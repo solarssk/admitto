@@ -23,6 +23,7 @@ const EXPECTED_POLICIES: Record<
   "admin:mail-transport-test": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:health-live": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:event-mail-transport-test": { windowMs: [60_000], max: [5], checks: 1 },
+  "admin:client-error": { windowMs: [60_000], max: [30], checks: 1 },
   "admin:export": { windowMs: [3_600_000], max: [10], checks: 1 },
   "admin:export-pii": { windowMs: [3_600_000], max: [5], checks: 1 },
   "admin:import-preview": { windowMs: [60_000], max: [10], checks: 1 },

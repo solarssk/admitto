@@ -185,6 +185,7 @@ export type RateLimitScope =
   | "checkin_history"
   | "admin_geocoding_search"
   | "admin_geocoding_timezone"
+  | "admin_client_error"
   | "wallet_webhook";
 
 /** Emit `auth.login.success` as JSON to stdout (no password/token fields) and persist a durable

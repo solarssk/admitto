@@ -302,6 +302,10 @@ export const RATE_POLICIES = {
     "admin:event-mail-transport-test",
     "admin_event_mail_transport_test",
   ),
+  /** Client-reported errors/CSP violations - the one source meant to fire from an uncontrolled
+   * browser-side condition (e.g. a misbehaving extension retrying a blocked mutation), so it
+   * needs a ceiling other click-driven admin endpoints don't. */
+  "admin:client-error": authUserScopedPolicy("admin:client-error", "admin_client_error", 30, 60_000),
   "admin:export": {
     checks: [
       {
