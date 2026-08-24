@@ -1674,8 +1674,9 @@ describe("PATCH /api/admin/events/:eventId", () => {
       }
     });
 
-    it("falls back to subscribing unconditionally when listWebhooks itself fails", async () => {
+    it("skips subscribing entirely when listWebhooks itself fails, instead of blindly duplicating or destructively clearing what's already there", async () => {
       const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockRejectedValue(new Error("down"));
+      const unsubscribeSpy = vi.spyOn(PassCreatorClient.prototype, "unsubscribeWebhook").mockResolvedValue(undefined);
       const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
       try {
         const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
@@ -1685,11 +1686,16 @@ describe("PATCH /api/admin/events/:eventId", () => {
         });
 
         expect(res.status).toBe(200);
-        await vi.waitFor(() => {
-          expect(subscribeSpy).toHaveBeenCalledTimes(4);
-        });
+        // Neither call happens on this path: subscribing blindly would duplicate whatever's
+        // already registered (the original bug), and clearing target URLs first would risk
+        // deleting a working subscription with no guaranteed replacement if a later subscribe
+        // call also failed (bot review, PR #1057) - skipping is the only option that's never
+        // worse than doing nothing this cycle.
+        expect(unsubscribeSpy).not.toHaveBeenCalled();
+        expect(subscribeSpy).not.toHaveBeenCalled();
       } finally {
         listSpy.mockRestore();
+        unsubscribeSpy.mockRestore();
         subscribeSpy.mockRestore();
       }
     });
