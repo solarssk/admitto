@@ -630,7 +630,10 @@
 
 /* A user-defined template name is unbounded free text - clamp to 2 lines instead of letting it
    wrap without limit and force this column to claim most of the row's width (same fix as
-   .audit-log-scope). The full name is still reachable via this cell's title tooltip. */
+   .audit-log-scope). The full name is still reachable via this cell's title tooltip. Applied to
+   a <span> wrapper, not the <td> itself - `display: -webkit-box` would override the <td>'s
+   required `table-cell` display and the browser's table fix-up would compute it as flow-root
+   instead, stranding the real <td>'s padding/border/vertical-align on the wrong box. */
 .communication-template-cell {
   display: -webkit-box;
   -webkit-line-clamp: 2;
