@@ -1797,7 +1797,7 @@ export function AccountPage() {
                       {s.deviceLabel || parseUserAgent(s.userAgent)}
                       {s.isCurrent && <Badge variant="neutral" className="sessions-current-badge">Current</Badge>}
                     </td>
-                    <td>
+                    <td className="sessions-ip-cell">
                       {s.ip ?? "-"}
                       {s.ip && <div className="sessions-subdued"><GeoCell location={s.country} /></div>}
                     </td>
