@@ -5800,7 +5800,7 @@ output.mail-field-hint {
   -webkit-box-orient: vertical;
   overflow: hidden;
   white-space: normal;
-  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 /* IPv6 addresses have no spaces to wrap on, so as a single unbroken token they'd otherwise force
