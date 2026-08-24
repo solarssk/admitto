@@ -163,7 +163,7 @@ Canonical roadmap: [VERSIONING.md](VERSIONING.md). Short view:
 |-----------|------------|
 | **v0.4.x** ✅ | Delivered - import → ticket mail → check-in → reports; location, bounce, Health, worker, … |
 | **v0.5.x** ✅ | Delivered - wallet passes (Apple/Google via PassCreator), passkey/security-key registration, SSO/OIDC hardening, users UX |
-| **v0.6.0** ✅ | Delivered - passkeys/security keys usable for sign-in and step-up (not just registration), "Forget all trusted devices", session-cookie and step-up security hardening |
+| **v0.6.0** | In progress, not yet tagged - passkeys/security keys usable for sign-in and step-up (not just registration), "Forget all trusted devices", session-cookie and step-up security hardening |
 | **v0.7** | Hardening phase 1 (Outlook/iPhone/Android mail and ticket tests) |
 | **v0.8+** | External-ingest `/api/ingest`, RSVP intake + calendar invites, waitlist - not yet scheduled to a specific version |
 | **v1.0** | First event go-live |
