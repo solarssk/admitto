@@ -5866,6 +5866,54 @@ describe("Attendees v2 — RSVP and manual create", () => {
     await prisma.attendee.delete({ where: { id: body.id } });
   });
 
+  it("re-fetches the row when a concurrent request wins the mint (already_issued) so the response isn't a stale concurrency token", async () => {
+    // Simulates another admin requesting this same brand-new attendee's ticket link a moment
+    // before this handler's own issueTicket call runs (e.g. reacting to the just-published
+    // activity update) - that request's issueTicket call mints for real and returns "issued";
+    // this one loses the race and gets "already_issued" back, exactly like the real CAS would.
+    const spy = vi.spyOn(ticketOperations, "issueTicket").mockImplementationOnce(async (attendeeId: string) => {
+      const token = generateToken();
+      await prisma.attendee.update({
+        where: { id: attendeeId },
+        data: { token_hash: hashToken(token), token_enc: encryptToString(token) },
+      });
+      return { status: "already_issued", mode: "internal", attendeeId };
+    });
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "race@example.com", first_name: "Race", last_name: "Winner" }),
+      });
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { id: string; updated_at: string };
+      const row = await prisma.attendee.findUniqueOrThrow({ where: { id: body.id } });
+      expect(row.token_hash).not.toBeNull();
+      expect(body.updated_at).toBe(row.updated_at.toISOString());
+      await prisma.attendee.delete({ where: { id: body.id } });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("still creates the attendee when ticket issuance fails - the link is just minted later instead", async () => {
+    const spy = vi.spyOn(ticketOperations, "issueTicket").mockRejectedValueOnce(new Error("boom"));
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "issuance-fails@example.com", first_name: "Issuance", last_name: "Fails" }),
+      });
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { id: string; ticket_url?: string };
+      const row = await prisma.attendee.findUniqueOrThrow({ where: { id: body.id } });
+      expect(row.token_hash).toBeNull();
+      await prisma.attendee.delete({ where: { id: body.id } });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("POST create rejects malformed JSON without writing an attendee", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
       method: "POST",

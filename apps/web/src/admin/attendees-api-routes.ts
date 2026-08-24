@@ -3149,15 +3149,18 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
     // outside Admitto's own mailer - instead of only after a ticket email has been sent. Kept
     // best-effort: BASE_URL not being configured yet (or any other issuance hiccup) must not fail
     // attendee creation, since the link can still be minted later via ticket-link/resend the same
-    // way an imported attendee's can. `created` is re-read after a real mint (code review,
-    // 2026-08-24) - issueTicket bumps the row's `updated_at`, and the stale pre-mint value in
-    // `created` would otherwise ship as this response's `updated_at`, failing the very next
-    // optimistic-concurrency PATCH the admin makes against it.
+    // way an imported attendee's can. `created` is re-read after either "issued" or
+    // "already_issued" (bot review) - issueTicket bumps the row's `updated_at` whenever *any*
+    // caller actually mints it, and "already_issued" means a concurrent request (e.g. another
+    // admin reacting to the just-published activity update and requesting this same attendee's
+    // ticket link) won that mint a moment before this call. Without the refresh, the stale
+    // pre-mint value in `created` would ship as this response's `updated_at`, failing the very
+    // next optimistic-concurrency PATCH the admin makes against it.
     let dtoSourceRow = created;
     try {
       const baseUrl = await resolveInstanceBaseUrl(db, process.env);
       const issueResult = await issueTicket(created.id, db, baseUrl);
-      if (issueResult.status === "issued") {
+      if (issueResult.status === "issued" || issueResult.status === "already_issued") {
         dtoSourceRow = await db.attendee.findUniqueOrThrow({
           where: { id: created.id },
           select: ATTENDEE_DETAIL_SELECT,
