@@ -1,8 +1,6 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/admitto-logo-dark.svg">
-    <img src="docs/assets/admitto-logo.svg" alt="Admitto" height="64">
-  </picture>
+  <img src="docs/assets/admitto-logo.svg#gh-light-mode-only" alt="Admitto" height="64">
+  <img src="docs/assets/admitto-logo-dark.svg#gh-dark-mode-only" alt="Admitto" height="64">
 </p>
 
 <p align="center">

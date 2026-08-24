@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-24
+
 ### Added
 
 - Passkeys and security keys registered under My account → Two-factor authentication can now be used to confirm sensitive account actions - password change, resetting two-factor, removing a passkey or security key, regenerating backup codes, unlinking single sign-on - the same as a code from your authenticator app. Every one of those popups now offers a "Use a passkey or security key" button once you have one confirmed, alongside the code field. Previously a registered passkey only counted toward "has a confirmed second factor" and could not itself be used for anything.
@@ -33,9 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On the two-factor sign-in step, the "Could not verify with your passkey or security key" message no longer appears between Continue and the "Use a passkey or security key" button. It now shows near the top of the page, in the same place as every other error on this step.
 - Signing in with a passkey or security key when it is your only confirmed second factor (the ceremony starts automatically, before there is any real chance to check "Remember this device" first) now offers "Remember this device?" as a one-tap follow-up right after verification succeeds, instead of silently never remembering the device on that path.
 - First-time passkey/security-key setup no longer looks stuck while your browser or password manager (for example Bitwarden) works through its own prompt - a short note now explains the wait, matching the hint already shown for the same wait on My Account's own step-up popups.
-
-### Fixed
-
 - Communication email preview (Communication tab and the template editor) no longer lets clicks on the ticket link or QR code navigate inside the preview frame - clicking the recipient's real ticket link previously triggered a nested-frame Content Security Policy violation instead of doing nothing.
 - Requirements' item and custom-field editors (Badge, Gift bag, Add item) now scroll their header and footer together with the rest of the form, matching every other popup in the app, instead of pinning them in place - the scrollbar also now sits flush against the popup's edge instead of inset behind a permanently reserved gap. This reverses the permanent scrollbar-gutter reservation added in 0.5.4 for these two modals specifically: a short form (e.g. a text-type custom field) is evenly centered again instead of always leaving dead space on the right, at the cost of a small width shift on the rare form tall enough to actually need the scrollbar - the same trade-off every other popup in the app already makes.
 - Delivery details and Sent message preview (Communication log) now scroll their header and footer together with the rest of the content, matching every other popup in the app, instead of pinning them in place.
@@ -1133,7 +1132,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.5.5...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/solarssk/admitto/compare/v0.5.5...v0.6.0
 [0.5.5]: https://github.com/solarssk/admitto/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/solarssk/admitto/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/solarssk/admitto/compare/v0.5.2...v0.5.3
