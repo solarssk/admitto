@@ -1674,8 +1674,39 @@ describe("PATCH /api/admin/events/:eventId", () => {
       }
     });
 
-    it("falls back to subscribing unconditionally when listWebhooks itself fails", async () => {
+    it("clears both target URLs before resubscribing when listWebhooks itself fails, instead of piling duplicates on top of whatever's already there", async () => {
+      const baseUrl = await resolveInstanceBaseUrl(prisma);
+      const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
       const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockRejectedValue(new Error("down"));
+      const unsubscribeSpy = vi
+        .spyOn(PassCreatorClient.prototype, "unsubscribeWebhook")
+        .mockResolvedValue(undefined);
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledTimes(4);
+        });
+        const unsubscribedUrls = unsubscribeSpy.mock.calls.map((call) => call[0]).sort();
+        expect(unsubscribedUrls).toEqual([targetUrl, `${targetUrl}/voided`].sort());
+      } finally {
+        listSpy.mockRestore();
+        unsubscribeSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("still resubscribes all 4 events even when clearing both target URLs also fails - never worse than the old blind-subscribe fallback", async () => {
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockRejectedValue(new Error("down"));
+      const unsubscribeSpy = vi
+        .spyOn(PassCreatorClient.prototype, "unsubscribeWebhook")
+        .mockRejectedValue(new Error("also down"));
       const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
       try {
         const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
@@ -1690,6 +1721,7 @@ describe("PATCH /api/admin/events/:eventId", () => {
         });
       } finally {
         listSpy.mockRestore();
+        unsubscribeSpy.mockRestore();
         subscribeSpy.mockRestore();
       }
     });

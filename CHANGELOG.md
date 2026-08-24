@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The "You need a confirmed authenticator app..." message shown to a Superadmin who tries to reset another Superadmin's two-factor or password without a confirmed second factor of their own now says a passkey or security key works too, matching what the check has actually accepted since sign-in/step-up passkeys shipped in 0.6.0.
+- Saving Event Settings with Wallet configured no longer risks piling a fresh duplicate PassCreator webhook subscription onto every existing one when PassCreator's list-webhooks call itself fails - it now clears both webhook target URLs first and resubscribes cleanly, the same recovery already used for the one-time pass_voided URL migration, instead of blindly resubscribing without checking. This was the source of dozens of duplicate webhook entries silently piling up in PassCreator's dashboard for repeatedly-saved event templates.
 
 ## [0.6.0] - 2026-08-24
 
