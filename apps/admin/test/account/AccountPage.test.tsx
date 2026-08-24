@@ -20,9 +20,11 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     confirmMfaTotp: vi.fn(),
     resetMfa: vi.fn(),
     deleteAccountSession: vi.fn(),
+    forgetAllTrustedDevices: vi.fn(),
     unlinkAccountExternalIdentity: vi.fn(),
     beginWebauthnRegistration: vi.fn(),
     finishWebauthnRegistration: vi.fn(),
+    beginWebauthnAssertion: vi.fn(),
     deleteWebauthnCredential: vi.fn(),
     deleteAccountTotp: vi.fn(),
     fetchBackupCodesStatus: vi.fn(),
@@ -30,10 +32,12 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   };
 });
 
-// startRegistration() calls the real navigator.credentials.create(), which doesn't exist in
-// jsdom - every test drives it through this mock instead of a real WebAuthn ceremony.
+// startRegistration()/startAuthentication() call the real navigator.credentials.create()/get(),
+// neither of which exists in jsdom - every test drives them through these mocks instead of a
+// real WebAuthn ceremony.
 vi.mock("@simplewebauthn/browser", () => ({
   startRegistration: vi.fn(),
+  startAuthentication: vi.fn(),
 }));
 
 vi.mock("../../src/account/TotpQrCode.js", () => ({
@@ -65,15 +69,17 @@ import {
   confirmMfaTotp,
   resetMfa,
   deleteAccountSession,
+  forgetAllTrustedDevices,
   unlinkAccountExternalIdentity,
   beginWebauthnRegistration,
   finishWebauthnRegistration,
+  beginWebauthnAssertion,
   deleteWebauthnCredential,
   deleteAccountTotp,
   fetchBackupCodesStatus,
   regenerateBackupCodes,
 } from "../../src/api/client.js";
-import { startRegistration } from "@simplewebauthn/browser";
+import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
 
 const mockDeleteSession = vi.mocked(deleteAccountSession);
 
@@ -85,9 +91,12 @@ const mockEnrollMfaTotp = vi.mocked(enrollMfaTotp);
 const mockCancelMfaEnroll = vi.mocked(cancelMfaEnroll);
 const mockConfirmMfaTotp = vi.mocked(confirmMfaTotp);
 const mockResetMfa = vi.mocked(resetMfa);
+const mockForgetAllTrustedDevices = vi.mocked(forgetAllTrustedDevices);
 const mockUnlinkExternalIdentity = vi.mocked(unlinkAccountExternalIdentity);
 const mockBeginWebauthnRegistration = vi.mocked(beginWebauthnRegistration);
 const mockFinishWebauthnRegistration = vi.mocked(finishWebauthnRegistration);
+const mockBeginWebauthnAssertion = vi.mocked(beginWebauthnAssertion);
+const mockStartAuthentication = vi.mocked(startAuthentication);
 const mockDeleteWebauthnCredential = vi.mocked(deleteWebauthnCredential);
 const mockDeleteAccountTotp = vi.mocked(deleteAccountTotp);
 const mockFetchBackupCodesStatus = vi.mocked(fetchBackupCodesStatus);
@@ -112,6 +121,7 @@ const baseAccount: AccountDto = {
   external_identities: [],
   available_identity_providers: [],
   webauthn_enabled: true,
+  trusted_devices_count: 0,
 };
 
 const totpEnrolledAccount: AccountDto = {
@@ -1122,7 +1132,11 @@ describe("AccountPage toasts", () => {
       ).toBeTruthy();
     });
     expect(screen.getByText("Authenticator app (TOTP)")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Two-factor authentication options" })).toBeNull();
+    // "Reset everything" needs a local password to reset with, so it stays hidden here - but the
+    // menu itself still shows for "Forget all trusted devices", which doesn't need one.
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+    expect(await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /^Reset everything/ })).toBeNull();
   });
 
   it("copies the otpauth URI during enrollment", async () => {
@@ -1553,6 +1567,41 @@ describe("AccountPage toasts", () => {
     expect(mockResetMfa).toHaveBeenLastCalledWith({ password: "current-password", code: "123456" });
   });
 
+  it("resets MFA using a passkey/security key as step-up proof instead of a code", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    const account: AccountDto = {
+      ...totpEnrolledAccount,
+      mfa_methods: [...totpEnrolledAccount.mfa_methods, makeWebauthnMethod()],
+    };
+    mockFetchAccount.mockResolvedValueOnce(account).mockResolvedValueOnce(baseAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockResetMfa
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockResolvedValueOnce({ sessions_revoked: 0 });
+    mockBeginWebauthnAssertion.mockResolvedValue({ options: { challenge: "chal-1" } } as never);
+    mockStartAuthentication.mockResolvedValue({ id: "cred-1" } as never);
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    const dialog = await openResetMfaDialog();
+    fireEvent.change(within(dialog).getByLabelText("Current password", { selector: "#account-reset-password" }), {
+      target: { value: "current-password" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Reset" }));
+    const stepUpButton = await screen.findByRole("button", { name: "Use a passkey or security key" });
+    fireEvent.click(stepUpButton);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Two-factor authentication reset\./)).toBeTruthy();
+    });
+    expect(mockResetMfa).toHaveBeenLastCalledWith({
+      password: "current-password",
+      webauthn: { response: { id: "cred-1" } },
+    });
+  });
+
   it("clears a stale reset error when the confirm dialog is reopened", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
@@ -1679,7 +1728,7 @@ describe("AccountPage profile: account type", () => {
     await waitFor(() => {
       expect(screen.getByText("Managed by Okta")).toBeTruthy();
     });
-    expect(screen.getByText(/password and two-factor authentication are managed there/)).toBeTruthy();
+    expect(screen.getByText(/password and two-factor authentication are managed there/i)).toBeTruthy();
   });
 
   it("prioritizes the linked provider and mentions the fallback password when the account has both", async () => {
@@ -2455,6 +2504,17 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     expect(within(dialog).getByText(`Backup codes: save all ${codes.length}, shown once`)).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "Add" }).hasAttribute("disabled")).toBe(true);
 
+    // This popup uses the "stacked" backup-codes layout (a separate Download button below the
+    // list, not the inline header one TOTP enrollment uses) - same downloadBackupCodes() call,
+    // just wired from the other button.
+    const createObjectURL = vi.fn((_blob: Blob | MediaSource) => "blob:mock-codes");
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = vi.fn();
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    fireEvent.click(within(dialog).getByRole("button", { name: "Download" }));
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    clickSpy.mockRestore();
+
     // Cannot dismiss (even via the backdrop) until the checkbox is checked.
     fireEvent.click(document.querySelector(".at-modal-backdrop")!);
     expect(screen.getByRole("dialog", { name: "Add passkey" })).toBeTruthy();
@@ -2932,7 +2992,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
-    expect(mockDeleteWebauthnCredential).toHaveBeenLastCalledWith("cred-1", "123456");
+    expect(mockDeleteWebauthnCredential).toHaveBeenLastCalledWith("cred-1", { code: "123456" });
   });
 
   it("refreshes the backup codes status after removing a credential with a step-up code", async () => {
@@ -2972,6 +3032,44 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
 
     await waitFor(() => {
       expect(mockFetchBackupCodesStatus).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("removes a credential using a passkey/security key as step-up proof instead of a code", async () => {
+    const account: AccountDto = {
+      ...baseAccount,
+      mfa_methods: [
+        { type: "totp", confirmed: true, last_used_at: null },
+        makeWebauthnMethod(),
+      ],
+    };
+    mockFetchAccount.mockResolvedValue(account);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockFetchBackupCodesStatus.mockResolvedValue({ total: 10, remaining: 10 });
+    const { ApiError } = await import("../../src/api/client.js");
+    mockDeleteWebauthnCredential
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockResolvedValueOnce({ ok: true });
+    mockBeginWebauthnAssertion.mockResolvedValue({ options: { challenge: "chal-1" } } as never);
+    mockStartAuthentication.mockResolvedValue({ id: "cred-1" } as never);
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Manage" }));
+    const manageDialog = await screen.findByRole("dialog", { name: "Manage passkeys" });
+    fireEvent.click(within(manageDialog).getByRole("button", { name: "Remove MacBook Touch ID" }));
+    const dialog = await screen.findByRole("dialog", { name: "Remove passkey" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+    const stepUpButton = await screen.findByRole("button", { name: "Use a passkey or security key" });
+    fireEvent.click(stepUpButton);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(mockDeleteWebauthnCredential).toHaveBeenLastCalledWith("cred-1", {
+      webauthn: { response: { id: "cred-1" } },
     });
   });
 
@@ -3294,7 +3392,37 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
-    expect(mockDeleteAccountTotp).toHaveBeenLastCalledWith("123456");
+    expect(mockDeleteAccountTotp).toHaveBeenLastCalledWith({ code: "123456" });
+  });
+
+  it("removes TOTP using a passkey/security key as step-up proof instead of a code", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    const account: AccountDto = {
+      ...totpEnrolledAccount,
+      mfa_methods: [...totpEnrolledAccount.mfa_methods, makeWebauthnMethod()],
+    };
+    mockFetchAccount.mockResolvedValueOnce(account).mockResolvedValueOnce(baseAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockDeleteAccountTotp
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockResolvedValueOnce({ ok: true });
+    mockBeginWebauthnAssertion.mockResolvedValue({ options: { challenge: "chal-1" } } as never);
+    mockStartAuthentication.mockResolvedValue({ id: "cred-1" } as never);
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(totpRow()).getByRole("button", { name: "Manage" }));
+    const dialog = await screen.findByRole("dialog", { name: "Manage authenticator app" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+    const stepUpButton = await screen.findByRole("button", { name: "Use a passkey or security key" });
+    fireEvent.click(stepUpButton);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(mockDeleteAccountTotp).toHaveBeenLastCalledWith({ webauthn: { response: { id: "cred-1" } } });
   });
 
   it("refreshes the backup codes status after removing TOTP with a step-up code", async () => {
@@ -3379,6 +3507,142 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     // The "Reset everything" path goes through the unmodified reset flow, not the new
     // TOTP-only removal endpoint.
     expect(mockDeleteAccountTotp).not.toHaveBeenCalled();
+  });
+
+  it("offers Forget all trusted devices even without a local password, but hides Reset everything there", async () => {
+    mockLoadedAccount({ ...totpEnrolledAccount, has_local_password: false });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+
+    expect(await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /^Reset everything/ })).toBeNull();
+  });
+
+  it("disables Forget all trusted devices when no device is currently remembered", async () => {
+    mockLoadedAccount({ ...totpEnrolledAccount, trusted_devices_count: 0 });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+
+    const item = await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ });
+    expect(item.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(item);
+    expect(screen.queryByRole("dialog", { name: "Forget all trusted devices" })).toBeNull();
+  });
+
+  it("Forget all trusted devices revokes devices, toasts the count, and reloads the account", async () => {
+    mockFetchAccount
+      .mockResolvedValueOnce({ ...totpEnrolledAccount, trusted_devices_count: 3 })
+      .mockResolvedValueOnce({ ...totpEnrolledAccount, trusted_devices_count: 0 });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockForgetAllTrustedDevices.mockResolvedValueOnce({ devices_revoked: 3 });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Forget all trusted devices" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Forget devices" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/^3 devices forgotten\./);
+    });
+    expect(mockForgetAllTrustedDevices).toHaveBeenCalledWith();
+    expect(screen.queryByRole("dialog", { name: "Forget all trusted devices" })).toBeNull();
+    // Reloaded so a now-empty count disables the menu item again without a page refresh.
+    await waitFor(() => {
+      expect(mockFetchAccount).toHaveBeenCalledTimes(2);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+    expect((await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ })).hasAttribute("disabled")).toBe(
+      true,
+    );
+  });
+
+  it("Forget all trusted devices uses singular wording when exactly one device is revoked", async () => {
+    mockFetchAccount
+      .mockResolvedValueOnce({ ...totpEnrolledAccount, trusted_devices_count: 1 })
+      .mockResolvedValueOnce({ ...totpEnrolledAccount, trusted_devices_count: 0 });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockForgetAllTrustedDevices.mockResolvedValueOnce({ devices_revoked: 1 });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Forget all trusted devices" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Forget devices" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /^1 device forgotten\. You'll be asked to verify again next time you sign in on it\./,
+      );
+    });
+  });
+
+  it("Cancel dismisses the Forget all trusted devices dialog without revoking anything", async () => {
+    mockLoadedAccount({ ...totpEnrolledAccount, trusted_devices_count: 2 });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Forget all trusted devices" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: "Forget all trusted devices" })).toBeNull();
+    expect(mockForgetAllTrustedDevices).not.toHaveBeenCalled();
+  });
+
+  it("Forget all trusted devices toasts a no-op message when the server finds nothing left to revoke", async () => {
+    mockLoadedAccount({ ...totpEnrolledAccount, trusted_devices_count: 1 });
+    mockForgetAllTrustedDevices.mockResolvedValueOnce({ devices_revoked: 0 });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Forget devices" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/^No devices were remembered\./);
+    });
+  });
+
+  it("shows an error in the dialog and does not close it when forgetting devices fails", async () => {
+    mockLoadedAccount({ ...totpEnrolledAccount, trusted_devices_count: 1 });
+    mockForgetAllTrustedDevices.mockRejectedValueOnce(new Error("network down"));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Two-factor authentication options" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^Forget all trusted devices/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Forget all trusted devices" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Forget devices" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByText("Failed to forget devices.")).toBeTruthy();
+    });
   });
 
   it("clicking outside the Reset dialog while resetting does not dismiss it", async () => {
@@ -3548,7 +3812,7 @@ describe("AccountPage: Backup codes", () => {
     expect(within(dialog).getByText(/3 of 10 backup codes remaining/)).toBeTruthy();
   });
 
-  it("regenerates and shows the new plaintext codes with a download button, disabling further regeneration", async () => {
+  it("regenerates and shows the new plaintext codes with a download button, disabling further regeneration until saved is confirmed", async () => {
     mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockFetchBackupCodesStatus.mockResolvedValueOnce({ total: 10, remaining: 3 });
@@ -3568,8 +3832,90 @@ describe("AccountPage: Backup codes", () => {
     });
     expect(within(dialog).getByRole("button", { name: "Download" })).toBeTruthy();
     expect(mockRegenerateBackupCodes).toHaveBeenCalledWith(undefined);
-    // A second click in the same dialog session can't invalidate the batch just shown.
+    // Can't invalidate the batch just shown before confirming it's saved.
     expect(within(dialog).getByRole("button", { name: "Regenerate" }).hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(within(dialog).getByLabelText("I've saved my backup codes"));
+    // Confirming the save unlocks a fresh regenerate cycle.
+    expect(within(dialog).getByRole("button", { name: "Regenerate" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("lets a second regenerate cycle run after the first batch is confirmed saved, requiring its own fresh step-up code", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockFetchBackupCodesStatus.mockResolvedValueOnce({ total: 10, remaining: 3 });
+    const firstCodes = Array.from({ length: BACKUP_RECOVERY_CODE_COUNT }, (_, i) => `FIRST-${i}`);
+    const secondCodes = Array.from({ length: BACKUP_RECOVERY_CODE_COUNT }, (_, i) => `SECOND-${i}`);
+    mockRegenerateBackupCodes
+      .mockResolvedValueOnce({ ok: true, codes: firstCodes })
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockResolvedValueOnce({ ok: true, codes: secondCodes });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(backupCodesRow()).getByText("3 of 10 remaining")).toBeTruthy();
+    });
+    fireEvent.click(within(backupCodesRow()).getByRole("button", { name: "Manage" }));
+    const dialog = await screen.findByRole("dialog", { name: "Manage backup codes" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Regenerate" }));
+    await waitFor(() => {
+      expect(within(dialog).getByText(`Backup codes: save all ${firstCodes.length}, shown once`)).toBeTruthy();
+    });
+    fireEvent.click(within(dialog).getByLabelText("I've saved my backup codes"));
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Regenerate" }));
+    // Falls back to the code-entry flow instead of leaving the first batch on screen, and the
+    // second attempt needs its own step-up proof rather than reusing the first one.
+    await waitFor(() => {
+      expect(within(dialog).getByLabelText("Authenticator or backup code")).toBeTruthy();
+    });
+    expect(within(dialog).queryByText(`Backup codes: save all ${firstCodes.length}, shown once`)).toBeNull();
+    expect(mockRegenerateBackupCodes).toHaveBeenNthCalledWith(2, undefined);
+
+    fireEvent.change(within(dialog).getByLabelText("Authenticator or backup code"), {
+      target: { value: "654321" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Regenerate" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByText(`Backup codes: save all ${secondCodes.length}, shown once`)).toBeTruthy();
+    });
+    expect(mockRegenerateBackupCodes).toHaveBeenNthCalledWith(3, { code: "654321" });
+    // Newly disabled again until this second batch is confirmed saved too.
+    expect(within(dialog).getByRole("button", { name: "Regenerate" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("regenerates backup codes using a passkey/security key as step-up proof instead of a code", async () => {
+    const account: AccountDto = {
+      ...totpEnrolledAccount,
+      mfa_methods: [...totpEnrolledAccount.mfa_methods, makeWebauthnMethod()],
+    };
+    mockFetchAccount.mockResolvedValue(account);
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockFetchBackupCodesStatus.mockResolvedValueOnce({ total: 10, remaining: 3 });
+    const { ApiError } = await import("../../src/api/client.js");
+    const codes = Array.from({ length: BACKUP_RECOVERY_CODE_COUNT }, (_, i) => `NEW-${i}`);
+    mockRegenerateBackupCodes
+      .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
+      .mockResolvedValueOnce({ ok: true, codes });
+    mockBeginWebauthnAssertion.mockResolvedValue({ options: { challenge: "chal-1" } } as never);
+    mockStartAuthentication.mockResolvedValue({ id: "cred-1" } as never);
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(backupCodesRow()).getByText("3 of 10 remaining")).toBeTruthy();
+    });
+    fireEvent.click(within(backupCodesRow()).getByRole("button", { name: "Manage" }));
+    const dialog = await screen.findByRole("dialog", { name: "Manage backup codes" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Regenerate" }));
+    const stepUpButton = await screen.findByRole("button", { name: "Use a passkey or security key" });
+    fireEvent.click(stepUpButton);
+
+    await waitFor(() => {
+      expect(within(dialog).getByText(`Backup codes: save all ${codes.length}, shown once`)).toBeTruthy();
+    });
+    expect(mockRegenerateBackupCodes).toHaveBeenLastCalledWith({ webauthn: { response: { id: "cred-1" } } });
   });
 
   it("requires a step-up code for regeneration on an MFA-required account, and submits it", async () => {
@@ -3603,7 +3949,7 @@ describe("AccountPage: Backup codes", () => {
     await waitFor(() => {
       expect(within(dialog).getByText(`Backup codes: save all ${newCodes.length}, shown once`)).toBeTruthy();
     });
-    expect(mockRegenerateBackupCodes).toHaveBeenLastCalledWith("123456");
+    expect(mockRegenerateBackupCodes).toHaveBeenLastCalledWith({ code: "123456" });
   });
 
   it("Close dismisses the manage dialog without regenerating", async () => {

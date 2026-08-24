@@ -27,10 +27,11 @@ vi.mock("@admitto/auth", async (importOriginal) => {
     regenerateBackupRecoveryCodes: vi.fn(),
     markBackupCodesAcknowledged: vi.fn(async () => {}),
     parseTotpSecretFromOtpauthUri: vi.fn(() => "SECRET"),
-    // Short-circuits hasUsableWebauthnCredentials before it needs a real userMfaMethod query -
-    // this file's `db` is a bare mock, not a real PrismaClient. None of these tests exercise the
-    // WebAuthn button itself.
+    // Short-circuits hasUsableWebauthnCredentials/hasTotp before either needs a real
+    // userMfaMethod query - this file's `db` is a bare mock, not a real PrismaClient. None of
+    // these tests exercise the WebAuthn button or the no-TOTP backup-only form variant.
     getWebauthnEnabled: vi.fn(async () => false),
+    userHasConfirmedTotp: vi.fn(async () => true),
   };
 });
 
