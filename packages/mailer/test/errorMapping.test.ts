@@ -78,11 +78,39 @@ describe("mapSmtpError", () => {
     });
   });
 
-  it("keeps unclassified transport errors terminal and non-retryable", () => {
+  it("defaults unclassified transport errors to retryable (bounded by MAX_MAIL_DRAIN_ATTEMPTS)", () => {
     expect(mapSmtpError(new Error("unexpected transport response"))).toEqual({
       status: "failed",
-      retryable: false,
+      retryable: true,
     });
+  });
+
+  it.each([
+    ["EAUTH", 'Missing credentials for "PLAIN"'],
+    ["ETLS", "Error initiating TLS - self signed certificate"],
+    ["EENVELOPE", "No recipients defined"],
+    ["EREQUIRETLS", "Server does not support REQUIRETLS extension (RFC 8689)"],
+  ])("keeps Nodemailer %s (no SMTP reply code) terminal and non-retryable", (code, message) => {
+    const err = new Error(message) as Error & { code: string };
+    err.code = code;
+    expect(mapSmtpError(err)).toEqual({ status: "rejected", retryable: false });
+  });
+
+  it("does not let a permanent Nodemailer code override an already-classified SMTP reply code", () => {
+    const err = new Error("535 5.7.8 Authentication failed") as Error & { code: string; responseCode: number };
+    err.code = "EAUTH";
+    err.responseCode = 535;
+    expect(mapSmtpError(err)).toEqual({ status: "rejected", retryable: false });
+  });
+
+  it("still defaults an unrecognized Nodemailer code to retryable", () => {
+    const err = new Error("Invalid greeting. response=200 nope") as Error & { code: string };
+    err.code = "EPROTOCOL";
+    expect(mapSmtpError(err)).toEqual({ status: "failed", retryable: true });
+  });
+
+  it("defaults a non-object thrown value to retryable, not a permanent Nodemailer code", () => {
+    expect(mapSmtpError("connection reset")).toEqual({ status: "failed", retryable: true });
   });
 });
 
