@@ -965,24 +965,23 @@ describe("HTML MFA enroll - WebAuthn method choice", () => {
     expect(html).toContain('href="/mfa/enroll/webauthn?attachment=platform&next=%2Fadmin%2Fevents"');
   });
 
-  it("GET /mfa/enroll/method redirects to backup codes when they're still owed from a prior enrollment", async () => {
+  it.each([
+    ["/mfa/enroll/method, with next", "/mfa/enroll/method?next=%2Fadmin%2Fevents", "/mfa/enroll/backup-codes?next=%2Fadmin%2Fevents"],
+    ["/mfa/enroll/method, no next", "/mfa/enroll/method", "/mfa/enroll/backup-codes"],
+    [
+      "/mfa/enroll/webauthn, with next",
+      "/mfa/enroll/webauthn?attachment=platform&next=%2Fadmin%2Fevents",
+      "/mfa/enroll/backup-codes?next=%2Fadmin%2Fevents",
+    ],
+    ["/mfa/enroll/webauthn, no next", "/mfa/enroll/webauthn?attachment=platform", "/mfa/enroll/backup-codes"],
+  ])("GET %s redirects to backup codes when they're still owed from a prior enrollment", async (_label, path, location) => {
     const loginRes = await loginToBackupCodesRequired();
-    const res = await app.request("/mfa/enroll/method?next=%2Fadmin%2Fevents", {
+    const res = await app.request(path, {
       headers: { ...sameOrigin, ...cookieHeader(loginRes) },
       redirect: "manual",
     });
     expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("/mfa/enroll/backup-codes?next=%2Fadmin%2Fevents");
-  });
-
-  it("GET /mfa/enroll/method redirects to backup codes with no next param when none was given", async () => {
-    const loginRes = await loginToBackupCodesRequired();
-    const res = await app.request("/mfa/enroll/method", {
-      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
-      redirect: "manual",
-    });
-    expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("/mfa/enroll/backup-codes");
+    expect(res.headers.get("location")).toBe(location);
   });
 
   it("GET /mfa/enroll/method redirects to /login for a session in the wrong stage", async () => {
@@ -1045,26 +1044,6 @@ describe("HTML MFA enroll - WebAuthn method choice", () => {
     } finally {
       await prisma.systemSettings.deleteMany({ where: { key: SETTING_WEBAUTHN_ENABLED } });
     }
-  });
-
-  it("GET /mfa/enroll/webauthn redirects to backup codes when they're still owed from a prior enrollment", async () => {
-    const loginRes = await loginToBackupCodesRequired();
-    const res = await app.request("/mfa/enroll/webauthn?attachment=platform", {
-      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
-      redirect: "manual",
-    });
-    expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("/mfa/enroll/backup-codes");
-  });
-
-  it("GET /mfa/enroll/webauthn redirects to backup codes with a next param when one was given", async () => {
-    const loginRes = await loginToBackupCodesRequired();
-    const res = await app.request("/mfa/enroll/webauthn?attachment=platform&next=%2Fadmin%2Fevents", {
-      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
-      redirect: "manual",
-    });
-    expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("/mfa/enroll/backup-codes?next=%2Fadmin%2Fevents");
   });
 
   it("GET /mfa/enroll/webauthn redirects to /login for a session in the wrong stage", async () => {
