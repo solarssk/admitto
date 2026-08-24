@@ -1,11 +1,6 @@
 # Cloudflare Access - Identity Linking
 
-| Field | Value |
-|---|---|
-| **Audience** | Superadmins |
-| **Required role** | Superadmin |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.5.2 |
+**Audience:** Superadmins · **Required role:** Superadmin · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.4
 
 ## What this page helps you do
 
@@ -72,7 +67,7 @@ A staff member already linked to the selected direct provider signs in through C
 - Admitto's own **Protected URL paths** field (Organisation settings → Identity → Cloudflare Access, see [Identity and SSO](Identity-and-SSO)) only drives Admitto-side decisions, such as the check-in redirect fallback described below - it never configures Cloudflare itself. If your Cloudflare Access application was created before check-in accepted this identity, or its path match otherwise still only lists `/admin` and `/api/admin/*`, add `/api/checkin` to that application directly. Until you do, Cloudflare never forwards a token on check-in requests and scanning falls back to requiring an ordinary Admitto session, even though `/admin` itself works through Cloudflare.
 - Protecting `/login` with Cloudflare too stops anyone reaching the password form without first clearing Cloudflare, but removes it as a recovery path if Cloudflare or the identity provider ever has an outage. Decide this deliberately rather than by default.
 - Role grants for a Cloudflare sign-in come only from the group claim configured in steps 4-5, never from any group data Cloudflare provides natively.
-- A staff account that signs in **without** going through Cloudflare Access (local password, or directly through your identity provider) gets a normal Admitto session, not a Cloudflare Access identity. If that account's usual landing page is `/admin` and Cloudflare protects that path, the sign-in and any two-factor step still complete normally, but the session cannot reach `/admin` itself - only a Cloudflare Access identity can. Admitto detects this and lands the account on the check-in surface (`/operator`) instead, since that page is not behind Cloudflare and every admin and superadmin can already use it. This is expected, not a failed sign-in.
+- A staff account that signs in **without** going through Cloudflare Access (local password, or directly through your identity provider) gets a normal Admitto session, not a Cloudflare Access identity. If that account's usual landing page is `/admin` and Cloudflare protects that path, the sign-in and any two-factor step still complete normally, but the session cannot reach `/admin` itself - only a Cloudflare Access identity can. Admitto detects this and lands the account on the check-in surface (`/operator`) instead, once at least one event exists - every admin and superadmin can already use that page, and it is not behind Cloudflare. On a brand-new instance with no events yet, it falls back one step further, to My account (`/account`), since there is no check-in surface to use either. This is expected, not a failed sign-in.
 
 ## What changes after this action
 
@@ -80,7 +75,7 @@ Staff already linked to the selected direct provider skip Admitto's own sign-in 
 
 ## Common problems
 
-- **Sign-in through Cloudflare fails with "Forbidden" and no further detail:** open [Logs and Audit](Logs-and-Audit)'s System logs and look for `auth.cf_access` entries - every failed attempt logs a specific `reason`, listed below.
+- **Sign-in through Cloudflare shows a generic access-denied page** (for example "You signed in through Cloudflare Access, but this account has no admin access.") **instead of the admin panel, and you need the specific reason:** open [Logs and Audit](Logs-and-Audit)'s System logs and look for `auth.cf_access` entries - every failed attempt logs a specific `reason`, listed below.
 - **A local password or direct sign-in lands on the check-in screen instead of the admin panel:** expected once Cloudflare protects `/admin` - see Important decisions above. The sign-in itself succeeded; only a Cloudflare Access identity can reach `/admin`.
 - **Signing in through Cloudflare Access reaches the admin panel fine, but live check-in scanning still asks for an Admitto session:** the Cloudflare Access application's own path match likely doesn't include `/api/checkin` yet - add it there. Admitto's own Protected URL paths setting alone has no effect on what Cloudflare forwards; see Important decisions above.
 - **`missing_canonical_identity` or `invalid_canonical_identity`:** Cloudflare is not sending a usable claim at all - most often because it was added under OIDC Scopes instead of OIDC Claims (step 5), or because the value looks like an e-mail address, which is rejected on purpose. Re-check step 5 and Cloudflare's own Test result.

@@ -1,11 +1,6 @@
 # Users and Roles Administration
 
-| Field | Value |
-|---|---|
-| **Audience** | Organisation Admins and Superadmins |
-| **Required role** | Administrator for assignments; Superadmin for staff accounts |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.5.1 |
+**Audience:** Organisation Admins and Superadmins · **Required role:** Administrator for assignments; Superadmin for staff accounts · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
 
 ## What this page helps you do
 

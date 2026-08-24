@@ -1,11 +1,6 @@
 # My Account
 
-| Field | Value |
-|---|---|
-| **Audience** | All staff (Operators, Organisation Admins, Superadmins) |
-| **Required role** | Any signed-in staff account |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.5.1 |
+**Audience:** All staff (Operators, Organisation Admins, Superadmins) · **Required role:** Any signed-in staff account · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.0
 
 ## What this page helps you do
 
@@ -27,21 +22,21 @@ Sign in and open **My account** from the top-right account menu. No special perm
 8. **Account type**: read-only. Shows **Local account** if you sign in with a password you set yourself, or **Managed by \<provider name\>** if your sign-in is linked to an organisation identity provider (SSO, short for single sign-on). An account can be both at once: a local password kept as a fallback alongside a linked provider.
 9. **SSO** (Profile card header, next to the card title): a menu for managing your own linked identity providers. Only appears when there's something to connect or unlink. It offers two kinds of action, and both can be available at once if more than one provider is configured:
    - **Connect \<provider name\>**: link an additional identity provider to your account. One item appears per enabled provider you are not already linked to. Selecting it takes you to that provider's sign-in page, where you confirm your identity with your current local password (plus a two-factor code, if your account requires one) before the new provider is linked. This option needs a local password to work, so it only appears once your account has one: set it under **Password** on this page, or ask your administrator to set it for you.
-   - **Unlink SSO**: remove every identity provider currently linked to your account and fall back to (or set) a local password. See the dedicated steps below.
-9. To **unlink SSO**: open the **SSO** menu and choose **Unlink SSO**. Set the new local password you'll sign in with, then confirm:
+   - **Unlink SSO**: remove every identity provider currently linked to your account and fall back to (or set) a local password. This also removes a linked Cloudflare Access identity if you have one, since unlinking one credential and leaving the other in place would break a later Cloudflare Access sign-in; see [Cloudflare Access - Identity Linking](Cloudflare-Access-Identity-Linking). See the dedicated steps below.
+10. To **unlink SSO**: open the **SSO** menu and choose **Unlink SSO**. Set the new local password you'll sign in with, then confirm:
    - If your account already has a confirmed authenticator app, passkey, or security key, you're asked to confirm with a code from it, a backup code, or the passkey/security key itself, instead of a password. This is checked regardless of your role.
    - Otherwise, if your account has a local password, you're asked to enter it to confirm it's really you.
    - If your account has neither a confirmed authenticator app nor a local password (a brand-new SSO-only account that's never touched either setting), self-service unlink isn't possible. Ask your administrator to unlink it for you instead.
    - If any of your roles were assigned automatically by an identity provider group (shown with a small cloud icon next to the role's scope on this page), unlinking is blocked until your administrator removes that role or you leave the underlying group. This stops SSO group-managed access from being silently converted into access you control yourself.
    - Unlinking ends your other active sessions immediately; the session you're using stays signed in.
-10. Click **Save** once you're done editing the profile fields above (Save is disabled until something has actually changed).
-11. **Password**: enter your current password plus a new one (at least 12 characters) to change it. This ends your other active sessions; the session you're using stays signed in. Not available on an account with no local password (SSO-only).
-12. **Two-factor authentication**: click **Set up** to add an authenticator app (TOTP) as a second sign-in factor; this opens in a popup with a QR code to scan and a digit code to confirm. Save the 10 backup codes shown once during setup; they're your fallback if you lose access to the app. Once set up, the button becomes **Manage**, opening a popup with a single **Remove** action that takes out only the authenticator app; your passkeys, security keys, and backup codes are left in place.
+11. Click **Save** once you're done editing the profile fields above (Save is disabled until something has actually changed).
+12. **Password**: enter your current password plus a new one (at least 12 characters) to change it. This ends your other active sessions; the session you're using stays signed in. Not available on an account with no local password (SSO-only).
+13. **Two-factor authentication**: click **Set up** to add an authenticator app (TOTP) as a second sign-in factor; this opens in a popup with a QR code to scan and a digit code to confirm. Save the 10 backup codes shown once during setup; they're your fallback if you lose access to the app. Once set up, the button becomes **Manage**, opening a popup with a single **Remove** action that takes out only the authenticator app; your passkeys, security keys, and backup codes are left in place.
 
-    To clear every two-factor method at once instead, use the options menu (the three-dot icon) in the **Two-factor authentication** card's own header and choose **Reset everything**; see the dedicated bullet under Important decisions below.
+    The options menu (the three-dot icon) in the **Two-factor authentication** card's own header offers two further actions: **Reset everything**, which clears every confirmed two-factor method at once (see the dedicated bullet under Important decisions below), and **Forget all trusted devices**, which ends every "Remember this device" trust for this account at once, the same as a bank's "forget remembered devices" option, without waiting for each one to expire on its own. Forget all trusted devices is available whenever you have a confirmed two-factor method, even without a local password (unlike Reset everything), and is disabled whenever there's currently nothing to forget.
 
     If your role requires two-factor authentication and you have a confirmed method, both **Remove** and the full reset ask you to confirm with a code from your authenticator app, a backup code, or a passkey/security key first.
-13. **Passkeys and security keys**: register one or more passkeys or security keys as extra two-factor methods, alongside an authenticator app. Once registered, a passkey or security key can be used the same way a code from your authenticator app can: at the two-factor step after your password (a "Use a passkey or security key" option appears), and to confirm sensitive account actions; see What changes after this action below:
+14. **Passkeys and security keys**: register one or more passkeys or security keys as extra two-factor methods, alongside an authenticator app. Once registered, a passkey or security key can be used the same way a code from your authenticator app can: at the two-factor step after your password (a "Use a passkey or security key" option appears), and to confirm sensitive account actions; see What changes after this action below:
 
     | Type | What it is | Typical example |
     |------|------------|------------------|
@@ -49,11 +44,11 @@ Sign in and open **My account** from the top-right account menu. No special perm
     | Security key | A separate physical device you plug in or tap | YubiKey or similar |
 
     Click **Add passkey** or **Add security key**, give it a name in the popup (required: this is how you'll tell multiple keys apart later, for example "Work laptop" vs "Phone"), then follow your browser or device's prompt to complete it. There's no limit on how many passkeys or security keys you can register. If this is your first-ever confirmed two-factor method, the popup shows your 10 backup codes once, the same as setting up an authenticator app. Save them before closing.
-14. To **remove** a passkey or security key: find it in its list under **Two-factor authentication** and click **Remove**.
+15. To **remove** a passkey or security key: find it in its list under **Two-factor authentication** and click **Remove**.
     - If your role requires two-factor authentication and you have a confirmed method, you're asked to confirm with a code from your authenticator app, a backup code, or a passkey/security key.
     - If the one you're removing is your last remaining two-factor method, you'll need to set one up again the next time you sign in.
-15. **Backup codes**: appears once you have at least one confirmed two-factor method (an authenticator app, a passkey, or a security key). Shows how many of your 10 codes are still unused, for example "7 of 10 remaining", or **None generated yet** if none have been created for your account. Backup codes are an account-wide fallback: they aren't tied to any single authenticator app, passkey, or security key, and work as a second factor no matter which method you normally sign in with. Click **Manage**, then **Regenerate** to invalidate your current codes and get a fresh set of 10, shown once as plain text. Save them somewhere safe, since they can't be viewed again after you close the popup. Backup codes can't be removed individually; regenerating is the only way to invalidate old ones. If your role requires two-factor authentication and you have a confirmed method, regenerating asks you to confirm with a code from your authenticator app, another backup code, or a passkey/security key first.
-16. **Active sessions**: review where your account is currently signed in (device, IP, sign-in method, last active) and revoke any session that isn't yours, or all other sessions at once.
+16. **Backup codes**: appears once you have at least one confirmed two-factor method (an authenticator app, a passkey, or a security key). Shows how many of your 10 codes are still unused, for example "7 of 10 remaining", or **None generated yet** if none have been created for your account. Backup codes are an account-wide fallback: they aren't tied to any single authenticator app, passkey, or security key, and work as a second factor no matter which method you normally sign in with. Click **Manage**, then **Regenerate** to invalidate your current codes and get a fresh set of 10, shown once as plain text. Save them somewhere safe, since they can't be viewed again after you close the popup. Backup codes can't be removed individually; regenerating is the only way to invalidate old ones. If your role requires two-factor authentication and you have a confirmed method, regenerating asks you to confirm with a code from your authenticator app, another backup code, or a passkey/security key first.
+17. **Active sessions**: review where your account is currently signed in (device, IP, sign-in method, last active) and revoke any session that isn't yours, or all other sessions at once.
 
 ## Expected result
 

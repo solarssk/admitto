@@ -1,11 +1,6 @@
 # First Event Checklist
 
-| Field | Value |
-|---|---|
-| **Audience** | Event Manager |
-| **Required role** | Administrator |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.5.1 |
+**Audience:** Event Managers · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
 
 Use this checklist before an event. It is a practical starting point, not a replacement for your organisation's event policy.
 
@@ -38,4 +33,4 @@ Use this checklist before an event. It is a practical starting point, not a repl
 
 - [ ] Review attendance in [Reports and Archiving](Reports-and-Archiving).
 - [ ] Export the data your team needs through the approved process.
-- [ ] Archive the event when no more changes are needed.
+- [ ] Ask a Superadmin to archive the event once no more changes are needed.

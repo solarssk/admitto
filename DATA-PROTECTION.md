@@ -18,6 +18,7 @@
 | OIDC IdP group membership (`ExternalIdentity.groups`) | Role mapping at OIDC login | Personal data (access metadata) |
 | `AttendeeActionLog.metadata` (admin audit trail) | Accountability — who changed an attendee's email/company/department/ticket type, from what, to what, and when | Personal data — see **Admin audit trail** below |
 | `AdminAuditLog.metadata` for attendee create/erase (central audit log) | Security/incident-response — which attendee (name, email) was created or permanently erased, from which event, by whom | Personal data — see **Central admin audit log** below |
+| Wallet pass registration (name, event details sent to PassCreator; provider pass ID, download URL, and per-platform device-registration counts stored locally) | Apple/Google Wallet ticket delivery, when Wallet is enabled | Personal data — see [SUBPROCESSORS.md](docs/security/SUBPROCESSORS.md) |
 
 `AttendeeNote.body` is a free-text operator note. It may contain special-category data
 (for example accessibility, dietary, or medical information) if staff enter it. Operators
@@ -198,7 +199,7 @@ policy). Different retention periods for different categories are intentional �
 | Login sessions, trusted devices | Product — automatic | Best-effort purge on the worker when expired/revoked |
 | Email bodies (`rendered_html`, `rendered_subject`) | Product — automatic | Nullified **60 days** after terminal delivery (`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`) |
 | Durable security audit trail (`SecurityAuditLog` — login/MFA/logout/OIDC/access-denied) | Product — automatic | Best-effort purge on the worker (boot + ~24h); default **30 days** (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) |
-| IP addresses in admin audit log and check-in history | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge |
+| IP addresses in admin audit log | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge. (An IP tied to a check-in-time request only ever appears in the System logs live tail below — in-memory only, not a persisted, purgeable table.) |
 | System logs live tail (in-memory only) | Product — automatic | Not persisted anywhere by the product; the last 1000 entries are kept in server memory and gone on the next restart. Long-term retention, if you need it, is whatever your container log driver already does with stdout |
 | Event attendee list (PII) | Operator | Export via admin UI; erasure via **Attendees → attendee detail → More actions → Delete attendee** (single) or the Attendees list's row-selection bulk bar (multiple at once), or the `DELETE` API directly — see [DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md) |
 
@@ -227,7 +228,8 @@ Attendees may have rights of access, rectification, and erasure under applicable
 ## Subprocessors
 
 Depends on customer configuration — hosting, corporate email (e.g. Microsoft 365 / Graph or SMTP
-relay), optional CDN/WAF, optional future wallet provider. Template:
+relay), optional CDN/WAF, and (when Wallet is enabled) the configured wallet pass provider
+(PassCreator, for Apple/Google Wallet). Template:
 [SUBPROCESSORS.md](docs/security/SUBPROCESSORS.md).
 
 ## Hosting

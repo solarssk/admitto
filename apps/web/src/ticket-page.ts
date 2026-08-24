@@ -8,6 +8,7 @@ import {
   resolveAppleMapsUrl,
   resolveGoogleMapsUrl,
 } from "@admitto/location";
+import { formatTempDual, formatTempRangeDual } from "@admitto/shared";
 import { renderAdmittoFaviconLink } from "./favicon.js";
 import { buildTicketPageStyles } from "./ticket-inline-styles.js";
 import { weatherCodeInfo } from "./weather/weather-codes.js";
@@ -195,8 +196,8 @@ function renderTicketWeatherHtml(weather: WeatherSummaryDto | null | undefined):
     const info = weatherCodeInfo(weather.weather_code);
     const range =
       weather.temp_min_c != null
-        ? `${weather.temp_min_c}-${weather.temp_c}°C`
-        : `${weather.temp_c}°C`;
+        ? formatTempRangeDual(weather.temp_min_c, weather.temp_c)
+        : formatTempDual(weather.temp_c);
     return `<div class="ticket__weather-block" aria-labelledby="weather-heading">
       ${heading}
       <div class="ticket__weather-main">

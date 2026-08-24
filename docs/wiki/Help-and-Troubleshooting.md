@@ -1,22 +1,17 @@
 # Help and Troubleshooting
 
-| Field | Value |
-|---|---|
-| **Audience** | All staff |
-| **Required role** | Any staff role |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.5.1 |
+**Audience:** All staff · **Required role:** Any staff role · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
 
 Start with the page for the failed workflow:
 
 | Problem | First page to use |
 |---|---|
-| Sign-in, MFA, or missing access | [Users and Roles Administration](Users-and-Roles-Administration) or [Identity and SSO](Identity-and-SSO) |
+| Sign-in, MFA, or missing access | [My Account](My-Account) for your own sign-in or MFA; [Users and Roles Administration](Users-and-Roles-Administration) or [Identity and SSO](Identity-and-SSO) for access-scope or provider problems an admin must fix |
 | Invalid, warning, or skipped import rows | [Importing Attendees](Importing-Attendees) and [Import File Reference](Import-File-Reference) |
 | Template preview or test failure | [Email Templates](Email-Templates) and [Advanced Email Templates](Advanced-Email-Templates) |
 | Failed, bounced, or rejected delivery | [Email Delivery Statuses](Email-Delivery-Statuses) |
 | Wallet pass not created, not updating, or wallet badge link empty | [Wallet Passes Overview](Wallet-Passes-Overview) |
-| Invalid or revoked check-in result | [Scanning Tickets and Check-in Results](Scanning-Tickets-and-Results) |
+| Invalid or revoked check-in result | [Scanning Tickets and Results](Scanning-Tickets-and-Results) |
 | No manual lookup result or wrong admission | [Manual Lookup and Corrections](Manual-Lookup-and-Corrections) |
 | Offline or reconnecting check-in | [Check-in Connection Problems](Check-in-Connection-Problems) |
 | Instance configuration or logs | [Organisation Settings](Organisation-Settings) and [Logs and Audit](Logs-and-Audit) |

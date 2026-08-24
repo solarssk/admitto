@@ -23,7 +23,7 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 |------|-------------------------------|-----------------|-------|
 | Authentication | Staff sign-in before admin/operator actions | Local accounts and/or **OIDC** | App · Config |
 | Authorization | Least privilege by role and event/org scope | **RBAC** (admin, operator, platform roles) | App |
-| Strong auth | MFA for privileged users | **TOTP** for elevated roles | App · Config |
+| Strong auth | MFA for privileged users | **TOTP** authenticator apps, and **WebAuthn passkeys/security keys** (FIDO2, e.g. Face ID, Windows Hello, YubiKey) for elevated roles - usable for enrollment, sign-in, and step-up | App · Config |
 | Edge access (ZTNA) | Restrict staff URLs at the perimeter, so an unauthorized request never reaches the application at all | Optional zero-trust network access (ZTNA) gateway — e.g. **Cloudflare Access** — in front of staff paths. Verifies identity (via the same OIDC provider or its own) and device posture before proxying the request through; complements, does not replace, Admitto's own RBAC | Operator |
 | Session security | HttpOnly cookies, TLS, rotation | Configurable lifetime; server-side revocation | App · Config |
 | CSRF | Protect state-changing browser requests | Same-origin checks on mutating requests (behind standard reverse proxy) | App |
@@ -62,17 +62,23 @@ Expired or revoked session and trusted-device rows are purged best-effort on the
 (at boot and about every 24 hours). Operators can also run
 `npm run cli -w @admitto/auth -- purge-auth-retention` (use `--dry-run` first
 to preview counts).
-**Trusted-device revocation on logout.** Signing out (`POST /logout` in the staff UI, or
-`POST /api/auth/logout`) revokes the `admitto_trusted_device` cookie and its database row for
-that browser, in addition to the session itself. The next sign-in on that browser requires MFA
-again unless the user checks **"Remember this device"** during verification. This is intentional:
-the trusted-device cookie must not silently persist past a sign-out on a browser other people may
-use next.
+**Trusted-device persistence across sign-out.** Signing out (`POST /logout` in the staff UI, or
+`POST /api/auth/logout`) revokes the session but intentionally does **not** clear the
+`admitto_trusted_device` cookie or its database row. A **"Remember this device"** trust now lasts
+for its full window (`trusted_device_days`, 30 days by default) regardless of how many times the
+user signs out and back in on that browser, matching how most other products with this feature
+behave. It is cleared only by: the trust window expiring, a password change, an MFA reset, an
+admin-initiated reset, or the account's own **"Forget all trusted devices"** action (My account →
+Two-factor authentication's options menu).
 
-> **Shared check-in devices.** On shared operator tablets, sign out before handing the device to
-> the next person — logout is what clears the remembered-device state; simply closing the browser
-> or app does not. Instance operators can also shorten or disable trusted-device persistence
-> entirely via the `trusted_device_days` setting (`0` disables the feature).
+> **Shared check-in devices.** On shared operator tablets, signing out alone no longer clears
+> remembered-device trust — the trust is scoped to that specific account (`validateTrustedDevice`
+> rejects the cookie for a different `user_id`), so it does not carry over to whoever uses the
+> device next, but it does let the *same* account skip MFA again on that device until the trust
+> window expires. Set `trusted_device_days` to a short value (or `0` to disable the feature
+> entirely) for any instance where the same account may sign in from a device it shouldn't stay
+> trusted on, and use **"Forget all trusted devices"** or an admin-initiated reset to clear it
+> sooner.
 Frozen email delivery bodies (`EmailDelivery.rendered_html` / `rendered_subject`) are nullified
 best-effort on the Admitto **worker** (boot + ~24h) once a delivery is terminal and older than 60 days
 (configurable via `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`). Preview with
@@ -95,13 +101,14 @@ enforced server-side, not just the strength meter shown while typing — per NIS
 §3.1.1.2's requirement to check candidates against a blocklist instead of relying on
 character-composition rules.
 
-### Implemented in codebase (v0.4.3)
+### Implemented in codebase
 
 These capabilities exist in the application — they are **not** roadmap-only claims:
 
 | Capability | Where |
 |------------|-------|
 | TOTP MFA (privileged roles) | `packages/auth` — MFA enrollment and verification |
+| WebAuthn passkeys / security keys (enrollment, sign-in, step-up) | `packages/auth/src/mfa/webauthn.ts`; `apps/web/src/auth/mfa-html-routes.ts`, `apps/web/src/admin/account-routes.ts` |
 | OIDC / SSO | `packages/auth` OIDC provider module; staff login routes in the web app |
 | Local break-glass admin | Local account provider alongside OIDC |
 
@@ -117,9 +124,9 @@ Roles are scoped to **instance**, **organization**, or **event** as appropriate:
 
 | Role | Typical use |
 |------|-------------|
-| Platform administrator | System configuration, integrations, user management |
-| Event organizer | Import, mail, exports, event configuration |
-| Check-in operator | Event-day scanning and lookup only |
+| `superadmin` (instance) | System configuration, integrations, user management, break-glass |
+| `admin` (organization) | Import, mail, exports, event configuration |
+| `operator` (event) | Event-day scanning and lookup only |
 
 Access checks are enforced on API routes and staff UI entry points.
 
@@ -203,7 +210,7 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 
 `X-Forwarded-*` headers are honoured only when **both** are true: `TRUST_PROXY=true`, **and** the
 request's direct TCP peer is inside `TRUSTED_PROXY_CIDRS` (default in
-[`deploy/.env.example`](../deploy/.env.example), loopback-only if unset). `TRUST_PROXY` alone is
+[`deploy/.env.example`](../../deploy/.env.example), loopback-only if unset). `TRUST_PROXY` alone is
 not a trust boundary — anything that can reach the app directly could otherwise set these headers
 itself.
 
@@ -213,11 +220,11 @@ itself.
 | `X-Forwarded-Proto`, `X-Forwarded-Host` | CSRF origin check on mutating POSTs |
 | `X-Forwarded-Proto` | Session cookie `Secure` flag |
 
-Implementation: [`apps/web/src/rate-limit/trust-proxy.ts`](../apps/web/src/rate-limit/trust-proxy.ts)
+Implementation: [`apps/web/src/rate-limit/trust-proxy.ts`](../../apps/web/src/rate-limit/trust-proxy.ts)
 (the `TRUSTED_PROXY_CIDRS` peer check), consumed by
-[`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts),
-[`same-origin-post.ts`](../apps/web/src/auth/same-origin-post.ts), and `isSecureRequest` in
-[`auth/routes.ts`](../apps/web/src/auth/routes.ts).
+[`client-ip.ts`](../../apps/web/src/rate-limit/client-ip.ts),
+[`same-origin-post.ts`](../../apps/web/src/auth/same-origin-post.ts), and `isSecureRequest` in
+[`auth/routes.ts`](../../apps/web/src/auth/routes.ts).
 
 **Operator requirement:** the edge proxy must set a **single** trusted client IP (e.g. nginx
 `proxy_set_header X-Forwarded-For $remote_addr`). If the proxy **appends** to a client-sent
@@ -291,7 +298,7 @@ and `worker`.
 ## Data protection in operations
 
 - **Ticket / QR payload:** opaque random identifier — no attendee name or email embedded in the QR.
-- **Integration credentials** (mail, OIDC): stored encrypted in the application database; key
+- **Integration credentials** (mail, OIDC, Wallet/PassCreator): stored encrypted in the application database; key
   supplied at deploy time via environment variable.
 - **Logs:** intended for operations, not analytics. Attendee-facing data (recipient addresses,
   import content) and secrets are never logged in full. A small, named set of staff/operator

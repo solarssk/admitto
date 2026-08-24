@@ -1,11 +1,6 @@
 # Identity and SSO
 
-| Field | Value |
-|---|---|
-| **Audience** | Superadmins |
-| **Required role** | Superadmin |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.5.0 |
+**Audience:** Superadmins · **Required role:** Superadmin · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.2
 
 ## What this page helps you do
 
@@ -100,7 +95,7 @@ A local password always keeps working as a fallback (unless the account has no l
 6. Configure group-to-role mappings only after confirming the provider's group claim. This is
    what turns "member of the `IT-Admins` group in Entra ID" into "Superadmin in Admitto." Each
    role always applies at one fixed level, shown next to it and not separately chosen: Superadmin
-   is instance-wide, Admin picks an Organization, Operator picks an Event, both from a searchable
+   is instance-wide, Admin picks an Organisation, Operator picks an Event, both from a searchable
    list rather than a typed ID.
 7. Save the provider and test sign-in with a non-critical account, in the separate Superadmin
    session mentioned above, not the one you're using to configure this.
@@ -174,7 +169,7 @@ Enabled providers appear in the staff sign-in flow. Updated mappings apply when 
 - **Sign-in redirects to an error at the identity provider ("redirect URI mismatch" or similar):** the callback registered at the provider must exactly match the **Redirect URI** shown in the provider editor (Instance URL + `/api/auth/oidc/<provider-id>/callback`). Check for a trailing slash, `http` vs `https`, or the wrong provider id. If Redirect URI is missing in the editor, set Instance URL under Organisation settings → General first. On the Add provider form, the URI appears only after the first save (the pattern is shown as a hint before then).
 - **Issuer rejected as private / link-local:** production blocks private destinations unless the exact hostname or IP literal is listed in `SSO_PRIVATE_DESTINATION_ALLOWLIST`. This is separate from the mail allowlist.
 - **Cloudflare test fails:** check the team URL and audience without copying tokens into support messages.
-- **Cloudflare sign-in fails with "Forbidden," or lands a staff member on Admitto's own sign-in screen instead of straight into the panel:** see [Cloudflare Access - Identity Linking](Cloudflare-Access-Identity-Linking)'s Common problems list, which maps each specific denial reason from System logs to its cause.
+- **Cloudflare sign-in shows a generic access-denied page** (for example "You signed in through Cloudflare Access, but this account has no admin access."), **or lands a staff member on Admitto's own sign-in screen instead of straight into the panel:** see [Cloudflare Access - Identity Linking](Cloudflare-Access-Identity-Linking)'s Common problems list, which maps each specific denial reason from System logs to its cause.
 - **The change risks lockout:** stop and use the separate Superadmin session to restore the last known working configuration.
 
 ## Related pages

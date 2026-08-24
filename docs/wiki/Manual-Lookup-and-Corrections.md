@@ -1,11 +1,6 @@
 # Manual Lookup and Corrections
 
-| Field | Value |
-|---|---|
-| **Audience** | Check-in Operators and Event Managers |
-| **Required role** | Operator for lookup; Administrator for administrative corrections |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.4.13 |
+**Audience:** Check-in Operators and Event Managers · **Required role:** Operator for lookup; Administrator for administrative corrections · **Feature status:** ✅ Available · **Last verified:** Admitto 0.4.13
 
 ## What this page helps you do
 
@@ -50,5 +45,5 @@ Manual admission records the manual method. Undo or administrative revoke adds a
 
 ## Related pages
 
-- [Scanning Tickets and Check-in Results](Scanning-Tickets-and-Results)
+- [Scanning Tickets and Results](Scanning-Tickets-and-Results)
 - [Event Items and Check-in Behaviour](Event-Items-and-Check-in-Behaviour)
