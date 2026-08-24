@@ -42,8 +42,8 @@ own database, secrets, and operator access.
 | **Backups** | Customer policy (manual pre-upgrade `pg_dump` + nightly `db-backup` compose service) |
 | **Monitoring** | Customer tools; application exposes liveness and token-gated readiness endpoints |
 
-Optional **wallet pass** integration (planned) may add a third-party pass provider — see
-[SUBPROCESSORS.md](SUBPROCESSORS.md).
+Optional **wallet pass** integration (PassCreator) adds a third-party pass provider when enabled
+per event — see [SUBPROCESSORS.md](SUBPROCESSORS.md).
 
 ---
 
