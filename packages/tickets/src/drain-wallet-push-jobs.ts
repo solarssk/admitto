@@ -165,6 +165,63 @@ async function markWalletPushFailed(db: PrismaClient, jobId: string, err: unknow
   });
 }
 
+/** Writes the job's terminal state once the per-target loop is done - split out of
+ * runOneWalletPushJob to keep that function's cognitive complexity under SonarCloud's threshold
+ * (bot review), no behavior change. */
+async function finalizeWalletPushJob(
+  db: PrismaClient,
+  job: ClaimedWalletPushJob,
+  eventId: string,
+  request: WalletPushRequest,
+  targetCount: number,
+  tally: { reissued: number; skipped: number; errored: number },
+): Promise<"succeeded" | "failed"> {
+  const { reissued, skipped, errored } = tally;
+
+  if (errored > 0) {
+    // Per-attendee failures never throw out of the batch loop (each is caught individually so
+    // one bad target doesn't stop the rest), so this is the only point that sees the aggregate
+    // count - without it, a push where every attendee errored would still report "succeeded"
+    // with nothing in its own status to flag that nothing actually reached anyone. Logged
+    // regardless of how many errored: an event-wide push has no operator watching a toast for
+    // it (unlike an in-session Push updates click), so this is the only signal ops has.
+    emitSystemLog("wallet", "error", "wallet_push_job_had_errors", {
+      job_id: job.id,
+      event_id: eventId,
+      reissued,
+      skipped,
+      errored,
+    });
+  }
+
+  // Every target erroring (not just some) means the job accomplished nothing - report it as a
+  // real failure so the existing "failed" toast/history handling picks it up, instead of the
+  // generic "succeeded" path silently implying it worked.
+  if (targetCount > 0 && errored === targetCount) {
+    await db.adminJob.update({
+      where: { id: job.id },
+      data: {
+        status: "failed",
+        finished_at: new Date(),
+        result_json: { request, reissued, skipped, errored },
+        error: WALLET_PUSH_JOB_ALL_FAILED_ERROR,
+      },
+    });
+    return "failed";
+  }
+
+  await db.adminJob.update({
+    where: { id: job.id },
+    data: {
+      status: "succeeded",
+      finished_at: new Date(),
+      result_json: { request, reissued, skipped, errored },
+      error: null,
+    },
+  });
+  return "succeeded";
+}
+
 async function runOneWalletPushJob(db: PrismaClient, job: ClaimedWalletPushJob): Promise<"succeeded" | "failed"> {
   try {
     const request = readWalletPushRequest(job);
@@ -214,48 +271,7 @@ async function runOneWalletPushJob(db: PrismaClient, job: ClaimedWalletPushJob):
       await db.adminJob.update({ where: { id: job.id }, data: { progress_done: done } });
     }
 
-    if (errored > 0) {
-      // Per-attendee failures never throw out of the loop above (each is caught individually so
-      // one bad target doesn't stop the rest), so this is the only point that sees the aggregate
-      // count - without it, a push where every attendee errored would still report "succeeded"
-      // with nothing in its own status to flag that nothing actually reached anyone. Logged
-      // regardless of how many errored: an event-wide push has no operator watching a toast for
-      // it (unlike an in-session Push updates click), so this is the only signal ops has.
-      emitSystemLog("wallet", "error", "wallet_push_job_had_errors", {
-        job_id: job.id,
-        event_id: eventId,
-        reissued,
-        skipped,
-        errored,
-      });
-    }
-
-    // Every target erroring (not just some) means the job accomplished nothing - report it as a
-    // real failure so the existing "failed" toast/history handling picks it up, instead of the
-    // generic "succeeded" path silently implying it worked.
-    if (targets.length > 0 && errored === targets.length) {
-      await db.adminJob.update({
-        where: { id: job.id },
-        data: {
-          status: "failed",
-          finished_at: new Date(),
-          result_json: { request, reissued, skipped, errored },
-          error: WALLET_PUSH_JOB_ALL_FAILED_ERROR,
-        },
-      });
-      return "failed";
-    }
-
-    await db.adminJob.update({
-      where: { id: job.id },
-      data: {
-        status: "succeeded",
-        finished_at: new Date(),
-        result_json: { request, reissued, skipped, errored },
-        error: null,
-      },
-    });
-    return "succeeded";
+    return await finalizeWalletPushJob(db, job, eventId, request, targets.length, { reissued, skipped, errored });
   } catch (err) {
     await markWalletPushFailed(db, job.id, err);
     return "failed";
