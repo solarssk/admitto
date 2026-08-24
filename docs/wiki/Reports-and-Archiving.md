@@ -1,11 +1,6 @@
 # Reports and Archiving
 
-| Field | Value |
-|---|---|
-| **Audience** | Event Managers and Superadmins |
-| **Required role** | Administrator for reports; Superadmin for archiving |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.4.13 |
+**Audience:** Event Managers and Superadmins · **Required role:** Administrator for reports; Superadmin for archiving · **Feature status:** ✅ Available · **Last verified:** Admitto 0.4.13
 
 ## What this page helps you do
 

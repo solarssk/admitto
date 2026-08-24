@@ -1,11 +1,6 @@
 # Email Delivery Statuses
 
-| Field | Value |
-|---|---|
-| **Audience** | Event Managers and Superadmins |
-| **Required role** | Administrator or Superadmin |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.4.13 |
+**Audience:** Event Managers and Superadmins · **Required role:** Administrator or Superadmin · **Feature status:** ✅ Available · **Last verified:** Admitto 0.4.13
 
 The delivery log records the latest known state reported by Admitto and the configured mail transport.
 

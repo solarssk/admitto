@@ -1,11 +1,6 @@
 # My Account
 
-| Field | Value |
-|---|---|
-| **Audience** | All staff (Operators, Organisation Admins, Superadmins) |
-| **Required role** | Any signed-in staff account |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.5.1 |
+**Audience:** All staff (Operators, Organisation Admins, Superadmins) · **Required role:** Any signed-in staff account · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
 
 ## What this page helps you do
 

@@ -44,6 +44,7 @@ const requiredPages = [
 ];
 const metadataLabels = ["Audience", "Required role", "Feature status", "Last verified"];
 const validStatuses = new Set(["Available", "Preview", "Planned", "Deprecated"]);
+const statusIcons = { Available: "✅", Preview: "🧪", Planned: "🗺️", Deprecated: "🚫" };
 const requiredSidebarSections = [
   "Start Here",
   "Event Management",
@@ -135,18 +136,27 @@ function* markdownLinks(text) {
   }
 }
 
-/** Parses just the page's own "| Field | Value |" metadata table into a label -> value map, so a
- * label mentioned elsewhere in the page (an example, a code block, prose) can never satisfy the
- * metadata check in its place. */
-function parseFieldValueMetadataTable(text) {
+/** Parses just the page's own metadata byline - the first non-blank line after the "# Title"
+ * line, formatted as "**Label:** value · **Label:** value · ...". Reading only that specific
+ * line (not scanning the whole page) means a label mentioned elsewhere - an example, a code
+ * block, prose - can never satisfy the metadata check in its place. */
+function parseMetadataByline(text) {
   const rows = new Map();
-  const tableHeader = "| Field | Value |\n|---|---|\n";
-  const headerIndex = text.indexOf(tableHeader);
-  if (headerIndex === -1) return rows;
-  for (const line of text.slice(headerIndex + tableHeader.length).split("\n")) {
-    if (!line.startsWith("|")) break;
-    const cellMatch = line.match(/^\|\s*\*\*([^*|]+)\*\*\s*\|([^|]*)\|$/);
-    if (cellMatch) rows.set(cellMatch[1].trim(), cellMatch[2].trim());
+  const lines = text.split("\n");
+  let bylineLine;
+  for (let index = 1; index < lines.length; index += 1) {
+    if (lines[index].trim() === "") continue;
+    bylineLine = lines[index];
+    break;
+  }
+  if (!bylineLine) return rows;
+  for (const segment of bylineLine.split("·")) {
+    const trimmed = segment.trim();
+    if (!trimmed.startsWith("**")) continue;
+    const labelEnd = trimmed.indexOf(":**", 2);
+    if (labelEnd === -1) continue;
+    const label = trimmed.slice(2, labelEnd).trim();
+    if (label) rows.set(label, trimmed.slice(labelEnd + 3).trim());
   }
   return rows;
 }
@@ -194,12 +204,15 @@ if (!existsSync(wikiRoot) || !statSync(wikiRoot).isDirectory()) {
     const fileName = relative(wikiRoot, filePath);
     if (filePath !== resolve(wikiRoot, "_Sidebar.md")) {
       if (!text.startsWith("# ")) fail(`${relativePath} is missing its page title.`);
-      const metadataRows = parseFieldValueMetadataTable(text);
+      const metadataRows = parseMetadataByline(text);
       for (const label of metadataLabels) {
         if (!metadataRows.get(label)?.trim()) fail(`${relativePath} is missing ${label} metadata.`);
       }
-      const status = metadataRows.get("Feature status")?.trim();
-      if (!status || !validStatuses.has(status)) {
+      const statusValue = metadataRows.get("Feature status")?.trim() ?? "";
+      const statusSpace = statusValue.indexOf(" ");
+      const statusIcon = statusSpace === -1 ? "" : statusValue.slice(0, statusSpace);
+      const status = statusSpace === -1 ? "" : statusValue.slice(statusSpace + 1).trim();
+      if (!status || !validStatuses.has(status) || statusIcon !== statusIcons[status]) {
         fail(`${relativePath} has an invalid feature status.`);
       }
       if (workflowPages.has(fileName)) {
