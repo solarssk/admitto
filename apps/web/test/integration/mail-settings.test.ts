@@ -335,38 +335,23 @@ describe("PUT /api/admin/mail-settings", () => {
     },
   );
 
-  it("rejects a private/loopback Power Automate URL (SSRF guard, same as SMTP host)", async () => {
-    const res = await app.request("/api/admin/mail-settings", {
-      method: "PUT",
-      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ powerAutomateUrl: "https://127.0.0.1/webhook" }),
-    });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error?: string };
-    expect(body.error).toBe("validation_failed");
-  });
-
-  it("rejects a non-HTTPS Power Automate URL", async () => {
-    const res = await app.request("/api/admin/mail-settings", {
-      method: "PUT",
-      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ powerAutomateUrl: "http://prod-00.example.com/webhook" }),
-    });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error?: string };
-    expect(body.error).toBe("validation_failed");
-  });
-
-  it("rejects a Power Automate URL targeting cloud metadata via a trailing-dot absolute hostname (CodeRabbit finding on #1050)", async () => {
-    const res = await app.request("/api/admin/mail-settings", {
-      method: "PUT",
-      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ powerAutomateUrl: "https://metadata.google.internal./flow" }),
-    });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error?: string };
-    expect(body.error).toBe("validation_failed");
-  });
+  it.each([
+    "https://127.0.0.1/webhook",
+    "http://prod-00.example.com/webhook",
+    "https://metadata.google.internal./flow",
+  ])(
+    "rejects an unsafe Power Automate URL (SSRF guard, same as SMTP host): %s",
+    async (powerAutomateUrl) => {
+      const res = await app.request("/api/admin/mail-settings", {
+        method: "PUT",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ powerAutomateUrl }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error?: string };
+      expect(body.error).toBe("validation_failed");
+    },
+  );
 
   it("trims SMTP host before persistence", async () => {
     const res = await app.request("/api/admin/mail-settings", {
