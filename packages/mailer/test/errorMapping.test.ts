@@ -85,27 +85,14 @@ describe("mapSmtpError", () => {
     });
   });
 
-  it("keeps Nodemailer EAUTH (no SMTP reply code) terminal and non-retryable", () => {
-    const err = new Error('Missing credentials for "PLAIN"') as Error & { code: string };
-    err.code = "EAUTH";
-    expect(mapSmtpError(err)).toEqual({ status: "rejected", retryable: false });
-  });
-
-  it("keeps Nodemailer ETLS (certificate/hostname failure) terminal and non-retryable", () => {
-    const err = new Error("Error initiating TLS - self signed certificate") as Error & { code: string };
-    err.code = "ETLS";
-    expect(mapSmtpError(err)).toEqual({ status: "rejected", retryable: false });
-  });
-
-  it("keeps Nodemailer EENVELOPE (malformed sender/recipient) terminal and non-retryable", () => {
-    const err = new Error("No recipients defined") as Error & { code: string };
-    err.code = "EENVELOPE";
-    expect(mapSmtpError(err)).toEqual({ status: "rejected", retryable: false });
-  });
-
-  it("keeps Nodemailer EREQUIRETLS (REQUIRETLS policy mismatch) terminal and non-retryable", () => {
-    const err = new Error("Server does not support REQUIRETLS extension (RFC 8689)") as Error & { code: string };
-    err.code = "EREQUIRETLS";
+  it.each([
+    ["EAUTH", 'Missing credentials for "PLAIN"'],
+    ["ETLS", "Error initiating TLS - self signed certificate"],
+    ["EENVELOPE", "No recipients defined"],
+    ["EREQUIRETLS", "Server does not support REQUIRETLS extension (RFC 8689)"],
+  ])("keeps Nodemailer %s (no SMTP reply code) terminal and non-retryable", (code, message) => {
+    const err = new Error(message) as Error & { code: string };
+    err.code = code;
     expect(mapSmtpError(err)).toEqual({ status: "rejected", retryable: false });
   });
 
@@ -120,6 +107,10 @@ describe("mapSmtpError", () => {
     const err = new Error("Invalid greeting. response=200 nope") as Error & { code: string };
     err.code = "EPROTOCOL";
     expect(mapSmtpError(err)).toEqual({ status: "failed", retryable: true });
+  });
+
+  it("defaults a non-object thrown value to retryable, not a permanent Nodemailer code", () => {
+    expect(mapSmtpError("connection reset")).toEqual({ status: "failed", retryable: true });
   });
 });
 
