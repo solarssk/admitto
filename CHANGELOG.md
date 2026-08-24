@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Passkeys and security keys registered under My account → Two-factor authentication can now be used to confirm sensitive account actions - password change, resetting two-factor, removing a passkey or security key, regenerating backup codes, unlinking single sign-on - the same as a code from your authenticator app. Every one of those popups now offers a "Use a passkey or security key" button once you have one confirmed, alongside the code field. Previously a registered passkey only counted toward "has a confirmed second factor" and could not itself be used for anything.
+- Signing in can now be completed with a registered passkey or security key at the two-factor step after your password - a "Use a passkey or security key" option appears once you have one confirmed, alongside the usual authenticator-code field.
+- First-time two-factor setup now lets you choose an authenticator app, a passkey, or a security key as your second factor, instead of always starting with an authenticator app QR code. Skipped entirely (setup goes straight to the authenticator app as before) on an instance that has passkeys and security keys turned off.
+- My account → Two-factor authentication's options menu now has a "Forget all trusted devices" action, so you can end every "Remember this device" trust at once, the same as a bank's "forget remembered devices" option, without waiting for each one to expire on its own. Available whenever you have a confirmed two-factor method, even without a local password (unlike "Reset everything"), and disabled whenever there is currently nothing to forget.
+
+### Changed
+
+- Signing out no longer ends a "Remember this device" trust for that device. It now lasts for its full window (30 days by default) regardless of how many times you sign out and back in on it, matching how most other products with this feature behave. A password change, a two-factor reset, or an admin-initiated reset still clears it immediately, the same as before.
+
+### Fixed
+
+- My Account no longer briefly shows "Too many requests" and fails to load right after a burst of two-factor management actions (enrolling or removing an authenticator app, registering a passkey or security key, viewing or regenerating backup codes) - the per-IP rate limit shared by all of My Account's requests was too tight for ordinary back-to-back use of the newly added WebAuthn management actions.
+- Signing in no longer offers a 6-digit authenticator-app code field, or a way to switch to one, to an account whose only confirmed two-factor methods are backup codes and/or a passkey or security key (for example, after removing the authenticator app). For an account with a confirmed passkey or security key and no authenticator app, the two-factor step now tries it automatically instead of waiting for a click, with the backup-code field ready as a fallback if that's cancelled or fails.
+- On the two-factor sign-in step, the "Use a passkey or security key" button no longer sits flush against Continue with no gap between them, and now matches its height. The "Authentication code" label is now centered above the code boxes it labels instead of sitting at the card's left edge.
+- The "Download" button in My Account's passkey, security key, and backup codes dialogs now sits below the codes as its own clearly visible button, instead of a small text link next to the header.
+- The two-factor sign-in step's "Could not verify with your passkey or security key" message no longer sits flush against Continue with no gap above it.
+- My Account's "Manage backup codes" dialog no longer permanently disables Regenerate the moment a fresh batch is shown. It now unlocks again once "I've saved my backup codes" is checked, so a second regeneration can be started without closing and reopening the dialog, and correctly asks for its own fresh step-up code instead of reusing the first one.
+- First-time two-factor setup's authenticator app QR step and passkey/security key step now each offer a "Choose a different method" link back to the method choice, for an account that picked the wrong one by mistake. Previously the only way back was abandoning setup and starting over.
+- First-time two-factor setup's "Begin setup" button is centered and no longer underlined on an instance offering passkeys and security keys as a choice.
+- The three method choices in first-time two-factor setup now show an icon for each method, and "Security key" is labelled "Security key (YubiKey)", matching how My account already names a registered one.
+- On the two-factor sign-in step, the "Could not verify with your passkey or security key" message no longer appears between Continue and the "Use a passkey or security key" button. It now shows near the top of the page, in the same place as every other error on this step.
+- Signing in with a passkey or security key when it is your only confirmed second factor (the ceremony starts automatically, before there is any real chance to check "Remember this device" first) now offers "Remember this device?" as a one-tap follow-up right after verification succeeds, instead of silently never remembering the device on that path.
+- First-time passkey/security-key setup no longer looks stuck while your browser or password manager (for example Bitwarden) works through its own prompt - a short note now explains the wait, matching the hint already shown for the same wait on My Account's own step-up popups.
+
 ### Fixed
 
 - Communication email preview (Communication tab and the template editor) no longer lets clicks on the ticket link or QR code navigate inside the preview frame - clicking the recipient's real ticket link previously triggered a nested-frame Content Security Policy violation instead of doing nothing.
@@ -15,6 +41,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The staff user edit modal's Sign-in security row no longer forces a permanent horizontal scrollbar.
 - All remaining popups (Add attendee, Create event, Invite user, Create/Edit template, CSP trusted origins, Fix Maps link, Font family, device label edit, and the Attendees page bulk dialogs) now use the app's slim on-theme scrollbar instead of the browser's default one, matching every other popup.
 - The header "Send tickets" dialog now puts Cancel before "Send tickets", matching every other popup's button order. The device label edit modal's save error now renders as a Notice banner instead of plain text.
+
+### Security
+
+- An actor superadmin whose only confirmed second factor is a passkey or security key (not an authenticator app) can now complete a superadmin-on-superadmin two-factor or password reset, and self-service single sign-on unlinking, using that credential. Both actions previously only recognized a confirmed authenticator app: a passkey-only superadmin was wrongly denied the reset outright (403), and a passkey-only user attempting self-unlink was wrongly asked for their local password instead of their already-confirmed second factor.
+- Every request that can carry a WebAuthn/passkey ceremony response, sign-in verification, passkey registration, and every step-up-gated account action (password change, two-factor reset, passkey removal, backup-code regeneration, single sign-on unlink), is now capped in body size and rejected before it is ever parsed, closing a resource-exhaustion path an oversized request could otherwise reach.
+- Step-up proof attempts (a code or a WebAuthn assertion) across all of an account's step-up-gated actions now share one overall rate limit per session, on top of each action's own limit, so a stolen session can no longer multiply its effective guessing budget by switching between actions.
+- A rejected step-up proof, a wrong code or a failed WebAuthn assertion, on any account-security action is now written to the security audit log, the same way a failed sign-in two-factor attempt already was. Previously only successful step-ups left a trace.
+- Signing in with a passkey or security key now records the browser's timezone in its security audit log entries, matching the authenticator-app sign-in path.
+- WebAuthn credential verification for sign-in, step-up, and passkey removal no longer runs while a database transaction is held open, reducing how long a connection stays tied up per request.
 
 ## [0.5.5] - 2026-08-23
 
@@ -153,6 +188,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - My account: staff can choose 12-hour (AM/PM), 24-hour, or browser-default time input independently from their regional date format.
+- **My account: passkeys and security keys.** Staff can now register passkeys (Face ID, Windows Hello, and similar) and security keys (for example a YubiKey) as extra two-factor methods alongside an authenticator app. Each one is given a name so multiple keys can be told apart, and there is no limit on how many can be registered. Setting up, resetting, or adding a two-factor method now opens in a popup instead of expanding inline on the page. Registering a passkey or security key stays available to inspect or remove even if an administrator later turns passkeys/security keys off for the instance — only adding a new one is affected. If it's the account's first-ever confirmed two-factor method, its 10 backup codes are shown once in the same popup and must be saved before it can be closed, the same as first-time authenticator app setup.
+- **My account: backup codes.** A new Backup codes row in Two-factor authentication shows how many of your codes are still unused (for example "7 of 10 remaining"). Regenerate invalidates the current batch and issues a fresh set of 10 codes, shown once as plain text — the same one-time reveal used during initial setup.
 - **Add to Apple Wallet / Google Wallet.** The wallet badges on the public ticket page are now live — tapping one creates (or reuses) the attendee's wallet pass and opens it directly, without ever landing on a PassCreator-hosted page. If creation fails, the ticket page shows a retry notice instead of a broken redirect.
 - **Wallet settings in the admin UI.** Event settings → Wallet (superadmin-only) now has a real PassCreator API key and Template ID field, both specific to that event, so a leaked or rotated key only ever affects one event, not the whole instance (instead of the roadmap placeholder). A header switch turns the whole feature on or off for the event; independent Apple Wallet / Google Wallet switches disable one platform without clearing the other's configuration. Test connection checks the API key and template against PassCreator before saving. Field mapping controls which PassCreator field key receives which attendee/event value — nothing beyond the QR code is sent until it's mapped, since PassCreator templates don't share a common set of field names. Admins can map attendee name (full or first/last), email, company, department, event name/date/hours/location, ticket type, the ticket/QR value (for templates whose barcode isn't bound to it directly), directions and accessibility notes, individual address components, and Google/Apple Maps links. No env var restart needed to change any of it.
 - **Event hours (start/end).** New Event and Event settings → Basic information now have an optional "Event hours" start/end time field, shown as a range on tickets and (later) wallet passes. Leave blank to omit.
@@ -161,6 +198,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Revoking an attendee's ticket now also voids their wallet pass, if they have one, so a revoked ticket doesn't stay usable at the gate through an old wallet install. Restoring the ticket restores the pass the same way.
 - Event Settings changes to an event's name, date, timezone, or event hours are now pushed in the background to every already-issued wallet pass for that event, so passes stay in sync without staff needing to push updates manually.
 - Organisation Settings → Security: superadmins can now allow specific third-party `https://` origins to run script, send data, and (on sign-in pages) render an embedded widget, for example an analytics/monitoring beacon like Cloudflare Web Analytics or a login challenge widget like Cloudflare Turnstile, without weakening the Content-Security-Policy for anything else.
+
+### Changed
+
+- **My account: two-factor authentication methods can now be managed independently.** The authenticator app's action is now **Manage** instead of **Reset**: **Remove** takes out only the authenticator app and leaves passkeys, security keys, and backup codes untouched; **Reset everything** remains available from the card's own options menu for clearing all of them at once.
 
 ### Fixed
 - Public ticket page: the browser tab, bookmarks, and home-screen shortcuts now show the Admitto icon on the ticket page and its not-found/error state, instead of a blank or default icon. The shared favicon markup was never wired into this page's HTML template.

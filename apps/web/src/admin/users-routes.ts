@@ -21,7 +21,7 @@ import {
   resetUserMfa,
   revokeAllTrustedDevicesForUser,
   revokeUserAuthState,
-  userHasConfirmedTotp,
+  userHasAnyConfirmedMfaMethod,
 } from "@admitto/auth";
 import { writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
 import { emitSystemLog } from "@admitto/shared/system-log";
@@ -30,7 +30,8 @@ import {
   positiveIntQuery,
   resolveActorEmailForLog,
 } from "./admin-helpers.js";
-import { withStepUpGate } from "./account-routes.js";
+import { z } from "zod";
+import { withStepUpGate, stepUpProofFields } from "./account-routes.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { runSerializableTransaction } from "./event-items-api-routes.js";
@@ -65,18 +66,20 @@ async function actorMustStepUpForReset(
 }
 
 /** Runs `perform` inside a transaction, requiring the ACTOR to prove themselves with their own
- * TOTP/recovery code first when `requiresStepUp` is true (actorMustStepUpForReset). Deliberately
- * does NOT defer to withStepUpGate's own userRequiresMfaStepUp check for that decision: that
- * check is `userRequiresMfa && userHasConfirmedTotp`, so it silently reads "no confirmed local
- * TOTP" as "step-up not needed" - correct for withStepUpGate's other, self-service callers (an
+ * TOTP/recovery code or WebAuthn assertion first when `requiresStepUp` is true
+ * (actorMustStepUpForReset). Deliberately does NOT defer to withStepUpGate's own
+ * userRequiresMfaStepUp check for that decision: that check is
+ * `userRequiresMfa && userHasAnyConfirmedMfaMethod`, so it silently reads "no confirmed MFA
+ * method" as "step-up not needed" - correct for withStepUpGate's other, self-service callers (an
  * account-routes.ts action about the user's own data, gated by the instance's configurable
  * MFA-required-roles policy), but wrong here: a superadmin actor can reach this endpoint with a
- * fully-privileged SESSION_STAGE.FULL session and zero local TOTP simply by authenticating
+ * fully-privileged SESSION_STAGE.FULL session and zero confirmed MFA simply by authenticating
  * entirely through OIDC (finalizeOidcLogin never depends on local MFA state), and letting that
  * fall through as "skip" would silently defeat the entire privilege-escalation protection this
  * feature exists to add. So this check is unconditional whenever requiresStepUp is true,
- * independent of the instance's MFA-required-roles setting: an actor with no confirmed TOTP has
- * nothing to step up with and is denied outright (actor_mfa_required) rather than waved through. */
+ * independent of the instance's MFA-required-roles setting: an actor with no confirmed MFA method
+ * has nothing to step up with and is denied outright (actor_mfa_required) rather than waved
+ * through. */
 async function runAdminResetWithActorStepUp<T extends { ok: boolean }>(
   c: Context,
   db: PrismaClient,
@@ -85,12 +88,13 @@ async function runAdminResetWithActorStepUp<T extends { ok: boolean }>(
     requiresStepUp: boolean;
     actorUserId: string;
     currentSessionId: string | undefined;
-    rawCode: string | undefined;
+    stepUpBody: { code?: string; webauthn?: { response: unknown } };
     rateLimitAction: string;
+    injectedBaseUrl?: string;
   },
   perform: (tx: Prisma.TransactionClient, orgId: string, audit: OpsAuditContext) => Promise<T>,
 ): Promise<{ ok: true; value: T } | { ok: false; response: Response }> {
-  const { requiresStepUp, actorUserId, currentSessionId, rawCode, rateLimitAction } = params;
+  const { requiresStepUp, actorUserId, currentSessionId, stepUpBody, rateLimitAction, injectedBaseUrl } = params;
 
   if (!requiresStepUp) {
     const orgId = await resolveInstanceOrganizationId(db);
@@ -98,20 +102,20 @@ async function runAdminResetWithActorStepUp<T extends { ok: boolean }>(
     return { ok: true, value: await db.$transaction((tx) => perform(tx, orgId, audit)) };
   }
 
-  if (!(await userHasConfirmedTotp(db, actorUserId))) {
+  if (!(await userHasAnyConfirmedMfaMethod(db, actorUserId))) {
     return { ok: false, response: c.json({ code: "actor_mfa_required" }, 403) };
   }
 
   // forceRequired: true - withStepUpGate's own default behavior re-derives "is step-up needed"
-  // via userRequiresMfaStepUp (userRequiresMfa && userHasConfirmedTotp), so without this an
-  // instance whose configurable mfa_required_roles setting omits "superadmin" would make
-  // userRequiresMfa false for this actor and skip requiring/validating rawCode entirely, even
-  // though the userHasConfirmedTotp check just above already committed to demanding one.
+  // via userRequiresMfaStepUp (userRequiresMfa && userHasAnyConfirmedMfaMethod), so without this
+  // an instance whose configurable mfa_required_roles setting omits "superadmin" would make
+  // userRequiresMfa false for this actor and skip requiring/validating proof entirely, even
+  // though the userHasAnyConfirmedMfaMethod check just above already committed to demanding one.
   return withStepUpGate(
     c,
     db,
     rateLimitStore,
-    { userId: actorUserId, currentSessionId, rawCode, rateLimitAction, forceRequired: true },
+    { userId: actorUserId, currentSessionId, stepUpBody, injectedBaseUrl, rateLimitAction, forceRequired: true },
     perform,
   );
 }
@@ -125,8 +129,9 @@ async function runAdminResetWithActorStepUp<T extends { ok: boolean }>(
  * re-checks the same condition fresh inside its own transaction (TOCTOU) - computes whether the
  * ACTOR must step up (actorMustStepUpForReset) and runs `perform` accordingly
  * (runAdminResetWithActorStepUp - see its own docstring for the actor step-up/fail-closed
- * semantics), then emits the security system log. `rawCode` is resolved by the caller and simply
- * unused here when step-up isn't required.
+ * semantics), then emits the security system log. `stepUpBody` is only actually resolved (and
+ * can fail on an expired/missing WebAuthn challenge) inside withStepUpGate, reached via
+ * runAdminResetWithActorStepUp - simply unused when step-up isn't required.
  */
 async function handleAdminAssistedReset<T extends { ok: true } | { ok: false; code: string }>(
   c: Context,
@@ -134,10 +139,11 @@ async function handleAdminAssistedReset<T extends { ok: true } | { ok: false; co
   rateLimitStore: RateLimitStore,
   params: {
     id: string;
-    rawCode: string | undefined;
+    stepUpBody: { code?: string; webauthn?: { response: unknown } };
     ssoManagedCode: string;
     rateLimitAction: string;
     logAction: string;
+    injectedBaseUrl?: string;
   },
   perform: (
     tx: Prisma.TransactionClient,
@@ -147,7 +153,7 @@ async function handleAdminAssistedReset<T extends { ok: true } | { ok: false; co
     actorUserId: string,
   ) => Promise<T>,
 ): Promise<Response> {
-  const { id, rawCode, ssoManagedCode, rateLimitAction, logAction } = params;
+  const { id, stepUpBody, ssoManagedCode, rateLimitAction, logAction, injectedBaseUrl } = params;
 
   const user = await db.user.findUnique({
     where: { id },
@@ -164,7 +170,7 @@ async function handleAdminAssistedReset<T extends { ok: true } | { ok: false; co
     c,
     db,
     rateLimitStore,
-    { requiresStepUp, actorUserId, currentSessionId: auth.sessionId, rawCode, rateLimitAction },
+    { requiresStepUp, actorUserId, currentSessionId: auth.sessionId, stepUpBody, injectedBaseUrl, rateLimitAction },
     (tx, orgId, audit) => perform(tx, orgId, audit, requiresStepUp, actorUserId),
   );
   if (!gated.ok) return gated.response;
@@ -1177,6 +1183,7 @@ export async function handlePostResetUserMfa(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
@@ -1190,8 +1197,10 @@ export async function handlePostResetUserMfa(
   // on it for that local path. Resetting it here would silently drop that account's local sign-in
   // from password+TOTP to password-only, the same unmonitored weakening the reset-password guard
   // below exists to prevent. See handleAdminAssistedReset for the shared SSO-managed check.
-  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
-  const rawCode = typeof body?.code === "string" ? body.code : undefined;
+  const body = (await c.req.json().catch(() => null)) as unknown;
+  const parsedStepUpBody = z.object(stepUpProofFields).strict().safeParse(body ?? {});
+  if (!parsedStepUpBody.success) return c.json({ error: "invalid body" }, 400);
+  const stepUpBody = parsedStepUpBody.data;
 
   return handleAdminAssistedReset(
     c,
@@ -1199,10 +1208,11 @@ export async function handlePostResetUserMfa(
     rateLimitStore,
     {
       id,
-      rawCode,
+      stepUpBody,
       ssoManagedCode: "cannot_reset_mfa_sso_managed",
       rateLimitAction: "admin-reset-2fa-superadmin",
       logAction: "user_mfa_reset",
+      injectedBaseUrl,
     },
     (tx, orgId, audit, requiresStepUp, actorUserId) =>
       performResetUserMfa(tx, id, orgId, audit, actorUserId, requiresStepUp),
@@ -1347,6 +1357,7 @@ export async function handlePostResetUserPassword(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
+  injectedBaseUrl?: string,
 ): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
@@ -1365,7 +1376,9 @@ export async function handlePostResetUserPassword(
   // one here would silently open a second, unmonitored sign-in path alongside SSO. Unlink the
   // identity provider first (DELETE .../external-identity) if the account needs to go local.
   // See handleAdminAssistedReset for the shared SSO-managed check.
-  const rawCode = typeof body?.code === "string" ? body.code : undefined;
+  const parsedStepUpBody = z.object(stepUpProofFields).safeParse(body ?? {});
+  if (!parsedStepUpBody.success) return c.json({ error: "invalid body" }, 400);
+  const stepUpBody = parsedStepUpBody.data;
 
   return handleAdminAssistedReset(
     c,
@@ -1373,10 +1386,11 @@ export async function handlePostResetUserPassword(
     rateLimitStore,
     {
       id,
-      rawCode,
+      stepUpBody,
       ssoManagedCode: "cannot_reset_password_sso_managed",
       rateLimitAction: "admin-reset-password-superadmin",
       logAction: "user_password_reset",
+      injectedBaseUrl,
     },
     (tx, orgId, audit, requiresStepUp, actorUserId) =>
       performResetUserPassword(tx, id, newPassword, orgId, audit, actorUserId, requiresStepUp),

@@ -7,10 +7,37 @@ import {
   normalizeRecoveryCode,
 } from "./recovery-hash.js";
 import { verifyAndConsumeRecoveryRow, findMatchingRecoveryRowId } from "./recovery-consume.js";
+import { userHasAnyConfirmedMfaMethod } from "./policy.js";
 
 export interface BackupRecoveryCodesResult {
   /** Plaintext codes — return to client once only. */
   codes: string[];
+}
+
+/** Recovery rows an in-progress (never-confirmed) enrollment attempt owns — excludes the
+ * break-glass emergency row, which is never touched by enrollment start/cancel/reset flows. */
+export const BACKUP_RECOVERY_DELETE_FILTER = {
+  type: "recovery" as const,
+  OR: [{ label: null }, { label: { not: EMERGENCY_RECOVERY_LABEL } }],
+};
+
+/**
+ * Generate fresh backup codes only when the user has no confirmed MFA method yet — i.e. this is
+ * their first-ever enrollment (TOTP or WebAuthn, whichever they start with). A no-op returning
+ * `[]` when they already have a confirmed method: codes were already shown and must not be
+ * silently rotated out from under an unrelated second-method enrollment. Wipes any stale
+ * (never-confirmed) recovery rows from an abandoned attempt first.
+ */
+export async function ensureFreshEnrollmentBackupCodes(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<string[]> {
+  if (await userHasAnyConfirmedMfaMethod(prisma, userId)) return [];
+  await prisma.userMfaMethod.deleteMany({
+    where: { user_id: userId, ...BACKUP_RECOVERY_DELETE_FILTER },
+  });
+  const { codes } = await generateBackupRecoveryCodes(prisma, userId);
+  return codes;
 }
 
 /** Generate N backup recovery code rows (hashed) for a user. */
@@ -51,6 +78,33 @@ export async function regenerateBackupRecoveryCodes(
     });
     return generateBackupRecoveryCodes(tx, userId);
   });
+}
+
+export interface BackupRecoveryCodesStatus {
+  /** Rows in the current batch (normally `BACKUP_RECOVERY_CODE_COUNT`, excludes emergency). */
+  total: number;
+  /** Rows in the current batch not yet consumed. */
+  remaining: number;
+}
+
+/** Read-only count of the user's current backup recovery code batch — never exposes the
+ * plaintext codes themselves (only an argon2id hash is ever stored, same as passwords). */
+export async function getBackupRecoveryCodesStatus(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<BackupRecoveryCodesStatus> {
+  const rows = await prisma.userMfaMethod.findMany({
+    where: {
+      user_id: userId,
+      type: "recovery",
+      OR: [{ label: null }, { label: { not: EMERGENCY_RECOVERY_LABEL } }],
+    },
+    select: { last_used_at: true },
+  });
+  return {
+    total: rows.length,
+    remaining: rows.filter((r) => r.last_used_at === null).length,
+  };
 }
 
 /** Verify and consume a backup recovery code (not emergency). */

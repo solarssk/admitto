@@ -66,6 +66,7 @@ export {
   getSessionIdleTimeoutOperatorMs,
   getTrustedDeviceDays,
   getMfaRequiredRoles,
+  getWebauthnEnabled,
 } from "./settings/resolver.js";
 export {
   SETTING_SESSION_TTL,
@@ -81,6 +82,7 @@ export {
   SETTING_CF_ACCESS_SOURCE_PROVIDER_ID,
   SETTING_SETUP_COMPLETE,
   SETTING_INSTANCE_URL,
+  SETTING_WEBAUTHN_ENABLED,
   SETTING_CSP_TRUSTED_ORIGINS,
 } from "./settings/keys.js";
 export { getInstanceUrl } from "./settings/instance-url.js";
@@ -189,6 +191,7 @@ export {
   logAuthSettingsChanged,
   type LoginAuditContext,
   type MfaAuditContext,
+  type MfaFailureReason,
   type MfaMethod,
   type RateLimitScope,
   type AuthSettingsResource,
@@ -197,10 +200,13 @@ export {
   login,
   logout,
   completeMfa,
+  completeMfaWithWebauthn,
   loginNextAfterFullSession,
   type LoginInput,
   type LoginResult,
   type CompleteMfaInput,
+  type CompleteMfaResult,
+  type CompleteMfaWithWebauthnInput,
 } from "./login.js";
 export {
   bootstrapSuperadmin,
@@ -212,6 +218,7 @@ export { runInTransaction } from "./prisma-tx.js";
 export {
   userRequiresMfa,
   userHasConfirmedTotp,
+  userHasAnyConfirmedMfaMethod,
   userRequiresMfaStepUp,
   userHasUnacknowledgedBackupCodes,
   markBackupCodesAcknowledged,
@@ -224,13 +231,40 @@ export {
   cancelPendingTotpEnrollment,
   confirmTotpEnrollment,
   verifyUserTotpCode,
+  removeTotpMethod,
   resetUserMfa,
   type StartTotpEnrollmentResult,
 } from "./mfa/enrollment.js";
 export { parseTotpSecretFromOtpauthUri } from "./mfa/totp.js";
-export { regenerateBackupRecoveryCodes, findBackupRecoveryRowId, verifyBackupRecoveryCodesSet } from "./mfa/backup-recovery.js";
+export {
+  regenerateBackupRecoveryCodes,
+  findBackupRecoveryRowId,
+  verifyBackupRecoveryCodesSet,
+  getBackupRecoveryCodesStatus,
+  type BackupRecoveryCodesStatus,
+} from "./mfa/backup-recovery.js";
 export { generateEmergencyRecoveryCode } from "./mfa/emergency-recovery.js";
-export { validateTrustedDevice, revokeTrustedDeviceByToken, revokeAllTrustedDevicesForUser } from "./mfa/trusted-device.js";
+export {
+  beginWebauthnRegistration,
+  finishWebauthnRegistration,
+  listWebauthnCredentials,
+  removeWebauthnCredential,
+  beginWebauthnAssertion,
+  finishWebauthnAssertion,
+  type WebauthnAttachment,
+  type WebauthnRpConfig,
+  type BeginWebauthnRegistrationResult,
+  type FinishWebauthnRegistrationResult,
+  type WebauthnCredentialSummary,
+  type BeginWebauthnAssertionResult,
+  type FinishWebauthnAssertionResult,
+} from "./mfa/webauthn.js";
+export {
+  createTrustedDevice,
+  validateTrustedDevice,
+  revokeTrustedDeviceByToken,
+  revokeAllTrustedDevicesForUser,
+} from "./mfa/trusted-device.js";
 export { purgeAuthRetention, purgeSecurityAuditLog, resolveSecurityAuditLogRetentionDays } from "./retention.js";
 
 export {

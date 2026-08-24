@@ -115,6 +115,15 @@ import type {
   ConfirmMfaTotpBody,
   ResetMfaBody,
   ResetMfaResponse,
+  WebauthnRegisterBeginBody,
+  WebauthnRegisterBeginResponse,
+  WebauthnRegisterFinishBody,
+  WebauthnRegisterFinishResponse,
+  WebauthnCredentialsResponse,
+  WebauthnAssertBeginResponse,
+  StepUpProofBody,
+  BackupCodesStatusResponse,
+  RegenerateBackupCodesResponse,
   IdentityProvidersListResponse,
   ToggleProviderResponse,
   CfAccessSummaryDto,
@@ -2554,6 +2563,11 @@ export async function deleteAccountSession(sessionId: string): Promise<void> {
   await parseJson<unknown>(res);
 }
 
+export async function forgetAllTrustedDevices(): Promise<{ devices_revoked: number }> {
+  const res = await fetch("/api/account/mfa/trusted-devices", jsonDeleteInit());
+  return parseJson<{ devices_revoked: number }>(res);
+}
+
 export async function enrollMfaTotp(): Promise<MfaEnrollResponse> {
   const res = await fetch("/api/account/mfa/totp/enroll", jsonPostInit({}));
   return parseJson<MfaEnrollResponse>(res);
@@ -2572,6 +2586,51 @@ export async function confirmMfaTotp(body: ConfirmMfaTotpBody): Promise<{ ok: tr
 export async function resetMfa(body: ResetMfaBody): Promise<ResetMfaResponse> {
   const res = await fetch("/api/account/mfa/reset", jsonPostInit(body));
   return parseJson<ResetMfaResponse>(res);
+}
+
+export async function beginWebauthnRegistration(body: WebauthnRegisterBeginBody): Promise<WebauthnRegisterBeginResponse> {
+  const res = await fetch("/api/account/mfa/webauthn/register/begin", jsonPostInit(body));
+  return parseJson<WebauthnRegisterBeginResponse>(res);
+}
+
+export async function finishWebauthnRegistration(body: WebauthnRegisterFinishBody): Promise<WebauthnRegisterFinishResponse> {
+  const res = await fetch("/api/account/mfa/webauthn/register/finish", jsonPostInit(body));
+  return parseJson<WebauthnRegisterFinishResponse>(res);
+}
+
+export async function fetchWebauthnCredentials(signal?: AbortSignal): Promise<WebauthnCredentialsResponse> {
+  const res = await fetch("/api/account/mfa/webauthn", { credentials: "same-origin", signal });
+  return parseJson<WebauthnCredentialsResponse>(res);
+}
+
+/** Starts a WebAuthn step-up ceremony against the caller's own registered credentials - the
+ * `options` are passed to `startAuthentication()`, and the resulting assertion becomes the
+ * `webauthn` field of the `proof` passed to whichever step-up-gated call below is being made. */
+export async function beginWebauthnAssertion(): Promise<WebauthnAssertBeginResponse> {
+  const res = await fetch("/api/account/mfa/webauthn/assert/begin", jsonPostInit({}));
+  return parseJson<WebauthnAssertBeginResponse>(res);
+}
+
+export async function deleteWebauthnCredential(credentialId: string, proof?: StepUpProofBody): Promise<{ ok: true }> {
+  const res = await fetch(`/api/account/mfa/webauthn/${encodeURIComponent(credentialId)}`, jsonDeleteInit(proof));
+  return parseJson<{ ok: true }>(res);
+}
+
+/** Removes only the TOTP row(s) - WebAuthn credentials and backup codes are untouched. */
+export async function deleteAccountTotp(proof?: StepUpProofBody): Promise<{ ok: true }> {
+  const res = await fetch("/api/account/mfa/totp", jsonDeleteInit(proof));
+  return parseJson<{ ok: true }>(res);
+}
+
+export async function fetchBackupCodesStatus(signal?: AbortSignal): Promise<BackupCodesStatusResponse> {
+  const res = await fetch("/api/account/mfa/backup-codes", { credentials: "same-origin", signal });
+  return parseJson<BackupCodesStatusResponse>(res);
+}
+
+/** Invalidates the current backup-code batch and mints a fresh set, returned once as plaintext. */
+export async function regenerateBackupCodes(proof?: StepUpProofBody): Promise<RegenerateBackupCodesResponse> {
+  const res = await fetch("/api/account/mfa/backup-codes/regenerate", jsonPostInit(proof ?? {}));
+  return parseJson<RegenerateBackupCodesResponse>(res);
 }
 
 /** Load aggregated admission report for an event. */

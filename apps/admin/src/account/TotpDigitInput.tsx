@@ -9,7 +9,7 @@ interface Props {
 }
 
 /**
- * Six individual digit boxes for TOTP entry — mirrors the auth wizard experience.
+ * Six individual digit boxes for TOTP entry, mirrors the auth wizard experience.
  * Auto-advances focus on each digit entry; backspace moves to the previous box.
  * Handles paste of a full 6-digit code.
  */

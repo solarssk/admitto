@@ -103,10 +103,12 @@ import {
 } from "./auth/mfa-rate-limit.js";
 import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinStreamConcurrencyLimit } from "./checkin-stream-limit.js";
-import { handleLogin, handleLogout, handleMe, handlePostSessionDeviceLabel, handleMfaVerify, handleTotpEnroll, handleTotpConfirm, handleTotpBackupCodesComplete } from "./auth/routes.js";
+import { handleLogin, handleLogout, handleMe, handlePostSessionDeviceLabel, handleMfaVerify, handlePostMfaWebauthnBegin, handlePostMfaWebauthnVerify, handlePostMfaRememberDevice, handlePostMfaWebauthnEnrollBegin, handlePostMfaWebauthnEnrollFinish, handleTotpEnroll, handleTotpConfirm, handleTotpBackupCodesComplete } from "./auth/routes.js";
 import {
   handleGetMfaEnroll,
   handleGetMfaEnrollBackupCodes,
+  handleGetMfaEnrollMethod,
+  handleGetMfaEnrollWebauthn,
   handleGetMfaVerify,
   handlePostMfaEnroll,
   handlePostMfaEnrollBackupCodes,
@@ -352,10 +354,20 @@ import {
   handleDeleteAccountExternalIdentity,
   handleGetAccountSessions,
   handleDeleteAccountSession,
+  handleDeleteAccountTrustedDevices,
   handlePostMfaEnroll as handlePostAccountMfaEnroll,
   handleDeleteMfaEnroll as handleDeleteAccountMfaEnroll,
   handlePostMfaConfirm as handlePostAccountMfaConfirm,
   handlePostMfaReset as handlePostAccountMfaReset,
+  handlePostAccountWebauthnRegisterBegin,
+  handlePostAccountWebauthnRegisterFinish,
+  handlePostAccountWebauthnAssertBegin,
+  handleGetAccountWebauthnCredentials,
+  handleDeleteAccountWebauthnCredential,
+  handleDeleteAccountTotp,
+  handleGetAccountBackupCodesStatus,
+  handlePostAccountRegenerateBackupCodes,
+  MAX_WEBAUTHN_BODY_BYTES,
 } from "./admin/account-routes.js";
 import {
   handleGetSystemSettings,
@@ -639,6 +651,14 @@ export function createApp(options: CreateAppOptions = {}) {
   const fontUploadBodyLimit = bodyLimit({
     maxSize: Math.ceil(5.1 * 1024 * 1024),
     onError: (c) => c.json({ error: "file too large" }, 413),
+  });
+  // Every route that can carry a WebAuthn ceremony response (registration, assertion, or a
+  // step-up proof on an account-security action) - bounds the decode/CBOR-parse/crypto-verify
+  // work `@simplewebauthn/server` does on the body, and rejects an oversized request before it's
+  // ever buffered/parsed, not just once the zod schema's own `.max()` calls see it.
+  const webauthnBodyLimit = bodyLimit({
+    maxSize: MAX_WEBAUTHN_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
   const staffSpa = createStaffSpaHandlers({ distRoot: options.adminDistRoot, db });
@@ -1707,13 +1727,13 @@ export function createApp(options: CreateAppOptions = {}) {
     handleDeleteUserRole(c, db),
   );
   app.post("/api/admin/users/:id/reset-2fa", jsonPostCsrf, staffAdminGate, (c) =>
-    handlePostResetUserMfa(c, db, rateLimitStore),
+    handlePostResetUserMfa(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.delete("/api/admin/users/:id/external-identity", jsonPostCsrf, staffAdminGate, (c) =>
     handleDeleteUserExternalIdentity(c, db),
   );
   app.post("/api/admin/users/:id/reset-password", jsonPostCsrf, staffAdminGate, (c) =>
-    handlePostResetUserPassword(c, db, rateLimitStore),
+    handlePostResetUserPassword(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.post("/api/admin/users/:id/revoke-sessions", jsonPostCsrf, staffAdminGate, (c) =>
     handlePostRevokeUserSessions(c, db),
@@ -1744,15 +1764,18 @@ export function createApp(options: CreateAppOptions = {}) {
   app.patch("/api/account/profile", jsonPostCsrf, requireSession, (c) =>
     handlePatchAccountProfile(c, db),
   );
-  app.patch("/api/account/password", jsonPostCsrf, requireSession, (c) =>
-    handlePatchAccountPassword(c, db, rateLimitStore),
+  app.patch("/api/account/password", jsonPostCsrf, webauthnBodyLimit, requireSession, (c) =>
+    handlePatchAccountPassword(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
-  app.delete("/api/account/external-identity", jsonPostCsrf, requireSession, (c) =>
-    handleDeleteAccountExternalIdentity(c, db, rateLimitStore),
+  app.delete("/api/account/external-identity", jsonPostCsrf, webauthnBodyLimit, requireSession, (c) =>
+    handleDeleteAccountExternalIdentity(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.get("/api/account/sessions", requireSession, (c) => handleGetAccountSessions(c, db));
   app.delete("/api/account/sessions/:sessionId", jsonPostCsrf, requireSession, (c) =>
     handleDeleteAccountSession(c, db),
+  );
+  app.delete("/api/account/mfa/trusted-devices", jsonPostCsrf, requireSession, (c) =>
+    handleDeleteAccountTrustedDevices(c, db),
   );
   app.post(
     "/api/account/mfa/totp/enroll",
@@ -1767,8 +1790,54 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/account/mfa/totp/confirm", jsonPostCsrf, requireSession, (c) =>
     handlePostAccountMfaConfirm(c, db, rateLimitStore),
   );
-  app.post("/api/account/mfa/reset", jsonPostCsrf, requireSession, (c) =>
-    handlePostAccountMfaReset(c, db, rateLimitStore),
+  app.post("/api/account/mfa/reset", jsonPostCsrf, webauthnBodyLimit, requireSession, (c) =>
+    handlePostAccountMfaReset(c, db, rateLimitStore, mailInjectedBaseUrl),
+  );
+  app.get("/api/account/mfa/webauthn", requireSession, (c) =>
+    handleGetAccountWebauthnCredentials(c, db),
+  );
+  app.post(
+    "/api/account/mfa/webauthn/register/begin",
+    jsonPostCsrf,
+    requireSession,
+    createAccountMfaEnrollRateLimitMiddleware(rateLimitStore),
+    (c) => handlePostAccountWebauthnRegisterBegin(c, db, mailInjectedBaseUrl),
+  );
+  app.post(
+    "/api/account/mfa/webauthn/register/finish",
+    jsonPostCsrf,
+    webauthnBodyLimit,
+    requireSession,
+    createAccountMfaEnrollRateLimitMiddleware(rateLimitStore),
+    (c) => handlePostAccountWebauthnRegisterFinish(c, db, mailInjectedBaseUrl),
+  );
+  app.post(
+    "/api/account/mfa/webauthn/assert/begin",
+    jsonPostCsrf,
+    requireSession,
+    createAccountMfaEnrollRateLimitMiddleware(rateLimitStore),
+    (c) => handlePostAccountWebauthnAssertBegin(c, db, mailInjectedBaseUrl),
+  );
+  app.delete(
+    "/api/account/mfa/webauthn/:credentialId",
+    jsonPostCsrf,
+    webauthnBodyLimit,
+    requireSession,
+    (c) => handleDeleteAccountWebauthnCredential(c, db, rateLimitStore, mailInjectedBaseUrl),
+  );
+  app.delete("/api/account/mfa/totp", jsonPostCsrf, loginRateLimitJson, webauthnBodyLimit, requireSession, (c) =>
+    handleDeleteAccountTotp(c, db, rateLimitStore, mailInjectedBaseUrl),
+  );
+  app.get("/api/account/mfa/backup-codes", requireSession, (c) =>
+    handleGetAccountBackupCodesStatus(c, db),
+  );
+  app.post(
+    "/api/account/mfa/backup-codes/regenerate",
+    jsonPostCsrf,
+    loginRateLimitJson,
+    webauthnBodyLimit,
+    requireSession,
+    (c) => handlePostAccountRegenerateBackupCodes(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
 
   app.get("/api/checkin/events", requireSession, (c) => handleGetCheckinEvents(c, db));
@@ -1777,6 +1846,30 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.post("/api/auth/mfa/verify", jsonPostCsrf, requirePartialSession, (c) =>
     handleMfaVerify(c, db, rateLimitStore),
+  );
+  app.post("/api/auth/mfa/webauthn/begin", jsonPostCsrf, loginRateLimitJson, requirePartialSession, (c) =>
+    handlePostMfaWebauthnBegin(c, db, mailInjectedBaseUrl),
+  );
+  app.post("/api/auth/mfa/webauthn/verify", jsonPostCsrf, webauthnBodyLimit, requirePartialSession, (c) =>
+    handlePostMfaWebauthnVerify(c, db, rateLimitStore, mailInjectedBaseUrl),
+  );
+  app.post("/api/auth/mfa/remember-device", jsonPostCsrf, requireSession, (c) =>
+    handlePostMfaRememberDevice(c, db),
+  );
+  app.post(
+    "/api/auth/mfa/webauthn/register/begin",
+    jsonPostCsrf,
+    requirePartialSession,
+    mfaEnrollRateLimitJson,
+    (c) => handlePostMfaWebauthnEnrollBegin(c, db, mailInjectedBaseUrl),
+  );
+  app.post(
+    "/api/auth/mfa/webauthn/register/finish",
+    jsonPostCsrf,
+    webauthnBodyLimit,
+    requirePartialSession,
+    mfaEnrollRateLimitJson,
+    (c) => handlePostMfaWebauthnEnrollFinish(c, db, mailInjectedBaseUrl),
   );
   app.post("/api/auth/mfa/totp/enroll", jsonPostCsrf, requirePartialSession, mfaEnrollRateLimitJson, (c) =>
     handleTotpEnroll(c, db),
@@ -1877,6 +1970,8 @@ export function createApp(options: CreateAppOptions = {}) {
     handlePostMfaVerify(c, db, rateLimitStore),
   );
   app.get("/mfa/enroll", requirePartialSessionHtml, (c) => handleGetMfaEnroll(c, db));
+  app.get("/mfa/enroll/method", requirePartialSessionHtml, (c) => handleGetMfaEnrollMethod(c, db));
+  app.get("/mfa/enroll/webauthn", requirePartialSessionHtml, (c) => handleGetMfaEnrollWebauthn(c, db));
   app.post("/mfa/enroll/start", htmlPostCsrf, requirePartialSessionHtml, mfaEnrollRateLimitHtml, (c) =>
     handlePostMfaEnrollStart(c, db),
   );

@@ -1,5 +1,11 @@
 import type { DeliveryDto, HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
 import type { LogoCropMeta, LogoPersistenceDto } from "@admitto/mail-templates";
+import type {
+  AuthenticationResponseJSON,
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+  RegistrationResponseJSON,
+} from "@simplewebauthn/browser";
 
 // DeliveryDto is also used locally below (AttendeeDetailDto.deliveries, the deliveries-list
 // response's items) so this file still needs its own bound import above - DeliveryDetailDto
@@ -1533,10 +1539,19 @@ export interface AccountRoleDto {
   is_oidc: boolean;
 }
 
+/** "platform" = passkey (Touch ID/Windows Hello/password manager); "cross-platform" = security
+ * key (USB/NFC/BLE FIDO2 device) - mirrors packages/auth's WebauthnAttachment. */
+export type WebauthnAttachment = "platform" | "cross-platform";
+
 export interface AccountMfaMethodDto {
   type: string;
   confirmed: boolean;
   last_used_at: string | null;
+  /** WebAuthn-only fields (see handleGetAccount) - absent on totp/recovery rows, since only
+   * webauthn can have several rows that need telling apart. */
+  id?: string;
+  label?: string | null;
+  attachment?: WebauthnAttachment;
 }
 
 export interface AccountExternalIdentityDto {
@@ -1567,6 +1582,8 @@ export interface AccountDto {
   mfa_methods: AccountMfaMethodDto[];
   external_identities: AccountExternalIdentityDto[];
   available_identity_providers: AccountAvailableIdentityProviderDto[];
+  webauthn_enabled: boolean;
+  trusted_devices_count: number;
 }
 
 export interface PatchAccountProfileBody {
@@ -1577,17 +1594,22 @@ export interface PatchAccountProfileBody {
   phone_number?: string | null;
 }
 
-export interface PatchAccountPasswordBody {
+/** A step-up proof: a TOTP/recovery code, or a signed WebAuthn assertion - mirrors the backend's
+ * own `stepUpProofFields` (account-routes.ts). Callers set at most one of the two. */
+export interface StepUpProofBody {
+  code?: string;
+  webauthn?: { response: AuthenticationResponseJSON };
+}
+
+export interface PatchAccountPasswordBody extends StepUpProofBody {
   current_password: string;
   new_password: string;
   new_password_confirm: string;
-  code?: string;
 }
 
-export interface DeleteAccountExternalIdentityBody {
+export interface DeleteAccountExternalIdentityBody extends StepUpProofBody {
   new_password: string;
   current_password?: string;
-  code?: string;
 }
 
 export interface PatchAccountPasswordResponse {
@@ -1604,14 +1626,65 @@ export interface ConfirmMfaTotpBody {
   code: string;
 }
 
-export interface ResetMfaBody {
+export interface ResetMfaBody extends StepUpProofBody {
   password: string;
-  code?: string;
 }
 
 export interface ResetMfaResponse {
   ok: true;
   sessions_revoked: number;
+}
+
+export interface WebauthnRegisterBeginBody {
+  attachment: WebauthnAttachment;
+}
+
+export interface WebauthnRegisterBeginResponse {
+  options: PublicKeyCredentialCreationOptionsJSON;
+}
+
+export interface WebauthnRegisterFinishBody {
+  attachment: WebauthnAttachment;
+  label?: string;
+  response: RegistrationResponseJSON;
+}
+
+export interface WebauthnRegisterFinishResponse {
+  ok: true;
+  id: string;
+  backupCodes: string[];
+}
+
+/** One row from GET /api/account/mfa/webauthn - not currently consumed by the UI (which derives
+ * the same data from AccountDto.mfa_methods, already loaded via loadAccount()), kept for API
+ * completeness alongside the other three webauthn client functions. */
+export interface WebauthnCredentialDto {
+  id: string;
+  label: string | null;
+  attachment: WebauthnAttachment;
+  confirmedAt: string | null;
+  lastUsedAt: string | null;
+}
+
+export interface WebauthnCredentialsResponse {
+  credentials: WebauthnCredentialDto[];
+}
+
+export interface WebauthnAssertBeginResponse {
+  options: PublicKeyCredentialRequestOptionsJSON;
+}
+
+/** GET /api/account/mfa/backup-codes response - status of the current backup-code batch. Codes
+ * themselves are never retrievable after initial display (only an argon2id hash is stored), so
+ * this is the only account-level view of the batch other than regenerating it outright. */
+export interface BackupCodesStatusResponse {
+  total: number;
+  remaining: number;
+}
+
+export interface RegenerateBackupCodesResponse {
+  ok: true;
+  codes: string[];
 }
 
 export interface EventContactDto {

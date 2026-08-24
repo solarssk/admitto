@@ -5,7 +5,7 @@ import { renderAdmittoFaviconLink } from "./favicon.js";
 export const AUTH_PRODUCT_NAME = "Admitto";
 
 export interface AuthDocumentOptions {
-  /** Step hint for meta description only — not used as document title. */
+  /** Step hint for meta description only, not used as document title. */
   step?: string;
   body: string;
   css?: string;
@@ -13,7 +13,7 @@ export interface AuthDocumentOptions {
   scripts?: string;
 }
 
-/** Inline mark — CSP on auth pages blocks external images; must not use &lt;img src&gt;. Source: packages/ui/src/assets/admitto-mark.svg */
+/** Inline mark, CSP on auth pages blocks external images; must not use &lt;img src&gt;. Source: packages/ui/src/assets/admitto-mark.svg */
 export const ADMITTO_MARK_SVG = `<svg class="auth-brand-logo" xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="7.5" fill="#066fd1"/><path d="M9.5 16.5l4.2 4.2 7.5-9" stroke="#ffffff" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><rect x="22.5" y="6" width="4" height="4" rx="1" fill="#ffffff" fill-opacity="0.55"/></svg>`;
 
 export const AUTH_PAGE_CSS = `
@@ -124,7 +124,7 @@ body {
   margin: 0 0 1.375rem;
   text-wrap: pretty;
 }
-/* Notice subset — same classes/structure as packages/ui Notice (SSR auth cannot import React).
+/* Notice subset, same classes/structure as packages/ui Notice (SSR auth cannot import React).
    margin-bottom replaces the SPA parent flex-gap that normally spaces Notice from siblings. */
 .at-notice {
   display: flex;
@@ -199,6 +199,27 @@ body {
   color: var(--at-gray-500);
 }
 .auth-otp-wrap { margin-bottom: 1rem; }
+/* Matches the already-centered digit boxes below it - left-aligned otherwise, since .auth-label
+   is shared with every other (left-aligned, single-line) field on these auth pages. */
+.auth-otp-wrap > .auth-label { text-align: center; }
+/* Space from Continue above, matching the gap Continue itself keeps from the field above it -
+   otherwise sits directly against it with no gap at all. */
+#mfa-webauthn-btn { margin-top: 0.75rem; }
+/* .auth-webauthn-error sits right after .subtitle (not between the two action buttons - a
+   mid-page error box there read as belonging to neither one), so .subtitle's own bottom margin
+   already spaces it; no separate top margin needed here. */
+.auth-remember-prompt {
+  margin-top: 1.25rem;
+}
+#mfa-remember-yes {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+}
+#mfa-remember-no {
+  margin-top: 0.75rem;
+}
 .auth-otp-digits {
   display: flex;
   gap: 0.5rem;
@@ -262,6 +283,7 @@ body {
 .auth-btn-primary {
   display: block;
   width: 100%;
+  min-height: 42px;
   padding: 0.625rem 1rem;
   background: var(--at-blue);
   color: #fff;
@@ -269,6 +291,8 @@ body {
   border-radius: 6px;
   font-size: 0.875rem;
   font-weight: 500;
+  text-align: center;
+  text-decoration: none;
   cursor: pointer;
   margin-top: 1.25rem;
   transition: background 0.15s;
@@ -377,6 +401,32 @@ body {
   gap: 0.5rem;
   margin-bottom: 0.75rem;
 }
+/* Enrollment method choice: a form (Authenticator app) alongside two plain links (Passkey,
+   Security key) styled as buttons - one gap value for the whole stack instead of relying on
+   each child's own margin, which would double up with flex gap. */
+.auth-enroll-method-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+.auth-enroll-method-list .auth-btn-primary {
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+}
+.auth-enroll-method-list .auth-btn-secondary {
+  text-decoration: none;
+}
+/* "Choose a different method" link, shown on both the QR (TOTP) and WebAuthn enrollment steps
+   when reached via the method-choice page - same glued-to-the-form/button-above-it gap
+   .auth-btn-secondary already needed fixing for elsewhere on this page family (#mfa-webauthn-btn),
+   shared by both step pages instead of a fragile per-page ID sibling selector. */
+.auth-enroll-back-link {
+  margin-top: 0.75rem;
+}
 .auth-mfa-actions .auth-btn-secondary { flex: 1 1 12rem; margin-top: 0; }
 .auth-btn-link {
   text-decoration: none;
@@ -400,7 +450,7 @@ ${AUTH_PASSWORD_STRENGTH_CSS}
 `;
 
 /**
- * Generic SSO icon for /login provider buttons — a neutral shield glyph (same mark
+ * Generic SSO icon for /login provider buttons, a neutral shield glyph (same mark
  * used for OIDC providers in the admin identity list), not a specific vendor's logo.
  * The button's own label text (configurable per provider) is what identifies the
  * actual provider; the icon just marks "this is a single sign-on button".
@@ -506,7 +556,7 @@ export function renderAuthBrand(): string {
   return `<div class="auth-brand">${ADMITTO_MARK_SVG}<h1 class="auth-product-name">${AUTH_PRODUCT_NAME}</h1></div>`;
 }
 
-/** Centered auth shell — brand lives inside the card (design: ui_kits/admin/LoginScreen.jsx). */
+/** Centered auth shell, brand lives inside the card (design: ui_kits/admin/LoginScreen.jsx). */
 export function renderAuthPage(cardInner: string, wide = false): string {
   const cardClass = wide ? "auth-card auth-card-wide" : "auth-card";
   return `<div class="auth-page"><div class="${cardClass}">${cardInner}</div></div>`;

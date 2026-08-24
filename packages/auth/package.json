@@ -27,6 +27,10 @@
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
     },
+    "./webauthn-testing": {
+      "types": "./dist/webauthn-testing.d.ts",
+      "default": "./dist/webauthn-testing.js"
+    },
     "./cli-helpers": {
       "types": "./dist/cli-helpers.d.ts",
       "default": "./dist/cli-helpers.js"
@@ -62,8 +66,9 @@
     "@admitto/mail-templates": "*",
     "@admitto/shared": "*",
     "@admitto/tickets": "*",
+    "@simplewebauthn/server": "^13.3.2",
     "argon2": "^0.45.1",
-    "jose": "^6.2.5",
+    "jose": "^6.2.9",
     "otplib": "^13.4.1",
     "undici": "^8.7.0"
   },
@@ -74,6 +79,6 @@
     "prisma": "^7.9.1",
     "tsx": "^4.23.10",
     "typescript": "^7.0.2",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   }
 }
