@@ -13,6 +13,20 @@ function withoutQueryAndFragment(value: string): string {
   }
 }
 
+/** Describes a failed resource load (a non-bubbling "error" event's target is the element
+ * that failed) for reporting, e.g. "Failed to load script https://cdn.example.com/x.js". */
+function describeFailedResourceLoad(target: EventTarget | null): string {
+  let src: string | undefined;
+  if (target instanceof HTMLScriptElement || target instanceof HTMLImageElement) {
+    src = target.src;
+  } else if (target instanceof HTMLLinkElement) {
+    src = target.href;
+  }
+  const what = target instanceof Element ? target.tagName.toLowerCase() : "resource";
+  if (!src) return `Failed to load ${what}`;
+  return `Failed to load ${what} ${withoutQueryAndFragment(src)}`;
+}
+
 /**
  * Errors and CSP violations that never reach React (event-handler throws, third-party
  * script injection, uncaught rejections) are otherwise invisible in production - no
@@ -30,17 +44,7 @@ export function installGlobalErrorReporting(): void {
     "error",
     (event) => {
       if (typeof event.message !== "string") {
-        const target = event.target;
-        const src =
-          target instanceof HTMLScriptElement || target instanceof HTMLImageElement
-            ? target.src
-            : target instanceof HTMLLinkElement
-              ? target.href
-              : undefined;
-        const what = target instanceof Element ? target.tagName.toLowerCase() : "resource";
-        reportClientError(new Error(`Failed to load ${what}${src ? ` ${withoutQueryAndFragment(src)}` : ""}`), {
-          source: "resource-error",
-        });
+        reportClientError(new Error(describeFailedResourceLoad(event.target)), { source: "resource-error" });
         return;
       }
       if (event.message.includes("ResizeObserver loop")) return;
