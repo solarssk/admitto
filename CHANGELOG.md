@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The "You need a confirmed authenticator app..." message shown to a Superadmin who tries to reset another Superadmin's two-factor or password without a confirmed second factor of their own now says a passkey or security key works too, matching what the check has actually accepted since sign-in/step-up passkeys shipped in 0.6.0.
+
 ## [0.6.0] - 2026-08-24
 
 ### Added
