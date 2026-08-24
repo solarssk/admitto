@@ -725,7 +725,8 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
   {
     key: "scope",
     header: <HintLabel hint={SCOPE_HINT}>Scope</HintLabel>,
-    cell: (entry) => scopeLabel(entry, eventTitleById),
+    title: (entry) => scopeLabel(entry, eventTitleById),
+    cell: (entry) => <span className="audit-log-scope">{scopeLabel(entry, eventTitleById)}</span>,
   },
   {
     key: "actor",
@@ -743,6 +744,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
   {
     key: "ip",
     header: "IP address",
+    className: "audit-log-ip",
     cell: (entry) => (
       <>
         {entry.ip ?? "-"}
@@ -900,6 +902,7 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
   {
     key: "ip",
     header: "IP address",
+    className: "audit-log-ip",
     cell: (entry) => (
       <>
         {entry.ip ?? "-"}

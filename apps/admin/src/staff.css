@@ -5356,6 +5356,13 @@ output.mail-field-hint {
   font-family: "Twemoji Country Flags", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
 }
 
+/* IPv6 addresses have no spaces to wrap on, so as a single unbroken token they'd otherwise force
+   this column's minimum width to their full length under table-layout: auto, distorting every
+   other column in the row (same fix as .audit-log-ip - this table just isn't the audit log). */
+.sessions-ip-cell {
+  word-break: break-all;
+}
+
 .sessions-action-col {
   text-align: center;
 }
@@ -5784,6 +5791,31 @@ output.mail-field-hint {
   font-size: 0.95em;
   opacity: 0.85;
   line-height: 1;
+}
+
+/* Long event titles clamp to 2 lines (Time and User already routinely render 2 lines in this
+   table - UTC + local time, name + email - so this keeps Scope's row-height in the same rhythm
+   instead of wrapping without limit and making one row much taller than its neighbours). Anything
+   still cut off is reachable via the cell's native title tooltip (see buildAuditColumns' `title`
+   for this column). Applied to a <span> wrapper around the label, not the <td> itself - `display:
+   -webkit-box` would override the <td>'s required `table-cell` display, and the browser's table
+   fix-up then wraps the <td> in an anonymous cell box, leaving the real <td>'s own padding, border
+   and vertical-align (from `.table td`) on the wrong element and breaking row separators. */
+.audit-log-scope {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+/* IPv6 addresses have no spaces to wrap on, so as a single unbroken token they'd otherwise force
+   this column's minimum width to their full length under table-layout: auto, distorting every
+   other column. break-all only kicks in once a token doesn't fit - harmless for the short country
+   name on the line below. */
+.audit-log-ip {
+  word-break: break-all;
 }
 
 /* Re-fetching with existing rows still on screen (filter/page change) — dim them

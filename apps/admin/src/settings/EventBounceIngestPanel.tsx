@@ -495,6 +495,7 @@ export const EventBounceIngestPanel = forwardRef<
         title={<HintLabel hint={BOUNCE_CARD_HINT}>Bounce detection</HintLabel>}
         actions={
           <Switch
+            id="event-bounce-detection-enabled"
             label={draft.enabled ? "On" : "Off"}
             checked={draft.enabled}
             disabled={isArchived}

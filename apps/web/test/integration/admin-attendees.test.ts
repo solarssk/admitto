@@ -1971,6 +1971,97 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(body.wallet_apple_link).toBeNull();
       expect(body.wallet_google_link).toBeNull();
     });
+
+    it("issues a ticket at creation time so wallet links are available immediately, without a mutating GET", async () => {
+      const res = await app.request(`/api/admin/events/${WALLET_ACTION_EVENT}/attendees`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: "wallet-links-created@example.com",
+          first_name: "Wallet",
+          last_name: "Links",
+        }),
+      });
+      expect(res.status).toBe(201);
+      const created = (await res.json()) as {
+        id: string;
+        updated_at: string;
+        wallet_apple_link: string | null;
+        wallet_google_link: string | null;
+      };
+      expect(created.wallet_apple_link).toMatch(/\/wallet\/apple$/);
+      expect(created.wallet_google_link).toMatch(/\/wallet\/google$/);
+
+      try {
+        const row = await prisma.attendee.findUniqueOrThrow({ where: { id: created.id } });
+        expect(row.token_hash).not.toBeNull();
+        const mintedAt = row.updated_at;
+
+        // The 201 response's own `updated_at` must reflect the post-mint row, not a pre-mint
+        // snapshot (code review, 2026-08-24) - otherwise the very next optimistic-concurrency
+        // PATCH built from this response's `updated_at` would spuriously fail as a stale write.
+        expect(created.updated_at).toBe(mintedAt.toISOString());
+        const patchRes = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${created.id}`,
+          {
+            method: "PATCH",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ company: "Updated Co", expected_updated_at: created.updated_at }),
+          },
+        );
+        expect(patchRes.status).toBe(200);
+        const afterPatch = await prisma.attendee.findUniqueOrThrow({ where: { id: created.id } });
+
+        // GET must be a pure read - opening the detail page again must not re-mutate the row
+        // (security review, 2026-08-24: minting as a side effect of GET would be exploitable via
+        // a cross-site top-level navigation, since this route carries no CSRF guard by design).
+        const getRes = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${created.id}`,
+          { headers: { Cookie: adminCookie } },
+        );
+        expect(getRes.status).toBe(200);
+        const getBody = (await getRes.json()) as {
+          wallet_apple_link: string | null;
+          wallet_google_link: string | null;
+        };
+        expect(getBody.wallet_apple_link).toMatch(/\/wallet\/apple$/);
+        expect(getBody.wallet_google_link).toMatch(/\/wallet\/google$/);
+
+        const rowAfterGet = await prisma.attendee.findUniqueOrThrow({ where: { id: created.id } });
+        expect(rowAfterGet.updated_at.getTime()).toBe(afterPatch.updated_at.getTime());
+      } finally {
+        // Same reasoning as the reissue tests above: keep this describe's total
+        // WALLET_ACTION_EVENT attendee count from drifting past what the later
+        // "wallet_status on GET list" block's unfiltered (25-per-page) list call expects.
+        await prisma.attendee.delete({ where: { id: created.id } });
+      }
+    });
+
+    it("still returns null links for a cancelled attendee, which can never be issued a ticket", async () => {
+      const attendeeId = "att-wallet-links-cancelled";
+      await prisma.attendee.create({
+        data: {
+          id: attendeeId,
+          event_id: WALLET_ACTION_EVENT,
+          email: `${attendeeId}@example.com`,
+          name: "Cancelled",
+          status: "cancelled",
+        },
+      });
+      try {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}`,
+          { headers: { Cookie: adminCookie } },
+        );
+
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { wallet_apple_link: string | null; wallet_google_link: string | null };
+        expect(body.wallet_apple_link).toBeNull();
+        expect(body.wallet_google_link).toBeNull();
+      } finally {
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
   });
 
   describe("wallet_status on GET list", () => {
@@ -4232,7 +4323,7 @@ describe("POST /api/admin/events/:eventId/attendees/:id/ticket-link", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns 422 when the attendee has no issued ticket yet", async () => {
+  it("issues a ticket on demand and returns its URL when the attendee has never been sent one", async () => {
     const unissued = await prisma.attendee.create({
       data: {
         id: "att-admin-ticket-link-unissued",
@@ -4249,11 +4340,74 @@ describe("POST /api/admin/events/:eventId/attendees/:id/ticket-link", () => {
           headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
         },
       );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { url: string };
+      expect(body.url).toMatch(/^https:\/\/tickets\.example\.com\/t\/.+/);
+
+      const row = await prisma.attendee.findUniqueOrThrow({ where: { id: unissued.id } });
+      expect(row.token_hash).not.toBeNull();
+      expect(row.token_enc).not.toBeNull();
+
+      const log = await prisma.attendeeActionLog.findFirst({
+        where: { attendee_id: unissued.id, action_type: "ticket_link_retrieved" },
+      });
+      expect(log).not.toBeNull();
+    } finally {
+      await prisma.attendee.delete({ where: { id: unissued.id } });
+    }
+  });
+
+  it("returns 422 for a cancelled attendee, which can never be issued a ticket", async () => {
+    const cancelled = await prisma.attendee.create({
+      data: {
+        id: "att-admin-ticket-link-cancelled",
+        event_id: EVENT_A,
+        email: "cancelled@example.com",
+        name: "Cancelled Attendee",
+        status: "cancelled",
+      },
+    });
+    try {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/attendees/${cancelled.id}/ticket-link`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        },
+      );
       expect(res.status).toBe(422);
       const body = (await res.json()) as { error: string };
       expect(body.error).toBe("ticket_not_issued");
     } finally {
-      await prisma.attendee.delete({ where: { id: unissued.id } });
+      await prisma.attendee.delete({ where: { id: cancelled.id } });
+    }
+  });
+
+  it("returns 422, not a stale working link, for a cancelled attendee that already had a token before cancellation", async () => {
+    const cancelled = await prisma.attendee.create({
+      data: {
+        id: "att-admin-ticket-link-cancelled-with-token",
+        event_id: EVENT_A,
+        email: "cancelled-with-token@example.com",
+        name: "Cancelled After Issuance",
+        status: "cancelled",
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+      },
+    });
+    try {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/attendees/${cancelled.id}/ticket-link`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        },
+      );
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe("ticket_not_issued");
+    } finally {
+      await prisma.attendee.delete({ where: { id: cancelled.id } });
     }
   });
 
@@ -5710,6 +5864,54 @@ describe("Attendees v2 — RSVP and manual create", () => {
     expect(adminMeta.attendee_email).toBe("manual@example.com");
 
     await prisma.attendee.delete({ where: { id: body.id } });
+  });
+
+  it("re-fetches the row when a concurrent request wins the mint (already_issued) so the response isn't a stale concurrency token", async () => {
+    // Simulates another admin requesting this same brand-new attendee's ticket link a moment
+    // before this handler's own issueTicket call runs (e.g. reacting to the just-published
+    // activity update) - that request's issueTicket call mints for real and returns "issued";
+    // this one loses the race and gets "already_issued" back, exactly like the real CAS would.
+    const spy = vi.spyOn(ticketOperations, "issueTicket").mockImplementationOnce(async (attendeeId: string) => {
+      const token = generateToken();
+      await prisma.attendee.update({
+        where: { id: attendeeId },
+        data: { token_hash: hashToken(token), token_enc: encryptToString(token) },
+      });
+      return { status: "already_issued", mode: "internal", attendeeId };
+    });
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "race@example.com", first_name: "Race", last_name: "Winner" }),
+      });
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { id: string; updated_at: string };
+      const row = await prisma.attendee.findUniqueOrThrow({ where: { id: body.id } });
+      expect(row.token_hash).not.toBeNull();
+      expect(body.updated_at).toBe(row.updated_at.toISOString());
+      await prisma.attendee.delete({ where: { id: body.id } });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("still creates the attendee when ticket issuance fails - the link is just minted later instead", async () => {
+    const spy = vi.spyOn(ticketOperations, "issueTicket").mockRejectedValueOnce(new Error("boom"));
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "issuance-fails@example.com", first_name: "Issuance", last_name: "Fails" }),
+      });
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { id: string; ticket_url?: string };
+      const row = await prisma.attendee.findUniqueOrThrow({ where: { id: body.id } });
+      expect(row.token_hash).toBeNull();
+      await prisma.attendee.delete({ where: { id: body.id } });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("POST create rejects malformed JSON without writing an attendee", async () => {
