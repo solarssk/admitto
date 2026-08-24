@@ -542,26 +542,24 @@ async function subscribeWalletWebhooksBestEffort(
   // (template, targetUrl, event) triple - re-checking on every wallet-relevant save (which this
   // function runs on) would otherwise accumulate a duplicate subscription per save, each
   // delivering its own redundant webhook call forever after. Listing is itself best-effort: if it
-  // fails we can no longer trust any dedup state, so - same idea as the legacy pass_voided
-  // migration below - clear both target URLs first and resubscribe all four events fresh, instead
-  // of the old blind-subscribe fallback that piled a fresh duplicate onto every save this ever
-  // happened on (root cause of the duplicate-webhook pileup seen in production). PassCreator's own
-  // docs (developer.passcreator.com/en/webhooks/webhook-endpoints) don't say whether unsubscribing
-  // an already-clear target_url errors or no-ops, but it doesn't matter here: an unsubscribe
-  // failure below still falls through to a normal subscribe, so this is never worse than the old
-  // fallback and is a straight improvement whenever it succeeds.
+  // fails, skip subscribing entirely this cycle instead of guessing. Blindly resubscribing without
+  // checking piles a fresh duplicate onto every existing one (the original bug this fixed).
+  // Clearing target URLs first and resubscribing - tried in an earlier version of this fix - is
+  // worse, not better: if a subsequent subscribeWebhook call then also fails, it deletes a
+  // previously-working subscription with no guaranteed replacement, breaking wallet registration
+  // or void updates for that event type until some later save happens to repair it (bot review,
+  // PR #1057) - a regression the original bug never had, since the old subscription always stayed
+  // in place alongside a failed duplicate attempt. Skipping is the only option that's never worse:
+  // nothing here changes what's already subscribed, so the next successful save (or the periodic
+  // sync, registration-sync.ts) is what reconciles it.
   let ownTemplateHooks: { targetUrl: string | null; event: string; passTemplate: string | null }[] = [];
-  let listFailed = false;
   try {
     ownTemplateHooks = (await client.listWebhooks()).filter(
       (hook) => hook.passTemplate === updated.wallet_template_id,
     );
   } catch (err) {
-    listFailed = true;
-    console.error(
-      "wallet webhook subscribe: listWebhooks failed, clearing both target URLs before resubscribing:",
-      err,
-    );
+    console.error("wallet webhook subscribe: listWebhooks failed, skipping this cycle:", err);
+    return;
   }
 
   // One-time migration: pass_voided used to share registrationUrl with the three registration
@@ -574,23 +572,7 @@ async function subscribeWalletWebhooksBestEffort(
     (hook) => hook.targetUrl === registrationUrl && hook.event === "pass_voided",
   );
   let alreadySubscribed = new Set(ownTemplateHooks.map((hook) => `${hook.targetUrl ?? ""} ${hook.event}`));
-  if (listFailed) {
-    const votedUrl = targetUrlFor("pass_voided");
-    const urlsToClear = [registrationUrl, votedUrl];
-    const settledClear = await Promise.allSettled(
-      urlsToClear.map((url) => client.unsubscribeWebhook(url)),
-    );
-    settledClear.forEach((outcome, index) => {
-      if (outcome.status !== "rejected") return;
-      console.error(
-        `wallet webhook subscribe: clearing ${urlsToClear[index]} before resubscribe failed:`,
-        outcome.reason,
-      );
-    });
-    // alreadySubscribed is already empty here: ownTemplateHooks never got populated on this path
-    // (the try block above never completed), so there's nothing to wipe - the subscribe loop
-    // below fills it back in fresh regardless of whether the clears above succeeded.
-  } else if (hasLegacyVoidedSubscription) {
+  if (hasLegacyVoidedSubscription) {
     try {
       await client.unsubscribeWebhook(registrationUrl);
       alreadySubscribed = new Set(); // wiped clean - every event below gets a fresh subscription
