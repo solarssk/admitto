@@ -156,8 +156,8 @@ describe("mfa-html-routes", () => {
     mockResume.mockResolvedValue(null);
     mockStart.mockResolvedValue(enrollment as never);
     mockConfirm.mockResolvedValue(true);
-    mockPromoteBackup.mockResolvedValue(true);
-    mockPromoteFull.mockResolvedValue(SESSION_STAGE.FULL);
+    mockPromoteBackup.mockResolvedValue({ rawToken: "rotated-token" });
+    mockPromoteFull.mockResolvedValue({ stage: SESSION_STAGE.FULL, rawToken: "rotated-token" });
     mockRegen.mockResolvedValue({ codes: tenCodes() } as never);
     mockVerifySet.mockResolvedValue(true);
   });
@@ -238,6 +238,7 @@ describe("mfa-html-routes", () => {
       ok: true,
       stage: SESSION_STAGE.BACKUP_CODES_REQUIRED,
       trustedDeviceRawToken: "td-tok",
+      sessionRawToken: "rotated-token",
     } as never);
     const { app } = makeApp({
       userId: "u1",
@@ -259,6 +260,7 @@ describe("mfa-html-routes", () => {
     mockCompleteMfa.mockResolvedValue({
       ok: true,
       stage: SESSION_STAGE.CHANGE_PASSWORD_REQUIRED,
+      sessionRawToken: "rotated-token",
     } as never);
     const { app } = makeApp({
       userId: "u1",
@@ -278,6 +280,7 @@ describe("mfa-html-routes", () => {
     mockCompleteMfa.mockResolvedValue({
       ok: true,
       stage: SESSION_STAGE.FULL,
+      sessionRawToken: "rotated-token",
     } as never);
     const { app } = makeApp({
       userId: "u1",
@@ -298,6 +301,7 @@ describe("mfa-html-routes", () => {
     mockCompleteMfa.mockResolvedValue({
       ok: true,
       stage: SESSION_STAGE.FULL,
+      sessionRawToken: "rotated-token",
     } as never);
     mockLanding.mockRejectedValue(new Error("no roles"));
     const { app } = makeApp({
@@ -315,8 +319,11 @@ describe("mfa-html-routes", () => {
     expect(mockRevoke).toHaveBeenCalled();
     // clearSessionCookie now runs inside resolvePostMfaLandingPath (routes.ts), a same-module
     // call ESM mocking can't intercept - assert its observable effect (an expired Set-Cookie for
-    // the session cookie) instead of the mock being called.
-    const clearedCookie = res.headers.getSetCookie().find((c) => c.startsWith("admitto_session="));
+    // the session cookie) instead of the mock being called. The rotated session cookie is set
+    // first (unconditionally, before the landing path can fail), so the clearing Set-Cookie is
+    // the last "admitto_session=" header - browsers apply same-name Set-Cookie headers in order,
+    // so the last one determines the final state.
+    const clearedCookie = res.headers.getSetCookie().filter((c) => c.startsWith("admitto_session=")).pop();
     expect(clearedCookie).toMatch(/Max-Age=0/i);
     err.mockRestore();
   });
@@ -525,7 +532,7 @@ describe("mfa-html-routes", () => {
 
   it("shows QR error when promotion to backup-codes step fails", async () => {
     stashEnrollmentBackupCodes("s1", tenCodes());
-    mockPromoteBackup.mockResolvedValue(false);
+    mockPromoteBackup.mockResolvedValue(null);
     // After confirm succeeds, promotion fails and resume is called once for the error page.
     mockResume.mockResolvedValue(enrollment as never);
     const { app } = makeApp({
@@ -546,7 +553,7 @@ describe("mfa-html-routes", () => {
 
   it("shows start page when promotion fails and pending enrollment is gone", async () => {
     stashEnrollmentBackupCodes("s1", tenCodes());
-    mockPromoteBackup.mockResolvedValue(false);
+    mockPromoteBackup.mockResolvedValue(null);
     mockResume.mockResolvedValue(null);
     const { app } = makeApp({
       userId: "u1",
@@ -617,7 +624,7 @@ describe("mfa-html-routes", () => {
 
   it("redirects to change-password after backup-codes ack when required", async () => {
     stashEnrollmentBackupCodes("s1", tenCodes());
-    mockPromoteFull.mockResolvedValue(SESSION_STAGE.CHANGE_PASSWORD_REQUIRED);
+    mockPromoteFull.mockResolvedValue({ stage: SESSION_STAGE.CHANGE_PASSWORD_REQUIRED, rawToken: "rotated-token" });
     const { app } = makeApp({
       userId: "u1",
       sessionId: "s1",

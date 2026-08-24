@@ -42,7 +42,7 @@ import {
 } from "./enrollment-backup-cache.js";
 import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
-import { setTrustedDeviceCookie, resolvePostMfaLandingPath } from "./routes.js";
+import { setSessionCookie, setTrustedDeviceCookie, resolvePostMfaLandingPath } from "./routes.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { parseOptionalClientTimezone } from "../admin/timezone.js";
 
@@ -249,6 +249,10 @@ export async function handlePostMfaVerify(
   if (result.trustedDeviceRawToken) {
     await setTrustedDeviceCookie(c, db, result.trustedDeviceRawToken);
   }
+  // Session token rotates on every promotion (see promoteSessionToFull) - the pre-MFA
+  // cookie must stop working the instant a higher stage is reached. Always set on the
+  // `ok: true` path - completeMfa() only omits it on the `ok: false` branch handled above.
+  setSessionCookie(c, result.sessionRawToken!);
 
   const landing = await resolvePostMfaLandingPath(
     c,
@@ -493,6 +497,7 @@ export async function handlePostMfaEnroll(
       trustedOrigins,
     );
   }
+  setSessionCookie(c, promoted.rawToken);
 
   // Extend stash TTL to match the fresh backup-codes session window.
   extendEnrollmentBackupCodes(partial.sessionId);
@@ -575,12 +580,13 @@ export async function handlePostMfaEnrollBackupCodes(
       trustedOrigins,
     );
   }
-  if (promoted === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
+  setSessionCookie(c, promoted.rawToken);
+  if (promoted.stage === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
     clearEnrollmentBackupCodes(partial.sessionId);
     return c.redirect("/change-password", 302);
   }
 
-  const landing = await resolvePostMfaLandingPath(c, db, partial.userId, partial.sessionId, promoted, form["next"]);
+  const landing = await resolvePostMfaLandingPath(c, db, partial.userId, partial.sessionId, promoted.stage, form["next"]);
   return c.redirect(landing, 302);
 }
 

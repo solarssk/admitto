@@ -164,8 +164,8 @@ describe("auth API routes (routes.ts)", () => {
     mockLoginNext.mockResolvedValue(LOGIN_NEXT.COMPLETE);
     mockSetupComplete.mockResolvedValue(true);
     mockStashEnsure.mockResolvedValue(["AAAA-BBBB"]);
-    mockPromoteBackup.mockResolvedValue(true);
-    mockPromoteFull.mockResolvedValue(SESSION_STAGE.FULL);
+    mockPromoteBackup.mockResolvedValue({ rawToken: "rotated-token" });
+    mockPromoteFull.mockResolvedValue({ stage: SESSION_STAGE.FULL, rawToken: "rotated-token" });
     mockUpdateLabel.mockResolvedValue(true);
     mockRegen.mockResolvedValue({ codes: ["A", "B"] } as never);
   });
@@ -644,7 +644,7 @@ describe("auth API routes (routes.ts)", () => {
       ).toBe(401);
 
       mockConfirm.mockResolvedValue(true);
-      mockPromoteBackup.mockResolvedValue(false);
+      mockPromoteBackup.mockResolvedValue(null);
       expect(
         (
           await h.request("/api/auth/mfa/totp/confirm", {
@@ -656,7 +656,7 @@ describe("auth API routes (routes.ts)", () => {
       ).toBe(401);
       expect(mockRegen).toHaveBeenCalled();
 
-      mockPromoteBackup.mockResolvedValue(true);
+      mockPromoteBackup.mockResolvedValue({ rawToken: "rotated-token" });
       stashEnrollmentBackupCodes("s1", ["KEEP"]);
       const ok = await h.request("/api/auth/mfa/totp/confirm", {
         method: "POST",
@@ -707,7 +707,7 @@ describe("auth API routes (routes.ts)", () => {
       expect(mockMarkAck).toHaveBeenCalled();
 
       stashEnrollmentBackupCodes("s1", ["AAAA"]);
-      mockPromoteFull.mockResolvedValue(SESSION_STAGE.CHANGE_PASSWORD_REQUIRED);
+      mockPromoteFull.mockResolvedValue({ stage: SESSION_STAGE.CHANGE_PASSWORD_REQUIRED, rawToken: "rotated-token" });
       expect(
         await (
           await h().request("/api/auth/mfa/totp/backup-codes/complete", { method: "POST" })
@@ -715,7 +715,7 @@ describe("auth API routes (routes.ts)", () => {
       ).toEqual({ ok: true, next: LOGIN_NEXT.CHANGE_PASSWORD });
 
       stashEnrollmentBackupCodes("s1", ["AAAA"]);
-      mockPromoteFull.mockResolvedValue(SESSION_STAGE.FULL);
+      mockPromoteFull.mockResolvedValue({ stage: SESSION_STAGE.FULL, rawToken: "rotated-token" });
       expect(
         await (
           await h().request("/api/auth/mfa/totp/backup-codes/complete", { method: "POST" })
