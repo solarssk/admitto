@@ -33,6 +33,8 @@ export const STALE_WALLET_PUSH_PENDING_ERROR =
 export const WALLET_PUSH_JOB_BAD_REQUEST_ERROR = "Wallet push job has an invalid request payload.";
 export const WALLET_PUSH_JOB_NOT_CONFIGURED_ERROR = "Wallet is not configured for this event.";
 export const WALLET_PUSH_JOB_GENERIC_ERROR = "Wallet push failed unexpectedly. Contact support if this continues.";
+export const WALLET_PUSH_JOB_ALL_FAILED_ERROR =
+  "Wallet push failed for every targeted attendee. Check the wallet provider's status, then try again.";
 
 export type DrainWalletPushJobsResult = {
   claimed: number;
@@ -210,6 +212,38 @@ async function runOneWalletPushJob(db: PrismaClient, job: ClaimedWalletPushJob):
       }
       done += batch.length;
       await db.adminJob.update({ where: { id: job.id }, data: { progress_done: done } });
+    }
+
+    if (errored > 0) {
+      // Per-attendee failures never throw out of the loop above (each is caught individually so
+      // one bad target doesn't stop the rest), so this is the only point that sees the aggregate
+      // count - without it, a push where every attendee errored would still report "succeeded"
+      // with nothing in its own status to flag that nothing actually reached anyone. Logged
+      // regardless of how many errored: an event-wide push has no operator watching a toast for
+      // it (unlike an in-session Push updates click), so this is the only signal ops has.
+      emitSystemLog("wallet", "error", "wallet_push_job_had_errors", {
+        job_id: job.id,
+        event_id: eventId,
+        reissued,
+        skipped,
+        errored,
+      });
+    }
+
+    // Every target erroring (not just some) means the job accomplished nothing - report it as a
+    // real failure so the existing "failed" toast/history handling picks it up, instead of the
+    // generic "succeeded" path silently implying it worked.
+    if (targets.length > 0 && errored === targets.length) {
+      await db.adminJob.update({
+        where: { id: job.id },
+        data: {
+          status: "failed",
+          finished_at: new Date(),
+          result_json: { request, reissued, skipped, errored },
+          error: WALLET_PUSH_JOB_ALL_FAILED_ERROR,
+        },
+      });
+      return "failed";
     }
 
     await db.adminJob.update({

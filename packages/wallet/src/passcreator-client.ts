@@ -20,6 +20,10 @@ export type PassCreatorWebhookEventType =
 
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 500;
+/** Same timeout every other outbound HTTP client in this codebase uses for a third-party call
+ * (OIDC discovery/token, Cloudflare Access, Graph mailer) - a request PassCreator never responds
+ * to would otherwise hang this client's caller forever, since fetch() has no default timeout. */
+const REQUEST_TIMEOUT_MS = 15_000;
 
 type PassCreatorEnvelope<T> = {
   success: boolean;
@@ -432,6 +436,7 @@ export class PassCreatorClient implements WalletPassProvider {
         ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   }
 
