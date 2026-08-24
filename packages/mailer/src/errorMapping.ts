@@ -85,7 +85,11 @@ export function mapSmtpError(err: unknown): MappedFailure {
     return { status: "failed", retryable: true };
   }
 
-  return { status: "failed", retryable: false };
+  // An SMTP error we can't classify (no reply code, no recognized transport-error pattern) is
+  // often a mid-transaction connection drop under load (e.g. provider-side throttling that
+  // doesn't send a clean 4xx first) rather than a truly permanent failure - MAX_MAIL_DRAIN_ATTEMPTS
+  // already bounds the retry count, so defaulting to retryable is safer than giving up after one try.
+  return { status: "failed", retryable: true };
 }
 
 /** Drop the free-text suffix from a provider send-failure message before it reaches

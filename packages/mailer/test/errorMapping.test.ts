@@ -78,10 +78,10 @@ describe("mapSmtpError", () => {
     });
   });
 
-  it("keeps unclassified transport errors terminal and non-retryable", () => {
+  it("defaults unclassified transport errors to retryable (bounded by MAX_MAIL_DRAIN_ATTEMPTS)", () => {
     expect(mapSmtpError(new Error("unexpected transport response"))).toEqual({
       status: "failed",
-      retryable: false,
+      retryable: true,
     });
   });
 });
