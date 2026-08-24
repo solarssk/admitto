@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Admin errors that happen outside React's own render cycle - an exception thrown from a button/switch handler, an unhandled promise rejection, or a browser extension's script getting blocked by the admin's Content-Security-Policy - are now reported to the server the same way a render error already was, instead of only ever showing up in that one person's browser console. Meant to catch page breakage caused by a browser extension (e.g. a password manager reacting to a settings toggle) with enough detail to diagnose it without needing to reproduce it live.
+
 ### Fixed
 
+- Five toggle switches (event Mail settings' "Bounce detection", the Requirements list's per-item enable switch, and the item editor's "Active", "Requires return", and "Issue on check-in" switches) no longer regenerate their underlying element id on every click - each now has a stable id like every other switch in the app.
 - The "You need a confirmed authenticator app..." message shown to a Superadmin who tries to reset another Superadmin's two-factor or password without a confirmed second factor of their own now says a passkey or security key works too, matching what the check has actually accepted since sign-in/step-up passkeys shipped in 0.6.0.
 
 ## [0.6.0] - 2026-08-24

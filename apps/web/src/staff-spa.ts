@@ -55,8 +55,11 @@ function buildStaffSpaContentSecurityPolicy(
       : STAFF_SPA_IMG_SRC;
   return [
     "default-src 'self'",
-    `script-src ${["'self'", ...trustedOrigins].join(" ")}`,
-    `style-src ${STAFF_SPA_STYLE_SRC.join(" ")}`,
+    // 'report-sample' asks the browser to include a snippet of the blocked script/style in
+    // the securitypolicyviolation event (globalErrorReporting.ts reads event.sample) - without
+    // it, that field is always empty and a reported violation can't say what was blocked.
+    `script-src ${["'self'", ...trustedOrigins, "'report-sample'"].join(" ")}`,
+    `style-src ${[...STAFF_SPA_STYLE_SRC, "'report-sample'"].join(" ")}`,
     `img-src ${imgSrc.join(" ")}`,
     `connect-src ${["'self'", ...trustedOrigins].join(" ")}`,
     `font-src ${STAFF_SPA_FONT_SRC.join(" ")}`,

@@ -108,6 +108,7 @@ function EventItemsTableBody({
             >
               {(guard) => (
                 <Switch
+                  id={`requirement-item-enabled-${item.id}`}
                   label={item.enabled ? "On" : "Off"}
                   checked={item.enabled}
                   aria-busy={togglingIds.has(item.id)}
