@@ -42,12 +42,12 @@ Active automated checks in this repository:
 | CodeQL | SAST (JavaScript/TypeScript) | Every PR + weekly | `.github/workflows/codeql.yml` |
 | Semgrep | SAST (JavaScript/TypeScript) | Every merge to `main` + weekly | `.github/workflows/semgrep.yml` |
 | gitleaks | Secret scan (full history) | Every PR | `.github/workflows/ci.yml` (`secret-scan`) |
-| npm audit | Dependency SCA (`--audit-level=high`) | Every PR | `.github/workflows/ci.yml` (`build-test`) |
+| npm audit | Dependency SCA (`--audit-level=high`) | Every PR | `.github/workflows/ci.yml` (`lint-and-typecheck`) |
 | Dependabot | npm + GitHub Actions updates | Scheduled | `.github/dependabot.yml` |
 | Docker build smoke | Production `Dockerfile` builds | Every merge to `main` | `.github/workflows/ci.yml` (`docker-build`) |
 | Trivy | Container image scan (OS + libraries); **scan-before-push** on release tags | Release tags + manual dispatch | `.github/workflows/publish-container.yml` |
 | CycloneDX SBOM | Container image bill of materials | Release tags | `.github/workflows/publish-container.yml` (artifact + release asset) |
-| Codecov | Test coverage reporting (no merge gate) | Every PR | `.github/workflows/ci.yml` (`build-test`) |
+| Codecov | Test coverage reporting (no merge gate) | Every PR | `.github/workflows/ci.yml` (`test-web` / `test-admin` / `test-rest`) |
 | SonarCloud | Code quality and maintainability (SAST-adjacent, e.g. hardcoded-secret patterns, injection-prone constructs) | Automatic analysis on every PR and `main` push | GitHub App (`sonarcloud.io`) — not a workflow file in this repo |
 
 **Codecov data:** CI uploads LCOV coverage reports (file paths and hit counts). No secrets, attendee PII, or production credentials are sent. Treat Codecov as development tooling; customer production data stays in customer PostgreSQL.

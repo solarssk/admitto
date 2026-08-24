@@ -1,6 +1,6 @@
 # Reference Hub
 
-**Audience:** All staff · **Required role:** Any staff role · **Feature status:** ✅ Available · **Last verified:** Admitto 0.4.13
+**Audience:** All staff · **Required role:** Any staff role · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
 
 Use these pages when you need an exact field, value, status, or definition.
 
@@ -9,6 +9,7 @@ Use these pages when you need an exact field, value, status, or definition.
 - [Import File Reference](Import-File-Reference) — accepted attendee columns, identifiers, and validation rules.
 - [Template Variables](Template-Variables) — supported message variables and placement rules.
 - [Email Delivery Statuses](Email-Delivery-Statuses) — what each recorded delivery result means.
+- [Pass Statuses](Pass-Statuses) — exact pass and wallet-pass status meanings and the void/restore cascade.
 
 ## Check-in
 

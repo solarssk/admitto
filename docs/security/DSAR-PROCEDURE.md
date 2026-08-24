@@ -49,8 +49,9 @@ flowchart TD
   1. Delete the attendee record from **Admin → Attendees → attendee detail → More actions →
      Delete attendee** (type the attendee's name to confirm), or for multiple data subjects at
      once, select their rows on the **Attendees** list and use the bulk bar's **More actions →
-     Delete** (10-second arm delay before the confirm button unlocks, no typed confirmation since
-     there's no single name to type). Both call the same `DELETE`/`bulk-delete`
+     Delete** (a confirmation dialog lists what will be removed; no typed confirmation since
+     there's no single name to type — unlike the single-attendee flow above). Both call the same
+     `DELETE`/`bulk-delete`
      `/api/admin/events/:eventId/attendees/...` endpoints used by the API client below — they
      remove dependent delivery, wallet, and check-in rows in one transaction and write an audit
      log entry (per-attendee, plus a central admin-audit-log entry naming the erased attendee(s)

@@ -36,7 +36,7 @@ If you rely on **legitimate interest** (Art. 6(1)(f) GDPR), your DPO should docu
 | Category | Examples | Special category? |
 |----------|----------|-------------------|
 | Identity | Name, email | Personal data |
-| Optional profile | Company, department, custom fields | Personal data |
+| Optional profile | Company, department, custom fields | Personal data — free-text notes/custom fields may contain Art. 9 special-category data (e.g. dietary, accessibility); see [DATA-PROTECTION.md](../../DATA-PROTECTION.md) |
 | Access token | Random QR / opaque ID | Not PII in the QR itself |
 | Operational | Check-in time, ticket type | Operational |
 | Technical | IP address, user-agent (sessions / throttling) | Personal data (online identifier) |
@@ -54,9 +54,10 @@ Two layers: **product-automated** (Admitto **worker** at boot and about every 24
 | Login sessions, trusted devices | Purged automatically when expired/revoked — **worker** (boot + ~24h) |
 | Security audit trail (`SecurityAuditLog` — login/MFA/logout/OIDC/access-denied) | Purged automatically after **30 days** default (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) — **worker** (boot + ~24h) |
 | Email delivery snapshots (`rendered_html`, `rendered_subject`) | Nullified **60 days** after terminal delivery — **worker** (boot + ~24h); delivery log metadata retained |
-| IP in admin audit / check-in logs | **30 days or operator corporate log retention policy** — not auto-purged by product |
+| IP in admin audit log | **30 days or operator corporate log retention policy** — not auto-purged by product. (Check-in-time IP only appears in the System logs live tail below, in-memory only — not a persisted, purgeable table.) |
 | Event attendee PII | **Retained until operator erasure** (conscious product default); export via admin UI; erasure via the Attendees admin UI (single or bulk) or the `DELETE` API directly, per DSAR procedure |
-| Audit logs (general) | Per customer security policy; attendee data minimised in log lines (staff-accountability exception documented in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) || System logs live tail (in-memory only) | Not persisted by the product — last 1000 entries, emptied on every restart |
+| Audit logs (general) | Per customer security policy; attendee data minimised in log lines (staff-accountability exception documented in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) |
+| System logs live tail (in-memory only) | Not persisted by the product — last 1000 entries, emptied on every restart |
 
 Organizers can export attendee lists before erasure (spreadsheet / PDF export in admin UI).
 Per-attendee erasure uses `DELETE /api/admin/events/:eventId/attendees/:id` (v0.4.6+); follow
@@ -103,7 +104,7 @@ Depends on customer configuration — typical categories:
 | Hosting / cloud | VM, disk, backups |
 | Email | Microsoft 365 / Graph or corporate SMTP |
 | Edge (optional) | CDN, WAF, access gateway |
-| Wallet (future) | Third-party pass provider if enabled |
+| Wallet | Third-party pass provider (PassCreator) when enabled per event |
 
 See [SUBPROCESSORS.md](SUBPROCESSORS.md).
 
