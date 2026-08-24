@@ -70,7 +70,7 @@
     "argon2": "^0.45.1",
     "jose": "^6.2.9",
     "otplib": "^13.4.1",
-    "undici": "^8.7.0"
+    "undici": "^8.10.0"
   },
   "devDependencies": {
     "@prisma/client": "^7.9.1",
