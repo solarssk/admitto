@@ -16,6 +16,17 @@ export {
   type PreferredTimeFormat,
 } from "./preferredTimeFormat.js";
 export { zonedWallClockToUtcIso } from "./zonedWallClock.js";
+export {
+  celsiusToFahrenheit,
+  formatTempChip,
+  formatTempDual,
+  formatTempForUnit,
+  formatTempRangeDual,
+  formatTempRangeForUnit,
+  roundTemp,
+  tempUnitFromTimeZone,
+  type TempUnit,
+} from "./weatherTemp.js";
 
 // Node-only SSRF guard (imports node:net/node:dns) deliberately NOT re-exported here —
 // this barrel is also consumed by the browser (apps/admin), and even an unused re-export
