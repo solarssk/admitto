@@ -34,7 +34,7 @@ This is the current product roadmap — details live in milestone descriptions a
 flowchart LR
     v04["v0.4.x ✓\nStaff SPA · check-in\nidentity · SSE · mail"]
     v05["v0.5.x ✓\nWallet passes (PassCreator)\nPasskey registration · SSO hardening"]
-    v06["v0.6 ✓\nPasskey/security-key sign-in\nMFA hardening"]
+    v06["v0.6 (in progress)\nPasskey/security-key sign-in\nMFA hardening"]
     v07["v0.7\nHardening phase 1\n(mail/ticket cross-platform)"]
     v08["v0.8+\nIngest API · RSVP/ICS\nWaitlist"]
     v10(["v1.0\nFirst event\ngo-live"])
@@ -45,7 +45,7 @@ flowchart LR
 |---------|--------|
 | **v0.4** | Operator UI + event-day ops + staff SPA foundation (through current `v0.4.x` patches — see [CHANGELOG.md](CHANGELOG.md)). |
 | **v0.5** | Delivered - wallet passes (Apple/Google via PassCreator), passkey/security-key registration, SSO/OIDC hardening, users-table UX. |
-| **v0.6** | Delivered - passkeys/security keys usable for sign-in and step-up (not just registration), first-time 2FA method choice, session-cookie and step-up security hardening. |
+| **v0.6** | In progress, not yet tagged - passkeys/security keys usable for sign-in and step-up (not just registration), first-time 2FA method choice, session-cookie and step-up security hardening. |
 | **v0.7** | Hardening phase 1 (Outlook/iPhone/Android mail and ticket tests, operational fixes toward go-live). |
 | **v0.8–v0.9** | External-ingest `/api/ingest`, RSVP intake, calendar iMIP/ICS, waitlist, template lifecycle triggers, further hardening + dry run (backup/restore, event-day readiness — ADR 0012) - not yet scheduled to a specific version. |
 | **v1.0** | First event **go-live ready** = MVP complete. |

@@ -72,10 +72,13 @@ admin-initiated reset, or the account's own **"Forget all trusted devices"** act
 Two-factor authentication's options menu).
 
 > **Shared check-in devices.** On shared operator tablets, signing out alone no longer clears
-> remembered-device trust — a device stays MFA-skippable for whoever signs in next until the trust
+> remembered-device trust — the trust is scoped to that specific account (`validateTrustedDevice`
+> rejects the cookie for a different `user_id`), so it does not carry over to whoever uses the
+> device next, but it does let the *same* account skip MFA again on that device until the trust
 > window expires. Set `trusted_device_days` to a short value (or `0` to disable the feature
-> entirely) for any instance where devices are shared, and use **"Forget all trusted devices"** or
-> an admin-initiated reset before handing a device to someone else.
+> entirely) for any instance where the same account may sign in from a device it shouldn't stay
+> trusted on, and use **"Forget all trusted devices"** or an admin-initiated reset to clear it
+> sooner.
 Frozen email delivery bodies (`EmailDelivery.rendered_html` / `rendered_subject`) are nullified
 best-effort on the Admitto **worker** (boot + ~24h) once a delivery is terminal and older than 60 days
 (configurable via `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`). Preview with
@@ -105,7 +108,7 @@ These capabilities exist in the application — they are **not** roadmap-only cl
 | Capability | Where |
 |------------|-------|
 | TOTP MFA (privileged roles) | `packages/auth` — MFA enrollment and verification |
-| WebAuthn passkeys / security keys (enrollment, sign-in, step-up) | `packages/auth/src/webauthn-testing.ts`; `apps/web/src/auth/mfa-html-routes.ts`, `apps/web/src/admin/account-routes.ts` |
+| WebAuthn passkeys / security keys (enrollment, sign-in, step-up) | `packages/auth/src/mfa/webauthn.ts`; `apps/web/src/auth/mfa-html-routes.ts`, `apps/web/src/admin/account-routes.ts` |
 | OIDC / SSO | `packages/auth` OIDC provider module; staff login routes in the web app |
 | Local break-glass admin | Local account provider alongside OIDC |
 
