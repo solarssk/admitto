@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Five toggle switches (event Mail settings' "Bounce detection", the Requirements list's per-item enable switch, and the item editor's "Active", "Requires return", and "Issue on check-in" switches) no longer regenerate their underlying element id on every click - each now has a stable id like every other switch in the app.
 - The "You need a confirmed authenticator app..." message shown to a Superadmin who tries to reset another Superadmin's two-factor or password without a confirmed second factor of their own now says a passkey or security key works too, matching what the check has actually accepted since sign-in/step-up passkeys shipped in 0.6.0.
+- The Scope column in Settings → Logs → Audit logs no longer forces a long event title onto one unbroken line, which used to crowd the User, IP address, and Details columns toward the right edge - it now clamps to 2 lines with the full title available as a hover tooltip. IPv6 addresses in the IP address column now wrap instead of forcing that column wide and distorting the rest of the row.
 
 ## [0.6.0] - 2026-08-24
 
