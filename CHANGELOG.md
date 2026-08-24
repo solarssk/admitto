@@ -42,6 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All remaining popups (Add attendee, Create event, Invite user, Create/Edit template, CSP trusted origins, Fix Maps link, Font family, device label edit, and the Attendees page bulk dialogs) now use the app's slim on-theme scrollbar instead of the browser's default one, matching every other popup.
 - The header "Send tickets" dialog now puts Cancel before "Send tickets", matching every other popup's button order. The device label edit modal's save error now renders as a Notice banner instead of plain text.
 - The public ticket page's weather forecast shows both Celsius and Fahrenheit again (e.g. `18°C (64°F)`), and the event weather chip in the admin/operator event pickers again switches to Fahrenheit for an operator whose browser is in an Americas timezone instead of always showing Celsius. Both silently regressed to Celsius-only during an unrelated branch history repair shortly after they first shipped; no functional change was intended or announced at the time.
+- The Invite user dialog's phone number field resists browser and password-manager autofill again, matching its email field and every other field in that dialog - it had silently regressed to allowing autofill.
+- The background worker now refuses to start with an invalid bounce-ingest poll interval (`BOUNCE_INGEST_TICK_SECONDS` or the legacy `BOUNCE_INGEST_INTERVAL_SECONDS`, e.g. zero, negative, or non-numeric) instead of silently falling back to the default.
+- Saving an event's or the instance's outgoing mail server settings now rejects a private, loopback, or link-local SMTP host, the same check already applied to the bounce-ingest IMAP host - previously only the IMAP host was checked.
+- Saving an event's or the instance's Power Automate flow URL now rejects a non-HTTPS URL, or one pointing at a private, loopback, or link-local address, immediately on save, the same check already applied to the SMTP host - previously this field only got checked once the provider was fully validated, so a bad URL saved while a different provider was still active would slip through unnoticed.
 
 ### Security
 

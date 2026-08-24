@@ -239,10 +239,10 @@ export function InviteUserModal({ open, onClose, onCreated }: Readonly<InviteUse
                 name="invite-phone"
                 icon={<i className="ti ti-phone" aria-hidden="true" />}
                 type="tel"
-                autoComplete="tel-national"
                 value={phoneNumber}
                 disabled={submitting}
                 onChange={(e) => setPhoneNumber(e.target.value)}
+                {...NO_AUTOFILL_PROPS}
               />
             </div>
             <p className="at-hint">For internal contact only - not shown on tickets.</p>

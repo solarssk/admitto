@@ -14,6 +14,7 @@ import {
   type MailSettingsInput,
 } from "@admitto/mailer-config";
 import {
+  isBlockedMailHost,
   isSendSuccess,
   MailDestinationError,
   probeMailTransport,
@@ -53,7 +54,19 @@ export const putMailSettingsBodySchema = z
     replyTo: optionalEmail,
     envelopeFrom: optionalEmail,
     allowedFromDomain: optionalTrimmedNonEmpty(253),
-    host: optionalTrimmedNonEmpty(253),
+    host: z
+      .union([
+        z
+          .string()
+          .trim()
+          .min(1)
+          .max(253)
+          .refine((h) => !isBlockedMailHost(h), {
+            error: "host must not be a private, loopback, or link-local address",
+          }),
+        z.literal(""),
+      ])
+      .optional(),
     port: z.union([z.number().int().min(1).max(65535), z.null()]).optional(),
     secure: z.boolean().optional(),
     user: optionalTrimmedNonEmpty(254),
@@ -74,7 +87,21 @@ export const putMailSettingsBodySchema = z
     smtpPassword: z.string().optional(),
     graphClientSecret: z.string().optional(),
     powerAutomateKey: z.string().optional(),
-    powerAutomateUrl: z.string().optional(),
+    powerAutomateUrl: z
+      .union([
+        z
+          .string()
+          .trim()
+          .url("powerAutomateUrl must be a valid URL")
+          .refine((u) => u.toLowerCase().startsWith("https://"), {
+            error: "powerAutomateUrl must use HTTPS",
+          })
+          .refine((u) => !isBlockedMailHost(new URL(u).hostname), {
+            error: "powerAutomateUrl must not target a private, loopback, or link-local address",
+          }),
+        z.literal(""),
+      ])
+      .optional(),
   })
   .strict();
 

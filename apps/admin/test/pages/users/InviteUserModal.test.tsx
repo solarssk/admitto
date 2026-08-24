@@ -49,6 +49,23 @@ describe("InviteUserModal", () => {
     expect(screen.getByLabelText("Email address *")).toHaveProperty("disabled", true);
   });
 
+  it("resists browser/password-manager autofill on email, phone, and temporary password", () => {
+    render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
+
+    const email = screen.getByLabelText("Email address *") as HTMLInputElement;
+    expect(email.autocomplete).toBe("off");
+    expect(email.getAttribute("data-1p-ignore")).toBe("true");
+    expect(email.getAttribute("data-lpignore")).toBe("true");
+
+    const phone = screen.getByLabelText("Phone number", { selector: "input[type=tel]" }) as HTMLInputElement;
+    expect(phone.autocomplete).toBe("off");
+    expect(phone.getAttribute("data-1p-ignore")).toBe("true");
+    expect(phone.getAttribute("data-lpignore")).toBe("true");
+
+    const password = screen.getByLabelText("Temporary password *") as HTMLInputElement;
+    expect(password.autocomplete).toBe("new-password");
+  });
+
   it("includes an optional phone number when filled in", async () => {
     render(<InviteUserModal open onClose={vi.fn()} onCreated={vi.fn()} />);
 
