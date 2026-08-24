@@ -600,6 +600,27 @@ describe("HTML MFA enroll", () => {
     expect(html).toContain('class="auth-btn-secondary auth-enroll-back-link" href="/mfa/enroll/method"');
   });
 
+  it("POST /mfa/enroll/start carries a next param through to the hidden field and the back-to-method link", async () => {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: admin!.id } });
+
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+
+    const startRes = await app.request("/mfa/enroll/start", {
+      method: "POST",
+      headers: { ...sameOrigin, ...cookieHeader(loginRes), "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ next: "/admin/events" }).toString(),
+    });
+    expect(startRes.status).toBe(200);
+    const html = await startRes.text();
+    expect(html).toContain('input type="hidden" name="next" value="/admin/events"');
+    expect(html).toContain('href="/mfa/enroll/method?next=%2Fadmin%2Fevents"');
+  });
+
   it("QR step has no back-to-method link on a WebAuthn-disabled instance (3-step, TOTP-only flow)", async () => {
     await prisma.systemSettings.upsert({
       where: { key: SETTING_WEBAUTHN_ENABLED },
@@ -789,6 +810,59 @@ describe("HTML MFA enroll - WebAuthn method choice", () => {
     });
   }
 
+  /** Confirms a TOTP method with its backup codes never acknowledged, then completes login and
+   * MFA verify - lands the partial session in BACKUP_CODES_REQUIRED, the same still-pending
+   * state a user who never finished their first enrollment would be in. */
+  async function loginToBackupCodesRequired(): Promise<Response> {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: admin!.id,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+        backup_codes_acknowledged_at: null,
+      },
+    });
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+    const verifyRes = await app.request("/api/auth/mfa/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: JSON.stringify({ code: generateTotpCode(secret) }),
+    });
+    if (verifyRes.status !== 200) throw new Error(`verify failed: ${verifyRes.status} ${await verifyRes.text()}`);
+    // promoteSessionToBackupCodesStep updates the same session row in place - verify's response
+    // carries no new Set-Cookie, so the login response's cookie is still the one to reuse.
+    return loginRes;
+  }
+
+  /** Confirms a TOTP method and logs in without verifying it - lands the partial session in
+   * MFA_PENDING, a stage the enrollment routes below don't expect (they redirect to /login). */
+  async function loginToMfaPending(): Promise<Response> {
+    const admin = await prisma.user.findUnique({ where: { email: adminEmail } });
+    await resetAdminAuthLabState(admin!.id);
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: admin!.id,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+    return app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ email: adminEmail, password: adminPassword }),
+    });
+  }
+
   it("GET /mfa/enroll links to the method-choice step (4-step flow) when WebAuthn is enabled", async () => {
     const loginRes = await loginToEnrollmentRequired();
     const res = await app.request("/mfa/enroll", { headers: { ...sameOrigin, ...cookieHeader(loginRes) } });
@@ -797,6 +871,16 @@ describe("HTML MFA enroll - WebAuthn method choice", () => {
     expect(html).toContain('href="/mfa/enroll/method"');
     expect(html).toContain("Step 1 of 4");
     expect(html).not.toContain('action="/mfa/enroll/start"');
+  });
+
+  it("GET /mfa/enroll carries a next param through to the method-choice link", async () => {
+    const loginRes = await loginToEnrollmentRequired();
+    const res = await app.request("/mfa/enroll?next=%2Fadmin%2Fevents", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('href="/mfa/enroll/method?next=%2Fadmin%2Fevents"');
   });
 
   it("GET /mfa/enroll posts straight to TOTP start (3-step flow) when WebAuthn is disabled instance-wide", async () => {
@@ -851,6 +935,66 @@ describe("HTML MFA enroll - WebAuthn method choice", () => {
     }
   });
 
+  it("GET /mfa/enroll/method redirects to /mfa/enroll with a next param when WebAuthn is disabled instance-wide", async () => {
+    await prisma.systemSettings.upsert({
+      where: { key: SETTING_WEBAUTHN_ENABLED },
+      create: { key: SETTING_WEBAUTHN_ENABLED, value_json: "false" },
+      update: { value_json: "false" },
+    });
+    try {
+      const loginRes = await loginToEnrollmentRequired();
+      const res = await app.request("/mfa/enroll/method?next=%2Fadmin%2Fevents", {
+        headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+        redirect: "manual",
+      });
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe("/mfa/enroll?next=%2Fadmin%2Fevents");
+    } finally {
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_WEBAUTHN_ENABLED } });
+    }
+  });
+
+  it("GET /mfa/enroll/method carries a next param through to the webauthn/authenticator links", async () => {
+    const loginRes = await loginToEnrollmentRequired();
+    const res = await app.request("/mfa/enroll/method?next=%2Fadmin%2Fevents", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('name="next" value="/admin/events"');
+    expect(html).toContain('href="/mfa/enroll/webauthn?attachment=platform&next=%2Fadmin%2Fevents"');
+  });
+
+  it("GET /mfa/enroll/method redirects to backup codes when they're still owed from a prior enrollment", async () => {
+    const loginRes = await loginToBackupCodesRequired();
+    const res = await app.request("/mfa/enroll/method?next=%2Fadmin%2Fevents", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+      redirect: "manual",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/mfa/enroll/backup-codes?next=%2Fadmin%2Fevents");
+  });
+
+  it("GET /mfa/enroll/method redirects to backup codes with no next param when none was given", async () => {
+    const loginRes = await loginToBackupCodesRequired();
+    const res = await app.request("/mfa/enroll/method", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+      redirect: "manual",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/mfa/enroll/backup-codes");
+  });
+
+  it("GET /mfa/enroll/method redirects to /login for a session in the wrong stage", async () => {
+    const loginRes = await loginToMfaPending();
+    const res = await app.request("/mfa/enroll/method", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+      redirect: "manual",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login");
+  });
+
   it("GET /mfa/enroll/webauthn?attachment=platform shows the passkey registration step, auto-starting the ceremony", async () => {
     const loginRes = await loginToEnrollmentRequired();
     const res = await app.request("/mfa/enroll/webauthn?attachment=platform", {
@@ -864,6 +1008,16 @@ describe("HTML MFA enroll - WebAuthn method choice", () => {
     expect(html).toContain('href="/mfa/enroll/method"');
   });
 
+  it("GET /mfa/enroll/webauthn carries a next param through to the back-to-method link", async () => {
+    const loginRes = await loginToEnrollmentRequired();
+    const res = await app.request("/mfa/enroll/webauthn?attachment=cross-platform&next=%2Fadmin%2Fevents", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('href="/mfa/enroll/method?next=%2Fadmin%2Fevents"');
+  });
+
   it("GET /mfa/enroll/webauthn with an invalid attachment redirects to the method-choice step", async () => {
     const loginRes = await loginToEnrollmentRequired();
     const res = await app.request("/mfa/enroll/webauthn?attachment=nonsense", {
@@ -872,6 +1026,55 @@ describe("HTML MFA enroll - WebAuthn method choice", () => {
     });
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/mfa/enroll/method");
+  });
+
+  it("GET /mfa/enroll/webauthn redirects to the method-choice step when WebAuthn is disabled instance-wide", async () => {
+    await prisma.systemSettings.upsert({
+      where: { key: SETTING_WEBAUTHN_ENABLED },
+      create: { key: SETTING_WEBAUTHN_ENABLED, value_json: "false" },
+      update: { value_json: "false" },
+    });
+    try {
+      const loginRes = await loginToEnrollmentRequired();
+      const res = await app.request("/mfa/enroll/webauthn?attachment=platform", {
+        headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+        redirect: "manual",
+      });
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe("/mfa/enroll/method");
+    } finally {
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_WEBAUTHN_ENABLED } });
+    }
+  });
+
+  it("GET /mfa/enroll/webauthn redirects to backup codes when they're still owed from a prior enrollment", async () => {
+    const loginRes = await loginToBackupCodesRequired();
+    const res = await app.request("/mfa/enroll/webauthn?attachment=platform", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+      redirect: "manual",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/mfa/enroll/backup-codes");
+  });
+
+  it("GET /mfa/enroll/webauthn redirects to backup codes with a next param when one was given", async () => {
+    const loginRes = await loginToBackupCodesRequired();
+    const res = await app.request("/mfa/enroll/webauthn?attachment=platform&next=%2Fadmin%2Fevents", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+      redirect: "manual",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/mfa/enroll/backup-codes?next=%2Fadmin%2Fevents");
+  });
+
+  it("GET /mfa/enroll/webauthn redirects to /login for a session in the wrong stage", async () => {
+    const loginRes = await loginToMfaPending();
+    const res = await app.request("/mfa/enroll/webauthn?attachment=platform", {
+      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+      redirect: "manual",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login");
   });
 
   it("completes enrollment end to end via a registered passkey: creates the credential, stashes backup codes, and reaches a full session", async () => {
@@ -945,6 +1148,25 @@ describe("HTML MFA enroll - WebAuthn method choice", () => {
     } finally {
       await prisma.systemSettings.deleteMany({ where: { key: SETTING_WEBAUTHN_ENABLED } });
     }
+  });
+
+  it("register/begin rejects malformed JSON and an invalid body", async () => {
+    const loginRes = await loginToEnrollmentRequired();
+    const malformedRes = await app.request("/api/auth/mfa/webauthn/register/begin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: "{not json",
+    });
+    expect(malformedRes.status).toBe(400);
+    expect(((await malformedRes.json()) as { error: string }).error).toBe("invalid JSON");
+
+    const invalidBodyRes = await app.request("/api/auth/mfa/webauthn/register/begin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: JSON.stringify({ attachment: "nonsense" }),
+    });
+    expect(invalidBodyRes.status).toBe(400);
+    expect(((await invalidBodyRes.json()) as { error: string }).error).toBe("invalid body");
   });
 
   it("register/begin is unauthorized once the session already reached the backup-codes step", async () => {
@@ -1041,6 +1263,41 @@ describe("HTML MFA enroll - WebAuthn method choice", () => {
     });
     expect(second.status).toBe(400);
     expect(((await second.json()) as { code: string }).code).toBe("challenge_expired");
+  });
+
+  it("register/finish rejects malformed JSON and an invalid body", async () => {
+    const loginRes = await loginToEnrollmentRequired();
+    const malformedRes = await app.request("/api/auth/mfa/webauthn/register/finish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: "{not json",
+    });
+    expect(malformedRes.status).toBe(400);
+    expect(((await malformedRes.json()) as { error: string }).error).toBe("invalid JSON");
+
+    const invalidBodyRes = await app.request("/api/auth/mfa/webauthn/register/finish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: JSON.stringify({ attachment: "nonsense" }),
+    });
+    expect(invalidBodyRes.status).toBe(400);
+    expect(((await invalidBodyRes.json()) as { error: string }).error).toBe("invalid body");
+  });
+
+  it("register/finish returns 401 for a session in the wrong stage", async () => {
+    const loginRes = await loginToMfaPending();
+    const authenticator = createVirtualAuthenticator();
+    const response = authenticator.register({
+      challenge: "irrelevant-never-checked",
+      rpID: WEBAUTHN_RP.rpID,
+      origin: WEBAUTHN_RP.origin,
+    });
+    const res = await app.request("/api/auth/mfa/webauthn/register/finish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
+      body: JSON.stringify({ attachment: "platform", response }),
+    });
+    expect(res.status).toBe(401);
   });
 });
 

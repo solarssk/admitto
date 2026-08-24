@@ -1053,6 +1053,10 @@ export async function handleDeleteAccountTrustedDevices(c: Context, db: PrismaCl
     if (count > 0) {
       await writeAdminAuditLog(tx, {
         organizationId: orgId,
+        // adminAuditFromContext always sets operator to the authenticated caller's own userId
+        // (never undefined) - this fallback exists only to match writeAdminAuditLog's shared
+        // shape with other call sites where audit is constructed without one.
+        /* v8 ignore next */
         actorUserId: audit.operator ?? userId,
         sessionId: audit.sessionId,
         ip: audit.ip,

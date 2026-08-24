@@ -11,6 +11,7 @@ import {
   deleteAccountTotp,
   fetchBackupCodesStatus,
   regenerateBackupCodes,
+  forgetAllTrustedDevices,
 } from "../../src/api/client.js";
 
 describe("account API client", () => {
@@ -66,6 +67,22 @@ describe("account API client", () => {
         credentials: "same-origin",
       }),
     );
+  });
+
+  it("forgetAllTrustedDevices DELETEs the trusted-devices endpoint and returns the revoked count", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ devices_revoked: 3 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await forgetAllTrustedDevices();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/account/mfa/trusted-devices",
+      expect.objectContaining({ method: "DELETE", credentials: "same-origin" }),
+    );
+    expect(result).toEqual({ devices_revoked: 3 });
   });
 
   it("cancelMfaEnroll propagates API errors", async () => {

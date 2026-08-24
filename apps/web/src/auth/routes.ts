@@ -609,6 +609,10 @@ export async function handlePostMfaWebauthnEnrollBegin(
   if (rp instanceof Response) return rp;
 
   const begin = await beginWebauthnRegistration(db, partial.userId, parsed.data.attachment, rp);
+  // Only reachable if the authenticated user's own row was deleted between session creation and
+  // this call - requireSession/requirePartialSession already guarantee the row exists for a live
+  // request, so this can't be reproduced without corrupting the DB out from under a real session.
+  /* v8 ignore next */
   if (!begin) return c.json({ error: "unauthorized" }, 401);
 
   stashWebauthnChallenge("register", partial.sessionId, begin.challenge);
@@ -665,11 +669,21 @@ export async function handlePostMfaWebauthnEnrollFinish(
   );
   if (!created) return c.json({ code: "verification_failed" }, 400);
 
+  // Enrollment-only: this is necessarily the account's first confirmed MFA method (the
+  // partialAuth stage guard above already ensures ENROLLMENT_REQUIRED, i.e. no confirmed method
+  // yet), so finishWebauthnRegistration's own contract guarantees a non-empty batch here - see
+  // its docstring. The empty-batch branch only exists to share the same shape as the account-
+  // management registration finish, where a later credential legitimately mints none.
+  /* v8 ignore next */
   if (created.backupCodes.length > 0) {
     stashEnrollmentBackupCodes(partial.sessionId, created.backupCodes);
   }
 
   const promoted = await promoteSessionToBackupCodesStep(db, partial.sessionId, partial.userId);
+  // Only reachable if the session's own stage changed between the enrollment_required check
+  // above and this update (revoked/expired mid-request by a concurrent action) - not
+  // reproducible in a live request without pausing execution between the two.
+  /* v8 ignore next */
   if (!promoted) return c.json({ code: "verification_failed" }, 400);
 
   return c.json({ ok: true, next: "/mfa/enroll/backup-codes" });

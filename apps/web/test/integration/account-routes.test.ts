@@ -892,6 +892,25 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
     expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBeGreaterThan(0);
   });
 
+  it("returns 429 after exceeding the cross-action step-up total, even with this action's own bucket untouched", async () => {
+    await enrollConfirmedTotp();
+    // The per-action mfa:totp:session:mfa-reset bucket (tested above) stays untouched here -
+    // this is the separate, action-agnostic ceiling shared across every step-up-gated action.
+    const bucketKey = `mfa:stepup-total:session:${adminSessionId}`;
+    for (let i = 0; i < 20; i++) {
+      await rateLimitStore.hit(bucketKey, 15 * 60_000, 20);
+    }
+
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: ADMIN_PASSWORD, code: "000000" }),
+    });
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("too many requests");
+  });
+
   it("resets MFA with a correct TOTP code", async () => {
     // Seeded directly (not via enroll+confirm) so this is the only code ever verified against
     // this secret — verifyUserTotpCode rejects replaying the same time-step twice, which
@@ -2079,6 +2098,25 @@ describe("DELETE /api/account/external-identity — step-up for MFA-required rol
     const bucketKey = `mfa:totp:session:account-external-identity:${adminSessionId}`;
     for (let i = 0; i < 10; i++) {
       await rateLimitStore.hit(bucketKey, 15 * 60_000, 10);
+    }
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD, code: "000000" }),
+    });
+    expect(res.status).toBe(429);
+    expect(((await res.json()) as { error?: string }).error).toBe("too many requests");
+  });
+
+  it("returns 429 after exceeding the cross-action step-up total, even with this action's own bucket untouched", async () => {
+    await enrollConfirmedTotp();
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-total-ratelimit-subject", user_id: adminUserId },
+    });
+    const bucketKey = `mfa:stepup-total:session:${adminSessionId}`;
+    for (let i = 0; i < 20; i++) {
+      await rateLimitStore.hit(bucketKey, 15 * 60_000, 20);
     }
 
     const res = await app.request("/api/account/external-identity", {
