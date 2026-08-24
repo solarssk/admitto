@@ -1,26 +1,25 @@
 # Roles and Permissions
 
-| Field | Value |
-|---|---|
-| **Audience** | Event Managers and Superadmins |
-| **Required role** | Administrator or Superadmin |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.5.1 |
+**Audience:** Event Managers and Superadmins · **Required role:** Administrator or Superadmin · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
 
 Your role decides which organisations, events, and actions are available. If a control is missing, ask a Superadmin to review your assignments rather than sharing an account.
 
+**Legend:** ✅ full access · 🟡 scoped access (see note) · – no access
+
 | Task | Administrator | Operator | Superadmin |
-|---|---:|---:|---:|
-| Manage events in an assigned organisation | Yes | No | Yes |
-| Add, import, and edit attendees | Yes | No | Yes |
-| Prepare templates and send event messages | Yes | No | Yes |
-| Run check-in | Yes | Yes, for assigned events | Yes |
-| Change ticket types and requirements | Yes | No | Yes |
-| Manage organisation-level settings | Yes, for assigned organisations | No | Yes |
-| Assign organisation and event roles | Yes, within permitted scope | No | Yes |
-| Manage staff users across the instance | No | No | Yes |
-| Change instance settings | No | No | Yes |
-| Archive or restore an event | No | No | Yes |
+|---|:---:|:---:|:---:|
+| Manage events in an assigned organisation | ✅ | – | ✅ |
+| Add, import, and edit attendees | ✅ | – | ✅ |
+| Prepare templates and send event messages | ✅ | – | ✅ |
+| Run check-in | ✅ | 🟡¹ | ✅ |
+| Change ticket types and requirements | ✅ | – | ✅ |
+| Manage organisation-level settings | 🟡² | – | ✅ |
+| Assign organisation and event roles | 🟡³ | – | ✅ |
+| Manage staff users across the instance | – | – | ✅ |
+| Change instance settings | – | – | ✅ |
+| Archive or restore an event | – | – | ✅ |
+
+¹ Only for events they're assigned to. ² Only for organisations they're assigned to. ³ Within the scope they've been granted.
 
 ## Administrator
 

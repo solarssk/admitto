@@ -1,11 +1,6 @@
 # Organisation Administration
 
-| Field | Value |
-|---|---|
-| **Audience** | Organisation Admins |
-| **Required role** | Administrator |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.5.1 |
+**Audience:** Organisation Admins · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
 
 ## What this page helps you do
 

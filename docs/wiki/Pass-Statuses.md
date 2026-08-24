@@ -1,11 +1,6 @@
 # Pass Statuses
 
-| Field | Value |
-|---|---|
-| **Audience** | Event Managers and Check-in Operators |
-| **Required role** | Administrator for changes; Operator for check-in results |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.5.1 |
+**Audience:** Event Managers and Check-in Operators · **Required role:** Administrator for changes; Operator for check-in results · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
 
 Pass status controls whether an attendee may use the event ticket. It is separate from attendance confirmation, email delivery, and check-in state.
 

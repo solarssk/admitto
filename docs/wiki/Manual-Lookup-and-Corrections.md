@@ -1,11 +1,6 @@
 # Manual Lookup and Corrections
 
-| Field | Value |
-|---|---|
-| **Audience** | Check-in Operators and Event Managers |
-| **Required role** | Operator for lookup; Administrator for administrative corrections |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.4.13 |
+**Audience:** Check-in Operators and Event Managers · **Required role:** Operator for lookup; Administrator for administrative corrections · **Feature status:** ✅ Available · **Last verified:** Admitto 0.4.13
 
 ## What this page helps you do
 

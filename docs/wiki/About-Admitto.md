@@ -1,11 +1,6 @@
 # About Admitto
 
-| Field | Value |
-|---|---|
-| **Audience** | All staff |
-| **Required role** | Any staff role |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.5.1 |
+**Audience:** All staff · **Required role:** Any staff role · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
 
 Admitto is a self-hosted tool for internal events. It helps your team work from one attendee list from preparation through entry.
 

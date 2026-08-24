@@ -1,11 +1,6 @@
 # Superadmin Quick Start
 
-| Field | Value |
-|---|---|
-| **Audience** | Superadmins |
-| **Required role** | Superadmin |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.4.13 |
+**Audience:** Superadmins · **Required role:** Superadmin · **Feature status:** ✅ Available · **Last verified:** Admitto 0.4.13
 
 ## What this page helps you do
 
