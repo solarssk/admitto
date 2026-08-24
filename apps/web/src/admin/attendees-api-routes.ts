@@ -69,6 +69,7 @@ import {
   buildWalletPassInput,
   reissueOneWalletPass,
   resolveEventWalletProvider,
+  issueTicket,
 } from "@admitto/tickets";
 import { canManageInstance } from "@admitto/auth";
 import { InstanceUrlRequiredError, resolveInstanceBaseUrl } from "../instance-base-url.js";
@@ -798,10 +799,18 @@ function serializeAttendeeRow(
  * (buildAttendeeMailLinks) - works whether or not a WalletPass row exists yet, unlike
  * wallet_pass.apple_url/android_url which are only populated after a pass has actually been
  * created (PO review, 2026-08-13: admin had no way to copy a wallet link for an attendee who
- * hadn't added their pass yet). Null for either platform when wallet isn't configured/enabled
- * for this event, the instance URL isn't set yet, or the attendee is missing whatever identifier
- * (public_ref / plaintext token) that platform's route needs - never a hard failure, since these
- * links are a convenience on top of the rest of the attendee detail page, not a requirement of it. */
+ * hadn't added their pass yet). Read-only - deliberately does NOT call issueTicket() here even
+ * though this is the same idempotent call handleGetAttendeeTicketLink makes, because this
+ * resolver runs on every attendee-detail GET (security review, 2026-08-24): GET has no CSRF
+ * guard by design (app.ts's route registration), so minting a token as a side effect of it would
+ * let a cross-site top-level navigation to this URL silently issue a ticket for an attendee who
+ * never had one. Ticket issuance happens at attendee creation (handleCreateEventAttendee) and via
+ * the explicit, CSRF-protected ticket-link/resend actions instead - by the time any of those has
+ * run once, the token already exists and this function picks it up as a plain read. Null for
+ * either platform when wallet isn't configured/enabled for this event, the instance URL isn't set
+ * yet, or the attendee has no token yet (never created via the flows above, or an agency import
+ * missing public_ref) - never a hard failure, since these links are a convenience on top of the
+ * rest of the attendee detail page, not a requirement of it. */
 async function resolveAttendeeWalletLinksForDto(
   db: PrismaClient,
   attendeeId: string,
@@ -812,7 +821,12 @@ async function resolveAttendeeWalletLinksForDto(
     return { apple: links.apple_wallet_url || null, google: links.google_wallet_url || null };
   } catch (err) {
     if (err instanceof InstanceUrlRequiredError) return { apple: null, google: null };
-    console.error("resolveAttendeeWalletLinksForDto failed:", err);
+    // "Not issued yet" is the expected shape for an attendee with no ticket sent - not a real
+    // failure, so it must not be logged as one (same distinction as handleGetAttendeeTicketLink).
+    const notIssued =
+      err instanceof Error &&
+      (err.message.includes("missing token_enc") || err.message.includes("missing public_ref"));
+    if (!notIssued) console.error("resolveAttendeeWalletLinksForDto failed:", err);
     return { apple: null, google: null };
   }
 }
@@ -3130,7 +3144,29 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
     });
 
     publishActivityChanged(eventId);
-    const dto = await buildAttendeeDetailDto(db, eventId, created);
+    // Issue the ticket now, inside this explicit and already-audited create action, so the
+    // ticket/wallet links are usable immediately - e.g. handed to the attendee through a channel
+    // outside Admitto's own mailer - instead of only after a ticket email has been sent. Kept
+    // best-effort: BASE_URL not being configured yet (or any other issuance hiccup) must not fail
+    // attendee creation, since the link can still be minted later via ticket-link/resend the same
+    // way an imported attendee's can. `created` is re-read after a real mint (code review,
+    // 2026-08-24) - issueTicket bumps the row's `updated_at`, and the stale pre-mint value in
+    // `created` would otherwise ship as this response's `updated_at`, failing the very next
+    // optimistic-concurrency PATCH the admin makes against it.
+    let dtoSourceRow = created;
+    try {
+      const baseUrl = await resolveInstanceBaseUrl(db, process.env);
+      const issueResult = await issueTicket(created.id, db, baseUrl);
+      if (issueResult.status === "issued") {
+        dtoSourceRow = await db.attendee.findUniqueOrThrow({
+          where: { id: created.id },
+          select: ATTENDEE_DETAIL_SELECT,
+        });
+      }
+    } catch {
+      // Swallowed - see comment above.
+    }
+    const dto = await buildAttendeeDetailDto(db, eventId, dtoSourceRow);
     return c.json(dto, 201);
   } catch (err) {
     if (err instanceof Response) return err;
@@ -3238,10 +3274,12 @@ export async function handleResendEventAttendeeTicket(
 
 /**
  * POST /api/admin/events/:eventId/attendees/:id/ticket-link
- * Returns the attendee's existing ticket URL for an authorised admin to copy and hand to the
- * attendee directly - same authorisation model as resend, and the raw token is decrypted only
- * in the point of use (resolveAttendeeMailLinks), never returned as an attendee DTO field. Does
- * not issue a ticket that hasn't been sent yet - `resend` is the action for that.
+ * Returns the attendee's ticket URL for an authorised admin to copy and hand to the attendee
+ * directly through a channel outside Admitto's own mailer - same authorisation model as resend.
+ * Issues the ticket on demand (idempotent, ADR 0001: "issuance is independent of any carrier")
+ * when this is the first link ever requested for the attendee, so the admin doesn't have to send
+ * a ticket email first just to get a link. The raw token is decrypted only in the point of use
+ * (resolveAttendeeMailLinks), never returned as an attendee DTO field.
  */
 export async function handleGetAttendeeTicketLink(
   c: Context,
@@ -3257,6 +3295,14 @@ export async function handleGetAttendeeTicketLink(
 
   let ticketUrl: string;
   try {
+    // Check status before trusting any pre-existing token: a cancelled/revoked attendee who
+    // was issued a ticket before being cancelled must not still hand out a working link here
+    // (security review, 2026-08-24) - issueTicket's own status check runs before its token_hash
+    // check, so this catches that case even though resolveAttendeeMailLinks below would not.
+    const issueResult = await issueTicket(attendeeId, db, baseUrlOrRes);
+    if (issueResult.status === "not_issuable") {
+      return c.json({ error: "ticket_not_issued" }, 422);
+    }
     ticketUrl = (await resolveAttendeeMailLinks(attendeeId, db, baseUrlOrRes)).ticket_url;
   } catch (err) {
     // Only the specific "nothing to build a link from yet" shape is a real 422 - a decryption

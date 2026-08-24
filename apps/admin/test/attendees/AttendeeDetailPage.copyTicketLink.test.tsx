@@ -118,7 +118,7 @@ describe("AttendeeDetailPage — Copy ticket link", () => {
     });
   });
 
-  it("toasts the mapped error when the ticket hasn't been issued yet", async () => {
+  it("toasts the mapped error when the attendee can't be issued a ticket", async () => {
     fetchTicketLink.mockRejectedValueOnce(new ApiError(422, "ticket_not_issued", "ticket_not_issued"));
     mockLoad(baseDetail());
     renderPage();
@@ -128,7 +128,7 @@ describe("AttendeeDetailPage — Copy ticket link", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /Copy ticket link/ }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/hasn.t been sent yet/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/can.t be issued a ticket/);
     });
   });
 
