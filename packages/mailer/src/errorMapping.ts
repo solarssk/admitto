@@ -25,7 +25,17 @@ const SMTP_CODE_RE = /\b([45]\d{2})\b/;
 interface NodemailerSmtpError extends Error {
   responseCode?: number;
   response?: string;
+  code?: string;
 }
+
+/** Nodemailer's own permanent, client-side error codes - authentication, envelope
+ * (malformed sender/recipient/DSN), TLS/certificate, and REQUIRETLS-policy failures.
+ * None of these carry an SMTP reply code (they happen before or outside the protocol
+ * exchange), and none resolve by retrying with the same mail config: the same
+ * credentials, message, or TLS setup fails identically every attempt. Retrying EAUTH
+ * in particular would repeat failed authentication against the same mailbox up to
+ * MAX_MAIL_DRAIN_ATTEMPTS times per recipient in a bulk send. */
+const PERMANENT_NODEMAILER_CODES = new Set(["EAUTH", "ETLS", "EENVELOPE", "EREQUIRETLS"]);
 
 function isSmtpReplyCode(value: number): boolean {
   return Number.isInteger(value) && value >= 400 && value < 600;
@@ -85,10 +95,16 @@ export function mapSmtpError(err: unknown): MappedFailure {
     return { status: "failed", retryable: true };
   }
 
-  // An SMTP error we can't classify (no reply code, no recognized transport-error pattern) is
-  // often a mid-transaction connection drop under load (e.g. provider-side throttling that
-  // doesn't send a clean 4xx first) rather than a truly permanent failure - MAX_MAIL_DRAIN_ATTEMPTS
-  // already bounds the retry count, so defaulting to retryable is safer than giving up after one try.
+  const nodemailerCode = err && typeof err === "object" ? (err as NodemailerSmtpError).code : undefined;
+  if (nodemailerCode && PERMANENT_NODEMAILER_CODES.has(nodemailerCode)) {
+    return { status: "rejected", retryable: false };
+  }
+
+  // An SMTP error we can't classify (no reply code, no recognized transport-error pattern or
+  // permanent Nodemailer code) is often a mid-transaction connection drop under load (e.g.
+  // provider-side throttling that doesn't send a clean 4xx first) rather than a truly permanent
+  // failure - MAX_MAIL_DRAIN_ATTEMPTS already bounds the retry count, so defaulting to retryable
+  // is safer than giving up after one try.
   return { status: "failed", retryable: true };
 }
 
