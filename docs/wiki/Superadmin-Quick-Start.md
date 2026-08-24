@@ -1,6 +1,6 @@
 # Superadmin Quick Start
 
-**Audience:** Superadmins · **Required role:** Superadmin · **Feature status:** ✅ Available · **Last verified:** Admitto 0.4.13
+**Audience:** Superadmins · **Required role:** Superadmin · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.4
 
 ## What this page helps you do
 
@@ -18,7 +18,7 @@ Sign in with your own Superadmin account and complete the security steps shown b
 4. Use **Organisation settings** for supported general, branding, mail, security, archiving, identity, log, and **Health check** settings. Health check groups Core infrastructure vs External integrations, can **Run live checks**, and can **Copy for GitHub Issue** / **Export** a sanitized snapshot.
 5. Use the topbar **System status** and **Account** menus for a quick glance at connection/mailer state and My account / Sign out.
 6. Use organisation settings for configuration that belongs to one organisation.
-7. Use event settings for event-specific overrides and lifecycle actions.
+7. Use event settings for event-specific overrides and lifecycle actions, including Event settings → Wallet, a Superadmin-only area for configuring Apple/Google Wallet passes (PassCreator).
 8. Verify every material change with a synthetic account or test event.
 9. Review the relevant audit, system, or security log view when the change requires confirmation.
 
@@ -49,6 +49,7 @@ Depending on scope, a change can affect the entire instance, one organisation, o
 - [Organisation Administration](Organisation-Administration)
 - [Users and Roles Administration](Users-and-Roles-Administration)
 - [Organisation Settings](Organisation-Settings)
+- [Wallet Passes - PassCreator Template Setup](Wallet-Passes-PassCreator-Setup)
 - [Mail Delivery Administration](Mail-Delivery-Administration)
 - [Identity and SSO](Identity-and-SSO)
 - [Logs and Audit](Logs-and-Audit)
