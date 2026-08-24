@@ -18,6 +18,7 @@ import {
 } from "@admitto/auth";
 import {
   DEFAULT_MAIL_DRAIN_LIMIT,
+  assertValidBounceIngestTickSecondsEnv,
   drainPendingDeliveries,
   ingestBounces,
   nullifyDeliverySnapshots,
@@ -422,6 +423,7 @@ export async function runWorker(db: PrismaClient): Promise<void> {
     throw new Error("DATABASE_URL is required");
   }
 
+  assertValidBounceIngestTickSecondsEnv(process.env);
   const tickSeconds = parseBounceIngestTickSeconds(process.env);
   const tickMs = tickSeconds * 1000;
   const locks = await openWorkerLockClient(databaseUrl);

@@ -321,6 +321,20 @@ describe("PUT /api/admin/mail-settings", () => {
     expect(body.error).toBe("validation_failed");
   });
 
+  it.each(["127.0.0.1", "10.0.0.1", "169.254.169.254"])(
+    "rejects a private/loopback/link-local SMTP host (SSRF guard, same as bounce-ingest IMAP host): %s",
+    async (host) => {
+      const res = await app.request("/api/admin/mail-settings", {
+        method: "PUT",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ host }),
+      });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error?: string };
+      expect(body.error).toBe("validation_failed");
+    },
+  );
+
   it("trims SMTP host before persistence", async () => {
     const res = await app.request("/api/admin/mail-settings", {
       method: "PUT",

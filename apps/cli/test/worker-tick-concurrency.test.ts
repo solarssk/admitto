@@ -50,6 +50,7 @@ vi.mock("@admitto/auth", () => ({
 
 vi.mock("@admitto/mail-delivery", () => ({
   DEFAULT_MAIL_DRAIN_LIMIT: 50,
+  assertValidBounceIngestTickSecondsEnv: vi.fn(),
   drainPendingDeliveries,
   ingestBounces,
   nullifyDeliverySnapshots: vi.fn(async () => ({ deliveries: 0 })),
