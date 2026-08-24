@@ -19,7 +19,7 @@ Scan tickets and respond consistently to every supported check-in result.
 3. Point the camera at one QR code or scan one ticket. Admitto plays a short beep (and vibration where the device supports it), with distinct tones for valid, already checked in, and invalid results.
 4. Read the status, attendee name, and ticket type before acting.
 5. Confirm check-in when the screen shows **Ready to check in**.
-6. Mark required items with **Mark issued** / **Mark given** when the attendee card offers those actions (attest after the physical hand-over).
+6. Mark required items with **Mark issued** / **Mark returned** when the attendee card offers those actions (attest after the physical hand-over).
 7. Open a row in **Recent scans** when you need to reopen that attendee's card.
 
 ## Expected result
@@ -30,7 +30,7 @@ One of these results appears:
 |---|---|---|
 | PREVIEW / Ready to check in | The attendee was found and the event requires confirmation. | Confirm only after checking the person and ticket. |
 | VALID / Valid | Check-in was recorded. | Continue with any item actions, then scan the next ticket. |
-| ALREADY_CHECKED_IN | The attendee is already admitted. | Do not record a second admission. Ask the event lead if correction is needed. |
+| ALREADY_CHECKED_IN | The attendee is already admitted. | Do not record a second admission. Ask an Organisation Admin if correction is needed. |
 | REVOKED | The pass was revoked or cancelled. | Do not admit. Escalate to an Event Manager. |
 | INVALID | The code is not valid for this event. | Check the QR or use manual lookup when enabled. |
 

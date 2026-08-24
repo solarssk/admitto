@@ -74,7 +74,7 @@ Unfamiliar term below (TOTP, OIDC, …)? Check the [Glossary](docs/wiki/Glossary
 | ✅ | **Check-in** | Scan with a camera or USB scanner, or look someone up by name. Hand out badges and items. Beep / vibration on each scan. |
 | 🖥️ | **Staff admin** | Events, reports, and who can access what. Staff can connect or disconnect their own company SSO from My account. |
 | ⚙️ | **Ops** | A background worker sends mail and finishes long imports/exports. Health page plus audit and security logs. |
-| 🔒 | **Security** | Two-factor login (TOTP), company SSO (OIDC), optional Cloudflare Access. Secrets encrypted at rest. Session and login logs show the country for each IP, looked up on your own server (no external geo API). |
+| 🔒 | **Security** | Two-factor login (TOTP, passkeys, and security keys), company SSO (OIDC), optional Cloudflare Access. Secrets encrypted at rest. Session and login logs show the country for each IP, looked up on your own server (no external geo API). |
 | 🏠 | **Hosting** | You run it yourself. Roles: Superadmin, Admin, Operator. |
 
 **Coming later:** public self-service registration is not part of Admitto; first-event intake is planned via MS Forms → `/api/ingest`.
@@ -87,7 +87,7 @@ Unfamiliar term below (TOTP, OIDC, …)? Check the [Glossary](docs/wiki/Glossary
 | 🔌 | **Backend** | Hono 4, PostgreSQL (Prisma 7), Redis |
 | 🎨 | **Frontend** | React 19, react-router 7, Vite, Tabler design tokens |
 | 📬 | **Mail** | M365 Graph · SMTP · Power Automate · IMAP bounce ingest |
-| 🔑 | **Auth** | Local accounts · OIDC · Cloudflare Access (ZTNA) · 2FA (TOTP) |
+| 🔑 | **Auth** | Local accounts · OIDC · Cloudflare Access (ZTNA) · 2FA (TOTP, WebAuthn passkeys/security keys) |
 
 ## Prerequisites
 
@@ -161,11 +161,11 @@ Canonical roadmap: [VERSIONING.md](VERSIONING.md). Short view:
 
 | Milestone | What ships |
 |-----------|------------|
-| **v0.4.x** ✅ | Current line (import → ticket mail → check-in → reports; location, bounce, Health, worker, …) |
-| **v0.5** | External-ingest `/api/ingest` (MS Forms / Power Automate), users UX, wallet passes (PassCreator) |
-| **v0.6** | TBD |
-| **v0.7** | RSVP intake, calendar invites, waitlist |
-| **v0.8-0.9** | Hardening, stress testing, dry run |
+| **v0.4.x** ✅ | Delivered - import → ticket mail → check-in → reports; location, bounce, Health, worker, … |
+| **v0.5.x** ✅ | Delivered - wallet passes (Apple/Google via PassCreator), passkey/security-key registration, SSO/OIDC hardening, users UX |
+| **v0.6.0** ✅ | Delivered - passkeys/security keys usable for sign-in and step-up (not just registration), "Forget all trusted devices", session-cookie and step-up security hardening |
+| **v0.7** | Hardening phase 1 (Outlook/iPhone/Android mail and ticket tests) |
+| **v0.8+** | External-ingest `/api/ingest`, RSVP intake + calendar invites, waitlist - not yet scheduled to a specific version |
 | **v1.0** | First event go-live |
 | **v1.1+** | Self-service registration, multi-language, multi-track |
 

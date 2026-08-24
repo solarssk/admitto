@@ -10,6 +10,7 @@ Admitto is a self-hosted tool for internal events. It helps your team work from 
 - Add attendees one at a time or import a CSV or XLSX file.
 - Assign attendees ticket types and send QR tickets.
 - Prepare, test, and send event email.
+- Issue Apple and Google Wallet versions of tickets when Wallet is configured for the event - see [Wallet Passes Overview](Wallet-Passes-Overview).
 - Scan tickets, look up attendees manually when the event allows it, and record issued items.
 - Review check-in results and export attendance data.
 

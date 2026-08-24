@@ -8,7 +8,7 @@ Respond safely when check-in loses its connection or live updates.
 
 ## Before you start
 
-Know who the event lead is and which network the check-in device should use.
+Know who the Organisation Admin for this event is and which network the check-in device should use.
 
 ## Steps
 
@@ -37,10 +37,10 @@ No attendee state changes until a request succeeds. After reconnection, refresh 
 
 - **The banner does not clear:** reload only after noting the current attendee, then sign in again if asked.
 - **Only one device has the problem:** compare its network and browser state with a working device.
-- **Several devices lose access:** stop admissions and contact the event lead or Superadmin through the approved support channel.
+- **Several devices lose access:** stop admissions and contact an Organisation Admin or Superadmin through the approved support channel.
 
 ## Related pages
 
 - [Operator Quick Start](Operator-Quick-Start)
-- [Scanning Tickets and Check-in Results](Scanning-Tickets-and-Results)
+- [Scanning Tickets and Results](Scanning-Tickets-and-Results)
 - [Help and Troubleshooting](Help-and-Troubleshooting)

@@ -1,6 +1,6 @@
 # Wallet Passes Overview
 
-**Audience:** Superadmins (configuration), all staff (attendee actions) · **Required role:** Superadmin for Event Settings → Wallet; Administrator or Superadmin for attendee wallet actions · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
+**Audience:** Superadmins (configuration), Administrators and Superadmins (attendee actions) · **Required role:** Superadmin for Event Settings → Wallet; Administrator or Superadmin for attendee wallet actions · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.4
 
 ## What this page helps you do
 
@@ -41,6 +41,10 @@ works; Admitto never signs or hosts pass files itself.
   surfacing. No template setup needed - this is a fixed Apple-defined vocabulary, not something an
   admin maps field by field. No NFC hardware or PassCreator account approval required, and it has
   no effect on Google Wallet.
+- **Lock Screen relevance date** (Apple Wallet only, always on, no switch). Whenever Apple Wallet
+  is enabled and the event has a start time, Admitto tells PassCreator when the pass should surface
+  on the Lock Screen - independent of, and regardless of, the separate Semantic tags opt-in above.
+  See the [template setup page](Wallet-Passes-PassCreator-Setup) for details.
 - **Live updates to already-issued, active passes.** Editing an attendee (name, email, company,
   department, ticket type) or a wallet-relevant event field (title, date, hours, timezone, the
   Apple Wallet toggle, or the Semantic tags toggle) automatically refreshes passes already on
