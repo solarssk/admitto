@@ -1,11 +1,6 @@
 # Operator Quick Start
 
-| Field | Value |
-|---|---|
-| **Audience** | Check-in Operators |
-| **Required role** | Operator for the event |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.4.13 |
+**Audience:** Check-in Operators · **Required role:** Operator for the event · **Feature status:** ✅ Available · **Last verified:** Admitto 0.4.13
 
 ![Check-in screen showing a fictional successful admission](assets/checkin.png)
 

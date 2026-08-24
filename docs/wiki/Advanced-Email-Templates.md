@@ -1,11 +1,6 @@
 # Advanced Email Templates
 
-| Field | Value |
-|---|---|
-| **Audience** | Technical Event Manager |
-| **Required role** | Administrator |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.5.1 |
+**Audience:** Technical Event Manager · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
 
 ## What this page helps you do
 

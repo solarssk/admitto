@@ -1,11 +1,6 @@
 # Organisation Settings
 
-| Field | Value |
-|---|---|
-| **Audience** | Superadmins |
-| **Required role** | Superadmin |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.5.0 |
+**Audience:** Superadmins · **Required role:** Superadmin · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.0
 
 ## What this page helps you do
 

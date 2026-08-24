@@ -1,11 +1,6 @@
 # Template Variables
 
-| Field | Value |
-|---|---|
-| **Audience** | Event Managers and Technical Event Managers |
-| **Required role** | Administrator |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.5.4 |
+**Audience:** Event Managers and Technical Event Managers · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.4
 
 Use the variable chips shown in **Communication → Templates**. The editor is the source of truth for the variables available to the selected template. Chips are grouped the same way in the editor.
 

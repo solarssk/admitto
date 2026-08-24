@@ -1,11 +1,6 @@
 # Email Templates
 
-| Field | Value |
-|---|---|
-| **Audience** | Event Managers |
-| **Required role** | Administrator |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.5.1 |
+**Audience:** Event Managers · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
 
 ## What this page helps you do
 

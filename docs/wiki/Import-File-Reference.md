@@ -1,11 +1,6 @@
 # Import File Reference
 
-| Field | Value |
-|---|---|
-| **Audience** | Event Managers |
-| **Required role** | Administrator |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.4.13 |
+**Audience:** Event Managers · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.4.13
 
 Download the current CSV template from **Import attendees**. Headers are trimmed and case-insensitive.
 

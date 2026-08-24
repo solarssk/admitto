@@ -1,11 +1,6 @@
 # First Event Checklist
 
-| Field | Value |
-|---|---|
-| **Audience** | Event Manager |
-| **Required role** | Administrator |
-| **Feature status** | Available |
-| **Last verified** | Admitto 0.5.1 |
+**Audience:** Event Manager · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
 
 Use this checklist before an event. It is a practical starting point, not a replacement for your organisation's event policy.
 
