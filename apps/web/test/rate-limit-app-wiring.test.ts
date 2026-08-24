@@ -113,7 +113,7 @@ describe("createApp rate-limit wiring", () => {
     const store = new InMemoryRateLimitStore();
     const app = createWiringApp(store);
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 30; i++) {
       expect((await app.request("/api/account")).status).toBe(401);
     }
     expect((await app.request("/api/account")).status).toBe(429);

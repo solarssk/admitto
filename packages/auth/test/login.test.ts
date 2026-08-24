@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   userHasUnacknowledgedBackupCodes: vi.fn().mockResolvedValue(false),
   validateTrustedDevice: vi.fn(),
   verifyTotpOrRecoveryCodeDetailed: vi.fn(),
+  finishWebauthnAssertion: vi.fn(),
   promoteSessionToFull: vi.fn(),
   getTrustedDeviceDays: vi.fn(),
   createTrustedDevice: vi.fn(),
@@ -71,11 +72,17 @@ vi.mock("../src/mfa/verify-step-up-code.js", () => ({
   verifyTotpOrRecoveryCodeDetailed: mocks.verifyTotpOrRecoveryCodeDetailed,
 }));
 
+vi.mock("../src/mfa/webauthn.js", () => ({
+  finishWebauthnAssertion: mocks.finishWebauthnAssertion,
+}));
+
 vi.mock("../src/settings/resolver.js", () => ({
   getTrustedDeviceDays: mocks.getTrustedDeviceDays,
 }));
 
-import { login, completeMfa } from "../src/login.js";
+import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
+import { login, completeMfa, completeMfaWithWebauthn } from "../src/login.js";
+import type { WebauthnRpConfig } from "../src/mfa/webauthn.js";
 
 // $transaction just invokes the callback with `prisma` itself as the stand-in `tx` - login()
 // never calls $transaction directly, and completeMfa's mocked internals (verifyTotpOrRecoveryCodeDetailed
@@ -280,6 +287,174 @@ describe("completeMfa failure audit", () => {
 
     // emitMfaAudit never runs on this path (see completeMfa's docstring) - the caller's own
     // transaction wrapper is responsible for handling/auditing the propagated failure.
+    expect(mocks.logMfaFailure).not.toHaveBeenCalled();
+  });
+});
+
+const testWebauthnRp: WebauthnRpConfig = {
+  rpName: "Admitto",
+  rpID: "admitto.example.com",
+  origin: "https://admitto.example.com",
+};
+
+const testWebauthnResponse = {
+  id: "cred-1",
+  rawId: "cred-1",
+  response: { clientDataJSON: "a", authenticatorData: "b", signature: "c" },
+  clientExtensionResults: {},
+  type: "public-key",
+} as unknown as AuthenticationResponseJSON;
+
+describe("completeMfaWithWebauthn trusted-device audit", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("emits auth.trusted_device.created when remember-device is enabled", async () => {
+    mocks.finishWebauthnAssertion.mockResolvedValue({ credentialId: "cred-1" });
+    mocks.promoteSessionToFull.mockResolvedValue(SESSION_STAGE.FULL);
+    mocks.getTrustedDeviceDays.mockResolvedValue(30);
+    mocks.createTrustedDevice.mockResolvedValue({ rawToken: "trusted-raw" });
+
+    const result = await completeMfaWithWebauthn(prisma, {
+      userId: "user-1",
+      sessionId: "sess-1",
+      response: testWebauthnResponse,
+      challenge: "chal-1",
+      rp: testWebauthnRp,
+      rememberDevice: true,
+      ip: "1.2.3.4",
+      userAgent: "test-agent",
+    });
+
+    expect(result).toEqual({ ok: true, trustedDeviceRawToken: "trusted-raw", stage: SESSION_STAGE.FULL });
+    expect(mocks.logTrustedDeviceCreated).toHaveBeenCalledWith(prisma, {
+      userId: "user-1",
+      sessionId: "sess-1",
+      ip: "1.2.3.4",
+      userAgent: "test-agent",
+    });
+    expect(mocks.logMfaSuccess).toHaveBeenCalledWith(prisma, expect.anything(), "webauthn");
+    expect(mocks.resetFailedMfaFailureStreak).toHaveBeenCalledWith(prisma, "user-1");
+  });
+
+  it("carries the captured timezone into the audit context, same as completeMfa's own TOTP path", async () => {
+    mocks.finishWebauthnAssertion.mockResolvedValue({ credentialId: "cred-1" });
+    mocks.promoteSessionToFull.mockResolvedValue(SESSION_STAGE.FULL);
+
+    await completeMfaWithWebauthn(prisma, {
+      userId: "user-1",
+      sessionId: "sess-1",
+      response: testWebauthnResponse,
+      challenge: "chal-1",
+      rp: testWebauthnRp,
+      ip: "1.2.3.4",
+      timezone: "Europe/Warsaw",
+    });
+
+    expect(mocks.logMfaSuccess).toHaveBeenCalledWith(
+      prisma,
+      expect.objectContaining({ timezone: "Europe/Warsaw" }),
+      "webauthn",
+    );
+  });
+
+  it("skips trusted-device creation and getTrustedDeviceDays entirely when remember-device is not requested", async () => {
+    mocks.finishWebauthnAssertion.mockResolvedValue({ credentialId: "cred-1" });
+    mocks.promoteSessionToFull.mockResolvedValue(SESSION_STAGE.FULL);
+
+    const result = await completeMfaWithWebauthn(prisma, {
+      userId: "user-1",
+      sessionId: "sess-1",
+      response: testWebauthnResponse,
+      challenge: "chal-1",
+      rp: testWebauthnRp,
+    });
+
+    expect(result).toEqual({ ok: true, trustedDeviceRawToken: undefined, stage: SESSION_STAGE.FULL });
+    expect(mocks.getTrustedDeviceDays).not.toHaveBeenCalled();
+    expect(mocks.createTrustedDevice).not.toHaveBeenCalled();
+    expect(mocks.logTrustedDeviceCreated).not.toHaveBeenCalled();
+  });
+
+  it("skips trusted-device creation when the instance's trusted-device window is disabled (0 days)", async () => {
+    mocks.finishWebauthnAssertion.mockResolvedValue({ credentialId: "cred-1" });
+    mocks.promoteSessionToFull.mockResolvedValue(SESSION_STAGE.FULL);
+    mocks.getTrustedDeviceDays.mockResolvedValue(0);
+
+    const result = await completeMfaWithWebauthn(prisma, {
+      userId: "user-1",
+      sessionId: "sess-1",
+      response: testWebauthnResponse,
+      challenge: "chal-1",
+      rp: testWebauthnRp,
+      rememberDevice: true,
+    });
+
+    expect(result).toEqual({ ok: true, trustedDeviceRawToken: undefined, stage: SESSION_STAGE.FULL });
+    expect(mocks.createTrustedDevice).not.toHaveBeenCalled();
+    expect(mocks.logTrustedDeviceCreated).not.toHaveBeenCalled();
+  });
+});
+
+describe("completeMfaWithWebauthn failure audit", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("audits a rejected assertion without bumping the repeated-guessing alert streak", async () => {
+    mocks.finishWebauthnAssertion.mockResolvedValue(null);
+
+    const result = await completeMfaWithWebauthn(prisma, {
+      userId: "user-1",
+      sessionId: "sess-1",
+      response: testWebauthnResponse,
+      challenge: "chal-1",
+      rp: testWebauthnRp,
+      ip: "1.2.3.4",
+    });
+
+    expect(result).toEqual({ ok: false });
+    expect(mocks.logMfaFailure).toHaveBeenCalledWith(prisma, expect.anything(), "invalid_webauthn", undefined);
+    // A rejected assertion isn't brute-forceable the way a guessed code is - see
+    // emitMfaWebauthnAudit's own docstring.
+    expect(mocks.recordFailedMfaFailureSideEffects).not.toHaveBeenCalled();
+    expect(mocks.promoteSessionToFull).not.toHaveBeenCalled();
+  });
+
+  it("audits a verified assertion whose session promotion failed", async () => {
+    mocks.finishWebauthnAssertion.mockResolvedValue({ credentialId: "cred-1" });
+    mocks.promoteSessionToFull.mockResolvedValue(null);
+
+    const result = await completeMfaWithWebauthn(prisma, {
+      userId: "user-1",
+      sessionId: "sess-1",
+      response: testWebauthnResponse,
+      challenge: "chal-1",
+      rp: testWebauthnRp,
+    });
+
+    expect(result).toEqual({ ok: false });
+    expect(mocks.logMfaFailure).toHaveBeenCalledWith(prisma, expect.anything(), "session_not_promoted", "webauthn");
+    expect(mocks.recordFailedMfaFailureSideEffects).not.toHaveBeenCalled();
+    expect(mocks.logMfaSuccess).not.toHaveBeenCalled();
+  });
+
+  it("propagates the session-promotion failure uncaught when the caller already owns the transaction", async () => {
+    const callerOwnedTx = {} as PrismaClient;
+    mocks.finishWebauthnAssertion.mockResolvedValue({ credentialId: "cred-1" });
+    mocks.promoteSessionToFull.mockResolvedValue(null);
+
+    await expect(
+      completeMfaWithWebauthn(callerOwnedTx, {
+        userId: "user-1",
+        sessionId: "sess-1",
+        response: testWebauthnResponse,
+        challenge: "chal-1",
+        rp: testWebauthnRp,
+      }),
+    ).rejects.toThrow("mfa session promotion failed after webauthn assertion verified");
+
     expect(mocks.logMfaFailure).not.toHaveBeenCalled();
   });
 });

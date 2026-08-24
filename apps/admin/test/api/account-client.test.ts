@@ -6,10 +6,12 @@ import {
   beginWebauthnRegistration,
   finishWebauthnRegistration,
   fetchWebauthnCredentials,
+  beginWebauthnAssertion,
   deleteWebauthnCredential,
   deleteAccountTotp,
   fetchBackupCodesStatus,
   regenerateBackupCodes,
+  forgetAllTrustedDevices,
 } from "../../src/api/client.js";
 
 describe("account API client", () => {
@@ -65,6 +67,22 @@ describe("account API client", () => {
         credentials: "same-origin",
       }),
     );
+  });
+
+  it("forgetAllTrustedDevices DELETEs the trusted-devices endpoint and returns the revoked count", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ devices_revoked: 3 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await forgetAllTrustedDevices();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/account/mfa/trusted-devices",
+      expect.objectContaining({ method: "DELETE", credentials: "same-origin" }),
+    );
+    expect(result).toEqual({ devices_revoked: 3 });
   });
 
   it("cancelMfaEnroll propagates API errors", async () => {
@@ -138,11 +156,27 @@ describe("account API client", () => {
     expect(result.credentials).toHaveLength(1);
   });
 
+  it("beginWebauthnAssertion POSTs to the assert/begin endpoint and returns ceremony options", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ options: { challenge: "chal-1" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await beginWebauthnAssertion();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/account/mfa/webauthn/assert/begin",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(result).toEqual({ options: { challenge: "chal-1" } });
+  });
+
   it("deleteWebauthnCredential DELETEs the encoded credential endpoint with an optional step-up code", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
     vi.stubGlobal("fetch", fetchMock);
 
-    await deleteWebauthnCredential("cred with space", "123456");
+    await deleteWebauthnCredential("cred with space", { code: "123456" });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/account/mfa/webauthn/cred%20with%20space",
@@ -169,7 +203,7 @@ describe("account API client", () => {
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(init.body).toBeUndefined();
 
-    await deleteAccountTotp("123456");
+    await deleteAccountTotp({ code: "123456" });
     const init2 = fetchMock.mock.calls[1]![1] as RequestInit;
     expect(JSON.parse(String(init2.body))).toEqual({ code: "123456" });
   });
@@ -207,7 +241,7 @@ describe("account API client", () => {
     const init = fetchMock.mock.calls[0]![1] as RequestInit;
     expect(JSON.parse(String(init.body))).toEqual({});
 
-    await regenerateBackupCodes("123456");
+    await regenerateBackupCodes({ code: "123456" });
     const init2 = fetchMock.mock.calls[1]![1] as RequestInit;
     expect(JSON.parse(String(init2.body))).toEqual({ code: "123456" });
   });

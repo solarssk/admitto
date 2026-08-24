@@ -14,6 +14,7 @@ import {
   fetchAccountSessions,
   fetchBackupCodesStatus,
   finishWebauthnRegistration,
+  forgetAllTrustedDevices,
   patchAccountPassword,
   patchAccountProfile,
   regenerateBackupCodes,
@@ -29,6 +30,7 @@ import type {
   BackupCodesStatusResponse,
   MfaEnrollResponse,
   SessionListDto,
+  StepUpProofBody,
   WebauthnAttachment,
 } from "../api/types.js";
 import { roleLabel } from "../auth/role-labels.js";
@@ -51,6 +53,7 @@ import {
 import { parseUserAgent } from "../utils/parseUserAgent.js";
 import { TotpDigitInput } from "./TotpDigitInput.js";
 import { TotpQrCode } from "./TotpQrCode.js";
+import { WebauthnStepUpButton } from "./WebauthnStepUpButton.js";
 
 const PASSWORD_HINT = "Changing your password ends your other active sessions. Your current session stays signed in.";
 const TIME_FORMAT_OPTIONS = [
@@ -145,7 +148,7 @@ function accountTypeHint(account: AccountDto, isManaged: boolean): string {
   if (account.has_local_password) {
     return "Signed in through your organization's identity provider, with a local password available as a fallback. Manage it in the Password section below.";
   }
-  return "Signed in through your organization's identity provider, password and two-factor authentication are managed there.";
+  return "Signed in through your organization's identity provider. Password and two-factor authentication are managed there.";
 }
 
 /** How this account exists, not how the current browser session happens to be signed in - "Local
@@ -256,12 +259,24 @@ function AccountIdentityActionsMenu({
   );
 }
 
-/** Kebab menu in the "Two-factor authentication" card header - holds the single account-wide
- * "Reset everything" action (clears TOTP, every passkey/security key, and all backup codes
- * together), kept out of the per-method Manage popups above so it doesn't read as belonging to
- * any one method. Self-contained (calls useDropdownMenu itself, same as HealthCheckMoreActions)
- * since nothing else in the card needs its open state. */
-function TwoFactorMoreActions({ onReset }: Readonly<{ onReset: () => void }>) {
+/** Kebab menu in the "Two-factor authentication" card header - holds account-wide actions kept
+ * out of the per-method Manage popups above so they don't read as belonging to any one method:
+ * forgetting every device this account ever chose to remember (disabled once there are none
+ * left to forget), and, additionally, the account-wide "Reset everything" action (clears TOTP,
+ * every passkey/security key, and all backup codes together) once the account also has a local
+ * password to reset with. Self-contained (calls useDropdownMenu itself, same as
+ * HealthCheckMoreActions) since nothing else in the card needs its open state. */
+function TwoFactorMoreActions({
+  onReset,
+  onForgetDevices,
+  showReset,
+  trustedDevicesCount,
+}: Readonly<{
+  onReset: () => void;
+  onForgetDevices: () => void;
+  showReset: boolean;
+  trustedDevicesCount: number;
+}>) {
   const { open, setOpen, close, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
   });
@@ -282,15 +297,28 @@ function TwoFactorMoreActions({ onReset }: Readonly<{ onReset: () => void }>) {
       {open && (
         <div className="more-actions-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
           <MoreActionsMenuItem
-            icon="refresh"
-            label="Reset everything"
-            hint="Remove every 2FA method and end your other sessions"
-            variant="danger"
+            icon="devices-off"
+            label="Forget all trusted devices"
+            hint="You'll be asked to verify again on every device next time"
+            disabled={trustedDevicesCount === 0}
+            tooltip={trustedDevicesCount === 0 ? "No devices are currently remembered." : undefined}
             onClick={() => {
               close();
-              onReset();
+              onForgetDevices();
             }}
           />
+          {showReset && (
+            <MoreActionsMenuItem
+              icon="refresh"
+              label="Reset everything"
+              hint="Remove every 2FA method and end your other sessions"
+              variant="danger"
+              onClick={() => {
+                close();
+                onReset();
+              }}
+            />
+          )}
         </div>
       )}
     </div>
@@ -421,6 +449,9 @@ export function AccountPage() {
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const [revokeAllOpen, setRevokeAllOpen] = useState(false);
   const [revokeAllBusy, setRevokeAllBusy] = useState(false);
+  const [forgetDevicesOpen, setForgetDevicesOpen] = useState(false);
+  const [forgetDevicesBusy, setForgetDevicesBusy] = useState(false);
+  const [forgetDevicesError, setForgetDevicesError] = useState<string | null>(null);
   const [uriCopied, setUriCopied] = useState(false);
   const [showUriManual, setShowUriManual] = useState(false);
   const [qrRenderFailed, setQrRenderFailed] = useState(false);
@@ -600,13 +631,13 @@ export function AccountPage() {
     });
   }
 
-  /** Shared by the form's own submit and the step-up dialog's confirm, `code` is only passed once the server has asked for one. */
-  async function submitPasswordChange(code?: string): Promise<void> {
+  /** Shared by the form's own submit and the step-up dialog's confirm, `proof` is only passed once the server has asked for one. */
+  async function submitPasswordChange(proof?: StepUpProofBody): Promise<void> {
     const { sessions_revoked } = await patchAccountPassword({
       current_password: currentPassword,
       new_password: newPassword,
       new_password_confirm: confirmPassword,
-      code,
+      ...proof,
     });
     setCurrentPassword("");
     setNewPassword("");
@@ -621,13 +652,56 @@ export function AccountPage() {
     await loadSessions();
   }
 
-  /** Shared by the confirm dialog's own submit and the step-up dialog's confirm, `code` is only
+  /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it, `proof` is only
+   * passed once the server has asked for one, same two-step shape as submitPasswordChange. `target`
+   * is passed explicitly rather than read from `removeCredentialTarget` state, since the caller
+   * has already null-checked `.id` right before calling this. */
+  async function submitRemoveCredential(target: AccountMfaMethodDto, proof?: StepUpProofBody): Promise<void> {
+    await deleteWebauthnCredential(target.id!, proof);
+    const removedLabel = target.label ? `"${target.label}"` : "Credential";
+    setRemoveCredentialTarget(null);
+    setRemoveCredentialCode("");
+    setRemoveCredentialCodeRequired(false);
+    addToast(`${removedLabel} removed.`, "success");
+    await loadAccount();
+    // Same reasoning as the TOTP-removal handler above - a step-up code here can be a backup
+    // code too.
+    await loadBackupCodesStatus();
+  }
+
+  /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it, `proof` is only
    * passed once the server has asked for one, same two-step shape as submitPasswordChange. */
-  async function submitUnlinkSso(code?: string): Promise<void> {
+  async function submitRemoveTotp(proof?: StepUpProofBody): Promise<void> {
+    await deleteAccountTotp(proof);
+    setManageTotpOpen(false);
+    setRemoveTotpCode("");
+    setRemoveTotpCodeRequired(false);
+    addToast("Authenticator app removed.", "success");
+    await loadAccount();
+    // A step-up code (when required) is a backup code as well as a TOTP code - refresh
+    // the remaining count shown on the Backup codes row in case that's what was used.
+    await loadBackupCodesStatus();
+  }
+
+  /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it, `proof` is only
+   * passed once the server has asked for one, same two-step shape as submitPasswordChange. */
+  async function submitResetMfa(proof?: StepUpProofBody): Promise<void> {
+    const { sessions_revoked } = await resetMfa({ password: resetPassword, ...proof });
+    setResetPassword(""); setResetCode(""); setResetCodeRequired(false); setResetConfirmOpen(false);
+    const mfaSessionsRevokedPlural = sessions_revoked === 1 ? "" : "s";
+    const mfaSessionsRevokedSuffix =
+      sessions_revoked > 0 ? ` ${sessions_revoked} other session${mfaSessionsRevokedPlural} ended.` : "";
+    addToast(`Two-factor authentication reset.${mfaSessionsRevokedSuffix}`, "success");
+    await loadAccount(); await loadSessions();
+  }
+
+  /** Shared by the confirm dialog's own submit and the step-up dialog's confirm, `proof` is only
+   * passed once the server has asked for one, same two-step shape as submitPasswordChange. */
+  async function submitUnlinkSso(proof?: StepUpProofBody): Promise<void> {
     await unlinkAccountExternalIdentity({
       new_password: unlinkSsoPassword,
       current_password: account?.has_local_password ? unlinkSsoCurrentPassword : undefined,
-      code,
+      ...proof,
     });
     setUnlinkSsoPassword("");
     setUnlinkSsoCurrentPassword("");
@@ -680,15 +754,7 @@ export function AccountPage() {
     setRemovingTotp(true);
     setRemoveTotpError(null);
     try {
-      await deleteAccountTotp(removeTotpCode || undefined);
-      setManageTotpOpen(false);
-      setRemoveTotpCode("");
-      setRemoveTotpCodeRequired(false);
-      addToast("Authenticator app removed.", "success");
-      await loadAccount();
-      // A step-up code (when required) is a backup code as well as a TOTP code - refresh
-      // the remaining count shown on the Backup codes row in case that's what was used.
-      await loadBackupCodesStatus();
+      await submitRemoveTotp(removeTotpCode ? { code: removeTotpCode } : undefined);
     } catch (err) {
       if (hasApiErrorCode(err, "totp_required")) {
         setRemoveTotpCodeRequired(true);
@@ -703,13 +769,7 @@ export function AccountPage() {
   async function handleResetMfaConfirm(): Promise<void> {
     setResetting(true); setResetError(null);
     try {
-      const { sessions_revoked } = await resetMfa({ password: resetPassword, code: resetCode || undefined });
-      setResetPassword(""); setResetCode(""); setResetCodeRequired(false); setResetConfirmOpen(false);
-      const mfaSessionsRevokedPlural = sessions_revoked === 1 ? "" : "s";
-      const mfaSessionsRevokedSuffix =
-        sessions_revoked > 0 ? ` ${sessions_revoked} other session${mfaSessionsRevokedPlural} ended.` : "";
-      addToast(`Two-factor authentication reset.${mfaSessionsRevokedSuffix}`, "success");
-      await loadAccount(); await loadSessions();
+      await submitResetMfa(resetCode ? { code: resetCode } : undefined);
     }
     catch (err) {
       if (hasApiErrorCode(err, "totp_required")) {
@@ -804,16 +864,7 @@ export function AccountPage() {
     setRemovingCredential(true);
     setRemoveCredentialError(null);
     try {
-      await deleteWebauthnCredential(removeCredentialTarget.id, removeCredentialCode || undefined);
-      const removedLabel = removeCredentialTarget.label ? `"${removeCredentialTarget.label}"` : "Credential";
-      setRemoveCredentialTarget(null);
-      setRemoveCredentialCode("");
-      setRemoveCredentialCodeRequired(false);
-      addToast(`${removedLabel} removed.`, "success");
-      await loadAccount();
-      // Same reasoning as the TOTP-removal handler above - a step-up code here can be a
-      // backup code too.
-      await loadBackupCodesStatus();
+      await submitRemoveCredential(removeCredentialTarget, removeCredentialCode ? { code: removeCredentialCode } : undefined);
     } catch (err) {
       if (hasApiErrorCode(err, "totp_required")) {
         setRemoveCredentialCodeRequired(true);
@@ -863,6 +914,29 @@ export function AccountPage() {
     if (!revokeAllBusy) { setRevokeAllOpen(false); setRevokeError(null); }
   }
 
+  async function handleForgetDevicesConfirm(): Promise<void> {
+    setForgetDevicesBusy(true); setForgetDevicesError(null);
+    try {
+      const { devices_revoked } = await forgetAllTrustedDevices();
+      setForgetDevicesOpen(false);
+      const plural = devices_revoked === 1 ? "" : "s";
+      const pronoun = devices_revoked === 1 ? "it" : "them";
+      addToast(
+        devices_revoked > 0
+          ? `${devices_revoked} device${plural} forgotten. You'll be asked to verify again next time you sign in on ${pronoun}.`
+          : "No devices were remembered.",
+        "success",
+      );
+      await loadAccount();
+    } catch (err) {
+      setForgetDevicesError(operatorApiErrorMessage(err, "Failed to forget devices."));
+    } finally { setForgetDevicesBusy(false); }
+  }
+
+  function handleForgetDevicesCancel(): void {
+    if (!forgetDevicesBusy) { setForgetDevicesOpen(false); setForgetDevicesError(null); }
+  }
+
   function handleRemoveTotpCancel(): void {
     if (!removingTotp) {
       setManageTotpOpen(false);
@@ -886,7 +960,7 @@ export function AccountPage() {
     setPasswordSaving(true);
     setPasswordCodeError(null);
     try {
-      await submitPasswordChange(passwordCode);
+      await submitPasswordChange({ code: passwordCode });
     } catch (err) {
       if (hasApiErrorCode(err, "invalid_totp")) {
         setPasswordCodeError(operatorApiErrorMessage(err, "Failed to change password."));
@@ -920,7 +994,7 @@ export function AccountPage() {
     setUnlinkSsoBusy(true);
     setUnlinkCodeError(null);
     try {
-      await submitUnlinkSso(unlinkCode);
+      await submitUnlinkSso({ code: unlinkCode });
     } catch (err) {
       if (hasApiErrorCode(err, "invalid_totp")) {
         setUnlinkCodeError(operatorApiErrorMessage(err, "Failed to unlink SSO."));
@@ -985,24 +1059,37 @@ export function AccountPage() {
     setAddSecurityKeyBackupCodes(null);
   }
 
-  /** Shared by first-time enrollment (renderMfaEnrollment) and the backup-codes regenerate
-   * dialog (renderManageBackupCodesDialog) - both show a freshly minted plaintext batch the same
-   * way, since neither can ever be shown again after this render. `alreadyShown` only applies to
-   * the enrollment case (an account that already had codes from an earlier method). */
-  function renderBackupCodesSection(codes: string[], alreadyShown: boolean): ReactNode {
+  /** Shared by first-time enrollment (renderMfaEnrollment) and the backup-codes regenerate,
+   * add-passkey, and add-security-key dialogs - all show a freshly minted plaintext batch the
+   * same way, since none can ever be shown again after this render. `alreadyShown` only applies
+   * to the enrollment case (an account that already had codes from an earlier method).
+   *
+   * `layout: "inline"` (the default, enrollment's own two-column layout) keeps Download in the
+   * header next to the title, so the 2FA card height stays in lockstep with the Password card
+   * (see PR #324). `layout: "stacked"` (the three dialogs above, each a narrow single-column
+   * ConfirmDialog with no such height constraint) moves Download to its own centered row below
+   * the codes instead, as a full button rather than a small text link, so it's not easy to miss
+   * next to the tiny header text. */
+  function renderBackupCodesSection(
+    codes: string[],
+    alreadyShown: boolean,
+    layout: "inline" | "stacked" = "inline",
+  ): ReactNode {
     if (codes.length > 0) {
       return (
         <div className="account-auth-backup">
           <div className="account-auth-backup__head">
             <strong>Backup codes: save all {codes.length}, shown once</strong>
-            <button
-              type="button"
-              className="account-uri-copy-btn"
-              onClick={() => downloadBackupCodes(codes)}
-            >
-              <i className="ti ti-download" aria-hidden="true" />{" "}
-              Download
-            </button>
+            {layout === "inline" && (
+              <button
+                type="button"
+                className="account-uri-copy-btn"
+                onClick={() => downloadBackupCodes(codes)}
+              >
+                <i className="ti ti-download" aria-hidden="true" />{" "}
+                Download
+              </button>
+            )}
           </div>
           <ul>{codes.map((code) => <li key={code}><code>{code}</code></li>)}</ul>
           <div className="account-checkbox-row">
@@ -1013,6 +1100,13 @@ export function AccountPage() {
               onChange={(e) => setBackupCodesSaved(e.target.checked)}
             />
           </div>
+          {layout === "stacked" && (
+            <div className="account-auth-backup__download-row">
+              <Button type="button" variant="secondary" onClick={() => downloadBackupCodes(codes)}>
+                <i className="ti ti-download" aria-hidden="true" /> Download
+              </Button>
+            </div>
+          )}
         </div>
       );
     }
@@ -1252,6 +1346,21 @@ export function AccountPage() {
    * has been minted yet in this dialog session; once regeneration succeeds, the body is replaced
    * by the new plaintext codes (renderBackupCodesSection, same markup as first-time enrollment)
    * and Regenerate stays disabled so a second click can't invalidate the batch just shown. */
+  /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it, `proof` is only
+   * passed once the server has asked for one, same two-step shape as submitPasswordChange. */
+  async function submitRegenerateBackupCodes(proof?: StepUpProofBody): Promise<void> {
+    const { codes } = await regenerateBackupCodes(proof);
+    setRegeneratedBackupCodes(codes);
+    setBackupCodesStatus({ total: codes.length, remaining: codes.length });
+    // Reset for a possible next cycle: once this batch is confirmed saved, Regenerate unlocks
+    // again (see disableConfirm below), and that next attempt needs its own fresh step-up proof
+    // rather than resubmitting this one (a TOTP code can't be replayed within its own time step).
+    setBackupCodesSaved(false);
+    setRegenerateBackupCodesCode("");
+    setRegenerateBackupCodesCodeRequired(false);
+    addToast("Backup codes regenerated.", "success");
+  }
+
   function renderManageBackupCodesDialog() {
     /* v8 ignore if */
     if (!account) return null;
@@ -1268,22 +1377,24 @@ export function AccountPage() {
         title="Manage backup codes"
         message={
           regeneratedBackupCodes
-            ? "Backup codes regenerated. Save these new codes, your previous codes no longer work."
+            ? "Backup codes regenerated. Save these new codes. Your previous codes no longer work."
             : statusMessage
         }
         confirmLabel="Regenerate"
         cancelLabel="Close"
         loading={regeneratingBackupCodes}
         errorMessage={regenerateBackupCodesError ?? undefined}
-        disableConfirm={!!regeneratedBackupCodes || (regenerateBackupCodesCodeRequired && !regenerateBackupCodesCode)}
+        disableConfirm={
+          (!!regeneratedBackupCodes && !backupCodesSaved) || (regenerateBackupCodesCodeRequired && !regenerateBackupCodesCode)
+        }
         onConfirm={async () => {
           setRegeneratingBackupCodes(true);
           setRegenerateBackupCodesError(null);
+          // Starting a fresh regenerate cycle after already confirming the current batch is
+          // saved - fall back to the code-entry flow instead of leaving the old batch on screen.
+          if (regeneratedBackupCodes) setRegeneratedBackupCodes(null);
           try {
-            const { codes } = await regenerateBackupCodes(regenerateBackupCodesCode || undefined);
-            setRegeneratedBackupCodes(codes);
-            setBackupCodesStatus({ total: codes.length, remaining: codes.length });
-            addToast("Backup codes regenerated.", "success");
+            await submitRegenerateBackupCodes(regenerateBackupCodesCode ? { code: regenerateBackupCodesCode } : undefined);
           } catch (err) {
             if (hasApiErrorCode(err, "totp_required")) {
               setRegenerateBackupCodesCodeRequired(true);
@@ -1308,13 +1419,13 @@ export function AccountPage() {
         }}
       >
         {regeneratedBackupCodes
-          ? renderBackupCodesSection(regeneratedBackupCodes, false)
+          ? renderBackupCodesSection(regeneratedBackupCodes, false, "stacked")
           : regenerateBackupCodesCodeRequired && (
-            <div className="mail-field-row">
-              <label className="mail-field-label" htmlFor="account-regenerate-backup-codes-code">Authenticator or backup code</label>
+            <>
               <Input
                 id="account-regenerate-backup-codes-code"
                 name="regenerate-backup-codes-code"
+                label="Authenticator or backup code"
                 type="text"
                 autoComplete="one-time-code"
                 autoCapitalize="off"
@@ -1323,7 +1434,15 @@ export function AccountPage() {
                 onChange={(e) => setRegenerateBackupCodesCode(e.target.value)}
                 {...stepUpCodeFieldAttrs}
               />
-            </div>
+              {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
+                <WebauthnStepUpButton
+                  busy={regeneratingBackupCodes}
+                  onBusyChange={setRegeneratingBackupCodes}
+                  onError={setRegenerateBackupCodesError}
+                  onSubmit={submitRegenerateBackupCodes}
+                />
+              )}
+            </>
           )}
       </ConfirmDialog>
     );
@@ -1358,7 +1477,7 @@ export function AccountPage() {
         title="Add passkey"
         message={
           addPasskeyBackupCodes
-            ? "Passkey added. Save these backup codes, you'll need one if you ever lose access to this passkey."
+            ? "Passkey added. Save these backup codes: you'll need one if you ever lose access to this passkey."
             : "Give this passkey a name so you can recognize it later."
         }
         confirmLabel="Add"
@@ -1371,7 +1490,7 @@ export function AccountPage() {
         onCancel={handleAddPasskeyCancel}
       >
         {addPasskeyBackupCodes ? (
-          renderBackupCodesSection(addPasskeyBackupCodes, false)
+          renderBackupCodesSection(addPasskeyBackupCodes, false, "stacked")
         ) : (
           <Input
             id="account-add-passkey-label"
@@ -1396,7 +1515,7 @@ export function AccountPage() {
         title="Add security key"
         message={
           addSecurityKeyBackupCodes
-            ? "Security key added. Save these backup codes, you'll need one if you ever lose access to this security key."
+            ? "Security key added. Save these backup codes: you'll need one if you ever lose access to this security key."
             : "Give this security key a name so you can recognize it later."
         }
         confirmLabel="Add"
@@ -1409,7 +1528,7 @@ export function AccountPage() {
         onCancel={handleAddSecurityKeyCancel}
       >
         {addSecurityKeyBackupCodes ? (
-          renderBackupCodesSection(addSecurityKeyBackupCodes, false)
+          renderBackupCodesSection(addSecurityKeyBackupCodes, false, "stacked")
         ) : (
           <Input
             id="account-add-security-key-label"
@@ -1447,11 +1566,11 @@ export function AccountPage() {
           </Notice>
         )}
         {removeCredentialCodeRequired && (
-          <div className="mail-field-row">
-            <label className="mail-field-label" htmlFor="account-remove-credential-code">Authenticator or backup code</label>
+          <>
             <Input
               id="account-remove-credential-code"
               name="remove-credential-code"
+              label="Authenticator or backup code"
               type="text"
               autoComplete="one-time-code"
               autoCapitalize="off"
@@ -1460,7 +1579,15 @@ export function AccountPage() {
               onChange={(e) => setRemoveCredentialCode(e.target.value)}
               {...stepUpCodeFieldAttrs}
             />
-          </div>
+            {removeCredentialTarget && account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
+              <WebauthnStepUpButton
+                busy={removingCredential}
+                onBusyChange={setRemovingCredential}
+                onError={setRemoveCredentialError}
+                onSubmit={(proof) => submitRemoveCredential(removeCredentialTarget, proof)}
+              />
+            )}
+          </>
         )}
       </ConfirmDialog>
     );
@@ -1597,11 +1724,21 @@ export function AccountPage() {
 
   function renderTwoFactorCard() {
     if (!account) return null;
-    const canResetEverything = account.has_local_password && (totpEnrolled || hasConfirmedWebauthnMethod(account));
+    const hasConfirmedMfa = totpEnrolled || hasConfirmedWebauthnMethod(account);
+    const canResetEverything = account.has_local_password && hasConfirmedMfa;
     return (
       <Card
         title="Two-factor authentication"
-        actions={canResetEverything ? <TwoFactorMoreActions onReset={() => setResetConfirmOpen(true)} /> : undefined}
+        actions={
+          hasConfirmedMfa ? (
+            <TwoFactorMoreActions
+              onReset={() => setResetConfirmOpen(true)}
+              onForgetDevices={() => setForgetDevicesOpen(true)}
+              showReset={canResetEverything}
+              trustedDevicesCount={account.trusted_devices_count}
+            />
+          ) : undefined
+        }
       >
           {/* Methods list, every action opens its own popup now (decision 6), so this stays
               visible at all times instead of being replaced by an inline form. */}
@@ -1855,6 +1992,8 @@ export function AccountPage() {
 
       <ConfirmDialog open={revokeAllOpen} icon={<i className="ti ti-device-laptop-off" aria-hidden="true" />} title="Revoke all other sessions" message={`This will end ${otherSessions.length} other active session${otherSessions.length === 1 ? "" : "s"}.`} confirmLabel="Revoke" confirmVariant="danger" loading={revokeAllBusy} errorMessage={revokeError ?? undefined} onConfirm={handleRevokeAllConfirm} onCancel={handleRevokeAllCancel} />
 
+      <ConfirmDialog open={forgetDevicesOpen} icon={<i className="ti ti-devices-off" aria-hidden="true" />} title="Forget all trusted devices" message="You'll be asked to verify with two-factor again the next time you sign in on any device you previously chose to remember." confirmLabel="Forget devices" loading={forgetDevicesBusy} errorMessage={forgetDevicesError ?? undefined} onConfirm={handleForgetDevicesConfirm} onCancel={handleForgetDevicesCancel} />
+
       <ConfirmDialog
         open={manageTotpOpen}
         icon={<i className="ti ti-shield-lock" aria-hidden="true" />}
@@ -1875,11 +2014,11 @@ export function AccountPage() {
           </Notice>
         )}
         {removeTotpCodeRequired && (
-          <div className="mail-field-row">
-            <label className="mail-field-label" htmlFor="account-remove-totp-code">Authenticator or backup code</label>
+          <>
             <Input
               id="account-remove-totp-code"
               name="remove-totp-code"
+              label="Authenticator or backup code"
               type="text"
               autoComplete="one-time-code"
               autoCapitalize="off"
@@ -1888,7 +2027,15 @@ export function AccountPage() {
               onChange={(e) => setRemoveTotpCode(e.target.value)}
               {...stepUpCodeFieldAttrs}
             />
-          </div>
+            {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
+              <WebauthnStepUpButton
+                busy={removingTotp}
+                onBusyChange={setRemovingTotp}
+                onError={setRemoveTotpError}
+                onSubmit={submitRemoveTotp}
+              />
+            )}
+          </>
         )}
       </ConfirmDialog>
 
@@ -1906,25 +2053,23 @@ export function AccountPage() {
         onCancel={handleResetMfaCancel}
       >
         <div className="account-reset-mfa-fields">
-          <div className="mail-field-row">
-            <label className="mail-field-label" htmlFor="account-reset-password">Current password</label>
-            <Input
-              id="account-reset-password"
-              name="current-password"
-              type="password"
-              autoComplete="current-password"
-              autoCapitalize="off"
-              spellCheck={false}
-              value={resetPassword}
-              onChange={(e) => setResetPassword(e.target.value)}
-            />
-          </div>
+          <Input
+            id="account-reset-password"
+            name="current-password"
+            label="Current password"
+            type="password"
+            autoComplete="current-password"
+            autoCapitalize="off"
+            spellCheck={false}
+            value={resetPassword}
+            onChange={(e) => setResetPassword(e.target.value)}
+          />
           {resetCodeRequired && (
-            <div className="mail-field-row">
-              <label className="mail-field-label" htmlFor="account-reset-code">Authenticator or backup code</label>
+            <>
               <Input
                 id="account-reset-code"
                 name="reset-code"
+                label="Authenticator or backup code"
                 type="text"
                 autoComplete="one-time-code"
                 autoCapitalize="off"
@@ -1933,7 +2078,15 @@ export function AccountPage() {
                 onChange={(e) => setResetCode(e.target.value)}
                 {...stepUpCodeFieldAttrs}
               />
-            </div>
+              {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
+                <WebauthnStepUpButton
+                  busy={resetting}
+                  onBusyChange={setResetting}
+                  onError={setResetError}
+                  onSubmit={submitResetMfa}
+                />
+              )}
+            </>
           )}
         </div>
       </ConfirmDialog>
@@ -1951,20 +2104,26 @@ export function AccountPage() {
         onConfirm={handlePasswordStepUpConfirm}
         onCancel={handlePasswordStepUpCancel}
       >
-        <div className="mail-field-row">
-          <label className="mail-field-label" htmlFor="account-password-code">Authenticator or backup code</label>
-          <Input
-            id="account-password-code"
-            name="password-code"
-            type="text"
-            autoComplete="one-time-code"
-            autoCapitalize="off"
-            spellCheck={false}
-            value={passwordCode}
-            onChange={(e) => setPasswordCode(e.target.value)}
-            {...stepUpCodeFieldAttrs}
+        <Input
+          id="account-password-code"
+          name="password-code"
+          label="Authenticator or backup code"
+          type="text"
+          autoComplete="one-time-code"
+          autoCapitalize="off"
+          spellCheck={false}
+          value={passwordCode}
+          onChange={(e) => setPasswordCode(e.target.value)}
+          {...stepUpCodeFieldAttrs}
+        />
+        {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
+          <WebauthnStepUpButton
+            busy={passwordSaving}
+            onBusyChange={setPasswordSaving}
+            onError={setPasswordCodeError}
+            onSubmit={submitPasswordChange}
           />
-        </div>
+        )}
       </ConfirmDialog>
 
       <ConfirmDialog
@@ -2022,20 +2181,26 @@ export function AccountPage() {
         onConfirm={handleUnlinkStepUpConfirm}
         onCancel={handleUnlinkStepUpCancel}
       >
-        <div className="mail-field-row">
-          <label className="mail-field-label" htmlFor="account-unlink-code">Authenticator or backup code</label>
-          <Input
-            id="account-unlink-code"
-            name="unlink-code"
-            type="text"
-            autoComplete="one-time-code"
-            autoCapitalize="off"
-            spellCheck={false}
-            value={unlinkCode}
-            onChange={(e) => setUnlinkCode(e.target.value)}
-            {...stepUpCodeFieldAttrs}
+        <Input
+          id="account-unlink-code"
+          name="unlink-code"
+          label="Authenticator or backup code"
+          type="text"
+          autoComplete="one-time-code"
+          autoCapitalize="off"
+          spellCheck={false}
+          value={unlinkCode}
+          onChange={(e) => setUnlinkCode(e.target.value)}
+          {...stepUpCodeFieldAttrs}
+        />
+        {account && hasConfirmedWebauthnMethod(account) && account.webauthn_enabled && (
+          <WebauthnStepUpButton
+            busy={unlinkSsoBusy}
+            onBusyChange={setUnlinkSsoBusy}
+            onError={setUnlinkCodeError}
+            onSubmit={submitUnlinkSso}
           />
-        </div>
+        )}
       </ConfirmDialog>
 
       {renderMfaEnrollDialog()}

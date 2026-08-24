@@ -27,7 +27,7 @@ export function isTotpMfaAttempt(code: string): boolean {
 
 /**
  * Rate-limit MFA verification per session and IP.
- * Dual-key check stays inline — bucket choice depends on submitted code shape.
+ * Dual-key check stays inline, bucket choice depends on submitted code shape.
  *
  * `action` namespaces the bucket per call site (e.g. "oidc-link", "mfa-confirm",
  * "mfa-reset") so unrelated self-service actions sharing a session don't throttle each
@@ -71,6 +71,73 @@ export async function checkMfaVerifyRateLimit(
   return true;
 }
 
+function mfaWebauthnSessionKey(sessionId: string, action?: string): string {
+  return action ? `mfa:webauthn:session:${action}:${sessionId}` : `mfa:webauthn:session:${sessionId}`;
+}
+
+function mfaWebauthnIpKey(ip: string, action?: string): string {
+  return action ? `mfa:webauthn:ip:${action}:${ip}` : `mfa:webauthn:ip:${ip}`;
+}
+
+/**
+ * Rate-limit a WebAuthn step-up/login attempt per session and IP, same session+IP dual-key shape
+ * as `checkMfaVerifyRateLimit`, but a single bucket: an assertion attempt has no code value to
+ * branch a TOTP-vs-recovery bucket choice on.
+ */
+export async function checkWebauthnStepUpRateLimit(
+  store: RateLimitStore,
+  sessionId: string,
+  ip: string,
+  action?: string,
+): Promise<boolean> {
+  const { windowMs, max } = INLINE_RATE_LIMITS["mfa:verify-webauthn"];
+
+  const sessionResult = await store.hit(mfaWebauthnSessionKey(sessionId, action), windowMs, max);
+  if (!sessionResult.allowed) {
+    logRateLimitExceeded({ scope: "mfa_verify", ip, keyHint: "session_webauthn" });
+    return false;
+  }
+  const ipResult = await store.hit(mfaWebauthnIpKey(ip, action), windowMs, max);
+  if (!ipResult.allowed) {
+    logRateLimitExceeded({ scope: "mfa_verify", ip, keyHint: "ip_webauthn" });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Cross-action ceiling on account-context step-up proof attempts (TOTP/recovery/WebAuthn alike),
+ * checked ALONGSIDE each call's own per-action bucket (`checkMfaVerifyRateLimit`/
+ * `checkWebauthnStepUpRateLimit`), never instead of it. Those per-action buckets are
+ * intentionally namespaced so failing one self-service action (e.g. password change) doesn't
+ * throttle trying an unrelated one (e.g. MFA reset) in the same session - but without a shared
+ * ceiling too, that design lets a session round-robin across every step-up-gated action, each
+ * with its own fresh 10-or-30-per-15-minutes budget, to multiply its real total proof-attempt
+ * budget by the number of such actions (currently ~8). This bucket is proof-type- and action-
+ * agnostic on purpose: the property it protects - "how many times has this session tried to
+ * prove step-up, full stop" - doesn't depend on which action or proof type was attempted. Not
+ * used by the login-time WebAuthn verify route, which has only one caller and isn't subject to
+ * this multiplication.
+ */
+export async function checkStepUpTotalRateLimit(
+  store: RateLimitStore,
+  sessionId: string,
+  ip: string,
+): Promise<boolean> {
+  const { windowMs, max } = INLINE_RATE_LIMITS["mfa:step-up-total"];
+  const sessionResult = await store.hit(`mfa:stepup-total:session:${sessionId}`, windowMs, max);
+  if (!sessionResult.allowed) {
+    logRateLimitExceeded({ scope: "mfa_verify", ip, keyHint: "session_stepup_total" });
+    return false;
+  }
+  const ipResult = await store.hit(`mfa:stepup-total:ip:${ip}`, windowMs, max);
+  if (!ipResult.allowed) {
+    logRateLimitExceeded({ scope: "mfa_verify", ip, keyHint: "ip_stepup_total" });
+    return false;
+  }
+  return true;
+}
+
 /** Client IP for MFA rate limiting (honours TRUST_PROXY). */
 export function resolveMfaClientIp(c: Context): string {
   return resolveClientIp(c);
@@ -86,7 +153,7 @@ function enrollDenied(c: Context, format: "json" | "text"): Response {
 
 /**
  * Rate-limit TOTP enrollment start per full session and IP (account self-service).
- * Dual-key + format option — stays outside generic rateLimit() wrapper.
+ * Dual-key + format option, stays outside generic rateLimit() wrapper.
  */
 export function createAccountMfaEnrollRateLimitMiddleware(
   store: RateLimitStore,

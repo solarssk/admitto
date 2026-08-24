@@ -27,6 +27,7 @@ import {
 import { userRequiresMfa, userHasAnyConfirmedMfaMethod, userHasUnacknowledgedBackupCodes } from "./mfa/policy.js";
 import { validateTrustedDevice, createTrustedDevice } from "./mfa/trusted-device.js";
 import { verifyTotpOrRecoveryCodeDetailed } from "./mfa/verify-step-up-code.js";
+import { finishWebauthnAssertion, type WebauthnRpConfig } from "./mfa/webauthn.js";
 import { getTrustedDeviceDays } from "./settings/resolver.js";
 import {
   recordFailedLoginFailureSideEffects,
@@ -34,6 +35,7 @@ import {
   recordFailedMfaFailureSideEffects,
   resetFailedMfaFailureStreak,
 } from "./privileged-login-alert.js";
+import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
 
 /** Credentials and request metadata for `login()`. */
 export interface LoginInput {
@@ -312,6 +314,138 @@ export async function completeMfa(
   }
 
   await emitMfaAudit(prisma, audit, input, txResult);
+
+  if (!txResult.ok) return { ok: false };
+  return {
+    ok: true,
+    trustedDeviceRawToken: txResult.trustedDeviceRawToken,
+    stage: txResult.stage,
+  };
+}
+
+/** Input for `completeMfaWithWebauthn()` after password login with partial session. `challenge`
+ * is the caller's own responsibility to have stashed at the matching assert/begin call and
+ * consumed (single-use) before calling this - see `finishWebauthnAssertion`'s own docstring. */
+export interface CompleteMfaWithWebauthnInput {
+  userId: string;
+  sessionId: string;
+  response: AuthenticationResponseJSON;
+  challenge: string;
+  rp: WebauthnRpConfig;
+  rememberDevice?: boolean;
+  ip?: string;
+  userAgent?: string;
+  deviceLabel?: string;
+  /** Browser IANA timezone when captured; omit when unknown. */
+  timezone?: string | null;
+}
+
+type CompleteMfaWithWebauthnTxResult =
+  | { ok: false; reason: "invalid_webauthn" }
+  | { ok: false; reason: "session_not_promoted" }
+  | { ok: true; trustedDeviceRawToken?: string; stage: SessionStage };
+
+/** Sibling of `SessionPromotionFailedAfterCodeVerifiedError` for the WebAuthn path - same
+ * roll-back-the-verification-too rationale, just nothing to "burn" here (an assertion isn't a
+ * one-time code), so it exists purely to keep the transaction atomic and the failure audited. */
+class WebauthnSessionPromotionFailedAfterVerifiedError extends Error {
+  constructor() {
+    super("mfa session promotion failed after webauthn assertion verified");
+  }
+}
+
+async function completeMfaWithWebauthnInTransaction(
+  tx: Prisma.TransactionClient,
+  input: CompleteMfaWithWebauthnInput,
+): Promise<CompleteMfaWithWebauthnTxResult> {
+  const { sessionId, userId } = input;
+
+  const promotedStage = await promoteSessionToFull(tx, sessionId, userId);
+  if (!promotedStage) throw new WebauthnSessionPromotionFailedAfterVerifiedError();
+
+  if (input.rememberDevice) {
+    const days = await getTrustedDeviceDays(tx);
+    if (days > 0) {
+      const { rawToken } = await createTrustedDevice(tx, {
+        userId,
+        ip: input.ip,
+        userAgent: input.userAgent,
+        label: input.deviceLabel,
+      });
+      return { ok: true, trustedDeviceRawToken: rawToken, stage: promotedStage };
+    }
+  }
+
+  return { ok: true, stage: promotedStage };
+}
+
+/** Sibling of `emitMfaAudit` for the WebAuthn path. Unlike a wrong code, a rejected assertion
+ * isn't something an attacker can practically brute-force, so it doesn't feed the repeated-
+ * guessing alert streak (`recordFailedMfaFailureSideEffects`) - that streak exists for
+ * enumerable/guessable credentials. */
+async function emitMfaWebauthnAudit(
+  db: PrismaClient | Prisma.TransactionClient,
+  audit: MfaAuditContext | undefined,
+  input: CompleteMfaWithWebauthnInput,
+  result: CompleteMfaWithWebauthnTxResult,
+): Promise<void> {
+  const auditCtx: MfaAuditContext = audit ?? {
+    userId: input.userId,
+    sessionId: input.sessionId,
+    ip: input.ip,
+    userAgent: input.userAgent,
+    timezone: input.timezone,
+  };
+  if (!result.ok) {
+    await logMfaFailure(db, auditCtx, result.reason, result.reason === "session_not_promoted" ? "webauthn" : undefined);
+    return;
+  }
+  await logMfaSuccess(db, auditCtx, "webauthn");
+  await resetFailedMfaFailureStreak(db, input.userId);
+  if (result.trustedDeviceRawToken) {
+    await logTrustedDeviceCreated(db, auditCtx);
+  }
+}
+
+/**
+ * Complete MFA step via a WebAuthn assertion - sibling of `completeMfa`, same
+ * transaction/rollback/audit shape, but verifying a signed assertion instead of a TOTP/recovery
+ * code. Kept separate rather than folding into `completeMfa`'s single `code: string` input: the
+ * two failure taxonomies don't map onto each other cleanly (`recovery_consume_conflict` has no
+ * WebAuthn equivalent), and there are only two call sites total, so the ~associated duplication
+ * here is cheaper than a generalized, harder-to-follow shared code path.
+ */
+export async function completeMfaWithWebauthn(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  input: CompleteMfaWithWebauthnInput,
+  audit?: MfaAuditContext,
+): Promise<CompleteMfaResult> {
+  // Verified before any transaction opens: the decode/CBOR-parse/crypto-verify work
+  // `finishWebauthnAssertion` does (and its own bounded credential-row read + sign-counter
+  // write) must never run while a broader transaction is held open for session promotion /
+  // trusted-device creation - see the confirmed "unbounded verification inside an open
+  // transaction" finding this fixes. Nothing here needs rolling back if promotion later fails:
+  // unlike a recovery code, an assertion isn't a one-time resource that can be "burned for
+  // nothing" (see WebauthnSessionPromotionFailedAfterVerifiedError's own docstring).
+  const verified = await finishWebauthnAssertion(prisma, input.userId, input.response, input.challenge, input.rp);
+  if (!verified) {
+    await emitMfaWebauthnAudit(prisma, audit, input, { ok: false, reason: "invalid_webauthn" });
+    return { ok: false };
+  }
+
+  let txResult: CompleteMfaWithWebauthnTxResult;
+  if ("$transaction" in prisma && typeof prisma.$transaction === "function") {
+    try {
+      txResult = await prisma.$transaction((tx) => completeMfaWithWebauthnInTransaction(tx, input));
+    } catch (err) {
+      if (!(err instanceof WebauthnSessionPromotionFailedAfterVerifiedError)) throw err;
+      txResult = { ok: false, reason: "session_not_promoted" };
+    }
+  } else {
+    txResult = await completeMfaWithWebauthnInTransaction(prisma, input);
+  }
+
+  await emitMfaWebauthnAudit(prisma, audit, input, txResult);
 
   if (!txResult.ok) return { ok: false };
   return {

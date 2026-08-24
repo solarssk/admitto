@@ -27,6 +27,11 @@ vi.mock("@admitto/auth", async (importOriginal) => {
     regenerateBackupRecoveryCodes: vi.fn(),
     markBackupCodesAcknowledged: vi.fn(async () => {}),
     parseTotpSecretFromOtpauthUri: vi.fn(() => "SECRET"),
+    // Short-circuits hasUsableWebauthnCredentials/hasTotp before either needs a real
+    // userMfaMethod query - this file's `db` is a bare mock, not a real PrismaClient. None of
+    // these tests exercise the WebAuthn button or the no-TOTP backup-only form variant.
+    getWebauthnEnabled: vi.fn(async () => false),
+    userHasConfirmedTotp: vi.fn(async () => true),
   };
 });
 
@@ -52,7 +57,6 @@ vi.mock("../src/auth/routes.js", async (importOriginal) => {
   return {
     ...actual,
     setTrustedDeviceCookie: vi.fn(async () => {}),
-    clearSessionCookie: vi.fn(),
   };
 });
 
@@ -71,7 +75,7 @@ import {
 import { checkMfaVerifyRateLimit } from "../src/auth/mfa-rate-limit.js";
 import { resolvePostLoginRedirectForUser } from "../src/auth/post-login-redirect.js";
 import { ensureEnrollmentBackupCodesStashed } from "../src/auth/ensure-backup-codes.js";
-import { clearSessionCookie, setTrustedDeviceCookie } from "../src/auth/routes.js";
+import { setTrustedDeviceCookie } from "../src/auth/routes.js";
 import {
   handleGetMfaEnroll,
   handleGetMfaEnrollBackupCodes,
@@ -96,7 +100,6 @@ const mockCheckLimit = vi.mocked(checkMfaVerifyRateLimit);
 const mockLanding = vi.mocked(resolvePostLoginRedirectForUser);
 const mockStashEnsure = vi.mocked(ensureEnrollmentBackupCodesStashed);
 const mockSetTrusted = vi.mocked(setTrustedDeviceCookie);
-const mockClearSession = vi.mocked(clearSessionCookie);
 const mockMarkAck = vi.mocked(markBackupCodesAcknowledged);
 
 type PartialAuth = {
@@ -310,7 +313,11 @@ describe("mfa-html-routes", () => {
     });
     expect(res.headers.get("location")).toBe("/login");
     expect(mockRevoke).toHaveBeenCalled();
-    expect(mockClearSession).toHaveBeenCalled();
+    // clearSessionCookie now runs inside resolvePostMfaLandingPath (routes.ts), a same-module
+    // call ESM mocking can't intercept - assert its observable effect (an expired Set-Cookie for
+    // the session cookie) instead of the mock being called.
+    const clearedCookie = res.headers.getSetCookie().find((c) => c.startsWith("admitto_session="));
+    expect(clearedCookie).toMatch(/Max-Age=0/i);
     err.mockRestore();
   });
 

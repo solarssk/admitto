@@ -16,10 +16,11 @@ export function applyAuthPageSecurityHeaders(c: Context, headers: Readonly<Recor
 
 /** Security headers for auth pages that ship nonce-gated inline scripts. `connect-src 'self'`
  *  is always present so same-origin requests (e.g. Cloudflare's own edge-injected
- *  `/cdn-cgi/challenge-platform` bot-detection beacon) aren't blocked by the `default-src 'none'`
- *  fallback on an unconfigured instance. `trustedOrigins` (Settings → Security,
- *  `csp_trusted_origins`) extends `script-src` alongside the nonce and adds those origins to
- *  `connect-src` and `frame-src` for a login challenge widget (e.g. Cloudflare Turnstile). */
+ *  `/cdn-cgi/challenge-platform` bot-detection beacon, or the MFA-verify page's own WebAuthn
+ *  `fetch()` calls) aren't blocked by the `default-src 'none'` fallback on an unconfigured
+ *  instance. `trustedOrigins` (Settings → Security, `csp_trusted_origins`) extends `script-src`
+ *  alongside the nonce and adds those origins to `connect-src` and `frame-src` for a login
+ *  challenge widget (e.g. Cloudflare Turnstile). */
 export function getAuthPageInlineScriptHeaders(
   scriptNonce: string,
   trustedOrigins: readonly string[] = [],

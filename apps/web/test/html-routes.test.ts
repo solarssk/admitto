@@ -274,7 +274,7 @@ describe("html-routes", () => {
     err.mockRestore();
   });
 
-  it("logs out a partial session and clears cookies", async () => {
+  it("logs out a partial session, clears the session cookie, and leaves the trusted-device cookie/token untouched", async () => {
     mockValidatePartial.mockResolvedValue({
       userId: "u1",
       sessionId: "s1",
@@ -287,8 +287,11 @@ describe("html-routes", () => {
     });
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/login");
-    expect(mockRevokeTrusted).toHaveBeenCalled();
+    expect(mockRevokeTrusted).not.toHaveBeenCalled();
     expect(mockLogout).toHaveBeenCalled();
+    expect(
+      res.headers.getSetCookie?.().some((c) => c.includes("admitto_trusted_device")),
+    ).toBe(false);
   });
 
   it("logs out cleanly when there is no session cookie", async () => {

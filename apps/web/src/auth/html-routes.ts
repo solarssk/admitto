@@ -7,14 +7,13 @@ import {
   login,
   logout,
   revokeSession,
-  revokeTrustedDeviceByToken,
   validateSession,
   validatePartialSession,
   resolveOidcEndSessionRedirect,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
-import { setSessionCookie, clearSessionCookie, clearTrustedDeviceCookie } from "./routes.js";
+import { setSessionCookie, clearSessionCookie } from "./routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import {
@@ -159,18 +158,16 @@ export async function handlePostLogin(
 }
 
 /**
- * POST /logout (revokes session, trusted device, and redirects to `/login`, or the identity
- * provider's own logout first, when applicable). `baseUrl` is null when Instance URL isn't
- * configured yet - local logout must still succeed in that case, just without the IdP redirect
- * (no safe `post_logout_redirect_uri` can be built without it).
+ * POST /logout (revokes the session and redirects to `/login`, or the identity provider's own
+ * logout first, when applicable). Does not touch the trusted-device cookie/token - see
+ * handleLogout's docstring in routes.ts for why a normal sign-out leaves "Remember this device"
+ * intact. `baseUrl` is null when Instance URL isn't configured yet - local logout must still
+ * succeed in that case, just without the IdP redirect (no safe `post_logout_redirect_uri` can be
+ * built without it).
  */
 export async function handlePostLogout(c: Context, db: PrismaClient, baseUrl: string | null): Promise<Response> {
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
-  const trustedRaw = getCookie(c, TRUSTED_DEVICE_COOKIE_NAME);
   const validated = rawToken ? await validatePartialSession(db, rawToken) : null;
-  if (validated) {
-    await revokeTrustedDeviceByToken(db, validated.userId, trustedRaw);
-  }
   // Resolved before the local session is revoked below - same session row either way, just
   // reading it while it's still the one the cookie names, not relying on ordering to matter.
   // Failure here (e.g. a transient DB error looking up the provider) must not block local
@@ -184,6 +181,5 @@ export async function handlePostLogout(c: Context, db: PrismaClient, baseUrl: st
       : null;
   await logout(db, validated, { ip: resolveClientIp(c) });
   clearSessionCookie(c);
-  clearTrustedDeviceCookie(c);
   return c.redirect(endSessionRedirect ?? "/login", 302);
 }
