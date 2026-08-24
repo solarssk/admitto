@@ -1,6 +1,6 @@
 # Glossary
 
-**Audience:** All staff · **Required role:** Any staff role · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
+**Audience:** All staff · **Required role:** Any staff role · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.0
 
 | Term | Meaning |
 |---|---|
