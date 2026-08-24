@@ -87,7 +87,21 @@ export const putMailSettingsBodySchema = z
     smtpPassword: z.string().optional(),
     graphClientSecret: z.string().optional(),
     powerAutomateKey: z.string().optional(),
-    powerAutomateUrl: z.string().optional(),
+    powerAutomateUrl: z
+      .union([
+        z
+          .string()
+          .trim()
+          .url("powerAutomateUrl must be a valid URL")
+          .refine((u) => u.toLowerCase().startsWith("https://"), {
+            error: "powerAutomateUrl must use HTTPS",
+          })
+          .refine((u) => !isBlockedMailHost(new URL(u).hostname), {
+            error: "powerAutomateUrl must not target a private, loopback, or link-local address",
+          }),
+        z.literal(""),
+      ])
+      .optional(),
   })
   .strict();
 

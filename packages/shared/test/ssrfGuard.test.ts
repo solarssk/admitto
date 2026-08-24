@@ -69,6 +69,10 @@ describe("isLoopbackHost", () => {
   it("does not flag a public hostname", () => {
     expect(isLoopbackHost("example.com")).toBe(false);
   });
+
+  it("recognizes an absolute-form hostname with a trailing root-label dot (CodeRabbit finding on #1050)", () => {
+    expect(isLoopbackHost("localhost.")).toBe(true);
+  });
 });
 
 describe("isBlockedPrivateOrMetadataHost", () => {
@@ -106,6 +110,10 @@ describe("isBlockedPrivateOrMetadataHost", () => {
   it("allows a public hostname/IP", () => {
     expect(isBlockedPrivateOrMetadataHost("example.com")).toBe(false);
     expect(isBlockedPrivateOrMetadataHost("93.184.216.34")).toBe(false);
+  });
+
+  it("blocks an absolute-form metadata hostname with a trailing root-label dot (CodeRabbit finding on #1050)", () => {
+    expect(isBlockedPrivateOrMetadataHost("metadata.google.internal.")).toBe(true);
   });
 
   it("blocks a link-local or IPv4-mapped-loopback address even with a zone index appended (CodeRabbit finding)", () => {

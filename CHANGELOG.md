@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Invite user dialog's phone number field resists browser and password-manager autofill again, matching its email field and every other field in that dialog - it had silently regressed to allowing autofill.
 - The background worker now refuses to start with an invalid bounce-ingest poll interval (`BOUNCE_INGEST_TICK_SECONDS` or the legacy `BOUNCE_INGEST_INTERVAL_SECONDS`, e.g. zero, negative, or non-numeric) instead of silently falling back to the default.
 - Saving an event's or the instance's outgoing mail server settings now rejects a private, loopback, or link-local SMTP host, the same check already applied to the bounce-ingest IMAP host - previously only the IMAP host was checked.
+- Saving an event's or the instance's Power Automate flow URL now rejects a non-HTTPS URL, or one pointing at a private, loopback, or link-local address, immediately on save, the same check already applied to the SMTP host - previously this field only got checked once the provider was fully validated, so a bad URL saved while a different provider was still active would slip through unnoticed.
 
 ### Security
 
