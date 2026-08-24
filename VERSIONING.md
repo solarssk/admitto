@@ -33,26 +33,27 @@ This is the current product roadmap — details live in milestone descriptions a
 ```mermaid
 flowchart LR
     v04["v0.4.x ✓\nStaff SPA · check-in\nidentity · SSE · mail"]
-    v05["v0.5\nIngest API · Users UX\nWallet passes (PassCreator)"]
-    v06["v0.6\nTBD"]
-    v07["v0.7\nRSVP · ICS\nWaitlist"]
+    v05["v0.5.x ✓\nWallet passes (PassCreator)\nPasskey registration · SSO hardening"]
+    v06["v0.6 ✓\nPasskey/security-key sign-in\nMFA hardening"]
+    v07["v0.7\nHardening phase 1\n(mail/ticket cross-platform)"]
+    v08["v0.8+\nIngest API · RSVP/ICS\nWaitlist"]
     v10(["v1.0\nFirst event\ngo-live"])
-    v04 --> v05 --> v06 --> v07 --> v10
+    v04 --> v05 --> v06 --> v07 --> v08 --> v10
 ```
 
 | Version | Focus |
 |---------|--------|
 | **v0.4** | Operator UI + event-day ops + staff SPA foundation (through current `v0.4.x` patches — see [CHANGELOG.md](CHANGELOG.md)). |
-| **v0.5** | External-ingest `/api/ingest` (Power Automate / MS Forms), users-table UX, template lifecycle triggers, wallet passes (Apple/Google via PassCreator). |
-| **v0.6** | TBD. |
-| **v0.7** | RSVP intake, calendar iMIP/ICS, waitlist. |
-| **v0.8–v0.9** | Hardening + dry run (Outlook/devices, batch tests, backup/restore, event-day readiness — ADR 0012). |
+| **v0.5** | Delivered - wallet passes (Apple/Google via PassCreator), passkey/security-key registration, SSO/OIDC hardening, users-table UX. |
+| **v0.6** | Delivered - passkeys/security keys usable for sign-in and step-up (not just registration), first-time 2FA method choice, session-cookie and step-up security hardening. |
+| **v0.7** | Hardening phase 1 (Outlook/iPhone/Android mail and ticket tests, operational fixes toward go-live). |
+| **v0.8–v0.9** | External-ingest `/api/ingest`, RSVP intake, calendar iMIP/ICS, waitlist, template lifecycle triggers, further hardening + dry run (backup/restore, event-day readiness — ADR 0012) - not yet scheduled to a specific version. |
 | **v1.0** | First event **go-live ready** = MVP complete. |
 | **v1.1+** | New waves **after** the first event — e.g. native bounded registration form, branded domain (CNAME), i18n, multi-room, mini-CRM. |
 
 ### Common scope mistakes (read before opening a milestone PR)
 
-- **First-event attendee intake** is **MS Forms → Power Automate → `/api/ingest`** (target **v0.5**), not a native public registration UI inside Admitto.
+- **First-event attendee intake** is planned as **MS Forms → Power Automate → `/api/ingest`**, not a native public registration UI inside Admitto - not yet built as of v0.6.0, and not yet assigned to a specific upcoming version.
 - **Native registration form**, custom branded domain, full i18n, multi-room scheduling, and mini-CRM belong to **`v1.1+`**, not to `v0.5`–`v0.7` pre-go-live milestones.
 - **`v0.x` patches** (`v0.4.1`, `v0.4.2`, …) are normal — they still belong to the same minor line until the next tagged minor (e.g. `v0.5.0`).
 
