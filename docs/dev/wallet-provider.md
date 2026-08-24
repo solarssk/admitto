@@ -1,9 +1,11 @@
 # Wallet provider integration
 
 Admitto issues Apple/Google Wallet passes through a single interface, `WalletPassProvider`
-(`packages/wallet/src/provider.ts`). The rest of the app never imports a concrete provider — it
-resolves one through `resolveWalletProvider()` and calls only this interface. PassCreator is
-today's only implementation.
+(`packages/wallet/src/provider.ts`). Pass creation, update, void, restore, delete, and status
+lookup all go through it — resolved via `resolveWalletProvider()`, never a concrete provider
+imported directly. PassCreator is today's only implementation. Two things don't go through it yet
+— see "Seams that bypass the interface" below; a new provider needs to account for both, not just
+implement the interface.
 
 ## Why this boundary exists
 
@@ -45,6 +47,22 @@ live in `packages/wallet/src/types.ts` — read them alongside this doc, not ins
   per event, not sent by default).
 - **No gating authority.** A webhook or callback from your service is a signal Admitto reconciles
   against its own state — never a source of truth for check-in eligibility.
+
+## Seams that bypass the interface
+
+Two things a PassCreator-only implementation currently handles outside `WalletPassProvider` — a
+second provider needs its own answer for both, since implementing the interface alone won't cover
+them:
+
+- **Test connection and webhook subscription management.** `apps/web/src/admin/event-settings-routes.ts`
+  imports and constructs `PassCreatorClient` directly (not through `resolveWalletProvider()`) for
+  the Wallet tab's "Test connection" action and for registering/clearing PassCreator's own webhook
+  subscriptions. `WalletPassProvider` has no method for either of these today.
+- **The inbound webhook receiver.** `apps/web/src/wallet-webhook.ts` parses PassCreator's specific
+  webhook payload shape and signature scheme (`PassCreatorWebhookData`, `verifyWebhookSignature`),
+  and the route itself is PassCreator-specific (`/api/wallet/webhook/passcreator/:eventId`). A
+  second provider that also delivers device-registration/void events via webhook needs its own
+  receiver route and payload parsing - there's no generic inbound webhook abstraction to plug into.
 
 ## What's out of scope
 
