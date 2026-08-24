@@ -640,7 +640,7 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
   white-space: normal;
-  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 /* Trailing kebab column - narrow, never wraps, aligned with the row's vertical center. */
