@@ -841,9 +841,9 @@ describe("HTML MFA enroll - WebAuthn method choice", () => {
       body: JSON.stringify({ code: generateTotpCode(secret) }),
     });
     if (verifyRes.status !== 200) throw new Error(`verify failed: ${verifyRes.status} ${await verifyRes.text()}`);
-    // promoteSessionToBackupCodesStep updates the same session row in place - verify's response
-    // carries no new Set-Cookie, so the login response's cookie is still the one to reuse.
-    return loginRes;
+    // promoteSessionToBackupCodesStep rotates the session token on every promotion, so the
+    // pre-verify login cookie no longer validates - verify's own response carries the new one.
+    return verifyRes;
   }
 
   /** Confirms a TOTP method and logs in without verifying it - lands the partial session in
@@ -1094,8 +1094,10 @@ describe("HTML MFA enroll - WebAuthn method choice", () => {
       }),
     ).toBe(1);
 
+    // register/finish already promoted the session to backup-codes-required, rotating the
+    // token - the pre-promotion login cookie no longer validates from here on.
     const backupCodesRes = await app.request("/mfa/enroll/backup-codes", {
-      headers: { ...sameOrigin, ...cookieHeader(loginRes) },
+      headers: { ...sameOrigin, ...cookieHeader(finishRes) },
     });
     expect(backupCodesRes.status).toBe(200);
     const backupHtml = await backupCodesRes.text();
@@ -1104,12 +1106,14 @@ describe("HTML MFA enroll - WebAuthn method choice", () => {
 
     const ackRes = await app.request("/mfa/enroll/backup-codes", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", ...sameOrigin, ...cookieHeader(loginRes) },
+      headers: { "Content-Type": "application/x-www-form-urlencoded", ...sameOrigin, ...cookieHeader(finishRes) },
       redirect: "manual",
     });
     expect(ackRes.status).toBe(302);
 
-    const me = await app.request("/api/auth/me", { headers: { ...sameOrigin, ...cookieHeader(loginRes) } });
+    // The acknowledgment above promoted the session again (backup-codes-required -> full),
+    // rotating the token a second time.
+    const me = await app.request("/api/auth/me", { headers: { ...sameOrigin, ...cookieHeader(ackRes) } });
     expect(me.status).toBe(200);
   });
 
@@ -2016,12 +2020,14 @@ describe("POST /api/auth/mfa/remember-device", () => {
       rpID: WEBAUTHN_RP.rpID,
       origin: WEBAUTHN_RP.origin,
     });
-    await app.request("/api/auth/mfa/webauthn/verify", {
+    const verifyRes = await app.request("/api/auth/mfa/webauthn/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...sameOrigin, ...cookieHeader(loginRes) },
       body: JSON.stringify({ response, remember_device: false }),
     });
-    return loginRes;
+    // completeMfaWithWebauthn rotates the session token on promotion to FULL, so the pre-verify
+    // login cookie no longer validates - verify's own response carries the new one.
+    return verifyRes;
   }
 
   it("sets the trusted-device cookie for an already fully authenticated session", async () => {

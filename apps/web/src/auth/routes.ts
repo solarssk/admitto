@@ -694,6 +694,10 @@ export async function handlePostMfaWebauthnEnrollFinish(
   /* v8 ignore next */
   if (!promoted) return c.json({ code: "verification_failed" }, 400);
 
+  // Session token rotates on every promotion (see promoteSessionToFull) - the pre-promotion
+  // cookie must stop working the instant a higher stage is reached.
+  setSessionCookie(c, promoted.rawToken);
+
   return c.json({ ok: true, next: "/mfa/enroll/backup-codes" });
 }
 
