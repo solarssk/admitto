@@ -75,6 +75,30 @@ export function parseBounceIngestTickSeconds(env: NodeJS.ProcessEnv = process.en
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_BOUNCE_INGEST_TICK_SECONDS;
 }
 
+/** Positive-integer form the raw string must take to be a valid deploy tick override. */
+const POSITIVE_INTEGER_RE = /^[1-9][0-9]*$/;
+
+/**
+ * Startup-only guard for the worker process: reject an explicitly-set but invalid
+ * BOUNCE_INGEST_TICK_SECONDS/BOUNCE_INGEST_INTERVAL_SECONDS (zero, negative, decimal, or
+ * non-numeric) loudly instead of letting parseBounceIngestTickSeconds() silently fall back to
+ * the default - a typo'd deploy override should fail the container at boot, not run forever on
+ * an operator-invisible wrong interval. An unset or blank var is fine (falls back to default);
+ * this only fires when the var is actually present with unusable content. Was previously
+ * enforced by deploy/scripts/bounce-ingest-loop.sh's own `grep -Eq` check before the worker
+ * compose cutover (#783) replaced that script with this Node process without carrying the
+ * check over.
+ */
+export function assertValidBounceIngestTickSecondsEnv(env: NodeJS.ProcessEnv = process.env): void {
+  for (const key of ["BOUNCE_INGEST_TICK_SECONDS", "BOUNCE_INGEST_INTERVAL_SECONDS"] as const) {
+    const raw = env[key];
+    if (raw === undefined || raw === "") continue;
+    if (!POSITIVE_INTEGER_RE.test(raw)) {
+      throw new Error(`${key} must be a positive integer (got: ${raw})`);
+    }
+  }
+}
+
 /**
  * Settings → Health stale window for the Admitto worker heartbeat.
  * Floor 5 minutes so a long import/export drain inside one tick does not false-alarm;

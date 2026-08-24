@@ -3,6 +3,7 @@ import type { IngestSummary } from "../../src/bounceIngest/types.js";
 import {
   BOUNCE_INGEST_RUN_HISTORY_LIMIT,
   BOUNCE_INGEST_STALE_MS,
+  assertValidBounceIngestTickSecondsEnv,
   bounceIngestStaleMsForEvent,
   bounceIngestStaleMsForPoll,
   bounceIngestStaleMsFromIntervalSeconds,
@@ -308,6 +309,30 @@ describe("bounceIngestStaleMs helpers", () => {
     expect(parseBounceIngestTickSeconds({ BOUNCE_INGEST_TICK_SECONDS: "" })).toBe(60);
     expect(parseBounceIngestTickSeconds({ BOUNCE_INGEST_TICK_SECONDS: "0" })).toBe(60);
     expect(parseBounceIngestTickSeconds({ BOUNCE_INGEST_TICK_SECONDS: "abc" })).toBe(60);
+  });
+
+  it("rejects an explicitly-set invalid tick/interval env var at startup", () => {
+    expect(() => assertValidBounceIngestTickSecondsEnv({ BOUNCE_INGEST_TICK_SECONDS: "0" })).toThrow(
+      /BOUNCE_INGEST_TICK_SECONDS must be a positive integer \(got: 0\)/,
+    );
+    expect(() => assertValidBounceIngestTickSecondsEnv({ BOUNCE_INGEST_TICK_SECONDS: "-5" })).toThrow(
+      /BOUNCE_INGEST_TICK_SECONDS must be a positive integer/,
+    );
+    expect(() => assertValidBounceIngestTickSecondsEnv({ BOUNCE_INGEST_TICK_SECONDS: "12.5" })).toThrow(
+      /BOUNCE_INGEST_TICK_SECONDS must be a positive integer/,
+    );
+    expect(() => assertValidBounceIngestTickSecondsEnv({ BOUNCE_INGEST_TICK_SECONDS: "abc" })).toThrow(
+      /BOUNCE_INGEST_TICK_SECONDS must be a positive integer/,
+    );
+    expect(() =>
+      assertValidBounceIngestTickSecondsEnv({ BOUNCE_INGEST_INTERVAL_SECONDS: "abc" }),
+    ).toThrow(/BOUNCE_INGEST_INTERVAL_SECONDS must be a positive integer/);
+  });
+
+  it("does not reject an unset or blank tick/interval env var", () => {
+    expect(() => assertValidBounceIngestTickSecondsEnv({})).not.toThrow();
+    expect(() => assertValidBounceIngestTickSecondsEnv({ BOUNCE_INGEST_TICK_SECONDS: "" })).not.toThrow();
+    expect(() => assertValidBounceIngestTickSecondsEnv({ BOUNCE_INGEST_TICK_SECONDS: "90" })).not.toThrow();
   });
 
   it("defaults non-positive deploy tick seconds to the 60s wake interval", () => {
