@@ -9,6 +9,7 @@ import {
   bootstrapSuperadmin,
   confirmTotpEnrollment,
   createSession,
+  createTrustedDevice,
   finishWebauthnRegistration,
   hashPassword,
   markBackupCodesAcknowledged,
@@ -20,6 +21,7 @@ import {
 } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpCode, generateTotpSecret } from "@admitto/auth/testing";
 import { createVirtualAuthenticator } from "@admitto/auth/webauthn-testing";
+import { MAX_WEBAUTHN_BODY_BYTES } from "../../src/admin/account-routes.js";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 
@@ -133,6 +135,7 @@ beforeEach(() => rateLimitStore.reset());
 
 afterEach(async () => {
   await prisma.userMfaMethod.deleteMany({ where: { user_id: userId } });
+  await prisma.trustedDevice.deleteMany({ where: { user_id: userId } });
   await prisma.externalIdentity.deleteMany({ where: { user_id: userId } });
   await prisma.oidcRoleGrant.deleteMany({ where: { user_id: userId } });
   await prisma.roleAssignment.deleteMany({ where: { user_id: userId, NOT: { scope_id: "evt-account" } } });
@@ -161,6 +164,19 @@ describe("GET /api/account", () => {
     expect(body.has_local_password).toBe(true);
     expect(body.must_change_password).toBe(true);
     expect(body).not.toHaveProperty("password_hash");
+  });
+
+  it("returns trusted_devices_count, live devices only", async () => {
+    await createTrustedDevice(prisma, { userId });
+    const expired = await createTrustedDevice(prisma, { userId });
+    await prisma.trustedDevice.update({ where: { id: expired.trustedDevice.id }, data: { expires_at: new Date(Date.now() - 1000) } });
+    const revoked = await createTrustedDevice(prisma, { userId });
+    await prisma.trustedDevice.update({ where: { id: revoked.trustedDevice.id }, data: { revoked_at: new Date() } });
+
+    const res = await app.request("/api/account", { headers: { Cookie: userCookie } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { trusted_devices_count: number };
+    expect(body.trusted_devices_count).toBe(1);
   });
 
   it("returns has_local_password: false for an SSO-linked account with no local password", async () => {
@@ -318,7 +334,7 @@ describe("PATCH /api/account/password", () => {
     rateLimitStore.reset();
     // Pre-fill only this endpoint's own user-scoped password-check bucket directly, instead of
     // looping HTTP requests: /api/account/password also sits behind the auth:account-ip per-IP
-    // bucket (applied group-wide in app.ts to the whole /api/account/* route group, max 10/min),
+    // bucket (applied group-wide in app.ts to the whole /api/account/* route group, max 30/min),
     // which would trip at the same threshold on repeated real requests and mask whether this
     // handler's own password-check rate limit is actually the thing returning 429.
     const bucketKey = `account:password-check:user:${userId}`;
@@ -504,6 +520,65 @@ describe("DELETE /api/account/sessions/:id", () => {
   });
 });
 
+describe("DELETE /api/account/mfa/trusted-devices", () => {
+  it("revokes every trusted device for the account and reports the count, leaving other accounts' devices untouched", async () => {
+    await createTrustedDevice(prisma, { userId });
+    await createTrustedDevice(prisma, { userId });
+    const otherDevice = await createTrustedDevice(prisma, { userId: otherUserId });
+
+    const res = await app.request("/api/account/mfa/trusted-devices", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { devices_revoked: number }).toEqual({ devices_revoked: 2 });
+    expect(await prisma.trustedDevice.count({ where: { user_id: userId, revoked_at: null } })).toBe(0);
+    expect(
+      (await prisma.trustedDevice.findUnique({ where: { id: otherDevice.trustedDevice.id } }))?.revoked_at,
+    ).toBeNull();
+    await prisma.trustedDevice.delete({ where: { id: otherDevice.trustedDevice.id } });
+  });
+
+  it("writes an audit entry only when a device was actually revoked", async () => {
+    const auditCountBefore = await prisma.adminAuditLog.count({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_trusted_devices_revoked" },
+    });
+    const noopRes = await app.request("/api/account/mfa/trusted-devices", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(noopRes.status).toBe(200);
+    expect((await noopRes.json()) as { devices_revoked: number }).toEqual({ devices_revoked: 0 });
+    expect(
+      await prisma.adminAuditLog.count({
+        where: { organization_id: ORG_ACCOUNT, action_type: "account_trusted_devices_revoked" },
+      }),
+    ).toBe(auditCountBefore);
+
+    await createTrustedDevice(prisma, { userId });
+    const res = await app.request("/api/account/mfa/trusted-devices", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { devices_revoked: number }).toEqual({ devices_revoked: 1 });
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_ACCOUNT, action_type: "account_trusted_devices_revoked" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.actor_user_id).toBe(userId);
+    expect(audit?.metadata).toMatchObject({ devicesRevoked: 1 });
+  });
+
+  it("returns 401 without a session", async () => {
+    const res = await app.request("/api/account/mfa/trusted-devices", {
+      method: "DELETE",
+      headers: { ...sameOrigin },
+    });
+    expect(res.status).toBe(401);
+  });
+});
+
 describe("POST /api/account/mfa/totp/*", () => {
   it("enrolls and confirms TOTP", async () => {
     const enrollRes = await app.request("/api/account/mfa/totp/enroll", {
@@ -584,7 +659,7 @@ describe("POST /api/account/mfa/totp/*", () => {
     });
     // Pre-fill only this endpoint's own user-scoped password-check bucket directly, instead of
     // looping HTTP requests: /api/account/mfa/reset also sits behind the group-wide
-    // auth:account-ip per-IP bucket (applied to all of /api/account/* in app.ts, max 10/min),
+    // auth:account-ip per-IP bucket (applied to all of /api/account/* in app.ts, max 30/min),
     // which would trip at the same threshold on repeated real requests and mask whether this
     // handler's own password-check rate limit is actually the thing returning 429.
     const bucketKey = `account:password-check:user:${userId}`;
@@ -776,7 +851,7 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
     expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBeGreaterThan(0);
   });
 
-  it("returns 401 invalid_totp for a wrong code", async () => {
+  it("returns 401 invalid_totp for a wrong code, and audits the failed attempt", async () => {
     await enrollConfirmedTotp();
     const res = await app.request("/api/account/mfa/reset", {
       method: "POST",
@@ -786,13 +861,19 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
     expect(res.status).toBe(401);
     expect(((await res.json()) as { code: string }).code).toBe("invalid_totp");
     expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBeGreaterThan(0);
+    const auditRow = await prisma.securityAuditLog.findFirst({
+      where: { event_type: "auth.mfa.fail", user_id: adminUserId },
+      orderBy: { created_at: "desc" },
+    });
+    expect(auditRow).not.toBeNull();
+    expect((auditRow?.metadata as { reason?: string } | null)?.reason).toBe("invalid_code");
   });
 
   it("returns 429 after exceeding the step-up code rate limit", async () => {
     await enrollConfirmedTotp();
     // Pre-fill only this endpoint's own session bucket directly, instead of looping HTTP
     // requests: /api/account/mfa/reset also sits behind the group-wide auth:account-ip per-IP
-    // bucket (applied to all of /api/account/* in app.ts, max 10/min), which would trip first
+    // bucket (applied to all of /api/account/* in app.ts, max 30/min), which would trip first
     // on repeated real requests and mask whether this handler's own step-up rate limit is
     // actually the thing returning 429.
     const bucketKey = `mfa:totp:session:mfa-reset:${adminSessionId}`;
@@ -809,6 +890,25 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
     const body = (await res.json()) as { error?: string };
     expect(body.error).toBe("too many requests");
     expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBeGreaterThan(0);
+  });
+
+  it("returns 429 after exceeding the cross-action step-up total, even with this action's own bucket untouched", async () => {
+    await enrollConfirmedTotp();
+    // The per-action mfa:totp:session:mfa-reset bucket (tested above) stays untouched here -
+    // this is the separate, action-agnostic ceiling shared across every step-up-gated action.
+    const bucketKey = `mfa:stepup-total:session:${adminSessionId}`;
+    for (let i = 0; i < 20; i++) {
+      await rateLimitStore.hit(bucketKey, 15 * 60_000, 20);
+    }
+
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: ADMIN_PASSWORD, code: "000000" }),
+    });
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("too many requests");
   });
 
   it("resets MFA with a correct TOTP code", async () => {
@@ -855,7 +955,7 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
     expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId } })).toBe(0);
   });
 
-  it("returns 401 invalid_webauthn for an assertion signed by the wrong authenticator", async () => {
+  it("returns 401 invalid_webauthn for an assertion signed by the wrong authenticator, and audits the failed attempt", async () => {
     await registerConfirmedWebauthnCredential(adminUserId);
     const wrongAuthenticator = createVirtualAuthenticator();
     const beginRes = await app.request("/api/account/mfa/webauthn/assert/begin", {
@@ -878,6 +978,12 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
     expect(res.status).toBe(401);
     expect(((await res.json()) as { code: string }).code).toBe("invalid_webauthn");
     expect(await prisma.userMfaMethod.count({ where: { user_id: adminUserId, type: "webauthn" } })).toBe(1);
+    const auditRow = await prisma.securityAuditLog.findFirst({
+      where: { event_type: "auth.mfa.fail", user_id: adminUserId },
+      orderBy: { created_at: "desc" },
+    });
+    expect(auditRow).not.toBeNull();
+    expect((auditRow?.metadata as { reason?: string } | null)?.reason).toBe("invalid_webauthn");
   });
 
   it("does not require a code for the non-MFA-required operator fixture", async () => {
@@ -890,6 +996,21 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
       body: JSON.stringify({ password: PASSWORD }),
     });
     expect(res.status).toBe(200);
+  });
+
+  it("rejects an oversized WebAuthn proof body before it's ever parsed", async () => {
+    await enrollConfirmedTotp();
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        password: ADMIN_PASSWORD,
+        webauthn: { response: { signature: "x".repeat(MAX_WEBAUTHN_BODY_BYTES) } },
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("request too large");
   });
 });
 
@@ -933,7 +1054,7 @@ describe("PATCH /api/account/password — step-up for MFA-required roles", () =>
     await enrollConfirmedTotp();
     // Pre-fill only this endpoint's own session bucket directly, instead of looping HTTP
     // requests: /api/account/password also sits behind the group-wide auth:account-ip per-IP
-    // bucket (applied to all of /api/account/* in app.ts, max 10/min), which would trip first
+    // bucket (applied to all of /api/account/* in app.ts, max 30/min), which would trip first
     // on repeated real requests and mask whether this handler's own step-up rate limit is
     // actually the thing returning 429.
     const bucketKey = `mfa:totp:session:account-password:${adminSessionId}`;
@@ -1814,7 +1935,7 @@ describe("DELETE /api/account/external-identity", () => {
     });
     // Pre-fill only this endpoint's own user-scoped password-check bucket directly, instead of
     // looping HTTP requests: /api/account/external-identity also sits behind the group-wide
-    // auth:account-ip per-IP bucket (applied to all of /api/account/* in app.ts, max 10/min),
+    // auth:account-ip per-IP bucket (applied to all of /api/account/* in app.ts, max 30/min),
     // which would trip at the same threshold on repeated real requests and mask whether this
     // handler's own password-check rate limit is actually the thing returning 429.
     const bucketKey = `account:password-check:user:${userId}`;
@@ -1947,7 +2068,7 @@ describe("DELETE /api/account/external-identity — step-up for MFA-required rol
     expect(await prisma.externalIdentity.count({ where: { user_id: adminUserId } })).toBe(1);
   });
 
-  it("returns 401 invalid_totp for a wrong code", async () => {
+  it("returns 401 invalid_totp for a wrong code, and audits the failed attempt", async () => {
     await enrollConfirmedTotp();
     await prisma.externalIdentity.create({
       data: { provider_id: PROVIDER_ID, subject: "self-unlink-stepup-wrong-subject", user_id: adminUserId },
@@ -1961,6 +2082,12 @@ describe("DELETE /api/account/external-identity — step-up for MFA-required rol
     expect(res.status).toBe(401);
     expect(((await res.json()) as { code: string }).code).toBe("invalid_totp");
     expect(await prisma.externalIdentity.count({ where: { user_id: adminUserId } })).toBe(1);
+    const auditRow = await prisma.securityAuditLog.findFirst({
+      where: { event_type: "auth.mfa.fail", user_id: adminUserId },
+      orderBy: { created_at: "desc" },
+    });
+    expect(auditRow).not.toBeNull();
+    expect((auditRow?.metadata as { reason?: string } | null)?.reason).toBe("invalid_code");
   });
 
   it("returns 429 after exceeding the step-up code rate limit", async () => {
@@ -1971,6 +2098,25 @@ describe("DELETE /api/account/external-identity — step-up for MFA-required rol
     const bucketKey = `mfa:totp:session:account-external-identity:${adminSessionId}`;
     for (let i = 0; i < 10; i++) {
       await rateLimitStore.hit(bucketKey, 15 * 60_000, 10);
+    }
+
+    const res = await app.request("/api/account/external-identity", {
+      method: "DELETE",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ new_password: NEW_PASSWORD, code: "000000" }),
+    });
+    expect(res.status).toBe(429);
+    expect(((await res.json()) as { error?: string }).error).toBe("too many requests");
+  });
+
+  it("returns 429 after exceeding the cross-action step-up total, even with this action's own bucket untouched", async () => {
+    await enrollConfirmedTotp();
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "self-unlink-total-ratelimit-subject", user_id: adminUserId },
+    });
+    const bucketKey = `mfa:stepup-total:session:${adminSessionId}`;
+    for (let i = 0; i < 20; i++) {
+      await rateLimitStore.hit(bucketKey, 15 * 60_000, 20);
     }
 
     const res = await app.request("/api/account/external-identity", {

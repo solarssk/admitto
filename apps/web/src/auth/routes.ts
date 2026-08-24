@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import { z } from "zod";
-import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
+import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/server";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import type { PrismaClient } from "@admitto/db";
 import { describeMailConfigForOrg } from "@admitto/mailer-config";
@@ -22,7 +22,6 @@ import {
   loginNextAfterFullSession,
   getTrustedDeviceDays,
   revokeSession,
-  revokeTrustedDeviceByToken,
   SESSION_STAGE,
   type SessionStage,
   updateSessionDeviceLabel,
@@ -32,6 +31,9 @@ import {
   resolveSetupComplete,
   getWebauthnEnabled,
   beginWebauthnAssertion,
+  beginWebauthnRegistration,
+  finishWebauthnRegistration,
+  createTrustedDevice,
 } from "@admitto/auth";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
 import { checkMfaVerifyRateLimit, checkWebauthnStepUpRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
@@ -43,7 +45,12 @@ import {
 } from "./enrollment-backup-cache.js";
 import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { stashWebauthnChallenge, consumeWebauthnChallenge } from "./webauthn-challenge-cache.js";
-import { resolveWebauthnRp, webauthnAuthenticationResponseSchema } from "../admin/account-routes.js";
+import {
+  resolveWebauthnRp,
+  webauthnAuthenticationResponseSchema,
+  webauthnRegistrationResponseSchema,
+  webauthnAttachmentSchema,
+} from "../admin/account-routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { shouldTrustForwardedHeaders } from "../rate-limit/trust-proxy.js";
@@ -114,17 +121,7 @@ export function clearSessionCookie(c: Context): void {
   });
 }
 
-/** Clear trusted-device cookie (call on logout). */
-export function clearTrustedDeviceCookie(c: Context): void {
-  const opts = sessionCookieOptions(c);
-  deleteCookie(c, TRUSTED_DEVICE_COOKIE_NAME, {
-    path: opts.path,
-    secure: opts.secure,
-    sameSite: opts.sameSite,
-  });
-}
-
-/** POST /api/auth/login — rate-limited, sets session cookie on success. */
+/** POST /api/auth/login, rate-limited, sets session cookie on success. */
 export async function handleLogin(
   c: Context,
   db: PrismaClient,
@@ -176,17 +173,16 @@ export async function handleLogin(
   return c.json({ ok: true, next: result.next }, 200);
 }
 
-/** POST /api/auth/logout — revokes current session, trusted device, and clears cookies. */
+/** POST /api/auth/logout, revokes the current session and clears its cookie. Does not touch the
+ * trusted-device cookie/token - "Remember this device" means skipping MFA on this device until
+ * that trust itself expires or is explicitly revoked (password change, MFA reset, admin action),
+ * not "only until the next logout". A normal sign-out should not force MFA again on next login,
+ * on this same device, before that trust window ends. */
 export async function handleLogout(c: Context, db: PrismaClient): Promise<Response> {
   const rawToken = getCookie(c, SESSION_COOKIE_NAME);
-  const trustedRaw = getCookie(c, TRUSTED_DEVICE_COOKIE_NAME);
   const validated = rawToken ? await validatePartialSession(db, rawToken) : null;
-  if (validated) {
-    await revokeTrustedDeviceByToken(db, validated.userId, trustedRaw);
-  }
   await logout(db, validated, { ip: resolveClientIp(c) });
   clearSessionCookie(c);
-  clearTrustedDeviceCookie(c);
   return c.json({ ok: true }, 200);
 }
 
@@ -196,7 +192,7 @@ export type MailerStatusPayload = {
 };
 
 export interface HandleMeOptions {
-  /** When true (`/api/admin/me` only), resolve org mail transport presence — no credentials. */
+  /** When true (`/api/admin/me` only), resolve org mail transport presence, no credentials. */
   includeMailerStatus?: boolean;
   /** When true, always include first-run onboarding completion flag (also auto-included for instance superadmins on `/api/auth/me`). */
   includeSetupComplete?: boolean;
@@ -219,7 +215,7 @@ async function resolveMailerStatus(db: PrismaClient): Promise<MailerStatusPayloa
   return { configured, provider };
 }
 
-/** GET /api/auth/me — current user profile (requires full session). */
+/** GET /api/auth/me, current user profile (requires full session). */
 export async function handleMe(
   c: Context,
   db: PrismaClient,
@@ -292,7 +288,7 @@ export async function handleMe(
   return c.json(body, 200);
 }
 
-/** POST /api/auth/session/device-label — set optional tablet label on the current session. */
+/** POST /api/auth/session/device-label, set optional tablet label on the current session. */
 export async function handlePostSessionDeviceLabel(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   if (!auth?.sessionId) {
@@ -333,7 +329,7 @@ export async function handlePostSessionDeviceLabel(c: Context, db: PrismaClient)
   return c.json({ device_label: label.length > 0 ? label : null }, 200);
 }
 
-/** POST /api/auth/mfa/verify — complete MFA step (partial session). */
+/** POST /api/auth/mfa/verify, complete MFA step (partial session). */
 export async function handleMfaVerify(
   c: Context,
   db: PrismaClient,
@@ -390,7 +386,7 @@ export async function handleMfaVerify(
   // `ok: true` path - completeMfa() only omits it on the `ok: false` branch handled above.
   setSessionCookie(c, result.sessionRawToken!);
 
-  // User still owes backup-code acknowledgment — keep them in the constrained
+  // User still owes backup-code acknowledgment, keep them in the constrained
   // stage instead of granting full access (IAM-002).
   if (result.stage === SESSION_STAGE.BACKUP_CODES_REQUIRED) {
     const backupCodes = await ensureEnrollmentBackupCodesStashed(db, partial.sessionId, partial.userId);
@@ -408,7 +404,7 @@ export async function handleMfaVerify(
 }
 
 /**
- * Where to send the browser after MFA succeeds via the HTML login page — shared by
+ * Where to send the browser after MFA succeeds via the HTML login page, shared by
  * `mfa-html-routes.ts`'s form-POST `/mfa/verify` route and `handlePostMfaWebauthnVerify` below,
  * so both apply the exact same three-way stage branch (backup-codes owed / password change owed /
  * full landing) instead of each re-implementing it. Returns a path string, not a `Response`: the
@@ -449,7 +445,7 @@ export async function resolvePostMfaLandingPath(
   }
 }
 
-/** POST /api/auth/mfa/webauthn/begin — start a WebAuthn login-time step-up ceremony against the
+/** POST /api/auth/mfa/webauthn/begin, start a WebAuthn login-time step-up ceremony against the
  * user's own registered credentials (partial session, MFA_PENDING only). */
 export async function handlePostMfaWebauthnBegin(
   c: Context,
@@ -484,10 +480,10 @@ const mfaWebauthnVerifySchema = z
   })
   .strict();
 
-/** POST /api/auth/mfa/webauthn/verify — complete the login-time MFA step with a WebAuthn
+/** POST /api/auth/mfa/webauthn/verify, complete the login-time MFA step with a WebAuthn
  * assertion instead of a TOTP/recovery code (partial session, MFA_PENDING only). Consumes the
- * challenge `handlePostMfaWebauthnBegin` stashed for this same session — never a client-supplied
- * challenge — and resolves the instance's own RP config the same way. */
+ * challenge `handlePostMfaWebauthnBegin` stashed for this same session, never a client-supplied
+ * challenge, and resolves the instance's own RP config the same way. */
 export async function handlePostMfaWebauthnVerify(
   c: Context,
   db: PrismaClient,
@@ -568,7 +564,140 @@ export async function handlePostMfaWebauthnVerify(
   return c.json({ ok: true, next }, 200);
 }
 
-/** POST /api/auth/mfa/totp/enroll — start enrollment (enrollment_required only). */
+/** POST /api/auth/mfa/remember-device, marks the current device as trusted for future logins.
+ * Full session only - remembering only ever follows an already-completed MFA step, it never
+ * gates one. Exists for the auto-starting WebAuthn ceremony on `/mfa/verify` (mfaWebauthnScript):
+ * that ceremony fires immediately on page load, before the user has any real chance to check
+ * "Remember this device" ahead of time, so the page instead offers it as a one-tap follow-up once
+ * verification already succeeded. */
+export async function handlePostMfaRememberDevice(c: Context, db: PrismaClient): Promise<Response> {
+  const auth = c.get("auth");
+  const days = await getTrustedDeviceDays(db);
+  if (days > 0) {
+    const { rawToken } = await createTrustedDevice(db, {
+      userId: auth.userId,
+      ip: resolveClientIp(c),
+      userAgent: c.req.header("user-agent"),
+    });
+    await setTrustedDeviceCookie(c, db, rawToken);
+  }
+  return c.json({ ok: true });
+}
+
+const mfaWebauthnEnrollBeginSchema = z.object({ attachment: webauthnAttachmentSchema }).strict();
+
+/** POST /api/auth/mfa/webauthn/register/begin, start a passkey/security-key registration
+ * ceremony during first-time enrollment (partial session, enrollment_required only) - no
+ * step-up gate, the account has no confirmed method yet (mirrors My Account's own registration
+ * begin, see account-routes.ts's handlePostAccountWebauthnRegisterBegin). */
+export async function handlePostMfaWebauthnEnrollBegin(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
+  const partial = c.get("partialAuth");
+  if (partial.stage !== SESSION_STAGE.ENROLLMENT_REQUIRED) {
+    return c.json(AUTH_ERROR, 401);
+  }
+
+  if (!(await getWebauthnEnabled(db))) {
+    return c.json({ code: "webauthn_disabled" }, 403);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON" }, 400);
+  }
+  const parsed = mfaWebauthnEnrollBeginSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
+  if (rp instanceof Response) return rp;
+
+  const begin = await beginWebauthnRegistration(db, partial.userId, parsed.data.attachment, rp);
+  // Only reachable if the authenticated user's own row was deleted between session creation and
+  // this call - requireSession/requirePartialSession already guarantee the row exists for a live
+  // request, so this can't be reproduced without corrupting the DB out from under a real session.
+  /* v8 ignore next */
+  if (!begin) return c.json({ error: "unauthorized" }, 401);
+
+  stashWebauthnChallenge("register", partial.sessionId, begin.challenge);
+  return c.json({ options: begin.options });
+}
+
+const mfaWebauthnEnrollFinishSchema = z
+  .object({
+    attachment: webauthnAttachmentSchema,
+    response: webauthnRegistrationResponseSchema,
+  })
+  .strict();
+
+/** POST /api/auth/mfa/webauthn/register/finish, verify the browser ceremony and complete
+ * first-time enrollment with a passkey/security key instead of an authenticator app. No
+ * step-up code required, same rationale as My Account's own registration finish - the ceremony
+ * itself already proves possession of a real, previously-unregistered authenticator. This is
+ * necessarily the account's first confirmed MFA method, so finishWebauthnRegistration always
+ * returns a fresh backup-codes batch, mirroring confirmTotpEnrollment's own path to the
+ * backup-codes step. */
+export async function handlePostMfaWebauthnEnrollFinish(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
+  const partial = c.get("partialAuth");
+  if (partial.stage !== SESSION_STAGE.ENROLLMENT_REQUIRED) {
+    return c.json(AUTH_ERROR, 401);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON" }, 400);
+  }
+  const parsed = mfaWebauthnEnrollFinishSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  const challenge = consumeWebauthnChallenge("register", partial.sessionId);
+  if (!challenge) return c.json({ code: "challenge_expired" }, 400);
+
+  const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
+  if (rp instanceof Response) return rp;
+
+  const created = await finishWebauthnRegistration(
+    db,
+    partial.userId,
+    parsed.data.response as RegistrationResponseJSON,
+    challenge,
+    parsed.data.attachment,
+    null,
+    rp,
+  );
+  if (!created) return c.json({ code: "verification_failed" }, 400);
+
+  // Enrollment-only: this is necessarily the account's first confirmed MFA method (the
+  // partialAuth stage guard above already ensures ENROLLMENT_REQUIRED, i.e. no confirmed method
+  // yet), so finishWebauthnRegistration's own contract guarantees a non-empty batch here - see
+  // its docstring. The empty-batch branch only exists to share the same shape as the account-
+  // management registration finish, where a later credential legitimately mints none.
+  /* v8 ignore next */
+  if (created.backupCodes.length > 0) {
+    stashEnrollmentBackupCodes(partial.sessionId, created.backupCodes);
+  }
+
+  const promoted = await promoteSessionToBackupCodesStep(db, partial.sessionId, partial.userId);
+  // Only reachable if the session's own stage changed between the enrollment_required check
+  // above and this update (revoked/expired mid-request by a concurrent action) - not
+  // reproducible in a live request without pausing execution between the two.
+  /* v8 ignore next */
+  if (!promoted) return c.json({ code: "verification_failed" }, 400);
+
+  return c.json({ ok: true, next: "/mfa/enroll/backup-codes" });
+}
+
+/** POST /api/auth/mfa/totp/enroll, start enrollment (enrollment_required only). */
 export async function handleTotpEnroll(c: Context, db: PrismaClient): Promise<Response> {
   const partial = c.get("partialAuth");
   if (partial.stage !== SESSION_STAGE.ENROLLMENT_REQUIRED) {
@@ -593,7 +722,7 @@ export async function handleTotpEnroll(c: Context, db: PrismaClient): Promise<Re
   );
 }
 
-/** POST /api/auth/mfa/totp/confirm — confirm TOTP with code (enrollment_required only). */
+/** POST /api/auth/mfa/totp/confirm, confirm TOTP with code (enrollment_required only). */
 export async function handleTotpConfirm(
   c: Context,
   db: PrismaClient,
@@ -658,14 +787,14 @@ export async function handleTotpConfirm(
   );
 }
 
-/** POST /api/auth/mfa/totp/backup-codes/complete — finish enrollment after saving backup codes. */
+/** POST /api/auth/mfa/totp/backup-codes/complete, finish enrollment after saving backup codes. */
 export async function handleTotpBackupCodesComplete(c: Context, db: PrismaClient): Promise<Response> {
   const partial = c.get("partialAuth");
   if (partial.stage !== SESSION_STAGE.BACKUP_CODES_REQUIRED) {
     return c.json(AUTH_ERROR, 401);
   }
 
-  // Refuse completion when backup codes are not in the stash — completing here
+  // Refuse completion when backup codes are not in the stash, completing here
   // would silently enter the app without the user ever seeing their recovery codes.
   const stashed = getStashedEnrollmentBackupCodes(partial.sessionId);
   if (!stashed?.length) {

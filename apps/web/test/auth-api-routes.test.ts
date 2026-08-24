@@ -87,7 +87,6 @@ import { checkMfaVerifyRateLimit } from "../src/auth/mfa-rate-limit.js";
 import { ensureEnrollmentBackupCodesStashed } from "../src/auth/ensure-backup-codes.js";
 import {
   clearSessionCookie,
-  clearTrustedDeviceCookie,
   handleLogin,
   handleLogout,
   handleMe,
@@ -180,7 +179,6 @@ describe("auth API routes (routes.ts)", () => {
       });
       app.get("/clear", (c) => {
         clearSessionCookie(c);
-        clearTrustedDeviceCookie(c);
         return c.text("ok");
       });
       app.get("/trusted", async (c) => {
@@ -308,7 +306,7 @@ describe("auth API routes (routes.ts)", () => {
   });
 
   describe("handleLogout", () => {
-    it("revokes trusted device for a partial session and clears cookies", async () => {
+    it("revokes the session but leaves the trusted-device cookie/token untouched", async () => {
       mockValidatePartial.mockResolvedValue({
         userId: "u1",
         sessionId: "s1",
@@ -320,8 +318,11 @@ describe("auth API routes (routes.ts)", () => {
         headers: { Cookie: "admitto_session=tok; admitto_trusted_device=td" },
       });
       expect(res.status).toBe(200);
-      expect(mockRevokeTrusted).toHaveBeenCalled();
+      expect(mockRevokeTrusted).not.toHaveBeenCalled();
       expect(mockLogout).toHaveBeenCalled();
+      expect(
+        res.headers.getSetCookie?.().some((c) => c.includes("admitto_trusted_device")),
+      ).toBe(false);
     });
   });
 
