@@ -542,15 +542,24 @@ async function subscribeWalletWebhooksBestEffort(
   // (template, targetUrl, event) triple - re-checking on every wallet-relevant save (which this
   // function runs on) would otherwise accumulate a duplicate subscription per save, each
   // delivering its own redundant webhook call forever after. Listing is itself best-effort: if it
-  // fails, fall back to the old blind-subscribe behavior rather than skipping subscription
-  // entirely - a few duplicate subscriptions are a lesser problem than none at all.
+  // fails, skip subscribing entirely this cycle instead of guessing. Blindly resubscribing without
+  // checking piles a fresh duplicate onto every existing one (the original bug this fixed).
+  // Clearing target URLs first and resubscribing - tried in an earlier version of this fix - is
+  // worse, not better: if a subsequent subscribeWebhook call then also fails, it deletes a
+  // previously-working subscription with no guaranteed replacement, breaking wallet registration
+  // or void updates for that event type until some later save happens to repair it (bot review,
+  // PR #1057) - a regression the original bug never had, since the old subscription always stayed
+  // in place alongside a failed duplicate attempt. Skipping is the only option that's never worse:
+  // nothing here changes what's already subscribed, so the next successful save (or the periodic
+  // sync, registration-sync.ts) is what reconciles it.
   let ownTemplateHooks: { targetUrl: string | null; event: string; passTemplate: string | null }[] = [];
   try {
     ownTemplateHooks = (await client.listWebhooks()).filter(
       (hook) => hook.passTemplate === updated.wallet_template_id,
     );
   } catch (err) {
-    console.error("wallet webhook subscribe: listWebhooks failed, subscribing unconditionally:", err);
+    console.error("wallet webhook subscribe: listWebhooks failed, skipping this cycle:", err);
+    return;
   }
 
   // One-time migration: pass_voided used to share registrationUrl with the three registration
