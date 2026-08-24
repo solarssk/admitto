@@ -151,8 +151,12 @@ function parseMetadataByline(text) {
   }
   if (!bylineLine) return rows;
   for (const segment of bylineLine.split("·")) {
-    const cellMatch = segment.trim().match(/^\*\*([^*]+):\*\*\s*(.*)$/);
-    if (cellMatch) rows.set(cellMatch[1].trim(), cellMatch[2].trim());
+    const trimmed = segment.trim();
+    if (!trimmed.startsWith("**")) continue;
+    const labelEnd = trimmed.indexOf(":**", 2);
+    if (labelEnd === -1) continue;
+    const label = trimmed.slice(2, labelEnd).trim();
+    if (label) rows.set(label, trimmed.slice(labelEnd + 3).trim());
   }
   return rows;
 }
@@ -205,9 +209,10 @@ if (!existsSync(wikiRoot) || !statSync(wikiRoot).isDirectory()) {
         if (!metadataRows.get(label)?.trim()) fail(`${relativePath} is missing ${label} metadata.`);
       }
       const statusValue = metadataRows.get("Feature status")?.trim() ?? "";
-      const statusMatch = statusValue.match(/^(\S+)\s+(.+)$/);
-      const status = statusMatch?.[2];
-      if (!status || !validStatuses.has(status) || statusMatch[1] !== statusIcons[status]) {
+      const statusSpace = statusValue.indexOf(" ");
+      const statusIcon = statusSpace === -1 ? "" : statusValue.slice(0, statusSpace);
+      const status = statusSpace === -1 ? "" : statusValue.slice(statusSpace + 1).trim();
+      if (!status || !validStatuses.has(status) || statusIcon !== statusIcons[status]) {
         fail(`${relativePath} has an invalid feature status.`);
       }
       if (workflowPages.has(fileName)) {
