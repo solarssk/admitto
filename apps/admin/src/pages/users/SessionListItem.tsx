@@ -69,7 +69,7 @@ export function SessionTableRow({ session: s, onEdit, onRevoke }: Readonly<Sessi
       <td className="sessions-col-tablet-hide" title={s.userAgent ?? undefined}>
         {s.deviceLabel ? s.deviceLabel : parseUserAgent(s.userAgent)}
       </td>
-      <td className="sessions-col-tablet-hide">
+      <td className="sessions-col-tablet-hide sessions-ip-cell">
         {s.ip ?? "-"}
         {s.ip && <div className="sessions-subdued"><GeoCell location={s.country} /></div>}
       </td>

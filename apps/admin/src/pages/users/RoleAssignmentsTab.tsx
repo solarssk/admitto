@@ -33,12 +33,13 @@ function scopeLabel(row: RoleAssignmentListItemDto): string {
  * of a person's initials. */
 function ScopeCell({ row }: Readonly<{ row: RoleAssignmentListItemDto }>) {
   const isOrg = row.scope_type === "organization";
+  const label = scopeLabel(row);
   return (
     <div className="users-page__user-cell">
       <span className="at-avatar at-avatar--sm" title={isOrg ? "Organization scope" : "Event scope"}>
         <i className={`ti ti-${isOrg ? "building" : "calendar-event"}`} aria-hidden="true" />
       </span>
-      {scopeLabel(row)}
+      <span className="users-page__scope-label" title={label}>{label}</span>
     </div>
   );
 }

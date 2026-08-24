@@ -5356,6 +5356,13 @@ output.mail-field-hint {
   font-family: "Twemoji Country Flags", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
 }
 
+/* IPv6 addresses have no spaces to wrap on, so as a single unbroken token they'd otherwise force
+   this column's minimum width to their full length under table-layout: auto, distorting every
+   other column in the row (same fix as .audit-log-ip - this table just isn't the audit log). */
+.sessions-ip-cell {
+  word-break: break-all;
+}
+
 .sessions-action-col {
   text-align: center;
 }

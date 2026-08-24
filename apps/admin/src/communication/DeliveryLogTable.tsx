@@ -290,7 +290,7 @@ function DeliveryListContent({
                   <span className="mono muted">{row.recipient_email ?? "-"}</span>
                 </Link>
               </td>
-              <td>{templateLabel(row)}</td>
+              <td className="communication-template-cell" title={templateLabel(row)}>{templateLabel(row)}</td>
               <td>{purposeLabel(row.purpose)}</td>
               <td>
                 <StatusBadge status={row.status} />

@@ -357,6 +357,20 @@
   color: var(--text-secondary);
 }
 
+/* An event title or organization name is unbounded free text - clamp to 2 lines instead of
+   letting it wrap without limit and force this column to claim most of the row's width (same
+   fix as .audit-log-scope). The full name is still reachable via this cell's title tooltip. */
+.users-page__scope-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+  word-break: break-word;
+}
+
 .users-page__roles {
   display: flex;
   flex-wrap: wrap;
