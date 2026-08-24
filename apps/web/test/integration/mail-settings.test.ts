@@ -354,6 +354,17 @@ describe("PUT /api/admin/mail-settings", () => {
     expect(body.error).toBe("validation_failed");
   });
 
+  it("rejects a Power Automate URL targeting cloud metadata via a trailing-dot absolute hostname (CodeRabbit finding on #1050)", async () => {
+    const res = await app.request("/api/admin/mail-settings", {
+      method: "PUT",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ powerAutomateUrl: "https://metadata.google.internal./flow" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("validation_failed");
+  });
+
   it("trims SMTP host before persistence", async () => {
     const res = await app.request("/api/admin/mail-settings", {
       method: "PUT",

@@ -27,6 +27,16 @@ export function unbracketHostname(hostname: string): string {
 }
 
 /**
+ * Strip a single trailing root-label dot from an absolute FQDN (e.g. "localhost." ->
+ * "localhost") so the exact-match hostname checks below can't be bypassed by an otherwise-
+ * identical absolute-form hostname - WHATWG URL parsing keeps the trailing dot in `.hostname`
+ * for a non-IP host (CodeRabbit finding on #1050).
+ */
+function stripTrailingDot(host: string): string {
+  return host.endsWith(".") ? host.slice(0, -1) : host;
+}
+
+/**
  * Normalize a hostname or IP literal for allowlist exact-match.
  * WHATWG URL parsing compresses IPv6 (`fd00:0:0:0:0:0:0:1` -> `fd00::1`), so an allowlist
  * entry pasted from either form still matches `new URL(issuer).hostname`.
@@ -45,7 +55,7 @@ export function canonicalizeAllowlistHost(hostname: string): string {
 
 /** Whether the hostname is loopback (localhost / 127.0.0.1 / ::1). */
 export function isLoopbackHost(hostname: string): boolean {
-  const host = unbracketHostname(hostname).toLowerCase();
+  const host = stripTrailingDot(unbracketHostname(hostname).toLowerCase());
   if (host === "localhost" || host === "127.0.0.1" || host === "::1") return true;
   const mapped = extractIpv4FromMappedIpv6(host);
   return mapped === "127.0.0.1";
@@ -129,7 +139,7 @@ function isBlockedPrivateIpv6(hostname: string): boolean {
 
 /** Whether the hostname is a private/loopback/link-local/metadata address (any family). */
 export function isBlockedPrivateOrMetadataHost(hostname: string): boolean {
-  const host = unbracketHostname(hostname).toLowerCase();
+  const host = stripTrailingDot(unbracketHostname(hostname).toLowerCase());
   if (host === "metadata.google.internal") return true;
   if (isBlockedPrivateIpv6(hostname)) return true;
 
