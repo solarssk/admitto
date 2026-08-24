@@ -327,12 +327,24 @@ describe("bounceIngestStaleMs helpers", () => {
     expect(() =>
       assertValidBounceIngestTickSecondsEnv({ BOUNCE_INGEST_INTERVAL_SECONDS: "abc" }),
     ).toThrow(/BOUNCE_INGEST_INTERVAL_SECONDS must be a positive integer/);
+    expect(() =>
+      assertValidBounceIngestTickSecondsEnv({ BOUNCE_INGEST_TICK_SECONDS: "9".repeat(400) }),
+    ).toThrow(/BOUNCE_INGEST_TICK_SECONDS must be a positive integer/);
   });
 
   it("does not reject an unset or blank tick/interval env var", () => {
     expect(() => assertValidBounceIngestTickSecondsEnv({})).not.toThrow();
     expect(() => assertValidBounceIngestTickSecondsEnv({ BOUNCE_INGEST_TICK_SECONDS: "" })).not.toThrow();
     expect(() => assertValidBounceIngestTickSecondsEnv({ BOUNCE_INGEST_TICK_SECONDS: "90" })).not.toThrow();
+  });
+
+  it("ignores an invalid legacy interval once the new tick variable already overrides it", () => {
+    expect(() =>
+      assertValidBounceIngestTickSecondsEnv({
+        BOUNCE_INGEST_TICK_SECONDS: "90",
+        BOUNCE_INGEST_INTERVAL_SECONDS: "abc",
+      }),
+    ).not.toThrow();
   });
 
   it("defaults non-positive deploy tick seconds to the 60s wake interval", () => {
