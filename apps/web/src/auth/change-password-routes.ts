@@ -22,6 +22,7 @@ import {
 import { applyAuthPageSecurityHeaders, createAuthPageScriptNonce } from "../auth-page-security.js";
 import { resolveCspTrustedOriginsSafe } from "../csp-trusted-origins.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
+import { setSessionCookie } from "./routes.js";
 import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { resolveClientTimezone } from "../admin/admin-helpers.js";
@@ -110,6 +111,7 @@ export async function handlePostChangePassword(c: Context, db: PrismaClient): Pr
     const hash = await hashPassword(password);
     const orgId = await resolveInstanceOrganizationId(db);
     let promotedStage: SessionStage | null = null;
+    let promotedRawToken: string | null = null;
     let revokedCount = 0;
     await db.$transaction(async (tx) => {
       await tx.user.update({
@@ -119,9 +121,16 @@ export async function handlePostChangePassword(c: Context, db: PrismaClient): Pr
       revokedCount = await revokeOtherSessions(tx, gate.userId, gate.sessionId);
       // Flag is now cleared, so promote the constrained session and resolve any
       // remaining gates (backup codes, then full) in one transaction (IAM-001).
-      promotedStage = await promoteSessionToFull(tx, gate.sessionId, gate.userId);
-      if (!promotedStage) throw new Error("session_promotion_failed");
+      const promoted = await promoteSessionToFull(tx, gate.sessionId, gate.userId);
+      if (!promoted) throw new Error("session_promotion_failed");
+      promotedStage = promoted.stage;
+      promotedRawToken = promoted.rawToken;
     });
+    // Session token rotates on every promotion (see promoteSessionToFull) - the
+    // pre-password-change cookie must stop working the instant the session advances.
+    // Non-null: the transaction above throws (and this line is never reached) unless
+    // `promoted` was set, which always assigns `promotedRawToken` in the same branch.
+    setSessionCookie(c, promotedRawToken!);
 
     // Audit write runs after the transaction commits, not inside it: the password
     // change and session promotion have already succeeded at this point, and a
