@@ -587,7 +587,9 @@ async function subscribeWalletWebhooksBestEffort(
         outcome.reason,
       );
     });
-    alreadySubscribed = new Set(); // best-effort clean slate - subscribe below fills it back in fresh
+    // alreadySubscribed is already empty here: ownTemplateHooks never got populated on this path
+    // (the try block above never completed), so there's nothing to wipe - the subscribe loop
+    // below fills it back in fresh regardless of whether the clears above succeeded.
   } else if (hasLegacyVoidedSubscription) {
     try {
       await client.unsubscribeWebhook(registrationUrl);
