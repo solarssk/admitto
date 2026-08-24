@@ -25,6 +25,23 @@ const SMTP_CODE_RE = /\b([45]\d{2})\b/;
 interface NodemailerSmtpError extends Error {
   responseCode?: number;
   response?: string;
+  code?: string;
+}
+
+/** Nodemailer's own permanent, client-side error codes - authentication, envelope
+ * (malformed sender/recipient/DSN), TLS/certificate, and REQUIRETLS-policy failures.
+ * None of these carry an SMTP reply code (they happen before or outside the protocol
+ * exchange), and none resolve by retrying with the same mail config: the same
+ * credentials, message, or TLS setup fails identically every attempt. Retrying EAUTH
+ * in particular would repeat failed authentication against the same mailbox up to
+ * MAX_MAIL_DRAIN_ATTEMPTS times per recipient in a bulk send. */
+const PERMANENT_NODEMAILER_CODES = new Set(["EAUTH", "ETLS", "EENVELOPE", "EREQUIRETLS"]);
+
+/** True when `err` carries one of Nodemailer's own permanent client-side error codes. */
+function isPermanentNodemailerError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const code = (err as NodemailerSmtpError).code;
+  return code !== undefined && PERMANENT_NODEMAILER_CODES.has(code);
 }
 
 function isSmtpReplyCode(value: number): boolean {
@@ -59,33 +76,44 @@ export function extractSmtpCode(err: unknown): number | undefined {
   return codeMatch ? Number(codeMatch[1]) : undefined;
 }
 
+/** Classify a resolved SMTP reply code (always in the 400-599 range - see {@link isSmtpReplyCode}). */
+function mapSmtpReplyCode(code: number): MappedFailure {
+  // Permanent auth / policy failures
+  if (code === 535 || code === 534 || code === 553 || code === 550) {
+    return { status: "rejected", retryable: false };
+  }
+  // Transient SMTP responses
+  if (code === 421 || code === 450 || code === 451 || code === 452) {
+    return { status: "failed", retryable: true };
+  }
+  if (code >= 500) {
+    return { status: "rejected", retryable: false };
+  }
+  return { status: "failed", retryable: true };
+}
+
 /** Map nodemailer / SMTP transport errors to normalized failure semantics. */
 export function mapSmtpError(err: unknown): MappedFailure {
-  const msg = err instanceof Error ? err.message : String(err);
   const code = extractSmtpCode(err);
-
   if (code !== undefined) {
-    // Permanent auth / policy failures
-    if (code === 535 || code === 534 || code === 553 || code === 550) {
-      return { status: "rejected", retryable: false };
-    }
-    // Transient SMTP responses
-    if (code === 421 || code === 450 || code === 451 || code === 452) {
-      return { status: "failed", retryable: true };
-    }
-    if (code >= 500) {
-      return { status: "rejected", retryable: false };
-    }
-    if (code >= 400 && code < 500) {
-      return { status: "failed", retryable: true };
-    }
+    return mapSmtpReplyCode(code);
   }
 
+  const msg = err instanceof Error ? err.message : String(err);
   if (/ECONNREFUSED|ETIMEDOUT|ENOTFOUND|ETIMEOUT|socket timeout/i.test(msg)) {
     return { status: "failed", retryable: true };
   }
 
-  return { status: "failed", retryable: false };
+  if (isPermanentNodemailerError(err)) {
+    return { status: "rejected", retryable: false };
+  }
+
+  // An SMTP error we can't classify (no reply code, no recognized transport-error pattern or
+  // permanent Nodemailer code) is often a mid-transaction connection drop under load (e.g.
+  // provider-side throttling that doesn't send a clean 4xx first) rather than a truly permanent
+  // failure - MAX_MAIL_DRAIN_ATTEMPTS already bounds the retry count, so defaulting to retryable
+  // is safer than giving up after one try.
+  return { status: "failed", retryable: true };
 }
 
 /** Drop the free-text suffix from a provider send-failure message before it reaches
