@@ -3524,6 +3524,7 @@ async function loadWalletActionContext(
       tokenEnc: string | null;
       providerPassId: string;
       previousStatus: string;
+      userProvidedId: string | null;
       provider: WalletPassProvider;
     }
 > {
@@ -3542,7 +3543,7 @@ async function loadWalletActionContext(
         qr_payload: true,
         external_uuid: true,
         token_enc: true,
-        wallet_pass: { select: { provider_pass_id: true, status: true } },
+        wallet_pass: { select: { provider_pass_id: true, status: true, user_provided_id: true } },
       },
     }),
     db.event.findUnique({
@@ -3574,6 +3575,7 @@ async function loadWalletActionContext(
     tokenEnc: attendee.token_enc,
     providerPassId: attendee.wallet_pass.provider_pass_id,
     previousStatus: attendee.wallet_pass.status,
+    userProvidedId: attendee.wallet_pass.user_provided_id,
     provider,
   };
 }
@@ -3713,6 +3715,80 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
     });
     return row;
   });
+  return c.json(serializeWalletPassAction(updated));
+}
+
+/**
+ * POST /api/admin/events/:eventId/attendees/:id/wallet/refresh-status - pulls this attendee's
+ * current device-registration status directly from the provider (a read, not a push - the
+ * opposite direction from reissue above), instead of waiting for the periodic wallet_sync worker
+ * job to get to this row (up to WALLET_SYNC_STALE_MS old, and capped at
+ * WALLET_SYNC_BATCH_LIMIT rows per tick system-wide - packages/wallet/src/registration-sync.ts).
+ * For an operator staring at one specific attendee who Passcreator's own dashboard already shows
+ * as registered while Admitto still doesn't, this is the immediate fix. Read-only at the
+ * provider - no writeActionLog entry, matching the periodic sync's own behavior (a status pull
+ * isn't an operator action on the pass the way void/restore/reissue/delete are).
+ */
+export async function handleRefreshAttendeeWalletStatus(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const ctx = await loadWalletActionContext(c, db, eventId);
+  if (ctx instanceof Response) return ctx;
+  if (!ctx.userProvidedId) return c.json({ error: "wallet_pass_not_refreshable" }, 409);
+
+  let status;
+  try {
+    status = await ctx.provider.getRegistrationStatus(ctx.userProvidedId);
+    if (!status) {
+      // PassCreator's search index can briefly lag right after a status-affecting event - a
+      // resolved "not found" here uses the exact same search endpoint whose lag app.ts's
+      // recoverDuplicatePass already retries for, and isn't authoritative on its own. One retry
+      // after the same short delay covers that; a thrown retry is folded into "still no match"
+      // rather than surfaced as its own error (bot review).
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      status = await ctx.provider.getRegistrationStatus(ctx.userProvidedId).catch(() => null);
+    }
+  } catch (err) {
+    return walletProviderErrorResponse(c, err, "handleRefreshAttendeeWalletStatus");
+  }
+  if (!status) {
+    // Still no match after the retry - genuinely gone at the provider (deleted out of band) or
+    // longer-than-usual index lag. Either way, treating this as a successful check would silently
+    // clear every previously-known registration count and, via registration_sync_attempted_at
+    // below, delay the periodic worker's next real attempt by ~30 minutes. Leave the stored
+    // status untouched and report the check itself as failed instead (bot review).
+    return c.json({ error: "wallet_status_check_inconclusive" }, 502);
+  }
+
+  // Conditioned on the pass identity read above, not just attendee_id: a concurrent delete+re-add
+  // during the provider call (widened by the retry above) would otherwise let this write stale
+  // registration data from the old pass onto the new one's row (bot review).
+  const { count } = await db.walletPass.updateMany({
+    where: {
+      attendee_id: ctx.attendeeId,
+      provider_pass_id: ctx.providerPassId,
+      user_provided_id: ctx.userProvidedId,
+    },
+    data: {
+      apple_active_registrations: status.appleActiveRegistrations,
+      apple_inactive_registrations: status.appleInactiveRegistrations,
+      google_active_registrations: status.googleActiveRegistrations,
+      google_inactive_registrations: status.googleInactiveRegistrations,
+      first_downloaded_at: status.firstDownloadedAt,
+      registration_checked_at: new Date(),
+      // Matches syncOne's own success write (registration-sync.ts) - the periodic worker selects
+      // its next stale-row batch by this field, not registration_checked_at, so leaving it
+      // untouched here would make the row look never-synced and get re-picked (wasting one of the
+      // system-wide 25-per-tick slots) on the very next tick, seconds after this manual refresh
+      // already did the same work (bot review).
+      registration_sync_attempted_at: new Date(),
+    },
+  });
+  if (count === 0) return c.json({ error: "wallet_pass_changed" }, 409);
+
+  const updated = await db.walletPass.findUniqueOrThrow({ where: { attendee_id: ctx.attendeeId } });
   return c.json(serializeWalletPassAction(updated));
 }
 

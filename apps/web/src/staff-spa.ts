@@ -4,6 +4,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import { resolveDefaultAdminDistRoot } from "./admin/admin-build-meta.js";
 import { resolveCspTrustedOriginsSafe } from "./csp-trusted-origins.js";
+import { isSecureRequest } from "./is-secure-request.js";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -72,10 +73,12 @@ function buildStaffSpaContentSecurityPolicy(
 
 /** Security headers for `/admin` and `/operator` SPA shell (Vite bundle). `trustedOrigins`
  *  (Settings → Security, `csp_trusted_origins`) extends `script-src`/`connect-src` for
- *  third-party analytics/monitoring beacons the operator has explicitly opted into. */
+ *  third-party analytics/monitoring beacons the operator has explicitly opted into. `secure`
+ *  (see `isSecureRequest`) gates HSTS so it's never sent on local HTTP dev/bootstrap. */
 export function getStaffSpaSecurityHeaders(
   env: EnvLike = process.env,
   trustedOrigins: readonly string[] = [],
+  secure = false,
 ): Record<string, string> {
   return {
     "Cache-Control": "no-store",
@@ -85,6 +88,10 @@ export function getStaffSpaSecurityHeaders(
     // form POST, causing the CSRF guard to reject the request.
     "Referrer-Policy": "same-origin",
     "X-Content-Type-Options": "nosniff",
+    // Operator SPA uses the camera for QR scanning (CameraScanner.tsx) - allow it same-origin
+    // only, deny every other powerful feature by default.
+    "Permissions-Policy": "camera=(self), geolocation=(), microphone=(), payment=(), usb=()",
+    ...(secure ? { "Strict-Transport-Security": "max-age=31536000; includeSubDomains" } : {}),
   };
 }
 
@@ -136,7 +143,7 @@ export function createStaffSpaHandlers(options: StaffSpaOptions) {
     c.header("Content-Type", file.contentType);
     const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
     for (const [name, value] of Object.entries(
-      getStaffSpaSecurityHeaders(process.env, trustedOrigins),
+      getStaffSpaSecurityHeaders(process.env, trustedOrigins, isSecureRequest(c)),
     )) {
       c.header(name, value);
     }
