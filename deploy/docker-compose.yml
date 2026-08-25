@@ -47,7 +47,9 @@ services:
       EMERGENCY_EXPORT_DIR: /app/emergency-exports
       UPLOAD_DIR: /app/uploads
       # JSON access log on app stdout (method, redacted path, status, duration -
-      # no IPs, tokens, or query strings). Set LOG_HTTP_REQUESTS=0 in .env to disable.
+      # no tokens or query strings; client IP is included only when the request carries a
+      # verified staff/operator session, see DATA-PROTECTION.md). Set LOG_HTTP_REQUESTS=0 in
+      # .env to disable.
       LOG_HTTP_REQUESTS: ${LOG_HTTP_REQUESTS:-1}
     volumes:
       - ./emergency-exports:/app/emergency-exports
