@@ -245,6 +245,16 @@ describe("external-services GET/PUT routes", () => {
     expect(await res.json()).toEqual({ error: "invalid_tile_url" });
   });
 
+  it("rejects private maps tile URL hosts", async () => {
+    const res = await handlePutMapsSettings(
+      mockContext({ tileUrl: "https://169.254.169.254/{z}/{x}/{y}.png" }),
+      db,
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "url_host_blocked" });
+    expect(patchMapsSettings).not.toHaveBeenCalled();
+  });
+
   it("rejects invalid geocoding base URLs", async () => {
     const res = await handlePutMapsSettings(
       mockContext({ geocodingBaseUrl: "ftp://bad.example" }),

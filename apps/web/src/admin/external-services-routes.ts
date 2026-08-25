@@ -25,7 +25,11 @@ import {
   patchMapsSettings,
   refreshMapsConfigCache,
 } from "../maps/maps-org-settings.js";
-import { isStaffSpaCompatibleTileUrl, resolveGeocodingConfig } from "../maps/config.js";
+import {
+  expandTileUrlForParse,
+  isStaffSpaCompatibleTileUrl,
+  resolveGeocodingConfig,
+} from "../maps/config.js";
 import {
   buildGeocodingUserAgent,
   isGeocodingContactConfigured,
@@ -103,6 +107,12 @@ function mapsUrlErrorCode(code: EditableServiceUrlError): string {
   if (code === "url_host_blocked") return "url_host_blocked";
   if (code === "url_host_unresolved") return "url_host_unresolved";
   return "invalid_geocoding_base_url";
+}
+
+function tileUrlErrorCode(code: EditableServiceUrlError): string {
+  if (code === "url_host_blocked") return "url_host_blocked";
+  if (code === "url_host_unresolved") return "url_host_unresolved";
+  return "invalid_tile_url";
 }
 
 function mapsUrlProbeMessage(code: EditableServiceUrlError): string {
@@ -314,8 +324,20 @@ export async function handlePutMapsSettings(
   }
 
   if (parsed.data.tileUrl != null && parsed.data.tileUrl.trim() !== "") {
-    if (!isStaffSpaCompatibleTileUrl(parsed.data.tileUrl.trim())) {
+    const tileUrl = parsed.data.tileUrl.trim();
+    if (!isStaffSpaCompatibleTileUrl(tileUrl)) {
       return c.json({ error: "invalid_tile_url" }, 400);
+    }
+    // isStaffSpaCompatibleTileUrl only lets an http: template through for the dev-only
+    // http://localhost/127.0.0.1 exception (same carve-out static-map.ts's assertSafeTileFetchUrl
+    // applies at fetch time) - only an https template needs the private/loopback/metadata host
+    // check the geocoding/weather base URLs already get above and below.
+    const expandedTileUrl = expandTileUrlForParse(tileUrl);
+    if (new URL(expandedTileUrl).protocol === "https:") {
+      const checkedTile = await assertEditableServiceUrl(expandedTileUrl);
+      if (!checkedTile.ok) {
+        return c.json({ error: tileUrlErrorCode(checkedTile.code) }, 400);
+      }
     }
   }
   if (parsed.data.geocodingBaseUrl != null && parsed.data.geocodingBaseUrl.trim() !== "") {

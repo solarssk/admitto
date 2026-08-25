@@ -86,8 +86,10 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
 /**
  * Expand Leaflet template tokens so `new URL(...)` can parse the configured tile pattern.
  * Tokens are replaced with fixed placeholders - we only care about scheme/host for CSP.
+ * Exported so callers needing the same expanded form (e.g. the maps settings save handler's
+ * SSRF host check) don't re-implement token substitution.
  */
-function expandTileUrlForParse(raw: string): string {
+export function expandTileUrlForParse(raw: string): string {
   return raw
     .replaceAll("{s}", "a")
     .replaceAll("{z}", "0")
