@@ -206,7 +206,7 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 | `GET …/attendees?q=...` (search) | user + event | 120 / 60 s | operator / admin |
 | single-attendee wallet actions (void/restore/reissue/delete) | user + event | 10 / 10 min | event admin |
 | bulk-attendee mutations (delete, check-in, revoke check-in/items/pass, ticket type, RSVP) | user + event | 20 / 60 s | event admin |
-| bulk wallet actions (void/reissue/delete for a selection), plus bulk-delete and bulk-revoke-pass whenever the selection includes attendees with a wallet pass | user + event | 3 / 10 min | event admin |
+| bulk wallet actions (void/reissue/delete for a selection, max 100 attendees per request), plus bulk-delete and bulk-revoke-pass whenever the event has wallet configured | user + event | 3 / 10 min | event admin |
 | attendee resend, check-in scan/history | per-route keys | see `apps/web/src/rate-limit/policies.ts` | operator / admin |
 
 Every route above that can reach PassCreator is additionally paced at the outbound-call layer, not
@@ -324,17 +324,22 @@ time, closing the same DNS-rebinding gap as the OIDC and mail guards above — s
 
 **PassCreator call pacing (not SSRF — availability/abuse hardening).** Every outbound call to
 PassCreator (issue, void, restore, delete, push, search, webhook key fetch) goes through one
-choke point, `PassCreatorClient.requestRaw`, which spaces calls at least 150ms apart process-wide
-— across every caller: single and bulk admin wallet actions, the background wallet-push/wallet-sync
-workers, and webhook resubscribe-on-save — regardless of how many separate requests or client
-instances are triggering them concurrently. This keeps Admitto's own outbound traffic under
-PassCreator's documented account-wide 600 req/min limit even under a burst (e.g. several bulk
-actions started at once), rather than relying only on reacting to a 429 after the limit is already
-exceeded. The admin-facing rate limits in the table above bound how much work an admin can queue
-up; this pacing bounds how fast that work actually reaches PassCreator. One consequence: a bulk
-wallet action against a large selection (up to 500 attendees per request) now takes proportionally
-longer to complete — around a minute or more for a full 500 — rather than firing all calls at once
-and having a chunk of them fail once PassCreator's own rate limit was exceeded.
+choke point, `PassCreatorClient.requestRaw`, which spaces calls at least 150ms apart — across every
+caller: single and bulk admin wallet actions, the background wallet-push/wallet-sync workers, and
+webhook resubscribe-on-save — regardless of how many separate requests or client instances are
+triggering them concurrently. This keeps Admitto's own outbound traffic under PassCreator's
+documented account-wide 600 req/min limit even under a burst (e.g. several bulk actions started at
+once), rather than relying only on reacting to a 429 after the limit is already exceeded. When
+`REDIS_URL` is configured, this pacing is coordinated across every server process handling
+requests via a Redis-backed gate (`packages/wallet/src/passcreator-pace-gate.ts`); without it, each
+process paces only its own calls, so the combined rate across multiple processes could exceed the
+intended pace. The admin-facing rate limits in the table above bound how much work an admin can
+queue up; this pacing bounds how fast that work actually reaches PassCreator. One consequence: a
+bulk wallet action against a selection now takes proportionally longer to complete than a
+non-wallet bulk action, rather than firing all calls at once and having a chunk of them fail once
+PassCreator's own rate limit was exceeded — bulk wallet actions on a whole selection are also
+capped at 100 attendees per request (down from the general 500 bulk-action cap) so a full-size
+request stays comfortably within a typical reverse proxy's response timeout.
 
 ---
 
