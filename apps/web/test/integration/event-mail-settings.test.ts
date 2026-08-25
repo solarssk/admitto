@@ -960,21 +960,9 @@ describe("POST /api/admin/events/:eventId/mail-settings/test", () => {
 
       const recipient = "shared-budget@example.com";
 
-      // 3 event-level requests: exhausts the event route's OWN burst (3/min) and brings the
+      // 3 organization-level requests: exhausts the org route's OWN burst (3/min) and brings the
       // shared recipient count to 3/5.
       for (let i = 0; i < 3; i++) {
-        const res = await app.request(`/api/admin/events/${EVENT}/mail-settings/test`, {
-          method: "POST",
-          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ to: recipient }),
-        });
-        expect(res.status).toBe(200);
-      }
-
-      // 2 organization-level requests to the SAME recipient: the org route's own burst (3/min)
-      // is untouched (0 -> 2, still under its own limit of 3), but the shared recipient count
-      // reaches 5/5.
-      for (let i = 0; i < 2; i++) {
         const res = await app.request("/api/admin/mail-settings/test", {
           method: "POST",
           headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
@@ -983,10 +971,25 @@ describe("POST /api/admin/events/:eventId/mail-settings/test", () => {
         expect(res.status).toBe(200);
       }
 
-      // A 3rd organization-level request is still within that route's OWN burst budget (3rd of
-      // 3 allowed) - if it were blocked, that would have to be the shared recipient budget, not
-      // the org route's own limit, isolating exactly what this test is proving.
-      const limited = await app.request("/api/admin/mail-settings/test", {
+      // 2 event-level requests to the SAME recipient: the event route's own burst (3/min) is
+      // untouched (0 -> 2, still under its own limit of 3), but the shared recipient count
+      // reaches 5/5.
+      for (let i = 0; i < 2; i++) {
+        const res = await app.request(`/api/admin/events/${EVENT}/mail-settings/test`, {
+          method: "POST",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ to: recipient }),
+        });
+        expect(res.status).toBe(200);
+      }
+
+      // A 3rd event-level request is still within that route's OWN burst budget (3rd of 3
+      // allowed) - if it were blocked, that would have to be the shared recipient budget, not the
+      // event route's own limit, isolating exactly what this test is proving, and exercising the
+      // event-level handler's own blocked branch (not just the org-level handler's, as it would
+      // if this test always blocked on the org-level side - bot review, Codecov patch-coverage
+      // follow-up).
+      const limited = await app.request(`/api/admin/events/${EVENT}/mail-settings/test`, {
         method: "POST",
         headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
         body: JSON.stringify({ to: recipient }),
