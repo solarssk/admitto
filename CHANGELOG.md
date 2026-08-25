@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An attendee's "Ticket link copied" activity log entry produced by opening "View sent message" now records the operator's own timezone instead of falling back to the event's timezone, matching every other activity log row - previously it could show a visibly different UTC offset than the operator's other actions on the same attendee if the event's own timezone differed from the operator's.
+
 ### Security
 
 - The public ticket page, the staff admin/operator app, and every sign-in or account-security page (login, two-factor, forced password change, single sign-on linking) now tell browsers to always use HTTPS for this site, the same protection the API already had. Previously that only reached these pages through Admitto's own bundled reverse proxy; a deployment that skips it (for example, the documented Portainer/NAS setup without the bundled nginx) shipped the public ticket page - which loads no scripts of its own, so it had no other way to pick this up - with no such protection at all.

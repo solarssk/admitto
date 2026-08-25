@@ -1661,7 +1661,10 @@ export async function fetchEventDelivery(
 /** Fetch a delivery's redacted rendered message for the "View sent message" preview — the
  * recipient's real QR code / ticket link are never included, by design (see
  * communication-api-routes.ts handleGetRenderedEventDelivery). `subject`/`html` are null when the
- * retention window already cleared the stored snapshot. */
+ * retention window already cleared the stored snapshot. A GET request, so it needs its own
+ * X-Client-Timezone header (the shared jsonPostInit-style helpers only cover mutation verbs) -
+ * this endpoint self-audits a "ticket_link_retrieved" write and that row should show the
+ * operator's local time too. */
 export async function fetchRenderedDelivery(
   eventId: string,
   deliveryId: string,
@@ -1669,7 +1672,11 @@ export async function fetchRenderedDelivery(
 ): Promise<RenderedDeliveryDto> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/deliveries/${encodeURIComponent(deliveryId)}/rendered`,
-    { credentials: "same-origin", signal },
+    {
+      credentials: "same-origin",
+      headers: { "X-Client-Timezone": Intl.DateTimeFormat().resolvedOptions().timeZone },
+      signal,
+    },
   );
   return parseJson<RenderedDeliveryDto>(res);
 }
