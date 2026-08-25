@@ -18,6 +18,18 @@ describe("mapSendResultToDelivery", () => {
     expect(u.sent_at).toBeInstanceOf(Date);
   });
 
+  it("clears error/error_code as null (not omitted) on accepted, so a retry after a prior failure wipes stale text", () => {
+    const u = mapSendResultToDelivery({ status: "accepted", provider: "smtp" });
+    expect(u.error).toBeNull();
+    expect(u.error_code).toBeNull();
+  });
+
+  it("clears error/error_code as null (not omitted) on sent", () => {
+    const u = mapSendResultToDelivery({ status: "sent", provider: "smtp" });
+    expect(u.error).toBeNull();
+    expect(u.error_code).toBeNull();
+  });
+
   it("maps failed retryable", () => {
     const u = mapSendResultToDelivery({
       status: "failed",
