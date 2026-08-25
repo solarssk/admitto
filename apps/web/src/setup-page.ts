@@ -29,8 +29,9 @@ function esc(s: string): string {
 export function getSetupPageSecurityHeaders(
   scriptNonce: string,
   trustedOrigins: readonly string[] = [],
+  secure = false,
 ): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins, secure);
 }
 
 export type SetupErrorCode =

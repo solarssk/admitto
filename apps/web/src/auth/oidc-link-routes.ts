@@ -14,6 +14,7 @@ import { checkMfaVerifyRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js
 import { checkOidcLinkStepUpRateLimit } from "../rate-limit/policies.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { parseOptionalClientTimezone } from "../admin/timezone.js";
+import { isSecureRequest } from "../is-secure-request.js";
 
 const LINK_ERROR = "Invalid password or code. Try again.";
 
@@ -24,7 +25,10 @@ function htmlResponse(
   status: 200 | 401 = 200,
   trustedOrigins: readonly string[] = [],
 ): Response {
-  applyAuthPageSecurityHeaders(c, getOidcLinkPageSecurityHeaders(scriptNonce, trustedOrigins));
+  applyAuthPageSecurityHeaders(
+    c,
+    getOidcLinkPageSecurityHeaders(scriptNonce, trustedOrigins, isSecureRequest(c)),
+  );
   return c.html(html, status);
 }
 
