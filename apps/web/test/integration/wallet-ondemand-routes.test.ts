@@ -369,6 +369,29 @@ describe("On-demand wallet routes", () => {
     expect(saved?.last_error_code).toBeNull();
   });
 
+  it("retries the duplicate-recovery lookup once when the first attempt finds nothing yet (search-index lag)", async () => {
+    const provider = stubProvider();
+    provider.createPass.mockRejectedValueOnce(
+      new WalletProviderError("wallet_provider_duplicate", "userProvidedId already exists"),
+    );
+    provider.findByUserProvidedId.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      providerPassId: "pc-winner-delayed",
+      downloadUrl: "https://pc.test/p/winner-delayed",
+      appleUrl: "https://pc.test/apple/winner-delayed",
+      androidUrl: "https://pc.test/android/winner-delayed",
+    });
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("https://pc.test/apple/winner-delayed");
+    expect(provider.findByUserProvidedId).toHaveBeenCalledTimes(2);
+    const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(saved?.status).toBe("active");
+    expect(saved?.provider_pass_id).toBe("pc-winner-delayed");
+  });
+
   it("marks failed when a duplicate error can't be recovered (findByUserProvidedId finds nothing)", async () => {
     const provider = stubProvider();
     provider.createPass.mockRejectedValueOnce(

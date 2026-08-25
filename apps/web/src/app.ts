@@ -169,6 +169,7 @@ import {
   handleVoidAttendeeWalletPass,
   handleRestoreAttendeeWalletPass,
   handleReissueAttendeeWalletPass,
+  handleRefreshAttendeeWalletStatus,
   handleDeleteAttendeeWalletPass,
   handleAddAttendeeNote,
   handlePatchAttendeeNote,
@@ -848,6 +849,19 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     }
 
+    /** PassCreator's createPass duplicate-rejection and its own search index can briefly
+     * disagree: a search right after a "duplicate" rejection sometimes finds nothing yet even
+     * though the winning pass genuinely exists there (search-index lag, not a real
+     * inconsistency - observed live 2026-08-25, an attendee's pass sat "failed" locally despite
+     * Passcreator's own dashboard already showing it added). One retry after a short delay
+     * covers that lag in practice; still falling through to markFailed below if it doesn't. */
+    async function recoverDuplicatePass(userProvidedId: string): Promise<WalletPassResult | null> {
+      const first = await provider.findByUserProvidedId(userProvidedId).catch(() => null);
+      if (first) return first;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      return provider.findByUserProvidedId(userProvidedId).catch(() => null);
+    }
+
     /**
      * A concurrent request for the same attendee can win the race and create the pass first -
      * PassCreator then rejects this one as a duplicate on the shared userProvidedId. Recovers the
@@ -864,9 +878,7 @@ export function createApp(options: CreateAppOptions = {}) {
       } catch (err) {
         const code = err instanceof WalletProviderError ? err.code : "wallet_provider_rejected";
         const recovered =
-          code === "wallet_provider_duplicate"
-            ? await provider.findByUserProvidedId(input.userProvidedId).catch(() => null)
-            : null;
+          code === "wallet_provider_duplicate" ? await recoverDuplicatePass(input.userProvidedId) : null;
         if (recovered) return markActive(input.userProvidedId, recovered);
 
         console.error("PassCreator createPass failed:", err);
@@ -1449,6 +1461,12 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     guardArchivedEvent((c) => handleReissueAttendeeWalletPass(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/wallet/refresh-status",
+    jsonPostCsrf,
+    staffAdminGate,
+    guardArchivedEvent((c) => handleRefreshAttendeeWalletStatus(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/wallet/delete",
