@@ -2963,19 +2963,16 @@ async function voidOneWalletPass(
  * admin:wallet-action-bulk's own (Redis-backed, account-wide) budget: the *normal* workflow this
  * limit was raised for - submit a batch, wait for the response, submit the next - is unaffected,
  * since each request's slot is freed before the next one in that workflow ever starts. */
-const inFlightBulkWalletActions = new Map<string, number>();
+const inFlightBulkWalletActions = new Set<string>();
 
 function acquireBulkWalletActionSlot(key: string): boolean {
-  const current = inFlightBulkWalletActions.get(key) ?? 0;
-  if (current >= 1) return false;
-  inFlightBulkWalletActions.set(key, current + 1);
+  if (inFlightBulkWalletActions.has(key)) return false;
+  inFlightBulkWalletActions.add(key);
   return true;
 }
 
 function releaseBulkWalletActionSlot(key: string): void {
-  const current = inFlightBulkWalletActions.get(key) ?? 0;
-  if (current <= 1) inFlightBulkWalletActions.delete(key);
-  else inFlightBulkWalletActions.set(key, current - 1);
+  inFlightBulkWalletActions.delete(key);
 }
 
 /** Shared "parse body -> resolve provider -> load targets -> chunked Promise.allSettled -> tally
