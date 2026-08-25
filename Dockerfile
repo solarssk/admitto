@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim AS builder
+FROM node:25-bookworm-slim AS builder
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
@@ -38,7 +38,7 @@ RUN npm run build
 # c12/jiti/etc.) automatically, same as any other production dependency.
 RUN npm prune --omit=dev
 
-FROM node:24-bookworm-slim AS production
+FROM node:25-bookworm-slim AS production
 
 # Global npm is unused at runtime (Prisma/app invoked via node directly).
 # Removes bundled picomatch 4.0.3 flagged by Trivy (CVE-2026-33671).
