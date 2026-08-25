@@ -346,6 +346,23 @@ describe("On-demand wallet routes", () => {
     errSpy.mockRestore();
   });
 
+  it("falls back to wallet_provider_rejected when createPass throws something other than a WalletProviderError", async () => {
+    const provider = stubProvider();
+    provider.createPass.mockRejectedValueOnce(new Error("unexpected network failure"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+
+    const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(saved?.status).toBe("failed");
+    expect(saved?.last_error_code).toBe("wallet_provider_rejected");
+    errSpy.mockRestore();
+  });
+
   it("calls createPass only once for two near-simultaneous requests for the same attendee (e.g. a work computer and a phone both clicking before either has a WalletPass row yet)", async () => {
     const provider = stubProvider();
     let releaseCreate: (() => void) | undefined;
