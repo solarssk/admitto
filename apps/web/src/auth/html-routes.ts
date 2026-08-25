@@ -23,6 +23,7 @@ import {
 } from "../login-page.js";
 import { createAuthPageScriptNonce } from "../auth-page-security.js";
 import { resolveCspTrustedOriginsSafe } from "../csp-trusted-origins.js";
+import { isSecureRequest } from "../is-secure-request.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { resolveStaffEntryPath } from "../setup-routes.js";
@@ -43,7 +44,9 @@ function htmlResponse(
   status: 200 | 401 = 200,
   trustedOrigins: readonly string[] = [],
 ): Response {
-  for (const [name, value] of Object.entries(getLoginPageSecurityHeaders(scriptNonce, trustedOrigins))) {
+  for (const [name, value] of Object.entries(
+    getLoginPageSecurityHeaders(scriptNonce, trustedOrigins, isSecureRequest(c)),
+  )) {
     c.header(name, value);
   }
   return c.html(html, status);

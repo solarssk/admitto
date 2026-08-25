@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- The public ticket page, the staff admin/operator app, and every sign-in or account-security page (login, two-factor, forced password change, single sign-on linking) now tell browsers to always use HTTPS for this site, the same protection the API already had. Previously that only reached these pages through Admitto's own bundled reverse proxy; a deployment that skips it (for example, the documented Portainer/NAS setup without the bundled nginx) shipped the public ticket page - which loads no scripts of its own, so it had no other way to pick this up - with no such protection at all.
+- The staff admin/operator app now tells browsers that only it, and nothing else, may ever use the device camera (needed for check-in QR scanning), and denies every other sensitive device feature (microphone, location, and more) outright; the public ticket page and every sign-in/account page now deny all of those, since none of them use any.
+- Fixed a reverse-proxy/app mismatch where the bundled nginx layer stamped a fixed referrer-handling value onto every response, silently overriding the stricter value the public ticket page sets for itself (send no referrer information anywhere) whenever nginx sits in front of the app. This wasn't exploitable in practice, since nothing sensitive travels in a ticket link, but the app's own per-page choice is now always the one that reaches the browser.
+
 ## [0.6.1] - 2026-08-25
 
 ### Added

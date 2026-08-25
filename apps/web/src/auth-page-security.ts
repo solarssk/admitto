@@ -24,6 +24,9 @@ export function applyAuthPageSecurityHeaders(c: Context, headers: Readonly<Recor
 export function getAuthPageInlineScriptHeaders(
   scriptNonce: string,
   trustedOrigins: readonly string[] = [],
+  /** True when the request arrived over HTTPS (see `isSecureRequest`) - HSTS is only ever safe
+   *  to send on an HTTPS response, so this stays off for local HTTP dev/bootstrap. */
+  secure = false,
 ): Record<string, string> {
   return {
     "Cache-Control": "private, no-store, max-age=0",
@@ -41,5 +44,8 @@ export function getAuthPageInlineScriptHeaders(
     "Referrer-Policy": "same-origin",
     "X-Content-Type-Options": "nosniff",
     "X-Robots-Tag": "noindex, nofollow",
+    // No auth page uses the camera/mic/geolocation - deny every powerful feature.
+    "Permissions-Policy": "camera=(), geolocation=(), microphone=(), payment=(), usb=()",
+    ...(secure ? { "Strict-Transport-Security": "max-age=31536000; includeSubDomains" } : {}),
   };
 }

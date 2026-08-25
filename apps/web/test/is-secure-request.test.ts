@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
-import { isSecureRequest } from "../src/auth/routes.js";
+import { isSecureRequest } from "../src/is-secure-request.js";
 
 vi.mock("@hono/node-server/conninfo", () => ({
   getConnInfo: vi.fn(),

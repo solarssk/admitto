@@ -123,6 +123,9 @@ export function buildTicketImgSrc(logoUrl?: string | null): string {
 export function getTicketPageSecurityHeaders(
   theme?: BrandingTheme | null,
   logoUrl?: string | null,
+  /** True when the request arrived over HTTPS (see `isSecureRequest`) - HSTS is only ever safe
+   *  to send on an HTTPS response, so this stays off for local HTTP dev/bootstrap. */
+  secure = false,
 ): Record<string, string> {
   const fontSrc = buildTicketFontSrc(theme);
   const imgSrc = buildTicketImgSrc(logoUrl);
@@ -133,6 +136,9 @@ export function getTicketPageSecurityHeaders(
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
     "X-Robots-Tag": "noindex, nofollow",
+    // Zero-JS page with no camera/mic/geolocation use of its own - deny every powerful feature.
+    "Permissions-Policy": "camera=(), geolocation=(), microphone=(), payment=(), usb=()",
+    ...(secure ? { "Strict-Transport-Security": "max-age=31536000; includeSubDomains" } : {}),
   };
 }
 

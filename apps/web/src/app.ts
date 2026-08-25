@@ -392,6 +392,7 @@ import {
 } from "./admin/identity-api-routes.js";
 import { resolveOidcPublicBaseUrlOrNull } from "./admin/oidc-redirect-uri.js";
 import { applyBaselineSecurityHeaders } from "./security-headers.js";
+import { isSecureRequest } from "./is-secure-request.js";
 import { createRequestLogMiddleware, resolveLogHttpRequests } from "./request-log.js";
 import { resolvePostLoginRedirectForUser } from "./auth/post-login-redirect.js";
 import { handleReadyz } from "./ops/readyz.js";
@@ -449,7 +450,9 @@ function htmlWithSecurityHeaders(
   theme?: Awaited<ReturnType<typeof getBrandingTheme>> | null,
   logoUrl?: string | null,
 ) {
-  for (const [name, value] of Object.entries(getTicketPageSecurityHeaders(theme, logoUrl))) {
+  for (const [name, value] of Object.entries(
+    getTicketPageSecurityHeaders(theme, logoUrl, isSecureRequest(c)),
+  )) {
     c.header(name, value);
   }
   return c.html(html, status);
