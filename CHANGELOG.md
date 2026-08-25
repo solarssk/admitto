@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - An unhandled promise rejection or an exception thrown outside a request's normal error handling is now logged (to System logs and stdout) with enough detail to diagnose before the process exits, instead of only ever surfacing as a bare Node.js stack trace in the container's raw logs.
 
+### Fixed
+
+- An attendee's "Ticket link copied" activity log entry produced by opening "View sent message" now records the operator's own timezone instead of falling back to the event's timezone, matching every other activity log row - previously it could show a visibly different UTC offset than the operator's other actions on the same attendee if the event's own timezone differed from the operator's.
+
 ### Security
 
 - Settings → External services → Maps' custom tile URL is now checked for a private, loopback, link-local, or cloud-metadata host at save time, the same check its Geocoding base URL and the Weather base URL fields already get - previously a tile URL pointing at one of those would save successfully and only fail once the map itself tried to render.
