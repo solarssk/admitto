@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  crashLogFields,
   isOptionalIpv6LoopbackBindError,
   resolveDevServeHostname,
   resolveDevServeHostnames,
@@ -46,5 +47,23 @@ describe("isOptionalIpv6LoopbackBindError", () => {
     expect(
       isOptionalIpv6LoopbackBindError(true, { code: "EADDRINUSE" } as NodeJS.ErrnoException),
     ).toBe(false);
+  });
+});
+
+describe("crashLogFields", () => {
+  it("extracts message and stack from a real Error - JSON.stringify(new Error(...)) alone would produce {}", () => {
+    const err = new Error("boom");
+    const fields = crashLogFields(err);
+    expect(fields.message).toBe("boom");
+    expect(fields.stack).toContain("boom");
+    // The actual bug this guards against: Error's own properties are non-enumerable.
+    expect(JSON.stringify(err)).toBe("{}");
+    expect(JSON.stringify(fields)).toContain("boom");
+  });
+
+  it("wraps a non-Error rejection reason (Node makes no guarantee it's an Error)", () => {
+    expect(crashLogFields("a plain string rejection").message).toBe("a plain string rejection");
+    expect(crashLogFields(42).message).toBe("42");
+    expect(crashLogFields(undefined).message).toBe("undefined");
   });
 });
