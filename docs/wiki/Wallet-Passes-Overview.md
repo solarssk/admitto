@@ -55,12 +55,19 @@ works; Admitto never signs or hosts pass files itself.
   Wallet's "Wallet push history" list - that list is event-wide and bulk pushes only.
 - **Registration status.** Whether an attendee has actually added the pass to their device (not
   just had one issued) is tracked from PassCreator via webhook, with periodic polling as a
-  fallback - shown on Attendee Detail and the Attendees list's Wallet column.
+  fallback (can take a while to reach any one attendee) - shown on Attendee Detail and the
+  Attendees list's Wallet column. Attendee Detail's wallet **Refresh status** action pulls that
+  one attendee's current status immediately instead of waiting for the periodic poll - useful when
+  PassCreator's own dashboard already shows a pass as added but Admitto hasn't caught up yet.
 - **Wallet lifecycle actions.** Void, push updates, and permanently delete a wallet pass at the
   provider - available both from Attendee Detail (single attendee) and the Attendees list (bulk,
-  for a selection). Restore is Attendee Detail only, there is no bulk restore action. Revoking an
-  attendee's ticket also voids their wallet pass automatically; restoring the ticket restores the
-  pass the same way.
+  for a selection). Restore and Refresh status are Attendee Detail only, there is no bulk version
+  of either. Revoking an attendee's ticket also voids their wallet pass automatically; restoring
+  the ticket restores the pass the same way. A bulk action against a large selection takes
+  noticeably longer than an equivalent single-attendee action multiplied out - each attendee's
+  pass is updated one call at a time at a fixed pace, to stay within PassCreator's own request
+  limit, rather than all at once. A bulk wallet action accepts at most 100 attendees per selection
+  and can take up to roughly 15 seconds to finish at this pace; this is expected, not a stuck page.
 
 ## What's not supported
 

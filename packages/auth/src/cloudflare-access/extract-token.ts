@@ -1,5 +1,5 @@
 export const CF_ACCESS_HEADER = "Cf-Access-Jwt-Assertion";
-/** Documented by Cloudflare; not used for auth — header-only at collision point (ADR 0017). */
+/** Documented by Cloudflare; not used for auth — header-only at collision point (see deploy/README.md, "Cloudflare and WireGuard"). */
 export const CF_ACCESS_COOKIE = "CF_Authorization";
 
 /** Extract Cloudflare Access JWT from the edge-injected header only. */

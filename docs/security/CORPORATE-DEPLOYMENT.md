@@ -23,7 +23,7 @@ own database, secrets, and operator access.
 | SaaS | **No** — single-tenant per deployment |
 | Data region | **Customer choice** (EU is the documented target for GDPR-oriented deployments) |
 | Orchestration | **Docker Compose** (supported production path for MVP) |
-| Container image | Published from signed semver tags on the project registry |
+| Container image | Published from semver tags on the project registry; CI-created tags are unsigned by default, with a signed-tag path for emergencies — see [VERSIONING.md](../../VERSIONING.md) |
 | Secrets | Customer `.env` / secret manager — never committed to git |
 
 ---

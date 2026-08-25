@@ -26,3 +26,8 @@ _reference
 poc-mail
 reports
 _ops
+uploads
+.claude
+graphify-out
+dump.rdb
+.pnpm-store

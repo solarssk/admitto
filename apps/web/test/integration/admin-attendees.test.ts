@@ -20,6 +20,7 @@ import {
   handleBulkRevokeAttendeeItems,
   handleDeleteAttendeeNote,
   handlePatchAttendeeNote,
+  handleRefreshAttendeeWalletStatus,
 } from "../../src/admin/attendees-api-routes.js";
 import { WALLET_MESSAGE_SEND_BODY_MAX_BYTES } from "../../src/admin/wallet-message-routes.js";
 import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
@@ -819,6 +820,11 @@ describe("DELETE /api/admin/events/:eventId/attendees/:id", () => {
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-delete", () => {
+  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - this block's tests all
+  // reuse EVENT_A, same convention as the PATCH block's own reset below (bot review's rate-limit
+  // fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
+
   async function seedBulkErasable(ids: string[]) {
     await prisma.attendee.createMany({
       data: ids.map((id, i) => ({
@@ -993,6 +999,30 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-delete", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects an oversized bulk body before it ever reaches the handler", async () => {
+    // bulkAttendeeIdsBodyLimit (app.ts) caps every bulk-attendee-id-array route at 0.5MB - well
+    // past what BULK_SEND_LIMIT (500) UUID-length ids could ever legitimately need.
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: Array.from({ length: 20_000 }, (_, i) => `att-${i}-${"x".repeat(30)}`) }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "request too large" });
+  });
+
+  it("rejects an attendeeId longer than 128 characters", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ["x".repeat(129)] }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "validation_failed" });
+  });
+
   it("rejects operator", async () => {
     const ids = ["att-bulk-erase-op"];
     await seedBulkErasable(ids);
@@ -1139,10 +1169,15 @@ describe("attendee erasure — wallet pass deletion at the provider", () => {
 describe("attendee wallet actions — void/restore/reissue", () => {
   const WALLET_ACTION_EVENT = "evt-admin-att-wallet-action";
   const WALLET_ACTION_EVENT_UNCONFIGURED = "evt-admin-att-wallet-action-unconfigured";
+  // admin:wallet-action is scoped per user+event (10/10min) - this block's many tests (single
+  // void/restore/reissue/delete and their bulk-wallet-* siblings) all reuse WALLET_ACTION_EVENT,
+  // same convention as the PATCH block's own reset below (bot review's rate-limit fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
   let voidSpy: ReturnType<typeof vi.spyOn>;
   let restoreSpy: ReturnType<typeof vi.spyOn>;
   let updateSpy: ReturnType<typeof vi.spyOn>;
   let deleteSpy: ReturnType<typeof vi.spyOn>;
+  let getRegistrationStatusSpy: ReturnType<typeof vi.spyOn>;
 
   beforeAll(async () => {
     await prisma.event.create({
@@ -1188,12 +1223,16 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       appleUrl: "https://pc.test/apple/default",
       androidUrl: "https://pc.test/android/default",
     });
+    getRegistrationStatusSpy = vi
+      .spyOn(PassCreatorClient.prototype, "getRegistrationStatus")
+      .mockClear()
+      .mockResolvedValue(null);
   });
 
   async function seedActionAttendee(
     id: string,
     eventId: string,
-    opts: { withPass?: boolean } = {},
+    opts: { withPass?: boolean; userProvidedId?: string } = {},
   ): Promise<void> {
     await prisma.attendee.create({
       data: {
@@ -1214,6 +1253,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
           status: "active",
           apple_url: "https://pc.test/apple/old",
           android_url: "https://pc.test/android/old",
+          user_provided_id: opts.userProvidedId,
         },
       });
     }
@@ -1581,6 +1621,234 @@ describe("attendee wallet actions — void/restore/reissue", () => {
     });
   });
 
+  describe("refresh-status", () => {
+    // Every test here cleans up its own attendee/pass in a finally block (same reasoning as the
+    // reissue-failure test above): this describe runs before delete/bulk-* below, and the later
+    // "wallet_status on GET list" block relies on an unfiltered, default-page-size attendee list
+    // still finding its own fixture on page 1 - five more uncleaned rows here would risk pushing
+    // it off.
+    it("pulls the current registration status from the provider and writes it locally", async () => {
+      const attendeeId = "att-wallet-action-refresh";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        getRegistrationStatusSpy.mockResolvedValueOnce({
+          appleActiveRegistrations: 1,
+          appleInactiveRegistrations: 0,
+          googleActiveRegistrations: 0,
+          googleInactiveRegistrations: 0,
+          firstDownloadedAt: "2026-08-25 09:00",
+        });
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(200);
+        expect(getRegistrationStatusSpy).toHaveBeenCalledWith(`admitto:${WALLET_ACTION_EVENT}:${attendeeId}`);
+        const body = (await res.json()) as { apple_active_registrations: number | null };
+        expect(body.apple_active_registrations).toBe(1);
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.apple_active_registrations).toBe(1);
+        expect(row?.first_downloaded_at).toBe("2026-08-25 09:00");
+        expect(row?.registration_checked_at).not.toBeNull();
+        // Must match syncOne's own success write (registration-sync.ts) - the periodic worker
+        // selects its next batch by this field, not registration_checked_at, so a manual refresh
+        // that left it untouched would look never-synced and get re-picked on the very next tick
+        // (bot review).
+        expect(row?.registration_sync_attempted_at).not.toBeNull();
+        // Read-only at the provider - unlike void/restore/reissue/delete, no operator action log.
+        expect(await prisma.attendeeActionLog.count({ where: { attendee_id: attendeeId } })).toBe(0);
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("retries once and recovers when the provider reports no match on the first attempt (search-index lag, bot review)", async () => {
+      const attendeeId = "att-wallet-action-refresh-lag";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        getRegistrationStatusSpy.mockResolvedValueOnce(null).mockResolvedValueOnce({
+          appleActiveRegistrations: 1,
+          appleInactiveRegistrations: 0,
+          googleActiveRegistrations: 0,
+          googleInactiveRegistrations: 0,
+          firstDownloadedAt: "2026-08-25 09:00",
+        });
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(200);
+        expect(getRegistrationStatusSpy).toHaveBeenCalledTimes(2);
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.apple_active_registrations).toBe(1);
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("leaves existing counts untouched and reports the check as failed when the provider still reports no match after the retry (bot review)", async () => {
+      const attendeeId = "att-wallet-action-refresh-notfound";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        await prisma.walletPass.update({
+          where: { attendee_id: attendeeId },
+          data: { apple_active_registrations: 3 },
+        });
+        getRegistrationStatusSpy.mockResolvedValue(null);
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(502);
+        expect(await res.json()).toEqual({ error: "wallet_status_check_inconclusive" });
+        expect(getRegistrationStatusSpy).toHaveBeenCalledTimes(2);
+        // The transient miss must not silently wipe a previously-known, real registration count.
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.apple_active_registrations).toBe(3);
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("returns 409 without writing when the pass is deleted and re-added at the provider while the status check is in flight (bot review)", async () => {
+      const attendeeId = "att-wallet-action-refresh-replaced";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        getRegistrationStatusSpy.mockImplementationOnce(async () => {
+          // Simulates a concurrent delete+re-add landing between loadWalletActionContext's read
+          // and this handler's own write - the row now belongs to a different provider pass.
+          await prisma.walletPass.update({
+            where: { attendee_id: attendeeId },
+            data: { provider_pass_id: "pc-replaced-mid-flight", user_provided_id: "admitto:replaced" },
+          });
+          return {
+            appleActiveRegistrations: 1,
+            appleInactiveRegistrations: 0,
+            googleActiveRegistrations: 0,
+            googleInactiveRegistrations: 0,
+            firstDownloadedAt: null,
+          };
+        });
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: "wallet_pass_changed" });
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        // The replacement row (provider_pass_id/user_provided_id from mid-flight) must be
+        // untouched by the stale response for the old pass.
+        expect(row?.provider_pass_id).toBe("pc-replaced-mid-flight");
+        expect(row?.apple_active_registrations).toBeNull();
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("returns 409 without calling the provider when the pass has no user_provided_id to look up", async () => {
+      const attendeeId = "att-wallet-action-refresh-no-upid";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: "wallet_pass_not_refreshable" });
+        expect(getRegistrationStatusSpy).not.toHaveBeenCalled();
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("returns 404 when the attendee has no wallet pass yet", async () => {
+      const attendeeId = "att-wallet-action-refresh-none";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT);
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(404);
+        expect(getRegistrationStatusSpy).not.toHaveBeenCalled();
+      } finally {
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("returns the provider's error code and leaves existing counts untouched when the provider call fails", async () => {
+      const attendeeId = "att-wallet-action-refresh-fail";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        await prisma.walletPass.update({
+          where: { attendee_id: attendeeId },
+          data: { apple_active_registrations: 2 },
+        });
+        getRegistrationStatusSpy.mockRejectedValueOnce(new WalletProviderError("wallet_provider_unauthorized", "bad key"));
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(502);
+        expect(await res.json()).toEqual({ error: "wallet_provider_unauthorized" });
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.apple_active_registrations).toBe(2);
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("returns 400 when the eventId route param is missing", async () => {
+      // The real route always has :eventId as a required segment, so this can't happen through
+      // the full app - mount the handler on its own optional-param route to exercise
+      // requireEventId's guard directly, same pattern as admin-communication.test.ts's
+      // guardTestApp() for the sibling delivery-log routes.
+      const miniApp = new Hono();
+      miniApp.post("/refresh-status/:eventId?", (c) => handleRefreshAttendeeWalletStatus(c, prisma));
+
+      const res = await miniApp.request("/refresh-status", { method: "POST" });
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "eventId required" });
+      expect(getRegistrationStatusSpy).not.toHaveBeenCalled();
+    });
+  });
+
   describe("delete", () => {
     it("deletes the pass at the provider and removes the local WalletPass row", async () => {
       const attendeeId = "att-wallet-action-delete";
@@ -1936,6 +2204,231 @@ describe("attendee wallet actions — void/restore/reissue", () => {
     });
   });
 
+  describe("admin:wallet-action rate limit", () => {
+    it("returns 429 after 10 single-attendee wallet actions per 10 minutes for the same event", async () => {
+      // A nonexistent attendee id still runs the full middleware chain (403 forbidden from the
+      // handler) before returning, so the rate limit is exercised without needing real passes.
+      for (let i = 0; i < 10; i++) {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/att-wallet-action-rl-nonexistent/wallet/void`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+        expect(res.status).toBe(403);
+      }
+
+      const limited = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/att-wallet-action-rl-nonexistent/wallet/void`,
+        { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+      );
+      expect(limited.status).toBe(429);
+      const body = (await limited.json()) as { error: string };
+      expect(body.error).toBe("too many requests");
+
+      // Same event, same admin, but the on-demand refresh-status route - proves the budget is
+      // shared with its void/restore/reissue/delete siblings rather than reset per route (own
+      // re-audit: this route also calls the provider once per request, getRegistrationStatus,
+      // but was missing this rate limit entirely when first added in a later PR - fixed here).
+      const refreshAlsoLimited = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/att-wallet-action-rl-nonexistent/wallet/refresh-status`,
+        { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+      );
+      expect(refreshAlsoLimited.status).toBe(429);
+
+      // The bulk sibling route has its own, separate (and much stricter) budget - a single-attendee
+      // action hitting its limit must not also block a fresh bulk request for the same user+event.
+      const bulkStillAllowed = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: ["att-wallet-action-rl-nonexistent"] }),
+        },
+      );
+      expect(bulkStillAllowed.status).not.toBe(429);
+    });
+  });
+
+  describe("admin:wallet-action-bulk rate limit", () => {
+    it("returns 429 after 3 bulk wallet actions per 10 minutes for the same event (bot review follow-up on the shared PassCreator budget, PR4)", async () => {
+      // Each bulk-wallet-* request can fan out to up to BULK_SEND_LIMIT (500) PassCreator calls -
+      // this route group gets its own, much stricter per-request budget than the single-attendee
+      // wallet routes (see policies.ts comment for the PassCreator-rate-limit math).
+      for (let i = 0; i < 3; i++) {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: ["att-wallet-action-rl-nonexistent"] }),
+          },
+        );
+        expect(res.status).not.toBe(429);
+      }
+
+      const limited = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: ["att-wallet-action-rl-nonexistent"] }),
+        },
+      );
+      expect(limited.status).toBe(429);
+      const body = (await limited.json()) as { error: string };
+      expect(body.error).toBe("too many requests");
+
+      // Same event, same admin, but a different bulk-wallet-* route - proves the budget is shared
+      // across all three bulk wallet routes rather than reset per route.
+      const reissueAlsoLimited = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-reissue`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: ["att-wallet-action-rl-nonexistent"] }),
+        },
+      );
+      expect(reissueAlsoLimited.status).toBe(429);
+    });
+
+    it("rejects more than WALLET_BULK_SEND_LIMIT (100) attendee ids, smaller than the generic bulk cap (bot review, PR #1064 round 3)", async () => {
+      // Deliberately smaller than the generic BULK_SEND_LIMIT (500) other bulk routes allow -
+      // every outbound PassCreator call is now paced, so a full 500-target request could outlive
+      // the reverse proxy's read timeout (see WALLET_BULK_SEND_LIMIT's own comment).
+      const tooMany = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            attendeeIds: Array.from({ length: 101 }, (_, i) => `att-wallet-bulk-limit-${i}`),
+          }),
+        },
+      );
+      expect(tooMany.status).toBe(400);
+      expect(await tooMany.json()).toMatchObject({ error: "validation_failed" });
+    });
+
+    it("also rejects more than WALLET_BULK_SEND_LIMIT (100) attendee ids for bulk-delete and bulk-revoke-pass, once the event has wallet configured (own re-audit after PR #1064 round 3, before any bot flagged it)", async () => {
+      // bulk-delete/bulk-revoke-pass's own body schema still allows the generic BULK_SEND_LIMIT
+      // (500) - the round-3 fix only shrank the 3 dedicated wallet-bulk routes' schemas, missing
+      // that these two share the identical per-attendee PassCreator fan-out once the event has
+      // wallet configured (deleteWalletPassesBestEffort / syncWalletPassOnStatusChangeBestEffort).
+      // assertWalletBulkSelectionWithinLimit closes that gap without touching either schema.
+      const tooManyIds = Array.from({ length: 101 }, (_, i) => `att-wallet-bulk-delete-toomany-${i}`);
+
+      const bulkDeleteRes = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-delete`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: tooManyIds }),
+        },
+      );
+      expect(bulkDeleteRes.status).toBe(400);
+      expect(await bulkDeleteRes.json()).toMatchObject({ error: "validation_failed" });
+
+      const bulkRevokePassRes = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-revoke-pass`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: tooManyIds }),
+        },
+      );
+      expect(bulkRevokePassRes.status).toBe(400);
+      expect(await bulkRevokePassRes.json()).toMatchObject({ error: "validation_failed" });
+    });
+
+    it("does not shrink bulk-delete/bulk-revoke-pass below the generic BULK_SEND_LIMIT (500) on an event with no wallet configured", async () => {
+      // Same over-100 selection as above, but against the unconfigured event - since
+      // deleteWalletPassesBestEffort/syncWalletPassOnStatusChangeBestEffort can never reach
+      // PassCreator for this event, the smaller wallet-only cap must not apply here.
+      const overWalletLimitIds = Array.from(
+        { length: 101 },
+        (_, i) => `att-nowallet-bulk-delete-toomany-${i}`,
+      );
+
+      const bulkDeleteRes = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT_UNCONFIGURED}/attendees/bulk-delete`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: overWalletLimitIds }),
+        },
+      );
+      expect(bulkDeleteRes.status).not.toBe(400);
+
+      const bulkRevokePassRes = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT_UNCONFIGURED}/attendees/bulk-revoke-pass`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: overWalletLimitIds }),
+        },
+      );
+      expect(bulkRevokePassRes.status).not.toBe(400);
+    });
+
+    it("does not charge the wallet-bulk budget for bulk-delete or bulk-revoke-pass on an event with no wallet configured (bot review, PR #1064 round 3)", async () => {
+      // 4 bulk-delete requests in a row against a non-wallet event - if this route still charged
+      // the strict 3/10min wallet-bulk budget unconditionally, the 4th would 429. It shouldn't,
+      // because deleteWalletPassesBestEffort can never actually call PassCreator for this event.
+      for (let i = 0; i < 4; i++) {
+        const id = `att-nowallet-bulk-delete-${i}`;
+        await seedActionAttendee(id, WALLET_ACTION_EVENT_UNCONFIGURED);
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT_UNCONFIGURED}/attendees/bulk-delete`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [id] }),
+          },
+        );
+        expect(res.status).not.toBe(429);
+      }
+    });
+
+    it("still charges the wallet-bulk budget for bulk-delete on an event that does have wallet configured, even before checking the specific selection", async () => {
+      // Conservative-but-cheap check: gated on the *event's* wallet config, not on whether the
+      // specific submitted ids actually have a wallet pass (that would need a body-aware lookup
+      // inside the rate-limit middleware itself) - so this still applies even to a selection of
+      // attendees who happen to have no wallet pass, as long as the event has wallet configured.
+      for (let i = 0; i < 3; i++) {
+        const id = `att-wallet-bulk-delete-budget-${i}`;
+        await seedActionAttendee(id, WALLET_ACTION_EVENT);
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-delete`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [id] }),
+          },
+        );
+        expect(res.status).not.toBe(429);
+      }
+
+      const id = "att-wallet-bulk-delete-budget-limited";
+      await seedActionAttendee(id, WALLET_ACTION_EVENT);
+      try {
+        const limited = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-delete`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [id] }),
+          },
+        );
+        expect(limited.status).toBe(429);
+      } finally {
+        // The 429 means bulk-delete never ran for this attendee, unlike the 3 above - clean it up
+        // ourselves so it doesn't linger past this point (see the "wallet_status on GET list"
+        // block below, which expects its own single seeded attendee to still be on page 1 of the
+        // default, unfiltered, 25-per-page attendee list).
+        await prisma.attendee.delete({ where: { id } });
+      }
+    });
+  });
+
   describe("wallet_apple_link / wallet_google_link on GET detail", () => {
     it("returns on-demand wallet links even when the attendee has never added a pass (PO review, 2026-08-13)", async () => {
       const attendeeId = "att-wallet-links-none";
@@ -2231,6 +2724,11 @@ describe("attendee wallet actions — void/restore/reissue", () => {
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
+  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - this block's tests all
+  // reuse EVENT_A, same convention as the PATCH block's own reset below (bot review's rate-limit
+  // fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
+
   // The suite-level seed() doesn't clean up after this block, and later describes in this same
   // file (e.g. bulk-resend) count *every* attendee in EVENT_A - leaving our seeded rows behind
   // would skew those counts. Delete CheckIn rows before Attendee rows (FK constraint), matching
@@ -2520,9 +3018,48 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
       await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: null } });
     }
   });
+
+  it("returns 429 after 20 bulk-attendee mutations per minute for the same event", async () => {
+    // An id that doesn't belong to this event is silently ignored (0 checked in), so the request
+    // still runs the full middleware chain and returns 200 without seeding real attendees.
+    for (let i = 0; i < 20; i++) {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attendeeIds: ["att-bulk-checkin-rl-nonexistent"] }),
+      });
+      expect(res.status).toBe(200);
+    }
+
+    const limited = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ["att-bulk-checkin-rl-nonexistent"] }),
+    });
+    expect(limited.status).toBe(429);
+    const body429 = (await limited.json()) as { error: string };
+    expect(body429.error).toBe("too many requests");
+
+    // Same event, same admin, but a different bulk-mutation sibling route - proves the budget is
+    // shared per user+event rather than reset per route.
+    const siblingLimited = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/bulk-revoke-pass`,
+      {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attendeeIds: ["att-bulk-checkin-rl-nonexistent"] }),
+      },
+    );
+    expect(siblingLimited.status).toBe(429);
+  });
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-checkin", () => {
+  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - this block's tests all
+  // reuse EVENT_A, same convention as the PATCH block's own reset below (bot review's rate-limit
+  // fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
+
   afterAll(async () => {
     await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-checkin-" } } });
     await prisma.checkIn.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-checkin-" } } });
@@ -2764,6 +3301,11 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-checkin", () => 
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-items", () => {
+  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - this block's tests all
+  // reuse EVENT_A, same convention as the PATCH block's own reset below (bot review's rate-limit
+  // fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
+
   afterAll(async () => {
     await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-items-" } } });
     await prisma.attendeeItemState.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-items-" } } });
@@ -3014,6 +3556,11 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-items", () => {
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-pass", () => {
+  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - this block's tests all
+  // reuse EVENT_A, same convention as the PATCH block's own reset below (bot review's rate-limit
+  // fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
+
   afterAll(async () => {
     await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-pass-" } } });
     await prisma.checkIn.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-pass-" } } });
@@ -6466,6 +7013,11 @@ describe("Attendees v2 — RSVP and manual create", () => {
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
+  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - this block's tests all
+  // reuse EVENT_A, same convention as the PATCH block's own reset below (bot review's rate-limit
+  // fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
+
   afterAll(async () => {
     await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-tt-" } } });
     await prisma.attendee.deleteMany({ where: { id: { startsWith: "att-bulk-tt-" } } });
@@ -7340,6 +7892,11 @@ describe("wallet-message routes — POST send, GET jobs/:jobId, GET history, GET
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-rsvp", () => {
+  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - this block's tests all
+  // reuse EVENT_A, same convention as the PATCH block's own reset below (bot review's rate-limit
+  // fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
+
   afterAll(async () => {
     await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-rsvp-" } } });
     await prisma.attendee.deleteMany({ where: { id: { startsWith: "att-bulk-rsvp-" } } });

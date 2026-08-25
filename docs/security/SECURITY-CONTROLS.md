@@ -101,6 +101,17 @@ enforced server-side, not just the strength meter shown while typing — per NIS
 §3.1.1.2's requirement to check candidates against a blocklist instead of relying on
 character-composition rules.
 
+**No account lockout, by design.** Local password authentication never locks or disables an
+account after repeated failed attempts — a login-triggerable lockout on admin/superadmin accounts
+would itself be a denial-of-service vector on a self-hosted internal tool. Brute-force is
+mitigated instead by the login rate limits above (see **Rate limiting**) plus an audit record on
+repeated failed attempts against privileged accounts (`packages/auth/src/privileged-login-alert.ts`):
+crossing the threshold emits an `auth.login.repeated_failures` (or `auth.mfa.repeated_failures`)
+event into the System logs live tail and writes a durable `SecurityAuditLog` row, for an operator to
+find on review — it never blocks the account, and there is no email, webhook, or other push
+notification, so an operator who isn't actively watching those logs will not be proactively alerted
+in the moment.
+
 ### Implemented in codebase
 
 These capabilities exist in the application — they are **not** roadmap-only claims:
@@ -152,9 +163,11 @@ documented in [`deploy/README.md`](../../deploy/README.md)). The proxy must **ov
 
 ## Rate limiting
 
-Application throttles use a sliding window (default **60 seconds** unless noted). Limits apply per
-bucket key; HTTP **429** when exceeded. Structured audit events: `auth.rate_limit.exceeded` (see
-`packages/auth` audit helpers).
+Application throttles use a fixed window (default **60 seconds** unless noted): each bucket resets
+at a fixed boundary rather than rolling continuously, so a burst straddling a window edge can allow
+up to roughly 2x the stated limit in the worst case — a common, accepted trade-off against the
+extra cost of a true sliding window. Limits apply per bucket key; HTTP **429** when exceeded.
+Structured audit events: `auth.rate_limit.exceeded` (see `packages/auth` audit helpers).
 
 **Store:** in-memory per process when `REDIS_URL` is unset; **Redis recommended in production** so
 limits are shared across replicas and survive restarts.
@@ -168,7 +181,7 @@ limits are shared across replicas and survive restarts.
 | `POST /api/auth/mfa/verify`, `POST /mfa/verify`, TOTP confirm | session + IP | 10 TOTP or 30 recovery / 15 min | partial session |
 | `POST /api/auth/mfa/totp/enroll`, `POST /mfa/enroll/start` | session + IP | 10 / 15 min | partial session (`enrollment_required`) |
 | `GET /api/auth/oidc/*/start`, `*/callback` | client IP | 20 / 60 s | no |
-| `/t/*`, `/q/*` | client IP | 60 / 60 s | no |
+| `/t/*` (ticket), `/q/*` (QR image), `/m/*` (event static map image) | client IP | 500 / 60 s | no |
 
 ### Operations probes
 
@@ -191,7 +204,13 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 | `POST …/template/test-send` | user + event | 5 / 60 s | event admin |
 | `POST /api/admin/mail-settings/test` | user | 5 / 60 s | admin |
 | `GET …/attendees?q=...` (search) | user + event | 120 / 60 s | operator / admin |
-| attendee resend, check-in scan/history | per-route keys | see `apps/web/src/*-rate-limit.ts` | operator / admin |
+| single-attendee wallet actions (void/restore/reissue/delete) | user + event | 10 / 10 min | event admin |
+| bulk-attendee mutations (delete, check-in, revoke check-in/items/pass, ticket type, RSVP) | user + event | 20 / 60 s | event admin |
+| bulk wallet actions (void/reissue/delete for a selection), plus bulk-delete and bulk-revoke-pass whenever the event has wallet configured - all capped at max 100 attendees per request in that case | user + event | 3 / 10 min | event admin |
+| attendee resend, check-in scan/history | per-route keys | see `apps/web/src/rate-limit/policies.ts` | operator / admin |
+
+Every route above that can reach PassCreator is additionally paced at the outbound-call layer, not
+just gated at the HTTP-route layer — see **Outbound HTTP** below.
 
 ### Superadmin (identity provider UI)
 
@@ -201,8 +220,10 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 | `POST /api/admin/identity/providers/:id/test` | user + provider | 10 / 60 s |
 
 **Body size caps** (separate from rate limits): import uploads ≤ 5 MB; template JSON sized for
-≤ 200k character body field — see `apps/web/src/admin/import-api-routes.ts` and
-`communication-api-routes.ts`.
+≤ 200k character body field; every bulk-attendee-id request (the mutation and wallet routes above)
+≤ 0.5 MB, with each attendee id itself capped at 128 characters — see
+`apps/web/src/admin/import-api-routes.ts`, `communication-api-routes.ts`, and
+`apps/web/src/app.ts` (`bulkAttendeeIdsBodyLimit`).
 
 ---
 
@@ -292,6 +313,36 @@ listed destinations skip the private/loopback checks at save and connect. This i
 risk: a compromised admin can still point mail settings at any allowlisted name; keep the list
 minimal and ensure DNS for those names is under operator control. Set the variable on both `app`
 and `worker`.
+
+**Weather and maps destinations.** The same DNS-pin-and-connect pattern also covers the three
+admin-configurable external-service URLs under Organisation Settings → External services: the
+Weather (Open-Meteo) base URL, the Nominatim geocoding base URL, and the map tile-server URL. Each
+re-resolves the hostname and pins the outbound connection to the validated address at request
+time, closing the same DNS-rebinding gap as the OIDC and mail guards above — see
+`apps/web/src/weather/open-meteo-client.ts`, `apps/web/src/maps/nominatim-provider.ts`, and
+`apps/web/src/maps/static-map.ts`.
+
+**PassCreator call pacing (not SSRF — availability/abuse hardening).** Every outbound call to
+PassCreator (issue, void, restore, delete, push, search, webhook key fetch) goes through one
+choke point, `PassCreatorClient.requestRaw`, which spaces calls at least 150ms apart — across every
+caller: single and bulk admin wallet actions, the background wallet-push/wallet-sync workers, and
+webhook resubscribe-on-save — regardless of how many separate requests or client instances are
+triggering them concurrently. This keeps Admitto's own outbound traffic under PassCreator's
+documented account-wide 600 req/min limit even under a burst (e.g. several bulk actions started at
+once), rather than relying only on reacting to a 429 after the limit is already exceeded. When
+`REDIS_URL` is configured, this pacing is coordinated across every server process handling
+requests via a Redis-backed gate (`packages/wallet/src/passcreator-pace-gate.ts`); without it, each
+process paces only its own calls, so the combined rate across multiple processes could exceed the
+intended pace. The admin-facing rate limits in the table above bound how much work an admin can
+queue up; this pacing bounds how fast that work actually reaches PassCreator. One consequence: a
+bulk wallet action against a selection now takes proportionally longer to complete than a
+non-wallet bulk action, rather than firing all calls at once and having a chunk of them fail once
+PassCreator's own rate limit was exceeded — bulk wallet actions on a whole selection are also
+capped at 100 attendees per request (down from the general 500 bulk-action cap) so a full-size
+request stays comfortably within a typical reverse proxy's response timeout. Bulk-delete and
+bulk-revoke-pass share that same 100-attendee cap whenever the target event has wallet configured
+(both can also reach PassCreator once per selected attendee in that case); an event with no wallet
+configured keeps the general 500-attendee cap for both, since neither can reach PassCreator at all.
 
 ---
 
@@ -390,8 +441,8 @@ Useful when repeating internal or vendor PEN tests against a staging instance:
 6. **Residual:** misconfigured proxy append on `X-Forwarded-For` can still spoof rate-limit IP —
    verify deploy runbook, not app-only config.
 
-Source constants: `apps/web/src/**/*-rate-limit*.ts`, `packages/auth/src/oidc/safe-url.ts`,
-`packages/auth/src/oidc/safe-oidc-fetch.ts`.
+Source constants: `apps/web/src/rate-limit/policies.ts` (definitions), `apps/web/src/app.ts`
+(wiring), `packages/auth/src/oidc/safe-url.ts`, `packages/auth/src/oidc/safe-oidc-fetch.ts`.
 
 ---
 

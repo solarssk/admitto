@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 import { getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.js";
@@ -10,6 +10,7 @@ const loadAttendeeDetailData = vi.fn();
 const voidWalletPass = vi.fn();
 const restoreWalletPass = vi.fn();
 const reissueWalletPass = vi.fn();
+const refreshWalletPassStatus = vi.fn();
 const deleteWalletPass = vi.fn();
 
 vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
@@ -57,6 +58,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     voidWalletPass: (...args: unknown[]) => voidWalletPass(...args),
     restoreWalletPass: (...args: unknown[]) => restoreWalletPass(...args),
     reissueWalletPass: (...args: unknown[]) => reissueWalletPass(...args),
+    refreshWalletPassStatus: (...args: unknown[]) => refreshWalletPassStatus(...args),
     deleteWalletPass: (...args: unknown[]) => deleteWalletPass(...args),
   };
 });
@@ -109,11 +111,28 @@ function mockLoad(detail: ReturnType<typeof baseDetail>) {
   loadAttendeeDetailData.mockResolvedValueOnce({ detail, attributeFields: [], itemsWarning: null });
 }
 
-function renderPage() {
+function RouteChangeControl() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate("/admin/events/evt-1/attendees/att-2")}>
+      Switch attendee
+    </button>
+  );
+}
+
+function renderPage({ withRouteChangeControl = false } = {}) {
   renderWithToast(
     <MemoryRouter initialEntries={["/admin/events/evt-1/attendees/att-1"]}>
       <Routes>
-        <Route path="/admin/events/:eventId/attendees/:attendeeId" element={<AttendeeDetailPage />} />
+        <Route
+          path="/admin/events/:eventId/attendees/:attendeeId"
+          element={
+            <>
+              {withRouteChangeControl && <RouteChangeControl />}
+              <AttendeeDetailPage />
+            </>
+          }
+        />
       </Routes>
     </MemoryRouter>,
   );
@@ -343,6 +362,89 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
 
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(reissueWalletPass).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Refresh status", () => {
+    it("calls refreshWalletPassStatus, toasts, and reloads detail - no confirm dialog, unlike the other wallet actions", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      refreshWalletPassStatus.mockResolvedValueOnce(walletPass({ status: "active" }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      fireEvent.click(screen.getByRole("menuitem", { name: /Refresh status/ }));
+
+      await waitFor(() => {
+        expect(refreshWalletPassStatus).toHaveBeenCalledWith("evt-1", "att-1");
+      });
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Wallet status refreshed\./);
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("toasts an error (not an inline dialog message, since this action has no dialog) when refreshWalletPassStatus fails", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      const { ApiError } = await import("../../src/api/client.js");
+      refreshWalletPassStatus.mockRejectedValueOnce(new ApiError(500, "server_error", "server_error"));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      fireEvent.click(screen.getByRole("menuitem", { name: /Refresh status/ }));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not refresh the wallet status\./);
+      });
+    });
+
+    it("does not toast or reload a stale success after navigating to another attendee mid-request", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      mockLoad(baseDetail({ id: "att-2", name: "Bea", wallet_pass: null }));
+      let resolveRefresh!: (value: ReturnType<typeof walletPass>) => void;
+      refreshWalletPassStatus.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+      );
+      renderPage({ withRouteChangeControl: true });
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      fireEvent.click(screen.getByRole("menuitem", { name: /Refresh status/ }));
+      await waitFor(() => expect(refreshWalletPassStatus).toHaveBeenCalledOnce());
+
+      fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
+      await screen.findByRole("heading", { name: "Bea" });
+      resolveRefresh(walletPass({ status: "active" }));
+
+      await waitFor(() => expect(loadAttendeeDetailData).toHaveBeenCalledTimes(2));
+      expect(screen.queryByTestId("at-toast")).toBeNull();
+    });
+
+    it("does not toast a stale failure after navigating to another attendee mid-request", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      mockLoad(baseDetail({ id: "att-2", name: "Bea", wallet_pass: null }));
+      const { ApiError } = await import("../../src/api/client.js");
+      let rejectRefresh!: (reason: Error) => void;
+      refreshWalletPassStatus.mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectRefresh = reject;
+        }),
+      );
+      renderPage({ withRouteChangeControl: true });
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      fireEvent.click(screen.getByRole("menuitem", { name: /Refresh status/ }));
+      await waitFor(() => expect(refreshWalletPassStatus).toHaveBeenCalledOnce());
+
+      fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
+      await screen.findByRole("heading", { name: "Bea" });
+      rejectRefresh(new ApiError(500, "server_error", "server_error"));
+
+      await waitFor(() => expect(loadAttendeeDetailData).toHaveBeenCalledTimes(2));
+      expect(screen.queryByTestId("at-toast")).toBeNull();
     });
   });
 

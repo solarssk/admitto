@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import {
   InMemoryRateLimitStore,
+  MAX_REQUESTS,
   createPublicRateLimitMiddleware,
   type RateLimitStore,
 } from "../src/rate-limit/index.js";
@@ -24,7 +25,7 @@ describe("public rate limit middleware", () => {
     const store = new InMemoryRateLimitStore();
     const app = makeRateLimitTestApp(store);
 
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < MAX_REQUESTS; i++) {
       const res = await app.request("/t/x", { headers: clientHeaders });
       expect(res.status).toBe(200);
     }
@@ -38,7 +39,7 @@ describe("public rate limit middleware", () => {
     const store = new InMemoryRateLimitStore();
     const app = makeRateLimitTestApp(store);
 
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < MAX_REQUESTS; i++) {
       const res = await app.request("/q/foo.png", { headers: clientHeaders });
       expect(res.status).toBe(200);
     }

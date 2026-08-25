@@ -24,3 +24,7 @@ updates:
       codeql-action:
         patterns:
           - "github/codeql-action/*"
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"

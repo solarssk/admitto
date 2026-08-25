@@ -192,7 +192,7 @@ export function validateCfAccessBootConfigFromResolved(config: CfAccessConfig): 
     );
   }
   console.warn(
-    "WARNING: CF_ACCESS_ENABLED=true; ensure origin is reachable only via Cloudflare Tunnel/firewall (see deployment-cloudflare-access.md)",
+    "WARNING: CF_ACCESS_ENABLED=true; ensure origin is reachable only via Cloudflare Tunnel/firewall (see deploy/README.md, Cloudflare and WireGuard section)",
   );
 }
 
