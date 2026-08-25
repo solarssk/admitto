@@ -3,6 +3,10 @@ type ClientErrorContext = {
   componentStack?: string;
 };
 
+/** Path this module reports to - shared with {@link "./globalErrorReporting.js"} so a CSP
+ *  violation about this endpoint itself is never reported here (would loop forever). */
+export const CLIENT_ERROR_REPORT_PATH = "/api/admin/client-errors";
+
 /** Report a client-side error: verbose in dev, structured server log in production. */
 export function reportClientError(error: unknown, context: ClientErrorContext): void {
   const err = error instanceof Error ? error : new Error(String(error));
@@ -21,7 +25,7 @@ export function reportClientError(error: unknown, context: ClientErrorContext): 
 
   // Same-origin POST; browser sets Origin for jsonPostCsrf. Fire-and-forget — a 401 before
   // session bootstrap (e.g. crash inside AuthProvider) is expected and intentionally ignored.
-  void fetch("/api/admin/client-errors", {
+  void fetch(CLIENT_ERROR_REPORT_PATH, {
     method: "POST",
     credentials: "same-origin",
     headers: {
