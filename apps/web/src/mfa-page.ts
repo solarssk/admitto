@@ -14,16 +14,18 @@ import { getAuthPageInlineScriptHeaders } from "./auth-page-security.js";
 export function getMfaPageSecurityHeaders(
   scriptNonce: string,
   trustedOrigins: readonly string[] = [],
+  secure = false,
 ): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins, secure);
 }
 
 /** MFA enroll allows nonce-gated inline script for clipboard copy and OTP widget. */
 export function getMfaEnrollPageSecurityHeaders(
   scriptNonce: string,
   trustedOrigins: readonly string[] = [],
+  secure = false,
 ): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins, secure);
 }
 
 interface AuthOtpCodeFieldOptions {
