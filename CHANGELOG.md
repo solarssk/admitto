@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An attendee's "Ticket link copied" activity log entry produced by opening "View sent message" now records the operator's own timezone instead of falling back to the event's timezone, matching every other activity log row - previously it could show a visibly different UTC offset than the operator's other actions on the same attendee if the event's own timezone differed from the operator's.
+
 ### Security
 
-- The attendee list's bulk actions (delete, check-in, revoke check-in, revoke items, revoke pass, change ticket type, change RSVP status) and every wallet action that calls Apple/Google Wallet's provider (void, restore, reissue, delete - both for one attendee and for a whole selection) now have a rate limit, matching the protection already in place for bulk email sends and single-attendee edits. Previously an admin account, or a compromised admin session, could resend the same bulk-delete or wallet-void request in a tight loop with no limit - bulk-delete in particular has no undo. Every one of these requests is also now capped at a generous size (well past what selecting hundreds of attendees ever needs), closing off an oversized request as a way to waste server resources before it's even processed.
+- The attendee list's bulk actions (delete, check-in, revoke check-in, revoke items, revoke pass, change ticket type, change RSVP status) and every wallet action that calls Apple/Google Wallet's provider (void, restore, reissue, delete for one attendee) now have a rate limit, matching the protection already in place for bulk email sends and single-attendee edits. Previously an admin account, or a compromised admin session, could resend the same bulk-delete or wallet-void request in a tight loop with no limit - bulk-delete in particular has no undo. Every one of these requests is also now capped at a generous size (well past what selecting hundreds of attendees ever needs), closing off an oversized request as a way to waste server resources before it's even processed.
+- Wallet actions that act on a whole selection at once (void, reissue, delete) now have a much tighter rate limit of their own, separate from the single-attendee one above - each of these already calls PassCreator once per selected attendee, so sharing the single-attendee limit would still have allowed far more PassCreator calls in a burst than PassCreator's own rate limit allows.
 
 ## [0.6.1] - 2026-08-25
 
