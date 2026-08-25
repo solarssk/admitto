@@ -54,6 +54,21 @@ export default defineConfig({
     // otherwise get base64-inlined as data: URIs - blocked outright by the staff SPA's own CSP
     // (font-src 'self' https:, no data:), so some weights/styles silently failed to load.
     assetsInlineLimit: 0,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          // @admitto/shared's timezones module eagerly builds its full zone list from both
+          // @vvo/tzdb (display metadata) and tzdata (IANA alias resolution) at import time, and
+          // it's reached from the very first route (events picker -> EventCard), so it was
+          // pulling ~380 kB of static tz data into the main entry chunk. Splitting it into its
+          // own chunk keeps the entry small and lets this rarely-changing data cache separately
+          // from the app code that changes on every deploy.
+          if (id.includes("node_modules/@vvo/tzdb") || id.includes("node_modules/tzdata")) {
+            return "tzdata";
+          }
+        },
+      },
+    },
   },
   server: {
     port: 5173,
