@@ -179,29 +179,35 @@ async function loadTicketTypeBreakdown(
     .filter((t) => t.count > 0);
 }
 
-/** CheckIn has no client_timezone column of its own - session_id (no FK, purged after retention)
- * is the only link to the scanning device's zone, same "resolve via session, fall back to
- * missing" join reports-routes.ts's loadDeviceIdsByAttendee already uses for device_label. */
+/** CheckIn has no client_timezone column of its own. Session.timezone is captured at *login*, not
+ * at scan time - stale the moment an operator changes timezone without signing out again (codex
+ * review) - so instead this resolves each check-in's zone from the matching AttendeeActionLog
+ * "check_in" row admitAttendee already writes in the same transaction (packages/tickets/src/
+ * admit.ts), whose client_timezone is the validated X-Client-Timezone header at write time. Rows
+ * predating that write, or the row's own client_timezone, simply have no map entry and fall back
+ * to null (viewer's own browser zone) same as every other source here. */
 async function loadRecentCheckInActivity(db: PrismaClient, eventId: string): Promise<EventRecentActivityEntry[]> {
   const rows = await db.checkIn.findMany({
     where: { event_id: eventId, status: "VALID" },
     orderBy: { checked_in_at: "desc" },
     take: RECENT_ACTIVITY_LIMIT,
-    select: {
-      id: true,
-      checked_in_at: true,
-      attendee_id: true,
-      session_id: true,
-      attendee: { select: { name: true } },
-    },
+    select: { id: true, checked_in_at: true, attendee_id: true, attendee: { select: { name: true } } },
   });
+  if (rows.length === 0) return [];
 
-  const sessionIds = [...new Set(rows.map((row) => row.session_id).filter((id): id is string => id != null))];
-  const sessions =
-    sessionIds.length > 0
-      ? await db.session.findMany({ where: { id: { in: sessionIds } }, select: { id: true, timezone: true } })
-      : [];
-  const timezoneBySessionId = new Map(sessions.map((s) => [s.id, s.timezone]));
+  const actionLogs = await db.attendeeActionLog.findMany({
+    where: {
+      event_id: eventId,
+      action_type: "check_in",
+      OR: rows.map((row) => ({ metadata: { path: ["check_in_id"], equals: row.id } })),
+    },
+    select: { metadata: true, client_timezone: true },
+  });
+  const timezoneByCheckInId = new Map(
+    actionLogs
+      .map((log) => [(log.metadata as { check_in_id?: string } | null)?.check_in_id, log.client_timezone] as const)
+      .filter((entry): entry is [string, string | null] => entry[0] != null),
+  );
 
   return rows.map((row) => ({
     id: `checkin:${row.id}`,
@@ -211,7 +217,7 @@ async function loadRecentCheckInActivity(db: PrismaClient, eventId: string): Pro
     attendee_id: row.attendee_id,
     message: "checked in",
     occurred_at: row.checked_in_at.toISOString(),
-    actor_timezone: (row.session_id ? timezoneBySessionId.get(row.session_id) : null) ?? null,
+    actor_timezone: timezoneByCheckInId.get(row.id) ?? null,
   }));
 }
 
