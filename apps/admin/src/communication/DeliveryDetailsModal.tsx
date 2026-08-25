@@ -18,6 +18,16 @@ const SESSION_ID_HINT = "The admin's login session at the moment this was sent, 
 const CLIENT_TIMEZONE_HINT =
   "The sending admin's browser timezone at the moment this was sent, used to show times below in the right zone.";
 
+/** A retried send can leave a prior attempt's `error`/`error_code` sitting on the row even after
+ * `status` moves on to "sent"/"accepted" - the mail-delivery drain worker only overwrites those
+ * columns when the *new* attempt itself fails (see drain.ts/mapSendResult.ts: a successful retry
+ * maps to `error: undefined`, and Prisma treats `undefined` as "leave the column alone", not
+ * "clear it"). Gate every place that surfaces `error`/`error_code` on the row's *current* status
+ * actually being a failure, so a delivery that succeeded on retry never shows a stale timeout. */
+function isFailureStatus(status: string): boolean {
+  return status === "failed" || status === "bounced" || status === "rejected";
+}
+
 export interface DeliveryDetailsModalProps {
   eventId: string;
   /** Event IANA zone - fallback when a delivery row has no client_timezone. */
@@ -143,7 +153,7 @@ function buildExportText(detail: DeliveryDetailDto, eventTimezone: string): stri
     "Delivery timeline",
     "------------------",
     ...detail.timeline.map((item, index) => {
-      const errorSuffix = item.error ? ` - ${item.error}` : "";
+      const errorSuffix = item.error && isFailureStatus(item.status) ? ` - ${item.error}` : "";
       return `${timelineStepLabel(detail.timeline, index)}: ${item.status} (${timelineItemTime(item, eventTimezone)})${errorSuffix}`;
     }),
   ];
@@ -187,7 +197,8 @@ export function DeliveryDetailsModal({
     return () => controller.abort();
   }, [eventId, row.id]);
 
-  const errorNotice = detail ? deliveryErrorNoticeContent(detail) : null;
+  const errorNotice =
+    detail && isFailureStatus(detail.status) ? deliveryErrorNoticeContent(detail) : null;
   const successNotice =
     detail && !errorNotice ? deliverySuccessNoticeContent(detail) : null;
 
