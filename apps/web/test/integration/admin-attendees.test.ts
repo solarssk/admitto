@@ -20,6 +20,7 @@ import {
   handleBulkRevokeAttendeeItems,
   handleDeleteAttendeeNote,
   handlePatchAttendeeNote,
+  handleRefreshAttendeeWalletStatus,
 } from "../../src/admin/attendees-api-routes.js";
 import { WALLET_MESSAGE_SEND_BODY_MAX_BYTES } from "../../src/admin/wallet-message-routes.js";
 import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
@@ -1723,6 +1724,21 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
         await prisma.attendee.delete({ where: { id: attendeeId } });
       }
+    });
+
+    it("returns 400 when the eventId route param is missing", async () => {
+      // The real route always has :eventId as a required segment, so this can't happen through
+      // the full app - mount the handler on its own optional-param route to exercise
+      // requireEventId's guard directly, same pattern as admin-communication.test.ts's
+      // guardTestApp() for the sibling delivery-log routes.
+      const miniApp = new Hono();
+      miniApp.post("/refresh-status/:eventId?", (c) => handleRefreshAttendeeWalletStatus(c, prisma));
+
+      const res = await miniApp.request("/refresh-status", { method: "POST" });
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "eventId required" });
+      expect(getRegistrationStatusSpy).not.toHaveBeenCalled();
     });
   });
 
