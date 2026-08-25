@@ -11,7 +11,7 @@
     "@admitto/crypto": "*",
     "@admitto/db": "*",
     "@admitto/shared": "*",
-    "redis": "^6.1.0"
+    "redis": "^6.2.1"
   },
   "exports": {
     ".": {

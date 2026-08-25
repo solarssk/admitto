@@ -45,7 +45,7 @@
     "hono": "^4.13.0",
     "ip-location-api": "5.0.2",
     "pdfkit": "^0.19.1",
-    "redis": "^6.1.0",
+    "redis": "^6.2.1",
     "sharp": "^0.35.3",
     "zod": "^4.4.3"
   },
@@ -53,7 +53,7 @@
     "@testcontainers/redis": "^12.1.0",
     "@types/node": "^24.0.0",
     "@types/pdfkit": "^0.17.6",
-    "jose": "^6.2.9",
+    "jose": "^6.2.10",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",
     "undici": "^8.10.0",
