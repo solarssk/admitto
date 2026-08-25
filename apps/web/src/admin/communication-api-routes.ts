@@ -419,19 +419,41 @@ export async function handlePreviewEventTemplate(
   }
 }
 
-/** POST /api/admin/events/:eventId/template/test-send */
-export async function handleTestSendEventTemplate(
+/** Shared "check access -> resolve template (by-id variant only) -> parse body -> recipient
+ * guard -> resolve baseUrl -> send -> audit log" skeleton for the two test-send routes below -
+ * they differed only in whether a specific templateId is targeted, and the extra 404/audit
+ * metadata that implies (SonarCloud duplication). `templateId` absent/undefined selects the
+ * event's default template, matching handleTestSendEventTemplate's previous standalone body. */
+async function runTestSendEventTemplate(
   c: Context,
   db: PrismaClient,
   rateLimitStore: RateLimitStore,
-  mailDeliveryDeps: MailDeliveryDeps = {},
-  injectedBaseUrl?: string,
+  mailDeliveryDeps: MailDeliveryDeps,
+  injectedBaseUrl: string | undefined,
+  templateId?: string,
 ): Promise<Response> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
 
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
+
+  let templateName: string | undefined;
+  if (templateId !== undefined) {
+    try {
+      await resolveTemplateById(templateId, eventId, db);
+    } catch (err) {
+      if (err instanceof TemplateNotFoundError) {
+        return c.json({ error: "not_found" }, 404);
+      }
+      throw err;
+    }
+    const templateMeta = await db.mailTemplate.findUnique({
+      where: { id: templateId },
+      select: { name: true },
+    });
+    templateName = templateMeta?.name ?? "unknown";
+  }
 
   let body: z.infer<typeof testSendBodySchema>;
   try {
@@ -450,7 +472,7 @@ export async function handleTestSendEventTemplate(
   let result;
   try {
     result = await sendTestEmail(
-      { eventId, toAddress: body.to },
+      { eventId, toAddress: body.to, ...(templateId !== undefined ? { templateId } : {}) },
       db,
       process.env,
       mailDeliveryDeps,
@@ -477,6 +499,9 @@ export async function handleTestSendEventTemplate(
         event_id: eventId,
         action_type: "mail_test_sent",
         audit: adminAuditFromContext(c),
+        ...(templateId !== undefined
+          ? { metadata: { template_id: templateId, template_name: templateName } }
+          : {}),
       });
     });
   } catch (auditErr) {
@@ -484,6 +509,17 @@ export async function handleTestSendEventTemplate(
   }
 
   return c.json({ status: "sent" } satisfies { status: "sent" });
+}
+
+/** POST /api/admin/events/:eventId/template/test-send */
+export async function handleTestSendEventTemplate(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  mailDeliveryDeps: MailDeliveryDeps = {},
+  injectedBaseUrl?: string,
+): Promise<Response> {
+  return runTestSendEventTemplate(c, db, rateLimitStore, mailDeliveryDeps, injectedBaseUrl);
 }
 
 /** POST /api/admin/events/:eventId/templates/:templateId/test-send */
@@ -494,82 +530,8 @@ export async function handleTestSendEventTemplateById(
   mailDeliveryDeps: MailDeliveryDeps = {},
   injectedBaseUrl?: string,
 ): Promise<Response> {
-  const eventId = requireEventId(c);
-  if (eventId instanceof Response) return eventId;
-
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
   const templateId = c.req.param("templateId") ?? "";
-  try {
-    await resolveTemplateById(templateId, eventId, db);
-  } catch (err) {
-    if (err instanceof TemplateNotFoundError) {
-      return c.json({ error: "not_found" }, 404);
-    }
-    throw err;
-  }
-
-  const templateMeta = await db.mailTemplate.findUnique({
-    where: { id: templateId },
-    select: { name: true },
-  });
-
-  let body: z.infer<typeof testSendBodySchema>;
-  try {
-    body = testSendBodySchema.parse(await c.req.json());
-  } catch {
-    return c.json({ error: "validation_failed" }, 400);
-  }
-
-  const recipientLimited = await guardMailTestRecipientRateLimit(c, rateLimitStore, body.to);
-  if (recipientLimited) return recipientLimited;
-
-  const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
-  if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
-  const baseUrl = baseUrlOrRes;
-
-  let result;
-  try {
-    result = await sendTestEmail(
-      { eventId, toAddress: body.to, templateId },
-      db,
-      process.env,
-      mailDeliveryDeps,
-      { baseUrl },
-    );
-  } catch (err) {
-    console.error("[admin] template test-send failed", err);
-    return c.json({
-      status: "failed",
-      error: clientSafeDeliveryError(err instanceof Error ? err.message : undefined),
-    } satisfies { status: "failed"; error: string });
-  }
-
-  if (!isSendSuccess(result.status) || result.error) {
-    return c.json({
-      status: "failed",
-      error: clientSafeDeliveryError(result.error),
-    } satisfies { status: "failed"; error: string });
-  }
-
-  try {
-    await db.$transaction(async (tx) => {
-      await writeBulkActionLog(tx, {
-        event_id: eventId,
-        action_type: "mail_test_sent",
-        audit: adminAuditFromContext(c),
-        metadata: {
-          template_id: templateId,
-          template_name: templateMeta?.name ?? "unknown",
-        },
-      });
-    });
-  } catch (auditErr) {
-    console.error("[audit] mail_test_sent log failed", auditErr);
-  }
-
-  return c.json({ status: "sent" } satisfies { status: "sent" });
+  return runTestSendEventTemplate(c, db, rateLimitStore, mailDeliveryDeps, injectedBaseUrl, templateId);
 }
 
 /** GET /api/admin/events/:eventId/deliveries */
