@@ -9,11 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Attendee detail's wallet "More actions" menu has a new "Refresh status" action - pulls the pass's current device-registration status directly from the provider on demand, instead of waiting for the periodic background sync to reach that one attendee (which can take up to 30 minutes, longer if many other passes are stale system-wide). For when the provider's own dashboard already shows a pass as added but Admitto hasn't caught up yet. Shares the same rate limit as the other single-attendee wallet actions (void/restore/reissue/delete), since it also calls the provider once per request. A momentary "not found" from the provider (the same brief search-index lag the duplicate-recovery fix above already accounts for) is retried once rather than taken as final, so it can't wipe a genuinely-registered pass's status back to unregistered.
 - An unhandled promise rejection or an exception thrown outside a request's normal error handling is now logged (to System logs and stdout) with enough detail to diagnose before the process exits, instead of only ever surfacing as a bare Node.js stack trace in the container's raw logs.
 
 ### Fixed
 
 - An attendee's "Ticket link copied" activity log entry produced by opening "View sent message" now records the operator's own timezone instead of falling back to the event's timezone, matching every other activity log row - previously it could show a visibly different UTC offset than the operator's other actions on the same attendee if the event's own timezone differed from the operator's.
+- Adding a pass to Apple/Google Wallet for the first time no longer occasionally shows a "?walletError=1" retry banner when PassCreator's create-duplicate check and its own search index briefly disagree (create says the pass already exists, search finds nothing yet) - one retry after a short delay now covers that lag.
+- Clicking "Add to Wallet" for the same attendee from two devices at nearly the same time (e.g. a work computer and a phone, before either had created the pass yet) could mint two separate passes at PassCreator instead of one - the second one silently orphaned, invisible to any later Push updates/void/delete, since Admitto had no record of it. The two requests now share one in-flight creation instead of racing.
 - The public ticket page, QR image, and static map endpoints now allow far more requests per minute from the same apparent IP address before throttling (60 to 500). A single public IP can represent many unrelated attendees at once - most commonly behind a shared corporate network, or behind a mobile carrier's large-scale NAT, which is common in some regions and can put hundreds of distinct subscribers behind one address simultaneously - and the previous limit could show a legitimate attendee a "Too Many Requests" error for opening their own ticket link.
 
 ### Security

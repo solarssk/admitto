@@ -26,6 +26,7 @@ import {
   fetchAttendeeDetail,
   fetchTicketTypes,
   reissueWalletPass,
+  refreshWalletPassStatus,
   deleteWalletPass,
   resendTicket,
   fetchTicketLink,
@@ -130,6 +131,7 @@ function MoreActionsMenu({
   onVoidWallet,
   onRestoreWallet,
   onReissueWallet,
+  onRefreshStatusWallet,
   onDeleteWallet,
 }: Readonly<{
   event: ArchivedGuardEvent;
@@ -158,6 +160,7 @@ function MoreActionsMenu({
   onVoidWallet: () => void;
   onRestoreWallet: () => void;
   onReissueWallet: () => void;
+  onRefreshStatusWallet: () => void;
   onDeleteWallet: () => void;
 }>) {
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
@@ -296,6 +299,10 @@ function MoreActionsMenu({
                 onReissue={() => {
                   setOpen(false);
                   onReissueWallet();
+                }}
+                onRefreshStatus={() => {
+                  setOpen(false);
+                  onRefreshStatusWallet();
                 }}
                 onDelete={() => {
                   setOpen(false);
@@ -452,6 +459,7 @@ function WalletActionMenuItems({
   onVoid,
   onRestore,
   onReissue,
+  onRefreshStatus,
   onDelete,
 }: Readonly<{
   event: ArchivedGuardEvent;
@@ -460,6 +468,7 @@ function WalletActionMenuItems({
   onVoid: () => void;
   onRestore: () => void;
   onReissue: () => void;
+  onRefreshStatus: () => void;
   onDelete: () => void;
 }>) {
   if (!hasWalletLifecycleActions(walletPass)) return null;
@@ -510,6 +519,17 @@ function WalletActionMenuItems({
             <span className="more-actions-menu__item-text">
               <span>Push updates</span>
               <span className="more-actions-menu__item-hint">Push the latest details to their wallet pass</span>
+            </span>
+          </button>
+        )}
+      </ArchivedGuard>
+      <ArchivedGuard event={event} reasonId="refresh-wallet-status-reason-menu" disabled={walletBusy}>
+        {(guard) => (
+          <button type="button" role="menuitem" className="more-actions-menu__item" {...guard} onClick={onRefreshStatus}>
+            <i className="ti ti-cloud-download" aria-hidden="true" />
+            <span className="more-actions-menu__item-text">
+              <span>Refresh status</span>
+              <span className="more-actions-menu__item-hint">Pull the latest device-registration status from the provider</span>
             </span>
           </button>
         )}
@@ -1928,6 +1948,30 @@ export function AttendeeDetailPage() {
     }
   }
 
+  /** Pulls the pass's current device-registration status directly from the provider (a read, not
+   * a push - the opposite direction from Push updates above), instead of waiting for the
+   * periodic background sync to get to this one row. No confirm dialog - unlike the other wallet
+   * actions, this never changes anything at the provider. */
+  async function handleWalletRefreshStatus() {
+    if (!eventId || !attendeeId) return;
+    const target = { eventId, attendeeId };
+    setWalletBusy(true);
+    try {
+      await refreshWalletPassStatus(eventId, attendeeId);
+      if (!isStillSelected(target)) return;
+      await loadDetail();
+      addToast("Wallet status refreshed.", "success");
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      // No confirm dialog for this action (unlike void/restore/reissue/delete above), so there's
+      // nowhere for walletError's inline text to render - toast instead, same as Test connection
+      // (EventSettingsPage.tsx's handleTestWallet) does for its own dialog-less wallet action.
+      addToast(operatorApiErrorMessage(err, "Could not refresh the wallet status."), "error");
+    } finally {
+      if (isStillSelected(target)) setWalletBusy(false);
+    }
+  }
+
   /** Permanently removes the pass at the provider - distinct from void, which leaves it
    * installed but marked invalid. Irreversible; a later "Add to Wallet" click starts fresh. */
   async function handleWalletDelete() {
@@ -2177,6 +2221,10 @@ export function AttendeeDetailPage() {
               onReissueWallet={() => {
                 setWalletError(null);
                 setActiveWalletAction("reissue");
+              }}
+              onRefreshStatusWallet={() => {
+                setWalletError(null);
+                void handleWalletRefreshStatus();
               }}
               onDeleteWallet={() => {
                 setWalletError(null);

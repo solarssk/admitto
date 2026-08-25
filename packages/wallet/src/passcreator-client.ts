@@ -389,7 +389,8 @@ export class PassCreatorClient implements WalletPassProvider {
     };
   }
 
-  /** Polled by the wallet-sync worker job (apps/cli), not on any request path. */
+  /** Polled by the wallet-sync worker job (apps/cli) and by the admin "Refresh status" action's
+   * on-demand request path (apps/web/src/admin/attendees-api-routes.ts). */
   async getRegistrationStatus(userProvidedId: string): Promise<WalletPassRegistrationStatus | null> {
     const row = await this.searchByUserProvidedId(userProvidedId);
     if (!row) return null;
