@@ -6,6 +6,7 @@ import { resolveStaffAuthFromRequest } from "./resolve-staff-auth.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { renderForbidden } from "../ticket-page.js";
 import { getStaffSpaSecurityHeaders } from "../staff-spa.js";
+import { isSecureRequest } from "../is-secure-request.js";
 
 const NO_ADMIN_ACCESS_MESSAGE = "Your account does not have access to the admin panel.";
 const INVALID_CF_ACCESS_MESSAGE =
@@ -24,7 +25,7 @@ function isAdminApiPath(path: string): boolean {
 
 /** Styled 403 for a top-level browser navigation - the specific reason stays in System logs. */
 function htmlForbidden(c: Context, message: string): Response {
-  for (const [name, value] of Object.entries(getStaffSpaSecurityHeaders())) {
+  for (const [name, value] of Object.entries(getStaffSpaSecurityHeaders(process.env, [], isSecureRequest(c)))) {
     c.header(name, value);
   }
   return c.html(renderForbidden(message), 403);

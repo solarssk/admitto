@@ -6,6 +6,7 @@ import { prisma } from "@admitto/db";
 import { createApp } from "./app.js";
 import { validateCfAccessBootConfig } from "./config.js";
 import { devConsoleExportSink, warnExportOnlyProductionEnv } from "./dev-export-sink.js";
+import { logger } from "./logger.js";
 
 type HttpsServerOptions = { cert: Buffer; key: Buffer };
 
@@ -59,6 +60,17 @@ export function isOptionalIpv6LoopbackBindError(
   return (
     optional && (err.code === "EAFNOSUPPORT" || err.code === "EADDRNOTAVAIL")
   );
+}
+
+/** Normalizes an unhandledRejection/uncaughtException value into loggable fields. Error's
+ * message/stack/name are non-enumerable own properties, so passing an Error straight into
+ * emitSystemLog's JSON.stringify(fields) would otherwise log it as "{}" - and installing these
+ * process listeners also suppresses Node's own default stack-trace print, so this is the only
+ * place that information would ever reach the log (bot review). `reason` is typed `unknown`
+ * because Node makes no guarantee an unhandledRejection's rejection value is an Error. */
+export function crashLogFields(reason: unknown): { message: string; stack?: string } {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  return { message: err.message, stack: err.stack };
 }
 
 /** Boot the Admitto web server; wires a dev-only export_only sink when NODE_ENV is development. */
@@ -146,6 +158,21 @@ async function main(): Promise<void> {
 // import.meta.url/argv[1] comparison, which breaks if the invocation path ever
 // crosses a symlink (e.g. a symlinked release directory).
 if (process.env.NODE_ENV !== "test") {
+  // Crash visibility only (defense-in-depth): without these, a rejected promise or thrown error
+  // that never reaches Hono's own request handling is invisible beyond Node's default stderr
+  // trace. Logging first, then exiting, matches this file's own startup-failure handling below
+  // and Node's documented guidance that process state after uncaughtException is not reliably
+  // safe to keep serving on - Docker's `restart: unless-stopped` (deploy/docker-compose.yml)
+  // is the recovery mechanism, same as it already is for any other fatal exit here.
+  process.on("unhandledRejection", (reason) => {
+    logger.error("unhandled promise rejection", crashLogFields(reason));
+    process.exit(1);
+  });
+  process.on("uncaughtException", (err) => {
+    logger.error("uncaught exception", crashLogFields(err));
+    process.exit(1);
+  });
+
   try {
     await main();
   } catch (err) {

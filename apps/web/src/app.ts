@@ -1,4 +1,4 @@
-import { Hono, type Context } from "hono";
+import { Hono, type Context, type Next } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
@@ -393,6 +393,7 @@ import {
 } from "./admin/identity-api-routes.js";
 import { resolveOidcPublicBaseUrlOrNull } from "./admin/oidc-redirect-uri.js";
 import { applyBaselineSecurityHeaders } from "./security-headers.js";
+import { isSecureRequest } from "./is-secure-request.js";
 import { createRequestLogMiddleware, resolveLogHttpRequests } from "./request-log.js";
 import { resolvePostLoginRedirectForUser } from "./auth/post-login-redirect.js";
 import { handleReadyz } from "./ops/readyz.js";
@@ -450,7 +451,9 @@ function htmlWithSecurityHeaders(
   theme?: Awaited<ReturnType<typeof getBrandingTheme>> | null,
   logoUrl?: string | null,
 ) {
-  for (const [name, value] of Object.entries(getTicketPageSecurityHeaders(theme, logoUrl))) {
+  for (const [name, value] of Object.entries(
+    getTicketPageSecurityHeaders(theme, logoUrl, isSecureRequest(c)),
+  )) {
     c.header(name, value);
   }
   return c.html(html, status);
@@ -615,6 +618,38 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminWalletMessageJobStatusRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-job-status");
   const adminWalletMessageSendRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-send");
   const adminAttendeePatchRateLimit = rateLimit(rateLimitStore, "admin:attendee-patch");
+  const adminWalletActionRateLimit = rateLimit(rateLimitStore, "admin:wallet-action");
+  const adminWalletActionBulkRateLimit = rateLimit(rateLimitStore, "admin:wallet-action-bulk");
+  const adminAttendeeBulkMutationRateLimit = rateLimit(rateLimitStore, "admin:attendee-bulk-mutation");
+  /** Wraps `adminWalletActionBulkRateLimit` so bulk-delete / bulk-revoke-pass only spend that
+   * budget when the event actually has wallet configured - unlike the 3 explicit
+   * bulk-wallet-void/reissue/delete routes (always a wallet action by definition), these two are
+   * general-purpose bulk mutations that only *sometimes* cascade into PassCreator calls
+   * (deleteWalletPassesBestEffort / syncWalletPassOnStatusChangeBestEffort), and were charging the
+   * strict wallet budget even for an event with wallet disabled entirely (bot review, PR #1064
+   * round 3). Checks only the event's wallet config, not whether the specific selected attendees
+   * have a wallet pass - the cheaper of the two checks the finding named, and still closes the
+   * common case (wallet not configured for this event at all). */
+  async function walletActionBulkRateLimitIfWalletConfigured(c: Context, next: Next): Promise<Response | void> {
+    const eventId = c.req.param("eventId");
+    const event = eventId
+      ? await db.event.findUnique({
+          where: { id: eventId },
+          select: { wallet_template_id: true, wallet_api_key_enc: true },
+        })
+      : null;
+    // Same "is wallet actually usable for this event" check resolveWalletProvider itself makes
+    // (packages/wallet/src/resolve-provider.ts) - deliberately not also checking the org/event's
+    // own wallet_enabled toggle, since that governs whether *new* passes get issued, not whether
+    // an existing pass can still be voided/restored/deleted (same reasoning already applied to
+    // deleteWalletPassesBestEffort's own erasure path).
+    const walletConfigured = Boolean(event?.wallet_template_id && event?.wallet_api_key_enc);
+    if (!walletConfigured) {
+      await next();
+      return;
+    }
+    return adminWalletActionBulkRateLimit(c, next);
+  }
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
   const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
   const checkinScanRateLimit = rateLimit(rateLimitStore, "checkin:scan");
@@ -659,6 +694,14 @@ export function createApp(options: CreateAppOptions = {}) {
   // ever buffered/parsed, not just once the zod schema's own `.max()` calls see it.
   const webauthnBodyLimit = bodyLimit({
     maxSize: MAX_WEBAUTHN_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  // Every bulk-attendee route whose body is just an attendeeIds array (up to BULK_SEND_LIMIT =
+  // 500 UUID-length ids, each now capped at 128 chars in its own zod schema) - a few hundred KB
+  // is generous headroom for that shape while still rejecting a grossly oversized body before
+  // it's ever buffered/parsed, same rationale as webauthnBodyLimit above.
+  const bulkAttendeeIdsBodyLimit = bodyLimit({
+    maxSize: Math.ceil(0.5 * 1024 * 1024),
     onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
@@ -1363,6 +1406,7 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/admin/events/:eventId/attendees/export-selected",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
     adminExportRateLimit,
     (c) => handleExportSelectedAttendees(c, db),
   );
@@ -1402,60 +1446,89 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/admin/events/:eventId/attendees/bulk-delete",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    // Also shares the wallet-action-bulk budget, but only when this event has wallet configured:
+    // deleteWalletPassesBestEffort (inside the handler) calls PassCreator once per selected
+    // attendee that has a wallet pass, which can't happen at all for a non-wallet event.
+    walletActionBulkRateLimitIfWalletConfigured,
     (c) => handleBulkDeleteEventAttendees(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-checkin",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
     guardArchivedEvent((c) => handleBulkCheckInEventAttendees(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-revoke-checkin",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
     guardArchivedEvent((c) => handleBulkRevokeCheckInEventAttendees(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-revoke-items",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
     guardArchivedEvent((c) => handleBulkRevokeAttendeeItems(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-revoke-pass",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    // Also shares the wallet-action-bulk budget, but only when this event has wallet configured:
+    // revokeOneAttendeePass (inside the handler, via syncWalletPassOnStatusChangeBestEffort) calls
+    // PassCreator once per selected attendee that has an active wallet pass, which can't happen at
+    // all for a non-wallet event.
+    walletActionBulkRateLimitIfWalletConfigured,
     guardArchivedEvent((c) => handleBulkRevokeAttendeePass(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-wallet-void",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminWalletActionBulkRateLimit,
     guardArchivedEvent((c) => handleBulkVoidAttendeeWalletPass(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-wallet-reissue",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminWalletActionBulkRateLimit,
     guardArchivedEvent((c) => handleBulkReissueAttendeeWalletPass(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-wallet-delete",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminWalletActionBulkRateLimit,
     guardArchivedEvent((c) => handleBulkDeleteAttendeeWalletPass(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-ticket-type",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
     guardArchivedEvent((c) => handleBulkTicketTypeEventAttendees(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-rsvp",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
     guardArchivedEvent((c) => handleBulkRsvpEventAttendees(c, db)),
   );
   app.post(
@@ -1487,18 +1560,21 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/admin/events/:eventId/attendees/:id/wallet/void",
     jsonPostCsrf,
     staffAdminGate,
+    adminWalletActionRateLimit,
     guardArchivedEvent((c) => handleVoidAttendeeWalletPass(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/wallet/restore",
     jsonPostCsrf,
     staffAdminGate,
+    adminWalletActionRateLimit,
     guardArchivedEvent((c) => handleRestoreAttendeeWalletPass(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/wallet/reissue",
     jsonPostCsrf,
     staffAdminGate,
+    adminWalletActionRateLimit,
     guardArchivedEvent((c) => handleReissueAttendeeWalletPass(c, db)),
   );
   app.post(
@@ -1511,6 +1587,7 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/admin/events/:eventId/attendees/:id/wallet/delete",
     jsonPostCsrf,
     staffAdminGate,
+    adminWalletActionRateLimit,
     guardArchivedEvent((c) => handleDeleteAttendeeWalletPass(c, db)),
   );
   app.post(

@@ -21,6 +21,7 @@ import {
 } from "../change-password-page.js";
 import { applyAuthPageSecurityHeaders, createAuthPageScriptNonce } from "../auth-page-security.js";
 import { resolveCspTrustedOriginsSafe } from "../csp-trusted-origins.js";
+import { isSecureRequest } from "../is-secure-request.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
 import { setSessionCookie } from "./routes.js";
 import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
@@ -35,7 +36,10 @@ function htmlResponse(
   status: 200 | 400 = 200,
   trustedOrigins: readonly string[] = [],
 ): Response {
-  applyAuthPageSecurityHeaders(c, getChangePasswordPageSecurityHeaders(scriptNonce, trustedOrigins));
+  applyAuthPageSecurityHeaders(
+    c,
+    getChangePasswordPageSecurityHeaders(scriptNonce, trustedOrigins, isSecureRequest(c)),
+  );
   return c.html(html, status);
 }
 
