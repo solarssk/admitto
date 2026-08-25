@@ -750,6 +750,37 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     expect(within(dialog).queryByRole("alert")).toBeNull();
   });
 
+  it("does not show a stale error notice for a delivery that succeeded after an earlier failed attempt", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [failedResendRow], total: 1 });
+    fetchEventDelivery.mockResolvedValue({
+      // The drain worker's retry only overwrites error/error_code when the *new* attempt itself
+      // fails - a successful retry leaves the prior attempt's "smtp_connect"/"Connection timed
+      // out" sitting on the row even though status has moved on to "sent" (see
+      // mapSendResult.ts/drain.ts). The notice must be gated on the current status, not on
+      // whether these columns happen to be populated.
+      ...detailFixture(),
+      status: "sent",
+      sent_at: "2026-09-01T13:10:00.000Z",
+    });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest Two");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
+    await within(dialog).findByText("Overview");
+
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+    expect(within(dialog).queryByText("Connection timed out")).toBeNull();
+    const notice = within(dialog).getByRole("status");
+    expect(notice.textContent).toMatch(/accepted this message for delivery/i);
+    // Raw fields still lists the stale error_code as-is - a diagnostic dump of the real row,
+    // deliberately not gated the way the Overview notice now is.
+    expect(within(dialog).getByText("smtp_connect")).toBeTruthy();
+  });
+
   it("falls back to placeholders for every unset optional field", async () => {
     fetchEventDeliveries.mockResolvedValue({
       items: [{ ...failedResendRow, recipient_email: null }],
@@ -914,6 +945,65 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
       // No fabricated provider transcript (plan.md: no Postmark integration exists).
       expect(text).not.toContain("250 2.0.0 OK");
       expect(clickSpy).toHaveBeenCalledOnce();
+    } finally {
+      clickSpy.mockRestore();
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+    }
+  });
+
+  it("Export as .txt omits a stale error suffix from a timeline row that isn't currently a failure", async () => {
+    fetchEventDeliveries.mockResolvedValue({ items: [failedResendRow], total: 1 });
+    // Same "retried and succeeded, but error/error_code linger" row as the modal-notice test
+    // above, placed as the *initial* timeline entry next to a genuinely still-failed resend -
+    // the exported line for each must reflect that row's own current status, not just whether
+    // `error` happens to be set.
+    const staleSentInitial: DeliveryDto = {
+      ...failedResendRow,
+      id: "dlv-2-initial",
+      purpose: "initial",
+      status: "sent",
+      sent_at: "2026-09-01T13:10:00.000Z",
+    };
+    fetchEventDelivery.mockResolvedValue({
+      ...detailFixture(),
+      timeline: [staleSentInitial, failedResendRow],
+    });
+
+    renderPage();
+    await goToDeliveryLogTab();
+    await screen.findByText("Guest Two");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
+    await within(dialog).findByText("Overview");
+
+    const createObjectURL = vi.fn((_blob: Blob | MediaSource) => "blob:mock-delivery-stale");
+    const originalCreate = URL.createObjectURL;
+    const originalRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = vi.fn();
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    try {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Export as .txt" }));
+
+      const blob = createObjectURL.mock.calls[0]![0] as Blob;
+      const text = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(blob);
+      });
+
+      const lines = text.split("\n");
+      const initialLine = lines.find((line) => line.startsWith("Initial send:"));
+      const resendLine = lines.find((line) => line.startsWith("Resend 1:"));
+      expect(initialLine).toMatch(/^Initial send: sent \(.+\)$/);
+      expect(initialLine).not.toContain("Connection timed out");
+      expect(resendLine).toMatch(/^Resend 1: failed \(.+\) - Connection timed out$/);
     } finally {
       clickSpy.mockRestore();
       URL.createObjectURL = originalCreate;
