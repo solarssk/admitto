@@ -2950,6 +2950,34 @@ async function voidOneWalletPass(
   return "voided";
 }
 
+/** Caps concurrent in-flight bulk-wallet requests to 1 per user+event. admin:wallet-action-bulk
+ * (policies.ts) bounds how many of these requests can *start* in a 10-minute window, but not how
+ * many run *at once* - and every outbound PassCreator call from any of them shares one
+ * process-wide (Redis-coordinated cross-process) pace gate
+ * (packages/wallet/src/passcreator-client.ts), so N genuinely concurrent 100-attendee requests
+ * queue N x 100 calls onto that single ~150ms-spaced stream: the last request in that queue can
+ * take N x ~15s to respond. At the current 10/10min ceiling that can exceed both the bundled
+ * nginx's 180s proxy_read_timeout and, comfortably, a plain 60s default on deployments without
+ * it - the client sees a timeout while the mutations keep running server-side (bot review on
+ * PR #1081, round 2). This is a process-local, best-effort second layer, not a replacement for
+ * admin:wallet-action-bulk's own (Redis-backed, account-wide) budget: the *normal* workflow this
+ * limit was raised for - submit a batch, wait for the response, submit the next - is unaffected,
+ * since each request's slot is freed before the next one in that workflow ever starts. */
+const inFlightBulkWalletActions = new Map<string, number>();
+
+function acquireBulkWalletActionSlot(key: string): boolean {
+  const current = inFlightBulkWalletActions.get(key) ?? 0;
+  if (current >= 1) return false;
+  inFlightBulkWalletActions.set(key, current + 1);
+  return true;
+}
+
+function releaseBulkWalletActionSlot(key: string): void {
+  const current = inFlightBulkWalletActions.get(key) ?? 0;
+  if (current <= 1) inFlightBulkWalletActions.delete(key);
+  else inFlightBulkWalletActions.set(key, current - 1);
+}
+
 /** Shared "parse body -> resolve provider -> load targets -> chunked Promise.allSettled -> tally
  * counts" skeleton for the three bulk wallet-lifecycle routes below (void/reissue/delete) - they
  * differed only in which per-attendee function to call and which literal action/log strings to
@@ -2987,6 +3015,11 @@ async function runBulkWalletAction<K extends string>(
 
   const label = action.slice("wallet_".length);
   const counts = { [successKey]: 0, skipped: 0, errored: 0 } as Record<K | "skipped" | "errored", number>;
+
+  const concurrencyKey = `${c.get("auth").userId}:${eventId}`;
+  if (!acquireBulkWalletActionSlot(concurrencyKey)) {
+    return c.json({ error: "bulk_wallet_action_in_progress" }, 429);
+  }
   try {
     const provider = await resolveEventWalletProvider(db, eventId);
     if (!provider) return c.json({ error: "wallet_not_configured" }, 409);
@@ -3019,6 +3052,8 @@ async function runBulkWalletAction<K extends string>(
       attendeeCount: parsed.data.attendeeIds.length,
     });
     return c.json({ error: "server error" }, 500);
+  } finally {
+    releaseBulkWalletActionSlot(concurrencyKey);
   }
 }
 

@@ -2290,6 +2290,74 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(reissueAlsoLimited.status).toBe(429);
     });
 
+    it("returns 429 for a bulk wallet action while another one for the same event is still in flight (concurrency guard, bot review round 2)", async () => {
+      // At the raised 10/10min ceiling, N genuinely concurrent 100-attendee requests can queue
+      // N x 100 calls onto the shared ~150ms-paced PassCreator stream - long enough for the last
+      // one to outlive a proxy read timeout. acquireBulkWalletActionSlot/releaseBulkWalletActionSlot
+      // (attendees-api-routes.ts) cap this process to 1 in-flight bulk-wallet request per
+      // user+event regardless of the request-count budget above.
+      const attendeeId = "att-bulk-concurrency-1";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+      try {
+        let releaseFirstCall: () => void = () => {};
+        const firstCallGate = new Promise<void>((resolve) => {
+          releaseFirstCall = resolve;
+        });
+        voidSpy.mockImplementationOnce(async () => {
+          await firstCallGate;
+        });
+
+        const firstRequest = app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [attendeeId] }),
+          },
+        );
+
+        // Give the first request's handler a tick to actually start (and acquire its slot)
+        // before the second one is sent, so the two genuinely race instead of both starting cold.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        const secondResponse = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [attendeeId] }),
+          },
+        );
+        expect(secondResponse.status).toBe(429);
+        const secondBody = (await secondResponse.json()) as { error: string };
+        expect(secondBody.error).toBe("bulk_wallet_action_in_progress");
+
+        releaseFirstCall();
+        const firstResponse = await firstRequest;
+        expect(firstResponse.status).not.toBe(429);
+
+        // The slot is released once the in-flight request finishes - a fresh request right after
+        // must not still be blocked by a leaked slot.
+        const thirdResponse = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [attendeeId] }),
+          },
+        );
+        expect(thirdResponse.status).not.toBe(429);
+      } finally {
+        // WALLET_ACTION_EVENT's attendees are only swept in this block's afterAll - a later test
+        // in this file (wallet_status on GET list) expects its own single seeded attendee to
+        // still be on page 1 of the default, unfiltered, 25-per-page attendee list, so this test
+        // must not leave an extra attendee lingering past this point. WalletPass has no cascade
+        // delete, so it goes first.
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
     it("rejects more than WALLET_BULK_SEND_LIMIT (100) attendee ids, smaller than the generic bulk cap (bot review, PR #1064 round 3)", async () => {
       // Deliberately smaller than the generic BULK_SEND_LIMIT (500) other bulk routes allow -
       // every outbound PassCreator call is now paced, so a full 500-target request could outlive
