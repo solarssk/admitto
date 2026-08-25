@@ -21,6 +21,7 @@ import {
 } from "./setup-page.js";
 import { createAuthPageScriptNonce } from "./auth-page-security.js";
 import { resolveCspTrustedOriginsSafe } from "./csp-trusted-origins.js";
+import { isSecureRequest } from "./is-secure-request.js";
 import { parseOptionalClientTimezone } from "./admin/timezone.js";
 
 const DISPLAY_NAME_MAX = 120;
@@ -51,7 +52,9 @@ function htmlResponse(
   status: 200 | 409 = 200,
   trustedOrigins: readonly string[] = [],
 ): Response {
-  for (const [name, value] of Object.entries(getSetupPageSecurityHeaders(scriptNonce, trustedOrigins))) {
+  for (const [name, value] of Object.entries(
+    getSetupPageSecurityHeaders(scriptNonce, trustedOrigins, isSecureRequest(c)),
+  )) {
     c.header(name, value);
   }
   return c.html(html, status);

@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { deleteWalletPass, reissueWalletPass, restoreWalletPass, voidWalletPass } from "../../src/api/client.js";
+import {
+  deleteWalletPass,
+  refreshWalletPassStatus,
+  reissueWalletPass,
+  restoreWalletPass,
+  voidWalletPass,
+} from "../../src/api/client.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -57,6 +63,24 @@ describe("reissueWalletPass (client) — thin wrapper coverage", () => {
       expect.objectContaining({ method: "POST", credentials: "same-origin" }),
     );
     expect(result).toEqual({ status: "active" });
+  });
+});
+
+describe("refreshWalletPassStatus (client) — thin wrapper coverage", () => {
+  it("POSTs the encoded wallet/refresh-status endpoint for the attendee", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: "active", apple_active_registrations: 1 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await refreshWalletPassStatus("evt-1", "att-1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/events/evt-1/attendees/att-1/wallet/refresh-status",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(result).toEqual({ status: "active", apple_active_registrations: 1 });
   });
 });
 
