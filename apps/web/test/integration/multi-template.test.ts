@@ -1172,6 +1172,39 @@ describe("multi-template API", () => {
     expect(exported).toHaveLength(0);
   });
 
+  it("POST /templates/:id/test-send propagates an unexpected error from template resolution instead of reporting a false 404", async () => {
+    // resolveTemplateById's *only* documented failure is TemplateNotFoundError, but it looks up
+    // the event first (findUniqueOrThrow) before ever reaching that check, and that lookup can
+    // itself throw for reasons that have nothing to do with the template existing - a real
+    // Prisma error must still surface as an internal error, not get silently reported as the same
+    // "not_found" the previous test asserts for the actually-expected case.
+    rateLimitStore.reset();
+    const created = await postNamedTemplate(app, "Unexpected error");
+    const findUniqueOrThrow = vi
+      .spyOn(prisma.event, "findUniqueOrThrow")
+      .mockRejectedValueOnce(new Error("connection reset"));
+
+    try {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/templates/${created.id}/test-send`,
+        {
+          method: "POST",
+          headers: {
+            Cookie: adminCookie,
+            "Content-Type": "application/json",
+            ...sameOrigin,
+          },
+          body: JSON.stringify({ to: "unexpected-error-test@example.com" }),
+        },
+      );
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: "internal_error" });
+      expect(exported).toHaveLength(0);
+    } finally {
+      findUniqueOrThrow.mockRestore();
+    }
+  });
+
   it("PATCH /templates/:id updates label/icon/description without touching content", async () => {
     const created = await postNamedTemplate(app, "Reminder");
 
