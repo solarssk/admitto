@@ -872,7 +872,17 @@ export function createApp(options: CreateAppOptions = {}) {
      * Passcreator's own dashboard already showing it added). One retry after a short delay
      * covers that lag in practice; still falling through to markFailed below if it doesn't. */
     async function recoverDuplicatePass(userProvidedId: string): Promise<WalletPassResult | null> {
-      const first = await provider.findByUserProvidedId(userProvidedId).catch(() => null);
+      // Only a resolved "no match yet" is worth retrying - that's the search-index-lag case this
+      // exists for. A thrown lookup (auth failure, or its own 15s HTTP timeout -
+      // PassCreatorClient's REQUEST_TIMEOUT_MS) is a real failure that one more identical call a
+      // second later won't fix; retrying it anyway would double the attendee's wait for the
+      // eventual failure redirect for no benefit (bot review).
+      let first: WalletPassResult | null;
+      try {
+        first = await provider.findByUserProvidedId(userProvidedId);
+      } catch {
+        return null;
+      }
       if (first) return first;
       await new Promise((resolve) => setTimeout(resolve, 1000));
       return provider.findByUserProvidedId(userProvidedId).catch(() => null);

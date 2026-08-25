@@ -447,7 +447,7 @@ describe("On-demand wallet routes", () => {
     errSpy.mockRestore();
   });
 
-  it("marks failed when the duplicate-recovery lookup itself throws", async () => {
+  it("marks failed when the duplicate-recovery lookup itself throws, without wasting a retry on it (bot review)", async () => {
     const provider = stubProvider();
     provider.createPass.mockRejectedValueOnce(
       new WalletProviderError("wallet_provider_duplicate", "userProvidedId already exists"),
@@ -460,6 +460,10 @@ describe("On-demand wallet routes", () => {
 
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+    // A thrown lookup (auth failure, or its own HTTP timeout) is a real failure a second
+    // identical call a moment later won't fix - only a resolved "no match yet" is worth
+    // retrying, so this must not have doubled the attendee's wait for no benefit.
+    expect(provider.findByUserProvidedId).toHaveBeenCalledTimes(1);
     const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
     expect(saved?.status).toBe("failed");
     expect(saved?.last_error_code).toBe("wallet_provider_duplicate");
