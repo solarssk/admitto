@@ -39,6 +39,8 @@ const EXPECTED_POLICIES: Record<
   "admin:resend": { windowMs: [60_000, 3_600_000], max: [5, 30], checks: 2 },
   "admin:resend-bulk": { windowMs: [600_000], max: [3], checks: 1 },
   "admin:attendee-patch": { windowMs: [60_000], max: [20], checks: 1 },
+  "admin:wallet-action": { windowMs: [600_000], max: [10], checks: 1 },
+  "admin:attendee-bulk-mutation": { windowMs: [60_000], max: [20], checks: 1 },
   "checkin:scan": { windowMs: [60_000], max: [120], checks: 1 },
   "checkin:history": { windowMs: [60_000], max: [180], checks: 1 },
   "checkin:stream": { windowMs: [60_000], max: [12], checks: 1 },
@@ -118,6 +120,19 @@ describe("RATE_POLICIES registry", () => {
     } as never;
     expect(RATE_POLICIES["admin:wallet-message-job-status"].checks[0]!.keyOf(ctx)).toBe(
       "admin:wallet-message-job-status:user:user-42:event:evt-1",
+    );
+  });
+
+  it("scopes admin:wallet-action and admin:attendee-bulk-mutation by user and event", () => {
+    const ctx = {
+      get: (key: string) => (key === "auth" ? { userId: "user-42" } : undefined),
+      req: { param: (name: string) => (name === "eventId" ? "evt-1" : undefined) },
+    } as never;
+    expect(RATE_POLICIES["admin:wallet-action"].checks[0]!.keyOf(ctx)).toBe(
+      "admin:wallet-action:user:user-42:event:evt-1",
+    );
+    expect(RATE_POLICIES["admin:attendee-bulk-mutation"].checks[0]!.keyOf(ctx)).toBe(
+      "admin:attendee-bulk-mutation:user:user-42:event:evt-1",
     );
   });
 });

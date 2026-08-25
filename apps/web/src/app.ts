@@ -614,6 +614,8 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminWalletMessageJobStatusRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-job-status");
   const adminWalletMessageSendRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-send");
   const adminAttendeePatchRateLimit = rateLimit(rateLimitStore, "admin:attendee-patch");
+  const adminWalletActionRateLimit = rateLimit(rateLimitStore, "admin:wallet-action");
+  const adminAttendeeBulkMutationRateLimit = rateLimit(rateLimitStore, "admin:attendee-bulk-mutation");
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
   const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
   const checkinScanRateLimit = rateLimit(rateLimitStore, "checkin:scan");
@@ -658,6 +660,14 @@ export function createApp(options: CreateAppOptions = {}) {
   // ever buffered/parsed, not just once the zod schema's own `.max()` calls see it.
   const webauthnBodyLimit = bodyLimit({
     maxSize: MAX_WEBAUTHN_BODY_BYTES,
+    onError: (c) => c.json({ error: "request too large" }, 400),
+  });
+  // Every bulk-attendee route whose body is just an attendeeIds array (up to BULK_SEND_LIMIT =
+  // 500 UUID-length ids, each now capped at 128 chars in its own zod schema) - a few hundred KB
+  // is generous headroom for that shape while still rejecting a grossly oversized body before
+  // it's ever buffered/parsed, same rationale as webauthnBodyLimit above.
+  const bulkAttendeeIdsBodyLimit = bodyLimit({
+    maxSize: Math.ceil(0.5 * 1024 * 1024),
     onError: (c) => c.json({ error: "request too large" }, 400),
   });
   const checkInPanelGuard = createCheckInPanelCapabilityGuard(db);
@@ -1312,6 +1322,7 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/admin/events/:eventId/attendees/export-selected",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
     adminExportRateLimit,
     (c) => handleExportSelectedAttendees(c, db),
   );
@@ -1351,60 +1362,80 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/admin/events/:eventId/attendees/bulk-delete",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
     (c) => handleBulkDeleteEventAttendees(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-checkin",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
     guardArchivedEvent((c) => handleBulkCheckInEventAttendees(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-revoke-checkin",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
     guardArchivedEvent((c) => handleBulkRevokeCheckInEventAttendees(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-revoke-items",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
     guardArchivedEvent((c) => handleBulkRevokeAttendeeItems(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-revoke-pass",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
     guardArchivedEvent((c) => handleBulkRevokeAttendeePass(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-wallet-void",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminWalletActionRateLimit,
     guardArchivedEvent((c) => handleBulkVoidAttendeeWalletPass(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-wallet-reissue",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminWalletActionRateLimit,
     guardArchivedEvent((c) => handleBulkReissueAttendeeWalletPass(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-wallet-delete",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminWalletActionRateLimit,
     guardArchivedEvent((c) => handleBulkDeleteAttendeeWalletPass(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-ticket-type",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
     guardArchivedEvent((c) => handleBulkTicketTypeEventAttendees(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-rsvp",
     jsonPostCsrf,
     staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
     guardArchivedEvent((c) => handleBulkRsvpEventAttendees(c, db)),
   );
   app.post(
@@ -1436,24 +1467,28 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/admin/events/:eventId/attendees/:id/wallet/void",
     jsonPostCsrf,
     staffAdminGate,
+    adminWalletActionRateLimit,
     guardArchivedEvent((c) => handleVoidAttendeeWalletPass(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/wallet/restore",
     jsonPostCsrf,
     staffAdminGate,
+    adminWalletActionRateLimit,
     guardArchivedEvent((c) => handleRestoreAttendeeWalletPass(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/wallet/reissue",
     jsonPostCsrf,
     staffAdminGate,
+    adminWalletActionRateLimit,
     guardArchivedEvent((c) => handleReissueAttendeeWalletPass(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/wallet/delete",
     jsonPostCsrf,
     staffAdminGate,
+    adminWalletActionRateLimit,
     guardArchivedEvent((c) => handleDeleteAttendeeWalletPass(c, db)),
   );
   app.post(

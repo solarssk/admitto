@@ -819,6 +819,11 @@ describe("DELETE /api/admin/events/:eventId/attendees/:id", () => {
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-delete", () => {
+  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - this block's tests all
+  // reuse EVENT_A, same convention as the PATCH block's own reset below (bot review's rate-limit
+  // fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
+
   async function seedBulkErasable(ids: string[]) {
     await prisma.attendee.createMany({
       data: ids.map((id, i) => ({
@@ -993,6 +998,30 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-delete", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects an oversized bulk body before it ever reaches the handler", async () => {
+    // bulkAttendeeIdsBodyLimit (app.ts) caps every bulk-attendee-id-array route at 0.5MB - well
+    // past what BULK_SEND_LIMIT (500) UUID-length ids could ever legitimately need.
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: Array.from({ length: 20_000 }, (_, i) => `att-${i}-${"x".repeat(30)}`) }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "request too large" });
+  });
+
+  it("rejects an attendeeId longer than 128 characters", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-delete`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ["x".repeat(129)] }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "validation_failed" });
+  });
+
   it("rejects operator", async () => {
     const ids = ["att-bulk-erase-op"];
     await seedBulkErasable(ids);
@@ -1139,6 +1168,10 @@ describe("attendee erasure — wallet pass deletion at the provider", () => {
 describe("attendee wallet actions — void/restore/reissue", () => {
   const WALLET_ACTION_EVENT = "evt-admin-att-wallet-action";
   const WALLET_ACTION_EVENT_UNCONFIGURED = "evt-admin-att-wallet-action-unconfigured";
+  // admin:wallet-action is scoped per user+event (10/10min) - this block's many tests (single
+  // void/restore/reissue/delete and their bulk-wallet-* siblings) all reuse WALLET_ACTION_EVENT,
+  // same convention as the PATCH block's own reset below (bot review's rate-limit fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
   let voidSpy: ReturnType<typeof vi.spyOn>;
   let restoreSpy: ReturnType<typeof vi.spyOn>;
   let updateSpy: ReturnType<typeof vi.spyOn>;
@@ -1936,6 +1969,40 @@ describe("attendee wallet actions — void/restore/reissue", () => {
     });
   });
 
+  describe("admin:wallet-action rate limit", () => {
+    it("returns 429 after 10 wallet actions per 10 minutes for the same event, shared across the single and bulk wallet routes", async () => {
+      // A nonexistent attendee id still runs the full middleware chain (403 forbidden from the
+      // handler) before returning, so the rate limit is exercised without needing real passes.
+      for (let i = 0; i < 10; i++) {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/att-wallet-action-rl-nonexistent/wallet/void`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+        expect(res.status).toBe(403);
+      }
+
+      const limited = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/att-wallet-action-rl-nonexistent/wallet/void`,
+        { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+      );
+      expect(limited.status).toBe(429);
+      const body = (await limited.json()) as { error: string };
+      expect(body.error).toBe("too many requests");
+
+      // Same event, same admin, but the bulk sibling route - proves the budget is shared per
+      // user+event rather than reset per route.
+      const bulkLimited = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: ["att-wallet-action-rl-nonexistent"] }),
+        },
+      );
+      expect(bulkLimited.status).toBe(429);
+    });
+  });
+
   describe("wallet_apple_link / wallet_google_link on GET detail", () => {
     it("returns on-demand wallet links even when the attendee has never added a pass (PO review, 2026-08-13)", async () => {
       const attendeeId = "att-wallet-links-none";
@@ -2231,6 +2298,11 @@ describe("attendee wallet actions — void/restore/reissue", () => {
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
+  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - this block's tests all
+  // reuse EVENT_A, same convention as the PATCH block's own reset below (bot review's rate-limit
+  // fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
+
   // The suite-level seed() doesn't clean up after this block, and later describes in this same
   // file (e.g. bulk-resend) count *every* attendee in EVENT_A - leaving our seeded rows behind
   // would skew those counts. Delete CheckIn rows before Attendee rows (FK constraint), matching
@@ -2520,9 +2592,48 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-checkin", () => {
       await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: null } });
     }
   });
+
+  it("returns 429 after 20 bulk-attendee mutations per minute for the same event", async () => {
+    // An id that doesn't belong to this event is silently ignored (0 checked in), so the request
+    // still runs the full middleware chain and returns 200 without seeding real attendees.
+    for (let i = 0; i < 20; i++) {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attendeeIds: ["att-bulk-checkin-rl-nonexistent"] }),
+      });
+      expect(res.status).toBe(200);
+    }
+
+    const limited = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-checkin`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ attendeeIds: ["att-bulk-checkin-rl-nonexistent"] }),
+    });
+    expect(limited.status).toBe(429);
+    const body429 = (await limited.json()) as { error: string };
+    expect(body429.error).toBe("too many requests");
+
+    // Same event, same admin, but a different bulk-mutation sibling route - proves the budget is
+    // shared per user+event rather than reset per route.
+    const siblingLimited = await app.request(
+      `/api/admin/events/${EVENT_A}/attendees/bulk-revoke-pass`,
+      {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ attendeeIds: ["att-bulk-checkin-rl-nonexistent"] }),
+      },
+    );
+    expect(siblingLimited.status).toBe(429);
+  });
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-checkin", () => {
+  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - this block's tests all
+  // reuse EVENT_A, same convention as the PATCH block's own reset below (bot review's rate-limit
+  // fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
+
   afterAll(async () => {
     await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-checkin-" } } });
     await prisma.checkIn.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-checkin-" } } });
@@ -2764,6 +2875,11 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-checkin", () => 
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-items", () => {
+  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - this block's tests all
+  // reuse EVENT_A, same convention as the PATCH block's own reset below (bot review's rate-limit
+  // fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
+
   afterAll(async () => {
     await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-items-" } } });
     await prisma.attendeeItemState.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-items-" } } });
@@ -3014,6 +3130,11 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-items", () => {
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-revoke-pass", () => {
+  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - this block's tests all
+  // reuse EVENT_A, same convention as the PATCH block's own reset below (bot review's rate-limit
+  // fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
+
   afterAll(async () => {
     await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-pass-" } } });
     await prisma.checkIn.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-revoke-pass-" } } });
@@ -6466,6 +6587,11 @@ describe("Attendees v2 — RSVP and manual create", () => {
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
+  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - this block's tests all
+  // reuse EVENT_A, same convention as the PATCH block's own reset below (bot review's rate-limit
+  // fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
+
   afterAll(async () => {
     await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-tt-" } } });
     await prisma.attendee.deleteMany({ where: { id: { startsWith: "att-bulk-tt-" } } });
@@ -7340,6 +7466,11 @@ describe("wallet-message routes — POST send, GET jobs/:jobId, GET history, GET
 });
 
 describe("POST /api/admin/events/:eventId/attendees/bulk-rsvp", () => {
+  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - this block's tests all
+  // reuse EVENT_A, same convention as the PATCH block's own reset below (bot review's rate-limit
+  // fix, PR3).
+  beforeEach(() => rateLimitStore.reset());
+
   afterAll(async () => {
     await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-rsvp-" } } });
     await prisma.attendee.deleteMany({ where: { id: { startsWith: "att-bulk-rsvp-" } } });

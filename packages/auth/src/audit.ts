@@ -181,6 +181,8 @@ export type RateLimitScope =
   | "admin_resend"
   | "admin_export"
   | "admin_attendee_patch"
+  | "admin_wallet_action"
+  | "admin_attendee_bulk_mutation"
   | "checkin_stream"
   | "checkin_history"
   | "admin_geocoding_search"

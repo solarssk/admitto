@@ -1079,7 +1079,7 @@ export async function handleDownloadExportJob(c: Context, db: PrismaClient): Pro
 
 const exportSelectedBodySchema = z
   .object({
-    attendee_ids: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendee_ids: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
     format: z.enum(["xlsx", "csv", "pdf"]),
   })
   .strict();
@@ -2087,7 +2087,7 @@ export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): P
 
 const bulkDeleteAttendeesBodySchema = z
   .object({
-    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
   })
   .strict();
 
@@ -2266,7 +2266,7 @@ async function applyBulkAttendeeChanges<Row extends { id: string }>(
 
 const bulkTicketTypeBodySchema = z
   .object({
-    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
     ticket_type: z.string().trim().min(1).max(100),
   })
   .strict();
@@ -2358,7 +2358,7 @@ export async function handleBulkTicketTypeEventAttendees(
 
 const bulkRsvpBodySchema = z
   .object({
-    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
     rsvp_status: rsvpStatusSchema,
   })
   .strict();
@@ -2434,7 +2434,7 @@ export async function handleBulkRsvpEventAttendees(
 
 const bulkCheckInAttendeesBodySchema = z
   .object({
-    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
   })
   .strict();
 
@@ -2578,13 +2578,13 @@ export async function handleBulkCheckInEventAttendees(c: Context, db: PrismaClie
 
 const bulkRevokeCheckInAttendeesBodySchema = z
   .object({
-    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
   })
   .strict();
 
 const bulkRevokePassAttendeesBodySchema = z
   .object({
-    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
   })
   .strict();
 
@@ -2687,7 +2687,7 @@ export async function handleBulkRevokeCheckInEventAttendees(c: Context, db: Pris
 
 const bulkRevokeItemsAttendeesBodySchema = z
   .object({
-    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
   })
   .strict();
 
@@ -2851,7 +2851,7 @@ export async function handleBulkRevokeAttendeePass(c: Context, db: PrismaClient)
 
 const bulkWalletAttendeesBodySchema = z
   .object({
-    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
   })
   .strict();
 

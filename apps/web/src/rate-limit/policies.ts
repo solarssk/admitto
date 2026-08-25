@@ -486,6 +486,39 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  // Every single-attendee wallet/void|restore|reissue|delete route and every bulk-wallet-
+  // void|reissue|delete route calls the live PassCreator API per attendee - same abuse pattern
+  // and same per-user-per-event budget as admin:wallet-message-send above ("a scripted resubmit-
+  // to-trigger-a-wallet-push abuse pattern"), just covering the wallet lifecycle actions instead
+  // of the wallet message send. Shared across all 7 of those routes: they're all the same cost
+  // class (one PassCreator call per attendee), so one event-scoped budget bounds all of them
+  // together rather than giving each route its own separate allowance.
+  "admin:wallet-action": {
+    checks: [
+      {
+        keyOf: (c) => adminUserEventKey(c, "wallet-action"),
+        windowMs: 600_000,
+        max: 10,
+        logOnExceeded: { scope: "admin_wallet_action", keyHint: "user_event" },
+      },
+    ],
+  },
+  // Bulk-attendee mutation routes (bulk-delete, bulk-checkin, bulk-revoke-checkin,
+  // bulk-revoke-items, bulk-revoke-pass, bulk-ticket-type, bulk-rsvp) - each request can touch up
+  // to BULK_SEND_LIMIT (500) attendees at once, and bulk-delete alone is a hard
+  // DELETE ... RETURNING with no undo. Same cost class/window as admin:attendee-patch (20/60s),
+  // but keyed per user+event rather than per user+attendee: these routes act on many attendees in
+  // one call, so there's no single attendee id to scope the bucket to.
+  "admin:attendee-bulk-mutation": {
+    checks: [
+      {
+        keyOf: (c) => adminUserEventKey(c, "attendee-bulk-mutation"),
+        windowMs: 60_000,
+        max: 20,
+        logOnExceeded: { scope: "admin_attendee_bulk_mutation", keyHint: "user_event" },
+      },
+    ],
+  },
   "admin:resend-bulk": {
     checks: [
       {

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- The attendee list's bulk actions (delete, check-in, revoke check-in, revoke items, revoke pass, change ticket type, change RSVP status) and every wallet action that calls Apple/Google Wallet's provider (void, restore, reissue, delete - both for one attendee and for a whole selection) now have a rate limit, matching the protection already in place for bulk email sends and single-attendee edits. Previously an admin account, or a compromised admin session, could resend the same bulk-delete or wallet-void request in a tight loop with no limit - bulk-delete in particular has no undo. Every one of these requests is also now capped at a generous size (well past what selecting hundreds of attendees ever needs), closing off an oversized request as a way to waste server resources before it's even processed.
+
 ## [0.6.1] - 2026-08-25
 
 ### Added
