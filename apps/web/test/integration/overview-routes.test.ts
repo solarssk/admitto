@@ -410,6 +410,7 @@ async function seed(client: PrismaClient) {
         status: "bounced",
         recipient_email: "bounced-guest@example.com",
         failed_at: new Date("2027-02-01T09:00:00.000Z"),
+        client_timezone: "Europe/Warsaw",
       },
       {
         id: "del-overview-activity-failed",
@@ -421,6 +422,8 @@ async function seed(client: PrismaClient) {
         status: "failed",
         recipient_email: "failed-guest@example.com",
         failed_at: new Date("2027-02-01T07:00:00.000Z"),
+        // No client_timezone (predates the column, or a non-browser send) - asserts the
+        // null-falls-back-to-viewer-zone path alongside del-overview-activity-bounced's captured one.
       },
     ],
   });
@@ -433,6 +436,7 @@ async function seed(client: PrismaClient) {
         action_type: "attendees_imported",
         created_at: new Date("2027-02-01T06:00:00.000Z"),
         metadata: { filename: "activity-guests.csv", created: 3, updated: 1, skipped: 0 },
+        client_timezone: "Asia/Kolkata",
       },
       {
         id: "log-overview-activity-added",
@@ -442,12 +446,25 @@ async function seed(client: PrismaClient) {
         created_at: new Date("2027-02-01T11:00:00.000Z"),
       },
       {
+        id: "log-overview-activity-checkin",
+        event_id: EVENT_ACTIVITY,
+        attendee_id: ATT_ACT_VIP_1,
+        action_type: "check_in",
+        created_at: new Date("2027-02-01T10:00:00.000Z"),
+        // Matches checkin-overview-activity-3 below by metadata.check_in_id, same as admitAttendee
+        // writes it (packages/tickets/src/admit.ts) - the source loadRecentCheckInActivity resolves
+        // a check-in's actor zone from, since Session.timezone would only be the zone at login.
+        metadata: { method: "scan", check_in_id: "checkin-overview-activity-3" },
+        client_timezone: "Asia/Kolkata",
+      },
+      {
         id: "log-overview-activity-issued",
         event_id: EVENT_ACTIVITY,
         attendee_id: ATT_ACT_STD_1,
         action_type: "item_issued",
         created_at: new Date("2027-02-01T09:30:00.000Z"),
         metadata: { event_item_key: "badge", from_state: "pending", to_state: "issued" },
+        client_timezone: "Europe/Warsaw",
       },
       {
         id: "log-overview-activity-returned",
@@ -887,6 +904,8 @@ describe("GET /api/admin/events/:eventId/overview", () => {
       tone: "info",
       attendee_id: ATT_ACT_NONE,
       message: "added",
+      // No matching AttendeeActionLog.client_timezone seeded for this row - falls back to null.
+      actor_timezone: null,
     });
     expect(checkin).toMatchObject({
       type: "checkin",
@@ -894,43 +913,62 @@ describe("GET /api/admin/events/:eventId/overview", () => {
       attendee_name: "Activity VIP One",
       attendee_id: ATT_ACT_VIP_1,
       message: "checked in",
+      // Resolved via the matching AttendeeActionLog "check_in" row's metadata.check_in_id, not a
+      // Session.timezone join - the whole point of the fix (codex review).
+      actor_timezone: "Asia/Kolkata",
     });
     expect(issued).toMatchObject({
       type: "item_issued",
       tone: "ok",
       attendee_id: ATT_ACT_STD_1,
       message: "issued Badge",
+      actor_timezone: "Europe/Warsaw",
     });
     expect(bounced).toMatchObject({
       type: "mail_bounced",
       tone: "error",
       attendee_id: ATT_ACT_STD_1,
       message: "Ticket email bounced for bounced-guest@example.com",
+      actor_timezone: "Europe/Warsaw",
     });
     expect(returned).toMatchObject({
       type: "item_returned",
       tone: "muted",
       attendee_id: ATT_ACT_STD_2,
       message: "returned Gift bag",
+      actor_timezone: null,
     });
     expect(failed).toMatchObject({
       type: "mail_failed",
       tone: "error",
       attendee_id: ATT_ACT_VIP_1,
       message: "Ticket email failed for failed-guest@example.com",
+      actor_timezone: null,
     });
     expect(revoked).toMatchObject({
       type: "item_revoked",
       tone: "warn",
       attendee_id: ATT_ACT_VIP_1,
       message: "revoked Badge",
+      actor_timezone: null,
     });
     expect(imported).toMatchObject({
       type: "import",
       tone: "muted",
       attendee_id: null,
       message: "4 attendees imported",
+      actor_timezone: "Asia/Kolkata",
     });
+    // checkin-overview-activity-1/2 (the two 08:00-hour rows collapsed by the destructure above)
+    // have no matching "check_in" action log seeded - confirms a check-in with no match falls back
+    // to null instead of throwing or leaking another row's zone.
+    const unmatchedCheckins = body.recent_activity.filter(
+      (entry) => entry.type === "checkin" && entry.attendee_id !== ATT_ACT_VIP_1,
+    );
+    expect(unmatchedCheckins).toHaveLength(2);
+    for (const entry of unmatchedCheckins) {
+      expect(entry.actor_timezone).toBeNull();
+    }
     // Length 10 (not 11) confirms the 23:00 ALREADY_CHECKED_IN noise row was excluded - a VALID-only
     // check-in there would otherwise sort first, ahead of the 11:00 entry asserted above.
     expect(body.recent_activity).toHaveLength(10);

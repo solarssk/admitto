@@ -82,6 +82,9 @@ export interface EventRecentActivityEntry {
   attendee_id: string | null;
   message: string;
   occurred_at: string;
+  /** IANA zone the acting admin's browser reported at write time, when captured - null falls
+   * back to the viewer's own browser zone (ActorOrViewerLocalTimeLine convention). */
+  actor_timezone: string | null;
 }
 
 const RECENT_ACTIVITY_LIMIT = 30;
@@ -176,6 +179,13 @@ async function loadTicketTypeBreakdown(
     .filter((t) => t.count > 0);
 }
 
+/** CheckIn has no client_timezone column of its own. Session.timezone is captured at *login*, not
+ * at scan time - stale the moment an operator changes timezone without signing out again (codex
+ * review) - so instead this resolves each check-in's zone from the matching AttendeeActionLog
+ * "check_in" row admitAttendee already writes in the same transaction (packages/tickets/src/
+ * admit.ts), whose client_timezone is the validated X-Client-Timezone header at write time. Rows
+ * predating that write, or the row's own client_timezone, simply have no map entry and fall back
+ * to null (viewer's own browser zone) same as every other source here. */
 async function loadRecentCheckInActivity(db: PrismaClient, eventId: string): Promise<EventRecentActivityEntry[]> {
   const rows = await db.checkIn.findMany({
     where: { event_id: eventId, status: "VALID" },
@@ -183,6 +193,22 @@ async function loadRecentCheckInActivity(db: PrismaClient, eventId: string): Pro
     take: RECENT_ACTIVITY_LIMIT,
     select: { id: true, checked_in_at: true, attendee_id: true, attendee: { select: { name: true } } },
   });
+  if (rows.length === 0) return [];
+
+  const actionLogs = await db.attendeeActionLog.findMany({
+    where: {
+      event_id: eventId,
+      action_type: "check_in",
+      OR: rows.map((row) => ({ metadata: { path: ["check_in_id"], equals: row.id } })),
+    },
+    select: { metadata: true, client_timezone: true },
+  });
+  const timezoneByCheckInId = new Map(
+    actionLogs
+      .map((log) => [(log.metadata as { check_in_id?: string } | null)?.check_in_id, log.client_timezone] as const)
+      .filter((entry): entry is [string, string | null] => entry[0] != null),
+  );
+
   return rows.map((row) => ({
     id: `checkin:${row.id}`,
     type: "checkin",
@@ -191,6 +217,7 @@ async function loadRecentCheckInActivity(db: PrismaClient, eventId: string): Pro
     attendee_id: row.attendee_id,
     message: "checked in",
     occurred_at: row.checked_in_at.toISOString(),
+    actor_timezone: timezoneByCheckInId.get(row.id) ?? null,
   }));
 }
 
@@ -211,6 +238,7 @@ async function loadRecentMailFailureActivity(
       failed_at: true,
       updated_at: true,
       attendee_id: true,
+      client_timezone: true,
       attendee: { select: { name: true, email: true } },
     },
   });
@@ -225,6 +253,7 @@ async function loadRecentMailFailureActivity(
       attendee_id: row.attendee_id,
       message: `Ticket email ${bounced ? "bounced" : "failed"} for ${email}`,
       occurred_at: (row.failed_at ?? row.updated_at).toISOString(),
+      actor_timezone: row.client_timezone,
     };
   });
 }
@@ -240,6 +269,7 @@ async function loadRecentImportActivity(db: PrismaClient, eventId: string): Prom
       attendee_id: null,
       message: `${total} attendee${total === 1 ? "" : "s"} imported`,
       occurred_at: entry.created_at,
+      actor_timezone: entry.actor_timezone,
     };
   });
 }
@@ -268,6 +298,7 @@ async function loadRecentAttendeeActionActivity(
       created_at: true,
       attendee_id: true,
       metadata: true,
+      client_timezone: true,
       attendee: { select: { name: true } },
     },
   });
@@ -292,7 +323,13 @@ async function loadRecentAttendeeActionActivity(
   return rows.map((row) => {
     const itemKey = (row.metadata as { event_item_key?: string } | null)?.event_item_key;
     const itemLabel = itemKey ? (itemLabels.get(itemKey) ?? itemKey) : "item";
-    const base = { id: `action:${row.id}`, attendee_name: row.attendee?.name, attendee_id: row.attendee_id, occurred_at: row.created_at.toISOString() };
+    const base = {
+      id: `action:${row.id}`,
+      attendee_name: row.attendee?.name,
+      attendee_id: row.attendee_id,
+      occurred_at: row.created_at.toISOString(),
+      actor_timezone: row.client_timezone,
+    };
     switch (row.action_type) {
       case "item_returned":
         return { ...base, type: "item_returned" as const, tone: "muted" as const, message: `returned ${itemLabel}` };

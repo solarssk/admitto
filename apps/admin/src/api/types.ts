@@ -1725,6 +1725,9 @@ export interface EventRecentActivityEntry {
   attendee_id: string | null;
   message: string;
   occurred_at: string;
+  /** IANA zone the acting admin's browser reported at write time, when captured - missing/null
+   * falls back to the viewer's own browser zone (ActorOrViewerLocalTimeLine convention). */
+  actor_timezone?: string | null;
 }
 
 export interface EventOverviewDto {

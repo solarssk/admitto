@@ -38,6 +38,7 @@ import {
   formatEventDateTime,
   formatRelativeTime as formatRelativeTimeShared,
   formatUtcDateTime,
+  getBrowserTimeZone,
 } from "../utils/event-dates.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import {
@@ -502,6 +503,9 @@ function liveCheckinsAsActivity(checkins: StreamCheckinEvent[]): DisplayActivity
     attendee_id: c.attendeeId,
     message: "checked in",
     occurred_at: c.admittedAt,
+    // This browser is the one that just scanned - its own zone is the real actor zone, not a
+    // guess, unlike the null-and-fall-back-to-viewer case the server-sourced rows use.
+    actor_timezone: getBrowserTimeZone(),
     ticketType: c.ticketType,
   }));
 }
@@ -679,7 +683,7 @@ function RecentActivityCard({
                         {formatRelativeTime(entry.occurred_at)}
                       </span>
                       <span className="overview-activity__time-absolute">
-                        {formatEventDateTime(entry.occurred_at, timezone)}
+                        {formatEventDateTime(entry.occurred_at, entry.actor_timezone ?? timezone)}
                       </span>
                     </time>
                   </li>
@@ -1793,7 +1797,7 @@ export function EventOverviewPage() {
             activity={currentOverview?.recent_activity ?? []}
             liveCheckins={recentCheckins}
             ticketTypes={ticketTypes}
-            timezone={eventTimezone}
+            timezone={getBrowserTimeZone()}
           />
         </div>
         <div className="overview-row overview-row--stretch">

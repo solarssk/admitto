@@ -19,10 +19,12 @@ const EXPECTED_POLICIES: Record<
   "auth:login-ip": { windowMs: [60_000], max: [10], checks: 1 },
   "auth:account-ip": { windowMs: [60_000], max: [30], checks: 1 },
   "admin:oidc-provider-ops": { windowMs: [60_000], max: [10], checks: 1 },
-  "admin:test-send": { windowMs: [60_000], max: [5], checks: 1 },
-  "admin:mail-transport-test": { windowMs: [60_000], max: [5], checks: 1 },
+  "admin:test-send": { windowMs: [60_000, 3_600_000], max: [5, 20], checks: 2 },
+  "admin:mail-transport-test": { windowMs: [60_000, 3_600_000], max: [3, 10], checks: 2 },
+  "admin:mail-diagnostics": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:health-live": { windowMs: [60_000], max: [5], checks: 1 },
-  "admin:event-mail-transport-test": { windowMs: [60_000], max: [5], checks: 1 },
+  "admin:event-mail-transport-test": { windowMs: [60_000, 3_600_000], max: [3, 10], checks: 2 },
+  "admin:event-mail-diagnostics": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:client-error": { windowMs: [60_000], max: [30], checks: 1 },
   "admin:export": { windowMs: [3_600_000], max: [10], checks: 1 },
   "admin:export-pii": { windowMs: [3_600_000], max: [5], checks: 1 },
@@ -58,6 +60,7 @@ const EXPECTED_INLINE_LIMITS: Record<keyof typeof INLINE_RATE_LIMITS, { windowMs
     "mfa:step-up-total": { windowMs: 900_000, max: 20 },
     "mfa:enroll": { windowMs: 900_000, max: 10 },
     "account:password-check": { windowMs: 60_000, max: 10 },
+    "mail:test-recipient": { windowMs: 3_600_000, max: 5 },
   };
 
 describe("RATE_POLICIES registry", () => {
@@ -112,6 +115,58 @@ describe("RATE_POLICIES registry", () => {
     expect(RATE_POLICIES["admin:event-mail-transport-test"].checks[0]!.keyOf(authCtx)).toBe(
       "admin:event-mail-transport-test:user:user-42",
     );
+    expect(RATE_POLICIES["admin:mail-diagnostics"].checks[0]!.keyOf(authCtx)).toBe(
+      "admin:mail-diagnostics:user:user-42",
+    );
+    expect(RATE_POLICIES["admin:event-mail-diagnostics"].checks[0]!.keyOf(authCtx)).toBe(
+      "admin:event-mail-diagnostics:user:user-42",
+    );
+  });
+
+  it("keeps the mail-diagnostics policies on a separate bucket from their test-send siblings", () => {
+    // The bot-review gap this guards against: admin:mail-diagnostics (probe) and
+    // admin:event-mail-diagnostics (probe, bounce-ingest test/run) must never share a key with
+    // admin:mail-transport-test / admin:event-mail-transport-test (the actual test-send routes) -
+    // otherwise exercising the diagnostics routes would silently eat into test-send's budget.
+    const authCtx = {
+      get: (key: string) => (key === "auth" ? { userId: "user-42" } : undefined),
+    } as never;
+    expect(RATE_POLICIES["admin:mail-diagnostics"].checks[0]!.keyOf(authCtx)).not.toBe(
+      RATE_POLICIES["admin:mail-transport-test"].checks[0]!.keyOf(authCtx),
+    );
+    expect(RATE_POLICIES["admin:event-mail-diagnostics"].checks[0]!.keyOf(authCtx)).not.toBe(
+      RATE_POLICIES["admin:event-mail-transport-test"].checks[0]!.keyOf(authCtx),
+    );
+  });
+
+  it("gives the burst and sustained checks on the three test-mail policies distinct, correctly-scoped keys", () => {
+    // Guards against a keyOf typo/collision making checks[1] silently double-count checks[0]'s
+    // bucket (or vice versa) - each pair must produce two different key strings for the same
+    // context, and the sustained key must still vary per user/event like the burst one does.
+    const ctxA = {
+      get: (key: string) => (key === "auth" ? { userId: "user-42" } : undefined),
+      req: { param: (name: string) => (name === "eventId" ? "evt-1" : undefined) },
+    } as never;
+    const ctxB = {
+      get: (key: string) => (key === "auth" ? { userId: "user-99" } : undefined),
+      req: { param: (name: string) => (name === "eventId" ? "evt-2" : undefined) },
+    } as never;
+
+    const testSend = RATE_POLICIES["admin:test-send"];
+    expect(testSend.checks[0]!.keyOf(ctxA)).toBe("admin:test-send:user:user-42:event:evt-1");
+    expect(testSend.checks[1]!.keyOf(ctxA)).toBe(
+      "admin:test-send:sustained:user:user-42:event:evt-1",
+    );
+    expect(testSend.checks[1]!.keyOf(ctxA)).not.toBe(testSend.checks[0]!.keyOf(ctxA));
+    expect(testSend.checks[1]!.keyOf(ctxA)).not.toBe(testSend.checks[1]!.keyOf(ctxB));
+
+    for (const name of ["admin:mail-transport-test", "admin:event-mail-transport-test"] as const) {
+      const policy = RATE_POLICIES[name];
+      expect(policy.checks[0]!.keyOf(ctxA)).toBe(`${name}:user:user-42`);
+      expect(policy.checks[1]!.keyOf(ctxA)).toBe(`${name}:sustained:user:user-42`);
+      expect(policy.checks[1]!.keyOf(ctxA)).not.toBe(policy.checks[0]!.keyOf(ctxA));
+      expect(policy.checks[1]!.keyOf(ctxA)).not.toBe(policy.checks[1]!.keyOf(ctxB));
+    }
   });
 
   it("scopes admin:wallet-message-job-status by user and event via adminUserEventKey", () => {

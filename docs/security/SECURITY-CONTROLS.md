@@ -202,8 +202,9 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 | `POST …/import/preview` | user + event | 10 / 60 s | event admin |
 | `POST …/import/commit` | user + event | 5 / 60 s | event admin |
 | `POST …/template/preview` | user + event | 20 / 60 s | event admin |
-| `POST …/template/test-send` | user + event | 5 / 60 s | event admin |
-| `POST /api/admin/mail-settings/test` | user | 5 / 60 s | admin |
+| `POST …/template/test-send` | user + event | 5 / 60 s burst, 20 / h sustained | event admin |
+| `POST /api/admin/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | admin |
+| `POST …/events/:eventId/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | admin |
 | `GET …/attendees?q=...` (search) | user + event | 120 / 60 s | operator / admin |
 | single-attendee wallet actions (void/restore/reissue/delete) | user + event | 10 / 60 s | event admin |
 | bulk-attendee mutations (delete, check-in, revoke check-in/items/pass, ticket type, RSVP) | user + event | 20 / 60 s | event admin |
@@ -211,6 +212,13 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 | attendee resend, check-in scan/history | per-route keys | see `apps/web/src/rate-limit/policies.ts` | operator / admin |
 | attendee export, deliveries export, reports export, audit-log export, security-audit-log export | user + route | 10 / h | admin |
 | attendee PII export | user + route | 5 / h | admin |
+
+All three test-mail routes above (`template/test-send` and both `mail-settings/test` routes) also
+share one additional budget on top of their own per-user/event bucket: **5 / hour per recipient
+address, instance-wide** — not scoped to the calling user, event, or which of the three routes
+sent it. This bounds how much test mail any single external address can receive even if a
+compromised admin session rotates between routes, events, or accounts to work around the
+per-user/event limits above.
 
 Every route above that can reach PassCreator is additionally paced at the outbound-call layer, not
 just gated at the HTTP-route layer — see **Outbound HTTP** below.

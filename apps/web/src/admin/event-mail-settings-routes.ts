@@ -55,6 +55,8 @@ import {
   type MailSmtpProbeDeps,
   type TransportTestOutcome,
 } from "./mail-settings-shared.js";
+import { guardMailTestRecipientRateLimit } from "../rate-limit/policies.js";
+import type { RateLimitStore } from "../rate-limit/types.js";
 
 async function loadEventOrg(
   db: PrismaClient,
@@ -266,6 +268,7 @@ export async function handleDeleteEventMailSettings(c: Context, db: PrismaClient
 export async function handlePostEventMailSettingsTest(
   c: Context,
   db: PrismaClient,
+  rateLimitStore: RateLimitStore,
   mailDeliveryDeps: MailDeliveryDeps = {},
 ): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -291,6 +294,9 @@ export async function handlePostEventMailSettingsTest(
   }
   const body = parsed.data;
   const audit = adminAuditFromContext(c);
+
+  const recipientLimited = await guardMailTestRecipientRateLimit(c, rateLimitStore, body.to);
+  if (recipientLimited) return recipientLimited;
 
   if (!body.verifyBounce) {
     return handlePlainEventTransportTest(c, db, {

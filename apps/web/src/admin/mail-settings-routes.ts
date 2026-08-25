@@ -28,6 +28,8 @@ import {
   handleSmtpConnectionProbe,
   type MailSmtpProbeDeps,
 } from "./mail-settings-shared.js";
+import { guardMailTestRecipientRateLimit } from "../rate-limit/policies.js";
+import type { RateLimitStore } from "../rate-limit/types.js";
 
 export { MAX_MAIL_SETTINGS_BODY_BYTES } from "./mail-settings-shared.js";
 
@@ -132,6 +134,7 @@ export async function handlePutMailSettings(c: Context, db: PrismaClient): Promi
 export async function handlePostMailSettingsTest(
   c: Context,
   db: PrismaClient,
+  rateLimitStore: RateLimitStore,
   mailDeliveryDeps: MailDeliveryDeps = {},
 ): Promise<Response> {
   const forbidden = await requireSuperadmin(c, db);
@@ -155,6 +158,10 @@ export async function handlePostMailSettingsTest(
 
   const orgId = await resolveInstanceOrganizationId(db, process.env);
   const audit = adminAuditFromContext(c);
+
+  const recipientLimited = await guardMailTestRecipientRateLimit(c, rateLimitStore, body.to);
+  if (recipientLimited) return recipientLimited;
+
   const mailEnv = (await isFirstRunWizard(db)) ? ({} as NodeJS.ProcessEnv) : process.env;
 
   const outcome = await runTransportTest(

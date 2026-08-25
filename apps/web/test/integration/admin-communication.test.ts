@@ -863,6 +863,40 @@ describe("POST /api/admin/events/:eventId/template/test-send", () => {
     const body = (await res.json()) as { error?: string };
     expect(body.error).toBe("request too large");
   });
+
+  it("returns 429 from the shared per-recipient budget across two different events, even though neither event's own burst bucket is exhausted", async () => {
+    // admin:test-send's burst/sustained buckets are keyed per event, so EVENT_A and EVENT_C
+    // (both managed by adminCookie's admin) each get their own fresh burst budget - this isolates
+    // the block to checkMailTestRecipientRateLimit rather than either event's own middleware
+    // check, and exercises that check's blocked branch for this route (not just the allowed one).
+    const recipient = "test-send-recipient-budget@example.com";
+
+    for (let i = 0; i < 3; i++) {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/template/test-send`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ to: recipient }),
+      });
+      expect(res.status).not.toBe(429);
+    }
+    for (let i = 0; i < 2; i++) {
+      const res = await app.request(`/api/admin/events/${EVENT_C}/template/test-send`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ to: recipient }),
+      });
+      expect(res.status).not.toBe(429);
+    }
+
+    const limited = await app.request(`/api/admin/events/${EVENT_C}/template/test-send`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ to: recipient }),
+    });
+    expect(limited.status).toBe(429);
+    const body = (await limited.json()) as { error?: string };
+    expect(body.error).toBe("too many requests");
+  });
 });
 
 describe("GET /api/admin/events/:eventId/deliveries", () => {
