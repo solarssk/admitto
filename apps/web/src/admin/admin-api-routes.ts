@@ -6,7 +6,14 @@ import { canManageInstance, listAdminEvents } from "@admitto/auth";
 import { ensureBadgeEventItem, ensureStandardTicketType, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { normalizeTimeZone } from "@admitto/shared/timezones";
-import { assertCoordinatePairing, buildEventStaticMapPath, LOCATION_LIMITS, LocationValidationError } from "@admitto/location";
+import {
+  assertCoordinatePairing,
+  buildEventStaticMapPath,
+  LOCATION_LIMITS,
+  LocationValidationError,
+  normalizeEventLocationInput,
+  type EventLocationInput,
+} from "@admitto/location";
 import { createWeatherServiceFromDb } from "../weather/weather-org-settings.js";
 import { summarizeMany } from "../weather/weather-service.js";
 import type { WeatherSummaryDto } from "../weather/types.js";
@@ -25,6 +32,7 @@ import {
 } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { timezoneField } from "./timezone.js";
+import { addressComponentsSchema, componentsToJson } from "./event-location-routes.js";
 
 const slugField = z
   .string()
@@ -56,6 +64,9 @@ const createEventSchema = z.object({
   latitude: z.number().min(LOCATION_LIMITS.LATITUDE_MIN).max(LOCATION_LIMITS.LATITUDE_MAX).optional(),
   longitude: z.number().min(LOCATION_LIMITS.LONGITUDE_MIN).max(LOCATION_LIMITS.LONGITUDE_MAX).optional(),
   geocoding_provider: z.string().trim().max(50).optional(),
+  // Zod's nullish object is wider than AddressComponents; normalizeEventLocationInput
+  // re-validates it via normalizeAddressComponents(unknown), same as the Location tab's PUT.
+  address_components: addressComponentsSchema.optional(),
 });
 
 type EventJsonRow = {
@@ -245,11 +256,18 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
     latitude,
     longitude,
     geocoding_provider,
+    address_components,
   } = parsed.data;
   const dateValue = parseEventDateInput(date);
 
+  let addressComponentsPatch: EventLocationInput["address_components"];
   try {
     assertCoordinatePairing(latitude ?? null, longitude ?? null);
+    // Zod's nullish object fields are wider than AddressComponents; normalizeEventLocationInput
+    // re-validates the actual shape via normalizeAddressComponents(unknown).
+    addressComponentsPatch = normalizeEventLocationInput({
+      address_components: address_components as EventLocationInput["address_components"],
+    }).address_components;
   } catch (err) {
     if (err instanceof LocationValidationError) return c.json({ error: err.message }, 400);
     throw err;
@@ -270,6 +288,7 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
   const trimmedVenueName = venue_name?.trim() || null;
   const trimmedAddress = formatted_address?.trim() || null;
   const hasLocation = trimmedVenueName !== null || trimmedAddress !== null || latitude !== undefined;
+  const componentsJson = componentsToJson(addressComponentsPatch);
 
   try {
     const event = await db.$transaction(async (tx) => {
@@ -301,6 +320,7 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
             ...(latitude !== undefined
               ? { geocoding_provider: geocoding_provider?.trim() || null, geocoded_at: new Date() }
               : {}),
+            ...(componentsJson !== undefined ? { address_components: componentsJson } : {}),
           },
         });
       }

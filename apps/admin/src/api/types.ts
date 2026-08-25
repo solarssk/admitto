@@ -111,6 +111,7 @@ export interface CreateEventBody {
   latitude?: number;
   longitude?: number;
   geocoding_provider?: string;
+  address_components?: AddressComponentsDto | null;
 }
 
 /** One uploaded font file for a specific weight+style within a custom font family - a real

@@ -27,7 +27,7 @@ import { z } from "zod";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
 import { enqueueEventWideWalletPushJob } from "./wallet-push-routes.js";
 
-const addressComponentsSchema = z
+export const addressComponentsSchema = z
   .object({
     object_name: z.string().nullable().optional(),
     street: z.string().nullable().optional(),
@@ -108,7 +108,7 @@ function serializeLocation(row: EventLocationRow | null): EventLocationDto {
   };
 }
 
-function componentsToJson(
+export function componentsToJson(
   components: AddressComponents | null | undefined,
 ): Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined {
   if (components === undefined) return undefined;

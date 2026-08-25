@@ -9,6 +9,7 @@ import { DatePicker } from "../components/DatePicker.js";
 import { TimeInput } from "../components/TimeInput.js";
 import { VenueAutocomplete } from "../components/VenueAutocomplete.js";
 import { slugFromTitle } from "./slug.js";
+import { componentsFromResult } from "../settings/locationGeocode.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
@@ -106,6 +107,7 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
         latitude: venueGeocode?.latitude,
         longitude: venueGeocode?.longitude,
         geocoding_provider: venueGeocode?.provider,
+        address_components: venueGeocode ? componentsFromResult(venueGeocode) : undefined,
       });
       onCreated(event);
       resetForm();

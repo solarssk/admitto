@@ -13,6 +13,7 @@ import { TimezoneSelect } from "../../components/TimezoneSelect.js";
 import { VenueAutocomplete } from "../../components/VenueAutocomplete.js";
 import type { GeocodingResultDto } from "../../api/types.js";
 import { slugFromTitle } from "../../events/slug.js";
+import { componentsFromResult } from "../../settings/locationGeocode.js";
 import { useWizard } from "./WizardContext.js";
 
 export type WizardStep4EventHandle = {
@@ -87,6 +88,7 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
           latitude: locationGeocode?.latitude,
           longitude: locationGeocode?.longitude,
           geocoding_provider: locationGeocode?.provider,
+          address_components: locationGeocode ? componentsFromResult(locationGeocode) : undefined,
         });
         setSelectedEventId(event.id);
         setSummary({ eventTitle: event.title });
