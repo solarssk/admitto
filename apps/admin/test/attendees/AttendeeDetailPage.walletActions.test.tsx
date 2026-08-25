@@ -10,6 +10,7 @@ const loadAttendeeDetailData = vi.fn();
 const voidWalletPass = vi.fn();
 const restoreWalletPass = vi.fn();
 const reissueWalletPass = vi.fn();
+const refreshWalletPassStatus = vi.fn();
 const deleteWalletPass = vi.fn();
 
 vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
@@ -57,6 +58,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     voidWalletPass: (...args: unknown[]) => voidWalletPass(...args),
     restoreWalletPass: (...args: unknown[]) => restoreWalletPass(...args),
     reissueWalletPass: (...args: unknown[]) => reissueWalletPass(...args),
+    refreshWalletPassStatus: (...args: unknown[]) => refreshWalletPassStatus(...args),
     deleteWalletPass: (...args: unknown[]) => deleteWalletPass(...args),
   };
 });
@@ -343,6 +345,40 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
 
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(reissueWalletPass).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Refresh status", () => {
+    it("calls refreshWalletPassStatus, toasts, and reloads detail - no confirm dialog, unlike the other wallet actions", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      refreshWalletPassStatus.mockResolvedValueOnce(walletPass({ status: "active" }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      fireEvent.click(screen.getByRole("menuitem", { name: /Refresh status/ }));
+
+      await waitFor(() => {
+        expect(refreshWalletPassStatus).toHaveBeenCalledWith("evt-1", "att-1");
+      });
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Wallet status refreshed\./);
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("toasts an error (not an inline dialog message, since this action has no dialog) when refreshWalletPassStatus fails", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      const { ApiError } = await import("../../src/api/client.js");
+      refreshWalletPassStatus.mockRejectedValueOnce(new ApiError(500, "server_error", "server_error"));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      fireEvent.click(screen.getByRole("menuitem", { name: /Refresh status/ }));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not refresh the wallet status\./);
+      });
     });
   });
 

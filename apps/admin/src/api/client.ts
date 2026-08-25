@@ -832,6 +832,17 @@ export async function reissueWalletPass(eventId: string, attendeeId: string): Pr
   return parseJson<WalletPassActionDto>(res);
 }
 
+/** Admin/superadmin-only: pulls the attendee's current device-registration status directly from
+ * the provider (a read, not a push - the opposite direction from reissue above), instead of
+ * waiting for the periodic background sync to get to this one row. */
+export async function refreshWalletPassStatus(eventId: string, attendeeId: string): Promise<WalletPassActionDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/wallet/refresh-status`,
+    jsonPostInit({}),
+  );
+  return parseJson<WalletPassActionDto>(res);
+}
+
 /** Admin/superadmin-only: permanently removes the pass at the provider, distinct from void (the
  * pass disappears entirely instead of staying installed but marked invalid). Irreversible. */
 export async function deleteWalletPass(eventId: string, attendeeId: string): Promise<{ deleted: boolean }> {

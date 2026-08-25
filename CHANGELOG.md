@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Attendee detail's wallet "More actions" menu has a new "Refresh status" action - pulls the pass's current device-registration status directly from the provider on demand, instead of waiting for the periodic background sync to reach that one attendee (which can take up to 30 minutes, longer if many other passes are stale system-wide). For when the provider's own dashboard already shows a pass as added but Admitto hasn't caught up yet.
+
+### Fixed
+
+- Adding a pass to Apple/Google Wallet for the first time no longer occasionally shows a "?walletError=1" retry banner when PassCreator's create-duplicate check and its own search index briefly disagree (create says the pass already exists, search finds nothing yet) - one retry after a short delay now covers that lag.
+
 ## [0.6.1] - 2026-08-25
 
 ### Added

@@ -1143,6 +1143,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
   let restoreSpy: ReturnType<typeof vi.spyOn>;
   let updateSpy: ReturnType<typeof vi.spyOn>;
   let deleteSpy: ReturnType<typeof vi.spyOn>;
+  let getRegistrationStatusSpy: ReturnType<typeof vi.spyOn>;
 
   beforeAll(async () => {
     await prisma.event.create({
@@ -1188,12 +1189,16 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       appleUrl: "https://pc.test/apple/default",
       androidUrl: "https://pc.test/android/default",
     });
+    getRegistrationStatusSpy = vi
+      .spyOn(PassCreatorClient.prototype, "getRegistrationStatus")
+      .mockClear()
+      .mockResolvedValue(null);
   });
 
   async function seedActionAttendee(
     id: string,
     eventId: string,
-    opts: { withPass?: boolean } = {},
+    opts: { withPass?: boolean; userProvidedId?: string } = {},
   ): Promise<void> {
     await prisma.attendee.create({
       data: {
@@ -1214,6 +1219,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
           status: "active",
           apple_url: "https://pc.test/apple/old",
           android_url: "https://pc.test/android/old",
+          user_provided_id: opts.userProvidedId,
         },
       });
     }
@@ -1575,6 +1581,140 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         // Same reasoning as the restore-failure test above: keep this describe's total
         // WALLET_ACTION_EVENT attendee count from drifting past what the later
         // "wallet_status on GET list" block's unfiltered (25-per-page) list call expects.
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+  });
+
+  describe("refresh-status", () => {
+    // Every test here cleans up its own attendee/pass in a finally block (same reasoning as the
+    // reissue-failure test above): this describe runs before delete/bulk-* below, and the later
+    // "wallet_status on GET list" block relies on an unfiltered, default-page-size attendee list
+    // still finding its own fixture on page 1 - five more uncleaned rows here would risk pushing
+    // it off.
+    it("pulls the current registration status from the provider and writes it locally", async () => {
+      const attendeeId = "att-wallet-action-refresh";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        getRegistrationStatusSpy.mockResolvedValueOnce({
+          appleActiveRegistrations: 1,
+          appleInactiveRegistrations: 0,
+          googleActiveRegistrations: 0,
+          googleInactiveRegistrations: 0,
+          firstDownloadedAt: "2026-08-25 09:00",
+        });
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(200);
+        expect(getRegistrationStatusSpy).toHaveBeenCalledWith(`admitto:${WALLET_ACTION_EVENT}:${attendeeId}`);
+        const body = (await res.json()) as { apple_active_registrations: number | null };
+        expect(body.apple_active_registrations).toBe(1);
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.apple_active_registrations).toBe(1);
+        expect(row?.first_downloaded_at).toBe("2026-08-25 09:00");
+        expect(row?.registration_checked_at).not.toBeNull();
+        // Read-only at the provider - unlike void/restore/reissue/delete, no operator action log.
+        expect(await prisma.attendeeActionLog.count({ where: { attendee_id: attendeeId } })).toBe(0);
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("clears the registration counts to null when the provider reports no match", async () => {
+      const attendeeId = "att-wallet-action-refresh-notfound";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        await prisma.walletPass.update({
+          where: { attendee_id: attendeeId },
+          data: { apple_active_registrations: 3 },
+        });
+        getRegistrationStatusSpy.mockResolvedValueOnce(null);
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(200);
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.apple_active_registrations).toBeNull();
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("returns 409 without calling the provider when the pass has no user_provided_id to look up", async () => {
+      const attendeeId = "att-wallet-action-refresh-no-upid";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: "wallet_pass_not_refreshable" });
+        expect(getRegistrationStatusSpy).not.toHaveBeenCalled();
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("returns 404 when the attendee has no wallet pass yet", async () => {
+      const attendeeId = "att-wallet-action-refresh-none";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT);
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(404);
+        expect(getRegistrationStatusSpy).not.toHaveBeenCalled();
+      } finally {
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("returns the provider's error code and leaves existing counts untouched when the provider call fails", async () => {
+      const attendeeId = "att-wallet-action-refresh-fail";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        await prisma.walletPass.update({
+          where: { attendee_id: attendeeId },
+          data: { apple_active_registrations: 2 },
+        });
+        getRegistrationStatusSpy.mockRejectedValueOnce(new WalletProviderError("wallet_provider_unauthorized", "bad key"));
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(502);
+        expect(await res.json()).toEqual({ error: "wallet_provider_unauthorized" });
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.apple_active_registrations).toBe(2);
+      } finally {
         await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
         await prisma.attendee.delete({ where: { id: attendeeId } });
       }
