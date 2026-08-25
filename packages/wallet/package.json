@@ -10,7 +10,8 @@
   "dependencies": {
     "@admitto/crypto": "*",
     "@admitto/db": "*",
-    "@admitto/shared": "*"
+    "@admitto/shared": "*",
+    "redis": "^6.1.0"
   },
   "exports": {
     ".": {

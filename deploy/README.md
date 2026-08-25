@@ -325,7 +325,7 @@ Per-container stdout, by design (SECURITY-CONTROLS: logs are operational — no 
 | `db-backup` | `[db-backup] …` prefixed lines per nightly dump |
 | `db` / `redis` | Image defaults (Postgres startup/checkpoints, Redis notices) |
 
-**Decision (issue #237):** the `app` access log is the supported way to see request activity in Portainer/`docker logs`. It deliberately excludes IPs, user agents, cookies, and query strings; ticket/QR paths are logged as `/t/[redacted]` and `/q/[redacted]` so QR tokens never reach stdout. Successful `/healthz`/`/readyz` probes are skipped (Docker healthcheck fires every 10s); failing probes are logged. Request-level *attribution* (who did what) stays in the DB audit log; client IPs stay at the proxy layer. Disable with `LOG_HTTP_REQUESTS=0` in `deploy/.env`.
+**Decision (issue #237):** the `app` access log is the supported way to see request activity in Portainer/`docker logs`. It deliberately excludes user agents, cookies, and query strings; the client IP is included only when the request carries a verified staff/operator session, otherwise it's omitted (see [DATA-PROTECTION.md](../DATA-PROTECTION.md) for the exact rule). Ticket/QR paths are logged as `/t/[redacted]` and `/q/[redacted]` so QR tokens never reach stdout. Successful `/healthz`/`/readyz` probes are skipped (Docker healthcheck fires every 10s); failing probes are logged. Request-level *attribution* (who did what) stays in the DB audit log. Disable with `LOG_HTTP_REQUESTS=0` in `deploy/.env`.
 
 ## First superadmin
 

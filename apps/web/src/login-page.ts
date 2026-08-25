@@ -56,8 +56,9 @@ function loginAutofillClearScript(scriptNonce: string): string {
 export function getLoginPageSecurityHeaders(
   scriptNonce: string,
   trustedOrigins: readonly string[] = [],
+  secure = false,
 ): Record<string, string> {
-  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins);
+  return getAuthPageInlineScriptHeaders(scriptNonce, trustedOrigins, secure);
 }
 
 /** SSO provider link for login footer. */

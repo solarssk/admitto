@@ -1079,7 +1079,7 @@ export async function handleDownloadExportJob(c: Context, db: PrismaClient): Pro
 
 const exportSelectedBodySchema = z
   .object({
-    attendee_ids: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendee_ids: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
     format: z.enum(["xlsx", "csv", "pdf"]),
   })
   .strict();
@@ -2087,7 +2087,7 @@ export async function handleDeleteEventAttendee(c: Context, db: PrismaClient): P
 
 const bulkDeleteAttendeesBodySchema = z
   .object({
-    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
   })
   .strict();
 
@@ -2112,6 +2112,10 @@ export async function handleBulkDeleteEventAttendees(c: Context, db: PrismaClien
   }
   const parsed = bulkDeleteAttendeesBodySchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
+
+  if (!(await assertWalletBulkSelectionWithinLimit(db, eventId, parsed.data.attendeeIds))) {
+    return c.json({ error: "validation_failed" }, 400);
+  }
 
   await deleteWalletPassesBestEffort(db, eventId, parsed.data.attendeeIds);
 
@@ -2266,7 +2270,7 @@ async function applyBulkAttendeeChanges<Row extends { id: string }>(
 
 const bulkTicketTypeBodySchema = z
   .object({
-    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
     ticket_type: z.string().trim().min(1).max(100),
   })
   .strict();
@@ -2358,7 +2362,7 @@ export async function handleBulkTicketTypeEventAttendees(
 
 const bulkRsvpBodySchema = z
   .object({
-    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
     rsvp_status: rsvpStatusSchema,
   })
   .strict();
@@ -2434,7 +2438,7 @@ export async function handleBulkRsvpEventAttendees(
 
 const bulkCheckInAttendeesBodySchema = z
   .object({
-    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
   })
   .strict();
 
@@ -2578,13 +2582,13 @@ export async function handleBulkCheckInEventAttendees(c: Context, db: PrismaClie
 
 const bulkRevokeCheckInAttendeesBodySchema = z
   .object({
-    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
   })
   .strict();
 
 const bulkRevokePassAttendeesBodySchema = z
   .object({
-    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
   })
   .strict();
 
@@ -2687,7 +2691,7 @@ export async function handleBulkRevokeCheckInEventAttendees(c: Context, db: Pris
 
 const bulkRevokeItemsAttendeesBodySchema = z
   .object({
-    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
   })
   .strict();
 
@@ -2812,6 +2816,10 @@ export async function handleBulkRevokeAttendeePass(c: Context, db: PrismaClient)
   const parsed = bulkRevokePassAttendeesBodySchema.safeParse(body);
   if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
 
+  if (!(await assertWalletBulkSelectionWithinLimit(db, eventId, parsed.data.attendeeIds))) {
+    return c.json({ error: "validation_failed" }, 400);
+  }
+
   const counts = { revoked: 0, skipped: 0, errored: 0 };
   try {
     const owned = await db.attendee.findMany({
@@ -2849,11 +2857,50 @@ export async function handleBulkRevokeAttendeePass(c: Context, db: PrismaClient)
   }
 }
 
+/** Deliberately smaller than BULK_SEND_LIMIT (500) used by every other bulk-attendee route.
+ * The 3 dedicated wallet-bulk routes below always call PassCreator once per selected attendee,
+ * and every outbound PassCreator call is now paced (packages/wallet/src/passcreator-client.ts,
+ * ~150ms minimum spacing) to stay under PassCreator's own rate limit - a full BULK_SEND_LIMIT
+ * request would take upwards of 75 seconds to complete, longer than nginx's default 60s
+ * proxy_read_timeout on the documented deployment (deploy/nginx/default.conf), returning a 504
+ * to the admin while the request keeps mutating data server-side (bot review, PR #1064 round 3).
+ * 100 targets keeps a full request comfortably under that timeout (~15s of pacing alone) even
+ * before deploy/nginx/default.conf's own proxy_read_timeout bump (defense in depth, not the
+ * primary fix - the "Portainer/NAS without compose nginx" topology has no nginx layer to bump at
+ * all). An admin selecting more than 100 attendees for one of these actions submits it in more
+ * than one batch. bulk-delete and bulk-revoke-pass only call PassCreator per attendee when the
+ * event has wallet configured (see assertWalletBulkSelectionWithinLimit below) - same profile as
+ * these 3 routes once that's true, so they're held to the same cap conditionally rather than
+ * unconditionally, to avoid capping the common non-wallet case down from 500 for no reason. */
+const WALLET_BULK_SEND_LIMIT = 100;
+
 const bulkWalletAttendeesBodySchema = z
   .object({
-    attendeeIds: z.array(z.string()).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(WALLET_BULK_SEND_LIMIT),
   })
   .strict();
+
+/** bulk-delete and bulk-revoke-pass keep the general BULK_SEND_LIMIT (500) in their own body
+ * schema, unlike the 3 dedicated wallet-bulk routes above, since both are pure DB operations for
+ * the common case of an event with no wallet configured. Once the target event does have wallet
+ * configured, deleteWalletPassesBestEffort / syncWalletPassOnStatusChangeBestEffort call
+ * PassCreator once per selected attendee that has a pass - exactly the same fan-out the 3
+ * dedicated routes are capped at 100 for - so a selection over that size is only rejected once
+ * the event is confirmed to have wallet configured (own re-audit after PR #1064 round 3, found
+ * before any bot flagged it: the round-3 fix capped the 3 dedicated routes but missed that these
+ * two share the identical worst case whenever most/all of a large selection has a wallet pass). */
+async function assertWalletBulkSelectionWithinLimit(
+  db: PrismaClient,
+  eventId: string,
+  attendeeIds: readonly string[],
+): Promise<boolean> {
+  if (attendeeIds.length <= WALLET_BULK_SEND_LIMIT) return true;
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: { wallet_template_id: true, wallet_api_key_enc: true },
+  });
+  return !(event?.wallet_template_id && event?.wallet_api_key_enc);
+}
 
 /** Attendees (within the given, event-owned set) that have a WalletPass row with a known
  * provider_pass_id - the ones a bulk wallet action can actually touch. Attendees missing from

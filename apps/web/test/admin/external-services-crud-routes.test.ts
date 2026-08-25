@@ -80,6 +80,7 @@ import {
   handlePutMapsSettings,
   handlePutWeatherSettings,
 } from "../../src/admin/external-services-routes.js";
+import * as externalServicesUrl from "../../src/admin/external-services-url.js";
 
 function mockContext(body?: unknown): Context {
   return {
@@ -243,6 +244,118 @@ describe("external-services GET/PUT routes", () => {
     );
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "invalid_tile_url" });
+  });
+
+  it("rejects private maps tile URL hosts", async () => {
+    const res = await handlePutMapsSettings(
+      mockContext({ tileUrl: "https://169.254.169.254/{z}/{x}/{y}.png" }),
+      db,
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "url_host_blocked" });
+    expect(patchMapsSettings).not.toHaveBeenCalled();
+  });
+
+  it("rejects a {s} tile URL whose b/c subdomain is blocked even when a resolves fine (bot review)", async () => {
+    // static-map.ts's fetchTilePng actually requests a/b/c depending on tile coordinates - a
+    // save-time check that only validated the `a` expansion would miss this. Spy on the real
+    // per-host check so the test stays deterministic without depending on real DNS for 3 hosts.
+    const spy = vi
+      .spyOn(externalServicesUrl, "assertEditableServiceUrl")
+      .mockImplementation(async (raw: string) => {
+        if (raw.startsWith("https://b.")) return { ok: false, code: "url_host_blocked" };
+        return { ok: true, href: raw };
+      });
+    try {
+      const res = await handlePutMapsSettings(
+        mockContext({ tileUrl: "https://{s}.tile.example/{z}/{x}/{y}.png" }),
+        db,
+      );
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "url_host_blocked" });
+      expect(patchMapsSettings).not.toHaveBeenCalled();
+      expect(spy).toHaveBeenCalledWith("https://a.tile.example/0/0/0.png");
+      expect(spy).toHaveBeenCalledWith("https://b.tile.example/0/0/0.png");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("rejects unresolved maps tile URL hosts", async () => {
+    // tileUrlErrorCode's own url_host_unresolved branch (distinct from mapsUrlErrorCode's, used
+    // by geocoding/weather) - the only other existing tile-URL rejection test always hits
+    // url_host_blocked, so this branch was previously unexercised (Codecov patch coverage).
+    const spy = vi
+      .spyOn(externalServicesUrl, "assertEditableServiceUrl")
+      .mockResolvedValue({ ok: false, code: "url_host_unresolved" });
+    try {
+      const res = await handlePutMapsSettings(
+        mockContext({ tileUrl: "https://tile.example/{z}/{x}/{y}.png" }),
+        db,
+      );
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "url_host_unresolved" });
+      expect(patchMapsSettings).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("falls back to invalid_tile_url for a tile-URL check failure that isn't host-blocked or host-unresolved (Codecov patch coverage)", async () => {
+    // tileUrlErrorCode's final fallback branch - assertEditableServiceUrl's third possible
+    // failure code (invalid_url), distinct from the two specific codes tested above.
+    const spy = vi
+      .spyOn(externalServicesUrl, "assertEditableServiceUrl")
+      .mockResolvedValue({ ok: false, code: "invalid_url" });
+    try {
+      const res = await handlePutMapsSettings(
+        mockContext({ tileUrl: "https://tile.example/{z}/{x}/{y}.png" }),
+        db,
+      );
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "invalid_tile_url" });
+      expect(patchMapsSettings).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("accepts a dev-only http://localhost tile URL without an SSRF host check (protocol short-circuit, Codecov patch coverage)", async () => {
+    // isStaffSpaCompatibleTileUrl's http:// exception only exists for local dev; once it lets a
+    // template through, validateTileUrlForSave must not still try to SSRF-check an http: host -
+    // that early return was previously unexercised, since every other tile URL test uses https.
+    vi.stubEnv("NODE_ENV", "development");
+    const spy = vi.spyOn(externalServicesUrl, "assertEditableServiceUrl");
+    try {
+      const res = await handlePutMapsSettings(
+        mockContext({ tileUrl: "http://localhost:8080/{z}/{x}/{y}.png" }),
+        db,
+      );
+      expect(res.status).toBe(200);
+      expect(patchMapsSettings).toHaveBeenCalledWith(
+        db,
+        expect.objectContaining({ tileUrl: "http://localhost:8080/{z}/{x}/{y}.png" }),
+      );
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("persists a fully valid https tile URL once every subdomain variant passes (Codecov patch coverage)", async () => {
+    // The success path through validateTileUrlForSave's for-of loop (every prior tile-URL test
+    // exercises a rejection) - no {s} token, so expandTileUrlSubdomainVariantsForParse returns
+    // exactly one variant and the loop completes without ever hitting the rejection branch.
+    const res = await handlePutMapsSettings(
+      mockContext({ tileUrl: "https://tile.example/{z}/{x}/{y}.png" }),
+      db,
+    );
+    expect(res.status).toBe(200);
+    expect(patchMapsSettings).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ tileUrl: "https://tile.example/{z}/{x}/{y}.png" }),
+    );
   });
 
   it("rejects invalid geocoding base URLs", async () => {
