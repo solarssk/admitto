@@ -1668,7 +1668,37 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       }
     });
 
-    it("clears the registration counts to null when the provider reports no match", async () => {
+    it("retries once and recovers when the provider reports no match on the first attempt (search-index lag, bot review)", async () => {
+      const attendeeId = "att-wallet-action-refresh-lag";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        getRegistrationStatusSpy.mockResolvedValueOnce(null).mockResolvedValueOnce({
+          appleActiveRegistrations: 1,
+          appleInactiveRegistrations: 0,
+          googleActiveRegistrations: 0,
+          googleInactiveRegistrations: 0,
+          firstDownloadedAt: "2026-08-25 09:00",
+        });
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(200);
+        expect(getRegistrationStatusSpy).toHaveBeenCalledTimes(2);
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.apple_active_registrations).toBe(1);
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("leaves existing counts untouched and reports the check as failed when the provider still reports no match after the retry (bot review)", async () => {
       const attendeeId = "att-wallet-action-refresh-notfound";
       try {
         await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
@@ -1679,15 +1709,59 @@ describe("attendee wallet actions — void/restore/reissue", () => {
           where: { attendee_id: attendeeId },
           data: { apple_active_registrations: 3 },
         });
-        getRegistrationStatusSpy.mockResolvedValueOnce(null);
+        getRegistrationStatusSpy.mockResolvedValue(null);
 
         const res = await app.request(
           `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
           { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
         );
 
-        expect(res.status).toBe(200);
+        expect(res.status).toBe(502);
+        expect(await res.json()).toEqual({ error: "wallet_status_check_inconclusive" });
+        expect(getRegistrationStatusSpy).toHaveBeenCalledTimes(2);
+        // The transient miss must not silently wipe a previously-known, real registration count.
         const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.apple_active_registrations).toBe(3);
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("returns 409 without writing when the pass is deleted and re-added at the provider while the status check is in flight (bot review)", async () => {
+      const attendeeId = "att-wallet-action-refresh-replaced";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        getRegistrationStatusSpy.mockImplementationOnce(async () => {
+          // Simulates a concurrent delete+re-add landing between loadWalletActionContext's read
+          // and this handler's own write - the row now belongs to a different provider pass.
+          await prisma.walletPass.update({
+            where: { attendee_id: attendeeId },
+            data: { provider_pass_id: "pc-replaced-mid-flight", user_provided_id: "admitto:replaced" },
+          });
+          return {
+            appleActiveRegistrations: 1,
+            appleInactiveRegistrations: 0,
+            googleActiveRegistrations: 0,
+            googleInactiveRegistrations: 0,
+            firstDownloadedAt: null,
+          };
+        });
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: "wallet_pass_changed" });
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        // The replacement row (provider_pass_id/user_provided_id from mid-flight) must be
+        // untouched by the stale response for the old pass.
+        expect(row?.provider_pass_id).toBe("pc-replaced-mid-flight");
         expect(row?.apple_active_registrations).toBeNull();
       } finally {
         await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });

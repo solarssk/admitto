@@ -3741,18 +3741,42 @@ export async function handleRefreshAttendeeWalletStatus(c: Context, db: PrismaCl
   let status;
   try {
     status = await ctx.provider.getRegistrationStatus(ctx.userProvidedId);
+    if (!status) {
+      // PassCreator's search index can briefly lag right after a status-affecting event - a
+      // resolved "not found" here uses the exact same search endpoint whose lag app.ts's
+      // recoverDuplicatePass already retries for, and isn't authoritative on its own. One retry
+      // after the same short delay covers that; a thrown retry is folded into "still no match"
+      // rather than surfaced as its own error (bot review).
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      status = await ctx.provider.getRegistrationStatus(ctx.userProvidedId).catch(() => null);
+    }
   } catch (err) {
     return walletProviderErrorResponse(c, err, "handleRefreshAttendeeWalletStatus");
   }
+  if (!status) {
+    // Still no match after the retry - genuinely gone at the provider (deleted out of band) or
+    // longer-than-usual index lag. Either way, treating this as a successful check would silently
+    // clear every previously-known registration count and, via registration_sync_attempted_at
+    // below, delay the periodic worker's next real attempt by ~30 minutes. Leave the stored
+    // status untouched and report the check itself as failed instead (bot review).
+    return c.json({ error: "wallet_status_check_inconclusive" }, 502);
+  }
 
-  const updated = await db.walletPass.update({
-    where: { attendee_id: ctx.attendeeId },
+  // Conditioned on the pass identity read above, not just attendee_id: a concurrent delete+re-add
+  // during the provider call (widened by the retry above) would otherwise let this write stale
+  // registration data from the old pass onto the new one's row (bot review).
+  const { count } = await db.walletPass.updateMany({
+    where: {
+      attendee_id: ctx.attendeeId,
+      provider_pass_id: ctx.providerPassId,
+      user_provided_id: ctx.userProvidedId,
+    },
     data: {
-      apple_active_registrations: status?.appleActiveRegistrations ?? null,
-      apple_inactive_registrations: status?.appleInactiveRegistrations ?? null,
-      google_active_registrations: status?.googleActiveRegistrations ?? null,
-      google_inactive_registrations: status?.googleInactiveRegistrations ?? null,
-      first_downloaded_at: status?.firstDownloadedAt ?? null,
+      apple_active_registrations: status.appleActiveRegistrations,
+      apple_inactive_registrations: status.appleInactiveRegistrations,
+      google_active_registrations: status.googleActiveRegistrations,
+      google_inactive_registrations: status.googleInactiveRegistrations,
+      first_downloaded_at: status.firstDownloadedAt,
       registration_checked_at: new Date(),
       // Matches syncOne's own success write (registration-sync.ts) - the periodic worker selects
       // its next stale-row batch by this field, not registration_checked_at, so leaving it
@@ -3762,6 +3786,9 @@ export async function handleRefreshAttendeeWalletStatus(c: Context, db: PrismaCl
       registration_sync_attempted_at: new Date(),
     },
   });
+  if (count === 0) return c.json({ error: "wallet_pass_changed" }, 409);
+
+  const updated = await db.walletPass.findUniqueOrThrow({ where: { attendee_id: ctx.attendeeId } });
   return c.json(serializeWalletPassAction(updated));
 }
 
