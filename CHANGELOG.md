@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-08-25
+
 ### Added
 
 - Attendee detail's wallet "More actions" menu has a new "Refresh status" action - pulls the pass's current device-registration status directly from the provider on demand, instead of waiting for the periodic background sync to reach that one attendee (which can take up to 30 minutes, longer if many other passes are stale system-wide). For when the provider's own dashboard already shows a pass as added but Admitto hasn't caught up yet. Shares the same rate limit as the other single-attendee wallet actions (void/restore/reissue/delete), since it also calls the provider once per request. A momentary "not found" from the provider (the same brief search-index lag the duplicate-recovery fix above already accounts for) is retried once rather than taken as final, so it can't wipe a genuinely-registered pass's status back to unregistered.
@@ -1198,7 +1200,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/solarssk/admitto/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/solarssk/admitto/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/solarssk/admitto/compare/v0.5.5...v0.6.0
 [0.5.5]: https://github.com/solarssk/admitto/compare/v0.5.4...v0.5.5
