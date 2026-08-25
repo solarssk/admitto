@@ -215,6 +215,14 @@ describe("POST /api/admin/events", () => {
       latitude: 52.2297,
       longitude: 21.0122,
       geocoding_provider: "nominatim",
+      address_components: {
+        object_name: "Convention Center",
+        street: "1 Example Street",
+        postcode: "00-001",
+        city: "Warsaw",
+        region: "Mazovia",
+        country: "Poland",
+      },
     });
     expect(res.status).toBe(201);
     const { event } = (await res.json()) as { event: { id: string } };
@@ -226,8 +234,32 @@ describe("POST /api/admin/events", () => {
       latitude: 52.2297,
       longitude: 21.0122,
       geocoding_provider: "nominatim",
+      address_components: {
+        object_name: "Convention Center",
+        street: "1 Example Street",
+        postcode: "00-001",
+        city: "Warsaw",
+        region: "Mazovia",
+        country: "Poland",
+      },
     });
     expect(location?.geocoded_at).toBeInstanceOf(Date);
+  });
+
+  it("creates an EventLocation row with no structured address when none was selected", async () => {
+    const res = await postCreateEvent(superCookie, {
+      title: "No Components Event",
+      slug: "no-components-event",
+      date: "2026-09-29",
+      timezone: "UTC",
+      latitude: 52.2297,
+      longitude: 21.0122,
+    });
+    expect(res.status).toBe(201);
+    const { event } = (await res.json()) as { event: { id: string } };
+
+    const location = await prisma.eventLocation.findUnique({ where: { event_id: event.id } });
+    expect(location?.address_components).toBeNull();
   });
 
   it("stores coordinates without a geocoding_provider when none was selected", async () => {
