@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An attendee's "Ticket link copied" activity log entry produced by opening "View sent message" now records the operator's own timezone instead of falling back to the event's timezone, matching every other activity log row - previously it could show a visibly different UTC offset than the operator's other actions on the same attendee if the event's own timezone differed from the operator's.
 - Adding a pass to Apple/Google Wallet for the first time no longer occasionally shows a "?walletError=1" retry banner when PassCreator's create-duplicate check and its own search index briefly disagree (create says the pass already exists, search finds nothing yet) - one retry after a short delay now covers that lag.
 
 ## [0.6.1] - 2026-08-25
