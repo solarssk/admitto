@@ -29,9 +29,17 @@ export function CameraScanner({ enabled, wedgeActive, onScan }: Readonly<CameraS
 
       try {
         const { BrowserQRCodeReader } = await import("@zxing/browser");
+        const { DecodeHintType } = await import("@zxing/library");
         if (stopped) return;
 
-        const reader = new BrowserQRCodeReader();
+        // TRY_HARDER spends more time per frame trying to lock onto a
+        // pattern, which noticeably helps with skewed, low-contrast, or
+        // partially obscured tickets (a printed badge held at an angle,
+        // scanned in dim venue lighting) at the cost of a slower per-frame
+        // decode. Applies identically across browsers/devices - unlike the
+        // focus/zoom/torch constraints below, it's a decoder setting, not a
+        // camera capability, so there's no platform gating to worry about.
+        const reader = new BrowserQRCodeReader(new Map([[DecodeHintType.TRY_HARDER, true]]));
         // decodeFromVideoDevice(undefined, ...) leaves device selection and
         // focus entirely to the browser's defaults, which on some phones
         // (e.g. iPhone's default rear lens) hunts poorly at the close range

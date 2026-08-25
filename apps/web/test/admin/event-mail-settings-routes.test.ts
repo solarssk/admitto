@@ -4,6 +4,7 @@ import { handlePostEventMailSettingsTest } from "../../src/admin/event-mail-sett
 import { requireSuperadmin } from "../../src/admin/admin-helpers.js";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { runEventBounceProbe, BounceProbeSetupError, sendEventTransportTestEmail } from "@admitto/mail-delivery";
+import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 
 vi.mock("../../src/admin/admin-helpers.js", () => ({
   requireEventId: (c: Context) => c.req.param("eventId") ?? new Response("bad", { status: 400 }),
@@ -77,6 +78,7 @@ describe("handlePostEventMailSettingsTest verifyBounce path", () => {
         json: { to: "operator@example.com", verifyBounce: false },
       }),
       db as never,
+      new InMemoryRateLimitStore(),
     );
 
     expect(res.status).toBe(200);
@@ -105,6 +107,7 @@ describe("handlePostEventMailSettingsTest verifyBounce path", () => {
         json: { to: "operator@example.com", verifyBounce: false },
       }),
       db as never,
+      new InMemoryRateLimitStore(),
     );
 
     expect(res.status).toBe(200);
@@ -123,6 +126,7 @@ describe("handlePostEventMailSettingsTest verifyBounce path", () => {
         json: { to: "nobody@example.com", verifyBounce: true },
       }),
       baseDb() as never,
+      new InMemoryRateLimitStore(),
     );
 
     expect(res.status).toBe(403);
@@ -144,6 +148,7 @@ describe("handlePostEventMailSettingsTest verifyBounce path", () => {
         json: { to: "nobody@example.com", verifyBounce: true },
       }),
       db as never,
+      new InMemoryRateLimitStore(),
     );
 
     expect(res.status).toBe(200);
@@ -170,6 +175,7 @@ describe("handlePostEventMailSettingsTest verifyBounce path", () => {
         json: { to: "nobody@example.com", verifyBounce: true },
       }),
       db as never,
+      new InMemoryRateLimitStore(),
     );
 
     expect(res.status).toBe(200);
@@ -224,6 +230,7 @@ describe("handlePostEventMailSettingsTest verifyBounce path", () => {
         json: { to: "nobody@example.com", verifyBounce: true },
       }),
       db as never,
+      new InMemoryRateLimitStore(),
     );
 
     expect(res.status).toBe(200);
@@ -250,7 +257,7 @@ describe("handlePostEventMailSettingsTest verifyBounce path", () => {
       get: () => ({ userId: "user_1", sessionId: "sess_1" }),
     } as unknown as Context;
 
-    const res = await handlePostEventMailSettingsTest(ctx, baseDb() as never);
+    const res = await handlePostEventMailSettingsTest(ctx, baseDb() as never, new InMemoryRateLimitStore());
     expect(res.status).toBe(400);
     const json = (await res.json()) as { error: string };
     expect(json.error).toBe("validation_failed");
@@ -268,6 +275,7 @@ describe("handlePostEventMailSettingsTest verifyBounce path", () => {
         json: { to: "nobody@example.com", verifyBounce: true },
       }),
       db as never,
+      new InMemoryRateLimitStore(),
     );
 
     expect(res.status).toBe(400);
@@ -295,6 +303,7 @@ describe("handlePostEventMailSettingsTest verifyBounce path", () => {
         json: { to: "nobody@example.com", verifyBounce: true },
       }),
       db as never,
+      new InMemoryRateLimitStore(),
     );
 
     expect(res.status).toBe(200);
@@ -327,6 +336,7 @@ describe("handlePostEventMailSettingsTest verifyBounce path", () => {
         json: { to: "nobody@example.com", verifyBounce: true },
       }),
       db as never,
+      new InMemoryRateLimitStore(),
     );
 
     expect(res.status).toBe(404);
@@ -347,6 +357,7 @@ describe("handlePostEventMailSettingsTest verifyBounce path", () => {
         json: { to: "operator@example.com", verifyBounce: false },
       }),
       db as never,
+      new InMemoryRateLimitStore(),
     );
 
     expect(res.status).toBe(200);
