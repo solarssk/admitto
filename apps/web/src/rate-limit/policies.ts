@@ -486,6 +486,66 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  // Every single-attendee wallet/void|restore|reissue|delete route and every bulk-wallet-
+  // void|reissue|delete route calls the live PassCreator API per attendee - same abuse pattern
+  // and same per-user-per-event budget as admin:wallet-message-send above ("a scripted resubmit-
+  // to-trigger-a-wallet-push abuse pattern"), just covering the wallet lifecycle actions instead
+  // of the wallet message send. Single-attendee only (void/restore/reissue/delete) - each request
+  // is exactly one PassCreator call, so 10/10min bounds this route group to 10 provider calls in
+  // the window. Bulk wallet actions get their own, much stricter policy below: a single bulk
+  // request can fan out to hundreds of provider calls, so sharing this budget with them would let
+  // a scripted attacker fire far more provider traffic than this number implies (see
+  // `admin:wallet-action-bulk`).
+  "admin:wallet-action": {
+    checks: [
+      {
+        keyOf: (c) => adminUserEventKey(c, "wallet-action"),
+        windowMs: 600_000,
+        max: 10,
+        logOnExceeded: { scope: "admin_wallet_action", keyHint: "user_event" },
+      },
+    ],
+  },
+  // Every bulk route that can cascade to one PassCreator call per selected attendee, up to
+  // BULK_SEND_LIMIT (500): the 3 explicit bulk-wallet-* routes always do, and bulk-delete /
+  // bulk-revoke-pass do too whenever the selection includes attendees with a wallet pass
+  // (deleteWalletPassesBestEffort / syncWalletPassOnStatusChangeBestEffort - bot review, PR #1064
+  // round 2: these two shared only the generic admin:attendee-bulk-mutation budget below, which
+  // doesn't account for the PassCreator calls they can trigger). A flat per-request budget shared
+  // with the single-attendee policy above would let 10 requests reach 5,000 provider calls in the
+  // same 10-minute window - far past PassCreator's documented 600 req/min limit
+  // (_ops/adr/0041-wallet-passcreator-api-contract.md). Capping this route group at 3 requests per
+  // 10 minutes bounds worst case to 1,500 calls/10min - `PassCreatorClient.requestRaw` (see
+  // `PASSCREATOR_MIN_CALL_INTERVAL_MS`) additionally paces every actual outbound call at a fixed
+  // process-wide rate regardless of which route or how many concurrent requests triggered it, so
+  // this policy and that pacing are complementary: this bounds how much work an admin can queue
+  // up, the client-level pacing bounds how fast PassCreator actually sees it.
+  "admin:wallet-action-bulk": {
+    checks: [
+      {
+        keyOf: (c) => adminUserEventKey(c, "wallet-action-bulk"),
+        windowMs: 600_000,
+        max: 3,
+        logOnExceeded: { scope: "admin_wallet_action_bulk", keyHint: "user_event" },
+      },
+    ],
+  },
+  // Bulk-attendee mutation routes (bulk-delete, bulk-checkin, bulk-revoke-checkin,
+  // bulk-revoke-items, bulk-revoke-pass, bulk-ticket-type, bulk-rsvp) - each request can touch up
+  // to BULK_SEND_LIMIT (500) attendees at once, and bulk-delete alone is a hard
+  // DELETE ... RETURNING with no undo. Same cost class/window as admin:attendee-patch (20/60s),
+  // but keyed per user+event rather than per user+attendee: these routes act on many attendees in
+  // one call, so there's no single attendee id to scope the bucket to.
+  "admin:attendee-bulk-mutation": {
+    checks: [
+      {
+        keyOf: (c) => adminUserEventKey(c, "attendee-bulk-mutation"),
+        windowMs: 60_000,
+        max: 20,
+        logOnExceeded: { scope: "admin_attendee_bulk_mutation", keyHint: "user_event" },
+      },
+    ],
+  },
   "admin:resend-bulk": {
     checks: [
       {
