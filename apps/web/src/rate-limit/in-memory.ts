@@ -28,7 +28,8 @@ function evictOldestBucket(buckets: Map<string, Bucket>): void {
 }
 
 /**
- * Process-local rate limiter with per-key sliding windows.
+ * Process-local rate limiter with per-key fixed windows, each anchored to that key's first hit
+ * (unlike `RedisRateLimitStore`'s windows in `redis.ts`, which align to a shared epoch boundary).
  * Default when `REDIS_URL` is not configured.
  */
 export class InMemoryRateLimitStore implements RateLimitStore {
@@ -43,7 +44,7 @@ export class InMemoryRateLimitStore implements RateLimitStore {
     this.maxBuckets = maxBuckets;
   }
 
-  /** Record one request for `key` within a sliding window of `windowMs`. */
+  /** Record one request for `key` within a fixed window of `windowMs`. */
   async hit(key: string, windowMs: number, max: number): Promise<RateLimitHitResult> {
     const now = Date.now();
     const bucket = this.buckets.get(key);

@@ -11,7 +11,7 @@ const IP = "127.0.0.1";
 const TOTP_CODE = "123456";
 const RECOVERY_CODE = "AAAA-BBBB-CCCC";
 const TOTP_MAX = 10;
-const RECOVERY_MAX = 30;
+const RECOVERY_MAX = 10;
 
 describe("checkMfaVerifyRateLimit", () => {
   it("namespaces TOTP buckets by action — exhausting one action's limit does not block a different action for the same session/IP", async () => {
