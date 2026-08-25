@@ -13,6 +13,16 @@ export default defineConfig({
     coverage: vitestCoverage,
     environment: "node",
     include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
+    // Vitest's default thread count is `os.availableParallelism() - 1`. With 264 files each
+    // spinning up its own jsdom environment plus React rendering, running that many concurrent
+    // worker threads saturates the machine and starves individual tests of CPU time - `waitFor`/
+    // `findBy*` calls that normally resolve in milliseconds intermittently blow past the 5s test
+    // timeout under that contention (never an assertion failure, and every flagged file passes
+    // reliably in isolation). Capping concurrency leaves the run CPU-bound instead of
+    // context-switch-bound. testTimeout is also raised as a second line of defense for
+    // legitimately slower CI hardware, not to mask this.
+    maxWorkers: 4,
+    testTimeout: 10_000,
     // Newer Node ships a webstorage global localStorage that (a) emits an
     // ExperimentalWarning on any access and (b) shadows jsdom's working
     // localStorage, because vitest skips window keys that already exist on

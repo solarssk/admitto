@@ -1,9 +1,10 @@
 import { createClient } from "redis";
 import { redisKeyForHit, redisWindowStart } from "./redis-keys.js";
+import { InMemoryRateLimitStore } from "./in-memory.js";
 import type { RateLimitHitResult, RateLimitStore } from "./types.js";
 import { recordSystemLog } from "@admitto/shared/system-log";
 
-const FAIL_OPEN_WARN = "Rate limit Redis unavailable; failing open";
+const FALLBACK_WARN = "Rate limit Redis unavailable; falling back to per-process in-memory limiter";
 const FAIL_OPEN_LOG_INTERVAL_MS = 60_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 2_000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 2_000;
@@ -52,12 +53,15 @@ function createRedisClient(options: RedisClientOptions) {
 
 /**
  * Shared Redis-backed rate limiter using fixed windows per client key.
- * Fails open (allows traffic) when Redis is unreachable or commands time out.
+ * Falls back to a process-local {@link InMemoryRateLimitStore} when Redis is unreachable or
+ * commands time out, so an outage degrades limits to "per replica" instead of removing them
+ * entirely — see {@link fallbackHit}.
  */
 export class RedisRateLimitStore implements RateLimitStore {
   private readonly client: ReturnType<typeof createRedisClient>;
   private readonly commandTimeoutMs: number;
   private readonly outageCooldownMs: number;
+  private readonly fallbackStore = new InMemoryRateLimitStore();
   private connectPromise: Promise<void> | null = null;
   private lastFailOpenWarnAt = 0;
   private redisUnavailableUntil = 0;
@@ -101,8 +105,8 @@ export class RedisRateLimitStore implements RateLimitStore {
 
   private warnFailOpen(now: number): void {
     if (now - this.lastFailOpenWarnAt >= FAIL_OPEN_LOG_INTERVAL_MS) {
-      console.warn(FAIL_OPEN_WARN);
-      recordSystemLog({ level: "warn", source: "cache", message: FAIL_OPEN_WARN });
+      console.warn(FALLBACK_WARN);
+      recordSystemLog({ level: "warn", source: "cache", message: FALLBACK_WARN });
       this.lastFailOpenWarnAt = now;
     }
   }
@@ -111,8 +115,11 @@ export class RedisRateLimitStore implements RateLimitStore {
     this.redisUnavailableUntil = now + this.outageCooldownMs;
   }
 
-  private failOpen(now: number, max: number, windowMs: number): RateLimitHitResult {
-    return { allowed: true, remaining: max, resetAt: now + windowMs };
+  /** Degraded-mode enforcement while Redis is unreachable: delegate to the process-local
+   * fallback instead of allowing every request. Still bounds traffic (per replica, not shared
+   * account-wide), unlike the previous unconditional allow. */
+  private fallbackHit(key: string, windowMs: number, max: number): Promise<RateLimitHitResult> {
+    return this.fallbackStore.hit(key, windowMs, max);
   }
 
   /** Record one request for `key` within a fixed Redis window of `windowMs`. */
@@ -123,7 +130,7 @@ export class RedisRateLimitStore implements RateLimitStore {
     const ttlMs = Math.max(1, resetAt - now);
 
     if (now < this.redisUnavailableUntil) {
-      return this.failOpen(now, max, windowMs);
+      return this.fallbackHit(key, windowMs, max);
     }
 
     try {
@@ -146,7 +153,7 @@ export class RedisRateLimitStore implements RateLimitStore {
     } catch {
       this.markRedisUnavailable(now);
       this.warnFailOpen(now);
-      return this.failOpen(now, max, windowMs);
+      return this.fallbackHit(key, windowMs, max);
     }
   }
 
