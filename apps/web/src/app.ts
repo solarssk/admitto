@@ -687,6 +687,22 @@ export function createApp(options: CreateAppOptions = {}) {
     return htmlWithSecurityHeaders(c, html, status, theme);
   }
 
+  /** Per-attendee in-flight lock for the wallet pass creation below - two near-simultaneous first
+   * clicks for the same attendee (e.g. a work computer and a phone, both before either has
+   * written a WalletPass row yet) would otherwise both reach createPass concurrently.
+   * PassCreator's enforceUniqueUserProvidedId isn't strongly consistent under real concurrency
+   * either (same class of lag as its search index - see recoverDuplicatePass above), so both
+   * calls can succeed and mint two separate passes; markActive's upsert then silently discards
+   * whichever DB write loses the race, leaving the other one orphaned at the provider forever -
+   * invisible to every future push/void, since nothing here ever learns its id (observed live
+   * 2026-08-25). One lock per running `app` instance is enough for this app's actual deployment
+   * topology (a single `app` container - deploy/README.md), not a distributed one.
+   */
+  const walletCreateLocks = new Map<
+    string,
+    Promise<{ apple_url: string | null; android_url: string | null } | null>
+  >();
+
   /**
    * On-demand wallet pass: creates (once) or reuses the attendee's WalletPass, then 302s to the
    * provider URL. Never a bare 500 - failures redirect back to the ticket page with a retry
@@ -902,9 +918,22 @@ export function createApp(options: CreateAppOptions = {}) {
       if (existing?.status === "voided" && existing.provider_pass_id) {
         return restoreExistingPass(existing.provider_pass_id);
       }
-      const display = await resolveTicketPageDisplay(db, resolved);
-      const input = buildWalletPassInput(display, qrPayload);
-      return createOrRecoverPass(input);
+
+      // Checked and set with no `await` between them - a second concurrent call for the same
+      // attendee.id is guaranteed to see the first's promise already registered here, however
+      // close together the two requests actually are (see walletCreateLocks' own doc comment).
+      const inFlight = walletCreateLocks.get(attendee.id);
+      if (inFlight) return inFlight;
+
+      const created = (async () => {
+        const display = await resolveTicketPageDisplay(db, resolved);
+        const input = buildWalletPassInput(display, qrPayload);
+        return createOrRecoverPass(input);
+      })().finally(() => {
+        walletCreateLocks.delete(attendee.id);
+      });
+      walletCreateLocks.set(attendee.id, created);
+      return created;
     }
 
     const providerUrls = await resolvePassUrls();

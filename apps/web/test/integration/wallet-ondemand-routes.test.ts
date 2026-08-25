@@ -346,6 +346,43 @@ describe("On-demand wallet routes", () => {
     errSpy.mockRestore();
   });
 
+  it("calls createPass only once for two near-simultaneous requests for the same attendee (e.g. a work computer and a phone both clicking before either has a WalletPass row yet)", async () => {
+    const provider = stubProvider();
+    let releaseCreate: (() => void) | undefined;
+    const createStarted = new Promise<void>((resolveStarted) => {
+      provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
+        resolveStarted();
+        await new Promise<void>((resolve) => {
+          releaseCreate = resolve;
+        });
+        return {
+          providerPassId: `pc-${input.userProvidedId}`,
+          downloadUrl: "https://pc.test/p/single-flight",
+          appleUrl: "https://pc.test/apple/single-flight",
+          androidUrl: "https://pc.test/android/single-flight",
+        };
+      });
+    });
+    const app = makeApp(provider);
+
+    const first = app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+    // Only start the second request once createPass has genuinely been entered by the first, so
+    // this deterministically exercises the same-tick race the lock exists for, rather than
+    // depending on timing luck.
+    await createStarted;
+    const second = app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+    releaseCreate?.();
+    const [firstRes, secondRes] = await Promise.all([first, second]);
+
+    expect(firstRes.status).toBe(302);
+    expect(secondRes.status).toBe(302);
+    expect(firstRes.headers.get("location")).toBe("https://pc.test/apple/single-flight");
+    expect(secondRes.headers.get("location")).toBe("https://pc.test/apple/single-flight");
+    expect(provider.createPass).toHaveBeenCalledTimes(1);
+    const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(saved?.provider_pass_id).toBe(`pc-admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`);
+  });
+
   it("recovers a pass a concurrent request already created instead of marking it failed", async () => {
     const provider = stubProvider();
     provider.createPass.mockRejectedValueOnce(
