@@ -2150,6 +2150,16 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       const body = (await limited.json()) as { error: string };
       expect(body.error).toBe("too many requests");
 
+      // Same event, same admin, but the on-demand refresh-status route - proves the budget is
+      // shared with its void/restore/reissue/delete siblings rather than reset per route (own
+      // re-audit: this route also calls the provider once per request, getRegistrationStatus,
+      // but was missing this rate limit entirely when first added in a later PR - fixed here).
+      const refreshAlsoLimited = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/att-wallet-action-rl-nonexistent/wallet/refresh-status`,
+        { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+      );
+      expect(refreshAlsoLimited.status).toBe(429);
+
       // The bulk sibling route has its own, separate (and much stricter) budget - a single-attendee
       // action hitting its limit must not also block a fresh bulk request for the same user+event.
       const bulkStillAllowed = await app.request(

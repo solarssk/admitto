@@ -1581,6 +1581,7 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/admin/events/:eventId/attendees/:id/wallet/refresh-status",
     jsonPostCsrf,
     staffAdminGate,
+    adminWalletActionRateLimit,
     guardArchivedEvent((c) => handleRefreshAttendeeWalletStatus(c, db)),
   );
   app.post(
