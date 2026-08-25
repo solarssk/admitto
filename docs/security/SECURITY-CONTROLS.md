@@ -101,6 +101,13 @@ enforced server-side, not just the strength meter shown while typing — per NIS
 §3.1.1.2's requirement to check candidates against a blocklist instead of relying on
 character-composition rules.
 
+**No account lockout, by design.** Local password authentication never locks or disables an
+account after repeated failed attempts — a login-triggerable lockout on admin/superadmin accounts
+would itself be a denial-of-service vector on a self-hosted internal tool. Brute-force is
+mitigated instead by the login rate limits above (see **Rate limiting**) plus alerting on repeated
+failed attempts against privileged accounts (`packages/auth/src/privileged-login-alert.ts`), which
+notifies an operator but never blocks the account.
+
 ### Implemented in codebase
 
 These capabilities exist in the application — they are **not** roadmap-only claims:
@@ -152,9 +159,11 @@ documented in [`deploy/README.md`](../../deploy/README.md)). The proxy must **ov
 
 ## Rate limiting
 
-Application throttles use a sliding window (default **60 seconds** unless noted). Limits apply per
-bucket key; HTTP **429** when exceeded. Structured audit events: `auth.rate_limit.exceeded` (see
-`packages/auth` audit helpers).
+Application throttles use a fixed window (default **60 seconds** unless noted): each bucket resets
+at a fixed boundary rather than rolling continuously, so a burst straddling a window edge can allow
+up to roughly 2x the stated limit in the worst case — a common, accepted trade-off against the
+extra cost of a true sliding window. Limits apply per bucket key; HTTP **429** when exceeded.
+Structured audit events: `auth.rate_limit.exceeded` (see `packages/auth` audit helpers).
 
 **Store:** in-memory per process when `REDIS_URL` is unset; **Redis recommended in production** so
 limits are shared across replicas and survive restarts.
@@ -191,7 +200,7 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 | `POST …/template/test-send` | user + event | 5 / 60 s | event admin |
 | `POST /api/admin/mail-settings/test` | user | 5 / 60 s | admin |
 | `GET …/attendees?q=...` (search) | user + event | 120 / 60 s | operator / admin |
-| attendee resend, check-in scan/history | per-route keys | see `apps/web/src/*-rate-limit.ts` | operator / admin |
+| attendee resend, check-in scan/history | per-route keys | see `apps/web/src/rate-limit/policies.ts` | operator / admin |
 
 ### Superadmin (identity provider UI)
 
@@ -293,6 +302,14 @@ risk: a compromised admin can still point mail settings at any allowlisted name;
 minimal and ensure DNS for those names is under operator control. Set the variable on both `app`
 and `worker`.
 
+**Weather and maps destinations.** The same DNS-pin-and-connect pattern also covers the three
+admin-configurable external-service URLs under Organisation Settings → External services: the
+Weather (Open-Meteo) base URL, the Nominatim geocoding base URL, and the map tile-server URL. Each
+re-resolves the hostname and pins the outbound connection to the validated address at request
+time, closing the same DNS-rebinding gap as the OIDC and mail guards above — see
+`apps/web/src/weather/open-meteo-client.ts`, `apps/web/src/maps/nominatim-provider.ts`, and
+`apps/web/src/maps/static-map.ts`.
+
 ---
 
 ## Data protection in operations
@@ -390,8 +407,8 @@ Useful when repeating internal or vendor PEN tests against a staging instance:
 6. **Residual:** misconfigured proxy append on `X-Forwarded-For` can still spoof rate-limit IP —
    verify deploy runbook, not app-only config.
 
-Source constants: `apps/web/src/**/*-rate-limit*.ts`, `packages/auth/src/oidc/safe-url.ts`,
-`packages/auth/src/oidc/safe-oidc-fetch.ts`.
+Source constants: `apps/web/src/rate-limit/policies.ts` (definitions), `apps/web/src/app.ts`
+(wiring), `packages/auth/src/oidc/safe-url.ts`, `packages/auth/src/oidc/safe-oidc-fetch.ts`.
 
 ---
 
