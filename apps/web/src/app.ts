@@ -169,6 +169,7 @@ import {
   handleVoidAttendeeWalletPass,
   handleRestoreAttendeeWalletPass,
   handleReissueAttendeeWalletPass,
+  handleRefreshAttendeeWalletStatus,
   handleDeleteAttendeeWalletPass,
   handleAddAttendeeNote,
   handlePatchAttendeeNote,
@@ -392,6 +393,7 @@ import {
 } from "./admin/identity-api-routes.js";
 import { resolveOidcPublicBaseUrlOrNull } from "./admin/oidc-redirect-uri.js";
 import { applyBaselineSecurityHeaders } from "./security-headers.js";
+import { isSecureRequest } from "./is-secure-request.js";
 import { createRequestLogMiddleware, resolveLogHttpRequests } from "./request-log.js";
 import { resolvePostLoginRedirectForUser } from "./auth/post-login-redirect.js";
 import { handleReadyz } from "./ops/readyz.js";
@@ -449,7 +451,9 @@ function htmlWithSecurityHeaders(
   theme?: Awaited<ReturnType<typeof getBrandingTheme>> | null,
   logoUrl?: string | null,
 ) {
-  for (const [name, value] of Object.entries(getTicketPageSecurityHeaders(theme, logoUrl))) {
+  for (const [name, value] of Object.entries(
+    getTicketPageSecurityHeaders(theme, logoUrl, isSecureRequest(c)),
+  )) {
     c.header(name, value);
   }
   return c.html(html, status);
@@ -726,6 +730,22 @@ export function createApp(options: CreateAppOptions = {}) {
     return htmlWithSecurityHeaders(c, html, status, theme);
   }
 
+  /** Per-attendee in-flight lock for the wallet pass creation below - two near-simultaneous first
+   * clicks for the same attendee (e.g. a work computer and a phone, both before either has
+   * written a WalletPass row yet) would otherwise both reach createPass concurrently.
+   * PassCreator's enforceUniqueUserProvidedId isn't strongly consistent under real concurrency
+   * either (same class of lag as its search index - see recoverDuplicatePass above), so both
+   * calls can succeed and mint two separate passes; markActive's upsert then silently discards
+   * whichever DB write loses the race, leaving the other one orphaned at the provider forever -
+   * invisible to every future push/void, since nothing here ever learns its id (observed live
+   * 2026-08-25). One lock per running `app` instance is enough for this app's actual deployment
+   * topology (a single `app` container - deploy/README.md), not a distributed one.
+   */
+  const walletCreateLocks = new Map<
+    string,
+    Promise<{ apple_url: string | null; android_url: string | null } | null>
+  >();
+
   /**
    * On-demand wallet pass: creates (once) or reuses the attendee's WalletPass, then 302s to the
    * provider URL. Never a bare 500 - failures redirect back to the ticket page with a retry
@@ -888,6 +908,29 @@ export function createApp(options: CreateAppOptions = {}) {
       }
     }
 
+    /** PassCreator's createPass duplicate-rejection and its own search index can briefly
+     * disagree: a search right after a "duplicate" rejection sometimes finds nothing yet even
+     * though the winning pass genuinely exists there (search-index lag, not a real
+     * inconsistency - observed live 2026-08-25, an attendee's pass sat "failed" locally despite
+     * Passcreator's own dashboard already showing it added). One retry after a short delay
+     * covers that lag in practice; still falling through to markFailed below if it doesn't. */
+    async function recoverDuplicatePass(userProvidedId: string): Promise<WalletPassResult | null> {
+      // Only a resolved "no match yet" is worth retrying - that's the search-index-lag case this
+      // exists for. A thrown lookup (auth failure, or its own 15s HTTP timeout -
+      // PassCreatorClient's REQUEST_TIMEOUT_MS) is a real failure that one more identical call a
+      // second later won't fix; retrying it anyway would double the attendee's wait for the
+      // eventual failure redirect for no benefit (bot review).
+      let first: WalletPassResult | null;
+      try {
+        first = await provider.findByUserProvidedId(userProvidedId);
+      } catch {
+        return null;
+      }
+      if (first) return first;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      return provider.findByUserProvidedId(userProvidedId).catch(() => null);
+    }
+
     /**
      * A concurrent request for the same attendee can win the race and create the pass first -
      * PassCreator then rejects this one as a duplicate on the shared userProvidedId. Recovers the
@@ -904,9 +947,7 @@ export function createApp(options: CreateAppOptions = {}) {
       } catch (err) {
         const code = err instanceof WalletProviderError ? err.code : "wallet_provider_rejected";
         const recovered =
-          code === "wallet_provider_duplicate"
-            ? await provider.findByUserProvidedId(input.userProvidedId).catch(() => null)
-            : null;
+          code === "wallet_provider_duplicate" ? await recoverDuplicatePass(input.userProvidedId) : null;
         if (recovered) return markActive(input.userProvidedId, recovered);
 
         console.error("PassCreator createPass failed:", err);
@@ -930,9 +971,22 @@ export function createApp(options: CreateAppOptions = {}) {
       if (existing?.status === "voided" && existing.provider_pass_id) {
         return restoreExistingPass(existing.provider_pass_id);
       }
-      const display = await resolveTicketPageDisplay(db, resolved);
-      const input = buildWalletPassInput(display, qrPayload);
-      return createOrRecoverPass(input);
+
+      // Checked and set with no `await` between them - a second concurrent call for the same
+      // attendee.id is guaranteed to see the first's promise already registered here, however
+      // close together the two requests actually are (see walletCreateLocks' own doc comment).
+      const inFlight = walletCreateLocks.get(attendee.id);
+      if (inFlight) return inFlight;
+
+      const created = (async () => {
+        const display = await resolveTicketPageDisplay(db, resolved);
+        const input = buildWalletPassInput(display, qrPayload);
+        return createOrRecoverPass(input);
+      })().finally(() => {
+        walletCreateLocks.delete(attendee.id);
+      });
+      walletCreateLocks.set(attendee.id, created);
+      return created;
     }
 
     const providerUrls = await resolvePassUrls();
@@ -1522,6 +1576,13 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     adminWalletActionRateLimit,
     guardArchivedEvent((c) => handleReissueAttendeeWalletPass(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/wallet/refresh-status",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminWalletActionRateLimit,
+    guardArchivedEvent((c) => handleRefreshAttendeeWalletStatus(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/wallet/delete",

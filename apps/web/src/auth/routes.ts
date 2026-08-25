@@ -53,30 +53,13 @@ import {
 } from "../admin/account-routes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
-import { shouldTrustForwardedHeaders } from "../rate-limit/trust-proxy.js";
 import { resolveClientTimezone } from "../admin/admin-helpers.js";
 import { parseOptionalClientTimezone } from "../admin/timezone.js";
 import { resolveOptionalSafeRedirectPath } from "./safe-redirect.js";
 import { resolvePostLoginRedirectForUser } from "./post-login-redirect.js";
+import { isSecureRequest } from "../is-secure-request.js";
 
 const AUTH_ERROR = { error: "unauthorized" } as const;
-
-function firstForwardedValue(raw: string | undefined): string | undefined {
-  if (!raw) return undefined;
-  const first = raw.split(",")[0]?.trim();
-  return first || undefined;
-}
-
-/** Whether the incoming request arrived over HTTPS (honours X-Forwarded-Proto from a trusted proxy peer). */
-export function isSecureRequest(c: Context): boolean {
-  const requestUrl = new URL(c.req.url);
-  let proto = requestUrl.protocol.replace(/:$/, "").toLowerCase();
-  if (shouldTrustForwardedHeaders(c)) {
-    const forwarded = firstForwardedValue(c.req.header("x-forwarded-proto"));
-    if (forwarded) proto = forwarded.toLowerCase();
-  }
-  return proto === "https";
-}
 
 function sessionCookieOptions(c: Context): {
   httpOnly: true;
