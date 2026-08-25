@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - An attendee's "Ticket link copied" activity log entry produced by opening "View sent message" now records the operator's own timezone instead of falling back to the event's timezone, matching every other activity log row - previously it could show a visibly different UTC offset than the operator's other actions on the same attendee if the event's own timezone differed from the operator's.
+- Communication's Delivery details modal, and its "Export as .txt" timeline, no longer show a stale error message (for example "Connection timeout") for a delivery that went out on a later automatic retry - the error notice, and each exported timeline row's error text, now only appear when that delivery's current status is itself a failure (failed, bounced, rejected), instead of surfacing left-over error text from an earlier failed attempt on the same row alongside a "Sent" status.
 
 ## [0.6.1] - 2026-08-25
 
