@@ -1621,6 +1621,11 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         expect(row?.apple_active_registrations).toBe(1);
         expect(row?.first_downloaded_at).toBe("2026-08-25 09:00");
         expect(row?.registration_checked_at).not.toBeNull();
+        // Must match syncOne's own success write (registration-sync.ts) - the periodic worker
+        // selects its next batch by this field, not registration_checked_at, so a manual refresh
+        // that left it untouched would look never-synced and get re-picked on the very next tick
+        // (bot review).
+        expect(row?.registration_sync_attempted_at).not.toBeNull();
         // Read-only at the provider - unlike void/restore/reissue/delete, no operator action log.
         expect(await prisma.attendeeActionLog.count({ where: { attendee_id: attendeeId } })).toBe(0);
       } finally {

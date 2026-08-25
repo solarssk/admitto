@@ -3707,6 +3707,12 @@ export async function handleRefreshAttendeeWalletStatus(c: Context, db: PrismaCl
       google_inactive_registrations: status?.googleInactiveRegistrations ?? null,
       first_downloaded_at: status?.firstDownloadedAt ?? null,
       registration_checked_at: new Date(),
+      // Matches syncOne's own success write (registration-sync.ts) - the periodic worker selects
+      // its next stale-row batch by this field, not registration_checked_at, so leaving it
+      // untouched here would make the row look never-synced and get re-picked (wasting one of the
+      // system-wide 25-per-tick slots) on the very next tick, seconds after this manual refresh
+      // already did the same work (bot review).
+      registration_sync_attempted_at: new Date(),
     },
   });
   return c.json(serializeWalletPassAction(updated));
