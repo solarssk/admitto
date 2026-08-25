@@ -80,6 +80,7 @@ import {
   handlePutMapsSettings,
   handlePutWeatherSettings,
 } from "../../src/admin/external-services-routes.js";
+import * as externalServicesUrl from "../../src/admin/external-services-url.js";
 
 function mockContext(body?: unknown): Context {
   return {
@@ -253,6 +254,31 @@ describe("external-services GET/PUT routes", () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "url_host_blocked" });
     expect(patchMapsSettings).not.toHaveBeenCalled();
+  });
+
+  it("rejects a {s} tile URL whose b/c subdomain is blocked even when a resolves fine (bot review)", async () => {
+    // static-map.ts's fetchTilePng actually requests a/b/c depending on tile coordinates - a
+    // save-time check that only validated the `a` expansion would miss this. Spy on the real
+    // per-host check so the test stays deterministic without depending on real DNS for 3 hosts.
+    const spy = vi
+      .spyOn(externalServicesUrl, "assertEditableServiceUrl")
+      .mockImplementation(async (raw: string) => {
+        if (raw.startsWith("https://b.")) return { ok: false, code: "url_host_blocked" };
+        return { ok: true, href: raw };
+      });
+    try {
+      const res = await handlePutMapsSettings(
+        mockContext({ tileUrl: "https://{s}.tile.example/{z}/{x}/{y}.png" }),
+        db,
+      );
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "url_host_blocked" });
+      expect(patchMapsSettings).not.toHaveBeenCalled();
+      expect(spy).toHaveBeenCalledWith("https://a.tile.example/0/0/0.png");
+      expect(spy).toHaveBeenCalledWith("https://b.tile.example/0/0/0.png");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("rejects invalid geocoding base URLs", async () => {

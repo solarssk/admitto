@@ -83,19 +83,40 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-/**
- * Expand Leaflet template tokens so `new URL(...)` can parse the configured tile pattern.
- * Tokens are replaced with fixed placeholders - we only care about scheme/host for CSP.
- * Exported so callers needing the same expanded form (e.g. the maps settings save handler's
- * SSRF host check) don't re-implement token substitution.
- */
-export function expandTileUrlForParse(raw: string): string {
+/** The exact `{s}` rotation `static-map.ts`'s `fetchTilePng` actually requests from
+ * (`subdomains[(x + y) % subdomains.length]`) - every host this template can resolve to at fetch
+ * time, not just the first one. */
+const TILE_SUBDOMAINS = ["a", "b", "c"] as const;
+
+function expandTileUrlTokens(raw: string, subdomain: string): string {
   return raw
-    .replaceAll("{s}", "a")
+    .replaceAll("{s}", subdomain)
     .replaceAll("{z}", "0")
     .replaceAll("{x}", "0")
     .replaceAll("{y}", "0")
     .replaceAll("{r}", "");
+}
+
+/**
+ * Expand Leaflet template tokens so `new URL(...)` can parse the configured tile pattern.
+ * Tokens are replaced with fixed placeholders - we only care about scheme/host for CSP.
+ * Exported so callers needing the same expanded form (e.g. the maps settings save handler's
+ * SSRF host check) don't re-implement token substitution. Uses the `a` subdomain when `{s}` is
+ * present - fine for a single scheme/protocol check (protocol never varies by subdomain), but a
+ * caller validating the *host* for SSRF must check every subdomain the template can resolve to -
+ * see {@link expandTileUrlSubdomainVariantsForParse}.
+ */
+export function expandTileUrlForParse(raw: string): string {
+  return expandTileUrlTokens(raw, "a");
+}
+
+/** Every host `static-map.ts` can actually request for this template - one entry, or one per
+ * `TILE_SUBDOMAINS` value when `{s}` is present. A save-time SSRF check that only validated the
+ * `a` expansion (as {@link expandTileUrlForParse} alone does) would miss a template whose `b`/`c`
+ * host resolves to a private/loopback/metadata address while `a` resolves publicly (bot review). */
+export function expandTileUrlSubdomainVariantsForParse(raw: string): string[] {
+  if (!raw.includes("{s}")) return [expandTileUrlTokens(raw, "a")];
+  return TILE_SUBDOMAINS.map((subdomain) => expandTileUrlTokens(raw, subdomain));
 }
 
 /**

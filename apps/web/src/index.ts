@@ -62,6 +62,17 @@ export function isOptionalIpv6LoopbackBindError(
   );
 }
 
+/** Normalizes an unhandledRejection/uncaughtException value into loggable fields. Error's
+ * message/stack/name are non-enumerable own properties, so passing an Error straight into
+ * emitSystemLog's JSON.stringify(fields) would otherwise log it as "{}" - and installing these
+ * process listeners also suppresses Node's own default stack-trace print, so this is the only
+ * place that information would ever reach the log (bot review). `reason` is typed `unknown`
+ * because Node makes no guarantee an unhandledRejection's rejection value is an Error. */
+export function crashLogFields(reason: unknown): { message: string; stack?: string } {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  return { message: err.message, stack: err.stack };
+}
+
 /** Boot the Admitto web server; wires a dev-only export_only sink when NODE_ENV is development. */
 async function main(): Promise<void> {
   await validateCfAccessBootConfig(prisma);
@@ -154,11 +165,11 @@ if (process.env.NODE_ENV !== "test") {
   // safe to keep serving on - Docker's `restart: unless-stopped` (deploy/docker-compose.yml)
   // is the recovery mechanism, same as it already is for any other fatal exit here.
   process.on("unhandledRejection", (reason) => {
-    logger.error("unhandled promise rejection", { err: reason });
+    logger.error("unhandled promise rejection", crashLogFields(reason));
     process.exit(1);
   });
   process.on("uncaughtException", (err) => {
-    logger.error("uncaught exception", { err });
+    logger.error("uncaught exception", crashLogFields(err));
     process.exit(1);
   });
 
