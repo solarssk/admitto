@@ -115,6 +115,36 @@ describe("RATE_POLICIES registry", () => {
     );
   });
 
+  it("gives the burst and sustained checks on the three test-mail policies distinct, correctly-scoped keys", () => {
+    // Guards against a keyOf typo/collision making checks[1] silently double-count checks[0]'s
+    // bucket (or vice versa) - each pair must produce two different key strings for the same
+    // context, and the sustained key must still vary per user/event like the burst one does.
+    const ctxA = {
+      get: (key: string) => (key === "auth" ? { userId: "user-42" } : undefined),
+      req: { param: (name: string) => (name === "eventId" ? "evt-1" : undefined) },
+    } as never;
+    const ctxB = {
+      get: (key: string) => (key === "auth" ? { userId: "user-99" } : undefined),
+      req: { param: (name: string) => (name === "eventId" ? "evt-2" : undefined) },
+    } as never;
+
+    const testSend = RATE_POLICIES["admin:test-send"];
+    expect(testSend.checks[0]!.keyOf(ctxA)).toBe("admin:test-send:user:user-42:event:evt-1");
+    expect(testSend.checks[1]!.keyOf(ctxA)).toBe(
+      "admin:test-send:sustained:user:user-42:event:evt-1",
+    );
+    expect(testSend.checks[1]!.keyOf(ctxA)).not.toBe(testSend.checks[0]!.keyOf(ctxA));
+    expect(testSend.checks[1]!.keyOf(ctxA)).not.toBe(testSend.checks[1]!.keyOf(ctxB));
+
+    for (const name of ["admin:mail-transport-test", "admin:event-mail-transport-test"] as const) {
+      const policy = RATE_POLICIES[name];
+      expect(policy.checks[0]!.keyOf(ctxA)).toBe(`${name}:user:user-42`);
+      expect(policy.checks[1]!.keyOf(ctxA)).toBe(`${name}:sustained:user:user-42`);
+      expect(policy.checks[1]!.keyOf(ctxA)).not.toBe(policy.checks[0]!.keyOf(ctxA));
+      expect(policy.checks[1]!.keyOf(ctxA)).not.toBe(policy.checks[1]!.keyOf(ctxB));
+    }
+  });
+
   it("scopes admin:wallet-message-job-status by user and event via adminUserEventKey", () => {
     const ctx = {
       get: (key: string) => (key === "auth" ? { userId: "user-42" } : undefined),
