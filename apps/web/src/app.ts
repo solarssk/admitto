@@ -1,4 +1,4 @@
-import { Hono, type Context } from "hono";
+import { Hono, type Context, type Next } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
@@ -617,6 +617,35 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminWalletActionRateLimit = rateLimit(rateLimitStore, "admin:wallet-action");
   const adminWalletActionBulkRateLimit = rateLimit(rateLimitStore, "admin:wallet-action-bulk");
   const adminAttendeeBulkMutationRateLimit = rateLimit(rateLimitStore, "admin:attendee-bulk-mutation");
+  /** Wraps `adminWalletActionBulkRateLimit` so bulk-delete / bulk-revoke-pass only spend that
+   * budget when the event actually has wallet configured - unlike the 3 explicit
+   * bulk-wallet-void/reissue/delete routes (always a wallet action by definition), these two are
+   * general-purpose bulk mutations that only *sometimes* cascade into PassCreator calls
+   * (deleteWalletPassesBestEffort / syncWalletPassOnStatusChangeBestEffort), and were charging the
+   * strict wallet budget even for an event with wallet disabled entirely (bot review, PR #1064
+   * round 3). Checks only the event's wallet config, not whether the specific selected attendees
+   * have a wallet pass - the cheaper of the two checks the finding named, and still closes the
+   * common case (wallet not configured for this event at all). */
+  async function walletActionBulkRateLimitIfWalletConfigured(c: Context, next: Next): Promise<Response | void> {
+    const eventId = c.req.param("eventId");
+    const event = eventId
+      ? await db.event.findUnique({
+          where: { id: eventId },
+          select: { wallet_template_id: true, wallet_api_key_enc: true },
+        })
+      : null;
+    // Same "is wallet actually usable for this event" check resolveWalletProvider itself makes
+    // (packages/wallet/src/resolve-provider.ts) - deliberately not also checking the org/event's
+    // own wallet_enabled toggle, since that governs whether *new* passes get issued, not whether
+    // an existing pass can still be voided/restored/deleted (same reasoning already applied to
+    // deleteWalletPassesBestEffort's own erasure path).
+    const walletConfigured = Boolean(event?.wallet_template_id && event?.wallet_api_key_enc);
+    if (!walletConfigured) {
+      await next();
+      return;
+    }
+    return adminWalletActionBulkRateLimit(c, next);
+  }
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
   const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
   const checkinScanRateLimit = rateLimit(rateLimitStore, "checkin:scan");
@@ -1365,9 +1394,10 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     bulkAttendeeIdsBodyLimit,
     adminAttendeeBulkMutationRateLimit,
-    // Also shares the wallet-action-bulk budget: deleteWalletPassesBestEffort (inside the handler)
-    // calls PassCreator once per selected attendee that has a wallet pass.
-    adminWalletActionBulkRateLimit,
+    // Also shares the wallet-action-bulk budget, but only when this event has wallet configured:
+    // deleteWalletPassesBestEffort (inside the handler) calls PassCreator once per selected
+    // attendee that has a wallet pass, which can't happen at all for a non-wallet event.
+    walletActionBulkRateLimitIfWalletConfigured,
     (c) => handleBulkDeleteEventAttendees(c, db),
   );
   app.post(
@@ -1400,10 +1430,11 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     bulkAttendeeIdsBodyLimit,
     adminAttendeeBulkMutationRateLimit,
-    // Also shares the wallet-action-bulk budget: revokeOneAttendeePass (inside the handler, via
-    // syncWalletPassOnStatusChangeBestEffort) calls PassCreator once per selected attendee that
-    // has an active wallet pass.
-    adminWalletActionBulkRateLimit,
+    // Also shares the wallet-action-bulk budget, but only when this event has wallet configured:
+    // revokeOneAttendeePass (inside the handler, via syncWalletPassOnStatusChangeBestEffort) calls
+    // PassCreator once per selected attendee that has an active wallet pass, which can't happen at
+    // all for a non-wallet event.
+    walletActionBulkRateLimitIfWalletConfigured,
     guardArchivedEvent((c) => handleBulkRevokeAttendeePass(c, db)),
   );
   app.post(

@@ -959,3 +959,63 @@ describe("PassCreatorClient call pacing (PR #1064 round 2 - bot review)", () => 
     expect(callTimestamps[1]! - callTimestamps[0]!).toBeGreaterThanOrEqual(145);
   });
 });
+
+describe("PassCreatorClient call pacing with REDIS_URL set (PR #1064 round 3 - bot review)", () => {
+  const REDIS_URL = process.env["REDIS_URL"] ?? "redis://localhost:6379";
+  let hasRedis = false;
+
+  beforeEach(async () => {
+    resetPassCreatorPacingForTest();
+    try {
+      const { createClient } = await import("redis");
+      const probe = createClient({ url: REDIS_URL, socket: { connectTimeout: 500 } });
+      probe.on("error", () => {});
+      await probe.connect();
+      await probe.ping();
+      await probe.quit();
+      hasRedis = true;
+    } catch {
+      hasRedis = false;
+    }
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("still paces calls when REDIS_URL points at a real, reachable Redis (goes through the distributed gate, not just the local one)", async (ctx) => {
+    if (!hasRedis) {
+      ctx.skip();
+      return;
+    }
+    vi.stubEnv("REDIS_URL", REDIS_URL);
+    const callTimestamps: number[] = [];
+    const fetchMock = vi.fn(async () => {
+      callTimestamps.push(Date.now());
+      return new Response(null, { status: 404 });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await Promise.all([client.deletePass("rd1"), client.deletePass("rd2"), client.deletePass("rd3")]);
+
+    expect(callTimestamps).toHaveLength(3);
+    for (let i = 1; i < callTimestamps.length; i++) {
+      expect(callTimestamps[i]! - callTimestamps[i - 1]!).toBeGreaterThan(0);
+    }
+  }, 15_000);
+
+  it("falls back to local-only pacing when REDIS_URL points nowhere reachable, instead of hanging", async () => {
+    vi.stubEnv("REDIS_URL", "redis://127.0.0.1:1");
+    const callTimestamps: number[] = [];
+    const fetchMock = vi.fn(async () => {
+      callTimestamps.push(Date.now());
+      return new Response(null, { status: 404 });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await Promise.all([client.deletePass("f1"), client.deletePass("f2")]);
+
+    expect(callTimestamps).toHaveLength(2);
+    expect(callTimestamps[1]! - callTimestamps[0]!).toBeGreaterThanOrEqual(145);
+  }, 15_000);
+});

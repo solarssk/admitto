@@ -2044,6 +2044,83 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       );
       expect(reissueAlsoLimited.status).toBe(429);
     });
+
+    it("rejects more than WALLET_BULK_SEND_LIMIT (100) attendee ids, smaller than the generic bulk cap (bot review, PR #1064 round 3)", async () => {
+      // Deliberately smaller than the generic BULK_SEND_LIMIT (500) other bulk routes allow -
+      // every outbound PassCreator call is now paced, so a full 500-target request could outlive
+      // the reverse proxy's read timeout (see WALLET_BULK_SEND_LIMIT's own comment).
+      const tooMany = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            attendeeIds: Array.from({ length: 101 }, (_, i) => `att-wallet-bulk-limit-${i}`),
+          }),
+        },
+      );
+      expect(tooMany.status).toBe(400);
+      expect(await tooMany.json()).toMatchObject({ error: "validation_failed" });
+    });
+
+    it("does not charge the wallet-bulk budget for bulk-delete or bulk-revoke-pass on an event with no wallet configured (bot review, PR #1064 round 3)", async () => {
+      // 4 bulk-delete requests in a row against a non-wallet event - if this route still charged
+      // the strict 3/10min wallet-bulk budget unconditionally, the 4th would 429. It shouldn't,
+      // because deleteWalletPassesBestEffort can never actually call PassCreator for this event.
+      for (let i = 0; i < 4; i++) {
+        const id = `att-nowallet-bulk-delete-${i}`;
+        await seedActionAttendee(id, WALLET_ACTION_EVENT_UNCONFIGURED);
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT_UNCONFIGURED}/attendees/bulk-delete`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [id] }),
+          },
+        );
+        expect(res.status).not.toBe(429);
+      }
+    });
+
+    it("still charges the wallet-bulk budget for bulk-delete on an event that does have wallet configured, even before checking the specific selection", async () => {
+      // Conservative-but-cheap check: gated on the *event's* wallet config, not on whether the
+      // specific submitted ids actually have a wallet pass (that would need a body-aware lookup
+      // inside the rate-limit middleware itself) - so this still applies even to a selection of
+      // attendees who happen to have no wallet pass, as long as the event has wallet configured.
+      for (let i = 0; i < 3; i++) {
+        const id = `att-wallet-bulk-delete-budget-${i}`;
+        await seedActionAttendee(id, WALLET_ACTION_EVENT);
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-delete`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [id] }),
+          },
+        );
+        expect(res.status).not.toBe(429);
+      }
+
+      const id = "att-wallet-bulk-delete-budget-limited";
+      await seedActionAttendee(id, WALLET_ACTION_EVENT);
+      try {
+        const limited = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-delete`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [id] }),
+          },
+        );
+        expect(limited.status).toBe(429);
+      } finally {
+        // The 429 means bulk-delete never ran for this attendee, unlike the 3 above - clean it up
+        // ourselves so it doesn't linger past this point (see the "wallet_status on GET list"
+        // block below, which expects its own single seeded attendee to still be on page 1 of the
+        // default, unfiltered, 25-per-page attendee list).
+        await prisma.attendee.delete({ where: { id } });
+      }
+    });
   });
 
   describe("wallet_apple_link / wallet_google_link on GET detail", () => {

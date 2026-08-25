@@ -2849,9 +2849,23 @@ export async function handleBulkRevokeAttendeePass(c: Context, db: PrismaClient)
   }
 }
 
+/** Deliberately smaller than BULK_SEND_LIMIT (500) used by every other bulk-attendee route.
+ * These 3 routes always call PassCreator once per selected attendee (unlike bulk-delete /
+ * bulk-revoke-pass, which only sometimes do), and every outbound PassCreator call is now paced
+ * (packages/wallet/src/passcreator-client.ts, ~150ms minimum spacing) to stay under PassCreator's
+ * own rate limit - a full BULK_SEND_LIMIT request would take upwards of 75 seconds to complete,
+ * longer than nginx's default 60s proxy_read_timeout on the documented deployment
+ * (deploy/nginx/default.conf), returning a 504 to the admin while the request keeps mutating data
+ * server-side (bot review, PR #1064 round 3). 100 targets keeps a full request comfortably under
+ * that timeout (~15s of pacing alone) even before deploy/nginx/default.conf's own
+ * proxy_read_timeout bump (defense in depth, not the primary fix - the "Portainer/NAS without
+ * compose nginx" topology has no nginx layer to bump at all). An admin selecting more than 100
+ * attendees for one of these 3 actions submits it in more than one batch. */
+const WALLET_BULK_SEND_LIMIT = 100;
+
 const bulkWalletAttendeesBodySchema = z
   .object({
-    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
+    attendeeIds: z.array(z.string().max(128)).min(1).max(WALLET_BULK_SEND_LIMIT),
   })
   .strict();
 
