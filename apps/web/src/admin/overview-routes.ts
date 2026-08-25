@@ -82,6 +82,9 @@ export interface EventRecentActivityEntry {
   attendee_id: string | null;
   message: string;
   occurred_at: string;
+  /** IANA zone the acting admin's browser reported at write time, when captured - null falls
+   * back to the viewer's own browser zone (ActorOrViewerLocalTimeLine convention). */
+  actor_timezone: string | null;
 }
 
 const RECENT_ACTIVITY_LIMIT = 30;
@@ -176,13 +179,30 @@ async function loadTicketTypeBreakdown(
     .filter((t) => t.count > 0);
 }
 
+/** CheckIn has no client_timezone column of its own - session_id (no FK, purged after retention)
+ * is the only link to the scanning device's zone, same "resolve via session, fall back to
+ * missing" join reports-routes.ts's loadDeviceIdsByAttendee already uses for device_label. */
 async function loadRecentCheckInActivity(db: PrismaClient, eventId: string): Promise<EventRecentActivityEntry[]> {
   const rows = await db.checkIn.findMany({
     where: { event_id: eventId, status: "VALID" },
     orderBy: { checked_in_at: "desc" },
     take: RECENT_ACTIVITY_LIMIT,
-    select: { id: true, checked_in_at: true, attendee_id: true, attendee: { select: { name: true } } },
+    select: {
+      id: true,
+      checked_in_at: true,
+      attendee_id: true,
+      session_id: true,
+      attendee: { select: { name: true } },
+    },
   });
+
+  const sessionIds = [...new Set(rows.map((row) => row.session_id).filter((id): id is string => id != null))];
+  const sessions =
+    sessionIds.length > 0
+      ? await db.session.findMany({ where: { id: { in: sessionIds } }, select: { id: true, timezone: true } })
+      : [];
+  const timezoneBySessionId = new Map(sessions.map((s) => [s.id, s.timezone]));
+
   return rows.map((row) => ({
     id: `checkin:${row.id}`,
     type: "checkin",
@@ -191,6 +211,7 @@ async function loadRecentCheckInActivity(db: PrismaClient, eventId: string): Pro
     attendee_id: row.attendee_id,
     message: "checked in",
     occurred_at: row.checked_in_at.toISOString(),
+    actor_timezone: (row.session_id ? timezoneBySessionId.get(row.session_id) : null) ?? null,
   }));
 }
 
@@ -211,6 +232,7 @@ async function loadRecentMailFailureActivity(
       failed_at: true,
       updated_at: true,
       attendee_id: true,
+      client_timezone: true,
       attendee: { select: { name: true, email: true } },
     },
   });
@@ -225,6 +247,7 @@ async function loadRecentMailFailureActivity(
       attendee_id: row.attendee_id,
       message: `Ticket email ${bounced ? "bounced" : "failed"} for ${email}`,
       occurred_at: (row.failed_at ?? row.updated_at).toISOString(),
+      actor_timezone: row.client_timezone,
     };
   });
 }
@@ -240,6 +263,7 @@ async function loadRecentImportActivity(db: PrismaClient, eventId: string): Prom
       attendee_id: null,
       message: `${total} attendee${total === 1 ? "" : "s"} imported`,
       occurred_at: entry.created_at,
+      actor_timezone: entry.actor_timezone,
     };
   });
 }
@@ -268,6 +292,7 @@ async function loadRecentAttendeeActionActivity(
       created_at: true,
       attendee_id: true,
       metadata: true,
+      client_timezone: true,
       attendee: { select: { name: true } },
     },
   });
@@ -292,7 +317,13 @@ async function loadRecentAttendeeActionActivity(
   return rows.map((row) => {
     const itemKey = (row.metadata as { event_item_key?: string } | null)?.event_item_key;
     const itemLabel = itemKey ? (itemLabels.get(itemKey) ?? itemKey) : "item";
-    const base = { id: `action:${row.id}`, attendee_name: row.attendee?.name, attendee_id: row.attendee_id, occurred_at: row.created_at.toISOString() };
+    const base = {
+      id: `action:${row.id}`,
+      attendee_name: row.attendee?.name,
+      attendee_id: row.attendee_id,
+      occurred_at: row.created_at.toISOString(),
+      actor_timezone: row.client_timezone,
+    };
     switch (row.action_type) {
       case "item_returned":
         return { ...base, type: "item_returned" as const, tone: "muted" as const, message: `returned ${itemLabel}` };

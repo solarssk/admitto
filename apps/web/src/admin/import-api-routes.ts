@@ -678,12 +678,14 @@ export async function loadRecentImportBatches(
   db: PrismaClient,
   eventId: string,
   limit: number,
-): Promise<Array<Omit<ImportHistoryEntryDto, "status" | "error"> & { status?: "succeeded" }>> {
+): Promise<
+  Array<Omit<ImportHistoryEntryDto, "status" | "error"> & { status?: "succeeded"; actor_timezone: string | null }>
+> {
   const rows = await db.attendeeActionLog.findMany({
     where: { event_id: eventId, action_type: "attendees_imported" },
     orderBy: { created_at: "desc" },
     take: limit,
-    select: { id: true, created_at: true, metadata: true },
+    select: { id: true, created_at: true, metadata: true, client_timezone: true },
   });
 
   return rows.map((row) => {
@@ -699,6 +701,7 @@ export async function loadRecentImportBatches(
       updated: importHistoryNumber(meta.updated),
       skipped: importHistoryNumber(meta.skipped),
       status: "succeeded" as const,
+      actor_timezone: row.client_timezone,
     };
   });
 }

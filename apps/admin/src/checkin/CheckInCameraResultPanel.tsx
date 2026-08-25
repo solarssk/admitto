@@ -1,13 +1,13 @@
 import { Button } from "@admitto/ui";
 import type { AttendeeCardDto, CheckInScanResponse, CheckInStatus, TicketTypeDto } from "../api/types.js";
-import { formatEventDateTime } from "../utils/event-dates.js";
+import { formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 
-function formatAlreadyCheckedInSubtitle(admittedAt: string | undefined, eventTimezone: string): string {
+function formatAlreadyCheckedInSubtitle(admittedAt: string | undefined): string {
   if (!admittedAt) return "Already checked in";
   const when = new Date(admittedAt);
   if (Number.isNaN(when.getTime())) return "Already checked in";
-  return `Entered ${formatEventDateTime(admittedAt, eventTimezone)}`;
+  return `Entered ${formatEventDateTime(admittedAt, getBrowserTimeZone())}`;
 }
 
 function statusMeta(status: CheckInStatus): {
@@ -96,7 +96,7 @@ export function CheckInCameraResultPanel({
   const meta = statusMeta(scanResult.status);
   const subtitle =
     scanResult.status === "ALREADY_CHECKED_IN"
-      ? formatAlreadyCheckedInSubtitle(scanResult.admittedAt, eventTimezone)
+      ? formatAlreadyCheckedInSubtitle(scanResult.admittedAt)
       : meta.subtitle;
 
   const isPreview = scanResult.status === "PREVIEW";
