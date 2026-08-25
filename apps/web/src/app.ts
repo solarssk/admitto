@@ -607,6 +607,8 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminCommunicationRateLimit = rateLimit(rateLimitStore, "admin:test-send");
   const adminMailSettingsRateLimit = rateLimit(rateLimitStore, "admin:mail-transport-test");
   const adminEventMailSettingsRateLimit = rateLimit(rateLimitStore, "admin:event-mail-transport-test");
+  const adminMailDiagnosticsRateLimit = rateLimit(rateLimitStore, "admin:mail-diagnostics");
+  const adminEventMailDiagnosticsRateLimit = rateLimit(rateLimitStore, "admin:event-mail-diagnostics");
   const adminHealthLiveRateLimit = rateLimit(rateLimitStore, "admin:health-live");
   const adminImportPreviewRateLimit = rateLimit(rateLimitStore, "admin:import-preview");
   const adminAttendeesSearchRateLimit = rateLimit(rateLimitStore, "admin:attendees-search");
@@ -1191,13 +1193,13 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminEventMailSettingsRateLimit,
-    guardArchivedEvent((c) => handlePostEventMailSettingsTest(c, db, mailDeliveryDeps)),
+    guardArchivedEvent((c) => handlePostEventMailSettingsTest(c, db, rateLimitStore, mailDeliveryDeps)),
   );
   app.post(
     "/api/admin/events/:eventId/mail-settings/probe",
     jsonPostCsrf,
     staffAdminGate,
-    adminEventMailSettingsRateLimit,
+    adminEventMailDiagnosticsRateLimit,
     guardArchivedEvent((c) => handlePostEventMailSettingsProbe(c, db, mailProbeDeps)),
   );
   app.get("/api/admin/events/:eventId/bounce-ingest-settings", staffAdminGate, (c) =>
@@ -1214,14 +1216,14 @@ export function createApp(options: CreateAppOptions = {}) {
     "/api/admin/events/:eventId/bounce-ingest-settings/test",
     jsonPostCsrf,
     staffAdminGate,
-    adminEventMailSettingsRateLimit,
+    adminEventMailDiagnosticsRateLimit,
     guardArchivedEvent((c) => handlePostEventBounceIngestSettingsTest(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/bounce-ingest-settings/run",
     jsonPostCsrf,
     staffAdminGate,
-    adminEventMailSettingsRateLimit,
+    adminEventMailDiagnosticsRateLimit,
     guardArchivedEvent((c) => handlePostEventBounceIngestSettingsRun(c, db)),
   );
   app.get("/api/admin/events/:eventId/location", staffAdminGate, (c) => handleGetEventLocation(c, db));
@@ -1630,7 +1632,9 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     templateTestSendBodyLimit,
     adminCommunicationRateLimit,
-    guardArchivedEvent((c) => handleTestSendEventTemplate(c, db, mailDeliveryDeps, mailInjectedBaseUrl)),
+    guardArchivedEvent((c) =>
+      handleTestSendEventTemplate(c, db, rateLimitStore, mailDeliveryDeps, mailInjectedBaseUrl),
+    ),
   );
   app.get("/api/admin/events/:eventId/templates", staffAdminGate, (c) =>
     handleListEventTemplates(c, db),
@@ -1680,7 +1684,7 @@ export function createApp(options: CreateAppOptions = {}) {
     templateTestSendBodyLimit,
     adminCommunicationRateLimit,
     guardArchivedEvent((c) =>
-      handleTestSendEventTemplateById(c, db, mailDeliveryDeps, mailInjectedBaseUrl),
+      handleTestSendEventTemplateById(c, db, rateLimitStore, mailDeliveryDeps, mailInjectedBaseUrl),
     ),
   );
   app.post(
@@ -1777,13 +1781,13 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminMailSettingsRateLimit,
-    (c) => handlePostMailSettingsTest(c, db, mailDeliveryDeps),
+    (c) => handlePostMailSettingsTest(c, db, rateLimitStore, mailDeliveryDeps),
   );
   app.post(
     "/api/admin/mail-settings/probe",
     jsonPostCsrf,
     staffAdminGate,
-    adminMailSettingsRateLimit,
+    adminMailDiagnosticsRateLimit,
     (c) => handlePostMailSettingsProbe(c, db, mailProbeDeps),
   );
   app.get("/api/admin/setup/checks", staffAdminGate, (c) =>

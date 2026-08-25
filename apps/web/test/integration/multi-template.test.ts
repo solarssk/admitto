@@ -1109,6 +1109,49 @@ describe("multi-template API", () => {
     expect(meta?.template_name).toBe(templateName);
   });
 
+  it("POST /templates/:id/test-send returns 429 from the shared per-recipient budget across two different events", async () => {
+    // Same isolation strategy as the plain /template/test-send route's own version of this test:
+    // EVENT_A and EVENT_B each get their own fresh per-event burst budget, so the block can only
+    // come from the shared, recipient-scoped check - and it exercises that check's blocked branch
+    // for this specific handler (handleTestSendEventTemplateById), not just the allowed one.
+    const eventATemplate = await postNamedTemplate(app, "Recipient budget A");
+    const eventBTemplate = await ensureEventBForeignTemplate(app, prisma);
+    const recipient = "test-send-by-id-recipient-budget@example.com";
+
+    for (let i = 0; i < 3; i++) {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/templates/${eventATemplate.id}/test-send`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+          body: JSON.stringify({ to: recipient }),
+        },
+      );
+      expect(res.status).not.toBe(429);
+    }
+    for (let i = 0; i < 2; i++) {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_B}/templates/${eventBTemplate.id}/test-send`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+          body: JSON.stringify({ to: recipient }),
+        },
+      );
+      expect(res.status).not.toBe(429);
+    }
+
+    const limited = await app.request(
+      `/api/admin/events/${EVENT_B}/templates/${eventBTemplate.id}/test-send`,
+      {
+        method: "POST",
+        headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+        body: JSON.stringify({ to: recipient }),
+      },
+    );
+    expect(limited.status).toBe(429);
+  });
+
   it("POST /templates/:id/test-send returns 404 for a template from another event", async () => {
     const foreignTemplate = await ensureEventBForeignTemplate(app, prisma);
 
@@ -1127,6 +1170,39 @@ describe("multi-template API", () => {
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "not_found" });
     expect(exported).toHaveLength(0);
+  });
+
+  it("POST /templates/:id/test-send propagates an unexpected error from template resolution instead of reporting a false 404", async () => {
+    // resolveTemplateById's *only* documented failure is TemplateNotFoundError, but it looks up
+    // the event first (findUniqueOrThrow) before ever reaching that check, and that lookup can
+    // itself throw for reasons that have nothing to do with the template existing - a real
+    // Prisma error must still surface as an internal error, not get silently reported as the same
+    // "not_found" the previous test asserts for the actually-expected case.
+    rateLimitStore.reset();
+    const created = await postNamedTemplate(app, "Unexpected error");
+    const findUniqueOrThrow = vi
+      .spyOn(prisma.event, "findUniqueOrThrow")
+      .mockRejectedValueOnce(new Error("connection reset"));
+
+    try {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/templates/${created.id}/test-send`,
+        {
+          method: "POST",
+          headers: {
+            Cookie: adminCookie,
+            "Content-Type": "application/json",
+            ...sameOrigin,
+          },
+          body: JSON.stringify({ to: "unexpected-error-test@example.com" }),
+        },
+      );
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: "internal_error" });
+      expect(exported).toHaveLength(0);
+    } finally {
+      findUniqueOrThrow.mockRestore();
+    }
   });
 
   it("PATCH /templates/:id updates label/icon/description without touching content", async () => {
