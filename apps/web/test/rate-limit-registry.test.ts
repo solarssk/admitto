@@ -10,7 +10,7 @@ const EXPECTED_POLICIES: Record<
   keyof typeof RATE_POLICIES,
   { windowMs: number[]; max: number[]; checks: number }
 > = {
-  "public:tq": { windowMs: [60_000], max: [60], checks: 1 },
+  "public:tq": { windowMs: [60_000], max: [500], checks: 1 },
   "ops:healthz": { windowMs: [60_000], max: [120], checks: 1 },
   "ops:readyz": { windowMs: [60_000], max: [10], checks: 1 },
   "ops:system-logs": { windowMs: [60_000], max: [120], checks: 1 },

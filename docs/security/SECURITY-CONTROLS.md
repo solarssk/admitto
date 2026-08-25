@@ -181,7 +181,7 @@ limits are shared across replicas and survive restarts.
 | `POST /api/auth/mfa/verify`, `POST /mfa/verify`, TOTP confirm | session + IP | 10 TOTP or 30 recovery / 15 min | partial session |
 | `POST /api/auth/mfa/totp/enroll`, `POST /mfa/enroll/start` | session + IP | 10 / 15 min | partial session (`enrollment_required`) |
 | `GET /api/auth/oidc/*/start`, `*/callback` | client IP | 20 / 60 s | no |
-| `/t/*`, `/q/*` | client IP | 60 / 60 s | no |
+| `/t/*` (ticket), `/q/*` (QR image), `/m/*` (event static map image) | client IP | 500 / 60 s | no |
 
 ### Operations probes
 
