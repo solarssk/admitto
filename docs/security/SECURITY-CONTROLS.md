@@ -206,7 +206,7 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 | `GET …/attendees?q=...` (search) | user + event | 120 / 60 s | operator / admin |
 | single-attendee wallet actions (void/restore/reissue/delete) | user + event | 10 / 10 min | event admin |
 | bulk-attendee mutations (delete, check-in, revoke check-in/items/pass, ticket type, RSVP) | user + event | 20 / 60 s | event admin |
-| bulk wallet actions (void/reissue/delete for a selection, max 100 attendees per request), plus bulk-delete and bulk-revoke-pass whenever the event has wallet configured | user + event | 3 / 10 min | event admin |
+| bulk wallet actions (void/reissue/delete for a selection), plus bulk-delete and bulk-revoke-pass whenever the event has wallet configured - all capped at max 100 attendees per request in that case | user + event | 3 / 10 min | event admin |
 | attendee resend, check-in scan/history | per-route keys | see `apps/web/src/rate-limit/policies.ts` | operator / admin |
 
 Every route above that can reach PassCreator is additionally paced at the outbound-call layer, not
@@ -339,7 +339,10 @@ bulk wallet action against a selection now takes proportionally longer to comple
 non-wallet bulk action, rather than firing all calls at once and having a chunk of them fail once
 PassCreator's own rate limit was exceeded — bulk wallet actions on a whole selection are also
 capped at 100 attendees per request (down from the general 500 bulk-action cap) so a full-size
-request stays comfortably within a typical reverse proxy's response timeout.
+request stays comfortably within a typical reverse proxy's response timeout. Bulk-delete and
+bulk-revoke-pass share that same 100-attendee cap whenever the target event has wallet configured
+(both can also reach PassCreator once per selected attendee in that case); an event with no wallet
+configured keeps the general 500-attendee cap for both, since neither can reach PassCreator at all.
 
 ---
 

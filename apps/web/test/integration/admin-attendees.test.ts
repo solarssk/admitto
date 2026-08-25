@@ -2063,6 +2063,67 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(await tooMany.json()).toMatchObject({ error: "validation_failed" });
     });
 
+    it("also rejects more than WALLET_BULK_SEND_LIMIT (100) attendee ids for bulk-delete and bulk-revoke-pass, once the event has wallet configured (own re-audit after PR #1064 round 3, before any bot flagged it)", async () => {
+      // bulk-delete/bulk-revoke-pass's own body schema still allows the generic BULK_SEND_LIMIT
+      // (500) - the round-3 fix only shrank the 3 dedicated wallet-bulk routes' schemas, missing
+      // that these two share the identical per-attendee PassCreator fan-out once the event has
+      // wallet configured (deleteWalletPassesBestEffort / syncWalletPassOnStatusChangeBestEffort).
+      // assertWalletBulkSelectionWithinLimit closes that gap without touching either schema.
+      const tooManyIds = Array.from({ length: 101 }, (_, i) => `att-wallet-bulk-delete-toomany-${i}`);
+
+      const bulkDeleteRes = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-delete`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: tooManyIds }),
+        },
+      );
+      expect(bulkDeleteRes.status).toBe(400);
+      expect(await bulkDeleteRes.json()).toMatchObject({ error: "validation_failed" });
+
+      const bulkRevokePassRes = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-revoke-pass`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: tooManyIds }),
+        },
+      );
+      expect(bulkRevokePassRes.status).toBe(400);
+      expect(await bulkRevokePassRes.json()).toMatchObject({ error: "validation_failed" });
+    });
+
+    it("does not shrink bulk-delete/bulk-revoke-pass below the generic BULK_SEND_LIMIT (500) on an event with no wallet configured", async () => {
+      // Same over-100 selection as above, but against the unconfigured event - since
+      // deleteWalletPassesBestEffort/syncWalletPassOnStatusChangeBestEffort can never reach
+      // PassCreator for this event, the smaller wallet-only cap must not apply here.
+      const overWalletLimitIds = Array.from(
+        { length: 101 },
+        (_, i) => `att-nowallet-bulk-delete-toomany-${i}`,
+      );
+
+      const bulkDeleteRes = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT_UNCONFIGURED}/attendees/bulk-delete`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: overWalletLimitIds }),
+        },
+      );
+      expect(bulkDeleteRes.status).not.toBe(400);
+
+      const bulkRevokePassRes = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT_UNCONFIGURED}/attendees/bulk-revoke-pass`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: overWalletLimitIds }),
+        },
+      );
+      expect(bulkRevokePassRes.status).not.toBe(400);
+    });
+
     it("does not charge the wallet-bulk budget for bulk-delete or bulk-revoke-pass on an event with no wallet configured (bot review, PR #1064 round 3)", async () => {
       // 4 bulk-delete requests in a row against a non-wallet event - if this route still charged
       // the strict 3/10min wallet-bulk budget unconditionally, the 4th would 429. It shouldn't,
