@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The staff admin/operator app's build no longer ships the full timezone database (used for the timezone picker and timezone-abbreviation display) bundled into its main entry script - it now loads as its own separate file. This was pushing the entry script past Vite's 500 kB chunk-size warning and slowing down first paint with data most visits never touch; it now downloads in parallel and, since it only changes when the timezone-data dependency itself is upgraded, browsers can keep reusing their cached copy across app deploys instead of re-downloading it every time.
+- Check-in's camera QR scanner now asks the decoder to try harder on a difficult frame instead of moving on after one pass, which should make it lock onto a skewed, low-contrast, or partially obscured ticket QR code more reliably (at the cost of a slightly slower decode per frame). Applies identically on every device/browser, unlike focus and zoom, which only some cameras support.
 
 ### Fixed
 
