@@ -219,7 +219,7 @@ function TicketTypeRow({
         </div>
       </div>
       <div className="tt-row__meta">
-        <TicketTypeBadge label={type.label} color={type.color} />
+        <TicketTypeBadge label={label.trim() || type.label} color={type.color} />
         <span className="tt-row__count">
           {type.attendee_count} attendee{pluralSuffix(type.attendee_count)}
         </span>
