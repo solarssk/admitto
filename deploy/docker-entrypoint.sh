@@ -26,22 +26,21 @@ ensure_emergency_export_dir_writable() {
   fi
 }
 
-quote_cmd_args() {
-  node -e 'console.log(process.argv.slice(1).map((a) => JSON.stringify(a)).join(" "))' "$@"
-}
-
 run_as_node() {
   if [ "$(id -u)" = "0" ]; then
-    # shellcheck disable=SC2046
-    exec su -s /bin/sh node -c "exec $(quote_cmd_args "$@")"
+    # Argv goes to `su` as positional args after `--`, not spliced into the -c string, so no
+    # argument content is ever re-parsed by a shell (a JSON.stringify-escaped arg containing a
+    # literal $(...) or ${...} would otherwise be command-substituted inside the double-quoted
+    # -c string this used to build). `-c`'s command runs as `sh -c 'exec "$0" "$@"' "$@"`, so $0
+    # is the program and "$@" is the rest - same as directly invoking "$@" below.
+    exec su -s /bin/sh node -c 'exec "$0" "$@"' -- "$@"
   fi
   exec "$@"
 }
 
 run_as_node_cmd() {
   if [ "$(id -u)" = "0" ]; then
-    # shellcheck disable=SC2046
-    su -s /bin/sh node -c "exec $(quote_cmd_args "$@")"
+    su -s /bin/sh node -c 'exec "$0" "$@"' -- "$@"
   else
     "$@"
   fi

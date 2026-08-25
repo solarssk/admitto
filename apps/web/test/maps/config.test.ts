@@ -9,6 +9,7 @@ import {
   getMapsConfigCache,
   defaultGeocodingConfig,
   defaultMapTileConfig,
+  expandTileUrlSubdomainVariantsForParse,
 } from "../../src/maps/config.js";
 
 const OSM_DEFAULT_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
@@ -89,6 +90,32 @@ describe("resolveMapTileConfig", () => {
   it("falls back to the default max zoom on a non-numeric override", () => {
     expect(resolveMapTileConfig({ MAP_TILE_MAX_ZOOM: "not-a-number" }).maxZoom).toBe(19);
     expect(resolveMapTileConfig({ MAP_TILE_MAX_ZOOM: "-5" }).maxZoom).toBe(19);
+  });
+});
+
+describe("expandTileUrlSubdomainVariantsForParse", () => {
+  it("expands {s} to every subdomain static-map.ts's fetchTilePng can actually request", () => {
+    expect(expandTileUrlSubdomainVariantsForParse("https://{s}.tile.example/{z}/{x}/{y}.png")).toEqual([
+      "https://a.tile.example/0/0/0.png",
+      "https://b.tile.example/0/0/0.png",
+      "https://c.tile.example/0/0/0.png",
+    ]);
+  });
+
+  it("returns a single variant when the template has no {s} token", () => {
+    expect(expandTileUrlSubdomainVariantsForParse(OSM_DEFAULT_TILE_URL)).toEqual([
+      "https://tile.openstreetmap.org/0/0/0.png",
+    ]);
+  });
+
+  it("still expands {r} even when {s} is also present, on every subdomain variant", () => {
+    expect(
+      expandTileUrlSubdomainVariantsForParse("https://{s}.tile.example/{z}/{x}/{y}{r}.png"),
+    ).toEqual([
+      "https://a.tile.example/0/0/0.png",
+      "https://b.tile.example/0/0/0.png",
+      "https://c.tile.example/0/0/0.png",
+    ]);
   });
 });
 
