@@ -1169,7 +1169,7 @@ describe("attendee erasure — wallet pass deletion at the provider", () => {
 describe("attendee wallet actions — void/restore/reissue", () => {
   const WALLET_ACTION_EVENT = "evt-admin-att-wallet-action";
   const WALLET_ACTION_EVENT_UNCONFIGURED = "evt-admin-att-wallet-action-unconfigured";
-  // admin:wallet-action is scoped per user+event (10/10min) - this block's many tests (single
+  // admin:wallet-action is scoped per user+event (10/min) - this block's many tests (single
   // void/restore/reissue/delete and their bulk-wallet-* siblings) all reuse WALLET_ACTION_EVENT,
   // same convention as the PATCH block's own reset below (bot review's rate-limit fix, PR3).
   beforeEach(() => rateLimitStore.reset());
@@ -2205,7 +2205,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
   });
 
   describe("admin:wallet-action rate limit", () => {
-    it("returns 429 after 10 single-attendee wallet actions per 10 minutes for the same event", async () => {
+    it("returns 429 after 10 single-attendee wallet actions per minute for the same event", async () => {
       // A nonexistent attendee id still runs the full middleware chain (403 forbidden from the
       // handler) before returning, so the rate limit is exercised without needing real passes.
       for (let i = 0; i < 10; i++) {
@@ -2249,11 +2249,11 @@ describe("attendee wallet actions — void/restore/reissue", () => {
   });
 
   describe("admin:wallet-action-bulk rate limit", () => {
-    it("returns 429 after 3 bulk wallet actions per 10 minutes for the same event (bot review follow-up on the shared PassCreator budget, PR4)", async () => {
-      // Each bulk-wallet-* request can fan out to up to BULK_SEND_LIMIT (500) PassCreator calls -
-      // this route group gets its own, much stricter per-request budget than the single-attendee
-      // wallet routes (see policies.ts comment for the PassCreator-rate-limit math).
-      for (let i = 0; i < 3; i++) {
+    it("returns 429 after 10 bulk wallet actions per 10 minutes for the same event (bot review follow-up on the shared PassCreator budget, PR4)", async () => {
+      // Each bulk-wallet-* request can fan out to up to WALLET_BULK_SEND_LIMIT (100) PassCreator
+      // calls - this route group gets its own, much stricter per-request budget than the
+      // single-attendee wallet routes (see policies.ts comment for the PassCreator-rate-limit math).
+      for (let i = 0; i < 10; i++) {
         const res = await app.request(
           `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
           {
@@ -2288,6 +2288,74 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         },
       );
       expect(reissueAlsoLimited.status).toBe(429);
+    });
+
+    it("returns 429 for a bulk wallet action while another one for the same event is still in flight (concurrency guard, bot review round 2)", async () => {
+      // At the raised 10/10min ceiling, N genuinely concurrent 100-attendee requests can queue
+      // N x 100 calls onto the shared ~150ms-paced PassCreator stream - long enough for the last
+      // one to outlive a proxy read timeout. acquireBulkWalletActionSlot/releaseBulkWalletActionSlot
+      // (attendees-api-routes.ts) cap this process to 1 in-flight bulk-wallet request per
+      // user+event regardless of the request-count budget above.
+      const attendeeId = "att-bulk-concurrency-1";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true });
+      try {
+        let releaseFirstCall: () => void = () => {};
+        const firstCallGate = new Promise<void>((resolve) => {
+          releaseFirstCall = resolve;
+        });
+        voidSpy.mockImplementationOnce(async () => {
+          await firstCallGate;
+        });
+
+        const firstRequest = app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [attendeeId] }),
+          },
+        );
+
+        // Give the first request's handler a tick to actually start (and acquire its slot)
+        // before the second one is sent, so the two genuinely race instead of both starting cold.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+
+        const secondResponse = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [attendeeId] }),
+          },
+        );
+        expect(secondResponse.status).toBe(429);
+        const secondBody = (await secondResponse.json()) as { error: string };
+        expect(secondBody.error).toBe("bulk_wallet_action_in_progress");
+
+        releaseFirstCall();
+        const firstResponse = await firstRequest;
+        expect(firstResponse.status).not.toBe(429);
+
+        // The slot is released once the in-flight request finishes - a fresh request right after
+        // must not still be blocked by a leaked slot.
+        const thirdResponse = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [attendeeId] }),
+          },
+        );
+        expect(thirdResponse.status).not.toBe(429);
+      } finally {
+        // WALLET_ACTION_EVENT's attendees are only swept in this block's afterAll - a later test
+        // in this file (wallet_status on GET list) expects its own single seeded attendee to
+        // still be on page 1 of the default, unfiltered, 25-per-page attendee list, so this test
+        // must not leave an extra attendee lingering past this point. WalletPass has no cascade
+        // delete, so it goes first.
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
     });
 
     it("rejects more than WALLET_BULK_SEND_LIMIT (100) attendee ids, smaller than the generic bulk cap (bot review, PR #1064 round 3)", async () => {
@@ -2370,10 +2438,10 @@ describe("attendee wallet actions — void/restore/reissue", () => {
     });
 
     it("does not charge the wallet-bulk budget for bulk-delete or bulk-revoke-pass on an event with no wallet configured (bot review, PR #1064 round 3)", async () => {
-      // 4 bulk-delete requests in a row against a non-wallet event - if this route still charged
-      // the strict 3/10min wallet-bulk budget unconditionally, the 4th would 429. It shouldn't,
+      // 11 bulk-delete requests in a row against a non-wallet event - if this route still charged
+      // the wallet-bulk budget (10/10min) unconditionally, the 11th would 429. It shouldn't,
       // because deleteWalletPassesBestEffort can never actually call PassCreator for this event.
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 11; i++) {
         const id = `att-nowallet-bulk-delete-${i}`;
         await seedActionAttendee(id, WALLET_ACTION_EVENT_UNCONFIGURED);
         const res = await app.request(
@@ -2393,7 +2461,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       // specific submitted ids actually have a wallet pass (that would need a body-aware lookup
       // inside the rate-limit middleware itself) - so this still applies even to a selection of
       // attendees who happen to have no wallet pass, as long as the event has wallet configured.
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 10; i++) {
         const id = `att-wallet-bulk-delete-budget-${i}`;
         await seedActionAttendee(id, WALLET_ACTION_EVENT);
         const res = await app.request(
@@ -2420,7 +2488,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         );
         expect(limited.status).toBe(429);
       } finally {
-        // The 429 means bulk-delete never ran for this attendee, unlike the 3 above - clean it up
+        // The 429 means bulk-delete never ran for this attendee, unlike the 10 above - clean it up
         // ourselves so it doesn't linger past this point (see the "wallet_status on GET list"
         // block below, which expects its own single seeded attendee to still be on page 1 of the
         // default, unfiltered, 25-per-page attendee list).
