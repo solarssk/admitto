@@ -57,6 +57,8 @@ import {
   resolveUserDisplayMap,
 } from "./admin-helpers.js";
 import { acquireEventImageAssetsLock } from "./event-image-assets-routes.js";
+import { checkMailTestRecipientRateLimit } from "../rate-limit/policies.js";
+import type { RateLimitStore } from "../rate-limit/types.js";
 
 /** Max character length for `body_template` (schema); shared with wire byte cap below. */
 export const TEMPLATE_BODY_CHAR_LIMIT = 200_000;
@@ -421,6 +423,7 @@ export async function handlePreviewEventTemplate(
 export async function handleTestSendEventTemplate(
   c: Context,
   db: PrismaClient,
+  rateLimitStore: RateLimitStore,
   mailDeliveryDeps: MailDeliveryDeps = {},
   injectedBaseUrl?: string,
 ): Promise<Response> {
@@ -435,6 +438,10 @@ export async function handleTestSendEventTemplate(
     body = testSendBodySchema.parse(await c.req.json());
   } catch {
     return c.json({ error: "validation_failed" }, 400);
+  }
+
+  if (!(await checkMailTestRecipientRateLimit(rateLimitStore, body.to, adminAuditFromContext(c).ip))) {
+    return c.json({ error: "too many requests" }, 429);
   }
 
   const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
@@ -484,6 +491,7 @@ export async function handleTestSendEventTemplate(
 export async function handleTestSendEventTemplateById(
   c: Context,
   db: PrismaClient,
+  rateLimitStore: RateLimitStore,
   mailDeliveryDeps: MailDeliveryDeps = {},
   injectedBaseUrl?: string,
 ): Promise<Response> {
@@ -513,6 +521,10 @@ export async function handleTestSendEventTemplateById(
     body = testSendBodySchema.parse(await c.req.json());
   } catch {
     return c.json({ error: "validation_failed" }, 400);
+  }
+
+  if (!(await checkMailTestRecipientRateLimit(rateLimitStore, body.to, adminAuditFromContext(c).ip))) {
+    return c.json({ error: "too many requests" }, 429);
   }
 
   const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);

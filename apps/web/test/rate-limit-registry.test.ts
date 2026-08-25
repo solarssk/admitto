@@ -19,10 +19,10 @@ const EXPECTED_POLICIES: Record<
   "auth:login-ip": { windowMs: [60_000], max: [10], checks: 1 },
   "auth:account-ip": { windowMs: [60_000], max: [30], checks: 1 },
   "admin:oidc-provider-ops": { windowMs: [60_000], max: [10], checks: 1 },
-  "admin:test-send": { windowMs: [60_000], max: [5], checks: 1 },
-  "admin:mail-transport-test": { windowMs: [60_000], max: [5], checks: 1 },
+  "admin:test-send": { windowMs: [60_000, 3_600_000], max: [5, 20], checks: 2 },
+  "admin:mail-transport-test": { windowMs: [60_000, 3_600_000], max: [3, 10], checks: 2 },
   "admin:health-live": { windowMs: [60_000], max: [5], checks: 1 },
-  "admin:event-mail-transport-test": { windowMs: [60_000], max: [5], checks: 1 },
+  "admin:event-mail-transport-test": { windowMs: [60_000, 3_600_000], max: [3, 10], checks: 2 },
   "admin:client-error": { windowMs: [60_000], max: [30], checks: 1 },
   "admin:export": { windowMs: [3_600_000], max: [10], checks: 1 },
   "admin:export-pii": { windowMs: [3_600_000], max: [5], checks: 1 },
@@ -58,6 +58,7 @@ const EXPECTED_INLINE_LIMITS: Record<keyof typeof INLINE_RATE_LIMITS, { windowMs
     "mfa:step-up-total": { windowMs: 900_000, max: 20 },
     "mfa:enroll": { windowMs: 900_000, max: 10 },
     "account:password-check": { windowMs: 60_000, max: 10 },
+    "mail:test-recipient": { windowMs: 3_600_000, max: 5 },
   };
 
 describe("RATE_POLICIES registry", () => {

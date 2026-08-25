@@ -904,7 +904,7 @@ describe("POST /api/admin/events/:eventId/mail-settings/test", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns 429 after 5 test sends per minute", async () => {
+  it("returns 429 after 3 test sends per minute", async () => {
     await prisma.mailSettings.create({
       data: {
         scope_type: "event",
@@ -915,7 +915,7 @@ describe("POST /api/admin/events/:eventId/mail-settings/test", () => {
     });
     rateLimitStore.reset();
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 3; i++) {
       const res = await app.request(`/api/admin/events/${EVENT}/mail-settings/test`, {
         method: "POST",
         headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },

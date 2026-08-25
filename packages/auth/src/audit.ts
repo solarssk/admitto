@@ -189,7 +189,9 @@ export type RateLimitScope =
   | "admin_geocoding_search"
   | "admin_geocoding_timezone"
   | "admin_client_error"
-  | "wallet_webhook";
+  | "wallet_webhook"
+  | "admin_test_send"
+  | "admin_mail_test_recipient";
 
 /** Emit `auth.login.success` as JSON to stdout (no password/token fields) and persist a durable
  * `SecurityAuditLog` row. Full email, not redacted - staff/operator sign-in is exactly the

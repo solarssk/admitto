@@ -55,6 +55,8 @@ import {
   type MailSmtpProbeDeps,
   type TransportTestOutcome,
 } from "./mail-settings-shared.js";
+import { checkMailTestRecipientRateLimit } from "../rate-limit/policies.js";
+import type { RateLimitStore } from "../rate-limit/types.js";
 
 async function loadEventOrg(
   db: PrismaClient,
@@ -266,6 +268,7 @@ export async function handleDeleteEventMailSettings(c: Context, db: PrismaClient
 export async function handlePostEventMailSettingsTest(
   c: Context,
   db: PrismaClient,
+  rateLimitStore: RateLimitStore,
   mailDeliveryDeps: MailDeliveryDeps = {},
 ): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -291,6 +294,10 @@ export async function handlePostEventMailSettingsTest(
   }
   const body = parsed.data;
   const audit = adminAuditFromContext(c);
+
+  if (!(await checkMailTestRecipientRateLimit(rateLimitStore, body.to, audit.ip))) {
+    return c.json({ error: "too many requests" }, 429);
+  }
 
   if (!body.verifyBounce) {
     return handlePlainEventTransportTest(c, db, {

@@ -1191,7 +1191,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminEventMailSettingsRateLimit,
-    guardArchivedEvent((c) => handlePostEventMailSettingsTest(c, db, mailDeliveryDeps)),
+    guardArchivedEvent((c) => handlePostEventMailSettingsTest(c, db, rateLimitStore, mailDeliveryDeps)),
   );
   app.post(
     "/api/admin/events/:eventId/mail-settings/probe",
@@ -1630,7 +1630,9 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     templateTestSendBodyLimit,
     adminCommunicationRateLimit,
-    guardArchivedEvent((c) => handleTestSendEventTemplate(c, db, mailDeliveryDeps, mailInjectedBaseUrl)),
+    guardArchivedEvent((c) =>
+      handleTestSendEventTemplate(c, db, rateLimitStore, mailDeliveryDeps, mailInjectedBaseUrl),
+    ),
   );
   app.get("/api/admin/events/:eventId/templates", staffAdminGate, (c) =>
     handleListEventTemplates(c, db),
@@ -1680,7 +1682,7 @@ export function createApp(options: CreateAppOptions = {}) {
     templateTestSendBodyLimit,
     adminCommunicationRateLimit,
     guardArchivedEvent((c) =>
-      handleTestSendEventTemplateById(c, db, mailDeliveryDeps, mailInjectedBaseUrl),
+      handleTestSendEventTemplateById(c, db, rateLimitStore, mailDeliveryDeps, mailInjectedBaseUrl),
     ),
   );
   app.post(
@@ -1777,7 +1779,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminMailSettingsRateLimit,
-    (c) => handlePostMailSettingsTest(c, db, mailDeliveryDeps),
+    (c) => handlePostMailSettingsTest(c, db, rateLimitStore, mailDeliveryDeps),
   );
   app.post(
     "/api/admin/mail-settings/probe",

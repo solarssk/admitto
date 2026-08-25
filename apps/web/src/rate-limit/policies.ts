@@ -70,6 +70,7 @@ export const INLINE_RATE_LIMITS = {
   "mfa:step-up-total": { windowMs: 15 * 60_000, max: 20 },
   "mfa:enroll": { windowMs: 15 * 60_000, max: 10 },
   "account:password-check": { windowMs: 60_000, max: 10 },
+  "mail:test-recipient": { windowMs: 3_600_000, max: 5 },
 } as const satisfies Record<string, InlineRateLimit>;
 
 export type InlineRateLimitName = keyof typeof INLINE_RATE_LIMITS;
@@ -264,6 +265,12 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  // Burst (unchanged) + sustained, same two-check shape as admin:resend's burst+global pair
+  // above. The burst bucket alone allows iterating a template (edit, test, edit, test, ...)
+  // without waiting between sends, but also allows up to 300 test emails/hour indefinitely if
+  // just left running - the sustained bucket caps that without touching normal iteration speed.
+  // A separate, recipient-scoped budget (see checkMailTestRecipientRateLimit) applies on top of
+  // both, checked in the handler once the recipient address is known.
   "admin:test-send": {
     beforeCheck: (c) => {
       if (!c.req.param("eventId")) return c.json({ error: "eventId required" }, 400);
@@ -279,13 +286,44 @@ export const RATE_POLICIES = {
         },
         windowMs: 60_000,
         max: 5,
+        logOnExceeded: { scope: "admin_test_send", keyHint: "burst" },
+      },
+      {
+        keyOf: (c) => {
+          const eventId = c.req.param("eventId")!;
+          const userId = authUserId(c);
+          return userId
+            ? `admin:test-send:sustained:user:${userId}:event:${eventId}`
+            : `admin:test-send:sustained:ip:${resolveClientIp(c)}:event:${eventId}`;
+        },
+        windowMs: 3_600_000,
+        max: 20,
+        logOnExceeded: { scope: "admin_test_send", keyHint: "sustained" },
       },
     ],
   },
-  "admin:mail-transport-test": authUserScopedPolicy(
-    "admin:mail-transport-test",
-    "admin_mail_transport_test",
-  ),
+  // Burst + sustained, same shape as admin:test-send above but tighter on both numbers: this
+  // dials a real SMTP/Graph transport (DNS resolution, TLS handshake, possibly a bounce-verify
+  // round trip) rather than rendering a template, so it is more expensive per call, and no
+  // legitimate workflow needs more than a handful of connectivity checks in a row. Same
+  // recipient-scoped budget as admin:test-send applies on top, shared across both this and
+  // admin:event-mail-transport-test below (see checkMailTestRecipientRateLimit).
+  "admin:mail-transport-test": {
+    checks: [
+      {
+        keyOf: (c) => `admin:mail-transport-test:user:${c.get("auth").userId}`,
+        windowMs: 60_000,
+        max: 3,
+        logOnExceeded: { scope: "admin_mail_transport_test", keyHint: "burst" },
+      },
+      {
+        keyOf: (c) => `admin:mail-transport-test:sustained:user:${c.get("auth").userId}`,
+        windowMs: 3_600_000,
+        max: 10,
+        logOnExceeded: { scope: "admin_mail_transport_test", keyHint: "sustained" },
+      },
+    ],
+  },
   /** On-demand live health probes (Nominatim / OIDC) from Settings → Health check. */
   "admin:health-live": {
     checks: [
@@ -298,10 +336,24 @@ export const RATE_POLICIES = {
       },
     ],
   },
-  "admin:event-mail-transport-test": authUserScopedPolicy(
-    "admin:event-mail-transport-test",
-    "admin_event_mail_transport_test",
-  ),
+  // Same burst+sustained shape and reasoning as admin:mail-transport-test above, just scoped to
+  // the event-level test endpoint's own user-keyed bucket.
+  "admin:event-mail-transport-test": {
+    checks: [
+      {
+        keyOf: (c) => `admin:event-mail-transport-test:user:${c.get("auth").userId}`,
+        windowMs: 60_000,
+        max: 3,
+        logOnExceeded: { scope: "admin_event_mail_transport_test", keyHint: "burst" },
+      },
+      {
+        keyOf: (c) => `admin:event-mail-transport-test:sustained:user:${c.get("auth").userId}`,
+        windowMs: 3_600_000,
+        max: 10,
+        logOnExceeded: { scope: "admin_event_mail_transport_test", keyHint: "sustained" },
+      },
+    ],
+  },
   /** Client-reported errors/CSP violations - the one source meant to fire from an uncontrolled
    * browser-side condition (e.g. a misbehaving extension retrying a blocked mutation), so it
    * needs a ceiling other click-driven admin endpoints don't. */
@@ -760,4 +812,25 @@ export async function checkAccountPasswordRateLimit(
     userId,
     ip,
   );
+}
+
+/** Throttle test-send / mail-transport-test emails per recipient address, globally across the
+ * whole instance rather than per user, event, or endpoint (inline, not middleware - the recipient
+ * is only known once the handler has parsed the request body, after the per-user/event middleware
+ * checks above have already run). All three callers (admin:test-send,
+ * admin:mail-transport-test, admin:event-mail-transport-test) share this same budget, so a
+ * compromised admin session can't round-robin between them, or between events/accounts, to send
+ * far more test mail to one external address than any single per-user bucket implies. */
+export async function checkMailTestRecipientRateLimit(
+  store: RateLimitStore,
+  recipientEmail: string,
+  ip: string | undefined,
+): Promise<boolean> {
+  const { windowMs, max } = INLINE_RATE_LIMITS["mail:test-recipient"];
+  const result = await store.hit(`mail:test-recipient:${recipientEmail.toLowerCase()}`, windowMs, max);
+  if (!result.allowed) {
+    logRateLimitExceeded({ scope: "admin_mail_test_recipient", ip, keyHint: "recipient" });
+    return false;
+  }
+  return true;
 }
