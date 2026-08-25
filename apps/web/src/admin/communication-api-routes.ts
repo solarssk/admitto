@@ -419,6 +419,30 @@ export async function handlePreviewEventTemplate(
   }
 }
 
+/** Resolves the by-id test-send route's target template name, or the 404 response to return if
+ * it doesn't belong to this event - split out of runTestSendEventTemplate below to keep that
+ * function's cognitive complexity under SonarCloud's threshold. */
+async function resolveTestSendTemplateName(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+  templateId: string,
+): Promise<string | Response> {
+  try {
+    await resolveTemplateById(templateId, eventId, db);
+  } catch (err) {
+    if (err instanceof TemplateNotFoundError) {
+      return c.json({ error: "not_found" }, 404);
+    }
+    throw err;
+  }
+  const templateMeta = await db.mailTemplate.findUnique({
+    where: { id: templateId },
+    select: { name: true },
+  });
+  return templateMeta?.name ?? "unknown";
+}
+
 /** Shared "check access -> resolve template (by-id variant only) -> parse body -> recipient
  * guard -> resolve baseUrl -> send -> audit log" skeleton for the two test-send routes below -
  * they differed only in whether a specific templateId is targeted, and the extra 404/audit
@@ -440,19 +464,9 @@ async function runTestSendEventTemplate(
 
   let templateName: string | undefined;
   if (templateId !== undefined) {
-    try {
-      await resolveTemplateById(templateId, eventId, db);
-    } catch (err) {
-      if (err instanceof TemplateNotFoundError) {
-        return c.json({ error: "not_found" }, 404);
-      }
-      throw err;
-    }
-    const templateMeta = await db.mailTemplate.findUnique({
-      where: { id: templateId },
-      select: { name: true },
-    });
-    templateName = templateMeta?.name ?? "unknown";
+    const resolved = await resolveTestSendTemplateName(c, db, eventId, templateId);
+    if (resolved instanceof Response) return resolved;
+    templateName = resolved;
   }
 
   let body: z.infer<typeof testSendBodySchema>;

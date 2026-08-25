@@ -41,8 +41,8 @@ const EXPECTED_POLICIES: Record<
   "admin:resend": { windowMs: [60_000, 3_600_000], max: [5, 30], checks: 2 },
   "admin:resend-bulk": { windowMs: [600_000], max: [3], checks: 1 },
   "admin:attendee-patch": { windowMs: [60_000], max: [20], checks: 1 },
-  "admin:wallet-action": { windowMs: [600_000], max: [10], checks: 1 },
-  "admin:wallet-action-bulk": { windowMs: [600_000], max: [3], checks: 1 },
+  "admin:wallet-action": { windowMs: [60_000], max: [10], checks: 1 },
+  "admin:wallet-action-bulk": { windowMs: [600_000], max: [10], checks: 1 },
   "admin:attendee-bulk-mutation": { windowMs: [60_000], max: [20], checks: 1 },
   "checkin:scan": { windowMs: [60_000], max: [120], checks: 1 },
   "checkin:history": { windowMs: [60_000], max: [180], checks: 1 },
@@ -55,7 +55,7 @@ const EXPECTED_INLINE_LIMITS: Record<keyof typeof INLINE_RATE_LIMITS, { windowMs
     "oidc:link-stepup": { windowMs: 60_000, max: 10 },
     "auth:login-email": { windowMs: 60_000, max: 10 },
     "mfa:verify-totp": { windowMs: 900_000, max: 10 },
-    "mfa:verify-recovery": { windowMs: 900_000, max: 30 },
+    "mfa:verify-recovery": { windowMs: 900_000, max: 10 },
     "mfa:verify-webauthn": { windowMs: 900_000, max: 10 },
     "mfa:step-up-total": { windowMs: 900_000, max: 20 },
     "mfa:enroll": { windowMs: 900_000, max: 10 },
@@ -196,13 +196,14 @@ describe("RATE_POLICIES registry", () => {
   });
 
   it("caps admin:wallet-action-bulk tightly enough to bound PassCreator call volume", () => {
-    // Worst case: max requests * BULK_SEND_LIMIT (500) provider calls in the window must stay a
-    // comfortable margin under PassCreator's documented 600 req/min limit
-    // (_ops/adr/0041-wallet-passcreator-api-contract.md), even before its own concurrency/backoff
-    // paces the actual outbound calls further.
+    // Worst case: max requests * WALLET_BULK_SEND_LIMIT (100 - the cap every route in this policy
+    // group is held to once wallet is in play, not the general BULK_SEND_LIMIT of 500) provider
+    // calls in the window must stay a comfortable margin under PassCreator's documented 600
+    // req/min limit (_ops/adr/0041-wallet-passcreator-api-contract.md), even before
+    // PASSCREATOR_MIN_CALL_INTERVAL_MS paces the actual outbound calls further.
     const policy = RATE_POLICIES["admin:wallet-action-bulk"].checks[0]!;
-    const BULK_SEND_LIMIT = 500;
-    const worstCaseCalls = policy.max * BULK_SEND_LIMIT;
+    const WALLET_BULK_SEND_LIMIT = 100;
+    const worstCaseCalls = policy.max * WALLET_BULK_SEND_LIMIT;
     const windowMinutes = policy.windowMs / 60_000;
     const worstCaseCallsPerMinute = worstCaseCalls / windowMinutes;
     expect(worstCaseCallsPerMinute).toBeLessThan(600);

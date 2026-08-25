@@ -112,8 +112,8 @@ export async function checkWebauthnStepUpRateLimit(
  * intentionally namespaced so failing one self-service action (e.g. password change) doesn't
  * throttle trying an unrelated one (e.g. MFA reset) in the same session - but without a shared
  * ceiling too, that design lets a session round-robin across every step-up-gated action, each
- * with its own fresh 10-or-30-per-15-minutes budget, to multiply its real total proof-attempt
- * budget by the number of such actions (currently ~8). This bucket is proof-type- and action-
+ * with its own fresh 10-per-15-minutes budget, to multiply its real total proof-attempt budget
+ * by the number of such actions (currently ~8). This bucket is proof-type- and action-
  * agnostic on purpose: the property it protects - "how many times has this session tried to
  * prove step-up, full stop" - doesn't depend on which action or proof type was attempted. Not
  * used by the login-time WebAuthn verify route, which has only one caller and isn't subject to

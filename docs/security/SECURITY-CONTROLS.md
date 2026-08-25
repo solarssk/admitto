@@ -178,7 +178,8 @@ limits are shared across replicas and survive restarts.
 |---------|--------|----------------|---------------|
 | `POST /login`, `POST /api/auth/login` | client IP | 10 / 60 s | no |
 | same | normalized email | 10 / 60 s | no (defense-in-depth inside handler) |
-| `POST /api/auth/mfa/verify`, `POST /mfa/verify`, TOTP confirm | session + IP | 10 TOTP or 30 recovery / 15 min | partial session |
+| `POST /api/auth/mfa/verify`, `POST /mfa/verify`, TOTP confirm | session + IP | 10 / 15 min per proof type - TOTP-shaped and recovery-code-shaped attempts are tracked on separate buckets, so the combined ceiling across both is up to 20 / 15 min | partial session |
+| `POST /api/auth/mfa/webauthn/verify` (WebAuthn login-time step) | session + IP | 10 / 15 min | partial session |
 | `POST /api/auth/mfa/totp/enroll`, `POST /mfa/enroll/start` | session + IP | 10 / 15 min | partial session (`enrollment_required`) |
 | `GET /api/auth/oidc/*/start`, `*/callback` | client IP | 20 / 60 s | no |
 | `/t/*` (ticket), `/q/*` (QR image), `/m/*` (event static map image) | client IP | 500 / 60 s | no |
@@ -205,10 +206,12 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 | `POST /api/admin/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | admin |
 | `POST …/events/:eventId/mail-settings/test` | user | 3 / 60 s burst, 10 / h sustained | admin |
 | `GET …/attendees?q=...` (search) | user + event | 120 / 60 s | operator / admin |
-| single-attendee wallet actions (void/restore/reissue/delete) | user + event | 10 / 10 min | event admin |
+| single-attendee wallet actions (void/restore/reissue/delete) | user + event | 10 / 60 s | event admin |
 | bulk-attendee mutations (delete, check-in, revoke check-in/items/pass, ticket type, RSVP) | user + event | 20 / 60 s | event admin |
-| bulk wallet actions (void/reissue/delete for a selection), plus bulk-delete and bulk-revoke-pass whenever the event has wallet configured - all capped at max 100 attendees per request in that case | user + event | 3 / 10 min | event admin |
+| bulk wallet actions (void/reissue/delete for a selection), plus bulk-delete and bulk-revoke-pass whenever the event has wallet configured - all capped at max 100 attendees per request in that case | user + event | 10 / 10 min | event admin |
 | attendee resend, check-in scan/history | per-route keys | see `apps/web/src/rate-limit/policies.ts` | operator / admin |
+| attendee export, deliveries export, reports export, audit-log export, security-audit-log export | user + route | 10 / h | admin |
+| attendee PII export | user + route | 5 / h | admin |
 
 All three test-mail routes above (`template/test-send` and both `mail-settings/test` routes) also
 share one additional budget on top of their own per-user/event bucket: **5 / hour per recipient

@@ -176,7 +176,7 @@ describe("drainPendingDeliveries", () => {
     });
     await prisma.emailDelivery.update({
       where: { id: queued.id },
-      data: { status: "failed", retryable: true, error: "soft fail" },
+      data: { status: "failed", retryable: true, error: "soft fail", error_code: "smtp_connect" },
     });
 
     const skipped = await drainPendingDeliveries(
@@ -200,6 +200,10 @@ describe("drainPendingDeliveries", () => {
     expect(retried).toEqual({ claimed: 1, sent: 1, failed: 0, skipped: 0, eventIds: [EVENT_ID] });
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: queued.id } });
     expect(after.status).toBe("accepted");
+    // The row failed once before this retry (error/error_code above) - a successful retry must
+    // wipe both, not leave them stale next to the now-successful status.
+    expect(after.error).toBeNull();
+    expect(after.error_code).toBeNull();
   });
 
   it("does not reclaim retryable failures still inside backoff", async () => {

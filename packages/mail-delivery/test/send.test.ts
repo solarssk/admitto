@@ -794,6 +794,8 @@ describe("retryDelivery", () => {
         recipient_email: "retry@example.com",
         rendered_subject: "Frozen Subject UNIQUE_MARKER",
         rendered_html: "<p>Frozen HTML UNIQUE_MARKER</p>",
+        error: "Connection timed out",
+        error_code: "smtp_connect",
       },
     });
 
@@ -811,6 +813,10 @@ describe("retryDelivery", () => {
     const updated = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
     expect(updated.status).toBe("accepted");
     expect(updated.attempts).toBe(2);
+    // The prior failed attempt left error/error_code populated - a successful retry must clear
+    // both so the row no longer shows a stale error next to its now-successful status.
+    expect(updated.error).toBeNull();
+    expect(updated.error_code).toBeNull();
   });
 
   it("increments attempts when sendBatch returns no result", async () => {

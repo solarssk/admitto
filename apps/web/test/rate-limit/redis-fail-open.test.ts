@@ -15,19 +15,47 @@ describe("RedisRateLimitStore fail-open", () => {
     vi.restoreAllMocks();
   });
 
-  it("allows traffic when Redis is unreachable", async () => {
+  const FALLBACK_WARN = "Rate limit Redis unavailable; falling back to per-process in-memory limiter";
+
+  it("falls back to the local in-memory limiter when Redis is unreachable", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const store = new RedisRateLimitStore("redis://127.0.0.1:1", unreachableRedis);
 
     const result = await store.hit("1.2.3.4", 60_000, 60);
     expect(result.allowed).toBe(true);
-    expect(result.remaining).toBe(60);
-    expect(warnSpy).toHaveBeenCalledWith("Rate limit Redis unavailable; failing open");
+    expect(result.remaining).toBe(59);
+    expect(warnSpy).toHaveBeenCalledWith(FALLBACK_WARN);
 
     const entries = querySystemLogs({ source: "cache" });
-    expect(
-      entries.some((entry) => entry.message === "Rate limit Redis unavailable; failing open"),
-    ).toBe(true);
+    expect(entries.some((entry) => entry.message === FALLBACK_WARN)).toBe(true);
+
+    await store.disconnect();
+  });
+
+  it("still enforces the limit during a Redis outage instead of allowing unlimited traffic", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const store = new RedisRateLimitStore("redis://127.0.0.1:1", unreachableRedis);
+
+    expect((await store.hit("same-key", 60_000, 3)).allowed).toBe(true);
+    expect((await store.hit("same-key", 60_000, 3)).allowed).toBe(true);
+    expect((await store.hit("same-key", 60_000, 3)).allowed).toBe(true);
+    const blocked = await store.hit("same-key", 60_000, 3);
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.remaining).toBe(0);
+
+    await store.disconnect();
+  });
+
+  it("keeps separate outage buckets per key, like the primary Redis path does", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const store = new RedisRateLimitStore("redis://127.0.0.1:1", unreachableRedis);
+
+    await store.hit("key-a", 60_000, 1);
+    const blockedA = await store.hit("key-a", 60_000, 1);
+    expect(blockedA.allowed).toBe(false);
+
+    const allowedB = await store.hit("key-b", 60_000, 1);
+    expect(allowedB.allowed).toBe(true);
 
     await store.disconnect();
   });
