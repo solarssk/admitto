@@ -506,14 +506,20 @@ export const RATE_POLICIES = {
       },
     ],
   },
-  // Bulk wallet actions (bulk-wallet-void/reissue/delete) - each request fans out to one
-  // PassCreator call per selected attendee, up to BULK_SEND_LIMIT (500). A flat per-request budget
-  // shared with the single-attendee policy above would let 10 requests reach 5,000 provider calls
-  // in the same 10-minute window - far past PassCreator's documented 600 req/min limit
+  // Every bulk route that can cascade to one PassCreator call per selected attendee, up to
+  // BULK_SEND_LIMIT (500): the 3 explicit bulk-wallet-* routes always do, and bulk-delete /
+  // bulk-revoke-pass do too whenever the selection includes attendees with a wallet pass
+  // (deleteWalletPassesBestEffort / syncWalletPassOnStatusChangeBestEffort - bot review, PR #1064
+  // round 2: these two shared only the generic admin:attendee-bulk-mutation budget below, which
+  // doesn't account for the PassCreator calls they can trigger). A flat per-request budget shared
+  // with the single-attendee policy above would let 10 requests reach 5,000 provider calls in the
+  // same 10-minute window - far past PassCreator's documented 600 req/min limit
   // (_ops/adr/0041-wallet-passcreator-api-contract.md). Capping this route group at 3 requests per
-  // 10 minutes bounds worst case to 1,500 calls/10min (avg 150/min), a comfortable margin under
-  // that limit even before accounting for `PassCreatorClient`'s own concurrency cap and 429
-  // backoff, which paces the actual outbound calls further.
+  // 10 minutes bounds worst case to 1,500 calls/10min - `PassCreatorClient.requestRaw` (see
+  // `PASSCREATOR_MIN_CALL_INTERVAL_MS`) additionally paces every actual outbound call at a fixed
+  // process-wide rate regardless of which route or how many concurrent requests triggered it, so
+  // this policy and that pacing are complementary: this bounds how much work an admin can queue
+  // up, the client-level pacing bounds how fast PassCreator actually sees it.
   "admin:wallet-action-bulk": {
     checks: [
       {

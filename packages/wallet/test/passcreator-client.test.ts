@@ -3,6 +3,11 @@ import { PassCreatorClient, WalletProviderError } from "../src/index.js";
 import { PASSCREATOR_DEFAULT_BASE_URL } from "../src/passcreator-config.js";
 import type { WalletPassInput } from "../src/index.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { resetPassCreatorPacingForTest } from "../src/passcreator-client.js";
+
+beforeEach(() => {
+  resetPassCreatorPacingForTest();
+});
 
 const CONFIG = { apiKey: "test-key", templateId: "tmpl-1", baseUrl: "https://pc.test" };
 
@@ -164,6 +169,10 @@ describe("PassCreatorClient.createPass", () => {
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
 
     const pending = client.createPass(INPUT);
+    // requestRaw awaits the call-pacing gate before invoking fetchFn - even at zero delay, an
+    // `await` always yields at least one microtask tick, so the call isn't necessarily recorded
+    // in fetchMock yet on the very next synchronous line. Wait for it instead of assuming it.
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
     // performFetch's own AbortSignal.timeout(15_000) is real and can't be swapped out from here -
     // abort it directly to simulate that 15s elapsing without a real test-suite delay.
     (fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.signal?.dispatchEvent(new Event("abort"));
@@ -881,5 +890,72 @@ describe("PassCreatorClient wallet system-log coverage", () => {
       fields: { status: 500, route: "/api/hook/subscribe/{templateId}" },
     });
     expect(JSON.stringify(entry)).not.toContain(CONFIG.templateId);
+  });
+});
+
+describe("PassCreatorClient call pacing (PR #1064 round 2 - bot review)", () => {
+  it("spaces consecutive calls at least PASSCREATOR_MIN_CALL_INTERVAL_MS apart, process-wide", async () => {
+    const callTimestamps: number[] = [];
+    const fetchMock = vi.fn(async () => {
+      callTimestamps.push(Date.now());
+      return new Response(null, { status: 404 }); // deletePass treats 404 as a successful idempotent delete
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    // Five concurrent calls, all launched at once - no chunking/concurrency limit at this layer,
+    // the pacing gate itself must be what spaces them out.
+    await Promise.all([
+      client.deletePass("p1"),
+      client.deletePass("p2"),
+      client.deletePass("p3"),
+      client.deletePass("p4"),
+      client.deletePass("p5"),
+    ]);
+
+    expect(callTimestamps).toHaveLength(5);
+    for (let i = 1; i < callTimestamps.length; i++) {
+      // A few ms of scheduling slack is fine; the gate must never let two calls fire materially
+      // less than the configured interval apart.
+      expect(callTimestamps[i]! - callTimestamps[i - 1]!).toBeGreaterThanOrEqual(145);
+    }
+  }, 10_000);
+
+  it("paces calls from two independent PassCreatorClient instances against the same shared gate", async () => {
+    const callTimestamps: number[] = [];
+    const fetchMock = vi.fn(async () => {
+      callTimestamps.push(Date.now());
+      return new Response(null, { status: 404 });
+    });
+    // Two separate instances, as two concurrent admin requests for the same event would each
+    // construct their own client from the event's decrypted API key - the gate is module-level,
+    // not per-instance, precisely so this still gets paced correctly.
+    const clientA = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+    const clientB = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await Promise.all([clientA.deletePass("a1"), clientB.deletePass("b1"), clientA.deletePass("a2")]);
+
+    expect(callTimestamps).toHaveLength(3);
+    expect(callTimestamps[1]! - callTimestamps[0]!).toBeGreaterThanOrEqual(145);
+    expect(callTimestamps[2]! - callTimestamps[1]!).toBeGreaterThanOrEqual(145);
+  }, 10_000);
+
+  it("re-paces each 429 retry attempt, not just the first attempt", async () => {
+    let calls = 0;
+    const callTimestamps: number[] = [];
+    const fetchMock = vi.fn(async () => {
+      callTimestamps.push(Date.now());
+      calls++;
+      if (calls < 2) return new Response(null, { status: 429 });
+      return new Response(null, { status: 404 });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    await client.deletePass("p1");
+
+    expect(callTimestamps).toHaveLength(2);
+    // The 429 retry backoff (RETRY_BASE_DELAY_MS=500) already exceeds the pacing interval on its
+    // own here, so this mainly documents that the gate is inside the retry loop, not bypassed by
+    // it - the real value is the earlier "spaces consecutive calls" test, which has no retries.
+    expect(callTimestamps[1]! - callTimestamps[0]!).toBeGreaterThanOrEqual(145);
   });
 });

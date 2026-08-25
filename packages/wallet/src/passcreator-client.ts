@@ -25,6 +25,48 @@ const RETRY_BASE_DELAY_MS = 500;
  * to would otherwise hang this client's caller forever, since fetch() has no default timeout. */
 const REQUEST_TIMEOUT_MS = 15_000;
 
+/**
+ * Minimum spacing enforced between the *start* of any two outbound PassCreator calls, from any
+ * `PassCreatorClient` instance in this process (bulk actions, single actions, the wallet-sync/
+ * wallet-push workers, webhook resubscribe-on-save, test-connection - every one of them
+ * ultimately calls `requestRaw` below). PassCreator's documented limit is 600 req/min account-wide
+ * (ADR 0041 §3) - concurrency-limited chunking at the caller (e.g. `chunk(targets, N)` +
+ * `Promise.allSettled`) only bounds how many calls are in flight at once, not how fast they leave
+ * this process, and does nothing at all across two separate concurrent requests each doing their
+ * own chunking (bot review, PR #1064). 150ms ≈ 6.7 req/s ≈ 400/min sustained, leaving headroom
+ * under the 600/min ceiling for other concurrent PassCreator traffic in the same account. A bulk
+ * action against many targets will now take noticeably longer wall-clock (500 targets ≈ 75s) than
+ * before - slower but actually completing, instead of racing past the limit and having a chunk of
+ * targets fail outright once retries (below) are exhausted. */
+const PASSCREATOR_MIN_CALL_INTERVAL_MS = 150;
+
+/** Process-wide (not per-instance) - see {@link PASSCREATOR_MIN_CALL_INTERVAL_MS}. Deliberately
+ * module-level state: PassCreator's rate limit is per-account, not per-`PassCreatorClient`
+ * instance, and a fresh instance is constructed per request (each event has its own decrypted API
+ * key), so instance-scoped pacing would not protect against two different instances - or two
+ * concurrent requests each constructing their own - firing at the same time. */
+let passCreatorNextSlotAt = 0;
+
+/** Reserves the next available call slot and resolves once it arrives - callers awaiting this
+ * back-to-back naturally serialize onto a steady `PASSCREATOR_MIN_CALL_INTERVAL_MS`-spaced stream
+ * regardless of how many are queued concurrently, since each reservation is made (and the shared
+ * `passCreatorNextSlotAt` advanced) synchronously before any `await`. */
+function reservePassCreatorSlot(): Promise<void> {
+  const now = Date.now();
+  const scheduledAt = Math.max(now, passCreatorNextSlotAt);
+  passCreatorNextSlotAt = scheduledAt + PASSCREATOR_MIN_CALL_INTERVAL_MS;
+  const delay = scheduledAt - now;
+  return delay > 0 ? sleep(delay) : Promise.resolve();
+}
+
+/** @internal test-only - resets the pacing gate between test cases, since this module's state is
+ * a process-wide singleton shared across an entire test file (same class of gotcha as
+ * `@admitto/mailer`'s own `resetMailSentThrottleForTest` / `@admitto/shared/system-log`'s
+ * `resetSystemLogBufferForTest`). */
+export function resetPassCreatorPacingForTest(): void {
+  passCreatorNextSlotAt = 0;
+}
+
 type PassCreatorEnvelope<T> = {
   success: boolean;
   errors?: string[];
@@ -509,6 +551,7 @@ export class PassCreatorClient implements WalletPassProvider {
   ): Promise<Response> {
     let lastRes: Response | undefined;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      await reservePassCreatorSlot();
       let res: Response;
       try {
         res = await this.performFetch(method, path, body);

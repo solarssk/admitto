@@ -1365,6 +1365,9 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     bulkAttendeeIdsBodyLimit,
     adminAttendeeBulkMutationRateLimit,
+    // Also shares the wallet-action-bulk budget: deleteWalletPassesBestEffort (inside the handler)
+    // calls PassCreator once per selected attendee that has a wallet pass.
+    adminWalletActionBulkRateLimit,
     (c) => handleBulkDeleteEventAttendees(c, db),
   );
   app.post(
@@ -1397,6 +1400,10 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     bulkAttendeeIdsBodyLimit,
     adminAttendeeBulkMutationRateLimit,
+    // Also shares the wallet-action-bulk budget: revokeOneAttendeePass (inside the handler, via
+    // syncWalletPassOnStatusChangeBestEffort) calls PassCreator once per selected attendee that
+    // has an active wallet pass.
+    adminWalletActionBulkRateLimit,
     guardArchivedEvent((c) => handleBulkRevokeAttendeePass(c, db)),
   );
   app.post(

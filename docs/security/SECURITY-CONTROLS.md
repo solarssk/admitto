@@ -204,7 +204,13 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 | `POST …/template/test-send` | user + event | 5 / 60 s | event admin |
 | `POST /api/admin/mail-settings/test` | user | 5 / 60 s | admin |
 | `GET …/attendees?q=...` (search) | user + event | 120 / 60 s | operator / admin |
+| single-attendee wallet actions (void/restore/reissue/delete) | user + event | 10 / 10 min | event admin |
+| bulk-attendee mutations (delete, check-in, revoke check-in/items/pass, ticket type, RSVP) | user + event | 20 / 60 s | event admin |
+| bulk wallet actions (void/reissue/delete for a selection), plus bulk-delete and bulk-revoke-pass whenever the selection includes attendees with a wallet pass | user + event | 3 / 10 min | event admin |
 | attendee resend, check-in scan/history | per-route keys | see `apps/web/src/rate-limit/policies.ts` | operator / admin |
+
+Every route above that can reach PassCreator is additionally paced at the outbound-call layer, not
+just gated at the HTTP-route layer — see **Outbound HTTP** below.
 
 ### Superadmin (identity provider UI)
 
@@ -214,8 +220,10 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 | `POST /api/admin/identity/providers/:id/test` | user + provider | 10 / 60 s |
 
 **Body size caps** (separate from rate limits): import uploads ≤ 5 MB; template JSON sized for
-≤ 200k character body field — see `apps/web/src/admin/import-api-routes.ts` and
-`communication-api-routes.ts`.
+≤ 200k character body field; every bulk-attendee-id request (the mutation and wallet routes above)
+≤ 0.5 MB, with each attendee id itself capped at 128 characters — see
+`apps/web/src/admin/import-api-routes.ts`, `communication-api-routes.ts`, and
+`apps/web/src/app.ts` (`bulkAttendeeIdsBodyLimit`).
 
 ---
 
@@ -313,6 +321,20 @@ re-resolves the hostname and pins the outbound connection to the validated addre
 time, closing the same DNS-rebinding gap as the OIDC and mail guards above — see
 `apps/web/src/weather/open-meteo-client.ts`, `apps/web/src/maps/nominatim-provider.ts`, and
 `apps/web/src/maps/static-map.ts`.
+
+**PassCreator call pacing (not SSRF — availability/abuse hardening).** Every outbound call to
+PassCreator (issue, void, restore, delete, push, search, webhook key fetch) goes through one
+choke point, `PassCreatorClient.requestRaw`, which spaces calls at least 150ms apart process-wide
+— across every caller: single and bulk admin wallet actions, the background wallet-push/wallet-sync
+workers, and webhook resubscribe-on-save — regardless of how many separate requests or client
+instances are triggering them concurrently. This keeps Admitto's own outbound traffic under
+PassCreator's documented account-wide 600 req/min limit even under a burst (e.g. several bulk
+actions started at once), rather than relying only on reacting to a 429 after the limit is already
+exceeded. The admin-facing rate limits in the table above bound how much work an admin can queue
+up; this pacing bounds how fast that work actually reaches PassCreator. One consequence: a bulk
+wallet action against a large selection (up to 500 attendees per request) now takes proportionally
+longer to complete — around a minute or more for a full 500 — rather than firing all calls at once
+and having a chunk of them fail once PassCreator's own rate limit was exceeded.
 
 ---
 
