@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- An unhandled promise rejection or an exception thrown outside a request's normal error handling is now logged (to System logs and stdout) with enough detail to diagnose before the process exits, instead of only ever surfacing as a bare Node.js stack trace in the container's raw logs.
+
+### Security
+
+- Settings → External services → Maps' custom tile URL is now checked for a private, loopback, link-local, or cloud-metadata host at save time, the same check its Geocoding base URL and the Weather base URL fields already get - previously a tile URL pointing at one of those would save successfully and only fail once the map itself tried to render.
+- The bundled nginx reverse-proxy config (`deploy/nginx/default.conf`) no longer reports its own version in the `Server` response header or on its default error pages.
+- `deploy/docker-entrypoint.sh`'s root-only fallback path (never used by the shipped image, which always drops to the unprivileged `node` user before this script runs) no longer rebuilds a shell command string from its arguments - a follow-up command containing a literal `$(...)` could have been re-evaluated by that fallback's shell instead of passed through as plain text.
+
 ## [0.6.1] - 2026-08-25
 
 ### Added

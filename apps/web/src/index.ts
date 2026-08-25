@@ -6,6 +6,7 @@ import { prisma } from "@admitto/db";
 import { createApp } from "./app.js";
 import { validateCfAccessBootConfig } from "./config.js";
 import { devConsoleExportSink, warnExportOnlyProductionEnv } from "./dev-export-sink.js";
+import { logger } from "./logger.js";
 
 type HttpsServerOptions = { cert: Buffer; key: Buffer };
 
@@ -146,6 +147,21 @@ async function main(): Promise<void> {
 // import.meta.url/argv[1] comparison, which breaks if the invocation path ever
 // crosses a symlink (e.g. a symlinked release directory).
 if (process.env.NODE_ENV !== "test") {
+  // Crash visibility only (defense-in-depth): without these, a rejected promise or thrown error
+  // that never reaches Hono's own request handling is invisible beyond Node's default stderr
+  // trace. Logging first, then exiting, matches this file's own startup-failure handling below
+  // and Node's documented guidance that process state after uncaughtException is not reliably
+  // safe to keep serving on - Docker's `restart: unless-stopped` (deploy/docker-compose.yml)
+  // is the recovery mechanism, same as it already is for any other fatal exit here.
+  process.on("unhandledRejection", (reason) => {
+    logger.error("unhandled promise rejection", { err: reason });
+    process.exit(1);
+  });
+  process.on("uncaughtException", (err) => {
+    logger.error("uncaught exception", { err });
+    process.exit(1);
+  });
+
   try {
     await main();
   } catch (err) {
