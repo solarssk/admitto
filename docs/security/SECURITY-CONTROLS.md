@@ -104,9 +104,13 @@ character-composition rules.
 **No account lockout, by design.** Local password authentication never locks or disables an
 account after repeated failed attempts — a login-triggerable lockout on admin/superadmin accounts
 would itself be a denial-of-service vector on a self-hosted internal tool. Brute-force is
-mitigated instead by the login rate limits above (see **Rate limiting**) plus alerting on repeated
-failed attempts against privileged accounts (`packages/auth/src/privileged-login-alert.ts`), which
-notifies an operator but never blocks the account.
+mitigated instead by the login rate limits above (see **Rate limiting**) plus an audit record on
+repeated failed attempts against privileged accounts (`packages/auth/src/privileged-login-alert.ts`):
+crossing the threshold emits an `auth.login.repeated_failures` (or `auth.mfa.repeated_failures`)
+event into the System logs live tail and writes a durable `SecurityAuditLog` row, for an operator to
+find on review — it never blocks the account, and there is no email, webhook, or other push
+notification, so an operator who isn't actively watching those logs will not be proactively alerted
+in the moment.
 
 ### Implemented in codebase
 
