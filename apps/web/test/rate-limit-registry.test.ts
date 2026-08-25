@@ -21,8 +21,10 @@ const EXPECTED_POLICIES: Record<
   "admin:oidc-provider-ops": { windowMs: [60_000], max: [10], checks: 1 },
   "admin:test-send": { windowMs: [60_000, 3_600_000], max: [5, 20], checks: 2 },
   "admin:mail-transport-test": { windowMs: [60_000, 3_600_000], max: [3, 10], checks: 2 },
+  "admin:mail-diagnostics": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:health-live": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:event-mail-transport-test": { windowMs: [60_000, 3_600_000], max: [3, 10], checks: 2 },
+  "admin:event-mail-diagnostics": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:client-error": { windowMs: [60_000], max: [30], checks: 1 },
   "admin:export": { windowMs: [3_600_000], max: [10], checks: 1 },
   "admin:export-pii": { windowMs: [3_600_000], max: [5], checks: 1 },
@@ -112,6 +114,28 @@ describe("RATE_POLICIES registry", () => {
     );
     expect(RATE_POLICIES["admin:event-mail-transport-test"].checks[0]!.keyOf(authCtx)).toBe(
       "admin:event-mail-transport-test:user:user-42",
+    );
+    expect(RATE_POLICIES["admin:mail-diagnostics"].checks[0]!.keyOf(authCtx)).toBe(
+      "admin:mail-diagnostics:user:user-42",
+    );
+    expect(RATE_POLICIES["admin:event-mail-diagnostics"].checks[0]!.keyOf(authCtx)).toBe(
+      "admin:event-mail-diagnostics:user:user-42",
+    );
+  });
+
+  it("keeps the mail-diagnostics policies on a separate bucket from their test-send siblings", () => {
+    // The bot-review gap this guards against: admin:mail-diagnostics (probe) and
+    // admin:event-mail-diagnostics (probe, bounce-ingest test/run) must never share a key with
+    // admin:mail-transport-test / admin:event-mail-transport-test (the actual test-send routes) -
+    // otherwise exercising the diagnostics routes would silently eat into test-send's budget.
+    const authCtx = {
+      get: (key: string) => (key === "auth" ? { userId: "user-42" } : undefined),
+    } as never;
+    expect(RATE_POLICIES["admin:mail-diagnostics"].checks[0]!.keyOf(authCtx)).not.toBe(
+      RATE_POLICIES["admin:mail-transport-test"].checks[0]!.keyOf(authCtx),
+    );
+    expect(RATE_POLICIES["admin:event-mail-diagnostics"].checks[0]!.keyOf(authCtx)).not.toBe(
+      RATE_POLICIES["admin:event-mail-transport-test"].checks[0]!.keyOf(authCtx),
     );
   });
 

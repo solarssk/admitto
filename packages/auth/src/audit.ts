@@ -191,7 +191,9 @@ export type RateLimitScope =
   | "admin_client_error"
   | "wallet_webhook"
   | "admin_test_send"
-  | "admin_mail_test_recipient";
+  | "admin_mail_test_recipient"
+  | "admin_mail_diagnostics"
+  | "admin_event_mail_diagnostics";
 
 /** Emit `auth.login.success` as JSON to stdout (no password/token fields) and persist a durable
  * `SecurityAuditLog` row. Full email, not redacted - staff/operator sign-in is exactly the

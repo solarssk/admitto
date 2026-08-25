@@ -57,7 +57,7 @@ import {
   resolveUserDisplayMap,
 } from "./admin-helpers.js";
 import { acquireEventImageAssetsLock } from "./event-image-assets-routes.js";
-import { checkMailTestRecipientRateLimit } from "../rate-limit/policies.js";
+import { guardMailTestRecipientRateLimit } from "../rate-limit/policies.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
 /** Max character length for `body_template` (schema); shared with wire byte cap below. */
@@ -440,9 +440,8 @@ export async function handleTestSendEventTemplate(
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  if (!(await checkMailTestRecipientRateLimit(rateLimitStore, body.to, adminAuditFromContext(c).ip))) {
-    return c.json({ error: "too many requests" }, 429);
-  }
+  const recipientLimited = await guardMailTestRecipientRateLimit(c, rateLimitStore, body.to);
+  if (recipientLimited) return recipientLimited;
 
   const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
   if (baseUrlOrRes instanceof Response) return baseUrlOrRes;
@@ -523,9 +522,8 @@ export async function handleTestSendEventTemplateById(
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  if (!(await checkMailTestRecipientRateLimit(rateLimitStore, body.to, adminAuditFromContext(c).ip))) {
-    return c.json({ error: "too many requests" }, 429);
-  }
+  const recipientLimited = await guardMailTestRecipientRateLimit(c, rateLimitStore, body.to);
+  if (recipientLimited) return recipientLimited;
 
   const baseUrlOrRes = await resolveMailInstanceBaseUrl(c, db, process.env, injectedBaseUrl);
   if (baseUrlOrRes instanceof Response) return baseUrlOrRes;

@@ -28,7 +28,7 @@ import {
   handleSmtpConnectionProbe,
   type MailSmtpProbeDeps,
 } from "./mail-settings-shared.js";
-import { checkMailTestRecipientRateLimit } from "../rate-limit/policies.js";
+import { guardMailTestRecipientRateLimit } from "../rate-limit/policies.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
 export { MAX_MAIL_SETTINGS_BODY_BYTES } from "./mail-settings-shared.js";
@@ -159,9 +159,8 @@ export async function handlePostMailSettingsTest(
   const orgId = await resolveInstanceOrganizationId(db, process.env);
   const audit = adminAuditFromContext(c);
 
-  if (!(await checkMailTestRecipientRateLimit(rateLimitStore, body.to, audit.ip))) {
-    return c.json({ error: "too many requests" }, 429);
-  }
+  const recipientLimited = await guardMailTestRecipientRateLimit(c, rateLimitStore, body.to);
+  if (recipientLimited) return recipientLimited;
 
   const mailEnv = (await isFirstRunWizard(db)) ? ({} as NodeJS.ProcessEnv) : process.env;
 

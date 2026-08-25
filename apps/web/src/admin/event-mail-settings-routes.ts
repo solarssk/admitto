@@ -55,7 +55,7 @@ import {
   type MailSmtpProbeDeps,
   type TransportTestOutcome,
 } from "./mail-settings-shared.js";
-import { checkMailTestRecipientRateLimit } from "../rate-limit/policies.js";
+import { guardMailTestRecipientRateLimit } from "../rate-limit/policies.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 
 async function loadEventOrg(
@@ -295,9 +295,8 @@ export async function handlePostEventMailSettingsTest(
   const body = parsed.data;
   const audit = adminAuditFromContext(c);
 
-  if (!(await checkMailTestRecipientRateLimit(rateLimitStore, body.to, audit.ip))) {
-    return c.json({ error: "too many requests" }, 429);
-  }
+  const recipientLimited = await guardMailTestRecipientRateLimit(c, rateLimitStore, body.to);
+  if (recipientLimited) return recipientLimited;
 
   if (!body.verifyBounce) {
     return handlePlainEventTransportTest(c, db, {

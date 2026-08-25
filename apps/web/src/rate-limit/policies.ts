@@ -1,7 +1,9 @@
 import { hostname } from "node:os";
+import { createHmac } from "node:crypto";
 import type { Context, Next } from "hono";
 import { routePath } from "hono/route";
 import { logRateLimitExceeded, type RateLimitScope } from "@admitto/auth";
+import { getEncryptionKey } from "@admitto/crypto";
 import { resolveClientIp } from "./client-ip.js";
 import { MAX_REQUESTS, WINDOW_MS } from "./constants.js";
 import type { RateLimitStore } from "./types.js";
@@ -324,6 +326,13 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  // Organization-level SMTP/Graph connectivity probe (/mail-settings/probe) - shares no bucket
+  // with admin:mail-transport-test above. It never sends mail to an address (so it never reaches
+  // checkMailTestRecipientRateLimit either), so tightening or adding an hourly cap to the actual
+  // test-send route must not also throttle this unrelated diagnostic (bot review on this PR:
+  // both used to share one policy, so 10 probes/hour would have exhausted the test-send route's
+  // own new sustained budget too). Same 5/min single-check shape this route always had.
+  "admin:mail-diagnostics": authUserScopedPolicy("admin:mail-diagnostics", "admin_mail_diagnostics"),
   /** On-demand live health probes (Nominatim / OIDC) from Settings → Health check. */
   "admin:health-live": {
     checks: [
@@ -354,6 +363,13 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  // Event-level SMTP/Graph probe and bounce-ingest connectivity test/manual-run - same reasoning
+  // as admin:mail-diagnostics above: none of these three routes sends mail to an address, so they
+  // must not share admin:event-mail-transport-test's tightened burst or new hourly budget.
+  "admin:event-mail-diagnostics": authUserScopedPolicy(
+    "admin:event-mail-diagnostics",
+    "admin_event_mail_diagnostics",
+  ),
   /** Client-reported errors/CSP violations - the one source meant to fire from an uncontrolled
    * browser-side condition (e.g. a misbehaving extension retrying a blocked mutation), so it
    * needs a ceiling other click-driven admin endpoints don't. */
@@ -814,23 +830,56 @@ export async function checkAccountPasswordRateLimit(
   );
 }
 
+/** Deterministic, keyed (HMAC-SHA256) tag for a normalized recipient address - never the address
+ * itself - so the address is not the rate-limit store's problem to protect. Redis keys are
+ * visible in plaintext to anything with read access to that instance (MONITOR, KEYS/SCAN,
+ * RDB/AOF snapshots and backups, replica streams, slow logs); an unkeyed hash alone would still
+ * let anyone with that access enumerate a target list of common/likely addresses offline and
+ * match them against observed keys, which HMAC's server-side secret prevents. Keyed with the
+ * app's existing {@link getEncryptionKey}, domain-separated by prefixing the input (not deriving
+ * a new key) - the standard, safe way to reuse one HMAC key for more than one purpose without a
+ * key-derivation step this codebase doesn't otherwise have. */
+function hashRecipientForRateLimit(recipientEmail: string): string {
+  return createHmac("sha256", getEncryptionKey())
+    .update(`mail-test-recipient:${recipientEmail.toLowerCase()}`)
+    .digest("hex");
+}
+
 /** Throttle test-send / mail-transport-test emails per recipient address, globally across the
  * whole instance rather than per user, event, or endpoint (inline, not middleware - the recipient
  * is only known once the handler has parsed the request body, after the per-user/event middleware
- * checks above have already run). All three callers (admin:test-send,
- * admin:mail-transport-test, admin:event-mail-transport-test) share this same budget, so a
- * compromised admin session can't round-robin between them, or between events/accounts, to send
- * far more test mail to one external address than any single per-user bucket implies. */
+ * checks above have already run). The three routes that actually send to an external address
+ * (admin:test-send's two variants, admin:mail-transport-test's and
+ * admin:event-mail-transport-test's own /mail-settings/test routes - not their sibling
+ * connectivity-probe/bounce-ingest routes, which have their own separate policies and never call
+ * this check) share this same budget, so a compromised admin session can't round-robin between
+ * them, or between events/accounts, to send far more test mail to one external address than any
+ * single per-user bucket implies. Exported for direct unit testing; call sites should generally
+ * use {@link guardMailTestRecipientRateLimit} instead. */
 export async function checkMailTestRecipientRateLimit(
   store: RateLimitStore,
   recipientEmail: string,
   ip: string | undefined,
 ): Promise<boolean> {
   const { windowMs, max } = INLINE_RATE_LIMITS["mail:test-recipient"];
-  const result = await store.hit(`mail:test-recipient:${recipientEmail.toLowerCase()}`, windowMs, max);
+  const key = `mail:test-recipient:${hashRecipientForRateLimit(recipientEmail)}`;
+  const result = await store.hit(key, windowMs, max);
   if (!result.allowed) {
     logRateLimitExceeded({ scope: "admin_mail_test_recipient", ip, keyHint: "recipient" });
     return false;
   }
   return true;
+}
+
+/** {@link checkMailTestRecipientRateLimit} plus the "resolve IP, and on failure return the 429"
+ * sequence every one of its 4 call sites needed identically (SonarCloud new-code duplication,
+ * this PR). Returns the response to return immediately, or `null` to continue handling the
+ * request normally. */
+export async function guardMailTestRecipientRateLimit(
+  c: Context,
+  store: RateLimitStore,
+  recipientEmail: string,
+): Promise<Response | null> {
+  const allowed = await checkMailTestRecipientRateLimit(store, recipientEmail, resolveClientIp(c));
+  return allowed ? null : c.json({ error: "too many requests" }, 429);
 }

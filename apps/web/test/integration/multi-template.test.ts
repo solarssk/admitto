@@ -1109,6 +1109,49 @@ describe("multi-template API", () => {
     expect(meta?.template_name).toBe(templateName);
   });
 
+  it("POST /templates/:id/test-send returns 429 from the shared per-recipient budget across two different events", async () => {
+    // Same isolation strategy as the plain /template/test-send route's own version of this test:
+    // EVENT_A and EVENT_B each get their own fresh per-event burst budget, so the block can only
+    // come from the shared, recipient-scoped check - and it exercises that check's blocked branch
+    // for this specific handler (handleTestSendEventTemplateById), not just the allowed one.
+    const eventATemplate = await postNamedTemplate(app, "Recipient budget A");
+    const eventBTemplate = await ensureEventBForeignTemplate(app, prisma);
+    const recipient = "test-send-by-id-recipient-budget@example.com";
+
+    for (let i = 0; i < 3; i++) {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/templates/${eventATemplate.id}/test-send`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+          body: JSON.stringify({ to: recipient }),
+        },
+      );
+      expect(res.status).not.toBe(429);
+    }
+    for (let i = 0; i < 2; i++) {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_B}/templates/${eventBTemplate.id}/test-send`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+          body: JSON.stringify({ to: recipient }),
+        },
+      );
+      expect(res.status).not.toBe(429);
+    }
+
+    const limited = await app.request(
+      `/api/admin/events/${EVENT_B}/templates/${eventBTemplate.id}/test-send`,
+      {
+        method: "POST",
+        headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+        body: JSON.stringify({ to: recipient }),
+      },
+    );
+    expect(limited.status).toBe(429);
+  });
+
   it("POST /templates/:id/test-send returns 404 for a template from another event", async () => {
     const foreignTemplate = await ensureEventBForeignTemplate(app, prisma);
 
