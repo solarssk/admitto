@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
-import { isSecureRequest } from "../src/auth/routes.js";
+import { isSecureRequest } from "../src/is-secure-request.js";
 
 vi.mock("@hono/node-server/conninfo", () => ({
   getConnInfo: vi.fn(),
@@ -62,6 +62,38 @@ describe("isSecureRequest", () => {
       expect(await probe("http://127.0.0.1:8080/probe", { "X-Forwarded-Proto": "HTTPS" })).toBe(
         true,
       );
+    } finally {
+      if (prev === undefined) delete process.env["TRUST_PROXY"];
+      else process.env["TRUST_PROXY"] = prev;
+    }
+  });
+
+  it("falls back to the request's own protocol when TRUST_PROXY is enabled, the peer is trusted, but no X-Forwarded-Proto header is present", async () => {
+    // firstForwardedValue's !raw branch (header absent -> undefined) - every other TRUST_PROXY=true
+    // test in this file always sends the header, so this branch was previously unexercised.
+    setPeer("127.0.0.1");
+    const prev = process.env["TRUST_PROXY"];
+    process.env["TRUST_PROXY"] = "true";
+    try {
+      expect(await probe("http://127.0.0.1:8080/probe")).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env["TRUST_PROXY"];
+      else process.env["TRUST_PROXY"] = prev;
+    }
+  });
+
+  it("falls back to the request's own protocol when X-Forwarded-Proto is present but its first comma-separated segment is empty", async () => {
+    // firstForwardedValue's `first || undefined` branch - a header value that's non-empty as a
+    // raw string (so the earlier !raw check passes through) but whose first segment trims down
+    // to nothing was previously unexercised; every other test sends a real, non-empty proto value
+    // as the first segment.
+    setPeer("127.0.0.1");
+    const prev = process.env["TRUST_PROXY"];
+    process.env["TRUST_PROXY"] = "true";
+    try {
+      expect(
+        await probe("http://127.0.0.1:8080/probe", { "X-Forwarded-Proto": ",https" }),
+      ).toBe(false);
     } finally {
       if (prev === undefined) delete process.env["TRUST_PROXY"];
       else process.env["TRUST_PROXY"] = prev;

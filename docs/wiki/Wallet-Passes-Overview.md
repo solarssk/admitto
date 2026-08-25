@@ -60,7 +60,11 @@ works; Admitto never signs or hosts pass files itself.
   provider - available both from Attendee Detail (single attendee) and the Attendees list (bulk,
   for a selection). Restore is Attendee Detail only, there is no bulk restore action. Revoking an
   attendee's ticket also voids their wallet pass automatically; restoring the ticket restores the
-  pass the same way.
+  pass the same way. A bulk action against a large selection takes noticeably longer than an
+  equivalent single-attendee action multiplied out - each attendee's pass is updated one call at a
+  time at a fixed pace, to stay within PassCreator's own request limit, rather than all at once. A
+  bulk wallet action accepts at most 100 attendees per selection and can take up to roughly 15
+  seconds to finish at this pace; this is expected, not a stuck page.
 
 ## What's not supported
 

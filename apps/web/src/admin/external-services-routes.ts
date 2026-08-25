@@ -25,7 +25,12 @@ import {
   patchMapsSettings,
   refreshMapsConfigCache,
 } from "../maps/maps-org-settings.js";
-import { isStaffSpaCompatibleTileUrl, resolveGeocodingConfig } from "../maps/config.js";
+import {
+  expandTileUrlForParse,
+  expandTileUrlSubdomainVariantsForParse,
+  isStaffSpaCompatibleTileUrl,
+  resolveGeocodingConfig,
+} from "../maps/config.js";
 import {
   buildGeocodingUserAgent,
   isGeocodingContactConfigured,
@@ -103,6 +108,12 @@ function mapsUrlErrorCode(code: EditableServiceUrlError): string {
   if (code === "url_host_blocked") return "url_host_blocked";
   if (code === "url_host_unresolved") return "url_host_unresolved";
   return "invalid_geocoding_base_url";
+}
+
+function tileUrlErrorCode(code: EditableServiceUrlError): string {
+  if (code === "url_host_blocked") return "url_host_blocked";
+  if (code === "url_host_unresolved") return "url_host_unresolved";
+  return "invalid_tile_url";
 }
 
 function mapsUrlProbeMessage(code: EditableServiceUrlError): string {
@@ -292,6 +303,30 @@ export async function handlePutWeatherSettings(
   return c.json({ weather: serializeWeather(described) });
 }
 
+/** Validates a candidate tile URL template at save time - extracted from handlePutMapsSettings to
+ * keep that function's cognitive complexity under SonarCloud's threshold (bot review), no
+ * behavior change. Returns the JSON error body to send (400) on failure, or null when valid. */
+async function validateTileUrlForSave(tileUrl: string): Promise<{ error: string } | null> {
+  if (!isStaffSpaCompatibleTileUrl(tileUrl)) {
+    return { error: "invalid_tile_url" };
+  }
+  // isStaffSpaCompatibleTileUrl only lets an http: template through for the dev-only
+  // http://localhost/127.0.0.1 exception (same carve-out static-map.ts's assertSafeTileFetchUrl
+  // applies at fetch time) - only an https template needs the private/loopback/metadata host
+  // check the geocoding/weather base URLs already get above and below. Protocol never varies by
+  // {s} subdomain, so checking it once on the `a` expansion is enough - but the host itself can,
+  // so every subdomain static-map.ts can actually request must be checked (bot review).
+  const expandedTileUrl = expandTileUrlForParse(tileUrl);
+  if (new URL(expandedTileUrl).protocol !== "https:") return null;
+  for (const tileUrlVariant of expandTileUrlSubdomainVariantsForParse(tileUrl)) {
+    const checkedTile = await assertEditableServiceUrl(tileUrlVariant);
+    if (!checkedTile.ok) {
+      return { error: tileUrlErrorCode(checkedTile.code) };
+    }
+  }
+  return null;
+}
+
 /** PUT /api/admin/external-services/maps */
 export async function handlePutMapsSettings(
   c: Context,
@@ -314,9 +349,8 @@ export async function handlePutMapsSettings(
   }
 
   if (parsed.data.tileUrl != null && parsed.data.tileUrl.trim() !== "") {
-    if (!isStaffSpaCompatibleTileUrl(parsed.data.tileUrl.trim())) {
-      return c.json({ error: "invalid_tile_url" }, 400);
-    }
+    const tileUrlError = await validateTileUrlForSave(parsed.data.tileUrl.trim());
+    if (tileUrlError) return c.json(tileUrlError, 400);
   }
   if (parsed.data.geocodingBaseUrl != null && parsed.data.geocodingBaseUrl.trim() !== "") {
     const checked = await assertEditableServiceUrl(parsed.data.geocodingBaseUrl);
