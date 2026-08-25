@@ -490,9 +490,12 @@ export const RATE_POLICIES = {
   // void|reissue|delete route calls the live PassCreator API per attendee - same abuse pattern
   // and same per-user-per-event budget as admin:wallet-message-send above ("a scripted resubmit-
   // to-trigger-a-wallet-push abuse pattern"), just covering the wallet lifecycle actions instead
-  // of the wallet message send. Shared across all 7 of those routes: they're all the same cost
-  // class (one PassCreator call per attendee), so one event-scoped budget bounds all of them
-  // together rather than giving each route its own separate allowance.
+  // of the wallet message send. Single-attendee only (void/restore/reissue/delete) - each request
+  // is exactly one PassCreator call, so 10/10min bounds this route group to 10 provider calls in
+  // the window. Bulk wallet actions get their own, much stricter policy below: a single bulk
+  // request can fan out to hundreds of provider calls, so sharing this budget with them would let
+  // a scripted attacker fire far more provider traffic than this number implies (see
+  // `admin:wallet-action-bulk`).
   "admin:wallet-action": {
     checks: [
       {
@@ -500,6 +503,24 @@ export const RATE_POLICIES = {
         windowMs: 600_000,
         max: 10,
         logOnExceeded: { scope: "admin_wallet_action", keyHint: "user_event" },
+      },
+    ],
+  },
+  // Bulk wallet actions (bulk-wallet-void/reissue/delete) - each request fans out to one
+  // PassCreator call per selected attendee, up to BULK_SEND_LIMIT (500). A flat per-request budget
+  // shared with the single-attendee policy above would let 10 requests reach 5,000 provider calls
+  // in the same 10-minute window - far past PassCreator's documented 600 req/min limit
+  // (_ops/adr/0041-wallet-passcreator-api-contract.md). Capping this route group at 3 requests per
+  // 10 minutes bounds worst case to 1,500 calls/10min (avg 150/min), a comfortable margin under
+  // that limit even before accounting for `PassCreatorClient`'s own concurrency cap and 429
+  // backoff, which paces the actual outbound calls further.
+  "admin:wallet-action-bulk": {
+    checks: [
+      {
+        keyOf: (c) => adminUserEventKey(c, "wallet-action-bulk"),
+        windowMs: 600_000,
+        max: 3,
+        logOnExceeded: { scope: "admin_wallet_action_bulk", keyHint: "user_event" },
       },
     ],
   },

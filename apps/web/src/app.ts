@@ -615,6 +615,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminWalletMessageSendRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-send");
   const adminAttendeePatchRateLimit = rateLimit(rateLimitStore, "admin:attendee-patch");
   const adminWalletActionRateLimit = rateLimit(rateLimitStore, "admin:wallet-action");
+  const adminWalletActionBulkRateLimit = rateLimit(rateLimitStore, "admin:wallet-action-bulk");
   const adminAttendeeBulkMutationRateLimit = rateLimit(rateLimitStore, "admin:attendee-bulk-mutation");
   const adminTemplatePreviewRateLimit = rateLimit(rateLimitStore, "admin:template-preview");
   const adminAuthProviderOpsRateLimit = rateLimit(rateLimitStore, "admin:oidc-provider-ops");
@@ -1403,7 +1404,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     bulkAttendeeIdsBodyLimit,
-    adminWalletActionRateLimit,
+    adminWalletActionBulkRateLimit,
     guardArchivedEvent((c) => handleBulkVoidAttendeeWalletPass(c, db)),
   );
   app.post(
@@ -1411,7 +1412,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     bulkAttendeeIdsBodyLimit,
-    adminWalletActionRateLimit,
+    adminWalletActionBulkRateLimit,
     guardArchivedEvent((c) => handleBulkReissueAttendeeWalletPass(c, db)),
   );
   app.post(
@@ -1419,7 +1420,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     bulkAttendeeIdsBodyLimit,
-    adminWalletActionRateLimit,
+    adminWalletActionBulkRateLimit,
     guardArchivedEvent((c) => handleBulkDeleteAttendeeWalletPass(c, db)),
   );
   app.post(

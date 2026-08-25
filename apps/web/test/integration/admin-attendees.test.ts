@@ -1970,7 +1970,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
   });
 
   describe("admin:wallet-action rate limit", () => {
-    it("returns 429 after 10 wallet actions per 10 minutes for the same event, shared across the single and bulk wallet routes", async () => {
+    it("returns 429 after 10 single-attendee wallet actions per 10 minutes for the same event", async () => {
       // A nonexistent attendee id still runs the full middleware chain (403 forbidden from the
       // handler) before returning, so the rate limit is exercised without needing real passes.
       for (let i = 0; i < 10; i++) {
@@ -1989,9 +1989,9 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       const body = (await limited.json()) as { error: string };
       expect(body.error).toBe("too many requests");
 
-      // Same event, same admin, but the bulk sibling route - proves the budget is shared per
-      // user+event rather than reset per route.
-      const bulkLimited = await app.request(
+      // The bulk sibling route has its own, separate (and much stricter) budget - a single-attendee
+      // action hitting its limit must not also block a fresh bulk request for the same user+event.
+      const bulkStillAllowed = await app.request(
         `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
         {
           method: "POST",
@@ -1999,7 +1999,50 @@ describe("attendee wallet actions — void/restore/reissue", () => {
           body: JSON.stringify({ attendeeIds: ["att-wallet-action-rl-nonexistent"] }),
         },
       );
-      expect(bulkLimited.status).toBe(429);
+      expect(bulkStillAllowed.status).not.toBe(429);
+    });
+  });
+
+  describe("admin:wallet-action-bulk rate limit", () => {
+    it("returns 429 after 3 bulk wallet actions per 10 minutes for the same event (bot review follow-up on the shared PassCreator budget, PR4)", async () => {
+      // Each bulk-wallet-* request can fan out to up to BULK_SEND_LIMIT (500) PassCreator calls -
+      // this route group gets its own, much stricter per-request budget than the single-attendee
+      // wallet routes (see policies.ts comment for the PassCreator-rate-limit math).
+      for (let i = 0; i < 3; i++) {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: ["att-wallet-action-rl-nonexistent"] }),
+          },
+        );
+        expect(res.status).not.toBe(429);
+      }
+
+      const limited = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-void`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: ["att-wallet-action-rl-nonexistent"] }),
+        },
+      );
+      expect(limited.status).toBe(429);
+      const body = (await limited.json()) as { error: string };
+      expect(body.error).toBe("too many requests");
+
+      // Same event, same admin, but a different bulk-wallet-* route - proves the budget is shared
+      // across all three bulk wallet routes rather than reset per route.
+      const reissueAlsoLimited = await app.request(
+        `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-reissue`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: ["att-wallet-action-rl-nonexistent"] }),
+        },
+      );
+      expect(reissueAlsoLimited.status).toBe(429);
     });
   });
 

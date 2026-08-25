@@ -40,6 +40,7 @@ const EXPECTED_POLICIES: Record<
   "admin:resend-bulk": { windowMs: [600_000], max: [3], checks: 1 },
   "admin:attendee-patch": { windowMs: [60_000], max: [20], checks: 1 },
   "admin:wallet-action": { windowMs: [600_000], max: [10], checks: 1 },
+  "admin:wallet-action-bulk": { windowMs: [600_000], max: [3], checks: 1 },
   "admin:attendee-bulk-mutation": { windowMs: [60_000], max: [20], checks: 1 },
   "checkin:scan": { windowMs: [60_000], max: [120], checks: 1 },
   "checkin:history": { windowMs: [60_000], max: [180], checks: 1 },
@@ -131,9 +132,25 @@ describe("RATE_POLICIES registry", () => {
     expect(RATE_POLICIES["admin:wallet-action"].checks[0]!.keyOf(ctx)).toBe(
       "admin:wallet-action:user:user-42:event:evt-1",
     );
+    expect(RATE_POLICIES["admin:wallet-action-bulk"].checks[0]!.keyOf(ctx)).toBe(
+      "admin:wallet-action-bulk:user:user-42:event:evt-1",
+    );
     expect(RATE_POLICIES["admin:attendee-bulk-mutation"].checks[0]!.keyOf(ctx)).toBe(
       "admin:attendee-bulk-mutation:user:user-42:event:evt-1",
     );
+  });
+
+  it("caps admin:wallet-action-bulk tightly enough to bound PassCreator call volume", () => {
+    // Worst case: max requests * BULK_SEND_LIMIT (500) provider calls in the window must stay a
+    // comfortable margin under PassCreator's documented 600 req/min limit
+    // (_ops/adr/0041-wallet-passcreator-api-contract.md), even before its own concurrency/backoff
+    // paces the actual outbound calls further.
+    const policy = RATE_POLICIES["admin:wallet-action-bulk"].checks[0]!;
+    const BULK_SEND_LIMIT = 500;
+    const worstCaseCalls = policy.max * BULK_SEND_LIMIT;
+    const windowMinutes = policy.windowMs / 60_000;
+    const worstCaseCallsPerMinute = worstCaseCalls / windowMinutes;
+    expect(worstCaseCallsPerMinute).toBeLessThan(600);
   });
 });
 
