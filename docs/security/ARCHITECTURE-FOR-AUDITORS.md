@@ -168,11 +168,12 @@ Useful answers when enterprise checklists ask for features not in scope:
 
 | Artefact | Location |
 |----------|----------|
-| Signed release tags | Project releases |
-| Container SBOM | `.github/workflows/publish-container.yml` — Syft SBOM attached to release assets |
+| Release tags | Project releases — created by CI as ordinary, unsigned GitHub tags by default; a manual signed-tag path exists for emergencies, see [VERSIONING.md](../../VERSIONING.md) |
+| Container SBOM | `.github/workflows/publish-container.yml` — CycloneDX SBOM generated via `aquasecurity/trivy-action`, attached to release assets |
 | Container vulnerability scan | `.github/workflows/publish-container.yml` — Trivy on built image |
 | Static analysis SARIF (CodeQL) | `.github/workflows/codeql.yml` — `security-extended` on every PR |
 | Static analysis SARIF (Semgrep) | `.github/workflows/semgrep.yml` — `--error` on every merge to `main` + weekly; intentionally not on PRs (CodeQL is the PR SAST gate; see [SECURITY.md](../../SECURITY.md)) |
-| Code quality analysis (SonarCloud) | Automatic analysis on every PR and `main` push via GitHub App integration (`sonarcloud.io`), not a workflow file in this repo — see [SECURITY.md](../../SECURITY.md) || Migration safety checks | `.github/workflows/ci.yml` job `migration-safety` — `scripts/check-migrations-destructive.sh` on PRs |
+| Code quality analysis (SonarCloud) | Automatic analysis on every PR and `main` push via GitHub App integration (`sonarcloud.io`), not a workflow file in this repo — see [SECURITY.md](../../SECURITY.md) |
+| Migration safety checks | `.github/workflows/ci.yml` job `migration-safety` — `scripts/check-migrations-destructive.sh` on PRs |
 
 Release **v0.4.3** added the corporate documentation pack. **CI trigger details** (PR vs `main`, required checks) are maintained in [SECURITY.md](../../SECURITY.md) — prefer that file over this table when answering audit questionnaires.
