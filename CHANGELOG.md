@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - An attendee's "Ticket link copied" activity log entry produced by opening "View sent message" now records the operator's own timezone instead of falling back to the event's timezone, matching every other activity log row - previously it could show a visibly different UTC offset than the operator's other actions on the same attendee if the event's own timezone differed from the operator's.
+- The public ticket page, QR image, and static map endpoints now allow far more requests per minute from the same apparent IP address before throttling (60 to 500). A single public IP can represent many unrelated attendees at once - most commonly behind a shared corporate network, or behind a mobile carrier's large-scale NAT, which is common in some regions and can put hundreds of distinct subscribers behind one address simultaneously - and the previous limit could show a legitimate attendee a "Too Many Requests" error for opening their own ticket link.
 
 ## [0.6.1] - 2026-08-25
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { createApp } from "../src/app.js";
-import { InMemoryRateLimitStore } from "../src/rate-limit/index.js";
+import { InMemoryRateLimitStore, MAX_REQUESTS } from "../src/rate-limit/index.js";
 import { RedisRateLimitStore } from "../src/rate-limit/redis.js";
 
 function createMockPrisma(): PrismaClient {
@@ -61,7 +61,7 @@ describe("createApp rate-limit wiring", () => {
     const app = createWiringApp(store);
     const headers = { "X-Forwarded-For": "203.0.113.77" };
 
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < MAX_REQUESTS; i++) {
       expect((await app.request("/t/sample-token", { headers })).status).not.toBe(429);
     }
     const blocked = await app.request("/t/sample-token", { headers });
