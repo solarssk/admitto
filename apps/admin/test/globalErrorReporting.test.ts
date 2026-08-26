@@ -3,7 +3,10 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const reportClientError = vi.fn();
-vi.mock("../src/reportClientError.js", () => ({ reportClientError }));
+vi.mock("../src/reportClientError.js", () => ({
+  reportClientError,
+  CLIENT_ERROR_REPORT_PATH: "/api/admin/client-errors",
+}));
 
 const { installGlobalErrorReporting } = await import("../src/globalErrorReporting.js");
 
@@ -89,6 +92,17 @@ describe("installGlobalErrorReporting", () => {
     const [err] = reportClientError.mock.calls[0];
     expect(err.message).toContain("blocked https://tracker.example.com/pixel ");
     expect(err.message).not.toContain("uid=abc123");
+  });
+
+  it("drops a CSP violation that blocks the client-error report endpoint itself, instead of looping forever", () => {
+    const event = new Event("securitypolicyviolation");
+    Object.defineProperty(event, "violatedDirective", { value: "connect-src" });
+    Object.defineProperty(event, "blockedURI", {
+      value: "https://admitto.example.com/api/admin/client-errors",
+    });
+    document.dispatchEvent(event);
+
+    expect(reportClientError).not.toHaveBeenCalled();
   });
 
   it("falls back to placeholders when the violation event has no blockedURI/sourceFile", () => {

@@ -625,6 +625,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminWalletActionRateLimit = rateLimit(rateLimitStore, "admin:wallet-action");
   const adminWalletActionBulkRateLimit = rateLimit(rateLimitStore, "admin:wallet-action-bulk");
   const adminAttendeeBulkMutationRateLimit = rateLimit(rateLimitStore, "admin:attendee-bulk-mutation");
+  const adminClientErrorRateLimit = rateLimit(rateLimitStore, "admin:client-error");
   /** Wraps `adminWalletActionBulkRateLimit` so bulk-delete / bulk-revoke-pass only spend that
    * budget when the event actually has wallet configured - unlike the 3 explicit
    * bulk-wallet-void/reissue/delete routes (always a wallet action by definition), these two are
@@ -1893,7 +1894,13 @@ export function createApp(options: CreateAppOptions = {}) {
   // runs on /operator and /account, whose sessions fail the admin-panel check - gating this
   // log-only endpoint on admin access would 403 every report from those surfaces and write a
   // spurious access-denied row to the security audit log for each one.
-  app.post("/api/admin/client-errors", jsonPostCsrf, requireSession, (c) => handlePostClientError(c));
+  app.post(
+    "/api/admin/client-errors",
+    jsonPostCsrf,
+    requireSession,
+    adminClientErrorRateLimit,
+    (c) => handlePostClientError(c),
+  );
   app.post("/api/admin/uploads", jsonPostCsrf, staffAdminGate, uploadBodyLimit, (c) =>
     handlePostUpload(c, db),
   );
