@@ -104,6 +104,108 @@ function classifyExisting(row: {
 }
 
 /**
+ * Shared loser's-side handling for both retry_existing and reclaim_cancelled: another
+ * request's guarded updateMany won the race on this exact row first. Anything other than a
+ * plain "skip" here means that concurrent request is itself mid-way through retrying/
+ * reclaiming this row (classifyExisting no longer sees "failed"/"cancelled" because it
+ * already flipped the row to "queued") - report in-flight rather than recursing into the
+ * same race.
+ */
+async function resolveLostRace(
+  prisma: PrismaClient,
+  deliveryId: string,
+  notFoundMessage: string,
+): Promise<ClaimResult> {
+  const refreshed = await prisma.emailDelivery.findFirst({ where: { id: deliveryId } });
+  if (!refreshed) {
+    throw new Error(notFoundMessage);
+  }
+  const lostRace = classifyExisting(refreshed);
+  if (lostRace.action !== "skip") {
+    return { action: "skip", reason: "in_flight" };
+  }
+  return lostRace;
+}
+
+async function claimRetryExisting(
+  input: ClaimInitialInput,
+  existingId: string,
+  message: FrozenMessage,
+  prisma: PrismaClient,
+): Promise<ClaimResult> {
+  const claimed = await prisma.emailDelivery.updateMany({
+    where: {
+      id: existingId,
+      status: "failed",
+      retryable: true,
+    },
+    data: {
+      status: "queued",
+      queued_at: new Date(),
+      batch_id: input.batchId,
+      client_timezone: input.timezone ?? null,
+      actor_user_id: input.actorUserId ?? null,
+      session_id: input.sessionId ?? null,
+    },
+  });
+  if (claimed.count === 0) {
+    return resolveLostRace(prisma, existingId, "Retry claim lost but initial delivery row not found");
+  }
+  return {
+    action: "retry_existing",
+    deliveryId: existingId,
+    message,
+  };
+}
+
+async function claimReclaimCancelled(
+  input: ClaimInitialInput,
+  existingId: string,
+  now: Date,
+  prisma: PrismaClient,
+): Promise<ClaimResult> {
+  // Full refresh, not just a status flip: a cancelled row can be arbitrarily old, so this
+  // reclaims it with this request's fresh template/content/actor - not the stale frozen
+  // message (or template) it originally queued under.
+  const claimed = await prisma.emailDelivery.updateMany({
+    where: {
+      id: existingId,
+      status: "cancelled",
+    },
+    data: {
+      status: "queued",
+      queued_at: now,
+      batch_id: input.batchId,
+      template_id: input.templateId,
+      template_label_snapshot: input.templateLabel ?? null,
+      provider: input.provider,
+      recipient_email: input.recipientEmail.toLowerCase(),
+      rendered_subject: input.renderedSubject,
+      rendered_html: input.renderedHtml,
+      attempts: 1,
+      retryable: null,
+      error: null,
+      error_code: null,
+      client_timezone: input.timezone ?? null,
+      actor_user_id: input.actorUserId ?? null,
+      session_id: input.sessionId ?? null,
+    },
+  });
+  if (claimed.count === 0) {
+    return resolveLostRace(prisma, existingId, "Reclaim lost but initial delivery row not found");
+  }
+  return {
+    action: "send",
+    deliveryId: existingId,
+    message: {
+      to: input.recipientEmail,
+      subject: input.renderedSubject,
+      html: input.renderedHtml,
+    },
+  };
+}
+
+/**
  * Atomically claim the initial delivery slot for (attendee, event).
  * Uses partial unique index on (attendee_id, event_id) WHERE purpose='initial'.
  */
@@ -144,94 +246,10 @@ export async function claimInitialDelivery(
 
   const result = classifyExisting(existing);
   if (result.action === "retry_existing") {
-    const claimed = await prisma.emailDelivery.updateMany({
-      where: {
-        id: existing.id,
-        status: "failed",
-        retryable: true,
-      },
-      data: {
-        status: "queued",
-        queued_at: new Date(),
-        batch_id: input.batchId,
-        client_timezone: input.timezone ?? null,
-        actor_user_id: input.actorUserId ?? null,
-        session_id: input.sessionId ?? null,
-      },
-    });
-    if (claimed.count === 0) {
-      const refreshed = await prisma.emailDelivery.findFirst({
-        where: { id: existing.id },
-      });
-      if (!refreshed) {
-        throw new Error("Retry claim lost but initial delivery row not found");
-      }
-      const lostRace = classifyExisting(refreshed);
-      // Anything other than a plain "skip" here means a concurrent request is itself mid-way
-      // through retrying/reclaiming this exact row (classifyExisting no longer sees "failed"/
-      // "cancelled" because that other request already flipped it to "queued") - report
-      // in-flight rather than recursing into the same race.
-      if (lostRace.action !== "skip") {
-        return { action: "skip", reason: "in_flight" };
-      }
-      return lostRace;
-    }
-    return {
-      action: "retry_existing",
-      deliveryId: existing.id,
-      message: result.message,
-    };
+    return claimRetryExisting(input, existing.id, result.message, prisma);
   }
   if (result.action === "reclaim_cancelled") {
-    // Full refresh, not just a status flip: a cancelled row can be arbitrarily old, so this
-    // reclaims it with this request's fresh template/content/actor - not the stale frozen
-    // message (or template) it originally queued under.
-    const claimed = await prisma.emailDelivery.updateMany({
-      where: {
-        id: existing.id,
-        status: "cancelled",
-      },
-      data: {
-        status: "queued",
-        queued_at: now,
-        batch_id: input.batchId,
-        template_id: input.templateId,
-        template_label_snapshot: input.templateLabel ?? null,
-        provider: input.provider,
-        recipient_email: input.recipientEmail.toLowerCase(),
-        rendered_subject: input.renderedSubject,
-        rendered_html: input.renderedHtml,
-        attempts: 1,
-        retryable: null,
-        error: null,
-        error_code: null,
-        client_timezone: input.timezone ?? null,
-        actor_user_id: input.actorUserId ?? null,
-        session_id: input.sessionId ?? null,
-      },
-    });
-    if (claimed.count === 0) {
-      const refreshed = await prisma.emailDelivery.findFirst({
-        where: { id: existing.id },
-      });
-      if (!refreshed) {
-        throw new Error("Reclaim lost but initial delivery row not found");
-      }
-      const lostRace = classifyExisting(refreshed);
-      if (lostRace.action !== "skip") {
-        return { action: "skip", reason: "in_flight" };
-      }
-      return lostRace;
-    }
-    return {
-      action: "send",
-      deliveryId: existing.id,
-      message: {
-        to: input.recipientEmail,
-        subject: input.renderedSubject,
-        html: input.renderedHtml,
-      },
-    };
+    return claimReclaimCancelled(input, existing.id, now, prisma);
   }
   return result;
 }
