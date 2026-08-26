@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- The admin/operator/account SPA's client-side error reporting (`POST /api/admin/client-errors`) now has a per-user rate limit (30/minute) - it previously had none, so a stuck browser tab could send this endpoint as many requests as it liked. Also fixed a related gap: a CSP violation that itself blocks this reporting call (for example, a temporarily misconfigured deployment) is no longer reported at all, instead of being reported by re-triggering the exact same blocked call it's describing - closing off a self-inflicted infinite retry loop that could otherwise flood a single browser session's requests and the server's logs indefinitely until the tab was closed or reloaded.
+
 ## [0.6.2] - 2026-08-25
 
 ### Added
