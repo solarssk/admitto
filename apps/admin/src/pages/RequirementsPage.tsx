@@ -89,9 +89,6 @@ function EventItemsTableBody({
               <i className={`ti ti-${item.icon ?? DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
               <div className="requirements-item-info">
                 <div className="requirements-item-name">{item.label}</div>
-                <div className="requirements-item-id">
-                  <code>{item.key}</code>
-                </div>
               </div>
             </div>
           </td>
@@ -101,23 +98,28 @@ function EventItemsTableBody({
             )}
           </td>
           <td className="requirements-item-status-col">
-            <ArchivedGuard
-              event={event}
-              reasonId={`toggle-item-reason-${item.id}`}
-              disabled={togglingIds.has(item.id)}
-            >
-              {(guard) => (
-                <Switch
-                  id={`requirement-item-enabled-${item.id}`}
-                  label={item.enabled ? "On" : "Off"}
-                  checked={item.enabled}
-                  aria-busy={togglingIds.has(item.id)}
-                  onChange={() => onToggle(item)}
-                  aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
-                  {...guard}
-                />
-              )}
-            </ArchivedGuard>
+            {/* Block wrapper so the cell's `vertical-align: middle` centers a normal block
+             * box - ArchivedGuard's Tooltip trigger is an inline-flex span with no baseline
+             * of its own, which table cells center inconsistently (a few px off). */}
+            <div className="requirements-status-cell">
+              <ArchivedGuard
+                event={event}
+                reasonId={`toggle-item-reason-${item.id}`}
+                disabled={togglingIds.has(item.id)}
+              >
+                {(guard) => (
+                  <Switch
+                    id={`requirement-item-enabled-${item.id}`}
+                    label={item.enabled ? "On" : "Off"}
+                    checked={item.enabled}
+                    aria-busy={togglingIds.has(item.id)}
+                    onChange={() => onToggle(item)}
+                    aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
+                    {...guard}
+                  />
+                )}
+              </ArchivedGuard>
+            </div>
           </td>
           <td className="requirements-item-actions">
             <div className="requirements-item-actions__wrap">
