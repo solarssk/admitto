@@ -163,8 +163,89 @@ export function normalizeMapsUrlOverride(
  * Does NOT know about an existing record - the "both coordinates or neither" rule is enforced by
  * `assertCoordinatePairing` against the *merged* result, since a caller may legitimately patch
  * just one axis when the other is already set on the stored record. */
+function assignIfDefined<K extends keyof NormalizedEventLocationInput>(
+  result: NormalizedEventLocationInput,
+  key: K,
+  value: NormalizedEventLocationInput[K] | undefined,
+): void {
+  if (value !== undefined) result[key] = value;
+}
+
+/** The 7 venue-identifier fields, extracted out of normalizeEventLocationInput to keep its own
+ * cognitive complexity under the SonarCloud threshold (S3776) - each is normalized and assigned
+ * the same way as every other short text field on this form. */
+function normalizeVenueIdentifierFields(
+  input: EventLocationInput,
+  result: NormalizedEventLocationInput,
+): void {
+  assignIfDefined(
+    result,
+    "venue_room",
+    normalizeText(input.venue_room, LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH, "venue_room"),
+  );
+  assignIfDefined(
+    result,
+    "venue_entrance",
+    normalizeText(input.venue_entrance, LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH, "venue_entrance"),
+  );
+  assignIfDefined(
+    result,
+    "venue_entrance_door",
+    normalizeText(input.venue_entrance_door, LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH, "venue_entrance_door"),
+  );
+  assignIfDefined(
+    result,
+    "venue_entrance_gate",
+    normalizeText(input.venue_entrance_gate, LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH, "venue_entrance_gate"),
+  );
+  assignIfDefined(
+    result,
+    "venue_entrance_portal",
+    normalizeText(input.venue_entrance_portal, LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH, "venue_entrance_portal"),
+  );
+  assignIfDefined(
+    result,
+    "venue_phone_number",
+    normalizeText(input.venue_phone_number, LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH, "venue_phone_number"),
+  );
+  assignIfDefined(
+    result,
+    "venue_place_id",
+    normalizeText(input.venue_place_id, LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH, "venue_place_id"),
+  );
+}
+
+/** The 7 access-point opening-time fields, extracted for the same reason as
+ * normalizeVenueIdentifierFields above. */
+function normalizeAccessPointTimingFields(
+  input: EventLocationInput,
+  result: NormalizedEventLocationInput,
+): void {
+  assignIfDefined(result, "venue_open_time", normalizeTimeField(input.venue_open_time, "venue_open_time"));
+  assignIfDefined(result, "venue_close_time", normalizeTimeField(input.venue_close_time, "venue_close_time"));
+  assignIfDefined(result, "doors_open_time", normalizeTimeField(input.doors_open_time, "doors_open_time"));
+  assignIfDefined(result, "gates_open_time", normalizeTimeField(input.gates_open_time, "gates_open_time"));
+  assignIfDefined(
+    result,
+    "box_office_open_time",
+    normalizeTimeField(input.box_office_open_time, "box_office_open_time"),
+  );
+  assignIfDefined(
+    result,
+    "parking_lots_open_time",
+    normalizeTimeField(input.parking_lots_open_time, "parking_lots_open_time"),
+  );
+  assignIfDefined(
+    result,
+    "fan_zone_open_time",
+    normalizeTimeField(input.fan_zone_open_time, "fan_zone_open_time"),
+  );
+}
+
 export function normalizeEventLocationInput(input: EventLocationInput): NormalizedEventLocationInput {
   const result: NormalizedEventLocationInput = {};
+  normalizeVenueIdentifierFields(input, result);
+  normalizeAccessPointTimingFields(input, result);
 
   const venueName = normalizeText(input.venue_name, LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH, "venue_name");
   if (venueName !== undefined) result.venue_name = venueName;
@@ -217,75 +298,6 @@ export function normalizeEventLocationInput(input: EventLocationInput): Normaliz
     "apple_maps_url_override",
   );
   if (appleOverride !== undefined) result.apple_maps_url_override = appleOverride;
-
-  const venueRoom = normalizeText(input.venue_room, LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH, "venue_room");
-  if (venueRoom !== undefined) result.venue_room = venueRoom;
-
-  const venueEntrance = normalizeText(
-    input.venue_entrance,
-    LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH,
-    "venue_entrance",
-  );
-  if (venueEntrance !== undefined) result.venue_entrance = venueEntrance;
-
-  const venueEntranceDoor = normalizeText(
-    input.venue_entrance_door,
-    LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH,
-    "venue_entrance_door",
-  );
-  if (venueEntranceDoor !== undefined) result.venue_entrance_door = venueEntranceDoor;
-
-  const venueEntranceGate = normalizeText(
-    input.venue_entrance_gate,
-    LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH,
-    "venue_entrance_gate",
-  );
-  if (venueEntranceGate !== undefined) result.venue_entrance_gate = venueEntranceGate;
-
-  const venueEntrancePortal = normalizeText(
-    input.venue_entrance_portal,
-    LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH,
-    "venue_entrance_portal",
-  );
-  if (venueEntrancePortal !== undefined) result.venue_entrance_portal = venueEntrancePortal;
-
-  const venuePhoneNumber = normalizeText(
-    input.venue_phone_number,
-    LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH,
-    "venue_phone_number",
-  );
-  if (venuePhoneNumber !== undefined) result.venue_phone_number = venuePhoneNumber;
-
-  const venuePlaceId = normalizeText(
-    input.venue_place_id,
-    LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH,
-    "venue_place_id",
-  );
-  if (venuePlaceId !== undefined) result.venue_place_id = venuePlaceId;
-
-  const venueOpenTime = normalizeTimeField(input.venue_open_time, "venue_open_time");
-  if (venueOpenTime !== undefined) result.venue_open_time = venueOpenTime;
-
-  const venueCloseTime = normalizeTimeField(input.venue_close_time, "venue_close_time");
-  if (venueCloseTime !== undefined) result.venue_close_time = venueCloseTime;
-
-  const doorsOpenTime = normalizeTimeField(input.doors_open_time, "doors_open_time");
-  if (doorsOpenTime !== undefined) result.doors_open_time = doorsOpenTime;
-
-  const gatesOpenTime = normalizeTimeField(input.gates_open_time, "gates_open_time");
-  if (gatesOpenTime !== undefined) result.gates_open_time = gatesOpenTime;
-
-  const boxOfficeOpenTime = normalizeTimeField(input.box_office_open_time, "box_office_open_time");
-  if (boxOfficeOpenTime !== undefined) result.box_office_open_time = boxOfficeOpenTime;
-
-  const parkingLotsOpenTime = normalizeTimeField(
-    input.parking_lots_open_time,
-    "parking_lots_open_time",
-  );
-  if (parkingLotsOpenTime !== undefined) result.parking_lots_open_time = parkingLotsOpenTime;
-
-  const fanZoneOpenTime = normalizeTimeField(input.fan_zone_open_time, "fan_zone_open_time");
-  if (fanZoneOpenTime !== undefined) result.fan_zone_open_time = fanZoneOpenTime;
 
   return result;
 }

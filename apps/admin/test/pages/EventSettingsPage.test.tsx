@@ -1456,6 +1456,84 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
+  it("shows the event's real venue access-point values in field mapping row tooltips", async () => {
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce({
+      ...emptyLocation,
+      venue_room: "Hall B",
+      venue_entrance: "Main entrance",
+      venue_entrance_door: "Door 3",
+      venue_entrance_gate: "Gate B",
+      venue_entrance_portal: "North Portal",
+      venue_phone_number: "+91 80 4252 1000",
+      venue_place_id: "I4CCAB9B9CD77B6BA",
+      venue_open_time: "08:00",
+      venue_close_time: "23:00",
+      doors_open_time: "08:30",
+      gates_open_time: "08:45",
+      box_office_open_time: "08:15",
+      parking_lots_open_time: "07:00",
+      fan_zone_open_time: "09:00",
+    });
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: {
+        room: "venue_room",
+        entrance: "venue_entrance",
+        door: "venue_entrance_door",
+        gate: "venue_entrance_gate",
+        portal: "venue_entrance_portal",
+        phone: "venue_phone_number",
+        placeId: "venue_place_id",
+        venueOpen: "venue_open_time",
+        venueClose: "venue_close_time",
+        doorsOpen: "doors_open_time",
+        gatesOpen: "gates_open_time",
+        boxOffice: "box_office_open_time",
+        parking: "parking_lots_open_time",
+        fanZone: "fan_zone_open_time",
+      },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const hoverTooltipOf = (label: string): HTMLElement => {
+      document
+        .querySelectorAll(".wallet-field-mapping__hint")
+        .forEach((el) => fireEvent.mouseLeave(el));
+      const trigger = screen.getByRole("button", { name: `Value, ${label}` });
+      const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+      const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+      fireEvent.mouseEnter(hintTrigger);
+      return screen.getByRole("tooltip");
+    };
+
+    await waitFor(() => expect(hoverTooltipOf("Venue room").textContent).toBe("Hall B"));
+    await waitFor(() => expect(hoverTooltipOf("Venue entrance").textContent).toBe("Main entrance"));
+    await waitFor(() => expect(hoverTooltipOf("Entrance door").textContent).toBe("Door 3"));
+    await waitFor(() => expect(hoverTooltipOf("Entrance gate").textContent).toBe("Gate B"));
+    await waitFor(() => expect(hoverTooltipOf("Entrance portal").textContent).toBe("North Portal"));
+    await waitFor(() =>
+      expect(hoverTooltipOf("Venue phone number").textContent).toBe("+91 80 4252 1000"),
+    );
+    await waitFor(() =>
+      expect(hoverTooltipOf("Venue place ID").textContent).toBe("I4CCAB9B9CD77B6BA"),
+    );
+    await waitFor(() => expect(hoverTooltipOf("Venue open time").textContent).toBe("08:00"));
+    await waitFor(() => expect(hoverTooltipOf("Venue close time").textContent).toBe("23:00"));
+    await waitFor(() => expect(hoverTooltipOf("Doors open time").textContent).toBe("08:30"));
+    await waitFor(() => expect(hoverTooltipOf("Gates open time").textContent).toBe("08:45"));
+    await waitFor(() =>
+      expect(hoverTooltipOf("Box office open time").textContent).toBe("08:15"),
+    );
+    await waitFor(() =>
+      expect(hoverTooltipOf("Parking lots open time").textContent).toBe("07:00"),
+    );
+    await waitFor(() => expect(hoverTooltipOf("Fan zone open time").textContent).toBe("09:00"));
+  });
+
   it("shows a not-set fallback for location tooltips before the Location tab has anything saved", async () => {
     vi.mocked(fetchEventLocation).mockResolvedValueOnce(emptyLocation);
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({

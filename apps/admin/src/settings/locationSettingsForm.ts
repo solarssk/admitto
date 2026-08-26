@@ -101,6 +101,57 @@ export function isLocationDirty(draft: LocationDraft, saved: LocationDraft): boo
   );
 }
 
+/** Trim-and-diff a single optional text field: unchanged (after trim) is omitted, cleared (empty
+ * after trim) becomes `null`. Shared by every plain string field in `SaveEventLocationBody` -
+ * extracted so `buildEventLocationPatchBody` doesn't repeat this same three-line shape per field
+ * (SonarCloud S3776 cognitive-complexity budget). */
+function diffTextField(
+  patch: Record<string, string | null>,
+  key: string,
+  draftValue: string,
+  savedValue: string,
+): void {
+  const trimmed = draftValue.trim();
+  if (trimmed !== savedValue.trim()) {
+    patch[key] = trimmed || null;
+  }
+}
+
+const VENUE_IDENTIFIER_FIELDS = [
+  "venue_room",
+  "venue_entrance",
+  "venue_entrance_door",
+  "venue_entrance_gate",
+  "venue_entrance_portal",
+  "venue_phone_number",
+  "venue_place_id",
+] as const;
+
+const ACCESS_POINT_TIMING_FIELDS = [
+  "venue_open_time",
+  "venue_close_time",
+  "doors_open_time",
+  "gates_open_time",
+  "box_office_open_time",
+  "parking_lots_open_time",
+  "fan_zone_open_time",
+] as const;
+
+/** Extracted out of buildEventLocationPatchBody (SonarCloud S3776) - the 7 venue-identifier and 7
+ * access-point-timing fields are both flat lists of same-shaped optional text fields, diffed the
+ * same way as every other field on this form. */
+function diffFieldList(
+  fields: readonly string[],
+  draft: LocationDraft,
+  saved: LocationDraft,
+): Partial<SaveEventLocationBody> {
+  const patch: Record<string, string | null> = {};
+  for (const field of fields) {
+    diffTextField(patch, field, draft[field as keyof LocationDraft] as string, saved[field as keyof LocationDraft] as string);
+  }
+  return patch;
+}
+
 /**
  * Builds the partial PATCH body from the diff between `draft` and `saved`.
  *
@@ -119,7 +170,10 @@ export function buildEventLocationPatchBody(
   saved: LocationDraft,
   pendingGeocodingProvider: string | null,
 ): SaveEventLocationBody {
-  const body: SaveEventLocationBody = {};
+  const body: SaveEventLocationBody = {
+    ...diffFieldList(VENUE_IDENTIFIER_FIELDS, draft, saved),
+    ...diffFieldList(ACCESS_POINT_TIMING_FIELDS, draft, saved),
+  };
 
   const venueName = draft.venue_name.trim();
   if (venueName !== saved.venue_name.trim()) {
@@ -156,62 +210,6 @@ export function buildEventLocationPatchBody(
   const appleOverride = draft.apple_maps_url_override.trim();
   if (appleOverride !== saved.apple_maps_url_override.trim()) {
     body.apple_maps_url_override = appleOverride || null;
-  }
-
-  const venueRoom = draft.venue_room.trim();
-  if (venueRoom !== saved.venue_room.trim()) body.venue_room = venueRoom || null;
-
-  const venueEntrance = draft.venue_entrance.trim();
-  if (venueEntrance !== saved.venue_entrance.trim()) body.venue_entrance = venueEntrance || null;
-
-  const venueEntranceDoor = draft.venue_entrance_door.trim();
-  if (venueEntranceDoor !== saved.venue_entrance_door.trim()) {
-    body.venue_entrance_door = venueEntranceDoor || null;
-  }
-
-  const venueEntranceGate = draft.venue_entrance_gate.trim();
-  if (venueEntranceGate !== saved.venue_entrance_gate.trim()) {
-    body.venue_entrance_gate = venueEntranceGate || null;
-  }
-
-  const venueEntrancePortal = draft.venue_entrance_portal.trim();
-  if (venueEntrancePortal !== saved.venue_entrance_portal.trim()) {
-    body.venue_entrance_portal = venueEntrancePortal || null;
-  }
-
-  const venuePhoneNumber = draft.venue_phone_number.trim();
-  if (venuePhoneNumber !== saved.venue_phone_number.trim()) {
-    body.venue_phone_number = venuePhoneNumber || null;
-  }
-
-  const venuePlaceId = draft.venue_place_id.trim();
-  if (venuePlaceId !== saved.venue_place_id.trim()) body.venue_place_id = venuePlaceId || null;
-
-  const venueOpenTime = draft.venue_open_time.trim();
-  if (venueOpenTime !== saved.venue_open_time.trim()) body.venue_open_time = venueOpenTime || null;
-
-  const venueCloseTime = draft.venue_close_time.trim();
-  if (venueCloseTime !== saved.venue_close_time.trim()) body.venue_close_time = venueCloseTime || null;
-
-  const doorsOpenTime = draft.doors_open_time.trim();
-  if (doorsOpenTime !== saved.doors_open_time.trim()) body.doors_open_time = doorsOpenTime || null;
-
-  const gatesOpenTime = draft.gates_open_time.trim();
-  if (gatesOpenTime !== saved.gates_open_time.trim()) body.gates_open_time = gatesOpenTime || null;
-
-  const boxOfficeOpenTime = draft.box_office_open_time.trim();
-  if (boxOfficeOpenTime !== saved.box_office_open_time.trim()) {
-    body.box_office_open_time = boxOfficeOpenTime || null;
-  }
-
-  const parkingLotsOpenTime = draft.parking_lots_open_time.trim();
-  if (parkingLotsOpenTime !== saved.parking_lots_open_time.trim()) {
-    body.parking_lots_open_time = parkingLotsOpenTime || null;
-  }
-
-  const fanZoneOpenTime = draft.fan_zone_open_time.trim();
-  if (fanZoneOpenTime !== saved.fan_zone_open_time.trim()) {
-    body.fan_zone_open_time = fanZoneOpenTime || null;
   }
 
   const coordinatesChanged = body.latitude !== undefined || body.longitude !== undefined;

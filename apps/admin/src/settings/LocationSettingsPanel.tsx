@@ -768,8 +768,7 @@ export function LocationSettingsPanel({
 
           <details className="disclosure">
             <summary className="disclosure__summary">
-              <i className="ti ti-chevron-right" aria-hidden="true" />
-              Opening hours
+              <i className="ti ti-chevron-right" aria-hidden="true" /> Opening hours
             </summary>
             <div className="disclosure__body">
               <div className="settings-field-stack">

@@ -353,36 +353,44 @@ const EMPTY_WALLET_LOCATION_SNAPSHOT: WalletRelevantLocationSnapshot = {
  * repeatedly enqueue pushes for no real change once each prior job finishes). address_components
  * is JSON - compared by serialized value, not object identity, since Prisma returns a fresh
  * object on every read even when the stored content is byte-identical. */
+/** Every WalletRelevantLocationSnapshot field that's a plain string|null, compared by `!==` -
+ * latitude/longitude (numbers) and address_components (an object, needs JSON.stringify) are
+ * handled separately in walletRelevantLocationFieldsChanged below. Listed once here instead of as
+ * a long `||` chain to keep that function's own cognitive complexity under the SonarCloud
+ * threshold (S3776). */
+const WALLET_RELEVANT_LOCATION_TEXT_FIELDS = [
+  "venue_name",
+  "formatted_address",
+  "directions_text",
+  "accessibility_text",
+  "google_maps_url_override",
+  "apple_maps_url_override",
+  "venue_room",
+  "venue_entrance",
+  "venue_entrance_door",
+  "venue_entrance_gate",
+  "venue_entrance_portal",
+  "venue_phone_number",
+  "venue_place_id",
+  "venue_open_time",
+  "venue_close_time",
+  "doors_open_time",
+  "gates_open_time",
+  "box_office_open_time",
+  "parking_lots_open_time",
+  "fan_zone_open_time",
+] as const satisfies readonly (keyof WalletRelevantLocationSnapshot)[];
+
 function walletRelevantLocationFieldsChanged(
   existing: WalletRelevantLocationSnapshot | null,
   updated: WalletRelevantLocationSnapshot,
 ): boolean {
   const before = existing ?? EMPTY_WALLET_LOCATION_SNAPSHOT;
-  return (
-    before.venue_name !== updated.venue_name ||
-    before.formatted_address !== updated.formatted_address ||
-    before.latitude !== updated.latitude ||
-    before.longitude !== updated.longitude ||
-    before.directions_text !== updated.directions_text ||
-    before.accessibility_text !== updated.accessibility_text ||
-    before.google_maps_url_override !== updated.google_maps_url_override ||
-    before.apple_maps_url_override !== updated.apple_maps_url_override ||
-    before.venue_room !== updated.venue_room ||
-    before.venue_entrance !== updated.venue_entrance ||
-    before.venue_entrance_door !== updated.venue_entrance_door ||
-    before.venue_entrance_gate !== updated.venue_entrance_gate ||
-    before.venue_entrance_portal !== updated.venue_entrance_portal ||
-    before.venue_phone_number !== updated.venue_phone_number ||
-    before.venue_place_id !== updated.venue_place_id ||
-    before.venue_open_time !== updated.venue_open_time ||
-    before.venue_close_time !== updated.venue_close_time ||
-    before.doors_open_time !== updated.doors_open_time ||
-    before.gates_open_time !== updated.gates_open_time ||
-    before.box_office_open_time !== updated.box_office_open_time ||
-    before.parking_lots_open_time !== updated.parking_lots_open_time ||
-    before.fan_zone_open_time !== updated.fan_zone_open_time ||
-    JSON.stringify(before.address_components) !== JSON.stringify(updated.address_components)
-  );
+  if (before.latitude !== updated.latitude || before.longitude !== updated.longitude) return true;
+  if (JSON.stringify(before.address_components) !== JSON.stringify(updated.address_components)) {
+    return true;
+  }
+  return WALLET_RELEVANT_LOCATION_TEXT_FIELDS.some((field) => before[field] !== updated[field]);
 }
 
 /** Best-effort: enqueues a wallet_push job to refresh every already-issued active wallet pass
