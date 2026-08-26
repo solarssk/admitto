@@ -7,7 +7,26 @@ import { setPreferredTimeFormat } from "../../src/utils/locale-store.js";
 afterEach(() => {
   setPreferredTimeFormat(undefined);
   cleanup();
+  vi.restoreAllMocks();
 });
+
+/** Stubs the layout reads TimeInput's placement effect uses - jsdom has no real layout engine,
+ * so getBoundingClientRect/scrollHeight/offsetWidth/innerWidth/innerHeight all default to 0.
+ * Same technique as DatePicker.test.tsx's own helper - both pickers share the fixed-position,
+ * viewport-flip placement pattern. */
+function mockPlacementLayout(opts: {
+  rect: { top: number; bottom: number; left: number };
+  panelHeight: number;
+  panelWidth: number;
+  innerWidth: number;
+  innerHeight: number;
+}) {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(opts.rect as DOMRect);
+  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(opts.panelHeight);
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(opts.panelWidth);
+  vi.spyOn(window, "innerWidth", "get").mockReturnValue(opts.innerWidth);
+  vi.spyOn(window, "innerHeight", "get").mockReturnValue(opts.innerHeight);
+}
 
 describe("TimeInput", () => {
   it("stores 24-hour typed input as canonical HH:MM on blur", () => {
@@ -251,10 +270,68 @@ describe("TimeInput", () => {
     expect(screen.getByLabelText("Start time")).toBeTruthy();
   });
 
-  it("marks an end-aligned picker for right-edge positioning", () => {
-    const { container } = render(
-      <TimeInput ariaLabel="End time" value="" onChange={vi.fn()} pickerAlign="end" />,
-    );
-    expect(container.querySelector(".time-input--picker-end")).toBeTruthy();
+  it("opens the picker fixed-positioned below the field by default", () => {
+    mockPlacementLayout({
+      rect: { top: 100, bottom: 130, left: 50 },
+      panelHeight: 200,
+      panelWidth: 200,
+      innerWidth: 1024,
+      innerHeight: 768,
+    });
+    render(<TimeInput ariaLabel="Start time" value="" onChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Choose time" });
+    expect(dialog.className).not.toContain("time-input__picker--above");
+    expect(dialog.style.position).toBe("fixed");
+    expect(dialog.style.left).toBe("50px");
+  });
+
+  it("flips the picker above the field when there isn't room below - e.g. the last field on a scrolled page", () => {
+    mockPlacementLayout({
+      rect: { top: 500, bottom: 540, left: 50 },
+      panelHeight: 300,
+      panelWidth: 200,
+      innerWidth: 1024,
+      innerHeight: 600,
+    });
+    render(<TimeInput ariaLabel="Start time" value="" onChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Choose time" });
+    expect(dialog.className).toContain("time-input__picker--above");
+  });
+
+  it("clamps the picker inside the viewport for a field near the right edge, instead of overflowing", () => {
+    mockPlacementLayout({
+      rect: { top: 100, bottom: 130, left: 900 },
+      panelHeight: 200,
+      panelWidth: 200,
+      innerWidth: 1024,
+      innerHeight: 768,
+    });
+    render(<TimeInput ariaLabel="Start time" value="" onChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Choose time" });
+    // Would overflow past 1024 (900 + 200 = 1100) if left-anchored at the field's own left edge -
+    // clamped to stay within the viewport instead of opening off to the right of it.
+    expect(Number.parseFloat(dialog.style.left)).toBeLessThanOrEqual(1024 - 8 - 200);
+  });
+
+  it("clamps the picker's own height and scrolls when neither above nor below has room for it", () => {
+    mockPlacementLayout({
+      rect: { top: 50, bottom: 90, left: 50 },
+      panelHeight: 500,
+      panelWidth: 200,
+      innerWidth: 1024,
+      innerHeight: 200,
+    });
+    render(<TimeInput ariaLabel="Start time" value="" onChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Choose time" });
+    expect(dialog.style.maxHeight).toBe("96px");
+    expect(dialog.style.overflowY).toBe("auto");
   });
 });

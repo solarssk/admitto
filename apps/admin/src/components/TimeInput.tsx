@@ -1,19 +1,27 @@
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type FocusEvent,
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
 } from "react";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
+import { attachFixedOverlayLifecycle, getFixedOverlayViewport } from "../utils/fixed-overlay-lifecycle.js";
 import { getPreferredTimeFormat } from "../utils/locale-store.js";
 import "../staff.css";
 
 type TimeParts = { hours: number; minutes: number };
+
+const PICKER_GAP_PX = 6;
+const VIEWPORT_PAD_PX = 8;
+
+const HIDDEN_FIXED_PICKER: CSSProperties = { position: "fixed", visibility: "hidden" };
 
 const TWELVE_HOUR_OPTIONS = Array.from({ length: 12 }, (_, index) => index + 1);
 const TWENTY_FOUR_HOUR_OPTIONS = Array.from({ length: 24 }, (_, index) => index);
@@ -129,8 +137,6 @@ export interface TimeInputProps {
   error?: string;
   /** Override the account regional format when an embedding form needs a specific display. */
   hourCycle?: "12h" | "24h";
-  /** Keep a popover inside the available edge of a paired field row. */
-  pickerAlign?: "start" | "end";
   /** Reports whether the current typed value can safely be submitted. */
   onValidityChange?: (valid: boolean) => void;
 }
@@ -147,7 +153,6 @@ export function TimeInput({
   hint,
   error,
   hourCycle,
-  pickerAlign = "start",
   onValidityChange,
 }: Readonly<TimeInputProps>) {
   const uid = useId();
@@ -165,6 +170,14 @@ export function TimeInput({
   const [typedInvalid, setTypedInvalid] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerTime, setPickerTime] = useState(() => splitTime(value));
+  // Fixed coords (not the old absolute-inside-`.time-input` panel) so a trigger near the bottom
+  // of a scrolled page flips the picker above instead of forcing the page to grow to fit it -
+  // an absolutely positioned panel still inflates the nearest scrolling ancestor's scrollHeight
+  // even with nothing else clipping it (PO report: opening "Fan zone opens", the last field in a
+  // long card, pushed the whole page taller). Same DatePicker/attachFixedOverlayLifecycle
+  // pattern as the Date and Timezone pickers in this same row.
+  const [pickerAbove, setPickerAbove] = useState(false);
+  const [pickerStyle, setPickerStyle] = useState<CSSProperties>(HIDDEN_FIXED_PICKER);
 
   useEffect(() => {
     setText(formatTime(value, twelveHour));
@@ -186,6 +199,7 @@ export function TimeInput({
   const invalidHintId = typedInvalid && !error ? `${uid}-invalid` : undefined;
   const closePicker = (reason?: OutsideInteraction) => {
     setPickerOpen(false);
+    setPickerStyle(HIDDEN_FIXED_PICKER);
     if (reason === "pointer") {
       suppressNextIconClickRef.current = true;
       window.setTimeout(() => {
@@ -195,6 +209,51 @@ export function TimeInput({
   };
 
   useClickOutside(containerRef, pickerOpen, closePicker, [pickerRef]);
+
+  // Places the picker with `position: fixed`, computed from the trigger's own
+  // getBoundingClientRect() - same technique as DatePicker/TimezoneSelect. Flips above the
+  // trigger when it doesn't fit below, clamps horizontally to the viewport (so the right-most
+  // field in a row opens directly under itself instead of overflowing past the card edge), and
+  // clamps its own height + scrolls when neither side has room for the panel's full height (a
+  // short viewport - landscape mobile, a zoomed page) - without this, `top` was computed from
+  // the panel's full natural height regardless of whether that fit, so the panel could render
+  // partly or fully off-screen with no way to reach it (closePicker on outside scroll rules out
+  // "just scroll the page instead").
+  useLayoutEffect(() => {
+    if (!pickerOpen) return;
+    const trigger = containerRef.current;
+    const panel = pickerRef.current;
+    /* v8 ignore if */
+    if (!trigger || !panel) return;
+    const updatePlacement = () => {
+      const rect = trigger.getBoundingClientRect();
+      const panelHeight = panel.scrollHeight;
+      const panelWidth = panel.offsetWidth;
+      const viewport = getFixedOverlayViewport();
+      const spaceBelow = viewport.bottom - rect.bottom;
+      const spaceAbove = rect.top - viewport.top;
+      const above = spaceBelow < panelHeight + PICKER_GAP_PX && spaceAbove > spaceBelow;
+      const available = Math.max(0, (above ? spaceAbove : spaceBelow) - PICKER_GAP_PX - VIEWPORT_PAD_PX);
+      const maxHeight = panelHeight > available ? available : undefined;
+      const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
+      const top = above ? rect.top - usedHeight - PICKER_GAP_PX : rect.bottom + PICKER_GAP_PX;
+      let left = rect.left;
+      left = Math.min(left, viewport.right - VIEWPORT_PAD_PX - panelWidth);
+      left = Math.max(left, viewport.left + VIEWPORT_PAD_PX);
+
+      setPickerAbove(above);
+      setPickerStyle({
+        position: "fixed",
+        top,
+        left,
+        maxHeight: maxHeight !== undefined ? `${maxHeight}px` : undefined,
+        overflowY: maxHeight !== undefined ? "auto" : undefined,
+        visibility: "visible",
+      });
+    };
+    updatePlacement();
+    return attachFixedOverlayLifecycle(panel, updatePlacement, () => closePicker("scroll"));
+  }, [pickerOpen]);
 
   function setTypedValidity(valid: boolean): void {
     setTypedInvalid(!valid);
@@ -296,10 +355,7 @@ export function TimeInput({
   }
 
   return (
-    <div
-      className={joinClassNames("at-field", "time-input", pickerAlign === "end" && "time-input--picker-end")}
-      ref={containerRef}
-    >
+    <div className="at-field time-input" ref={containerRef}>
       {label ? <label className="at-label" htmlFor={controlId}>{label}</label> : null}
       <div className={joinClassNames("time-input__control", isInvalid && "time-input__control--invalid")}>
         <button
@@ -337,7 +393,9 @@ export function TimeInput({
           className={joinClassNames(
             "time-input__picker",
             twelveHour ? "time-input__picker--twelve-hour" : "time-input__picker--twenty-four-hour",
+            pickerAbove && "time-input__picker--above",
           )}
+          style={pickerStyle}
           role="dialog"
           aria-label="Choose time"
         >
