@@ -29,7 +29,7 @@ describe("revokeUserSessions (client)", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await revokeUserSessions("usr-1", "123456");
+    await revokeUserSessions("usr-1", { code: "123456" });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/admin/users/usr-1/revoke-sessions",

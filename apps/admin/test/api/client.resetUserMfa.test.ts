@@ -29,7 +29,7 @@ describe("resetUserMfa (client)", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await resetUserMfa("usr-1", "123456");
+    await resetUserMfa("usr-1", { code: "123456" });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/admin/users/usr-1/reset-2fa",

@@ -1366,11 +1366,11 @@ export interface GrantUserRoleBody {
   scope_id?: string | null;
 }
 
-export interface ResetUserPasswordBody {
+/** `code`/`webauthn` here are the ACTOR's own step-up proof, required by the server only when
+ * resetting another superadmin's password (see actorMustStepUpForReset in
+ * apps/web/src/admin/users-routes.ts). */
+export interface ResetUserPasswordBody extends StepUpProofBody {
   new_password: string;
-  /** Actor's own TOTP/recovery code - required by the server only when resetting another
-   * superadmin's password (see actorMustStepUpForReset in apps/web/src/admin/users-routes.ts). */
-  code?: string;
 }
 
 export interface UnlinkUserExternalIdentityBody {

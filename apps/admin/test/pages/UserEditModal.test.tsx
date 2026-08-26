@@ -26,8 +26,15 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     revokeUserRole: vi.fn(),
     revokeUserSessions: vi.fn(),
     unlinkUserExternalIdentity: vi.fn(),
+    beginWebauthnAssertion: vi.fn(),
   };
 });
+
+// startAuthentication() calls the real navigator.credentials.get(), which doesn't exist in
+// jsdom - the WebauthnStepUpButton tests drive it through this mock instead.
+vi.mock("@simplewebauthn/browser", () => ({
+  startAuthentication: vi.fn(),
+}));
 
 import {
   deleteAdminUser,
@@ -41,7 +48,9 @@ import {
   revokeUserRole,
   revokeUserSessions,
   unlinkUserExternalIdentity,
+  beginWebauthnAssertion,
 } from "../../src/api/client.js";
+import { startAuthentication } from "@simplewebauthn/browser";
 
 const mockFetchAdminEvents = vi.mocked(fetchAdminEvents);
 const mockFetchAdminOrganizations = vi.mocked(fetchAdminOrganizations);
@@ -54,6 +63,8 @@ const mockDeleteAdminUser = vi.mocked(deleteAdminUser);
 const mockRevokeUserRole = vi.mocked(revokeUserRole);
 const mockRevokeUserSessions = vi.mocked(revokeUserSessions);
 const mockUnlinkUserExternalIdentity = vi.mocked(unlinkUserExternalIdentity);
+const mockBeginWebauthnAssertion = vi.mocked(beginWebauthnAssertion);
+const mockStartAuthentication = vi.mocked(startAuthentication);
 
 const event: EventDto = {
   id: "evt-1",
@@ -1248,7 +1259,23 @@ describe("UserEditModal reset actions on another superadmin - actor step-up", ()
     fireEvent.click(resetButton);
 
     await waitFor(() => {
-      expect(mockResetUserMfa).toHaveBeenCalledWith("usr-1", "123456");
+      expect(mockResetUserMfa).toHaveBeenCalledWith("usr-1", { code: "123456" });
+    });
+  });
+
+  it("resets another superadmin's MFA using a passkey/security key as step-up proof instead of a code", async () => {
+    mockBeginWebauthnAssertion.mockResolvedValue({ options: { challenge: "chal-1" } } as never);
+    mockStartAuthentication.mockResolvedValue({ id: "cred-1" } as never);
+    renderModal(superadminUser);
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset two-factor/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Reset two-factor" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use a passkey or security key" }));
+
+    await waitFor(() => {
+      expect(mockResetUserMfa).toHaveBeenCalledWith("usr-1", { webauthn: { response: { id: "cred-1" } } });
     });
   });
 
@@ -1269,7 +1296,23 @@ describe("UserEditModal reset actions on another superadmin - actor step-up", ()
     fireEvent.click(revokeButton);
 
     await waitFor(() => {
-      expect(mockRevokeUserSessions).toHaveBeenCalledWith("usr-1", "123456");
+      expect(mockRevokeUserSessions).toHaveBeenCalledWith("usr-1", { code: "123456" });
+    });
+  });
+
+  it("revokes another superadmin's sessions using a passkey/security key as step-up proof instead of a code", async () => {
+    mockBeginWebauthnAssertion.mockResolvedValue({ options: { challenge: "chal-1" } } as never);
+    mockStartAuthentication.mockResolvedValue({ id: "cred-1" } as never);
+    renderModal({ ...superadminUser, active_sessions_count: 2 });
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Revoke sessions/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Revoke all sessions" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use a passkey or security key" }));
+
+    await waitFor(() => {
+      expect(mockRevokeUserSessions).toHaveBeenCalledWith("usr-1", { webauthn: { response: { id: "cred-1" } } });
     });
   });
 
@@ -1307,6 +1350,25 @@ describe("UserEditModal reset actions on another superadmin - actor step-up", ()
       expect(mockResetUserPassword).toHaveBeenCalledWith("usr-1", {
         new_password: "long-enough-password",
         code: "654321",
+      });
+    });
+  });
+
+  it("resets another superadmin's password using a passkey/security key as step-up proof instead of a code", async () => {
+    mockBeginWebauthnAssertion.mockResolvedValue({ options: { challenge: "chal-1" } } as never);
+    mockStartAuthentication.mockResolvedValue({ id: "cred-1" } as never);
+    renderModal(superadminUser);
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset password/ }));
+    fireEvent.change(screen.getByLabelText("New temporary password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use a passkey or security key" }));
+
+    await waitFor(() => {
+      expect(mockResetUserPassword).toHaveBeenCalledWith("usr-1", {
+        new_password: "long-enough-password",
+        webauthn: { response: { id: "cred-1" } },
       });
     });
   });
