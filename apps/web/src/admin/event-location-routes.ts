@@ -254,6 +254,36 @@ function mapsUrlOverrideUpdate(
   return out;
 }
 
+/** The 14 venue-identifier/access-point-timing columns, extracted out of the upsert's own
+ * `update` object to keep its cognitive complexity under the SonarCloud threshold (S3776) - each
+ * is included only when actually present in the patch, same as every other field there. */
+const VENUE_ACCESS_UPDATE_FIELDS = [
+  "venue_room",
+  "venue_entrance",
+  "venue_entrance_door",
+  "venue_entrance_gate",
+  "venue_entrance_portal",
+  "venue_phone_number",
+  "venue_place_id",
+  "venue_open_time",
+  "venue_close_time",
+  "doors_open_time",
+  "gates_open_time",
+  "box_office_open_time",
+  "parking_lots_open_time",
+  "fan_zone_open_time",
+] as const satisfies readonly (keyof LocationPatch)[];
+
+function venueAccessUpdateData(
+  patch: LocationPatch,
+): Partial<Record<(typeof VENUE_ACCESS_UPDATE_FIELDS)[number], string | null>> {
+  const data: Partial<Record<(typeof VENUE_ACCESS_UPDATE_FIELDS)[number], string | null>> = {};
+  for (const field of VENUE_ACCESS_UPDATE_FIELDS) {
+    if (patch[field] !== undefined) data[field] = patch[field];
+  }
+  return data;
+}
+
 async function parseLocationPutBody(
   c: Context,
 ): Promise<{ patch: LocationPatch; geocodingProvider: string | null | undefined } | Response> {
@@ -581,26 +611,7 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
           ...(patch.directions_text !== undefined && { directions_text: patch.directions_text }),
           ...(patch.accessibility_text !== undefined && { accessibility_text: patch.accessibility_text }),
           ...(componentsJson !== undefined && { address_components: componentsJson }),
-          ...(patch.venue_room !== undefined && { venue_room: patch.venue_room }),
-          ...(patch.venue_entrance !== undefined && { venue_entrance: patch.venue_entrance }),
-          ...(patch.venue_entrance_door !== undefined && { venue_entrance_door: patch.venue_entrance_door }),
-          ...(patch.venue_entrance_gate !== undefined && { venue_entrance_gate: patch.venue_entrance_gate }),
-          ...(patch.venue_entrance_portal !== undefined && {
-            venue_entrance_portal: patch.venue_entrance_portal,
-          }),
-          ...(patch.venue_phone_number !== undefined && { venue_phone_number: patch.venue_phone_number }),
-          ...(patch.venue_place_id !== undefined && { venue_place_id: patch.venue_place_id }),
-          ...(patch.venue_open_time !== undefined && { venue_open_time: patch.venue_open_time }),
-          ...(patch.venue_close_time !== undefined && { venue_close_time: patch.venue_close_time }),
-          ...(patch.doors_open_time !== undefined && { doors_open_time: patch.doors_open_time }),
-          ...(patch.gates_open_time !== undefined && { gates_open_time: patch.gates_open_time }),
-          ...(patch.box_office_open_time !== undefined && {
-            box_office_open_time: patch.box_office_open_time,
-          }),
-          ...(patch.parking_lots_open_time !== undefined && {
-            parking_lots_open_time: patch.parking_lots_open_time,
-          }),
-          ...(patch.fan_zone_open_time !== undefined && { fan_zone_open_time: patch.fan_zone_open_time }),
+          ...venueAccessUpdateData(patch),
           ...mapsOverridePatch,
           ...geocodingPatch,
         },

@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
+import type { EventLocationInput } from "@admitto/location";
 // Subpath import, not the package root - the root barrel also re-exports compileTemplate, which
 // pulls in the full `mjml` compiler (and its own large dependency tree). @admitto/tickets is
 // bundled into the admin SPA, so importing from the root here would ship all of that unused MJML
@@ -124,32 +125,36 @@ export async function resolveTicket(
 /** Exported so apps/web's public_ref-based findAttendeeForEventRoute (a second ResolvedTicket
  * producer, outside this module) can build the exact same shape instead of maintaining its own
  * copy of this mapping (CodeRabbit review). */
-type LocationDetailsForTicket = {
-  venue_name: string | null;
-  formatted_address: string | null;
-  address_components: unknown;
-  latitude: number | null;
-  longitude: number | null;
-  map_zoom: number;
-  directions_text: string | null;
-  accessibility_text: string | null;
-  google_maps_url_override?: string | null;
-  apple_maps_url_override?: string | null;
-  venue_room?: string | null;
-  venue_entrance?: string | null;
-  venue_entrance_door?: string | null;
-  venue_entrance_gate?: string | null;
-  venue_entrance_portal?: string | null;
-  venue_phone_number?: string | null;
-  venue_place_id?: string | null;
-  venue_open_time?: string | null;
-  venue_close_time?: string | null;
-  doors_open_time?: string | null;
-  gates_open_time?: string | null;
-  box_office_open_time?: string | null;
-  parking_lots_open_time?: string | null;
-  fan_zone_open_time?: string | null;
-} | null;
+type LocationDetailsForTicket =
+  | ({
+      venue_name: string | null;
+      formatted_address: string | null;
+      address_components: unknown;
+      latitude: number | null;
+      longitude: number | null;
+      map_zoom: number;
+      directions_text: string | null;
+      accessibility_text: string | null;
+    } & Pick<
+      EventLocationInput,
+      | "google_maps_url_override"
+      | "apple_maps_url_override"
+      | "venue_room"
+      | "venue_entrance"
+      | "venue_entrance_door"
+      | "venue_entrance_gate"
+      | "venue_entrance_portal"
+      | "venue_phone_number"
+      | "venue_place_id"
+      | "venue_open_time"
+      | "venue_close_time"
+      | "doors_open_time"
+      | "gates_open_time"
+      | "box_office_open_time"
+      | "parking_lots_open_time"
+      | "fan_zone_open_time"
+    >)
+  | null;
 
 export function toResolved(
   row: {

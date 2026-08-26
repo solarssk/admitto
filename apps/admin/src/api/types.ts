@@ -1,4 +1,5 @@
 import type { DeliveryDto, HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
+import type { EventLocationInput } from "@admitto/location";
 import type { LogoCropMeta, LogoPersistenceDto } from "@admitto/mail-templates";
 import type {
   AuthenticationResponseJSON,
@@ -1123,7 +1124,26 @@ export interface EventLocationDto {
   fan_zone_open_time: string | null;
 }
 
-export interface SaveEventLocationBody {
+export interface SaveEventLocationBody
+  extends Pick<
+    EventLocationInput,
+    | "google_maps_url_override"
+    | "apple_maps_url_override"
+    | "venue_room"
+    | "venue_entrance"
+    | "venue_entrance_door"
+    | "venue_entrance_gate"
+    | "venue_entrance_portal"
+    | "venue_phone_number"
+    | "venue_place_id"
+    | "venue_open_time"
+    | "venue_close_time"
+    | "doors_open_time"
+    | "gates_open_time"
+    | "box_office_open_time"
+    | "parking_lots_open_time"
+    | "fan_zone_open_time"
+  > {
   /** Omit = unchanged; `null` (or "" for text fields) clears it. */
   venue_name?: string | null;
   formatted_address?: string | null;
@@ -1133,22 +1153,6 @@ export interface SaveEventLocationBody {
   directions_text?: string | null;
   accessibility_text?: string | null;
   address_components?: AddressComponentsDto | null;
-  google_maps_url_override?: string | null;
-  apple_maps_url_override?: string | null;
-  venue_room?: string | null;
-  venue_entrance?: string | null;
-  venue_entrance_door?: string | null;
-  venue_entrance_gate?: string | null;
-  venue_entrance_portal?: string | null;
-  venue_phone_number?: string | null;
-  venue_place_id?: string | null;
-  venue_open_time?: string | null;
-  venue_close_time?: string | null;
-  doors_open_time?: string | null;
-  gates_open_time?: string | null;
-  box_office_open_time?: string | null;
-  parking_lots_open_time?: string | null;
-  fan_zone_open_time?: string | null;
   /** Only meaningful alongside a latitude/longitude change for stamping a provider; send `null`
    * without a coordinate change to clear stale Verified provenance (e.g. free-text venue rename).
    * Omit for a manual pin move so the server clears provenance via the coordinate-change path. */
@@ -1398,11 +1402,11 @@ export interface GrantUserRoleBody {
   scope_id?: string | null;
 }
 
-/** `code`/`webauthn` here are the ACTOR's own step-up proof, required by the server only when
- * resetting another superadmin's password (see actorMustStepUpForReset in
- * apps/web/src/admin/users-routes.ts). */
-export interface ResetUserPasswordBody extends StepUpProofBody {
+export interface ResetUserPasswordBody {
   new_password: string;
+  /** Actor's own TOTP/recovery code - required by the server only when resetting another
+   * superadmin's password (see actorMustStepUpForReset in apps/web/src/admin/users-routes.ts). */
+  code?: string;
 }
 
 export interface UnlinkUserExternalIdentityBody {
