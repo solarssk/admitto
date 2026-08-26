@@ -13,6 +13,8 @@ const baseSettings = {
   mfa_required_roles: { value: ["superadmin"], source: "default" as const },
   instance_url: { value: null as string | null, source: "default" as const },
   csp_trusted_origins: { value: [] as string[], source: "default" as const },
+  webauthn_enabled: { value: true, source: "default" as const },
+  passkey_login_enabled: { value: false, source: "default" as const },
 };
 
 const MFA_EMPTY_WARNING =

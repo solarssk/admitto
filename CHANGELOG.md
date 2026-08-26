@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Settings → Security has a new "Passkey / security key sign-in" toggle, exposing the existing instance-wide passkey/security-key feature (previously configurable only via an environment variable) directly in the admin UI. A second new toggle, "Passkey sign-in on the login page", also appears here in preparation for an upcoming update that will let staff with a registered passkey skip the password on the sign-in screen - turning it on today has no visible effect yet.
+
 ### Fixed
 
 - Editing an event's custom field definition (for example toggling "Required") no longer re-sends its select options as a side effect. Previously any save re-derived and rewrote the full options list from the edit form regardless of whether the operator touched it, which could silently diverge from the list an attendee's already-saved value was chosen against - once that happened, the attendee's saved selection stopped matching any current option, so it showed as unset in Edit attendee and had to be re-picked before the form could be saved again.

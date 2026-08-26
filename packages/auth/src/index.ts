@@ -67,6 +67,7 @@ export {
   getTrustedDeviceDays,
   getMfaRequiredRoles,
   getWebauthnEnabled,
+  getPasskeyLoginEnabled,
 } from "./settings/resolver.js";
 export {
   SETTING_SESSION_TTL,
@@ -83,6 +84,7 @@ export {
   SETTING_SETUP_COMPLETE,
   SETTING_INSTANCE_URL,
   SETTING_WEBAUTHN_ENABLED,
+  SETTING_PASSKEY_LOGIN_ENABLED,
   SETTING_CSP_TRUSTED_ORIGINS,
 } from "./settings/keys.js";
 export { getInstanceUrl } from "./settings/instance-url.js";

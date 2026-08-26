@@ -69,7 +69,9 @@ function anySecurityEnvLocked(settings: SystemSettingsDto): boolean {
     fieldLocked(settings.operator_session_idle_timeout_ms.source) ||
     fieldLocked(settings.trusted_device_days.source) ||
     fieldLocked(settings.mfa_required_roles.source) ||
-    fieldLocked(settings.csp_trusted_origins.source)
+    fieldLocked(settings.csp_trusted_origins.source) ||
+    fieldLocked(settings.webauthn_enabled.source) ||
+    fieldLocked(settings.passkey_login_enabled.source)
   );
 }
 
@@ -235,6 +237,8 @@ export function SecurityPanel() {
   const mfaLocked = fieldLocked(settings.mfa_required_roles.source);
   const mfaEmpty = draft.mfaRoles.length === 0;
   const cspTrustedOriginsLocked = fieldLocked(settings.csp_trusted_origins.source);
+  const webauthnLocked = fieldLocked(settings.webauthn_enabled.source);
+  const passkeyLoginLocked = fieldLocked(settings.passkey_login_enabled.source);
   const cspTrustedOrigins = parseListInput(draft.cspTrustedOriginsRaw);
   const cspOriginErrors = cspTrustedOriginsErrors(draft.cspTrustedOriginsRaw);
   const hasUnsavedChanges = securityDraftHasChanges(settings, draft);
@@ -359,6 +363,48 @@ export function SecurityPanel() {
                   onChange={() => toggleRole(role.value)}
                 />
               ))}
+            </div>
+          </div>
+          <div className="security-settings-row-divider" aria-hidden="true" />
+
+          <div className="security-settings-item">
+            <div className="settings-row__text">
+              <strong>Passkey / security key sign-in</strong>
+              <p>
+                Allow passkeys and security keys as a two-factor method, and (when the option
+                below is also on) as a way to sign in without a password.
+              </p>
+            </div>
+            <div className="security-settings-row__control">
+              <Switch
+                id="security-webauthn-enabled"
+                label={draft.webauthnEnabled ? "On" : "Off"}
+                checked={draft.webauthnEnabled}
+                disabled={webauthnLocked}
+                onChange={() => setDraft({ ...draft, webauthnEnabled: !draft.webauthnEnabled })}
+              />
+            </div>
+          </div>
+          <div className="security-settings-row-divider" aria-hidden="true" />
+
+          <div className="security-settings-item">
+            <div className="settings-row__text">
+              <strong>Passkey sign-in on the login page</strong>
+              <p>
+                Show a "Sign in with a passkey" option on the sign-in screen for accounts with a
+                registered passkey. Password sign-in always stays available.
+              </p>
+            </div>
+            <div className="security-settings-row__control">
+              <Switch
+                id="security-passkey-login-enabled"
+                label={draft.passkeyLoginEnabled ? "On" : "Off"}
+                checked={draft.passkeyLoginEnabled}
+                disabled={passkeyLoginLocked || !draft.webauthnEnabled}
+                onChange={() =>
+                  setDraft({ ...draft, passkeyLoginEnabled: !draft.passkeyLoginEnabled })
+                }
+              />
             </div>
           </div>
           <div className="security-settings-row-divider" aria-hidden="true" />
