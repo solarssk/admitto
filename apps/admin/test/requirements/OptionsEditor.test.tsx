@@ -146,4 +146,49 @@ describe("OptionsEditor — drag to reorder (Pointer Events)", () => {
 
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it("falls back to the row's own height for the drag step with a single option (nothing to measure between rows)", () => {
+    const rows = optionRowsFromOptions(["S"]);
+    const onChange = vi.fn();
+    const { container } = render(<OptionsEditor rows={rows} usageCounts={{}} onChange={onChange} />);
+    const list = stubRowLayout(container);
+    const handle = screen.getAllByLabelText(/Drag to reorder/)[0]!;
+
+    fireEvent(handle, pointerEvent("pointerdown", { pointerId: 6, clientY: 0 }));
+    fireEvent(list, pointerEvent("pointermove", { pointerId: 6, clientY: 45 }));
+    fireEvent(list, pointerEvent("pointerup", { pointerId: 6 }));
+
+    // Only one slot exists, so the target index always clamps back to it - no reorder to commit,
+    // but the single-row step fallback (row.offsetHeight, not a gap between two rows) still runs.
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("auto-scrolls the list toward the pointer when dragging near its top or bottom edge", () => {
+    const rows = optionRowsFromOptions(["S", "M", "L"]);
+    const onChange = vi.fn();
+    const { container } = render(<OptionsEditor rows={rows} usageCounts={{}} onChange={onChange} />);
+    const list = stubRowLayout(container);
+    const handle = screen.getAllByLabelText(/Drag to reorder/)[1]!; // M, index 1
+
+    list.scrollTop = 50;
+    fireEvent(handle, pointerEvent("pointerdown", { pointerId: 8, clientY: 40 }));
+    fireEvent(list, pointerEvent("pointermove", { pointerId: 8, clientY: 5 })); // within 26px of top (0)
+    expect(list.scrollTop).toBe(41);
+
+    fireEvent(list, pointerEvent("pointermove", { pointerId: 8, clientY: 115 })); // within 26px of bottom (120)
+    expect(list.scrollTop).toBe(50);
+    fireEvent(list, pointerEvent("pointerup", { pointerId: 8 }));
+  });
+});
+
+describe("OptionsEditor — delete confirmation wording", () => {
+  it("uses singular wording in the delete-confirm strip for exactly one attendee", () => {
+    const rows = optionRowsFromOptions(["S", "M"]);
+    const onChange = vi.fn();
+    render(<OptionsEditor rows={rows} usageCounts={{ S: 1 }} onChange={onChange} />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove option" })[0]!);
+
+    expect(screen.getByText(/1 attendee currently have this value/)).toBeTruthy();
+  });
 });
