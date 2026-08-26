@@ -18,14 +18,16 @@ export function Select({ label, hint, id, children, className, ...rest }: Readon
           {label}
         </label>
       )}
-      <select
-        id={autoId}
-        className={["at-select", className].filter(Boolean).join(" ")}
-        aria-describedby={hintId}
-        {...rest}
-      >
-        {children}
-      </select>
+      <div className="at-control">
+        <select
+          id={autoId}
+          className={["at-select", className].filter(Boolean).join(" ")}
+          aria-describedby={hintId}
+          {...rest}
+        >
+          {children}
+        </select>
+      </div>
       {hint && (
         <span id={hintId} className="at-hint">
           {hint}
