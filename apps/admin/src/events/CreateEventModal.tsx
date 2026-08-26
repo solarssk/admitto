@@ -177,7 +177,6 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
                 value={eventHoursEnd}
                 disabled={submitting}
                 onChange={setEventHoursEnd}
-                pickerAlign="end"
                 onValidityChange={updateEventHoursEndValidity}
               />
             </div>

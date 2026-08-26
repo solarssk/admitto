@@ -7895,11 +7895,14 @@ output.mail-field-hint {
   color: var(--text-disabled);
 }
 
+/* `position: fixed` with coordinates computed from the trigger's own getBoundingClientRect()
+   (TimeInput.tsx's own layout effect, same DatePicker/TimezoneSelect pattern) - not `absolute`
+   inside `.time-input`, which would still inflate a scrolling ancestor's scrollHeight even
+   though it's visually clipped-free (PO report: opening the picker on a field near the bottom
+   of a long card grew the whole page). `top`/`left` come from that inline style, not this rule. */
 .time-input__picker {
-  position: absolute;
+  position: fixed;
   z-index: 1100;
-  top: calc(100% + 6px);
-  left: 0;
   display: grid;
   grid-template-columns: minmax(4.5rem, 1fr) minmax(4.5rem, 1fr);
   gap: 0.65rem;
@@ -7910,13 +7913,6 @@ output.mail-field-hint {
   border-radius: var(--radius-md, 0.5rem);
   background: var(--surface-card, #fff);
   box-shadow: var(--shadow-md, 0 8px 24px rgba(15, 23, 42, 0.12));
-}
-
-/* The paired end-time control opens toward the available edge, keeping the AM/PM column
-   inside a narrow modal instead of letting the picker be clipped on the right. */
-.time-input--picker-end .time-input__picker {
-  right: 0;
-  left: auto;
 }
 
 .time-input__picker--twelve-hour {
