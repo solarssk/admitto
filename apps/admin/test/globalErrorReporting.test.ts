@@ -3,9 +3,9 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const reportClientError = vi.fn();
-vi.mock("../src/reportClientError.js", () => ({
+vi.mock("../src/reportClientError.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/reportClientError.js")>()),
   reportClientError,
-  CLIENT_ERROR_REPORT_PATH: "/api/admin/client-errors",
 }));
 
 const { installGlobalErrorReporting } = await import("../src/globalErrorReporting.js");
@@ -98,11 +98,28 @@ describe("installGlobalErrorReporting", () => {
     const event = new Event("securitypolicyviolation");
     Object.defineProperty(event, "violatedDirective", { value: "connect-src" });
     Object.defineProperty(event, "blockedURI", {
-      value: "https://admitto.example.com/api/admin/client-errors",
+      // Same-origin (window.location.origin in this jsdom env is http://localhost:3000) - the
+      // one case the guard is meant to suppress.
+      value: "http://localhost:3000/api/admin/client-errors",
     });
     document.dispatchEvent(event);
 
     expect(reportClientError).not.toHaveBeenCalled();
+  });
+
+  it("still reports a violation on a different origin, even one with the same path suffix", () => {
+    // Own-review finding: a suffix-only match would let an attacker hide a genuinely malicious
+    // cross-origin violation by picking a URL that merely ends in this path.
+    const event = new Event("securitypolicyviolation");
+    Object.defineProperty(event, "violatedDirective", { value: "connect-src" });
+    Object.defineProperty(event, "blockedURI", {
+      value: "https://attacker.example.com/api/admin/client-errors",
+    });
+    document.dispatchEvent(event);
+
+    expect(reportClientError).toHaveBeenCalledTimes(1);
+    const [err] = reportClientError.mock.calls[0];
+    expect(err.message).toContain("https://attacker.example.com/api/admin/client-errors");
   });
 
   it("falls back to placeholders when the violation event has no blockedURI/sourceFile", () => {
