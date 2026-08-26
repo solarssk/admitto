@@ -96,6 +96,57 @@ describe("beginPasskeyLogin / finishPasskeyLogin", () => {
     const response = authenticator.authenticate({ challenge: "wrong-challenge", rpID: RP.rpID, origin: RP.origin });
     expect(await finishPasskeyLogin(prisma, response, begin.challenge, RP)).toBeNull();
   });
+
+  it("rejects a forged response that claims the real credential ID but is signed by a different key", async () => {
+    const userId = "user-pl-forged-id";
+    await createUser(userId, "pl-forged-id@example.com");
+    const { response: registration, result } = await registerCredential(userId, "Real key");
+    const impostor = createVirtualAuthenticator();
+    // Warm up the impostor's own sign counter past the real (stored) credential's counter (1)
+    // first, otherwise @simplewebauthn/server's counter-regression guard throws before it ever
+    // reaches signature verification - see webauthn.test.ts's identical case for finishWebauthnAssertion.
+    impostor.authenticate({ challenge: "warm-up", rpID: RP.rpID, origin: RP.origin });
+
+    const begin = await beginPasskeyLogin(RP.rpID);
+    const forged = impostor.authenticate({ challenge: begin.challenge, rpID: RP.rpID, origin: RP.origin });
+    forged.id = registration.id;
+    forged.rawId = registration.rawId;
+
+    expect(await finishPasskeyLogin(prisma, forged, begin.challenge, RP)).toBeNull();
+    const row = await prisma.userMfaMethod.findUnique({ where: { id: result.credentialRowId } });
+    expect(row?.webauthn_sign_count).toBe(1); // unchanged, a rejected assertion never advances it
+  });
+
+  it("rejects a write based on a stale counter snapshot, once another authentication has already advanced it (clone-detection CAS)", async () => {
+    const userId = "user-pl-counter-cas";
+    await createUser(userId, "pl-counter-cas@example.com");
+    const { authenticator, result } = await registerCredential(userId, "CAS key");
+
+    const begin = await beginPasskeyLogin(RP.rpID);
+    const response = authenticator.authenticate({ challenge: begin.challenge, rpID: RP.rpID, origin: RP.origin });
+
+    const staleRow = await prisma.userMfaMethod.findUniqueOrThrow({ where: { id: result.credentialRowId } });
+    // Simulate a second, already-committed authentication advancing the real stored counter past
+    // what `staleRow` still reflects - same technique as webauthn.test.ts's identical case for
+    // finishWebauthnAssertion.
+    await prisma.userMfaMethod.update({
+      where: { id: result.credentialRowId },
+      data: { webauthn_sign_count: staleRow.webauthn_sign_count! + 10 },
+    });
+
+    const staleReadPrisma = {
+      userMfaMethod: {
+        findFirst: async () => staleRow,
+        updateMany: (args: Parameters<PrismaClient["userMfaMethod"]["updateMany"]>[0]) =>
+          prisma.userMfaMethod.updateMany(args),
+      },
+    } as unknown as PrismaClient;
+
+    expect(await finishPasskeyLogin(staleReadPrisma, response, begin.challenge, RP)).toBeNull();
+
+    const row = await prisma.userMfaMethod.findUnique({ where: { id: result.credentialRowId } });
+    expect(row?.webauthn_sign_count).toBe(staleRow.webauthn_sign_count! + 10); // unchanged
+  });
 });
 
 describe("loginWithPasskey", () => {

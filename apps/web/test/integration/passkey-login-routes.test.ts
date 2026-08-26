@@ -241,4 +241,77 @@ describe("POST /api/auth/login/webauthn/finish", () => {
     });
     expect(replay.status).toBe(400);
   });
+
+  it("returns 403 passkey_login_disabled when the setting is off (defense in depth, not just begin)", async () => {
+    const res = await app.request("/api/auth/login/webauthn/finish", {
+      method: "POST",
+      headers: { ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ ceremony: "irrelevant", response: {} }),
+    });
+    expect(res.status).toBe(403);
+    expect((await res.json()) as { code: string }).toEqual({ code: "passkey_login_disabled" });
+  });
+
+  it("returns 400 invalid JSON for a malformed body", async () => {
+    await setPasskeyLoginEnabled(true);
+    const res = await app.request("/api/auth/login/webauthn/finish", {
+      method: "POST",
+      headers: { ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not json",
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error: string }).toEqual({ error: "invalid JSON" });
+  });
+
+  it("returns 400 invalid body when the response field is missing", async () => {
+    await setPasskeyLoginEnabled(true);
+    const res = await app.request("/api/auth/login/webauthn/finish", {
+      method: "POST",
+      headers: { ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ ceremony: "some-ceremony" }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error: string }).toEqual({ error: "invalid body" });
+  });
+
+  it("routes to the backup-codes step when the passkey is the account's first-ever unacknowledged MFA method", async () => {
+    await setPasskeyLoginEnabled(true);
+    // Register directly (not via registerCredential(), which pre-acknowledges backup codes) so
+    // this account's first-ever confirmed MFA method still owes that acknowledgment.
+    const authenticator = createVirtualAuthenticator();
+    const beginReg = await beginWebauthnRegistration(prisma, userId, "platform", RP);
+    const regResponse = authenticator.register({ challenge: beginReg!.challenge, rpID: RP_ID, origin: BASE_URL });
+    await finishWebauthnRegistration(prisma, userId, regResponse, beginReg!.challenge, "platform", "Key", RP);
+
+    const { body: beginBody } = await begin();
+    const response = authenticator.authenticate({ challenge: beginBody.options.challenge, rpID: RP_ID, origin: BASE_URL });
+    const res = await app.request("/api/auth/login/webauthn/finish", {
+      method: "POST",
+      headers: { ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ ceremony: beginBody.ceremony, response }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; next: string };
+    expect(body.next).toBe("/mfa/enroll/backup-codes");
+  });
+
+  it("routes to change-password when the account has a forced password change pending", async () => {
+    await setPasskeyLoginEnabled(true);
+    const authenticator = await registerCredential(userId);
+    await prisma.user.update({ where: { id: userId }, data: { must_change_password: true } });
+    try {
+      const { body: beginBody } = await begin();
+      const response = authenticator.authenticate({ challenge: beginBody.options.challenge, rpID: RP_ID, origin: BASE_URL });
+      const res = await app.request("/api/auth/login/webauthn/finish", {
+        method: "POST",
+        headers: { ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ ceremony: beginBody.ceremony, response }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean; next: string };
+      expect(body.next).toBe("/change-password");
+    } finally {
+      await prisma.user.update({ where: { id: userId }, data: { must_change_password: false } });
+    }
+  });
 });
