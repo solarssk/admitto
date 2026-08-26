@@ -40,6 +40,24 @@ describe("createLoginRateLimitMiddleware", () => {
     expect(blocked.status).toBe(429);
     expect(await blocked.text()).toBe("Too many requests");
   });
+
+  it("uses a separate budget from auth:login-ip when policyKey is auth:passkey-login-ip", async () => {
+    const store = new InMemoryRateLimitStore();
+    const app = new Hono();
+    app.post("/api/auth/login", createLoginRateLimitMiddleware(store), (c) => c.json({ ok: true }));
+    app.post(
+      "/api/auth/login/webauthn/begin",
+      createLoginRateLimitMiddleware(store, { policyKey: "auth:passkey-login-ip" }),
+      (c) => c.json({ ok: true }),
+    );
+
+    for (let i = 0; i < LOGIN_IP_MAX; i++) {
+      expect((await app.request("/api/auth/login", { method: "POST" })).status).toBe(200);
+    }
+    expect((await app.request("/api/auth/login", { method: "POST" })).status).toBe(429);
+    // The password login IP is exhausted, but the passkey-login bucket for the same IP is not.
+    expect((await app.request("/api/auth/login/webauthn/begin", { method: "POST" })).status).toBe(200);
+  });
 });
 
 describe("checkLoginEmailRateLimit", () => {

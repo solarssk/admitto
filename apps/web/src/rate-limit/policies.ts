@@ -236,6 +236,20 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  /** Own bucket, deliberately separate from auth:login-ip: a passkey-login begin/finish round
+   * trip has no email to also throttle per-account against (unlike the password route's
+   * checkLoginEmailRateLimit), so this is the only defense-in-depth layer this ceremony gets
+   * against an IP hammering it with junk assertions. */
+  "auth:passkey-login-ip": {
+    checks: [
+      {
+        keyOf: (c) => `auth:passkey-login:ip:${resolveClientIp(c)}`,
+        windowMs: 60_000,
+        max: 10,
+        logOnExceeded: { scope: "passkey_login_ip" },
+      },
+    ],
+  },
   /** Whole /api/account/* route group - own IP bucket, deliberately separate from
    * auth:login-ip. These routes run before requireSession (some pre-date the current
    * caller's session even being established), so without their own bucket a handful of

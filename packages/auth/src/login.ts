@@ -1,6 +1,6 @@
 import type { PrismaClient, Prisma } from "@admitto/db";
 import { verifyPasswordOrDummy } from "./password.js";
-import { findUserByEmail, normalizeEmail } from "./user.js";
+import { findUserByEmail, findUserById, normalizeEmail } from "./user.js";
 import {
   createSession,
   promoteSessionToFull,
@@ -28,6 +28,7 @@ import { userRequiresMfa, userHasAnyConfirmedMfaMethod, userHasUnacknowledgedBac
 import { validateTrustedDevice, createTrustedDevice } from "./mfa/trusted-device.js";
 import { verifyTotpOrRecoveryCodeDetailed } from "./mfa/verify-step-up-code.js";
 import { finishWebauthnAssertion, type WebauthnRpConfig } from "./mfa/webauthn.js";
+import { finishPasskeyLogin } from "./webauthn-login.js";
 import { getTrustedDeviceDays } from "./settings/resolver.js";
 import {
   recordFailedLoginFailureSideEffects,
@@ -117,6 +118,53 @@ export async function login(
     }
   }
 
+  return finalizeLoginSession(
+    prisma,
+    user,
+    stage,
+    next,
+    input,
+    audit ?? { email, ip: input.ip, userAgent: input.userAgent, timezone: input.timezone },
+    "password",
+  );
+}
+
+/** User fields `finalizeLoginSession` needs, satisfied by both `findUserByEmail` and
+ * `findUserById`'s return shape. */
+interface LoginTargetUser {
+  id: string;
+  must_change_password: boolean;
+}
+
+/** Request metadata `finalizeLoginSession` needs from either `LoginInput` or
+ * `LoginWithPasskeyInput` to create the session. */
+interface FinalizeLoginInput {
+  ip?: string;
+  userAgent?: string;
+  deviceLabel?: string;
+  timezone?: string | null;
+}
+
+/**
+ * Shared tail of every successful first-factor login, once `stage`/`next` already reflect
+ * whether a second factor is still owed (password path: `userRequiresMfa` et al; passkey path:
+ * always satisfied, see `loginWithPasskey`). Applies the two gates that apply regardless of which
+ * first factor was used - unacknowledged backup codes and a forced password change (IAM-001,
+ * IAM-002) - only when nothing upstream already routed to MFA/enrollment, creates the session,
+ * and records the standard success audit trail.
+ */
+async function finalizeLoginSession(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  user: LoginTargetUser,
+  initialStage: SessionStage,
+  initialNext: LoginNext,
+  input: FinalizeLoginInput,
+  auditCtx: LoginAuditContext,
+  method: "password" | "passkey",
+): Promise<LoginResult> {
+  let stage = initialStage;
+  let next = initialNext;
+
   // Forced password change and backup-code acknowledgment are enforced as
   // constrained session stages (not just client-side `next` hints) so no HTTP
   // client can reach protected routes while either step is still owed (IAM-001,
@@ -140,10 +188,7 @@ export async function login(
     timezone: input.timezone,
   });
 
-  await logLoginSuccess(prisma, {
-    ...(audit ?? { email, ip: input.ip, userAgent: input.userAgent, timezone: input.timezone }),
-    userId: user.id,
-  });
+  await logLoginSuccess(prisma, { ...auditCtx, userId: user.id, method });
   await resetFailedLoginStreak(prisma, user.id);
 
   return {
@@ -153,6 +198,72 @@ export async function login(
     userId: user.id,
     next,
   };
+}
+
+/** Request metadata for `loginWithPasskey`, mirrors `LoginInput` minus the fields that only make
+ * sense for a password (email, password, trusted-device cookie). */
+export interface LoginWithPasskeyInput {
+  response: AuthenticationResponseJSON;
+  challenge: string;
+  rp: WebauthnRpConfig;
+  ip?: string;
+  userAgent?: string;
+  deviceLabel?: string;
+  timezone?: string | null;
+}
+
+/**
+ * Authenticate with a discoverable-credential ("usernameless") passkey as the sole factor - no
+ * password step at all. A verified passkey assertion is treated as fully satisfying MFA (it
+ * already combines possession of the device with the platform's own PIN/biometric check in one
+ * ceremony, matching OWASP's and Microsoft Entra ID's classification of FIDO2/passkeys as
+ * phishing-resistant MFA in their own right), so this never routes to `MFA_PENDING` or
+ * `ENROLLMENT_REQUIRED` the way `login()` can - only the backup-codes/password-change gates in
+ * `finalizeLoginSession` can still apply.
+ */
+export async function loginWithPasskey(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  input: LoginWithPasskeyInput,
+  audit?: LoginAuditContext,
+): Promise<LoginResult> {
+  const assertion = await finishPasskeyLogin(prisma, input.response, input.challenge, input.rp);
+  if (!assertion) {
+    // No identified account yet (that's the point of "usernameless") - nothing more specific
+    // than an empty email to redact/log, unlike a failed password attempt against a known email.
+    await logLoginFailure(
+      prisma,
+      audit ?? { email: "", ip: input.ip, userAgent: input.userAgent, timezone: input.timezone },
+      "invalid_credentials",
+    );
+    return INVALID;
+  }
+
+  const user = await findUserById(prisma, assertion.userId);
+  /* v8 ignore start */
+  if (!user) {
+    // Unreachable in practice: assertion.userId came from a UserMfaMethod row's own foreign key
+    // to User, which can't dangle (onDelete: Cascade) - defensive only.
+    return INVALID;
+  }
+  /* v8 ignore stop */
+
+  const auditCtx = audit ?? { email: user.email, ip: input.ip, userAgent: input.userAgent, timezone: input.timezone };
+
+  if (!user.is_active) {
+    await logLoginFailure(prisma, auditCtx, "inactive");
+    await recordFailedLoginFailureSideEffects(prisma, user, { ip: input.ip });
+    return { ok: false, reason: "inactive" };
+  }
+
+  return finalizeLoginSession(
+    prisma,
+    user,
+    SESSION_STAGE.FULL,
+    LOGIN_NEXT.COMPLETE,
+    input,
+    auditCtx,
+    "passkey",
+  );
 }
 
 /** Input for `completeMfa()` after password login with partial session. */

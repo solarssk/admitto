@@ -32,7 +32,10 @@ export interface WebauthnRpConfig {
   origin: string;
 }
 
-function toTransports(transports: string[]): AuthenticatorTransportFuture[] {
+/** Shared with `webauthn-login.ts` (the discoverable-credential first-factor ceremony), which
+ * reads the same `webauthn_transports` column but for a credential resolved without a known
+ * userId. */
+export function toTransports(transports: string[]): AuthenticatorTransportFuture[] {
   return transports as AuthenticatorTransportFuture[];
 }
 
@@ -76,9 +79,10 @@ export async function beginWebauthnRegistration(
         transports: toTransports(c.webauthn_transports),
       })),
     authenticatorSelection: {
-      // Passkeys must be discoverable (resident) to earn the name and sync across a password
-      // manager/iCloud Keychain. Security keys don't need it, we always pass an explicit
-      // `allowCredentials` list at assertion time (never usernameless login), so preferring
+      // Passkeys must be discoverable (resident) to earn the name, sync across a password
+      // manager/iCloud Keychain, and work with the separate first-factor login ceremony in
+      // webauthn-login.ts. Security keys don't need it, `beginWebauthnAssertion` (this module's
+      // login-time MFA step-up) always passes an explicit `allowCredentials` list, so preferring
       // resident credentials there would only burn a hardware key's limited resident-key slots
       // for no benefit.
       residentKey: attachment === "platform" ? "required" : "discouraged",

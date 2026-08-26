@@ -203,13 +203,21 @@ export {
   logout,
   completeMfa,
   completeMfaWithWebauthn,
+  loginWithPasskey,
   loginNextAfterFullSession,
   type LoginInput,
   type LoginResult,
   type CompleteMfaInput,
   type CompleteMfaResult,
   type CompleteMfaWithWebauthnInput,
+  type LoginWithPasskeyInput,
 } from "./login.js";
+export {
+  beginPasskeyLogin,
+  finishPasskeyLogin,
+  type BeginPasskeyLoginResult,
+  type FinishPasskeyLoginResult,
+} from "./webauthn-login.js";
 export {
   bootstrapSuperadmin,
   superadminInstanceExists,

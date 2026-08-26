@@ -1,9 +1,11 @@
 import { WEBAUTHN_CHALLENGE_TTL_MS } from "@admitto/auth/constants";
 
-/** "register" (My Account, or the login-time enroll flow) vs "assert" (login verify / step-up) —
- * kept separate so a user with one ceremony type mid-flight under a session can't collide with a
- * different one under the same session id. */
-export type WebauthnChallengePurpose = "register" | "assert";
+/** "register" (My Account, or the login-time enroll flow) vs "assert" (login verify / step-up) vs
+ * "passkey-login" (first-factor discoverable-credential login, keyed by a server-issued opaque
+ * ceremony token instead of a session id - there is no session at all before this ceremony
+ * completes) — kept separate so a user with one ceremony type mid-flight under a session (or
+ * ceremony token) can't collide with a different one under the same key. */
+export type WebauthnChallengePurpose = "register" | "assert" | "passkey-login";
 
 interface ChallengeEntry {
   challenge: string;
