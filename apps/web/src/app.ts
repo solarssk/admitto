@@ -1883,7 +1883,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminUserRevokeSessionsRateLimit,
-    (c) => handlePostRevokeUserSessions(c, db),
+    (c) => handlePostRevokeUserSessions(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.get("/api/admin/role-assignments", staffAdminGate, (c) => handleGetRoleAssignments(c, db));
   app.get("/api/admin/system-settings", staffAdminGate, (c) => handleGetSystemSettings(c, db));

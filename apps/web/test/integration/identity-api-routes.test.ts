@@ -512,10 +512,10 @@ describe("identity providers API — create", () => {
     await prisma.identityProvider.delete({ where: { id: body.id } });
   });
 
-  it("returns 429 once the shared admin:oidc-provider-ops limit is exhausted", async () => {
-    // No :id on this route, so the policy's keyOf falls back to its "unknown" provider suffix -
-    // same bucket the test/discover-preview routes fall into for the same reason.
-    const key = `admin:oidc-provider-ops:user:${SUPER_ID}:provider:unknown`;
+  it("returns 429 once the admin:oidc-provider-ops limit for this route is exhausted", async () => {
+    // No :id on this route, so the policy's keyOf falls back to routePath(c) - its own bucket,
+    // separate from the sibling test/discover-preview/cf-access-test routes on the same policy.
+    const key = `admin:oidc-provider-ops:user:${SUPER_ID}:provider:/api/admin/identity/providers`;
     for (let i = 0; i < 10; i++) {
       await rateLimitStore.hit(key, 60_000, 10);
     }
@@ -533,7 +533,6 @@ describe("identity providers API — create", () => {
       }),
     });
     expect(res.status).toBe(429);
-    rateLimitStore.reset();
   });
 });
 

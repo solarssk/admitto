@@ -569,6 +569,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   const [resetPasswordBusy, setResetPasswordBusy] = useState(false);
   const [revokeSessionsOpen, setRevokeSessionsOpen] = useState(false);
   const [revokeSessionsBusy, setRevokeSessionsBusy] = useState(false);
+  const [revokeSessionsCode, setRevokeSessionsCode] = useState("");
   const [unlinkSsoOpen, setUnlinkSsoOpen] = useState(false);
   const [unlinkSsoBusy, setUnlinkSsoBusy] = useState(false);
   const [unlinkSsoPassword, setUnlinkSsoPassword] = useState("");
@@ -955,8 +956,9 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     if (!user) return;
     setRevokeSessionsBusy(true);
     try {
-      const { sessionsRevoked } = await revokeUserSessions(user.id);
+      const { sessionsRevoked } = await revokeUserSessions(user.id, revokeSessionsCode || undefined);
       setRevokeSessionsOpen(false);
+      setRevokeSessionsCode("");
       onUpdated(user, `${sessionsRevoked} session${sessionsRevoked === 1 ? "" : "s"} revoked`);
       onClose();
     } catch (err) {
@@ -1379,15 +1381,42 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       <ConfirmDialog
         open={revokeSessionsOpen}
         title="Revoke all sessions"
-        message={`End all active sessions for ${displayTitle}?`}
+        message={
+          requiresActorStepUp
+            ? `End all active sessions for ${displayTitle}? Revoking another superadmin's sessions requires your own authenticator or backup code.`
+            : `End all active sessions for ${displayTitle}?`
+        }
         confirmLabel="Revoke"
         confirmVariant="danger"
         loading={revokeSessionsBusy}
+        disableConfirm={requiresActorStepUp && revokeSessionsCode.trim().length === 0}
         onConfirm={() => void handleRevokeSessions()}
         onCancel={() => {
-          if (!revokeSessionsBusy) setRevokeSessionsOpen(false);
+          if (revokeSessionsBusy) return;
+          setRevokeSessionsOpen(false);
+          setRevokeSessionsCode("");
         }}
-      />
+      >
+        {requiresActorStepUp && (
+          <div className="mail-field-row">
+            <label className="mail-field-label" htmlFor="revoke-sessions-actor-code">
+              Your authenticator or backup code
+            </label>
+            <Input
+              id="revoke-sessions-actor-code"
+              name="revoke-sessions-actor-code"
+              type="text"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={revokeSessionsCode}
+              disabled={revokeSessionsBusy}
+              onChange={(e) => setRevokeSessionsCode(e.target.value)}
+              {...NO_AUTOFILL_PROPS}
+              autoComplete="one-time-code"
+            />
+          </div>
+        )}
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={unlinkSsoOpen}

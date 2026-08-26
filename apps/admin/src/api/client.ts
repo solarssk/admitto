@@ -2324,10 +2324,11 @@ export async function resetUserPassword(
 
 export async function revokeUserSessions(
   id: string,
+  code?: string,
 ): Promise<{ ok: boolean; sessionsRevoked: number }> {
   const res = await fetch(
     `/api/admin/users/${encodeURIComponent(id)}/revoke-sessions`,
-    jsonPostInit({}),
+    jsonPostInit(code ? { code } : {}),
   );
   return parseJson<{ ok: boolean; sessionsRevoked: number }>(res);
 }

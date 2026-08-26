@@ -1026,7 +1026,7 @@ describe("UserEditModal sign-in security", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
-      expect(mockRevokeUserSessions).toHaveBeenCalledWith("usr-1");
+      expect(mockRevokeUserSessions).toHaveBeenCalledWith("usr-1", undefined);
     });
     expect(onUpdated).toHaveBeenCalledWith({ ...user, active_sessions_count: 2 }, "2 sessions revoked");
     expect(onClose).toHaveBeenCalled();
@@ -1227,6 +1227,27 @@ describe("UserEditModal reset actions on another superadmin - actor step-up", ()
     });
   });
 
+  it("requires and sends the actor's own code when revoking another superadmin's sessions", async () => {
+    renderModal({ ...superadminUser, active_sessions_count: 2 });
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Revoke sessions/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Revoke all sessions" });
+    const revokeButton = within(dialog).getByRole("button", { name: "Revoke" });
+    expect(revokeButton).toHaveProperty("disabled", true);
+
+    fireEvent.change(within(dialog).getByLabelText("Your authenticator or backup code"), {
+      target: { value: "123456" },
+    });
+    expect(revokeButton).toHaveProperty("disabled", false);
+    fireEvent.click(revokeButton);
+
+    await waitFor(() => {
+      expect(mockRevokeUserSessions).toHaveBeenCalledWith("usr-1", "123456");
+    });
+  });
+
   it("does not show or require an actor code when resetting your own superadmin MFA", async () => {
     useAuthMock.mockReturnValue({ user: { id: "usr-1" } });
     renderModal(superadminUser);
@@ -1280,7 +1301,7 @@ describe("UserEditModal reset actions on another superadmin - actor step-up", ()
 
     expect(
       await screen.findByText(
-        "You need a confirmed authenticator app, passkey, or security key on your own account before you can reset another superadmin's two-factor or password. If you signed in through single sign-on and have no local password, you can't set one up yourself here - ask another superadmin who already has one confirmed to do this instead.",
+        "You need a confirmed authenticator app, passkey, or security key on your own account before you can reset another superadmin's two-factor or password, or revoke their sessions. If you signed in through single sign-on and have no local password, you can't set one up yourself here - ask another superadmin who already has one confirmed to do this instead.",
       ),
     ).toBeTruthy();
   });

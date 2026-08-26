@@ -87,6 +87,13 @@ function authUserId(c: Context): string | undefined {
   return c.get("auth")?.userId;
 }
 
+/** Per-actor-per-:paramName key for a route gated behind an auth middleware that always
+ * populates c.get("auth") before this runs (staffAdminGate/requireAdminAccess) - unlike
+ * adminUserEventKey, no IP fallback: there's no way to reach this middleware unauthenticated. */
+function adminUserTargetKey(c: Context, scope: string, paramName: string): string {
+  return `admin:${scope}:user:${c.get("auth").userId}:target:${c.req.param(paramName)}`;
+}
+
 /** 1:1 from former admin-heavy-ops-rate-limit.ts — three branches when eventId missing. */
 export function adminUserEventKey(c: Context, scope: string): string {
   const auth = c.get("auth");
@@ -250,11 +257,16 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  // Routes with no :id (test, discover-preview, cf-access/test, and the create route) fall back
+  // to routePath(c) rather than a shared "unknown" literal - otherwise four functionally
+  // unrelated actions (including a Cloudflare Access probe that isn't even OIDC) would compete
+  // for one budget, and routine iterative setup (discover, test, adjust, test again) could
+  // exhaust the limit an admin needs for the create action itself.
   "admin:oidc-provider-ops": {
     checks: [
       {
         keyOf: (c) => {
-          const providerId = c.req.param("id") ?? "unknown";
+          const providerId = c.req.param("id") ?? routePath(c);
           const userId = authUserId(c);
           return userId
             ? `admin:oidc-provider-ops:user:${userId}:provider:${providerId}`
@@ -571,18 +583,13 @@ export const RATE_POLICIES = {
   // Per-target-user, not per-actor: bounds how fast one admin can loop this against a single
   // account, matching admin:attendee-patch's reasoning above - a real admin force-logging-out
   // several different accounts in a row never approaches this, unlike a scripted repeat against
-  // one target. Sibling reset-password/reset-2fa additionally require step-up re-auth; this route
-  // has no such gate, so the rate limit is its only ceiling.
+  // one target. Sibling reset-password/reset-2fa additionally require actor step-up re-auth when
+  // the target is another superadmin (see actorMustStepUpForReset in users-routes.ts) - this
+  // route now requires the same, so the rate limit is defense-in-depth, not the only ceiling.
   "admin:user-revoke-sessions": {
     checks: [
       {
-        keyOf: (c) => {
-          const targetId = c.req.param("id");
-          const userId = authUserId(c);
-          return userId
-            ? `admin:user-revoke-sessions:user:${userId}:target:${targetId}`
-            : `admin:user-revoke-sessions:ip:${resolveClientIp(c)}:target:${targetId}`;
-        },
+        keyOf: (c) => adminUserTargetKey(c, "user-revoke-sessions", "id"),
         windowMs: 60_000,
         max: 10,
         logOnExceeded: { scope: "admin_user_revoke_sessions", keyHint: "user_target" },
