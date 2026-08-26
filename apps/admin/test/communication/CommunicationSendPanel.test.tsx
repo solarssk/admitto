@@ -139,11 +139,90 @@ describe("CommunicationSendPanel", () => {
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
     fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 1, failed: 1 });
 
-    render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
+    const { container } = render(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    expect(await screen.findByText("Send complete: 1 sent, 1 failed.")).toBeTruthy();
+    expect(await screen.findByText("Send complete")).toBeTruthy();
+    expect(screen.getByText("1 sent · 1 failed out of 2 total")).toBeTruthy();
+    // A batch with failures uses the same warning tone as resultVariant() would - never a
+    // green success card contradicting a failed delivery.
+    expect(container.querySelector(".status-circle--warn")).toBeTruthy();
+    expect(container.querySelector(".status-circle--ok")).toBeNull();
+
+    // No neutral/remaining segment left at done - the two segments split the full bar.
+    const sentSegment = container.querySelector(".send-progress__bar-segment--sent") as HTMLElement;
+    const failedSegment = container.querySelector(".send-progress__bar-segment--failed") as HTMLElement;
+    expect(sentSegment.style.width).toBe("50%");
+    expect(failedSegment.style.width).toBe("50%");
+
     expect(fetchBulkSendStatus).toHaveBeenCalledWith("evt-1", "batch-1", expect.any(AbortSignal));
+  });
+
+  it("shows a success-toned summary card when the completed batch has no failures", async () => {
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 3, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 3, failed: 0 });
+
+    const { container } = render(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("3 sent · 0 failed out of 3 total")).toBeTruthy();
+    expect(container.querySelector(".status-circle--ok")).toBeTruthy();
+    expect(container.querySelector(".status-circle--warn")).toBeNull();
+  });
+
+  it("shows Sent/Failed/Remaining stat tiles and a proportional progress bar while polling", async () => {
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 10, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 5, sent: 3, failed: 2 });
+
+    const { container } = render(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(container.querySelector(".send-progress__stat--sent .send-progress__stat-value")?.textContent).toBe(
+        "3",
+      );
+    });
+    expect(
+      container.querySelector(".send-progress__stat--failed .send-progress__stat-value")?.textContent,
+    ).toBe("2");
+    expect(
+      container.querySelector(".send-progress__stat--remaining .send-progress__stat-value")?.textContent,
+    ).toBe("5");
+
+    const sentSegment = container.querySelector(".send-progress__bar-segment--sent") as HTMLElement;
+    const failedSegment = container.querySelector(".send-progress__bar-segment--failed") as HTMLElement;
+    expect(sentSegment.style.width).toBe("30%");
+    expect(failedSegment.style.width).toBe("20%");
+
+    expect(screen.getByText("5 / 10 processed")).toBeTruthy();
+    expect(screen.getByText("50%")).toBeTruthy();
+
+    // The top-level status line stays in place - the tiles/bar are an addition, not a
+    // replacement.
+    expect(screen.getByText("Queued 10, sending in progress…")).toBeTruthy();
+
+    // "Send another" only resets the client's watch on this batch, it never cancels the batch
+    // server-side - hidden while polling so an operator can't abandon-view an in-flight send
+    // (or fire a second, concurrent one) with no indication the first is still running.
+    expect(screen.queryByRole("button", { name: "Send another" })).toBeNull();
+  });
+
+  it("shows Send another only once the batch has actually finished draining", async () => {
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 1, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 1, failed: 0 });
+
+    render(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByRole("button", { name: "Send another" })).toBeTruthy();
   });
 
   it("keeps polling on a timer while emails are still queued", async () => {
@@ -168,7 +247,8 @@ describe("CommunicationSendPanel", () => {
         await vi.advanceTimersByTimeAsync(2000);
       });
       expect(fetchBulkSendStatus).toHaveBeenCalledTimes(2);
-      expect(screen.getByText("Send complete: 2 sent, 0 failed.")).toBeTruthy();
+      expect(screen.getByText("Send complete")).toBeTruthy();
+      expect(screen.getByText("2 sent · 0 failed out of 2 total")).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }
@@ -185,6 +265,9 @@ describe("CommunicationSendPanel", () => {
     await waitFor(() => {
       expect(screen.getByRole("alert").textContent).toBe("Failed to load send status.");
     });
+    // A failed status check must not show a stale "Send complete" card from the last known
+    // batchStatus - the error notice above is the only outcome shown.
+    expect(screen.queryByText("Send complete")).toBeNull();
   });
 
   it("aborts polling when the selected template changes", async () => {

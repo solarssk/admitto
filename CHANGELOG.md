@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Communication → Send's bulk-send progress now shows Sent/Failed/Remaining stat tiles and a two-segment progress bar while a batch drains, and a "Send complete" summary card once it finishes, instead of a single plain-text line. The "Send another" button is now hidden until the batch has actually finished draining - it previously appeared as soon as sending started, and clicking it mid-send stopped the page from tracking that batch (with no way to check on it again) without cancelling anything server-side, so an operator could unknowingly fire a second, concurrent send while the first was still in flight.
+
 ## [0.6.3] - 2026-08-26
 
 ### Added
