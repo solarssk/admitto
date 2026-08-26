@@ -150,22 +150,24 @@ export function SearchableSelect({
           style={panelStyle}
         >
           {showSearch && (
-            <input
-              type="text"
-              id={`${id}-search`}
-              name={`${id}-search`}
-              className="searchable-select__search"
-              placeholder={searchPlaceholder}
-              aria-label={searchPlaceholder}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && results.length > 0) {
-                  e.preventDefault();
-                  handleSelect(results[0]!);
-                }
-              }}
-            />
+            <div className="at-control">
+              <input
+                type="text"
+                id={`${id}-search`}
+                name={`${id}-search`}
+                className="searchable-select__search"
+                placeholder={searchPlaceholder}
+                aria-label={searchPlaceholder}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && results.length > 0) {
+                    e.preventDefault();
+                    handleSelect(results[0]!);
+                  }
+                }}
+              />
+            </div>
           )}
           <ul className="searchable-select__list" aria-label={label}>
             {results.length === 0 ? (

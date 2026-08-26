@@ -78,7 +78,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           {field}
         </div>
       ) : (
-        field
+        <div className="at-control">{field}</div>
       )}
       {error ? (
         <span id={errorId} className="at-hint at-hint--error" role="alert">
