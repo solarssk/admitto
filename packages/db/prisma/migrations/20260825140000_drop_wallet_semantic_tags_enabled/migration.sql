@@ -4,4 +4,6 @@
 -- the "Siri Suggestions, Maps, Calendar" behavior its own copy promised. Replaced by mapping
 -- individual fields (event type, venue room/entrance/phone/place ID, access-point timing) through
 -- the existing Field mapping mechanism, same as every other wallet placeholder.
+-- destructive-approved: column is fully dead code (see above) - no reader remains anywhere in the
+-- codebase as of this migration; dropping it loses no live data an admin could still be using.
 ALTER TABLE "Event" DROP COLUMN "wallet_semantic_tags_enabled";

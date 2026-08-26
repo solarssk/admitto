@@ -292,31 +292,32 @@ async function parseLocationPutBody(
  * wallet-pass-input.ts) - venue name, address, coordinates/maps links, directions/accessibility
  * notes. `map_zoom` and geocoding provenance (`geocoding_provider`/`geocoded_at`) are UI-only,
  * never read by the pass, so they're deliberately excluded. */
-type WalletRelevantLocationSnapshot = {
-  venue_name: string | null;
-  formatted_address: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  directions_text: string | null;
-  accessibility_text: string | null;
-  address_components: Prisma.JsonValue | null;
-  google_maps_url_override: string | null;
-  apple_maps_url_override: string | null;
-  venue_room: string | null;
-  venue_entrance: string | null;
-  venue_entrance_door: string | null;
-  venue_entrance_gate: string | null;
-  venue_entrance_portal: string | null;
-  venue_phone_number: string | null;
-  venue_place_id: string | null;
-  venue_open_time: string | null;
-  venue_close_time: string | null;
-  doors_open_time: string | null;
-  gates_open_time: string | null;
-  box_office_open_time: string | null;
-  parking_lots_open_time: string | null;
-  fan_zone_open_time: string | null;
-};
+type WalletRelevantLocationSnapshot = Pick<
+  EventLocationRow,
+  | "venue_name"
+  | "formatted_address"
+  | "latitude"
+  | "longitude"
+  | "directions_text"
+  | "accessibility_text"
+  | "address_components"
+  | "google_maps_url_override"
+  | "apple_maps_url_override"
+  | "venue_room"
+  | "venue_entrance"
+  | "venue_entrance_door"
+  | "venue_entrance_gate"
+  | "venue_entrance_portal"
+  | "venue_phone_number"
+  | "venue_place_id"
+  | "venue_open_time"
+  | "venue_close_time"
+  | "doors_open_time"
+  | "gates_open_time"
+  | "box_office_open_time"
+  | "parking_lots_open_time"
+  | "fan_zone_open_time"
+>;
 
 const EMPTY_WALLET_LOCATION_SNAPSHOT: WalletRelevantLocationSnapshot = {
   venue_name: null,
