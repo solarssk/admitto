@@ -50,6 +50,8 @@ export {
   loadEventCustomDataFields,
   validateContentFieldReferences,
   UnknownContentFieldError,
+  assertContentFieldsNotAssignedElsewhere,
+  ContentFieldAlreadyAssignedError,
 } from "./event-custom-fields.js";
 export {
   buildCustomDataFromInput,

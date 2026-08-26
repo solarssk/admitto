@@ -10,6 +10,8 @@ import {
   loadEventCustomDataFields,
   validateContentFieldReferences,
   UnknownContentFieldError,
+  assertContentFieldsNotAssignedElsewhere,
+  ContentFieldAlreadyAssignedError,
   type EventItemConfig,
 } from "@admitto/tickets";
 import {
@@ -146,21 +148,39 @@ function serializeEventItem(row: {
   };
 }
 
+/** Sibling items' key/label/config, for detecting a content_field already claimed elsewhere.
+ * `excludeItemId` omits the item being written to - a PATCH keeping its own existing selection
+ * is not a conflict with itself. */
+async function loadSiblingEventItems(
+  db: PrismaClient | Prisma.TransactionClient,
+  eventId: string,
+  excludeItemId?: string,
+): Promise<{ key: string; label: string; config: unknown }[]> {
+  return db.eventItem.findMany({
+    where: { event_id: eventId, ...(excludeItemId ? { id: { not: excludeItemId } } : {}) },
+    select: { key: true, label: true, config: true },
+  });
+}
+
 /** Rejects config.content_fields entries that don't exist in the event's EventCustomField
- * registry - throws UnknownContentFieldError on an unknown reference, caught by the caller and
- * mapped to a 400. Takes a transaction client so the caller can run this after
- * acquireEventCustomFieldsLock, serializing against a concurrent field delete (see
- * event-custom-fields-routes.ts) - without that, a field could be deleted between this check and
- * the item's commit, leaving content_fields pointing at a source_field that no longer exists. */
+ * registry, or that are already used by a different event item - throws UnknownContentFieldError
+ * or ContentFieldAlreadyAssignedError respectively, caught by the caller and mapped to a 4xx.
+ * Takes a transaction client so the caller can run this after acquireEventCustomFieldsLock,
+ * serializing against a concurrent field delete (see event-custom-fields-routes.ts) - without
+ * that, a field could be deleted between this check and the item's commit, leaving content_fields
+ * pointing at a source_field that no longer exists. */
 async function validateConfigContentFields(
   db: PrismaClient | Prisma.TransactionClient,
   eventId: string,
   config: EventItemConfig | undefined,
+  excludeItemId?: string,
 ): Promise<void> {
   if (!config?.content_fields?.length) return;
   const registryFields = await loadEventCustomDataFields(db, eventId);
   const allowed = new Set(registryFields.map((f) => f.source_field));
   validateContentFieldReferences(allowed, config.content_fields);
+  const siblings = await loadSiblingEventItems(db, eventId, excludeItemId);
+  assertContentFieldsNotAssignedElsewhere(siblings, config.content_fields);
 }
 
 /** Require `:itemId` route param or return 400. */
@@ -329,6 +349,12 @@ export async function handleCreateEventItem(c: Context, db: PrismaClient): Promi
     if (err instanceof UnknownContentFieldError) {
       return c.json({ error: "unknown_content_field", field: err.sourceField }, 400);
     }
+    if (err instanceof ContentFieldAlreadyAssignedError) {
+      return c.json(
+        { error: "content_field_in_use", field: err.sourceField, item_label: err.itemLabel },
+        409,
+      );
+    }
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return c.json({ error: "key_conflict" }, 409);
     }
@@ -352,6 +378,7 @@ type EventItemRow = {
 type PatchEventItemOutcome =
   | { ok: true; row: EventItemRow }
   | { ok: false; reason: "unknown_content_field"; field: string }
+  | { ok: false; reason: "content_field_in_use"; field: string; itemLabel: string }
   | { ok: false; reason: "in_use" };
 
 /** Diffs a validated PATCH body against the existing row, returning only the fields that
@@ -415,21 +442,44 @@ function computePatchTransactionFlags(
   return { disabling, needsBadgeSync, needsSerializable };
 }
 
+type PatchContentFieldsCheck =
+  | { ok: true }
+  | { ok: false; reason: "unknown_content_field"; field: string }
+  | { ok: false; reason: "content_field_in_use"; field: string; itemLabel: string };
+
 /** Rejects config.content_fields entries that don't exist in the event's EventCustomField
- * registry inside the caller's transaction; returns the first unknown field slug, or null when
- * all references resolve (or there are none to check). Mirrors validateConfigContentFields's
- * checks but reports back to the caller instead of throwing, since the PATCH transaction needs
- * to return a typed { ok: false } outcome rather than unwind via an exception. */
+ * registry, or that are already claimed by a different event item, inside the caller's
+ * transaction. Mirrors validateConfigContentFields's checks but reports back to the caller
+ * instead of throwing, since the PATCH transaction needs to return a typed { ok: false } outcome
+ * rather than unwind via an exception. */
 async function validatePatchContentFields(
   tx: Prisma.TransactionClient,
   eventId: string,
+  itemId: string,
   config: EventItemConfig | undefined,
-): Promise<string | null> {
-  if (!config?.content_fields?.length) return null;
+): Promise<PatchContentFieldsCheck> {
+  if (!config?.content_fields?.length) return { ok: true };
   await acquireEventCustomFieldsLock(tx, eventId);
   const registryFields = await loadEventCustomDataFields(tx, eventId);
   const allowed = new Set(registryFields.map((f) => f.source_field));
-  return config.content_fields.find((f) => !allowed.has(f)) ?? null;
+  const unknownField = config.content_fields.find((f) => !allowed.has(f));
+  if (unknownField) return { ok: false, reason: "unknown_content_field", field: unknownField };
+
+  const siblings = await loadSiblingEventItems(tx, eventId, itemId);
+  try {
+    assertContentFieldsNotAssignedElsewhere(siblings, config.content_fields);
+  } catch (err) {
+    if (err instanceof ContentFieldAlreadyAssignedError) {
+      return {
+        ok: false,
+        reason: "content_field_in_use",
+        field: err.sourceField,
+        itemLabel: err.itemLabel,
+      };
+    }
+    throw err;
+  }
+  return { ok: true };
 }
 
 /** Turns off the event's "badge_at_entry" ops-config toggle when the badge item just became
@@ -494,9 +544,17 @@ async function applyEventItemPatch(
     needsBadgeSync,
   }: ApplyEventItemPatchOptions,
 ): Promise<PatchEventItemOutcome> {
-  const unknownField = await validatePatchContentFields(tx, eventId, config);
-  if (unknownField) {
-    return { ok: false, reason: "unknown_content_field", field: unknownField };
+  const fieldsCheck = await validatePatchContentFields(tx, eventId, itemId, config);
+  if (!fieldsCheck.ok) {
+    if (fieldsCheck.reason === "unknown_content_field") {
+      return { ok: false, reason: "unknown_content_field", field: fieldsCheck.field };
+    }
+    return {
+      ok: false,
+      reason: "content_field_in_use",
+      field: fieldsCheck.field,
+      itemLabel: fieldsCheck.itemLabel,
+    };
   }
 
   if (disabling) {
@@ -592,6 +650,12 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
   if (!result.ok) {
     if (result.reason === "unknown_content_field") {
       return c.json({ error: "unknown_content_field", field: result.field }, 400);
+    }
+    if (result.reason === "content_field_in_use") {
+      return c.json(
+        { error: "content_field_in_use", field: result.field, item_label: result.itemLabel },
+        409,
+      );
     }
     return c.json({ error: "item_in_use" }, 409);
   }

@@ -212,6 +212,21 @@
   flex-shrink: 0;
 }
 
+.requirements-field-picker-row--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.requirements-field-picker-row--disabled:hover {
+  background: none;
+}
+
+/* Tooltip's trigger wrapper is inline-flex by default - override to block so it doesn't shrink
+   the field row to its content width inside the vertical .requirements-field-stack. */
+.requirements-field-picker-tip {
+  display: block;
+}
+
 .requirements-toggle-row {
   display: flex;
   justify-content: space-between;

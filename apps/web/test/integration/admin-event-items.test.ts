@@ -87,6 +87,8 @@ async function seed(client: PrismaClient) {
     data: [
       { event_id: EVENT_EI_A, source_field: "shirt_size", label: "Shirt size" },
       { event_id: EVENT_EI_A, source_field: "sock_size", label: "Socks size" },
+      { event_id: EVENT_EI_A, source_field: "meal_choice", label: "Meal choice" },
+      { event_id: EVENT_EI_A, source_field: "badge_color", label: "Badge color" },
     ],
   });
 
@@ -267,12 +269,12 @@ describe("POST /api/admin/events/:eventId/items", () => {
       body: JSON.stringify({
         key: "new_item_with_hint",
         label: "New item with hint",
-        config: { content_fields: ["shirt_size"] },
+        config: { content_fields: ["meal_choice"] },
       }),
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { config: { content_fields: string[] } };
-    expect(body.config.content_fields).toEqual(["shirt_size"]);
+    expect(body.config.content_fields).toEqual(["meal_choice"]);
   });
 
   it("rejects a content_fields reference that doesn't exist in the event's custom field registry", async () => {
@@ -289,6 +291,23 @@ describe("POST /api/admin/events/:eventId/items", () => {
     const body = (await res.json()) as { error: string; field: string };
     expect(body.error).toBe("unknown_content_field");
     expect(body.field).toBe("no_such_field");
+  });
+
+  it("rejects a content_fields reference already assigned to a different item", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        key: "new_item_dup_hint",
+        label: "New item dup hint",
+        config: { content_fields: ["shirt_size"] },
+      }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string; field: string; item_label: string };
+    expect(body.error).toBe("content_field_in_use");
+    expect(body.field).toBe("shirt_size");
+    expect(body.item_label).toBe("Gift bag");
   });
 
   it("rejects malformed JSON body", async () => {
@@ -441,6 +460,32 @@ describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
     const body = (await res.json()) as { error: string; field: string };
     expect(body.error).toBe("unknown_content_field");
     expect(body.field).toBe("no_such_field");
+  });
+
+  it("rejects a content_fields reference already assigned to a different item", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_SOCKS}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        config: { content_fields: ["shirt_size"] },
+      }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string; field: string; item_label: string };
+    expect(body.error).toBe("content_field_in_use");
+    expect(body.field).toBe("shirt_size");
+    expect(body.item_label).toBe("Gift bag");
+  });
+
+  it("allows keeping a content_fields reference the item already has itself", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_GIFTBAG}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        config: { content_fields: ["shirt_size"] },
+      }),
+    });
+    expect(res.status).toBe(200);
   });
 
   it("persists issue_on_checkin false explicitly", async () => {
@@ -675,19 +720,19 @@ describe("PATCH /api/admin/events/:eventId/items/:itemId", () => {
       method: "PATCH",
       headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
       body: JSON.stringify({
-        config: { content_fields: ["sock_size", "shirt_size"] },
+        config: { content_fields: ["sock_size", "badge_color"] },
       }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { config: { content_fields: string[] } };
-    expect(body.config.content_fields).toEqual(["sock_size", "shirt_size"]);
+    expect(body.config.content_fields).toEqual(["sock_size", "badge_color"]);
 
     const getRes = await app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
       headers: { Cookie: adminCookie },
     });
     const socks = ((await getRes.json()) as { items: { key: string; config: typeof body.config }[] })
       .items.find((i) => i.key === "socks");
-    expect(socks?.config?.content_fields).toEqual(["sock_size", "shirt_size"]);
+    expect(socks?.config?.content_fields).toEqual(["sock_size", "badge_color"]);
   });
 
   it("rejects duplicate content_fields references", async () => {
