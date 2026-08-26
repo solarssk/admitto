@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Settings → Security has a new "Passkey / security key sign-in" toggle, exposing the existing instance-wide passkey/security-key feature (previously configurable only via an environment variable) directly in the admin UI. A second new toggle, "Passkey sign-in on the login page", also appears here in preparation for an upcoming update that will let staff with a registered passkey skip the password on the sign-in screen - turning it on today has no visible effect yet.
+- Settings → Security has a new "Passkey / security key sign-in" toggle, exposing the existing instance-wide passkey/security-key feature (previously configurable only via an environment variable) directly in the admin UI. A second new toggle, "Passkey sign-in on the login page", adds a "Sign in with a passkey" option to the sign-in screen: staff with a registered passkey can sign in with it directly, skipping the password entirely, without giving up second-factor strength - a verified passkey satisfies two-factor authentication on its own. The password field is never removed; it stays available either way, and a security key (as opposed to a passkey) still only works at the existing two-factor step, not here.
 
 ### Fixed
 

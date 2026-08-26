@@ -71,7 +71,13 @@ const resolveEntry = vi.mocked(resolveStaffEntryPath);
 const resolveLanding = vi.mocked(resolvePostLoginRedirectForUser);
 const checkEmailLimit = vi.mocked(checkLoginEmailRateLimit);
 
-function makeApp(db: PrismaClient = {} as PrismaClient): Hono {
+/** Stub for the SystemSettings reads handleGetLogin/handlePostLogin now do (getWebauthnEnabled,
+ * getPasskeyLoginEnabled) - `{}` alone throws (no `systemSettings` property to call
+ * `findUnique` on); `findUnique: async () => null` resolves both to their built-in defaults
+ * (webauthn_enabled true, passkey_login_enabled false), same as an unconfigured instance. */
+const settingsDb = { systemSettings: { findUnique: async () => null } } as unknown as PrismaClient;
+
+function makeApp(db: PrismaClient = settingsDb): Hono {
   const store = new InMemoryRateLimitStore();
   const app = new Hono();
   app.get("/login", (c) => handleGetLogin(c, db));
@@ -141,6 +147,21 @@ describe("html-routes", () => {
     const res = await makeApp().request("/login");
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("email");
+  });
+
+  it("omits the passkey sign-in button when the setting is unconfigured (default off)", async () => {
+    const res = await makeApp().request("/login");
+    expect(await res.text()).not.toContain("passkey-login-btn");
+  });
+
+  it("shows the passkey sign-in button once both settings resolve to true", async () => {
+    // Both getWebauthnEnabled and getPasskeyLoginEnabled read from this same table - any key
+    // resolving "true" is enough here since the test only needs both to be on at once.
+    const db = {
+      systemSettings: { findUnique: async () => ({ value_json: "true" }) },
+    } as unknown as PrismaClient;
+    const res = await makeApp(db).request("/login");
+    expect(await res.text()).toContain("passkey-login-btn");
   });
 
   it("redirects POST /login to /setup when staff entry is setup", async () => {

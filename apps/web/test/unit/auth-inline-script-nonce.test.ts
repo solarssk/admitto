@@ -47,6 +47,12 @@ describe("auth page inline script nonces (#253)", () => {
     expectAllScriptsNonced(renderLoginForm(NONCE));
   });
 
+  it("login form with passkey sign-in enabled also nonces the passkey ceremony script", () => {
+    const html = renderLoginForm(NONCE, undefined, undefined, [], true);
+    expectAllScriptsNonced(html);
+    expect(html).toContain("passkey-login-btn");
+  });
+
   it("MFA verify page tags OTP and submit scripts with the nonce", () => {
     const html = renderMfaVerifyForm(NONCE);
     expectAllScriptsNonced(html);
