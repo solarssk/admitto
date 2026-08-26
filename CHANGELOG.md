@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Communication → Send's bulk-send progress now shows Sent/Failed/Remaining stat tiles and a two-segment progress bar while a batch drains, and a "Send complete" summary card once it finishes, instead of a single plain-text line. The "Send another" button is now hidden until the batch has actually finished draining - it previously appeared as soon as sending started, and clicking it mid-send stopped the page from tracking that batch (with no way to check on it again) without cancelling anything server-side, so an operator could unknowingly fire a second, concurrent send while the first was still in flight.
+
 ### Fixed
 
 - Editing an event's custom field definition (for example toggling "Required") no longer re-sends its select options as a side effect. Previously any save re-derived and rewrote the full options list from the edit form regardless of whether the operator touched it, which could silently diverge from the list an attendee's already-saved value was chosen against - once that happened, the attendee's saved selection stopped matching any current option, so it showed as unset in Edit attendee and had to be re-picked before the form could be saved again.
