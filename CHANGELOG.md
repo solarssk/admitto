@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Check-in's camera scanner gained a torch toggle, next to the existing mute/close controls on both the mobile full-screen scanner and the desktop/tablet inline camera. Only appears once the active camera actually reports the capability, since most laptop webcams and every iPhone don't - so it stays out of the way rather than sitting there doing nothing.
+
 ### Fixed
 
 - Editing an event's custom field definition (for example toggling "Required") no longer re-sends its select options as a side effect. Previously any save re-derived and rewrote the full options list from the edit form regardless of whether the operator touched it, which could silently diverge from the list an attendee's already-saved value was chosen against - once that happened, the attendee's saved selection stopped matching any current option, so it showed as unset in Edit attendee and had to be re-picked before the form could be saved again.

@@ -50,6 +50,7 @@ import {
   scanSoundMuteTitle,
   useScanSoundMuted,
 } from "../checkin/scanSoundFeedback.js";
+import { useCameraTorch } from "../checkin/cameraTorch.js";
 import { AttendeeCard } from "../checkin/AttendeeCard.js";
 import { CameraOverlay } from "../checkin/CameraOverlay.js";
 import { CheckinConnectionBanner, CheckinConnectionLiveRegion } from "../checkin/ConnectionBanner.js";
@@ -201,6 +202,12 @@ interface CheckInOperatorActionsBarProps {
   scanSoundMuted: boolean;
   onToggleScanSound: () => void;
   actionsRef: RefObject<HTMLDivElement | null>;
+  /** Only rendered once the active track has actually reported the capability - see
+   * useCameraTorch's own doc for why. Never true before cameraActive, since there's no track
+   * to report it until then. */
+  torchSupported: boolean;
+  torchOn: boolean;
+  onToggleTorch: () => void;
 }
 
 /** Operator check-in header — mirrors AdminCheckInRoute's PageHeader (same title/subtitle/actions
@@ -214,6 +221,9 @@ function CheckInOperatorActionsBar({
   scanSoundMuted,
   onToggleScanSound,
   actionsRef,
+  torchSupported,
+  torchOn,
+  onToggleTorch,
 }: Readonly<CheckInOperatorActionsBarProps>) {
   if (!isDesktop && cameraActive) return null;
   return (
@@ -242,6 +252,18 @@ function CheckInOperatorActionsBar({
             icon={<i className={scanSoundMuteIconClass(scanSoundMuted)} aria-hidden="true" />}
             onClick={onToggleScanSound}
           />
+          {torchSupported && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              aria-pressed={torchOn}
+              aria-label={torchOn ? "Turn off torch" : "Turn on torch"}
+              title={torchOn ? "Turn off torch" : "Turn on torch"}
+              icon={<i className={`ti ti-bulb${torchOn ? "" : "-off"}`} aria-hidden="true" />}
+              onClick={onToggleTorch}
+            />
+          )}
         </div>
       }
     />
@@ -371,6 +393,7 @@ interface CheckInScanResultViewProps {
   onUndo: () => Promise<void>;
   onRevokeCheckIn: (attendeeId: string) => Promise<void>;
   onRevokeItem: (itemKey: string) => Promise<boolean>;
+  onTrackChange: (track: MediaStreamTrack | null) => void;
 }
 
 type CheckInAttendeeCardProps = Pick<
@@ -470,6 +493,7 @@ function CheckInScanResultView({
   onUndo,
   onRevokeCheckIn,
   onRevokeItem,
+  onTrackChange,
 }: Readonly<CheckInScanResultViewProps>) {
   const attendeeCard = (
     <CheckInAttendeeCard
@@ -516,6 +540,7 @@ function CheckInScanResultView({
               onScan={onScan}
               onClose={onCloseInlineCamera}
               onReset={onResetScan}
+              onTrackChange={onTrackChange}
             />
           )}
           {attendeeCard}
@@ -558,6 +583,10 @@ interface CheckInMobileOverlayProps {
   onUndo: () => Promise<void>;
   showUndo: boolean;
   transportError: string | null;
+  onTrackChange: (track: MediaStreamTrack | null) => void;
+  torchSupported: boolean;
+  torchOn: boolean;
+  onToggleTorch: () => void;
 }
 
 /** Mobile fullscreen camera overlay — a separate presentation surface from
@@ -590,6 +619,10 @@ function CheckInMobileOverlay({
   onUndo,
   showUndo,
   transportError,
+  onTrackChange,
+  torchSupported,
+  torchOn,
+  onToggleTorch,
 }: Readonly<CheckInMobileOverlayProps>) {
   if (!show) return null;
   return (
@@ -623,6 +656,10 @@ function CheckInMobileOverlay({
       onUndo={onUndo}
       showUndo={showUndo}
       transportError={transportError}
+      onTrackChange={onTrackChange}
+      torchSupported={torchSupported}
+      torchOn={torchOn}
+      onToggleTorch={onToggleTorch}
     />
   );
 }
@@ -654,6 +691,7 @@ export function CheckInPage({
   const canActRef = useRef(canAct);
   canActRef.current = canAct;
   const [scanSoundMuted, toggleScanSoundMuted] = useScanSoundMuted();
+  const { torchSupported, torchOn, toggleTorch, onTrackChange } = useCameraTorch();
   const isOperatorShell = onUseCameraChange === undefined;
   const isDesktop = useIsDesktop();
   const [operatorCamera, setOperatorCamera] = useState(() => !isDesktopViewport());
@@ -1682,6 +1720,9 @@ export function CheckInPage({
           scanSoundMuted={scanSoundMuted}
           onToggleScanSound={toggleScanSoundMuted}
           actionsRef={operatorCameraActionsRef}
+          torchSupported={torchSupported}
+          torchOn={torchOn}
+          onToggleTorch={toggleTorch}
         />
       )}
 
@@ -1730,6 +1771,7 @@ export function CheckInPage({
             onUndo={onUndo}
             onRevokeCheckIn={onRevokeCheckIn}
             onRevokeItem={onRevokeItem}
+            onTrackChange={onTrackChange}
           />
         </div>
 
@@ -1775,6 +1817,10 @@ export function CheckInPage({
         onUndo={onUndo}
         showUndo={showUndo}
         transportError={transportError}
+        onTrackChange={onTrackChange}
+        torchSupported={torchSupported}
+        torchOn={torchOn}
+        onToggleTorch={toggleTorch}
       />
     </>
   );
