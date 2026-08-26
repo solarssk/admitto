@@ -1,6 +1,6 @@
 # Scanning Tickets and Results
 
-**Audience:** Check-in Operators · **Required role:** Operator for the event · **Feature status:** ✅ Available · **Last verified:** Admitto 0.4.13
+**Audience:** Check-in Operators · **Required role:** Operator for the event · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.4
 
 ## What this page helps you do
 
@@ -15,7 +15,7 @@ Scan tickets and respond consistently to every supported check-in result.
 ## Steps
 
 1. Open **Check-in**.
-2. Use **Use camera** (desktop viewfinder is QR-sized; **Disable camera** turns it off), a hardware scanner, or the focused scan field. You can also paste or type a ticket token, URL, or agency QR and press Enter.
+2. Use **Use camera** (desktop viewfinder is QR-sized; **Disable camera** turns it off), a hardware scanner, or the focused scan field. You can also paste or type a ticket token, URL, or agency QR and press Enter. A torch button appears next to the camera controls once the camera is on, on devices whose camera supports it - most phones' rear camera, but not laptops or iPhones. Use it to light up a ticket in dim venue lighting.
 3. Point the camera at one QR code or scan one ticket. Admitto plays a short beep (and vibration where the device supports it), with distinct tones for valid, already checked in, and invalid results.
 4. Read the status, attendee name, and ticket type before acting.
 5. Confirm check-in when the screen shows **Ready to check in**.
@@ -47,6 +47,7 @@ A valid admission records the attendee, time, device, and method in the event hi
 ## Common problems
 
 - **The camera does not start:** check browser camera permission or use the hardware scanner.
+- **The code is hard to read in low light:** tap the torch button next to the camera controls, if it appears. If it does not appear, that device's camera does not expose torch control to the browser - use the venue's lighting or a separate flashlight instead.
 - **The scanner types but does not submit:** refocus the scan field and try one complete code.
 - **The wrong event is open:** stop scanning and return to the event list.
 

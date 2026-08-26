@@ -9,6 +9,7 @@ import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { AttendeePicker } from "./AttendeePicker.js";
 import { RecipientCountNotice, RecipientOptionCards } from "./RecipientOptionCards.js";
+import "./send-progress.css";
 
 interface CommunicationSendPanelProps {
   event: ArchivedGuardEvent;
@@ -29,6 +30,8 @@ interface CommunicationSendPanelProps {
 }
 
 type SendPhase = "form" | "polling" | "done";
+
+type BatchStatus = { queued: number; sent: number; failed: number };
 
 const RECIPIENT_OPTIONS: ReadonlyArray<{
   value: BulkSendFilter["type"];
@@ -68,15 +71,99 @@ const RECIPIENT_OPTIONS: ReadonlyArray<{
   },
 ];
 
-/** Notice tone for the send/queue result: "info" while still in flight, "warning" when nothing
- * useful happened (no match, nothing queued) or some messages failed, "success" otherwise. */
-function resultVariant(
-  phase: SendPhase,
-  batchStatus: { queued: number; sent: number; failed: number } | null,
-): "info" | "success" | "warning" {
-  if (phase === "polling") return "info";
-  if (!batchStatus) return "warning";
-  return batchStatus.failed > 0 ? "warning" : "success";
+/** Notice tone for the two remaining plain-text result cases (SendCompleteSummary owns its own
+ * tone for the batch-finished case, so this only ever renders while still polling, or done with
+ * no batch to summarize - "no recipients matched", "no emails queued", or a failed status check,
+ * none of which have a success reading). */
+function resultVariant(phase: SendPhase): "info" | "warning" {
+  return phase === "polling" ? "info" : "warning";
+}
+
+/** Two-segment bar out of `queued + sent + failed`: green for sent, red for failed, the rest
+ * left as the track's own neutral background (queued). At done, queued is 0 so the bar reads
+ * as fully sent/failed with no neutral remainder - no separate "done" variant needed. */
+function SendProgressBar({ batchStatus }: Readonly<{ batchStatus: BatchStatus }>) {
+  const total = batchStatus.queued + batchStatus.sent + batchStatus.failed;
+  const sentPct = total > 0 ? (batchStatus.sent / total) * 100 : 0;
+  const failedPct = total > 0 ? (batchStatus.failed / total) * 100 : 0;
+  return (
+    <div className="send-progress__bar">
+      <div
+        className="send-progress__bar-segment send-progress__bar-segment--sent"
+        style={{ width: `${sentPct}%` }}
+      />
+      <div
+        className="send-progress__bar-segment send-progress__bar-segment--failed"
+        style={{ width: `${failedPct}%` }}
+      />
+    </div>
+  );
+}
+
+/** Sent / Failed / Remaining stat tiles shown while a batch is still draining. "Remaining" is
+ * the operator-facing label for the internal `queued` field - clearer than exposing the queue
+ * terminology in the UI. Unlike SendProgressBar (also used from the done-state summary, where a
+ * malformed status response could in principle report nothing at all), this component only ever
+ * renders while polling - and polling only continues while `queued` is still positive - so
+ * `total` is always positive here too; no zero-guard needed on the percentage. */
+function SendProgressStats({ batchStatus }: Readonly<{ batchStatus: BatchStatus }>) {
+  const total = batchStatus.queued + batchStatus.sent + batchStatus.failed;
+  const processed = batchStatus.sent + batchStatus.failed;
+  const percent = Math.round((processed / total) * 100);
+  return (
+    <div className="send-progress">
+      <div className="send-progress__stats">
+        <div className="send-progress__stat send-progress__stat--sent">
+          <span className="send-progress__stat-value">{batchStatus.sent}</span>
+          <span className="send-progress__stat-label">Sent</span>
+        </div>
+        <div className="send-progress__stat send-progress__stat--failed">
+          <span className="send-progress__stat-value">{batchStatus.failed}</span>
+          <span className="send-progress__stat-label">Failed</span>
+        </div>
+        <div className="send-progress__stat send-progress__stat--remaining">
+          <span className="send-progress__stat-value">{batchStatus.queued}</span>
+          <span className="send-progress__stat-label">Remaining</span>
+        </div>
+      </div>
+      <SendProgressBar batchStatus={batchStatus} />
+      <p className="send-progress__caption">
+        <span>
+          {processed} / {total} processed
+        </span>
+        <span>{percent}%</span>
+      </p>
+    </div>
+  );
+}
+
+/** Done-state summary card, replacing the plain result Notice once a batch has actually
+ * finished draining (batchStatus present) - computes its own success/warning tone rather than
+ * reusing resultVariant() (that one always reads "warning" once polling ends, since none of its
+ * own no-batch cases - no match, nothing queued, a failed status check - have a success reading;
+ * only this card's own batchStatus tells whether the completed send was actually clean). */
+function SendCompleteSummary({ batchStatus }: Readonly<{ batchStatus: BatchStatus }>) {
+  const total = batchStatus.queued + batchStatus.sent + batchStatus.failed;
+  const hasFailures = batchStatus.failed > 0;
+  return (
+    <output className="send-progress">
+      <div className="send-progress__summary">
+        <span
+          className={`status-circle ${hasFailures ? "status-circle--warn" : "status-circle--ok"}`}
+          aria-hidden="true"
+        >
+          <i className={`ti ${hasFailures ? "ti-alert-triangle" : "ti-circle-check"}`} aria-hidden="true" />
+        </span>
+        <div className="send-progress__summary-text">
+          <strong className="send-progress__summary-heading">Send complete</strong>
+          <span className="send-progress__summary-detail">
+            {batchStatus.sent} sent · {batchStatus.failed} failed out of {total} total
+          </span>
+        </div>
+      </div>
+      <SendProgressBar batchStatus={batchStatus} />
+    </output>
+  );
 }
 
 /** Recipients filter, dry-run count, and batch send/status for the currently selected template.
@@ -104,9 +191,7 @@ export function CommunicationSendPanel({
   const [error, setError] = useState<string | null>(null);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [batchId, setBatchId] = useState<string | null>(null);
-  const [batchStatus, setBatchStatus] = useState<{ queued: number; sent: number; failed: number } | null>(
-    null,
-  );
+  const [batchStatus, setBatchStatus] = useState<BatchStatus | null>(null);
   const [ticketTypesRetryToken, setTicketTypesRetryToken] = useState(0);
 
   const resetForm = useCallback(() => {
@@ -442,28 +527,35 @@ export function CommunicationSendPanel({
         )}
         {(phase === "polling" || phase === "done") && (
           <>
-            {resultMessage && (
-              <Notice variant={resultVariant(phase, batchStatus)} as="output">
+            {phase === "polling" && resultMessage && (
+              <Notice variant={resultVariant(phase)} as="output">
                 {resultMessage}
               </Notice>
             )}
-            {batchStatus && phase === "polling" && (
-              <p className="mail-field-hint">
-                Queued: {batchStatus.queued} · Sent: {batchStatus.sent} · Failed:{" "}
-                {batchStatus.failed}
-              </p>
+            {phase === "polling" && batchStatus && <SendProgressStats batchStatus={batchStatus} />}
+            {phase === "done" && batchStatus && !error && <SendCompleteSummary batchStatus={batchStatus} />}
+            {phase === "done" && (!batchStatus || error) && resultMessage && (
+              <Notice variant={resultVariant(phase)} as="output">
+                {resultMessage}
+              </Notice>
             )}
-            <div className="communication-send-panel__actions">
-              <Button
-                type="button"
-                variant="secondary"
-                icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
-                disabled={busy}
-                onClick={resetForm}
-              >
-                Send another
-              </Button>
-            </div>
+            {/* Hidden while polling: resetForm only stops the client from watching this batch's
+                status (it never cancels anything server-side) - showing it mid-drain would let
+                an operator abandon the in-progress batch's visibility and fire a second,
+                concurrent send with no indication the first one is still running. */}
+            {phase === "done" && (
+              <div className="communication-send-panel__actions">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
+                  disabled={busy}
+                  onClick={resetForm}
+                >
+                  Send another
+                </Button>
+              </div>
+            )}
           </>
         )}
       </div>

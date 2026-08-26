@@ -135,11 +135,64 @@
    rather than a max-width, since the zoom is triggered by touch input, not viewport width: a
    landscape iPhone (up to ~930px wide) is still a touch device and still zooms, so a width-only
    cutoff (e.g. 640px) misses it (CodeRabbit review, PR #848). The desktop type scale is untouched
-   since a mouse-driven browser never triggers this zoom regardless of window width. */
+   since a mouse-driven browser never triggers this zoom regardless of window width.
+
+   For .at-input/.at-select this rendered visibly larger than the surrounding 14px labels/body
+   text (PO report). `.textarea` keeps the plain bump below (resizable, no fixed height to clip
+   against - the wrapper trick below doesn't apply to it). For .at-input/.at-select, wrapped in
+   .at-control (or .at-inputgroup) by their React components, every length is instead scaled up
+   by 16/14 - font-size, width, height, padding, the .at-select arrow position - then the whole
+   box is `transform: scale(14/16)`'d back down. The two cancel out, reproducing the desktop
+   14px box pixel-for-pixel (border, padding, arrow position included) while the *computed*
+   font-size iOS reads is still 16px, so the wrapper's `overflow: hidden` + fixed height clips
+   the oversized (pre-transform) layout box back down to the real control size. */
 @media (pointer: coarse) {
-  .at-input, .at-select, .at-textarea { font-size: 16px; }
+  .at-textarea { font-size: 16px; }
+
+  .at-control, .at-inputgroup:not(:has(.at-inputgroup__icon--action)) {
+    height: var(--control-h);
+    overflow: hidden;
+  }
+  .at-inputgroup:has(.at-inputgroup__icon--action) { height: var(--control-h); }
+
+  .at-control > .at-input,
+  .at-control > .at-select,
+  .at-inputgroup:not(:has(.at-inputgroup__icon--action)) > .at-input {
+    font-size: 16px;
+    width: calc(100% / 0.875);
+    height: calc(var(--control-h) / 0.875);
+    transform: scale(0.875);
+    transform-origin: top left;
+  }
+  .at-control > .at-input { padding: 0 calc(var(--pad-control-x) / 0.875); }
+  .at-control > .at-input[type="password"] { padding-right: calc(2.25rem / 0.875); }
+  .at-control > .at-select {
+    padding-left: calc(var(--pad-control-x) / 0.875);
+    padding-right: calc(2rem / 0.875);
+    background-position: right calc(0.6rem / 0.875) center;
+  }
+  .at-inputgroup:not(:has(.at-inputgroup__icon--action)) > .at-input {
+    padding-left: calc(2.1rem / 0.875);
+    padding-right: calc(var(--pad-control-x) / 0.875);
+  }
+
+  /* .at-control's own overflow:hidden clips a focused child's outward box-shadow ring, same
+     issue the action-icon wrapper below already solves for itself (its own overflow:hidden
+     predates this media query) - restore it here the same way, on the wrapper itself. The
+     input's own border still shows fine unclipped (it sits inside the wrapper's exact bounds
+     by construction), only the ring needs this. */
+  .at-control:focus-within,
+  .at-inputgroup:not(:has(.at-inputgroup__icon--action)):focus-within {
+    box-shadow: var(--ring);
+  }
+  .at-control:has(.at-input--invalid):focus-within,
+  .at-control:has(.at-select--invalid):focus-within,
+  .at-inputgroup:not(:has(.at-inputgroup__icon--action)):has(.at-input--invalid):focus-within {
+    box-shadow: 0 0 0 var(--ring-width) var(--status-error-tint);
+  }
 }
 
+.at-control { display: block; }
 .at-inputgroup { display: flex; align-items: center; position: relative; }
 .at-inputgroup .at-inputgroup__icon { position: absolute; left: 0.65rem; color: var(--text-muted); font-size: 1.05rem; pointer-events: none; }
 .at-inputgroup .at-input { padding-left: 2.1rem; }
@@ -199,6 +252,26 @@
    different icon ever reuses this button and looks off. */
 .at-inputgroup .at-inputgroup__icon--action i {
   transform: translateY(1px);
+}
+
+/* Same 16px-then-scaled-down trick as .at-input/.at-select's own @media block above, but this
+   input is `flex: 1` (not a percentage width) - it fills whatever space the fixed-width icon
+   button (var(--control-h)) leaves, so a plain `width: calc(100% / 0.875)` would resolve against
+   the *whole* wrapper (icon included) and `flex-shrink: 1` would immediately shrink it back to
+   fit, undoing the inflation entirely. `flex: none` opts it out of flex auto-sizing so its own
+   `width` - the remaining space, minus the button, inflated by the same 16/14 factor - takes
+   over instead. Placed after the `flex: 1; width: auto` rule above (same specificity - source
+   order decides) rather than in the earlier @media block, which loses that tie-break. */
+@media (pointer: coarse) {
+  .at-inputgroup:has(.at-inputgroup__icon--action) > .at-input {
+    font-size: 16px;
+    flex: none;
+    width: calc((100% - var(--control-h)) / 0.875);
+    height: calc(var(--control-h) / 0.875);
+    padding-left: calc(var(--pad-control-x) / 0.875);
+    transform: scale(0.875);
+    transform-origin: top left;
+  }
 }
 
 /* ---------------- Checkbox & Switch ---------------- */
