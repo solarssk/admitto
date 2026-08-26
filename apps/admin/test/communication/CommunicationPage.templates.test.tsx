@@ -2043,7 +2043,8 @@ describe("CommunicationPage templates", () => {
 
       fireEvent.click(screen.getByRole("tab", { name: /Email/i }));
       expect(screen.getByRole("tab", { name: /Email/i, selected: true })).toBeTruthy();
-      expect(screen.getByText("Send complete: 2 sent, 0 failed.")).toBeTruthy();
+      expect(screen.getByText("Send complete")).toBeTruthy();
+      expect(screen.getByText("2 sent · 0 failed out of 2 total")).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }

@@ -1,0 +1,94 @@
+/* ---------------- Bulk send progress (stat tiles + segmented bar) ---------------- */
+.send-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.send-progress__stats {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.send-progress__stat {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+.send-progress__stat-value {
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+}
+
+.send-progress__stat-label {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.send-progress__stat--sent .send-progress__stat-value { color: var(--status-ok-fg); }
+.send-progress__stat--failed .send-progress__stat-value { color: var(--status-error-fg); }
+.send-progress__stat--remaining .send-progress__stat-value { color: var(--primary); }
+
+.send-progress__bar {
+  display: flex;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+
+.send-progress__bar-segment {
+  height: 100%;
+  transition: width var(--dur) var(--ease-out);
+}
+.send-progress__bar-segment--sent { background: var(--status-ok); }
+.send-progress__bar-segment--failed { background: var(--status-error); }
+
+@media (prefers-reduced-motion: reduce) {
+  .send-progress__bar-segment {
+    transition: none;
+  }
+}
+
+.send-progress__caption {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* ---------------- Done summary card ---------------- */
+.send-progress__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.send-progress__summary-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.send-progress__summary-heading {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.send-progress__summary-detail {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
