@@ -372,8 +372,18 @@ export const RATE_POLICIES = {
   ),
   /** Client-reported errors/CSP violations - the one source meant to fire from an uncontrolled
    * browser-side condition (e.g. a misbehaving extension retrying a blocked mutation), so it
-   * needs a ceiling other click-driven admin endpoints don't. */
-  "admin:client-error": authUserScopedPolicy("admin:client-error", "admin_client_error", 30, 60_000),
+   * needs a ceiling other click-driven admin endpoints don't. Deliberately has no logOnExceeded:
+   * logging every rejected request here would just swap the log flood this ceiling exists to
+   * stop for an equally unbounded stream of rate-limit-exceeded log lines instead. */
+  "admin:client-error": {
+    checks: [
+      {
+        keyOf: (c) => `admin:client-error:user:${c.get("auth").userId}`,
+        windowMs: 60_000,
+        max: 30,
+      },
+    ],
+  },
   "admin:export": {
     checks: [
       {

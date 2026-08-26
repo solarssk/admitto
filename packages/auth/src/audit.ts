@@ -188,7 +188,6 @@ export type RateLimitScope =
   | "checkin_history"
   | "admin_geocoding_search"
   | "admin_geocoding_timezone"
-  | "admin_client_error"
   | "wallet_webhook"
   | "admin_test_send"
   | "admin_mail_test_recipient"
