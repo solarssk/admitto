@@ -61,9 +61,11 @@ export function installGlobalErrorReporting(): void {
     const blockedURI = event.blockedURI ? withoutQueryAndFragment(event.blockedURI) : "(inline)";
     // A violation that blocks this very reporting call (e.g. a misconfigured connect-src) would
     // otherwise report itself right back into the same block, forever - drop it instead of
-    // looping. `blockedURI` is always origin+pathname (or "(inline)") here, so a plain endsWith
-    // is enough without re-parsing it as a URL.
-    if (blockedURI.endsWith(CLIENT_ERROR_REPORT_PATH)) return;
+    // looping. Exact match on origin+pathname, not a suffix/substring check: blockedURI is
+    // attacker-influenceable (an injected cross-origin resource, or a data: URI, can be crafted
+    // to end in this same path), and a suffix match would silently swallow a genuinely malicious
+    // violation on a different origin instead of reporting it (own-review finding).
+    if (blockedURI === `${window.location.origin}${CLIENT_ERROR_REPORT_PATH}`) return;
     const sourceFile = event.sourceFile ? withoutQueryAndFragment(event.sourceFile) : "?";
     // Deliberately excludes event.sample: CSP only guarantees it is the blocked content, not
     // that the content is third-party - an inline script/style built from application or user
