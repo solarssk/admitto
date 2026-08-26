@@ -2292,10 +2292,10 @@ export async function revokeUserRole(id: string, assignmentId: string): Promise<
   }
 }
 
-export async function resetUserMfa(id: string, code?: string): Promise<{ ok: boolean }> {
+export async function resetUserMfa(id: string, proof?: StepUpProofBody): Promise<{ ok: boolean }> {
   const res = await fetch(
     `/api/admin/users/${encodeURIComponent(id)}/reset-2fa`,
-    jsonPostInit(code ? { code } : {}),
+    jsonPostInit(proof ?? {}),
   );
   return parseJson<{ ok: boolean }>(res);
 }
@@ -2324,10 +2324,11 @@ export async function resetUserPassword(
 
 export async function revokeUserSessions(
   id: string,
+  proof?: StepUpProofBody,
 ): Promise<{ ok: boolean; sessionsRevoked: number }> {
   const res = await fetch(
     `/api/admin/users/${encodeURIComponent(id)}/revoke-sessions`,
-    jsonPostInit({}),
+    jsonPostInit(proof ?? {}),
   );
   return parseJson<{ ok: boolean; sessionsRevoked: number }>(res);
 }

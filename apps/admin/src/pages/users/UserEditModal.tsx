@@ -16,7 +16,14 @@ import {
   unlinkUserExternalIdentity,
 } from "../../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../../api/operator-api-error.js";
-import type { EventDto, RoleAssignmentDto, SecurityAuditLogEntryDto, UserListItemDto } from "../../api/types.js";
+import type {
+  EventDto,
+  RoleAssignmentDto,
+  SecurityAuditLogEntryDto,
+  StepUpProofBody,
+  UserListItemDto,
+} from "../../api/types.js";
+import { WebauthnStepUpButton } from "../../account/WebauthnStepUpButton.js";
 import { ConfirmDialog } from "../../components/ConfirmDialog.js";
 import { GeoCell } from "../../components/GeoCell.js";
 import { MoreActionsMenuItem } from "../../components/MoreActionsMenuItem.js";
@@ -378,8 +385,10 @@ function SignInSecuritySection({
   resetPasswordCode,
   setResetPasswordCode,
   resetPasswordBusy,
+  setResetPasswordBusy,
   onCancelResetPassword,
   onResetPassword,
+  setError,
 }: Readonly<{
   user: UserListItemDto;
   resetPasswordOpen: boolean;
@@ -392,8 +401,10 @@ function SignInSecuritySection({
   resetPasswordCode: string;
   setResetPasswordCode: (value: string) => void;
   resetPasswordBusy: boolean;
+  setResetPasswordBusy: (busy: boolean) => void;
   onCancelResetPassword: () => void;
-  onResetPassword: () => void;
+  onResetPassword: (proof?: StepUpProofBody) => Promise<void>;
+  setError: (message: string | null) => void;
 }>) {
   return (
     <section className="users-modal__section">
@@ -478,6 +489,12 @@ function SignInSecuritySection({
                 {...NO_AUTOFILL_PROPS}
                 autoComplete="one-time-code"
               />
+              <WebauthnStepUpButton
+                busy={resetPasswordBusy}
+                onBusyChange={setResetPasswordBusy}
+                onError={setError}
+                onSubmit={onResetPassword}
+              />
             </div>
           )}
           <p className="form-hint">
@@ -497,7 +514,7 @@ function SignInSecuritySection({
                 newPassword.length < PASSWORD_MIN_LENGTH ||
                 (requiresActorStepUp && resetPasswordCode.trim().length === 0)
               }
-              onClick={onResetPassword}
+              onClick={() => void onResetPassword()}
             >
               {resetPasswordBusy ? "Resetting…" : "Reset password"}
             </Button>
@@ -569,6 +586,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
   const [resetPasswordBusy, setResetPasswordBusy] = useState(false);
   const [revokeSessionsOpen, setRevokeSessionsOpen] = useState(false);
   const [revokeSessionsBusy, setRevokeSessionsBusy] = useState(false);
+  const [revokeSessionsCode, setRevokeSessionsCode] = useState("");
   const [unlinkSsoOpen, setUnlinkSsoOpen] = useState(false);
   const [unlinkSsoBusy, setUnlinkSsoBusy] = useState(false);
   const [unlinkSsoPassword, setUnlinkSsoPassword] = useState("");
@@ -908,14 +926,18 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     setPendingAdds((prev) => prev.filter((p) => p.key !== key));
   };
 
-  const handleResetMfa = async () => {
+  // Each of these three step-up-gated handlers doubles as the WebauthnStepUpButton's onSubmit
+  // below (which always supplies a proof) and as its own dialog's plain Confirm handler (which
+  // doesn't - falls back to whatever's in the matching code field, if anything).
+
+  const handleResetMfa = async (proof?: StepUpProofBody) => {
     // Only reachable from the More actions menu, itself only rendered once the render gate
     // below (`if (!open || !user) return null`) has passed.
     /* v8 ignore if */
     if (!user) return;
     setResetMfaBusy(true);
     try {
-      await resetUserMfa(user.id, resetMfaCode || undefined);
+      await resetUserMfa(user.id, proof ?? (resetMfaCode ? { code: resetMfaCode } : undefined));
       setResetMfaOpen(false);
       setResetMfaCode("");
       onUpdated(user, "Two-factor reset. User must sign in again.");
@@ -927,12 +949,15 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     }
   };
 
-  const handleResetPassword = async () => {
+  const handleResetPassword = async (proof?: StepUpProofBody) => {
     if (!user || newPassword.length < PASSWORD_MIN_LENGTH) return;
     setResetPasswordBusy(true);
     setError(null);
     try {
-      await resetUserPassword(user.id, { new_password: newPassword, code: resetPasswordCode || undefined });
+      await resetUserPassword(user.id, {
+        new_password: newPassword,
+        ...(proof ?? (resetPasswordCode ? { code: resetPasswordCode } : {})),
+      });
       setResetPasswordOpen(false);
       setNewPassword("");
       setResetPasswordCode("");
@@ -949,14 +974,18 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
     }
   };
 
-  const handleRevokeSessions = async () => {
+  const handleRevokeSessions = async (proof?: StepUpProofBody) => {
     // Same render-gate reasoning as handleResetMfa above.
     /* v8 ignore if */
     if (!user) return;
     setRevokeSessionsBusy(true);
     try {
-      const { sessionsRevoked } = await revokeUserSessions(user.id);
+      const { sessionsRevoked } = await revokeUserSessions(
+        user.id,
+        proof ?? (revokeSessionsCode ? { code: revokeSessionsCode } : undefined),
+      );
       setRevokeSessionsOpen(false);
+      setRevokeSessionsCode("");
       onUpdated(user, `${sessionsRevoked} session${sessionsRevoked === 1 ? "" : "s"} revoked`);
       onClose();
     } catch (err) {
@@ -1279,12 +1308,14 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
               resetPasswordCode={resetPasswordCode}
               setResetPasswordCode={setResetPasswordCode}
               resetPasswordBusy={resetPasswordBusy}
+              setResetPasswordBusy={setResetPasswordBusy}
               onCancelResetPassword={() => {
                 setResetPasswordOpen(false);
                 setNewPassword("");
                 setResetPasswordCode("");
               }}
-              onResetPassword={() => void handleResetPassword()}
+              onResetPassword={handleResetPassword}
+              setError={setError}
             />
           </div>
 
@@ -1372,6 +1403,12 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
               {...NO_AUTOFILL_PROPS}
               autoComplete="one-time-code"
             />
+            <WebauthnStepUpButton
+              busy={resetMfaBusy}
+              onBusyChange={setResetMfaBusy}
+              onError={setError}
+              onSubmit={handleResetMfa}
+            />
           </div>
         )}
       </ConfirmDialog>
@@ -1379,15 +1416,48 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       <ConfirmDialog
         open={revokeSessionsOpen}
         title="Revoke all sessions"
-        message={`End all active sessions for ${displayTitle}?`}
+        message={
+          requiresActorStepUp
+            ? `End all active sessions for ${displayTitle}? Revoking another superadmin's sessions requires your own authenticator or backup code.`
+            : `End all active sessions for ${displayTitle}?`
+        }
         confirmLabel="Revoke"
         confirmVariant="danger"
         loading={revokeSessionsBusy}
+        disableConfirm={requiresActorStepUp && revokeSessionsCode.trim().length === 0}
         onConfirm={() => void handleRevokeSessions()}
         onCancel={() => {
-          if (!revokeSessionsBusy) setRevokeSessionsOpen(false);
+          if (revokeSessionsBusy) return;
+          setRevokeSessionsOpen(false);
+          setRevokeSessionsCode("");
         }}
-      />
+      >
+        {requiresActorStepUp && (
+          <div className="mail-field-row">
+            <label className="mail-field-label" htmlFor="revoke-sessions-actor-code">
+              Your authenticator or backup code
+            </label>
+            <Input
+              id="revoke-sessions-actor-code"
+              name="revoke-sessions-actor-code"
+              type="text"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={revokeSessionsCode}
+              disabled={revokeSessionsBusy}
+              onChange={(e) => setRevokeSessionsCode(e.target.value)}
+              {...NO_AUTOFILL_PROPS}
+              autoComplete="one-time-code"
+            />
+            <WebauthnStepUpButton
+              busy={revokeSessionsBusy}
+              onBusyChange={setRevokeSessionsBusy}
+              onError={setError}
+              onSubmit={handleRevokeSessions}
+            />
+          </div>
+        )}
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={unlinkSsoOpen}
