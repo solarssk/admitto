@@ -9,6 +9,8 @@ export const LOCATION_LIMITS = {
   VENUE_NAME_MAX_LENGTH: 300,
   ADDRESS_MAX_LENGTH: 500,
   TEXT_MAX_LENGTH: 2000,
+  /** Venue identifier fields (room, entrance, phone, place ID) - same cap as VENUE_NAME_MAX_LENGTH. */
+  SHORT_TEXT_MAX_LENGTH: 300,
   /** Same cap as other long Location text fields (directions / accessibility). */
   MAPS_URL_OVERRIDE_MAX_LENGTH: 2000,
   LATITUDE_MIN: -90,
@@ -44,6 +46,23 @@ function normalizeText(
   return trimmed;
 }
 
+/** Trims/validates a display-only "HH:MM" 24h wall-clock time field. Same shape as
+ * apps/web/src/admin/admin-helpers.ts's `eventHoursField` Zod regex, applied here at the domain
+ * layer for EventLocation's 7 access-point timing fields. */
+function normalizeTimeField(
+  value: string | null | undefined,
+  fieldName: string,
+): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(trimmed)) {
+    throw new LocationValidationError(`${fieldName} must be a 24h HH:MM time`);
+  }
+  return trimmed;
+}
+
 function normalizeCoordinate(
   value: number | null | undefined,
   min: number,
@@ -61,18 +80,12 @@ function normalizeCoordinate(
   return value;
 }
 
-export interface NormalizedEventLocationInput {
-  venue_name?: string | null;
-  formatted_address?: string | null;
-  latitude?: number | null;
-  longitude?: number | null;
+/** Same fields as `EventLocationInput`, except `map_zoom`: normalization always resolves it to a
+ * concrete number (or leaves it omitted), never `null` - the column always has a value, so `null`
+ * (submitted to reset it) is normalized to the default zoom before this type is ever built. */
+export type NormalizedEventLocationInput = Omit<EventLocationInput, "map_zoom"> & {
   map_zoom?: number;
-  directions_text?: string | null;
-  accessibility_text?: string | null;
-  address_components?: AddressComponents | null;
-  google_maps_url_override?: string | null;
-  apple_maps_url_override?: string | null;
-}
+};
 
 function normalizeMapZoom(value: number | null | undefined): number | undefined {
   if (value === undefined) return undefined;
@@ -150,8 +163,89 @@ export function normalizeMapsUrlOverride(
  * Does NOT know about an existing record - the "both coordinates or neither" rule is enforced by
  * `assertCoordinatePairing` against the *merged* result, since a caller may legitimately patch
  * just one axis when the other is already set on the stored record. */
+function assignIfDefined<K extends keyof NormalizedEventLocationInput>(
+  result: NormalizedEventLocationInput,
+  key: K,
+  value: NormalizedEventLocationInput[K] | undefined,
+): void {
+  if (value !== undefined) result[key] = value;
+}
+
+/** The 7 venue-identifier fields, extracted out of normalizeEventLocationInput to keep its own
+ * cognitive complexity under the SonarCloud threshold (S3776) - each is normalized and assigned
+ * the same way as every other short text field on this form. */
+function normalizeVenueIdentifierFields(
+  input: EventLocationInput,
+  result: NormalizedEventLocationInput,
+): void {
+  assignIfDefined(
+    result,
+    "venue_room",
+    normalizeText(input.venue_room, LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH, "venue_room"),
+  );
+  assignIfDefined(
+    result,
+    "venue_entrance",
+    normalizeText(input.venue_entrance, LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH, "venue_entrance"),
+  );
+  assignIfDefined(
+    result,
+    "venue_entrance_door",
+    normalizeText(input.venue_entrance_door, LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH, "venue_entrance_door"),
+  );
+  assignIfDefined(
+    result,
+    "venue_entrance_gate",
+    normalizeText(input.venue_entrance_gate, LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH, "venue_entrance_gate"),
+  );
+  assignIfDefined(
+    result,
+    "venue_entrance_portal",
+    normalizeText(input.venue_entrance_portal, LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH, "venue_entrance_portal"),
+  );
+  assignIfDefined(
+    result,
+    "venue_phone_number",
+    normalizeText(input.venue_phone_number, LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH, "venue_phone_number"),
+  );
+  assignIfDefined(
+    result,
+    "venue_place_id",
+    normalizeText(input.venue_place_id, LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH, "venue_place_id"),
+  );
+}
+
+/** The 7 access-point opening-time fields, extracted for the same reason as
+ * normalizeVenueIdentifierFields above. */
+function normalizeAccessPointTimingFields(
+  input: EventLocationInput,
+  result: NormalizedEventLocationInput,
+): void {
+  assignIfDefined(result, "venue_open_time", normalizeTimeField(input.venue_open_time, "venue_open_time"));
+  assignIfDefined(result, "venue_close_time", normalizeTimeField(input.venue_close_time, "venue_close_time"));
+  assignIfDefined(result, "doors_open_time", normalizeTimeField(input.doors_open_time, "doors_open_time"));
+  assignIfDefined(result, "gates_open_time", normalizeTimeField(input.gates_open_time, "gates_open_time"));
+  assignIfDefined(
+    result,
+    "box_office_open_time",
+    normalizeTimeField(input.box_office_open_time, "box_office_open_time"),
+  );
+  assignIfDefined(
+    result,
+    "parking_lots_open_time",
+    normalizeTimeField(input.parking_lots_open_time, "parking_lots_open_time"),
+  );
+  assignIfDefined(
+    result,
+    "fan_zone_open_time",
+    normalizeTimeField(input.fan_zone_open_time, "fan_zone_open_time"),
+  );
+}
+
 export function normalizeEventLocationInput(input: EventLocationInput): NormalizedEventLocationInput {
   const result: NormalizedEventLocationInput = {};
+  normalizeVenueIdentifierFields(input, result);
+  normalizeAccessPointTimingFields(input, result);
 
   const venueName = normalizeText(input.venue_name, LOCATION_LIMITS.VENUE_NAME_MAX_LENGTH, "venue_name");
   if (venueName !== undefined) result.venue_name = venueName;

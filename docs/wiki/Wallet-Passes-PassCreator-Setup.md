@@ -1,6 +1,6 @@
 # Wallet Passes - PassCreator Template Setup
 
-**Audience:** Superadmins · **Required role:** Superadmin · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.4
+**Audience:** Superadmins · **Required role:** Superadmin · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.3
 
 ## What this page helps you do
 
@@ -47,13 +47,22 @@ New and reissued wallet passes for this event's attendees show real data. Passes
 - **Test connection succeeds in Admitto but the pass still shows blank or wrong fields:** Test connection only checks that the API key and Template ID are valid and reachable - it does not check that Additional Properties are registered, that Field mapping rows exist for them, or that Value boxes reference them correctly.
 - **Scanning the wallet pass at check-in doesn't find the attendee, or the QR looks different from the ticket page's QR:** the template's Barcode Value box is still bound to `{userProvidedId}` (PassCreator's own pass identifier) instead of the ticket/QR value - see step 9.
 
-## Apple Wallet semantic tags (optional, no template setup)
+## Apple Wallet semantic tags (Siri Suggestions, Maps, Calendar)
 
-Event Settings → Wallet has a separate **Semantic tags** switch next to Apple Wallet, off by default. It adds Siri Suggestions, Maps, and Calendar smart data (event name, date/time, venue, entrance directions) to issued Apple Wallet passes - none of the Field mapping/Additional Properties setup above applies to it. Turning it on (or off) also refreshes already-issued Apple Wallet passes, the same way editing the event's title or hours does. It has no effect on Google Wallet passes, and does not require NFC or any special PassCreator account approval.
+Semantic tags are a separate, optional layer on top of the card fields above - they power Siri Suggestions, Maps, and Calendar smart surfacing on Apple Wallet, but never appear as visible text on the pass card itself. They need **two** things set up, on two different systems, and both are required:
+
+1. **In Admitto**, Event Settings → Wallet's Field mapping supports the same kind of entries as any other field, using placeholders such as "Event type", "Venue room", "Venue entrance" (and door/gate/portal), "Venue phone number", "Venue place ID", and the access-point opening times (venue, doors, gates, box office, parking lots, fan zone) - map any of these to a property name, same as step 4 above. Most of the underlying data comes from Event Settings → General (**Event type**) and → Location's **Venue access details** section; **Venue place ID** has no automatic source (Admitto's geocoding does not produce Apple Maps' own place identifiers) - look it up yourself in the Apple Maps app (search the venue, tap Share, copy the ID from the link) and enter it in Event Settings → Location.
+2. **In PassCreator**, register the same Additional Property (steps 2-3 above) if it doesn't exist yet, then open **Design & Content → Semantic Tags** and bind the matching Apple field (for example "Event Type", "Venue Room") to that property's placeholder token - the same `{propertyName}` token used for card fields, just placed in the Semantic Tags panel instead of Frontfields.
+
+Mapping a field in Admitto alone does nothing for Siri/Maps/Calendar without step 2 - and binding a Semantic Tags field in PassCreator to a property Admitto never sends is equally silent, since PassCreator only substitutes a value when both sides use the exact same property name. Admitto has no way to complete step 2 for you; the binding lives entirely inside that PassCreator template's own editor.
+
+There is no toggle for this in Admitto - a semantic tag placeholder becomes live the moment it's mapped in Field mapping and bound in PassCreator, the same as any other field. It has no effect on Google Wallet passes, and does not require NFC or any special PassCreator account approval.
+
+An earlier version of this integration also sent a separate `semantics` object directly through the wallet API, with an event-level "Semantic tags" toggle. That object was never a documented part of PassCreator's pass API and had no effect on issued passes (confirmed by inspecting real issued `.pkpass` files) - it has been removed. If you had that toggle turned on for an event, nothing changes when it disappears, since it was never doing anything.
 
 ## Lock Screen relevance date (always on for Apple Wallet, no switch)
 
-Whenever Apple Wallet is enabled for an event and the event has a start time set (Event settings → Basic information → Event hours), Admitto also tells PassCreator when the pass becomes relevant enough to surface on the Lock Screen. This is separate from the **Semantic tags** switch above - it works regardless of whether that switch is on or off, and there is nothing to configure for it. It has no effect on Google Wallet passes. An event with no start time set gets no Lock Screen surfacing behavior; nothing else about the pass changes.
+Whenever Apple Wallet is enabled for an event and the event has a start time set (Event settings → Basic information → Event hours), Admitto also tells PassCreator when the pass becomes relevant enough to surface on the Lock Screen. This works independently of the semantic tags setup above and needs no configuration of its own. It has no effect on Google Wallet passes. An event with no start time set gets no Lock Screen surfacing behavior; nothing else about the pass changes.
 
 ## Related pages
 

@@ -1,4 +1,5 @@
 import type { DeliveryDto, HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
+import type { EventLocationInput } from "@admitto/location";
 import type { LogoCropMeta, LogoPersistenceDto } from "@admitto/mail-templates";
 import type {
   AuthenticationResponseJSON,
@@ -11,7 +12,7 @@ import type {
 // response's items) so this file still needs its own bound import above - DeliveryDetailDto
 // isn't used locally, only re-exported, so it's not repeated in that import (Sonar S1128).
 export type { DeliveryDetailDto, DeliveryDto, HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
-export type { EventSettingsDto, LogoCropMeta, LogoPersistenceDto } from "@admitto/mail-templates";
+export type { EventSettingsDto, EventType, LogoCropMeta, LogoPersistenceDto } from "@admitto/mail-templates";
 
 export type MailerProvider = "smtp" | "graph" | "powerautomate" | "export_only";
 export type PreferredTimeFormat = "12h" | "24h";
@@ -1103,9 +1104,46 @@ export interface EventLocationDto {
   google_maps_url_override: string | null;
   /** Manual Apple Maps deep link when the pin-built URL is wrong; null = build from coords. */
   apple_maps_url_override: string | null;
+  /** Venue identifiers/opening times exposed as Wallet field-mapping placeholders - only reach a
+   * pass once an admin maps them in Event Settings -> Wallet. */
+  venue_room: string | null;
+  venue_entrance: string | null;
+  venue_entrance_door: string | null;
+  venue_entrance_gate: string | null;
+  venue_entrance_portal: string | null;
+  venue_phone_number: string | null;
+  /** Apple Maps' own place identifier - admin-entered, cannot be derived automatically. */
+  venue_place_id: string | null;
+  /** Access-point opening times, "HH:MM" wall-clock strings tied to the event's single date. */
+  venue_open_time: string | null;
+  venue_close_time: string | null;
+  doors_open_time: string | null;
+  gates_open_time: string | null;
+  box_office_open_time: string | null;
+  parking_lots_open_time: string | null;
+  fan_zone_open_time: string | null;
 }
 
-export interface SaveEventLocationBody {
+export interface SaveEventLocationBody
+  extends Pick<
+    EventLocationInput,
+    | "google_maps_url_override"
+    | "apple_maps_url_override"
+    | "venue_room"
+    | "venue_entrance"
+    | "venue_entrance_door"
+    | "venue_entrance_gate"
+    | "venue_entrance_portal"
+    | "venue_phone_number"
+    | "venue_place_id"
+    | "venue_open_time"
+    | "venue_close_time"
+    | "doors_open_time"
+    | "gates_open_time"
+    | "box_office_open_time"
+    | "parking_lots_open_time"
+    | "fan_zone_open_time"
+  > {
   /** Omit = unchanged; `null` (or "" for text fields) clears it. */
   venue_name?: string | null;
   formatted_address?: string | null;
@@ -1115,8 +1153,6 @@ export interface SaveEventLocationBody {
   directions_text?: string | null;
   accessibility_text?: string | null;
   address_components?: AddressComponentsDto | null;
-  google_maps_url_override?: string | null;
-  apple_maps_url_override?: string | null;
   /** Only meaningful alongside a latitude/longitude change for stamping a provider; send `null`
    * without a coordinate change to clear stale Verified provenance (e.g. free-text venue rename).
    * Omit for a manual pin move so the server clears provenance via the coordinate-change path. */
@@ -1366,11 +1402,11 @@ export interface GrantUserRoleBody {
   scope_id?: string | null;
 }
 
-/** `code`/`webauthn` here are the ACTOR's own step-up proof, required by the server only when
- * resetting another superadmin's password (see actorMustStepUpForReset in
- * apps/web/src/admin/users-routes.ts). */
-export interface ResetUserPasswordBody extends StepUpProofBody {
+export interface ResetUserPasswordBody {
   new_password: string;
+  /** Actor's own TOTP/recovery code - required by the server only when resetting another
+   * superadmin's password (see actorMustStepUpForReset in apps/web/src/admin/users-routes.ts). */
+  code?: string;
 }
 
 export interface UnlinkUserExternalIdentityBody {

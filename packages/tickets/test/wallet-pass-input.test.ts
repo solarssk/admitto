@@ -43,11 +43,7 @@ function fullResolved(overrides: { attendee?: Record<string, unknown>; event?: R
       longitude: -0.1,
       googleMapsUrlOverride: null,
       appleMapsUrlOverride: null,
-      // Matches the DB defaults (wallet_apple_enabled true, wallet_semantic_tags_enabled false) -
-      // semantics stays off unless a test explicitly opts in, so the "all fields present" exact
-      // match below doesn't need to account for it.
       walletAppleEnabled: true,
-      walletSemanticTagsEnabled: false,
       addressComponents: {
         object_name: "Main Hall",
         street: "123 Example St",
@@ -236,20 +232,12 @@ describe("buildWalletPassInput", () => {
 });
 
 describe("buildWalletPassInput — relevantDate (PassCreator Lock Screen surfacing)", () => {
-  it("sends the event's local wall-clock digits, independent of the semantic tags toggle", () => {
+  it("sends the event's local wall-clock digits", () => {
     const input = buildWalletPassInput(fullResolved(), "b");
     expect(input.relevantDate).toBe("2026-09-24 09:00");
   });
 
-  it("is present even when walletSemanticTagsEnabled is off (not part of the semantic tags opt-in)", () => {
-    const input = buildWalletPassInput(
-      fullResolved({ event: { walletSemanticTagsEnabled: false } }),
-      "b",
-    );
-    expect(input.relevantDate).toBe("2026-09-24 09:00");
-  });
-
-  it("is omitted when walletAppleEnabled is off, same as semantics", () => {
+  it("is omitted when walletAppleEnabled is off", () => {
     const input = buildWalletPassInput(fullResolved({ event: { walletAppleEnabled: false } }), "b");
     expect(input.relevantDate).toBeUndefined();
   });
@@ -260,232 +248,230 @@ describe("buildWalletPassInput — relevantDate (PassCreator Lock Screen surfaci
   });
 });
 
-describe("buildWalletPassInput — Apple Wallet semantic tags (opt-in)", () => {
-  it("omits semantics entirely when walletSemanticTagsEnabled is off (the DB default)", () => {
-    const input = buildWalletPassInput(fullResolved(), "b");
-    expect(input.semantics).toBeUndefined();
+describe("buildWalletPassInput — event type placeholder", () => {
+  it("translates a known event_type DB key to its Apple PKEventType literal", () => {
+    const input = buildWalletPassInput(fullResolved({ event: { eventType: "sports" } }), "b");
+    expect(input.eventTypeLabel).toBe("PKEventTypeSports");
   });
 
-  it("omits semantics when walletAppleEnabled is off, even if the tags toggle is on", () => {
-    const input = buildWalletPassInput(
-      fullResolved({ event: { walletSemanticTagsEnabled: true, walletAppleEnabled: false } }),
-      "b",
-    );
-    expect(input.semantics).toBeUndefined();
+  it.each([
+    ["generic", "PKEventTypeGeneric"],
+    ["live_performance", "PKEventTypeLivePerformance"],
+    ["movie", "PKEventTypeMovie"],
+    ["conference", "PKEventTypeConference"],
+    ["convention", "PKEventTypeConvention"],
+    ["workshop", "PKEventTypeWorkshop"],
+    ["social_gathering", "PKEventTypeSocialGathering"],
+  ])("translates %s to %s", (key, apple) => {
+    const input = buildWalletPassInput(fullResolved({ event: { eventType: key } }), "b");
+    expect(input.eventTypeLabel).toBe(apple);
   });
 
-  it("populates semantics from event/attendee data when both toggles are on", () => {
-    const input = buildWalletPassInput(
-      fullResolved({ event: { walletSemanticTagsEnabled: true } }),
-      "b",
-    );
-    expect(input.semantics).toEqual({
-      eventName: "Admitto Conference",
-      eventType: "PKEventTypeGeneric",
-      // Europe/London is BST (+01:00) in September.
-      eventStartDate: "2026-09-24T09:00:00+01:00",
-      eventEndDate: "2026-09-24T18:00:00+01:00",
-      venueName: "Main Hall",
-      venueLocation: { latitude: 51.5, longitude: -0.1 },
-      entranceDescription: "Enter via the north gate",
-      attendeeName: "Jane Doe",
-      duration: 9 * 60 * 60,
-    });
+  it("leaves eventTypeLabel undefined when event_type is not set", () => {
+    const input = buildWalletPassInput(fullResolved({ event: { eventType: null } }), "b");
+    expect(input.eventTypeLabel).toBeUndefined();
   });
+});
 
-  it("omits venueLocation when coordinates aren't ready, without dropping the rest", () => {
-    const input = buildWalletPassInput(
-      fullResolved({
-        event: { walletSemanticTagsEnabled: true, latitude: null, longitude: null },
-      }),
-      "b",
-    );
-    expect(input.semantics?.venueLocation).toBeUndefined();
-    expect(input.semantics?.eventName).toBe("Admitto Conference");
-  });
-
-  it("omits eventStartDate/eventEndDate/duration when event hours aren't set", () => {
-    const input = buildWalletPassInput(
-      fullResolved({
-        event: { walletSemanticTagsEnabled: true, eventHoursStart: null, eventHoursEnd: null },
-      }),
-      "b",
-    );
-    expect(input.semantics?.eventStartDate).toBeUndefined();
-    expect(input.semantics?.eventEndDate).toBeUndefined();
-    expect(input.semantics?.duration).toBeUndefined();
-    expect(input.semantics?.eventName).toBe("Admitto Conference");
-  });
-
-  it("sets eventStartDate but leaves eventEndDate/duration undefined when only the start hour is set", () => {
-    const input = buildWalletPassInput(
-      fullResolved({
-        event: { walletSemanticTagsEnabled: true, eventHoursStart: "09:00", eventHoursEnd: null },
-      }),
-      "b",
-    );
-    expect(input.semantics?.eventStartDate).toBeDefined();
-    expect(input.semantics?.eventEndDate).toBeUndefined();
-    expect(input.semantics?.duration).toBeUndefined();
-  });
-
-  it("treats a malformed event-hours string as unset rather than producing a bad instant", () => {
-    const input = buildWalletPassInput(
-      fullResolved({
-        event: { walletSemanticTagsEnabled: true, eventHoursStart: "9am", eventHoursEnd: "18:00" },
-      }),
-      "b",
-    );
-    expect(input.semantics?.eventStartDate).toBeUndefined();
-  });
-
-  it("omits duration (rather than 0) for an event whose start and end hours are identical", () => {
-    const input = buildWalletPassInput(
-      fullResolved({
-        event: { walletSemanticTagsEnabled: true, eventHoursStart: "09:00", eventHoursEnd: "09:00" },
-      }),
-      "b",
-    );
-    expect(input.semantics?.duration).toBeUndefined();
-  });
-
-  it("omits eventName/venueName/entranceDescription/attendeeName when their source values are empty", () => {
-    const input = buildWalletPassInput(
-      fullResolved({
-        attendee: { name: "" },
-        event: { walletSemanticTagsEnabled: true, title: "", location: "", directionsText: "" },
-      }),
-      "b",
-    );
-    expect(input.semantics?.eventName).toBeUndefined();
-    expect(input.semantics?.venueName).toBeUndefined();
-    expect(input.semantics?.entranceDescription).toBeUndefined();
-    expect(input.semantics?.attendeeName).toBeUndefined();
-  });
-
-  it("wraps an overnight event's duration past midnight instead of going negative", () => {
-    const input = buildWalletPassInput(
-      fullResolved({
-        event: { walletSemanticTagsEnabled: true, eventHoursStart: "22:00", eventHoursEnd: "02:00" },
-      }),
-      "b",
-    );
-    expect(input.semantics?.duration).toBe(4 * 60 * 60);
-  });
-
-  it("rolls eventEndDate onto the next calendar day for an overnight event, so it stays after eventStartDate", () => {
+describe("buildWalletPassInput — venue identifier placeholders", () => {
+  it("passes through each venue identifier field when set", () => {
     const input = buildWalletPassInput(
       fullResolved({
         event: {
-          walletSemanticTagsEnabled: true,
-          timezone: "UTC",
-          eventHoursStart: "22:00",
-          eventHoursEnd: "02:00",
+          venueRoom: "Hall B",
+          venueEntrance: "Main entrance",
+          venueEntranceDoor: "Door 3",
+          venueEntranceGate: "Gate B",
+          venueEntrancePortal: "North Portal",
+          venuePhoneNumber: "+91 80 4252 1000",
+          venuePlaceId: "I4CCAB9B9CD77B6BA",
         },
       }),
       "b",
     );
-    expect(input.semantics?.eventStartDate).toBe("2026-09-24T22:00:00Z");
-    expect(input.semantics?.eventEndDate).toBe("2026-09-25T02:00:00Z");
-    expect(new Date(input.semantics!.eventEndDate!).getTime()).toBeGreaterThan(
-      new Date(input.semantics!.eventStartDate!).getTime(),
-    );
+    expect(input.venueRoomLabel).toBe("Hall B");
+    expect(input.venueEntranceLabel).toBe("Main entrance");
+    expect(input.venueEntranceDoorLabel).toBe("Door 3");
+    expect(input.venueEntranceGateLabel).toBe("Gate B");
+    expect(input.venueEntrancePortalLabel).toBe("North Portal");
+    expect(input.venuePhoneNumberLabel).toBe("+91 80 4252 1000");
+    expect(input.venuePlaceIdLabel).toBe("I4CCAB9B9CD77B6BA");
   });
 
-  it("keeps eventEndDate on the same calendar day for a normal (non-overnight) event", () => {
-    const input = buildWalletPassInput(fullResolved({ event: { walletSemanticTagsEnabled: true } }), "b");
+  it("leaves every venue identifier label undefined when unset", () => {
+    const input = buildWalletPassInput(fullResolved(), "b");
+    expect(input.venueRoomLabel).toBeUndefined();
+    expect(input.venueEntranceLabel).toBeUndefined();
+    expect(input.venueEntranceDoorLabel).toBeUndefined();
+    expect(input.venueEntranceGateLabel).toBeUndefined();
+    expect(input.venueEntrancePortalLabel).toBeUndefined();
+    expect(input.venuePhoneNumberLabel).toBeUndefined();
+    expect(input.venuePlaceIdLabel).toBeUndefined();
+  });
+});
+
+// The 7 access-point timing placeholders all go through the same zonedDateTimeToIso helper as
+// the old eventStartDate/eventEndDate semantic tags did - venueOpenTime/venueOpenTimeLabel is
+// exercised here as the representative field for its DST/ICU edge cases rather than duplicating
+// every case across all 7 (they share the exact same code path). venueCloseTime is the one
+// exception: like the old eventEndDate, it carries the same overnight-rollover logic (its own
+// test below), since a venue's closing time is the field structurally analogous to when the
+// event itself ends - the other 6 are all pre-event and stay anchored to event.date as-is.
+describe("buildWalletPassInput — access-point timing placeholders", () => {
+  it("populates all 7 timing labels from their event fields", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: {
+          venueOpenTime: "08:00",
+          venueCloseTime: "23:00",
+          doorsOpenTime: "08:30",
+          gatesOpenTime: "08:45",
+          boxOfficeOpenTime: "08:15",
+          parkingLotsOpenTime: "07:00",
+          fanZoneOpenTime: "09:00",
+        },
+      }),
+      "b",
+    );
     // Europe/London (fullResolved's default timezone) is BST (+01:00) in September.
-    expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00+01:00");
-    expect(input.semantics?.eventEndDate).toBe("2026-09-24T18:00:00+01:00");
+    expect(input.venueOpenTimeLabel).toBe("2026-09-24T08:00:00+01:00");
+    expect(input.venueCloseTimeLabel).toBe("2026-09-24T23:00:00+01:00");
+    expect(input.doorsOpenTimeLabel).toBe("2026-09-24T08:30:00+01:00");
+    expect(input.gatesOpenTimeLabel).toBe("2026-09-24T08:45:00+01:00");
+    expect(input.boxOfficeOpenTimeLabel).toBe("2026-09-24T08:15:00+01:00");
+    expect(input.parkingLotsOpenTimeLabel).toBe("2026-09-24T07:00:00+01:00");
+    expect(input.fanZoneOpenTimeLabel).toBe("2026-09-24T09:00:00+01:00");
+  });
+
+  it("leaves a timing label undefined when its event field is unset", () => {
+    const input = buildWalletPassInput(fullResolved({ event: { venueOpenTime: null } }), "b");
+    expect(input.venueOpenTimeLabel).toBeUndefined();
+  });
+
+  it("rolls venue_close_time to the next calendar day for an overnight venue", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: { venueOpenTime: "20:00", venueCloseTime: "01:30" },
+      }),
+      "b",
+    );
+    // event.date is 2026-09-24; venue_close_time (01:30) < venue_open_time (20:00) marks this
+    // overnight, so venue_close_time anchors to 2026-09-25, not the event's own stored day.
+    expect(input.venueCloseTimeLabel).toBe("2026-09-25T01:30:00+01:00");
+  });
+
+  it("derives the overnight rollover from venue hours, not the event's own eventHoursStart/End", () => {
+    // eventHoursStart/eventHoursEnd are a separate field pair and are unset here entirely - only
+    // venue_open_time/venue_close_time drive the rollover (bot review: comparing against event
+    // hours instead of venue hours mis-anchored this whenever the two pairs disagreed).
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: {
+          eventHoursStart: null,
+          eventHoursEnd: null,
+          venueOpenTime: "22:00",
+          venueCloseTime: "04:00",
+        },
+      }),
+      "b",
+    );
+    expect(input.venueCloseTimeLabel).toBe("2026-09-25T04:00:00+01:00");
+  });
+
+  it("keeps venue_close_time on the event's own day when the venue isn't overnight", () => {
+    const input = buildWalletPassInput(
+      fullResolved({ event: { venueOpenTime: "09:00", venueCloseTime: "19:00" } }),
+      "b",
+    );
+    expect(input.venueCloseTimeLabel).toBe("2026-09-24T19:00:00+01:00");
+  });
+
+  it("does not roll the other 6 access-point times for an overnight venue - they stay pre-event, same day", () => {
+    const input = buildWalletPassInput(
+      fullResolved({
+        event: {
+          venueOpenTime: "18:00",
+          venueCloseTime: "01:00",
+          doorsOpenTime: "19:00",
+          gatesOpenTime: "19:15",
+          boxOfficeOpenTime: "18:30",
+          parkingLotsOpenTime: "17:00",
+          fanZoneOpenTime: "19:30",
+        },
+      }),
+      "b",
+    );
+    expect(input.venueOpenTimeLabel).toBe("2026-09-24T18:00:00+01:00");
+    expect(input.doorsOpenTimeLabel).toBe("2026-09-24T19:00:00+01:00");
+    expect(input.gatesOpenTimeLabel).toBe("2026-09-24T19:15:00+01:00");
+    expect(input.boxOfficeOpenTimeLabel).toBe("2026-09-24T18:30:00+01:00");
+    expect(input.parkingLotsOpenTimeLabel).toBe("2026-09-24T17:00:00+01:00");
+    expect(input.fanZoneOpenTimeLabel).toBe("2026-09-24T19:30:00+01:00");
+  });
+
+  it("treats a malformed time string as unset rather than producing a bad instant", () => {
+    const input = buildWalletPassInput(fullResolved({ event: { venueOpenTime: "9am" } }), "b");
+    expect(input.venueOpenTimeLabel).toBeUndefined();
   });
 
   it("computes a UTC offset ('Z') correctly for a UTC-timezone event", () => {
     const input = buildWalletPassInput(
-      fullResolved({ event: { walletSemanticTagsEnabled: true, timezone: "UTC" } }),
+      fullResolved({ event: { timezone: "UTC", venueOpenTime: "09:00" } }),
       "b",
     );
-    expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00Z");
+    expect(input.venueOpenTimeLabel).toBe("2026-09-24T09:00:00Z");
   });
 
   it("keeps the stored calendar day for a UTC+14 event, even though noon UTC there is already the next local day", () => {
     const input = buildWalletPassInput(
-      fullResolved({
-        event: { walletSemanticTagsEnabled: true, timezone: "Pacific/Kiritimati" },
-      }),
+      fullResolved({ event: { timezone: "Pacific/Kiritimati", venueOpenTime: "09:00" } }),
       "b",
     );
-    expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00+14:00");
+    expect(input.venueOpenTimeLabel).toBe("2026-09-24T09:00:00+14:00");
   });
 
   it("resolves the offset at the event's own local time, not the day's noon-UTC sentinel (DST transition day)", () => {
     const input = buildWalletPassInput(
       fullResolved({
         event: {
-          walletSemanticTagsEnabled: true,
           date: new Date("2026-03-29T12:00:00.000Z"),
           timezone: "Europe/London",
-          eventHoursStart: "00:30",
-          eventHoursEnd: "03:00",
+          venueOpenTime: "00:30",
         },
       }),
       "b",
     );
     // UK clocks spring forward 01:00 GMT -> 02:00 BST on 2026-03-29 - 00:30 local is still GMT
     // even though noon UTC that same day is already BST (the bug this guards against).
-    expect(input.semantics?.eventStartDate).toBe("2026-03-29T00:30:00Z");
-    expect(input.semantics?.eventEndDate).toBe("2026-03-29T03:00:00+01:00");
+    expect(input.venueOpenTimeLabel).toBe("2026-03-29T00:30:00Z");
   });
 
-  it("computes duration from real elapsed time across a DST transition, not a wall-clock hour count", () => {
+  it("resolves each field's own offset independently on a spring-forward date in a non-zero-standard-offset zone", () => {
     const input = buildWalletPassInput(
       fullResolved({
         event: {
-          walletSemanticTagsEnabled: true,
-          date: new Date("2026-03-28T12:00:00.000Z"),
-          timezone: "Europe/London",
-          eventHoursStart: "22:00",
-          eventHoursEnd: "02:00",
-        },
-      }),
-      "b",
-    );
-    // 2026-03-28 22:00 GMT to 2026-03-29 02:00 BST is 3 real hours (clocks sprang forward at
-    // 01:00 GMT), not the 4 wall-clock hours naive HH:MM subtraction would give.
-    expect(input.semantics?.duration).toBe(3 * 60 * 60);
-  });
-
-  it("resolves each bound's own offset on a spring-forward date in a non-zero-standard-offset zone (same-day event straddling the transition)", () => {
-    const input = buildWalletPassInput(
-      fullResolved({
-        event: {
-          walletSemanticTagsEnabled: true,
           date: new Date("2026-03-08T12:00:00.000Z"),
           timezone: "America/New_York",
-          eventHoursStart: "01:00",
-          eventHoursEnd: "03:00",
+          venueOpenTime: "01:00",
+          doorsOpenTime: "03:00",
         },
       }),
       "b",
     );
     // America/New_York springs forward on 2026-03-08 (02:00 EST -> 03:00 EDT): 01:00 is still
-    // EST (-05:00, real instant 06:00Z), 03:00 is already EDT (-04:00, real instant 07:00Z) - a
-    // real 1-hour local span, not the 2 hours a "treat the wall-clock digits as UTC, probe the
-    // offset once" approximation used to compute for both bounds landing on the same
-    // pre-transition side.
-    expect(input.semantics?.eventStartDate).toBe("2026-03-08T01:00:00-05:00");
-    expect(input.semantics?.eventEndDate).toBe("2026-03-08T03:00:00-04:00");
-    expect(input.semantics?.duration).toBe(1 * 60 * 60);
+    // EST (-05:00), 03:00 is already EDT (-04:00) - each field resolves its own instant
+    // independently, no shared "probe the offset once for both" approximation.
+    expect(input.venueOpenTimeLabel).toBe("2026-03-08T01:00:00-05:00");
+    expect(input.doorsOpenTimeLabel).toBe("2026-03-08T03:00:00-04:00");
   });
 
-  it("emits the resolved instant, not a stale-digits recombination, when eventHoursStart falls inside a spring-forward gap", () => {
+  it("emits the resolved instant, not a stale-digits recombination, when a time falls inside a spring-forward gap", () => {
     const input = buildWalletPassInput(
       fullResolved({
         event: {
-          walletSemanticTagsEnabled: true,
           date: new Date("2026-03-08T12:00:00.000Z"),
           timezone: "America/New_York",
-          eventHoursStart: "02:30",
-          eventHoursEnd: "09:00",
+          venueOpenTime: "02:30",
         },
       }),
       "b",
@@ -494,9 +480,9 @@ describe("buildWalletPassInput — Apple Wallet semantic tags (opt-in)", () => {
     // zonedWallClockToUtcIso resolves it to the nearest valid instant, 03:30 EDT (07:30Z).
     // Recombining that offset with the original "02:30" digits would emit
     // "2026-03-08T02:30:00-04:00", which parses as 06:30Z - a full hour off from the instant
-    // actually resolved and a different, wrong value from what the naive pre-fix code emitted too.
-    expect(input.semantics?.eventStartDate).toBe("2026-03-08T07:30:00.000Z");
-    expect(new Date(input.semantics!.eventStartDate!).toISOString()).toBe("2026-03-08T07:30:00.000Z");
+    // actually resolved.
+    expect(input.venueOpenTimeLabel).toBe("2026-03-08T07:30:00.000Z");
+    expect(new Date(input.venueOpenTimeLabel!).toISOString()).toBe("2026-03-08T07:30:00.000Z");
   });
 
   describe("tzOffsetSuffix ICU data variance", () => {
@@ -512,12 +498,10 @@ describe("buildWalletPassInput — Apple Wallet semantic tags (opt-in)", () => {
         return this.resolvedOptions().timeZoneName ? parts.filter((p) => p.type !== "timeZoneName") : parts;
       });
       const input = buildWalletPassInput(
-        fullResolved({
-          event: { walletSemanticTagsEnabled: true, timezone: "America/New_York" },
-        }),
+        fullResolved({ event: { timezone: "America/New_York", venueOpenTime: "09:00" } }),
         "b",
       );
-      expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00Z");
+      expect(input.venueOpenTimeLabel).toBe("2026-09-24T09:00:00Z");
     });
 
     it("falls back to Z when the offset formatter returns a string that doesn't match the GMT±HH:MM shape", () => {
@@ -531,12 +515,10 @@ describe("buildWalletPassInput — Apple Wallet semantic tags (opt-in)", () => {
         return parts.map((p) => (p.type === "timeZoneName" ? { ...p, value: "???" } : p));
       });
       const input = buildWalletPassInput(
-        fullResolved({
-          event: { walletSemanticTagsEnabled: true, timezone: "America/New_York" },
-        }),
+        fullResolved({ event: { timezone: "America/New_York", venueOpenTime: "09:00" } }),
         "b",
       );
-      expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00Z");
+      expect(input.venueOpenTimeLabel).toBe("2026-09-24T09:00:00Z");
     });
   });
 
@@ -562,12 +544,10 @@ describe("buildWalletPassInput — Apple Wallet semantic tags (opt-in)", () => {
         return parts.map((p) => (p.type === "hour" && p.value === "00" ? { ...p, value: "24" } : p));
       });
       const input = buildWalletPassInput(
-        fullResolved({
-          event: { walletSemanticTagsEnabled: true, timezone: "UTC", eventHoursStart: "00:00" },
-        }),
+        fullResolved({ event: { timezone: "UTC", venueOpenTime: "00:00" } }),
         "b",
       );
-      expect(input.semantics?.eventStartDate).toBe("2026-09-24T00:00:00Z");
+      expect(input.venueOpenTimeLabel).toBe("2026-09-24T00:00:00Z");
     });
 
     it("defaults a missing hour/minute part to '00' rather than throwing", () => {
@@ -583,12 +563,10 @@ describe("buildWalletPassInput — Apple Wallet semantic tags (opt-in)", () => {
       // an actual 09:00 request - matches, so this doesn't trip the skipped-time fallback path;
       // asserts the defensive default doesn't throw or corrupt the (still correct here) result.
       const input = buildWalletPassInput(
-        fullResolved({
-          event: { walletSemanticTagsEnabled: true, timezone: "America/New_York", eventHoursStart: "09:00" },
-        }),
+        fullResolved({ event: { timezone: "America/New_York", venueOpenTime: "09:00" } }),
         "b",
       );
-      expect(input.semantics?.eventStartDate).toBe("2026-09-24T09:00:00-04:00");
+      expect(input.venueOpenTimeLabel).toBe("2026-09-24T09:00:00-04:00");
     });
 
     it("defaults a missing hour part to '00' rather than throwing", () => {
@@ -603,12 +581,10 @@ describe("buildWalletPassInput — Apple Wallet semantic tags (opt-in)", () => {
       // With "hour" stripped, localWallClockReading reads back "00:00" for a UTC midnight
       // request - matches, so this stays on the normal (non-fallback) path too.
       const input = buildWalletPassInput(
-        fullResolved({
-          event: { walletSemanticTagsEnabled: true, timezone: "UTC", eventHoursStart: "00:00" },
-        }),
+        fullResolved({ event: { timezone: "UTC", venueOpenTime: "00:00" } }),
         "b",
       );
-      expect(input.semantics?.eventStartDate).toBe("2026-09-24T00:00:00Z");
+      expect(input.venueOpenTimeLabel).toBe("2026-09-24T00:00:00Z");
     });
   });
 });

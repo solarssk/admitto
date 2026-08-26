@@ -12,6 +12,7 @@ import type {
   DeliveryDto,
   EventDto,
   EventSettingsDto,
+  EventType,
   LogoCropMeta,
   LookupAttendeeResult,
   MeResponse,
@@ -511,12 +512,12 @@ export async function patchEvent(
     timezone: string;
     event_hours_start: string | null;
     event_hours_end: string | null;
+    event_type: EventType | null;
     wallet_enabled: boolean;
     wallet_template_id: string | null;
     wallet_api_key: string | null;
     wallet_apple_enabled: boolean;
     wallet_google_enabled: boolean;
-    wallet_semantic_tags_enabled: boolean;
     wallet_field_mapping: Record<string, string> | null;
     location: string | null;
     capacity: number | null;

@@ -43,6 +43,13 @@ model Event {
   // field of its own. Independently optional - the admin UI pairs them but neither is required.
   event_hours_start            String?
   event_hours_end              String?
+  // Optional event category (Apple PKEventType vocabulary), exposed as the `event_type` wallet
+  // field-mapping placeholder (WALLET_MAPPING_PLACEHOLDERS). Resolves to the exact Apple
+  // semantic-tag literal (e.g. "PKEventTypeSports") once an admin maps it to a PassCreator
+  // Additional Property bound to that template's own Semantic Tags "Event Type" field - mapping
+  // it here alone does not surface it on the pass, same as every other WALLET_MAPPING_PLACEHOLDERS
+  // entry. Null = not set; no default, Admitto has no way to infer a category on its own.
+  event_type                   String?
   // Per-event PassCreator config (ADR 0041): template + API key both live on the event, not the
   // organization - keeps a leaked/rotated key scoped to one event's logs instead of the instance.
   wallet_enabled               Boolean                    @default(true)
@@ -50,10 +57,6 @@ model Event {
   wallet_api_key_enc           String?
   wallet_apple_enabled         Boolean                    @default(true)
   wallet_google_enabled        Boolean                    @default(true)
-  // Apple Wallet semantic tags (Siri Suggestions/Maps/Calendar) - opt-in, default off (ADR 0009
-  // data minimization: nothing beyond the pass's visible fields goes to PassCreator unless an
-  // admin explicitly turns it on). Apple only - no Google Wallet equivalent exists.
-  wallet_semantic_tags_enabled Boolean                    @default(false)
   // Admin-defined PassCreator field key -> Admitto placeholder token (e.g. {"name": "full_name"}).
   // Null/empty = the built-in default mapping (name, eventDate, eventHours, eventPlace, ticketType).
   wallet_field_mapping         Json?
@@ -212,6 +215,29 @@ model EventLocation {
   // Null = build from coordinates as usual. Does not move the OSM pin or static map.
   google_maps_url_override String?   @db.Text
   apple_maps_url_override  String?   @db.Text
+  // Venue-specific data exposed as new Wallet field-mapping placeholders (WALLET_MAPPING_PLACEHOLDERS)
+  // for PassCreator's Apple Wallet Semantic Tags vocabulary - room/hall, the three distinct
+  // entrance-identifier kinds PassCreator itself exposes (door/gate/portal), a general entrance
+  // description, phone number, and Apple Maps' own place identifier (admin must look this up
+  // manually - Admitto's geocoding is Nominatim/OSM-based, not Apple MapKit). All optional.
+  venue_room                String?
+  venue_entrance            String?
+  venue_entrance_door       String?
+  venue_entrance_gate       String?
+  venue_entrance_portal     String?
+  venue_phone_number        String?
+  venue_place_id            String?
+  // Access-point opening times, "HH:MM" display-only wall-clock strings tied to the event's single
+  // `date` - same convention as Event.event_hours_start/end, not separate date pickers (Admitto's
+  // event model is single-day). 1:1 with PassCreator's own 7-field "Venue/Doors/Gates/Box Office/
+  // Parking Lots/Fan Zone Open Date" cluster.
+  venue_open_time           String?
+  venue_close_time          String?
+  doors_open_time           String?
+  gates_open_time           String?
+  box_office_open_time      String?
+  parking_lots_open_time    String?
+  fan_zone_open_time        String?
   created_at               DateTime  @default(now())
   updated_at               DateTime  @updatedAt
 }

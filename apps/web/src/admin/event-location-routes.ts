@@ -51,6 +51,20 @@ const putLocationBodySchema = z
     address_components: addressComponentsSchema.optional(),
     google_maps_url_override: z.string().nullish(),
     apple_maps_url_override: z.string().nullish(),
+    venue_room: z.string().nullish(),
+    venue_entrance: z.string().nullish(),
+    venue_entrance_door: z.string().nullish(),
+    venue_entrance_gate: z.string().nullish(),
+    venue_entrance_portal: z.string().nullish(),
+    venue_phone_number: z.string().nullish(),
+    venue_place_id: z.string().nullish(),
+    venue_open_time: z.string().nullish(),
+    venue_close_time: z.string().nullish(),
+    doors_open_time: z.string().nullish(),
+    gates_open_time: z.string().nullish(),
+    box_office_open_time: z.string().nullish(),
+    parking_lots_open_time: z.string().nullish(),
+    fan_zone_open_time: z.string().nullish(),
     // API-layer only — not part of `@admitto/location`'s EventLocationInput, since it isn't a
     // user-editable field with its own validation rules. It only ever rides along with a
     // latitude/longitude change (see the geocoding provenance logic below).
@@ -71,6 +85,20 @@ type EventLocationRow = {
   address_components: Prisma.JsonValue | null;
   google_maps_url_override: string | null;
   apple_maps_url_override: string | null;
+  venue_room: string | null;
+  venue_entrance: string | null;
+  venue_entrance_door: string | null;
+  venue_entrance_gate: string | null;
+  venue_entrance_portal: string | null;
+  venue_phone_number: string | null;
+  venue_place_id: string | null;
+  venue_open_time: string | null;
+  venue_close_time: string | null;
+  doors_open_time: string | null;
+  gates_open_time: string | null;
+  box_office_open_time: string | null;
+  parking_lots_open_time: string | null;
+  fan_zone_open_time: string | null;
 };
 
 /** Stable empty shape returned by GET when no `EventLocation` row exists yet — the tab
@@ -88,6 +116,20 @@ const EMPTY_LOCATION_DTO: EventLocationDto = {
   address_components: null,
   google_maps_url_override: null,
   apple_maps_url_override: null,
+  venue_room: null,
+  venue_entrance: null,
+  venue_entrance_door: null,
+  venue_entrance_gate: null,
+  venue_entrance_portal: null,
+  venue_phone_number: null,
+  venue_place_id: null,
+  venue_open_time: null,
+  venue_close_time: null,
+  doors_open_time: null,
+  gates_open_time: null,
+  box_office_open_time: null,
+  parking_lots_open_time: null,
+  fan_zone_open_time: null,
 };
 
 function serializeLocation(row: EventLocationRow | null): EventLocationDto {
@@ -105,6 +147,20 @@ function serializeLocation(row: EventLocationRow | null): EventLocationDto {
     address_components: parseStoredAddressComponents(row.address_components),
     google_maps_url_override: row.google_maps_url_override,
     apple_maps_url_override: row.apple_maps_url_override,
+    venue_room: row.venue_room,
+    venue_entrance: row.venue_entrance,
+    venue_entrance_door: row.venue_entrance_door,
+    venue_entrance_gate: row.venue_entrance_gate,
+    venue_entrance_portal: row.venue_entrance_portal,
+    venue_phone_number: row.venue_phone_number,
+    venue_place_id: row.venue_place_id,
+    venue_open_time: row.venue_open_time,
+    venue_close_time: row.venue_close_time,
+    doors_open_time: row.doors_open_time,
+    gates_open_time: row.gates_open_time,
+    box_office_open_time: row.box_office_open_time,
+    parking_lots_open_time: row.parking_lots_open_time,
+    fan_zone_open_time: row.fan_zone_open_time,
   };
 }
 
@@ -198,6 +254,36 @@ function mapsUrlOverrideUpdate(
   return out;
 }
 
+/** The 14 venue-identifier/access-point-timing columns, extracted out of the upsert's own
+ * `update` object to keep its cognitive complexity under the SonarCloud threshold (S3776) - each
+ * is included only when actually present in the patch, same as every other field there. */
+const VENUE_ACCESS_UPDATE_FIELDS = [
+  "venue_room",
+  "venue_entrance",
+  "venue_entrance_door",
+  "venue_entrance_gate",
+  "venue_entrance_portal",
+  "venue_phone_number",
+  "venue_place_id",
+  "venue_open_time",
+  "venue_close_time",
+  "doors_open_time",
+  "gates_open_time",
+  "box_office_open_time",
+  "parking_lots_open_time",
+  "fan_zone_open_time",
+] as const satisfies readonly (keyof LocationPatch)[];
+
+function venueAccessUpdateData(
+  patch: LocationPatch,
+): Partial<Record<(typeof VENUE_ACCESS_UPDATE_FIELDS)[number], string | null>> {
+  const data: Partial<Record<(typeof VENUE_ACCESS_UPDATE_FIELDS)[number], string | null>> = {};
+  for (const field of VENUE_ACCESS_UPDATE_FIELDS) {
+    if (patch[field] !== undefined) data[field] = patch[field];
+  }
+  return data;
+}
+
 async function parseLocationPutBody(
   c: Context,
 ): Promise<{ patch: LocationPatch; geocodingProvider: string | null | undefined } | Response> {
@@ -236,17 +322,32 @@ async function parseLocationPutBody(
  * wallet-pass-input.ts) - venue name, address, coordinates/maps links, directions/accessibility
  * notes. `map_zoom` and geocoding provenance (`geocoding_provider`/`geocoded_at`) are UI-only,
  * never read by the pass, so they're deliberately excluded. */
-type WalletRelevantLocationSnapshot = {
-  venue_name: string | null;
-  formatted_address: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  directions_text: string | null;
-  accessibility_text: string | null;
-  address_components: Prisma.JsonValue | null;
-  google_maps_url_override: string | null;
-  apple_maps_url_override: string | null;
-};
+type WalletRelevantLocationSnapshot = Pick<
+  EventLocationRow,
+  | "venue_name"
+  | "formatted_address"
+  | "latitude"
+  | "longitude"
+  | "directions_text"
+  | "accessibility_text"
+  | "address_components"
+  | "google_maps_url_override"
+  | "apple_maps_url_override"
+  | "venue_room"
+  | "venue_entrance"
+  | "venue_entrance_door"
+  | "venue_entrance_gate"
+  | "venue_entrance_portal"
+  | "venue_phone_number"
+  | "venue_place_id"
+  | "venue_open_time"
+  | "venue_close_time"
+  | "doors_open_time"
+  | "gates_open_time"
+  | "box_office_open_time"
+  | "parking_lots_open_time"
+  | "fan_zone_open_time"
+>;
 
 const EMPTY_WALLET_LOCATION_SNAPSHOT: WalletRelevantLocationSnapshot = {
   venue_name: null,
@@ -258,6 +359,20 @@ const EMPTY_WALLET_LOCATION_SNAPSHOT: WalletRelevantLocationSnapshot = {
   address_components: null,
   google_maps_url_override: null,
   apple_maps_url_override: null,
+  venue_room: null,
+  venue_entrance: null,
+  venue_entrance_door: null,
+  venue_entrance_gate: null,
+  venue_entrance_portal: null,
+  venue_phone_number: null,
+  venue_place_id: null,
+  venue_open_time: null,
+  venue_close_time: null,
+  doors_open_time: null,
+  gates_open_time: null,
+  box_office_open_time: null,
+  parking_lots_open_time: null,
+  fan_zone_open_time: null,
 };
 
 /** True only when one of the wallet-relevant fields' *persisted* value actually differs from
@@ -268,22 +383,44 @@ const EMPTY_WALLET_LOCATION_SNAPSHOT: WalletRelevantLocationSnapshot = {
  * repeatedly enqueue pushes for no real change once each prior job finishes). address_components
  * is JSON - compared by serialized value, not object identity, since Prisma returns a fresh
  * object on every read even when the stored content is byte-identical. */
+/** Every WalletRelevantLocationSnapshot field that's a plain string|null, compared by `!==` -
+ * latitude/longitude (numbers) and address_components (an object, needs JSON.stringify) are
+ * handled separately in walletRelevantLocationFieldsChanged below. Listed once here instead of as
+ * a long `||` chain to keep that function's own cognitive complexity under the SonarCloud
+ * threshold (S3776). */
+const WALLET_RELEVANT_LOCATION_TEXT_FIELDS = [
+  "venue_name",
+  "formatted_address",
+  "directions_text",
+  "accessibility_text",
+  "google_maps_url_override",
+  "apple_maps_url_override",
+  "venue_room",
+  "venue_entrance",
+  "venue_entrance_door",
+  "venue_entrance_gate",
+  "venue_entrance_portal",
+  "venue_phone_number",
+  "venue_place_id",
+  "venue_open_time",
+  "venue_close_time",
+  "doors_open_time",
+  "gates_open_time",
+  "box_office_open_time",
+  "parking_lots_open_time",
+  "fan_zone_open_time",
+] as const satisfies readonly (keyof WalletRelevantLocationSnapshot)[];
+
 function walletRelevantLocationFieldsChanged(
   existing: WalletRelevantLocationSnapshot | null,
   updated: WalletRelevantLocationSnapshot,
 ): boolean {
   const before = existing ?? EMPTY_WALLET_LOCATION_SNAPSHOT;
-  return (
-    before.venue_name !== updated.venue_name ||
-    before.formatted_address !== updated.formatted_address ||
-    before.latitude !== updated.latitude ||
-    before.longitude !== updated.longitude ||
-    before.directions_text !== updated.directions_text ||
-    before.accessibility_text !== updated.accessibility_text ||
-    before.google_maps_url_override !== updated.google_maps_url_override ||
-    before.apple_maps_url_override !== updated.apple_maps_url_override ||
-    JSON.stringify(before.address_components) !== JSON.stringify(updated.address_components)
-  );
+  if (before.latitude !== updated.latitude || before.longitude !== updated.longitude) return true;
+  if (JSON.stringify(before.address_components) !== JSON.stringify(updated.address_components)) {
+    return true;
+  }
+  return WALLET_RELEVANT_LOCATION_TEXT_FIELDS.some((field) => before[field] !== updated[field]);
 }
 
 /** Best-effort: enqueues a wallet_push job to refresh every already-issued active wallet pass
@@ -449,6 +586,20 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
           ...(componentsJson !== undefined && { address_components: componentsJson }),
           google_maps_url_override: patch.google_maps_url_override ?? null,
           apple_maps_url_override: patch.apple_maps_url_override ?? null,
+          venue_room: patch.venue_room ?? null,
+          venue_entrance: patch.venue_entrance ?? null,
+          venue_entrance_door: patch.venue_entrance_door ?? null,
+          venue_entrance_gate: patch.venue_entrance_gate ?? null,
+          venue_entrance_portal: patch.venue_entrance_portal ?? null,
+          venue_phone_number: patch.venue_phone_number ?? null,
+          venue_place_id: patch.venue_place_id ?? null,
+          venue_open_time: patch.venue_open_time ?? null,
+          venue_close_time: patch.venue_close_time ?? null,
+          doors_open_time: patch.doors_open_time ?? null,
+          gates_open_time: patch.gates_open_time ?? null,
+          box_office_open_time: patch.box_office_open_time ?? null,
+          parking_lots_open_time: patch.parking_lots_open_time ?? null,
+          fan_zone_open_time: patch.fan_zone_open_time ?? null,
           ...geocodingPatch,
         },
         update: {
@@ -460,6 +611,7 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
           ...(patch.directions_text !== undefined && { directions_text: patch.directions_text }),
           ...(patch.accessibility_text !== undefined && { accessibility_text: patch.accessibility_text }),
           ...(componentsJson !== undefined && { address_components: componentsJson }),
+          ...venueAccessUpdateData(patch),
           ...mapsOverridePatch,
           ...geocodingPatch,
         },

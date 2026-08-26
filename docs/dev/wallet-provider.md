@@ -32,8 +32,8 @@ interface WalletPassProvider {
 }
 ```
 
-Full type shapes (`WalletPassInput`, `WalletPassResult`, `WalletPassSemantics`, `WalletProviderError`)
-live in `packages/wallet/src/types.ts` — read them alongside this doc, not instead of it.
+Full type shapes (`WalletPassInput`, `WalletPassResult`, `WalletProviderError`) live in
+`packages/wallet/src/types.ts` — read them alongside this doc, not instead of it.
 
 ## What Admitto expects from an implementation
 
@@ -43,8 +43,10 @@ live in `packages/wallet/src/types.ts` — read them alongside this doc, not ins
   `wallet_provider_unauthorized`, `_rate_limited`, `_duplicate`, `_not_found`, `_timeout`,
   `_rejected`. Callers branch on `.code`, never on `.message`.
 - **Data minimization.** Send only what `WalletPassInput` actually contains — never reach back
-  into Admitto's database for more. Fields are optional for a reason (e.g. `semantics` is opt-in
-  per event, not sent by default).
+  into Admitto's database for more. Fields are optional for a reason: nothing beyond the
+  provider-controlled identity fields (barcode/QR value, `userProvidedId`, and — Apple-only, when
+  the event has a start time — `relevantDate` for Lock Screen surfacing) reaches a provider until
+  an admin explicitly maps the rest in Event Settings → Wallet's Field mapping.
 - **No gating authority.** A webhook or callback from your service is a signal Admitto reconciles
   against its own state — never a source of truth for check-in eligibility.
 

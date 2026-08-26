@@ -167,7 +167,6 @@ const activeEvent = {
   wallet_api_key: { configured: false },
   wallet_apple_enabled: false,
   wallet_google_enabled: false,
-  wallet_semantic_tags_enabled: false,
   wallet_field_mapping: null as Record<string, string> | null,
 };
 
@@ -447,7 +446,7 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByText("Basic information")).toBeTruthy();
     expect(screen.getByText("Status")).toBeTruthy();
     expect(
-      screen.getByText("When the event takes place. Times and reports use the timezone below."),
+      screen.getByText("When the event takes place."),
     ).toBeTruthy();
     const schedule = screen.getByText("Event hours (start)").closest(".settings-event-schedule");
     expect(schedule).not.toBeNull();
@@ -510,6 +509,40 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
+  it("saves the Event type through the event patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, event_type: "conference" },
+    });
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    fireEvent.click(screen.getByRole("button", { name: "Event type, none selected" }));
+    fireEvent.click(screen.getByRole("button", { name: "Conference" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { event_type: "conference" });
+    });
+  });
+
+  it("clears the Event type back to Not set through the event patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, event_type: "conference" });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, event_type: null },
+    });
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    fireEvent.click(screen.getByRole("button", { name: "Event type, Conference" }));
+    fireEvent.click(screen.getByRole("button", { name: "Not set" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { event_type: null });
+    });
+  });
+
   it("deep links to Location and keeps venue guidance out of Basic information", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings("/admin/events/evt-1/settings?tab=location");
@@ -551,6 +584,25 @@ describe("EventSettingsPage tabs", () => {
     );
     expect(await screen.findByText("Event timezone set to America/New_York.")).toBeTruthy();
     await waitFor(() => expect(refreshEvent).toHaveBeenCalled());
+  });
+
+  it("refetches the Wallet tab's location preview after a Location tab save", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, wallet_template_id: "tmpl-1" });
+    vi.mocked(fetchEventLocation).mockResolvedValue(emptyLocation);
+    vi.mocked(saveEventLocation).mockResolvedValueOnce({ ...emptyLocation, venue_room: "Hall B" });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    await waitFor(() => expect(document.getElementById("event-wallet-template-id")).toBeTruthy());
+    await waitFor(() => expect(fetchEventLocation).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Location" }));
+    await waitFor(() => expect(fetchEventLocation).toHaveBeenCalledTimes(2));
+
+    fireEvent.change(await screen.findByLabelText("Venue room"), { target: { value: "Hall B" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveEventLocation).toHaveBeenCalledWith("evt-1", { venue_room: "Hall B" }));
+    await waitFor(() => expect(fetchEventLocation).toHaveBeenCalledTimes(3));
   });
 
   it("shows the created date and an active hint in the Status card", async () => {
@@ -1092,43 +1144,17 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByText("PassCreator")).toBeTruthy();
     expect(screen.getByLabelText("Apple Wallet")).toBeTruthy();
     expect(screen.getByLabelText("Google Wallet")).toBeTruthy();
-    expect(screen.getByLabelText("Semantic tags")).toBeTruthy();
     expect((screen.getByLabelText("Samsung Wallet") as HTMLInputElement).disabled).toBe(true);
   });
 
-  it("disables the Semantic tags switch while Apple Wallet is off, and enables it once Apple Wallet is on", async () => {
-    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, wallet_apple_enabled: false });
+  it("shows a Notice explaining that field mapping alone does not deliver Semantic Tags", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
     await waitFor(() => {
       expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
     });
 
-    expect((screen.getByLabelText("Semantic tags") as HTMLInputElement).disabled).toBe(true);
-
-    fireEvent.click(screen.getByLabelText("Apple Wallet"));
-    expect((screen.getByLabelText("Semantic tags") as HTMLInputElement).disabled).toBe(false);
-  });
-
-  it("saves the semantic tags toggle through the event patch", async () => {
-    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
-      ...activeEvent,
-      wallet_apple_enabled: true,
-      wallet_semantic_tags_enabled: false,
-    });
-    vi.mocked(patchEvent).mockResolvedValueOnce({
-      event: { ...activeEvent, wallet_apple_enabled: true, wallet_semantic_tags_enabled: true },
-    });
-    renderSettings("/admin/events/evt-1/settings?tab=wallet");
-    await waitFor(() => {
-      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByLabelText("Semantic tags"));
-    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_semantic_tags_enabled: true });
-    });
+    expect(screen.getByText(/mapping alone is not enough/i)).toBeTruthy();
   });
 
   it("saves the wallet API key and platform toggles through the event patch", async () => {
@@ -1449,6 +1475,146 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
+  it("shows the event's real venue access-point values in field mapping row tooltips", async () => {
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce({
+      ...emptyLocation,
+      venue_room: "Hall B",
+      venue_entrance: "Main entrance",
+      venue_entrance_door: "Door 3",
+      venue_entrance_gate: "Gate B",
+      venue_entrance_portal: "North Portal",
+      venue_phone_number: "+91 80 4252 1000",
+      venue_place_id: "I4CCAB9B9CD77B6BA",
+      venue_open_time: "08:00",
+      venue_close_time: "23:00",
+      doors_open_time: "08:30",
+      gates_open_time: "08:45",
+      box_office_open_time: "08:15",
+      parking_lots_open_time: "07:00",
+      fan_zone_open_time: "09:00",
+    });
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: {
+        room: "venue_room",
+        entrance: "venue_entrance",
+        door: "venue_entrance_door",
+        gate: "venue_entrance_gate",
+        portal: "venue_entrance_portal",
+        phone: "venue_phone_number",
+        placeId: "venue_place_id",
+        venueOpen: "venue_open_time",
+        venueClose: "venue_close_time",
+        doorsOpen: "doors_open_time",
+        gatesOpen: "gates_open_time",
+        boxOffice: "box_office_open_time",
+        parking: "parking_lots_open_time",
+        fanZone: "fan_zone_open_time",
+      },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const hoverTooltipOf = (label: string): HTMLElement => {
+      document
+        .querySelectorAll(".wallet-field-mapping__hint")
+        .forEach((el) => fireEvent.mouseLeave(el));
+      const trigger = screen.getByRole("button", { name: `Value, ${label}` });
+      const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+      const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+      fireEvent.mouseEnter(hintTrigger);
+      return screen.getByRole("tooltip");
+    };
+
+    await waitFor(() => expect(hoverTooltipOf("Venue room").textContent).toBe("Hall B"));
+    await waitFor(() => expect(hoverTooltipOf("Venue entrance").textContent).toBe("Main entrance"));
+    await waitFor(() => expect(hoverTooltipOf("Entrance door").textContent).toBe("Door 3"));
+    await waitFor(() => expect(hoverTooltipOf("Entrance gate").textContent).toBe("Gate B"));
+    await waitFor(() => expect(hoverTooltipOf("Entrance portal").textContent).toBe("North Portal"));
+    await waitFor(() =>
+      expect(hoverTooltipOf("Venue phone number").textContent).toBe("+91 80 4252 1000"),
+    );
+    await waitFor(() =>
+      expect(hoverTooltipOf("Venue place ID").textContent).toBe("I4CCAB9B9CD77B6BA"),
+    );
+    await waitFor(() => expect(hoverTooltipOf("Venue open time").textContent).toBe("08:00"));
+    await waitFor(() => expect(hoverTooltipOf("Venue close time").textContent).toBe("23:00"));
+    await waitFor(() => expect(hoverTooltipOf("Doors open time").textContent).toBe("08:30"));
+    await waitFor(() => expect(hoverTooltipOf("Gates open time").textContent).toBe("08:45"));
+    await waitFor(() =>
+      expect(hoverTooltipOf("Box office open time").textContent).toBe("08:15"),
+    );
+    await waitFor(() =>
+      expect(hoverTooltipOf("Parking lots open time").textContent).toBe("07:00"),
+    );
+    await waitFor(() => expect(hoverTooltipOf("Fan zone open time").textContent).toBe("09:00"));
+  });
+
+  it("shows a not-set fallback for each venue access-point tooltip when the location field is empty", async () => {
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce(emptyLocation);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: {
+        room: "venue_room",
+        entrance: "venue_entrance",
+        door: "venue_entrance_door",
+        gate: "venue_entrance_gate",
+        portal: "venue_entrance_portal",
+        phone: "venue_phone_number",
+        placeId: "venue_place_id",
+        venueOpen: "venue_open_time",
+        venueClose: "venue_close_time",
+        doorsOpen: "doors_open_time",
+        gatesOpen: "gates_open_time",
+        boxOffice: "box_office_open_time",
+        parking: "parking_lots_open_time",
+        fanZone: "fan_zone_open_time",
+      },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const hoverTooltipOf = (label: string): HTMLElement => {
+      document
+        .querySelectorAll(".wallet-field-mapping__hint")
+        .forEach((el) => fireEvent.mouseLeave(el));
+      const trigger = screen.getByRole("button", { name: `Value, ${label}` });
+      const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+      const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+      fireEvent.mouseEnter(hintTrigger);
+      return screen.getByRole("tooltip");
+    };
+
+    for (const label of [
+      "Venue room",
+      "Venue entrance",
+      "Entrance door",
+      "Entrance gate",
+      "Entrance portal",
+      "Venue phone number",
+      "Venue place ID",
+      "Venue open time",
+      "Venue close time",
+      "Doors open time",
+      "Gates open time",
+      "Box office open time",
+      "Parking lots open time",
+      "Fan zone open time",
+    ]) {
+      await waitFor(() =>
+        expect(hoverTooltipOf(label).textContent).toBe(
+          "Not set for this event - this field won't be sent.",
+        ),
+      );
+    }
+  });
+
   it("shows a not-set fallback for location tooltips before the Location tab has anything saved", async () => {
     vi.mocked(fetchEventLocation).mockResolvedValueOnce(emptyLocation);
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
@@ -1497,6 +1663,53 @@ describe("EventSettingsPage tabs", () => {
     // "from"/"until" range for this case), and the abbreviation matches what the real pass sends.
     await waitFor(() => {
       expect(screen.getByRole("tooltip").textContent).toBe("from 18:00 GMT+2");
+    });
+  });
+
+  it("previews the Event type placeholder using its own label, not the raw DB value", async () => {
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce(emptyLocation);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      event_type: "social_gathering",
+      wallet_field_mapping: { category: "event_type" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const trigger = screen.getByRole("button", { name: "Value, Event type" });
+    const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+    const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+    fireEvent.mouseEnter(hintTrigger);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tooltip").textContent).toBe("Social gathering");
+    });
+  });
+
+  it("previews the Event type placeholder as not set when the event has no category", async () => {
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce(emptyLocation);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { category: "event_type" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const trigger = screen.getByRole("button", { name: "Value, Event type" });
+    const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+    const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+    fireEvent.mouseEnter(hintTrigger);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tooltip").textContent).toBe(
+        "Not set for this event - this field won't be sent.",
+      );
     });
   });
 

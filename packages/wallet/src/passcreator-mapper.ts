@@ -36,6 +36,21 @@ export const WALLET_MAPPING_PLACEHOLDERS = [
   "country",
   "ticket_type",
   "ticket_url",
+  "event_type",
+  "venue_room",
+  "venue_entrance",
+  "venue_entrance_door",
+  "venue_entrance_gate",
+  "venue_entrance_portal",
+  "venue_phone_number",
+  "venue_place_id",
+  "venue_open_time",
+  "venue_close_time",
+  "doors_open_time",
+  "gates_open_time",
+  "box_office_open_time",
+  "parking_lots_open_time",
+  "fan_zone_open_time",
 ] as const;
 
 function walletPlaceholderValues(input: WalletPassInput): Record<string, string | undefined> {
@@ -63,6 +78,21 @@ function walletPlaceholderValues(input: WalletPassInput): Record<string, string 
     country: input.addressCountryLabel,
     ticket_type: input.ticketTypeLabel,
     ticket_url: input.barcodeValue,
+    event_type: input.eventTypeLabel,
+    venue_room: input.venueRoomLabel,
+    venue_entrance: input.venueEntranceLabel,
+    venue_entrance_door: input.venueEntranceDoorLabel,
+    venue_entrance_gate: input.venueEntranceGateLabel,
+    venue_entrance_portal: input.venueEntrancePortalLabel,
+    venue_phone_number: input.venuePhoneNumberLabel,
+    venue_place_id: input.venuePlaceIdLabel,
+    venue_open_time: input.venueOpenTimeLabel,
+    venue_close_time: input.venueCloseTimeLabel,
+    doors_open_time: input.doorsOpenTimeLabel,
+    gates_open_time: input.gatesOpenTimeLabel,
+    box_office_open_time: input.boxOfficeOpenTimeLabel,
+    parking_lots_open_time: input.parkingLotsOpenTimeLabel,
+    fan_zone_open_time: input.fanZoneOpenTimeLabel,
   };
 }
 
@@ -105,14 +135,8 @@ export function toPassCreatorData(
     // when Admitto has no start time to anchor it to.
     ...(input.relevantDate ? { relevantDate: input.relevantDate } : {}),
   };
-  // Apple's `semantics` object (developer.passcreator.com/en/apple-wallet/semantic-tags) is a
-  // fixed-vocabulary sibling of `data`'s other top-level fields, entirely separate from the
-  // admin-configurable fieldMapping below - PassCreator ignores it for Google Wallet rendering,
-  // so this is safe to send regardless of which platform button the attendee actually used.
-  const semantics =
-    input.semantics && Object.keys(input.semantics).length > 0 ? { semantics: input.semantics } : {};
 
-  if (!fieldMapping) return { ...semantics, ...base };
+  if (!fieldMapping) return base;
 
   const values = walletPlaceholderValues(input);
   const custom: Record<string, unknown> = {};
@@ -123,7 +147,5 @@ export function toPassCreatorData(
   // base last: an admin's own field-mapping key (e.g. accidentally named "userProvidedId" or
   // "barcodeValue" after PassCreator's own API vocabulary) must never override the provider-
   // controlled identity/QR fields - those decide idempotency and which pass the barcode matches.
-  // semantics after custom for the same reason, in the unlikely case an admin's own mapping key
-  // happens to collide with the reserved "semantics" name.
-  return { ...custom, ...semantics, ...base };
+  return { ...custom, ...base };
 }

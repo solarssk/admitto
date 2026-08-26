@@ -1,6 +1,6 @@
 # Wallet Passes Overview
 
-**Audience:** Superadmins (configuration), Administrators and Superadmins (attendee actions) · **Required role:** Superadmin for Event Settings → Wallet; Administrator or Superadmin for attendee wallet actions · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.4
+**Audience:** Superadmins (configuration), Administrators and Superadmins (attendee actions) · **Required role:** Superadmin for Event Settings → Wallet; Administrator or Superadmin for attendee wallet actions · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.3
 
 ## What this page helps you do
 
@@ -27,7 +27,9 @@ works; Admitto never signs or hosts pass files itself.
   what they're called). In Event Settings → Wallet, an admin adds one row per template field: pick
   an Admitto **value** from a fixed list (attendee full/first/last name, email, company,
   department, event name/date/hours/location, directions/accessibility text, Google/Apple Maps
-  links, individual address parts, ticket type, or the ticket/QR value itself), then type the exact
+  links, individual address parts, ticket type, the ticket/QR value itself, event type, or a venue
+  access-point detail such as room, entrance, door/gate/portal, phone number, Apple place ID, or
+  an opening time), then type the exact
   **key** that matches that field's name in the PassCreator template. For example, mapping value
   "Attendee full name" to key `fullName` sends the attendee's name to whichever template field is
   registered as `fullName`. There is no default mapping and no auto-detection - nothing beyond the
@@ -35,19 +37,21 @@ works; Admitto never signs or hosts pass files itself.
   names and Admitto can't guess them. See the
   [template setup page](Wallet-Passes-PassCreator-Setup) for the full step-by-step, including how
   to register a field on the PassCreator side first.
-- **Semantic tags** (Apple Wallet only, off by default). A separate switch next to Apple Wallet
-  that sends Apple's own structured pass data (event name, start/end time, venue location, entrance
-  directions, attendee name, duration) so the pass gets Siri Suggestions and Maps/Calendar smart
-  surfacing. No template setup needed - this is a fixed Apple-defined vocabulary, not something an
-  admin maps field by field. No NFC hardware or PassCreator account approval required, and it has
-  no effect on Google Wallet.
+- **Semantic tags** (Apple Wallet only, no switch). Siri Suggestions and Maps/Calendar smart
+  surfacing use the same Field mapping mechanism as visible card fields - there is no separate
+  toggle. Map a placeholder such as "Event type", "Venue room", or an access-point opening time to
+  a field in Event Settings → Wallet, then bind that same field to the matching Apple semantic tag
+  inside PassCreator's own Semantic Tags panel. Both steps are required; mapping in Admitto alone
+  does nothing. No NFC hardware or PassCreator account approval required, and it has no effect on
+  Google Wallet. See the [template setup page](Wallet-Passes-PassCreator-Setup) for the full
+  walkthrough.
 - **Lock Screen relevance date** (Apple Wallet only, always on, no switch). Whenever Apple Wallet
   is enabled and the event has a start time, Admitto tells PassCreator when the pass should surface
-  on the Lock Screen - independent of, and regardless of, the separate Semantic tags opt-in above.
+  on the Lock Screen - independent of, and regardless of, the semantic tags field mapping above.
   See the [template setup page](Wallet-Passes-PassCreator-Setup) for details.
 - **Live updates to already-issued, active passes.** Editing an attendee (name, email, company,
   department, ticket type) or a wallet-relevant event field (title, date, hours, timezone, the
-  Apple Wallet toggle, or the Semantic tags toggle) automatically refreshes passes already on
+  Apple Wallet toggle, event type, or a Location field) automatically refreshes passes already on
   attendees' devices - no manual re-issue needed. Two things this does not cover: a voided pass is
   skipped until it is restored *and* separately pushed again, since restoring only clears the void
   flag rather than refreshing content; and a single-attendee edit pushes immediately in the same

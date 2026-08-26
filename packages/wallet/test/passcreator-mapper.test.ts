@@ -156,6 +156,70 @@ describe("toPassCreatorData", () => {
     expect(data.dateShort).toBe("10 Aug 2026");
   });
 
+  it("maps the venue/event-type/access-point-timing placeholders added for PassCreator's Semantic Tags vocabulary", () => {
+    const data = toPassCreatorData(
+      {
+        ...baseInput,
+        eventTypeLabel: "PKEventTypeConference",
+        venueRoomLabel: "Hall B",
+        venueEntranceLabel: "Main entrance",
+        venueEntranceDoorLabel: "Door 3",
+        venueEntranceGateLabel: "Gate B",
+        venueEntrancePortalLabel: "North Portal",
+        venuePhoneNumberLabel: "+91 80 4252 1000",
+        venuePlaceIdLabel: "I4CCAB9B9CD77B6BA",
+        venueOpenTimeLabel: "2026-08-10T08:00:00+02:00",
+        venueCloseTimeLabel: "2026-08-10T23:00:00+02:00",
+        doorsOpenTimeLabel: "2026-08-10T09:00:00+02:00",
+        gatesOpenTimeLabel: "2026-08-10T09:30:00+02:00",
+        boxOfficeOpenTimeLabel: "2026-08-10T08:30:00+02:00",
+        parkingLotsOpenTimeLabel: "2026-08-10T07:00:00+02:00",
+        fanZoneOpenTimeLabel: "2026-08-10T10:00:00+02:00",
+      },
+      "tmpl-1",
+      {
+        eventTypeField: "event_type",
+        roomField: "venue_room",
+        entranceField: "venue_entrance",
+        doorField: "venue_entrance_door",
+        gateField: "venue_entrance_gate",
+        portalField: "venue_entrance_portal",
+        phoneField: "venue_phone_number",
+        placeIdField: "venue_place_id",
+        venueOpenField: "venue_open_time",
+        venueCloseField: "venue_close_time",
+        doorsOpenField: "doors_open_time",
+        gatesOpenField: "gates_open_time",
+        boxOfficeOpenField: "box_office_open_time",
+        parkingLotsOpenField: "parking_lots_open_time",
+        fanZoneOpenField: "fan_zone_open_time",
+      },
+      true,
+    );
+    expect(data).toMatchObject({
+      eventTypeField: "PKEventTypeConference",
+      roomField: "Hall B",
+      entranceField: "Main entrance",
+      doorField: "Door 3",
+      gateField: "Gate B",
+      portalField: "North Portal",
+      phoneField: "+91 80 4252 1000",
+      placeIdField: "I4CCAB9B9CD77B6BA",
+      venueOpenField: "2026-08-10T08:00:00+02:00",
+      venueCloseField: "2026-08-10T23:00:00+02:00",
+      doorsOpenField: "2026-08-10T09:00:00+02:00",
+      gatesOpenField: "2026-08-10T09:30:00+02:00",
+      boxOfficeOpenField: "2026-08-10T08:30:00+02:00",
+      parkingLotsOpenField: "2026-08-10T07:00:00+02:00",
+      fanZoneOpenField: "2026-08-10T10:00:00+02:00",
+    });
+  });
+
+  it("never sends a semantics key (confirmed dead PassCreator API field, removed)", () => {
+    const data = toPassCreatorData(baseInput, "tmpl-1", undefined, true);
+    expect(data).not.toHaveProperty("semantics");
+  });
+
   describe("relevantDate", () => {
     it("omits the relevantDate key entirely when input.relevantDate is unset", () => {
       const data = toPassCreatorData(baseInput, "tmpl-1", undefined, true);
@@ -175,40 +239,4 @@ describe("toPassCreatorData", () => {
     });
   });
 
-  describe("Apple Wallet semantics", () => {
-    const semantics = {
-      eventName: "Launch Event",
-      eventType: "PKEventTypeGeneric",
-      eventStartDate: "2026-08-10T18:00:00+02:00",
-      venueName: "Test Arena",
-    };
-
-    it("omits the semantics key entirely when input.semantics is unset", () => {
-      const data = toPassCreatorData(baseInput, "tmpl-1", undefined, true);
-      expect(data).not.toHaveProperty("semantics");
-    });
-
-    it("omits the semantics key when input.semantics is an empty object", () => {
-      const data = toPassCreatorData({ ...baseInput, semantics: {} }, "tmpl-1", undefined, true);
-      expect(data).not.toHaveProperty("semantics");
-    });
-
-    it("sends semantics as a top-level sibling of base fields, verbatim", () => {
-      const data = toPassCreatorData({ ...baseInput, semantics }, "tmpl-1", undefined, true);
-      expect(data.semantics).toEqual(semantics);
-      expect(data.templateId).toBe("tmpl-1");
-      expect(data.barcodeValue).toBe("https://tickets.example.com/t/tok-1");
-    });
-
-    it("keeps semantics alongside an admin's own fieldMapping custom properties", () => {
-      const data = toPassCreatorData(
-        { ...baseInput, semantics, eventNameLabel: "Launch Event" },
-        "tmpl-1",
-        { name: "event_name" },
-        true,
-      );
-      expect(data.semantics).toEqual(semantics);
-      expect(data.name).toBe("Launch Event");
-    });
-  });
 });

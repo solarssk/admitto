@@ -192,6 +192,20 @@ describe("GET /api/admin/events/:eventId/location", () => {
       address_components: null,
       google_maps_url_override: null,
       apple_maps_url_override: null,
+      venue_room: null,
+      venue_entrance: null,
+      venue_entrance_door: null,
+      venue_entrance_gate: null,
+      venue_entrance_portal: null,
+      venue_phone_number: null,
+      venue_place_id: null,
+      venue_open_time: null,
+      venue_close_time: null,
+      doors_open_time: null,
+      gates_open_time: null,
+      box_office_open_time: null,
+      parking_lots_open_time: null,
+      fan_zone_open_time: null,
     });
   });
 
@@ -334,6 +348,59 @@ describe("PUT /api/admin/events/:eventId/location", () => {
     const row = await prisma.eventLocation.findUnique({ where: { event_id: EVENT_LOC } });
     expect(row?.formatted_address).toBe("1 Example Street, Example City");
     expect(row?.venue_name).toBe("ICE Kraków Congress Centre");
+  });
+
+  it("persists and clears the venue identifier and access-point timing fields", async () => {
+    const setRes = await putLocation(EVENT_LOC, adminCookie, {
+      venue_room: "Hall B",
+      venue_entrance: "Main entrance",
+      venue_entrance_door: "Door 3",
+      venue_entrance_gate: "Gate B",
+      venue_entrance_portal: "North Portal",
+      venue_phone_number: "+91 80 4252 1000",
+      venue_place_id: "I4CCAB9B9CD77B6BA",
+      venue_open_time: "08:00",
+      venue_close_time: "23:00",
+      doors_open_time: "08:30",
+      gates_open_time: "08:45",
+      box_office_open_time: "08:15",
+      parking_lots_open_time: "07:00",
+      fan_zone_open_time: "09:00",
+    });
+    expect(setRes.status).toBe(200);
+    const setBody = (await setRes.json()) as EventLocationDto;
+    expect(setBody).toMatchObject({
+      venue_room: "Hall B",
+      venue_entrance: "Main entrance",
+      venue_entrance_door: "Door 3",
+      venue_entrance_gate: "Gate B",
+      venue_entrance_portal: "North Portal",
+      venue_phone_number: "+91 80 4252 1000",
+      venue_place_id: "I4CCAB9B9CD77B6BA",
+      venue_open_time: "08:00",
+      venue_close_time: "23:00",
+      doors_open_time: "08:30",
+      gates_open_time: "08:45",
+      box_office_open_time: "08:15",
+      parking_lots_open_time: "07:00",
+      fan_zone_open_time: "09:00",
+    });
+
+    const clearRes = await putLocation(EVENT_LOC, adminCookie, {
+      venue_room: null,
+      doors_open_time: null,
+    });
+    expect(clearRes.status).toBe(200);
+    const clearBody = (await clearRes.json()) as EventLocationDto;
+    expect(clearBody.venue_room).toBeNull();
+    expect(clearBody.doors_open_time).toBeNull();
+    // Untouched fields stay as they were.
+    expect(clearBody.venue_entrance).toBe("Main entrance");
+  });
+
+  it("rejects an invalid time value for an access-point timing field", async () => {
+    const res = await putLocation(EVENT_LOC, adminCookie, { doors_open_time: "9am" });
+    expect(res.status).toBe(400);
   });
 
   it("applies a default zoom of 15 when map_zoom is omitted on create", async () => {
@@ -781,6 +848,26 @@ describe("PUT /api/admin/events/:eventId/location — auto-push to already-issue
       status: "pending",
       result_json: { request: { kind: "event_wide", eventId: WALLET_LOC_EVENT, reason: "location" } },
     });
+  });
+
+  it("enqueues an event-wide wallet_push job when a wallet-relevant field (venue_room) changes", async () => {
+    const res = await putLocation(WALLET_LOC_EVENT, adminCookie, { venue_room: "Hall B" });
+
+    expect(res.status).toBe(200);
+    const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({
+      status: "pending",
+      result_json: { request: { kind: "event_wide", eventId: WALLET_LOC_EVENT, reason: "location" } },
+    });
+  });
+
+  it("enqueues an event-wide wallet_push job when doors_open_time changes", async () => {
+    const res = await putLocation(WALLET_LOC_EVENT, adminCookie, { doors_open_time: "08:30" });
+
+    expect(res.status).toBe(200);
+    const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+    expect(jobs).toHaveLength(1);
   });
 
   it("does not enqueue a job when only map_zoom (UI-only, not on the pass) changes", async () => {

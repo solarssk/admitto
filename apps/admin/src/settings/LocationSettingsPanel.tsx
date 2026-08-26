@@ -6,7 +6,7 @@ import {
   resolveAppleMapsUrl,
   resolveGoogleMapsUrl,
 } from "@admitto/location";
-import { Badge, Button, Card, EmptyState, HintLabel, Notice, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, useToast } from "@admitto/ui";
 import {
   fetchEventLocation,
   fetchMapTileConfig,
@@ -18,6 +18,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventLocationDto, GeocodingResultDto, MapTileConfigDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
+import { TimeInput } from "../components/TimeInput.js";
 import { VenueAutocomplete } from "../components/VenueAutocomplete.js";
 import { whenShown, useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { AddressComponentsGrid } from "./AddressComponentsGrid.js";
@@ -45,6 +46,20 @@ const EMPTY_DRAFT: LocationDraft = {
   address_components: { ...EMPTY_ADDRESS_COMPONENTS },
   google_maps_url_override: "",
   apple_maps_url_override: "",
+  venue_room: "",
+  venue_entrance: "",
+  venue_entrance_door: "",
+  venue_entrance_gate: "",
+  venue_entrance_portal: "",
+  venue_phone_number: "",
+  venue_place_id: "",
+  venue_open_time: "",
+  venue_close_time: "",
+  doors_open_time: "",
+  gates_open_time: "",
+  box_office_open_time: "",
+  parking_lots_open_time: "",
+  fan_zone_open_time: "",
 };
 
 const ADDRESS_CARD_HINT =
@@ -55,6 +70,11 @@ const DIRECTIONS_HINT =
   "Arrival details shown with the event location.";
 const ACCESSIBILITY_HINT =
   "Accessibility details shown with the event location.";
+const ACCESS_POINTS_HINT =
+  "Venue and entrance details for this event.";
+const ACCESS_POINTS_INTRO =
+  "General venue and access details, not specific to Wallet. Today they're used once mapped to a field in Event Settings → Wallet.";
+const OPENING_HOURS_INTRO = "All optional - fill in only the ones that apply to this event.";
 
 /** Used when map-tile config cannot be loaded. Keeps venue/notes editable without a MapPicker. */
 const MAPS_UNAVAILABLE_FALLBACK: MapTileConfigDto = {
@@ -659,6 +679,158 @@ export function LocationSettingsPanel({
               onChange={(e) => setDraft((prev) => ({ ...prev, accessibility_text: e.target.value }))}
             />
           </div>
+        </div>
+      </Card>
+
+      <Card title={<HintLabel hint={ACCESS_POINTS_HINT}>Venue access details</HintLabel>}>
+        <div className="settings-field-stack">
+          <p className="settings-card-intro">{ACCESS_POINTS_INTRO}</p>
+
+          <div className="settings-field-row">
+            <Input
+              label="Venue room"
+              value={draft.venue_room}
+              disabled={disabled}
+              maxLength={LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH}
+              placeholder="e.g. Conference Hall B"
+              hint="The hall or room attendees enter, if any."
+              onChange={(e) => setDraft((prev) => ({ ...prev, venue_room: e.target.value }))}
+            />
+            <Input
+              label="Venue entrance"
+              value={draft.venue_entrance}
+              disabled={disabled}
+              maxLength={LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH}
+              placeholder="e.g. Main entrance"
+              hint="Which entrance to use, if there's more than one."
+              onChange={(e) => setDraft((prev) => ({ ...prev, venue_entrance: e.target.value }))}
+            />
+          </div>
+
+          <div className="settings-field-row settings-field-row--3">
+            <Input
+              label="Entrance door"
+              value={draft.venue_entrance_door}
+              disabled={disabled}
+              maxLength={LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH}
+              placeholder="e.g. Door 3"
+              hint="A specific numbered door."
+              onChange={(e) => setDraft((prev) => ({ ...prev, venue_entrance_door: e.target.value }))}
+            />
+            <Input
+              label="Entrance gate"
+              value={draft.venue_entrance_gate}
+              disabled={disabled}
+              maxLength={LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH}
+              placeholder="e.g. Gate B"
+              hint="A specific numbered gate."
+              onChange={(e) => setDraft((prev) => ({ ...prev, venue_entrance_gate: e.target.value }))}
+            />
+            <Input
+              label="Entrance portal"
+              value={draft.venue_entrance_portal}
+              disabled={disabled}
+              maxLength={LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH}
+              placeholder="e.g. North Portal"
+              hint="A named entry, large venues only."
+              onChange={(e) => setDraft((prev) => ({ ...prev, venue_entrance_portal: e.target.value }))}
+            />
+          </div>
+
+          <div className="settings-field-row">
+            <Input
+              label="Venue phone number"
+              value={draft.venue_phone_number}
+              disabled={disabled}
+              maxLength={LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH}
+              placeholder="e.g. +91 80 4252 1000"
+              hint="The venue's own public number, not yours."
+              onChange={(e) => setDraft((prev) => ({ ...prev, venue_phone_number: e.target.value }))}
+            />
+            <div className="settings-field-group">
+              <Input
+                label="Venue Place ID"
+                value={draft.venue_place_id}
+                disabled={disabled}
+                maxLength={LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH}
+                placeholder="e.g. I4CCAB9B9CD77B6BA"
+                onChange={(e) => setDraft((prev) => ({ ...prev, venue_place_id: e.target.value }))}
+              />
+              <span className="at-hint">
+                Optional - search your venue on Apple's{" "}
+                <a href="https://developer.apple.com/maps/place-id-lookup/" target="_blank" rel="noopener noreferrer">
+                  Place ID Lookup
+                </a>{" "}
+                tool.
+              </span>
+            </div>
+          </div>
+
+          <details className="disclosure">
+            <summary className="disclosure__summary">
+              <i className="ti ti-chevron-right" aria-hidden="true" /> Opening hours
+            </summary>
+            <div className="disclosure__body">
+              <div className="settings-field-stack">
+                <p className="settings-card-intro">{OPENING_HOURS_INTRO}</p>
+                <div className="settings-field-row settings-field-row--3">
+                  <TimeInput
+                    label="Venue opens"
+                    value={draft.venue_open_time}
+                    disabled={disabled}
+                    hint="When the venue opens to the public."
+                    onChange={(value) => setDraft((prev) => ({ ...prev, venue_open_time: value }))}
+                  />
+                  <TimeInput
+                    label="Venue closes"
+                    value={draft.venue_close_time}
+                    disabled={disabled}
+                    hint="When the venue closes to the public."
+                    onChange={(value) => setDraft((prev) => ({ ...prev, venue_close_time: value }))}
+                  />
+                  <TimeInput
+                    label="Doors open"
+                    value={draft.doors_open_time}
+                    disabled={disabled}
+                    hint="When attendees are let into the building."
+                    onChange={(value) => setDraft((prev) => ({ ...prev, doors_open_time: value }))}
+                  />
+                </div>
+                <div className="settings-field-row settings-field-row--3">
+                  <TimeInput
+                    label="Gates open"
+                    value={draft.gates_open_time}
+                    disabled={disabled}
+                    hint="When entry gates open, for open-air venues."
+                    onChange={(value) => setDraft((prev) => ({ ...prev, gates_open_time: value }))}
+                  />
+                  <TimeInput
+                    label="Box office opens"
+                    value={draft.box_office_open_time}
+                    disabled={disabled}
+                    hint="When on-site ticket sales open."
+                    onChange={(value) => setDraft((prev) => ({ ...prev, box_office_open_time: value }))}
+                  />
+                  <TimeInput
+                    label="Parking lots open"
+                    value={draft.parking_lots_open_time}
+                    disabled={disabled}
+                    hint="When parking becomes available."
+                    onChange={(value) => setDraft((prev) => ({ ...prev, parking_lots_open_time: value }))}
+                  />
+                </div>
+                <div className="settings-field-row settings-field-row--3">
+                  <TimeInput
+                    label="Fan zone opens"
+                    value={draft.fan_zone_open_time}
+                    disabled={disabled}
+                    hint="A fan activity area outside the main venue, if this event has one."
+                    onChange={(value) => setDraft((prev) => ({ ...prev, fan_zone_open_time: value }))}
+                  />
+                </div>
+              </div>
+            </div>
+          </details>
         </div>
       </Card>
 

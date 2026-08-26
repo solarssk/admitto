@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@admitto/db";
-import type { WalletPassInput, WalletPassSemantics } from "@admitto/wallet";
+import type { WalletPassInput } from "@admitto/wallet";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import { zonedWallClockToUtcIso } from "@admitto/shared";
 import { loadEventTicketTypes } from "./ticket-types.js";
@@ -120,11 +120,9 @@ function localWallClockReading(instant: Date, timeZone: string): string {
 
 /** PassCreator's top-level `relevantDate` ("Y-m-d H:i", no offset - the event's own local wall-clock
  * digits, matching the plain instant PassCreator's own docs example uses): controls when the pass
- * surfaces on the Lock Screen. Apple-only (same as `semantics` below) but a separate, always-on
- * piece of wallet behavior, not part of the opt-in "semantic tags" feature - gated on
- * `walletAppleEnabled` alone so a Google-only event never sends it, but NOT on
- * `walletSemanticTagsEnabled`. Undefined when there's no start time to anchor it to, rather than
- * guessing a time (same "no invented defaults" reasoning as buildSemantics). */
+ * surfaces on the Lock Screen. Apple-only, always-on whenever the event has a start time - gated
+ * on `walletAppleEnabled` alone so a Google-only event never sends it. Undefined when there's no
+ * start time to anchor it to, rather than guessing one. */
 function computeRelevantDate(event: {
   date: Date;
   eventHoursStart: string | null;
@@ -138,43 +136,19 @@ function computeRelevantDate(event: {
   return `${dayStr} ${event.eventHoursStart}`;
 }
 
-/** Builds Apple Wallet semantic tag values from the resolved event/attendee - only the fields
- * Admitto's domain model actually has data for (ADR 0009 data minimization); no invented
- * defaults beyond the fixed "PKEventTypeGeneric" eventType, which is valid for any event and
- * unlocks the rest of the vocabulary being considered well-formed by Apple/PassCreator. */
-function buildSemantics(resolved: ResolvedTicket): WalletPassSemantics | undefined {
-  const { attendee, event } = resolved;
-  const mapReady = isMapReady(event);
-  // An overnight event (end time earlier than start time) ends on the calendar day *after*
-  // event.date - without this, eventEndDate would land before eventStartDate on the same day,
-  // which is exactly backwards for Apple's semantic tags. event.date is anchored at noon UTC
-  // (see formatDate above), so +24h in UTC always lands on the next calendar day in any
-  // timezone, the same reasoning that anchoring already relies on.
-  const isOvernight = !!event.eventHoursStart && !!event.eventHoursEnd && event.eventHoursEnd < event.eventHoursStart;
-  const eventEndDateBase = isOvernight ? new Date(event.date.getTime() + 24 * 60 * 60 * 1000) : event.date;
-  const eventStartDate = zonedDateTimeToIso(event.date, event.eventHoursStart, event.timezone);
-  const eventEndDate = zonedDateTimeToIso(eventEndDateBase, event.eventHoursEnd, event.timezone);
-  // Derived from the resolved instants (real elapsed seconds), not wall-clock HH:MM subtraction -
-  // a DST transition between start and end otherwise makes duration disagree with the emitted
-  // eventStartDate/eventEndDate pair (bot review: P2, "Compute duration from the resolved event
-  // instants" - e.g. a 22:00-02:00 event crossing a spring-forward is 3 real hours, not 4).
-  const duration =
-    eventStartDate && eventEndDate
-      ? Math.round((Date.parse(eventEndDate) - Date.parse(eventStartDate)) / 1000)
-      : undefined;
-  const semantics: WalletPassSemantics = {
-    eventName: event.title || undefined,
-    eventType: "PKEventTypeGeneric",
-    eventStartDate,
-    eventEndDate,
-    venueName: event.location || undefined,
-    venueLocation: mapReady ? { latitude: event.latitude!, longitude: event.longitude! } : undefined,
-    entranceDescription: event.directionsText || undefined,
-    attendeeName: attendee.name || undefined,
-    duration: duration && duration > 0 ? duration : undefined,
-  };
-  return semantics;
-}
+/** Admitto's `event_type` DB key -> Apple's PKEventType semantic-tag literal. Used only to
+ * translate the value before it becomes the `event_type` WALLET_MAPPING_PLACEHOLDERS entry -
+ * PassCreator itself never sees Admitto's own key, only the Apple-vocabulary string. */
+const EVENT_TYPE_TO_APPLE: Record<string, string> = {
+  generic: "PKEventTypeGeneric",
+  live_performance: "PKEventTypeLivePerformance",
+  movie: "PKEventTypeMovie",
+  sports: "PKEventTypeSports",
+  conference: "PKEventTypeConference",
+  convention: "PKEventTypeConvention",
+  workshop: "PKEventTypeWorkshop",
+  social_gathering: "PKEventTypeSocialGathering",
+};
 
 /**
  * Maps an already display-resolved ticket (see resolveTicketPageDisplay) into the provider-neutral
@@ -186,6 +160,15 @@ export function buildWalletPassInput(resolved: ResolvedTicket, barcodeValue: str
   const { attendee, event } = resolved;
   const mapLabel = event.location ?? event.formattedAddress ?? undefined;
   const mapReady = isMapReady(event);
+  // An overnight venue (close time earlier than its own open time) closes on the calendar day
+  // *after* event.date, or it resolves to an instant before the venue even opens. Derived from
+  // venue_open_time/venue_close_time themselves, not the event's general eventHoursStart/End -
+  // those are a separate, independently-set field pair (bot review: comparing against event
+  // hours mis-anchors venue_close_time whenever the two pairs disagree or eventHours is unset).
+  // The other 6 access-point times (doors/gates/box office/parking/venue open, fan zone) are all
+  // pre-event and stay anchored to event.date itself.
+  const isOvernight = !!event.venueOpenTime && !!event.venueCloseTime && event.venueCloseTime < event.venueOpenTime;
+  const venueCloseDateBase = isOvernight ? new Date(event.date.getTime() + 24 * 60 * 60 * 1000) : event.date;
   return {
     attendeeName: attendee.name,
     attendeeFirstNameLabel: attendee.first_name || undefined,
@@ -216,10 +199,20 @@ export function buildWalletPassInput(resolved: ResolvedTicket, barcodeValue: str
     userProvidedId: `admitto:${event.id}:${attendee.id}`,
     barcodeValue,
     relevantDate: computeRelevantDate(event),
-    // Apple-only, opt-in (Event Settings -> Wallet -> Apple Wallet -> Semantic tags): gated on
-    // walletAppleEnabled too so a Google-only event never sends Apple-specific data to
-    // PassCreator, even though PassCreator itself would just ignore it for Google rendering.
-    semantics:
-      event.walletSemanticTagsEnabled && event.walletAppleEnabled ? buildSemantics(resolved) : undefined,
+    eventTypeLabel: event.eventType ? EVENT_TYPE_TO_APPLE[event.eventType] : undefined,
+    venueRoomLabel: event.venueRoom || undefined,
+    venueEntranceLabel: event.venueEntrance || undefined,
+    venueEntranceDoorLabel: event.venueEntranceDoor || undefined,
+    venueEntranceGateLabel: event.venueEntranceGate || undefined,
+    venueEntrancePortalLabel: event.venueEntrancePortal || undefined,
+    venuePhoneNumberLabel: event.venuePhoneNumber || undefined,
+    venuePlaceIdLabel: event.venuePlaceId || undefined,
+    venueOpenTimeLabel: zonedDateTimeToIso(event.date, event.venueOpenTime, event.timezone),
+    venueCloseTimeLabel: zonedDateTimeToIso(venueCloseDateBase, event.venueCloseTime, event.timezone),
+    doorsOpenTimeLabel: zonedDateTimeToIso(event.date, event.doorsOpenTime, event.timezone),
+    gatesOpenTimeLabel: zonedDateTimeToIso(event.date, event.gatesOpenTime, event.timezone),
+    boxOfficeOpenTimeLabel: zonedDateTimeToIso(event.date, event.boxOfficeOpenTime, event.timezone),
+    parkingLotsOpenTimeLabel: zonedDateTimeToIso(event.date, event.parkingLotsOpenTime, event.timezone),
+    fanZoneOpenTimeLabel: zonedDateTimeToIso(event.date, event.fanZoneOpenTime, event.timezone),
   };
 }

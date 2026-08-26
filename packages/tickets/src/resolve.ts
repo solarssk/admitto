@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@admitto/db";
+import type { EventLocationInput } from "@admitto/location";
 // Subpath import, not the package root - the root barrel also re-exports compileTemplate, which
 // pulls in the full `mjml` compiler (and its own large dependency tree). @admitto/tickets is
 // bundled into the admin SPA, so importing from the root here would ship all of that unused MJML
@@ -124,18 +125,36 @@ export async function resolveTicket(
 /** Exported so apps/web's public_ref-based findAttendeeForEventRoute (a second ResolvedTicket
  * producer, outside this module) can build the exact same shape instead of maintaining its own
  * copy of this mapping (CodeRabbit review). */
-type LocationDetailsForTicket = {
-  venue_name: string | null;
-  formatted_address: string | null;
-  address_components: unknown;
-  latitude: number | null;
-  longitude: number | null;
-  map_zoom: number;
-  directions_text: string | null;
-  accessibility_text: string | null;
-  google_maps_url_override?: string | null;
-  apple_maps_url_override?: string | null;
-} | null;
+type LocationDetailsForTicket =
+  | ({
+      venue_name: string | null;
+      formatted_address: string | null;
+      address_components: unknown;
+      latitude: number | null;
+      longitude: number | null;
+      map_zoom: number;
+      directions_text: string | null;
+      accessibility_text: string | null;
+    } & Pick<
+      EventLocationInput,
+      | "google_maps_url_override"
+      | "apple_maps_url_override"
+      | "venue_room"
+      | "venue_entrance"
+      | "venue_entrance_door"
+      | "venue_entrance_gate"
+      | "venue_entrance_portal"
+      | "venue_phone_number"
+      | "venue_place_id"
+      | "venue_open_time"
+      | "venue_close_time"
+      | "doors_open_time"
+      | "gates_open_time"
+      | "box_office_open_time"
+      | "parking_lots_open_time"
+      | "fan_zone_open_time"
+    >)
+  | null;
 
 export function toResolved(
   row: {
@@ -147,12 +166,12 @@ export function toResolved(
     event: {
       id: string; title: string; slug: string; date: Date; timezone: string;
       event_hours_start: string | null; event_hours_end: string | null;
+      event_type: string | null;
       wallet_enabled: boolean;
       wallet_template_id: string | null;
       wallet_api_key_enc: string | null;
       wallet_apple_enabled: boolean;
       wallet_google_enabled: boolean;
-      wallet_semantic_tags_enabled: boolean;
       wallet_field_mapping: unknown;
       location_details?: LocationDetailsForTicket;
       logo_url: string | null; header_image_url: string | null;
@@ -192,8 +211,8 @@ export function toResolved(
       walletApiKeyEnc: row.event.wallet_api_key_enc,
       walletAppleEnabled: row.event.wallet_apple_enabled,
       walletGoogleEnabled: row.event.wallet_google_enabled,
-      walletSemanticTagsEnabled: row.event.wallet_semantic_tags_enabled,
       walletFieldMapping: parseWalletFieldMapping(row.event.wallet_field_mapping),
+      eventType: row.event.event_type,
       location: loc?.venue_name ?? null,
       logoUrl: resolveTicketLogoUrl(row.event),
       formattedAddress: loc?.formatted_address ?? null,
@@ -205,6 +224,20 @@ export function toResolved(
       accessibilityText: loc?.accessibility_text ?? null,
       googleMapsUrlOverride: loc?.google_maps_url_override ?? null,
       appleMapsUrlOverride: loc?.apple_maps_url_override ?? null,
+      venueRoom: loc?.venue_room ?? null,
+      venueEntrance: loc?.venue_entrance ?? null,
+      venueEntranceDoor: loc?.venue_entrance_door ?? null,
+      venueEntranceGate: loc?.venue_entrance_gate ?? null,
+      venueEntrancePortal: loc?.venue_entrance_portal ?? null,
+      venuePhoneNumber: loc?.venue_phone_number ?? null,
+      venuePlaceId: loc?.venue_place_id ?? null,
+      venueOpenTime: loc?.venue_open_time ?? null,
+      venueCloseTime: loc?.venue_close_time ?? null,
+      doorsOpenTime: loc?.doors_open_time ?? null,
+      gatesOpenTime: loc?.gates_open_time ?? null,
+      boxOfficeOpenTime: loc?.box_office_open_time ?? null,
+      parkingLotsOpenTime: loc?.parking_lots_open_time ?? null,
+      fanZoneOpenTime: loc?.fan_zone_open_time ?? null,
     },
   };
 }

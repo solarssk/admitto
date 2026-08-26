@@ -16,6 +16,20 @@ export interface LocationDraft {
   address_components: AddressComponents;
   google_maps_url_override: string;
   apple_maps_url_override: string;
+  venue_room: string;
+  venue_entrance: string;
+  venue_entrance_door: string;
+  venue_entrance_gate: string;
+  venue_entrance_portal: string;
+  venue_phone_number: string;
+  venue_place_id: string;
+  venue_open_time: string;
+  venue_close_time: string;
+  doors_open_time: string;
+  gates_open_time: string;
+  box_office_open_time: string;
+  parking_lots_open_time: string;
+  fan_zone_open_time: string;
 }
 
 function componentsEqual(a: AddressComponents, b: AddressComponents): boolean {
@@ -41,6 +55,20 @@ export function draftFromLocation(data: EventLocationDto): LocationDraft {
     address_components: data.address_components ?? { ...EMPTY_ADDRESS_COMPONENTS },
     google_maps_url_override: data.google_maps_url_override ?? "",
     apple_maps_url_override: data.apple_maps_url_override ?? "",
+    venue_room: data.venue_room ?? "",
+    venue_entrance: data.venue_entrance ?? "",
+    venue_entrance_door: data.venue_entrance_door ?? "",
+    venue_entrance_gate: data.venue_entrance_gate ?? "",
+    venue_entrance_portal: data.venue_entrance_portal ?? "",
+    venue_phone_number: data.venue_phone_number ?? "",
+    venue_place_id: data.venue_place_id ?? "",
+    venue_open_time: data.venue_open_time ?? "",
+    venue_close_time: data.venue_close_time ?? "",
+    doors_open_time: data.doors_open_time ?? "",
+    gates_open_time: data.gates_open_time ?? "",
+    box_office_open_time: data.box_office_open_time ?? "",
+    parking_lots_open_time: data.parking_lots_open_time ?? "",
+    fan_zone_open_time: data.fan_zone_open_time ?? "",
   };
 }
 
@@ -55,8 +83,73 @@ export function isLocationDirty(draft: LocationDraft, saved: LocationDraft): boo
     draft.accessibility_text.trim() !== saved.accessibility_text.trim() ||
     !componentsEqual(draft.address_components, saved.address_components) ||
     draft.google_maps_url_override.trim() !== saved.google_maps_url_override.trim() ||
-    draft.apple_maps_url_override.trim() !== saved.apple_maps_url_override.trim()
+    draft.apple_maps_url_override.trim() !== saved.apple_maps_url_override.trim() ||
+    draft.venue_room.trim() !== saved.venue_room.trim() ||
+    draft.venue_entrance.trim() !== saved.venue_entrance.trim() ||
+    draft.venue_entrance_door.trim() !== saved.venue_entrance_door.trim() ||
+    draft.venue_entrance_gate.trim() !== saved.venue_entrance_gate.trim() ||
+    draft.venue_entrance_portal.trim() !== saved.venue_entrance_portal.trim() ||
+    draft.venue_phone_number.trim() !== saved.venue_phone_number.trim() ||
+    draft.venue_place_id.trim() !== saved.venue_place_id.trim() ||
+    draft.venue_open_time.trim() !== saved.venue_open_time.trim() ||
+    draft.venue_close_time.trim() !== saved.venue_close_time.trim() ||
+    draft.doors_open_time.trim() !== saved.doors_open_time.trim() ||
+    draft.gates_open_time.trim() !== saved.gates_open_time.trim() ||
+    draft.box_office_open_time.trim() !== saved.box_office_open_time.trim() ||
+    draft.parking_lots_open_time.trim() !== saved.parking_lots_open_time.trim() ||
+    draft.fan_zone_open_time.trim() !== saved.fan_zone_open_time.trim()
   );
+}
+
+/** Trim-and-diff a single optional text field: unchanged (after trim) is omitted, cleared (empty
+ * after trim) becomes `null`. Shared by every plain string field in `SaveEventLocationBody` -
+ * extracted so `buildEventLocationPatchBody` doesn't repeat this same three-line shape per field
+ * (SonarCloud S3776 cognitive-complexity budget). */
+function diffTextField(
+  patch: Record<string, string | null>,
+  key: string,
+  draftValue: string,
+  savedValue: string,
+): void {
+  const trimmed = draftValue.trim();
+  if (trimmed !== savedValue.trim()) {
+    patch[key] = trimmed || null;
+  }
+}
+
+const VENUE_IDENTIFIER_FIELDS = [
+  "venue_room",
+  "venue_entrance",
+  "venue_entrance_door",
+  "venue_entrance_gate",
+  "venue_entrance_portal",
+  "venue_phone_number",
+  "venue_place_id",
+] as const;
+
+const ACCESS_POINT_TIMING_FIELDS = [
+  "venue_open_time",
+  "venue_close_time",
+  "doors_open_time",
+  "gates_open_time",
+  "box_office_open_time",
+  "parking_lots_open_time",
+  "fan_zone_open_time",
+] as const;
+
+/** Extracted out of buildEventLocationPatchBody (SonarCloud S3776) - the 7 venue-identifier and 7
+ * access-point-timing fields are both flat lists of same-shaped optional text fields, diffed the
+ * same way as every other field on this form. */
+function diffFieldList(
+  fields: readonly string[],
+  draft: LocationDraft,
+  saved: LocationDraft,
+): Partial<SaveEventLocationBody> {
+  const patch: Record<string, string | null> = {};
+  for (const field of fields) {
+    diffTextField(patch, field, draft[field as keyof LocationDraft] as string, saved[field as keyof LocationDraft] as string);
+  }
+  return patch;
 }
 
 /**
@@ -77,7 +170,10 @@ export function buildEventLocationPatchBody(
   saved: LocationDraft,
   pendingGeocodingProvider: string | null,
 ): SaveEventLocationBody {
-  const body: SaveEventLocationBody = {};
+  const body: SaveEventLocationBody = {
+    ...diffFieldList(VENUE_IDENTIFIER_FIELDS, draft, saved),
+    ...diffFieldList(ACCESS_POINT_TIMING_FIELDS, draft, saved),
+  };
 
   const venueName = draft.venue_name.trim();
   if (venueName !== saved.venue_name.trim()) {

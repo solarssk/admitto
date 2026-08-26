@@ -37,34 +37,31 @@ export interface WalletPassInput {
   barcodeValue: string;
   /** PassCreator's top-level `relevantDate` ("Y-m-d H:i", local wall-clock digits, no offset) -
    * controls when the pass surfaces on the Lock Screen. Apple-only but always-on whenever the
-   * event has a start time and Apple Wallet is enabled - independent of the `semantics` opt-in
-   * below (ADR 0009 data minimization still applies: omitted when there's no start time). */
+   * event has a start time and Apple Wallet is enabled (ADR 0009 data minimization: omitted when
+   * there's no start time). */
   relevantDate?: string;
-  /** Apple Wallet semantic tags (opt-in, event-level). Omitted entirely unless the event has
-   * semantic tags enabled - never sent by default (ADR 0009 data minimization). */
-  semantics?: WalletPassSemantics;
-}
-
-/**
- * Apple PassKit `semantics` object for event tickets (developer.apple.com/documentation/walletpasses,
- * developer.passcreator.com/en/apple-wallet/semantic-tags). Powers Siri Suggestions / Maps /
- * Calendar smart surfacing on a plain `eventTicket` pass - no NFC, no poster-style template
- * required. Every field optional: only populated when Admitto actually has the underlying data.
- */
-export interface WalletPassSemantics {
-  eventName?: string;
-  /** Always "PKEventTypeGeneric" - Admitto has no per-event category (concert/sports/etc.) to
-   * pick a more specific PKEventType, and Generic is valid for any event. */
-  eventType?: string;
-  /** ISO 8601 with UTC offset, e.g. "2026-09-24T18:00:00+02:00". */
-  eventStartDate?: string;
-  eventEndDate?: string;
-  venueName?: string;
-  venueLocation?: { latitude: number; longitude: number };
-  entranceDescription?: string;
-  attendeeName?: string;
-  /** Event duration in seconds. */
-  duration?: number;
+  /** Apple PKEventType literal (e.g. "PKEventTypeSports") derived from Event.event_type - a
+   * WALLET_MAPPING_PLACEHOLDERS entry like every field below, not sent automatically; PassCreator
+   * only reads it once an admin maps this placeholder to a Custom Field bound in that template's
+   * own Semantic Tags panel. */
+  eventTypeLabel?: string;
+  venueRoomLabel?: string;
+  venueEntranceLabel?: string;
+  venueEntranceDoorLabel?: string;
+  venueEntranceGateLabel?: string;
+  venueEntrancePortalLabel?: string;
+  venuePhoneNumberLabel?: string;
+  /** Apple Maps' own place identifier - admin-entered, Admitto cannot derive it automatically. */
+  venuePlaceIdLabel?: string;
+  /** Access-point opening times, resolved to offset-aware ISO 8601 instants (same treatment as
+   * eventStartDate/eventEndDate previously received) via the event's own date + timezone. */
+  venueOpenTimeLabel?: string;
+  venueCloseTimeLabel?: string;
+  doorsOpenTimeLabel?: string;
+  gatesOpenTimeLabel?: string;
+  boxOfficeOpenTimeLabel?: string;
+  parkingLotsOpenTimeLabel?: string;
+  fanZoneOpenTimeLabel?: string;
 }
 
 export interface WalletPassResult {
