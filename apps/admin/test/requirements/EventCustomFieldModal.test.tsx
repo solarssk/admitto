@@ -448,6 +448,54 @@ describe("EventCustomFieldModal — edit", () => {
     expect(screen.getByRole("button", { name: "Checking usage…" }).hasAttribute("disabled")).toBe(true);
   });
 
+  it("recovers via Retry after a failed usage fetch, without requiring the modal to be reopened", async () => {
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockRejectedValueOnce(new Error("network error"));
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ M: 42 });
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, label: "Shirt sizes" });
+    renderModal(shirtField);
+    expect(await screen.findByText(/Could not load how many attendees use each option/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect(screen.queryByText(/Could not load how many attendees use each option/)).toBeNull();
+    });
+    await waitForUsageLoaded();
+
+    // An unrelated edit (not touching options) can now be saved without closing the modal.
+    fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Shirt sizes" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
+        label: "Shirt sizes",
+        description: null,
+        type: "select",
+        required: false,
+      });
+    });
+  });
+
+  it("pressing Escape while the risky-rename confirmation is open dismisses only the confirmation, not the whole modal", async () => {
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ M: 42 });
+    const onClose = vi.fn();
+    renderWithToast(
+      <EventCustomFieldModal eventId="evt-1" field={shirtField} onClose={onClose} onSaved={vi.fn()} />,
+    );
+    await waitForUsageLoaded();
+    const mInput = screen.getAllByLabelText("Option text")[1]!;
+    fireEvent.change(mInput, { target: { value: "Medium" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("This will affect existing attendees")).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await waitFor(() => {
+      expect(screen.queryByText("This will affect existing attendees")).toBeNull();
+    });
+    expect(onClose).not.toHaveBeenCalled();
+    // The draft survives - the whole modal wasn't discarded, only the confirmation was dismissed.
+    expect(screen.getByDisplayValue("Medium")).toBeTruthy();
+  });
+
   it("gates Save behind a confirmation when a rename affects attendees, and proceeds on Save anyway", async () => {
     vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ M: 42 });
     vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, options: ["S", "Medium", "L"] });

@@ -60,14 +60,21 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
     isEdit && field.type === "select" ? null : {},
   );
   const [usageError, setUsageError] = useState(false);
+  const [usageRetryToken, setUsageRetryToken] = useState(0);
   const [confirmRiskyRenames, setConfirmRiskyRenames] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(panelRef, true, onClose);
+  // Suspended while the risky-rename ConfirmDialog is open (same pattern as EventItemDrawer's
+  // and UserEditModal's own nested confirm dialogs) - both dialogs otherwise register their own
+  // capture-phase Escape listener on document, and this modal's runs first (mounted first), so
+  // pressing Escape to dismiss just the confirmation would instead call this modal's own onClose
+  // and discard the whole draft, options changes included.
+  useModalFocusTrap(panelRef, !confirmRiskyRenames, onClose);
   useOverscrollBounceGuard(scrollRef);
 
   useEffect(() => {
     if (!isEdit || field.type !== "select") return;
+    setUsageError(false);
     const controller = new AbortController();
     fetchEventCustomFieldOptionUsage(eventId, field.id, controller.signal)
       .then((counts) => setUsageCounts(counts))
@@ -75,10 +82,12 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
         if (!controller.signal.aborted) setUsageError(true);
       });
     return () => controller.abort();
-    // Fetches once for the field this modal was opened with - eventId/field.id/field.type don't
-    // change while it's open.
+    // Fetches once for the field this modal was opened with (eventId/field.id/field.type don't
+    // change while it's open), and again each time usageRetryToken changes - a failed fetch
+    // otherwise leaves usageCounts null (Save disabled) for good, with no way to recover short of
+    // closing and reopening the whole modal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [usageRetryToken]);
 
   const usageLoading = usageCounts === null;
   let submitLabel = "Create field";
@@ -285,8 +294,16 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
                 <>
                   <span className="at-label">Options</span>
                   {usageError && (
-                    <p className="at-hint" role="alert">
-                      Could not load how many attendees use each option. Try reopening this field.
+                    <p className="at-hint custom-field-usage-error" role="alert">
+                      Could not load how many attendees use each option.
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setUsageRetryToken((t) => t + 1)}
+                      >
+                        Retry
+                      </Button>
                     </p>
                   )}
                   <OptionsEditor
