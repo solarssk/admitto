@@ -9,7 +9,8 @@ export type EmailDeliveryStatus =
   | 'delivered'
   | 'failed'
   | 'bounced'
-  | 'rejected';
+  | 'rejected'
+  | 'cancelled';
 
 // pending: not yet created (on-demand, before first "Add to Wallet" click). failed: last create/
 // update attempt errored (see WalletPass.last_error_code).
@@ -46,6 +47,7 @@ export const EMAIL_DELIVERY_STATUS = [
   'failed',
   'bounced',
   'rejected',
+  'cancelled',
 ] as const satisfies EmailDeliveryStatus[];
 
 export const WALLET_PASS_STATUS = ['pending', 'active', 'voided', 'failed', 'expired'] as const satisfies WalletPassStatus[];
@@ -99,7 +101,8 @@ export type AttendeeActionType =
   | 'attendee_erased'
   | 'attendees_bulk_erased'
   | 'pass_revoked'
-  | 'pass_restored';
+  | 'pass_restored'
+  | 'mail_bulk_send_cancelled';
 
 export const ATTENDEE_ACTION_TYPE = [
   'check_in',
@@ -122,6 +125,7 @@ export const ATTENDEE_ACTION_TYPE = [
   'attendees_bulk_erased',
   'pass_revoked',
   'pass_restored',
+  'mail_bulk_send_cancelled',
 ] as const satisfies AttendeeActionType[];
 
 /** Maximum note body length (API validation — Lock #8). */

@@ -52,6 +52,9 @@
 }
 .send-progress__bar-segment--sent { background: var(--status-ok); }
 .send-progress__bar-segment--failed { background: var(--status-error); }
+/* Stopped by an operator, not a delivery error - muted gray keeps it visually distinct from the
+   red "failed" segment right next to it. */
+.send-progress__bar-segment--cancelled { background: var(--at-gray-400); }
 
 @media (prefers-reduced-motion: reduce) {
   .send-progress__bar-segment {

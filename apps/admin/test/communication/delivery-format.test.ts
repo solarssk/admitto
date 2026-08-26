@@ -89,6 +89,11 @@ describe("deliveryHistoryIcon", () => {
     expect(deliveryHistoryIcon("resend", "rejected")).toBe("mail-exclamation");
     expect(deliveryHistoryIcon("resend", "sent")).toBe("mail-forward");
   });
+
+  it("uses ban for a cancelled row, distinct from a failure", () => {
+    expect(deliveryHistoryIcon("initial", "cancelled")).toBe("ban");
+    expect(deliveryHistoryIcon("resend", "cancelled")).toBe("ban");
+  });
 });
 
 describe("countDeliveryOutcomes", () => {

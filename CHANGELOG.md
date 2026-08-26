@@ -10,10 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Check-in's camera scanner gained a torch toggle, next to the existing mute/close controls on both the mobile full-screen scanner and the desktop/tablet inline camera. Only appears once the active camera actually reports the capability, since most laptop webcams and every iPhone don't - so it stays out of the way rather than sitting there doing nothing.
+- Communication → Send now has a "Stop" button while a bulk send is draining, so an operator who spots a mistake (wrong template, typo, wrong audience) can halt the rest of the batch instead of waiting it out. Confirmed via a dialog before it takes effect. Attendees not yet emailed are skipped; anyone already sent the email keeps it, since that can't be undone. The panel's stat tiles, progress bar, and done-state summary now also account for cancelled recipients.
 
 ### Changed
 
 - Communication → Send's bulk-send progress now shows Sent/Failed/Remaining stat tiles and a two-segment progress bar while a batch drains, and a "Send complete" summary card once it finishes, instead of a single plain-text line. The "Send another" button is now hidden until the batch has actually finished draining - it previously appeared as soon as sending started, and clicking it mid-send stopped the page from tracking that batch (with no way to check on it again) without cancelling anything server-side, so an operator could unknowingly fire a second, concurrent send while the first was still in flight.
+- Communication → Delivery log, Attendees, and Attendee Detail now recognize a "Cancelled" mail-delivery status (styled distinctly from a delivery failure), and the Attendees page's mail-status "Not sent" filter now also includes attendees whose only delivery was cancelled - they still need a ticket exactly like someone who was never queued.
 
 ### Fixed
 

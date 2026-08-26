@@ -25,4 +25,11 @@ describe("MailStatusBadge", () => {
     render(<MailStatusBadge status="custom_state" />);
     expect(screen.getByText("custom_state")).toBeTruthy();
   });
+
+  it("shows a stopped send as a neutral Cancelled badge, not the RSVP domain's error-red one", () => {
+    const { container } = render(<MailStatusBadge status="cancelled" />);
+    expect(screen.getByText("Cancelled")).toBeTruthy();
+    expect(container.querySelector(".at-badge--error")).toBeNull();
+    expect(container.querySelector(".at-badge--neutral")).toBeTruthy();
+  });
 });

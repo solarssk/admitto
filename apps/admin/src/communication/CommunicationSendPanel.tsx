@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, Notice } from "@admitto/ui";
-import { fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
+import { cancelBulkSend, fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeRowDto, BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import { RSVP_STATUS_OPTIONS } from "../attendees/rsvpStatusBadge.js";
 import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { AttendeePicker } from "./AttendeePicker.js";
 import { RecipientCountNotice, RecipientOptionCards } from "./RecipientOptionCards.js";
@@ -31,7 +32,7 @@ interface CommunicationSendPanelProps {
 
 type SendPhase = "form" | "polling" | "done";
 
-type BatchStatus = { queued: number; sent: number; failed: number };
+type BatchStatus = { queued: number; sent: number; failed: number; cancelled: number };
 
 const RECIPIENT_OPTIONS: ReadonlyArray<{
   value: BulkSendFilter["type"];
@@ -79,13 +80,15 @@ function resultVariant(phase: SendPhase): "info" | "warning" {
   return phase === "polling" ? "info" : "warning";
 }
 
-/** Two-segment bar out of `queued + sent + failed`: green for sent, red for failed, the rest
- * left as the track's own neutral background (queued). At done, queued is 0 so the bar reads
- * as fully sent/failed with no neutral remainder - no separate "done" variant needed. */
+/** Bar out of `queued + sent + failed + cancelled`: green for sent, red for failed, muted gray
+ * for cancelled (stopped by an operator, not a delivery error - kept visually distinct from
+ * failed), the rest left as the track's own neutral background (queued). At done, queued is 0
+ * so the bar reads as fully sent/failed/cancelled with no neutral remainder. */
 function SendProgressBar({ batchStatus }: Readonly<{ batchStatus: BatchStatus }>) {
-  const total = batchStatus.queued + batchStatus.sent + batchStatus.failed;
+  const total = batchStatus.queued + batchStatus.sent + batchStatus.failed + batchStatus.cancelled;
   const sentPct = total > 0 ? (batchStatus.sent / total) * 100 : 0;
   const failedPct = total > 0 ? (batchStatus.failed / total) * 100 : 0;
+  const cancelledPct = total > 0 ? (batchStatus.cancelled / total) * 100 : 0;
   return (
     <div className="send-progress__bar">
       <div
@@ -95,6 +98,10 @@ function SendProgressBar({ batchStatus }: Readonly<{ batchStatus: BatchStatus }>
       <div
         className="send-progress__bar-segment send-progress__bar-segment--failed"
         style={{ width: `${failedPct}%` }}
+      />
+      <div
+        className="send-progress__bar-segment send-progress__bar-segment--cancelled"
+        style={{ width: `${cancelledPct}%` }}
       />
     </div>
   );
@@ -107,8 +114,12 @@ function SendProgressBar({ batchStatus }: Readonly<{ batchStatus: BatchStatus }>
  * renders while polling - and polling only continues while `queued` is still positive - so
  * `total` is always positive here too; no zero-guard needed on the percentage. */
 function SendProgressStats({ batchStatus }: Readonly<{ batchStatus: BatchStatus }>) {
-  const total = batchStatus.queued + batchStatus.sent + batchStatus.failed;
-  const processed = batchStatus.sent + batchStatus.failed;
+  const total = batchStatus.queued + batchStatus.sent + batchStatus.failed + batchStatus.cancelled;
+  // Cancelled rows count as "processed" - they're no longer waiting on anything, same as a sent
+  // or failed row. In practice this tile view rarely shows cancelled > 0 for long: stopping a
+  // batch flips every still-queued row for it in one statement, so `queued` drops to 0 - and the
+  // panel moves to the done summary card - on the very next poll tick.
+  const processed = batchStatus.sent + batchStatus.failed + batchStatus.cancelled;
   const percent = Math.round((processed / total) * 100);
   return (
     <div className="send-progress">
@@ -141,23 +152,31 @@ function SendProgressStats({ batchStatus }: Readonly<{ batchStatus: BatchStatus 
  * finished draining (batchStatus present) - computes its own success/warning tone rather than
  * reusing resultVariant() (that one always reads "warning" once polling ends, since none of its
  * own no-batch cases - no match, nothing queued, a failed status check - have a success reading;
- * only this card's own batchStatus tells whether the completed send was actually clean). */
+ * only this card's own batchStatus tells whether the completed send was actually clean). Tone/
+ * heading also account for an operator-initiated stop, not just failures - a stopped batch is
+ * neither a clean success nor a delivery failure, but it's not the unqualified "Send complete" a
+ * fully-drained batch gets either. */
 function SendCompleteSummary({ batchStatus }: Readonly<{ batchStatus: BatchStatus }>) {
-  const total = batchStatus.queued + batchStatus.sent + batchStatus.failed;
+  const total = batchStatus.queued + batchStatus.sent + batchStatus.failed + batchStatus.cancelled;
+  const hasCancellations = batchStatus.cancelled > 0;
   const hasFailures = batchStatus.failed > 0;
+  const isWarning = hasFailures || hasCancellations;
   return (
     <output className="send-progress">
       <div className="send-progress__summary">
         <span
-          className={`status-circle ${hasFailures ? "status-circle--warn" : "status-circle--ok"}`}
+          className={`status-circle ${isWarning ? "status-circle--warn" : "status-circle--ok"}`}
           aria-hidden="true"
         >
-          <i className={`ti ${hasFailures ? "ti-alert-triangle" : "ti-circle-check"}`} aria-hidden="true" />
+          <i className={`ti ${isWarning ? "ti-alert-triangle" : "ti-circle-check"}`} aria-hidden="true" />
         </span>
         <div className="send-progress__summary-text">
-          <strong className="send-progress__summary-heading">Send complete</strong>
+          <strong className="send-progress__summary-heading">
+            {hasCancellations ? "Send stopped" : "Send complete"}
+          </strong>
           <span className="send-progress__summary-detail">
-            {batchStatus.sent} sent · {batchStatus.failed} failed out of {total} total
+            {batchStatus.sent} sent · {batchStatus.failed} failed
+            {hasCancellations ? ` · ${batchStatus.cancelled} cancelled` : ""} out of {total} total
           </span>
         </div>
       </div>
@@ -193,6 +212,9 @@ export function CommunicationSendPanel({
   const [batchId, setBatchId] = useState<string | null>(null);
   const [batchStatus, setBatchStatus] = useState<BatchStatus | null>(null);
   const [ticketTypesRetryToken, setTicketTypesRetryToken] = useState(0);
+  const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
+  const [stopBusy, setStopBusy] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
 
   const resetForm = useCallback(() => {
     runIdRef.current += 1;
@@ -209,6 +231,9 @@ export function CommunicationSendPanel({
     setResultMessage(null);
     setBatchId(null);
     setBatchStatus(null);
+    setStopConfirmOpen(false);
+    setStopBusy(false);
+    setStopError(null);
   }, []);
 
   // Clears count/result/batch UI without touching the admin's chosen filter strategy (all /
@@ -225,6 +250,9 @@ export function CommunicationSendPanel({
     setResultMessage(null);
     setBatchId(null);
     setBatchStatus(null);
+    setStopConfirmOpen(false);
+    setStopBusy(false);
+    setStopError(null);
   }, []);
 
   // Switching the selected template is the tab equivalent of the old dialog's reopen - stale
@@ -276,10 +304,19 @@ export function CommunicationSendPanel({
       try {
         const status = await fetchBulkSendStatus(eventId, batchId, ac.signal);
         if (cancelled) return;
-        setBatchStatus({ queued: status.queued, sent: status.sent, failed: status.failed });
+        setBatchStatus({
+          queued: status.queued,
+          sent: status.sent,
+          failed: status.failed,
+          cancelled: status.cancelled,
+        });
         if (status.queued === 0) {
           setPhase("done");
-          setResultMessage(`Send complete: ${status.sent} sent, ${status.failed} failed.`);
+          setResultMessage(
+            status.cancelled > 0
+              ? `Send stopped: ${status.sent} sent, ${status.failed} failed, ${status.cancelled} cancelled.`
+              : `Send complete: ${status.sent} sent, ${status.failed} failed.`,
+          );
           return;
         }
         timeoutId = window.setTimeout(() => {
@@ -382,7 +419,7 @@ export function CommunicationSendPanel({
       }
 
       setBatchId(body.batchId);
-      setBatchStatus({ queued: body.queued, sent: 0, failed: body.failed });
+      setBatchStatus({ queued: body.queued, sent: 0, failed: body.failed, cancelled: 0 });
       setPhase("polling");
       setResultMessage(`Queued ${body.queued}, sending in progress…`);
     } catch (err) {
@@ -390,6 +427,25 @@ export function CommunicationSendPanel({
       setError(operatorApiErrorMessage(err, "Send failed."));
     } finally {
       if (runId === runIdRef.current) setBusy(false);
+    }
+  };
+
+  // Only callable while phase === "polling" (the Stop button that triggers this is hidden
+  // otherwise), so batchId is always set here - the check is defensive, not a real branch.
+  const runStopSend = async () => {
+    if (!batchId) return;
+    setStopBusy(true);
+    setStopError(null);
+    try {
+      await cancelBulkSend(eventId, batchId);
+      setStopConfirmOpen(false);
+      // No local batchStatus/phase update here - the still-running poll effect's next tick
+      // (within 2s) picks up the drop in `queued` and the resulting "Send stopped" wording on
+      // its own, the same single code path that already owns that transition.
+    } catch (err) {
+      setStopError(operatorApiErrorMessage(err, "Failed to stop the send."));
+    } finally {
+      setStopBusy(false);
     }
   };
 
@@ -533,6 +589,18 @@ export function CommunicationSendPanel({
               </Notice>
             )}
             {phase === "polling" && batchStatus && <SendProgressStats batchStatus={batchStatus} />}
+            {phase === "polling" && (
+              <div className="communication-send-panel__actions">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  icon={<i className="ti ti-player-stop" aria-hidden="true" />}
+                  onClick={() => setStopConfirmOpen(true)}
+                >
+                  Stop
+                </Button>
+              </div>
+            )}
             {phase === "done" && batchStatus && !error && <SendCompleteSummary batchStatus={batchStatus} />}
             {phase === "done" && (!batchStatus || error) && resultMessage && (
               <Notice variant={resultVariant(phase)} as="output">
@@ -559,6 +627,26 @@ export function CommunicationSendPanel({
           </>
         )}
       </div>
+      {/* Gated on phase too, not just stopConfirmOpen: the background poll effect can flip the
+          batch to "done" on its own (it finished draining naturally) while this dialog is open -
+          without the phase check it would keep asking "Stop this send?" on top of the done-state
+          summary card underneath, for a batch there's nothing left to stop. */}
+      <ConfirmDialog
+        open={stopConfirmOpen && phase === "polling"}
+        icon={<i className="ti ti-player-stop" aria-hidden="true" />}
+        title="Stop this send?"
+        message="Attendees not yet emailed won't receive it. Anyone already sent the email keeps it - a message that's gone out can't be recalled."
+        errorMessage={stopError}
+        confirmLabel="Stop"
+        confirmVariant="danger"
+        loading={stopBusy}
+        onConfirm={() => void runStopSend()}
+        onCancel={() => {
+          if (stopBusy) return;
+          setStopConfirmOpen(false);
+          setStopError(null);
+        }}
+      />
     </Card>
   );
 }

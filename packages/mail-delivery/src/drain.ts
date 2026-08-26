@@ -86,19 +86,37 @@ function deliveryUpdateFromBatchError(err: unknown, exhausted: boolean) {
   };
 }
 
+/**
+ * Marks a row failed (retryable, unless attempts are exhausted) - guarded against a row a
+ * concurrent cancelBulkSendBatch() has already moved to "cancelled". Every one of this
+ * function's callers runs when no send was actually attempted or confirmed (link resolution
+ * failed, the mailer itself failed to set up); an unconditional update-by-id here would silently
+ * undo the cancellation and put the row back in the retry pool, where a later drain tick would
+ * actually send an email the operator stopped. Returns false (no-op) when the row was already
+ * cancelled, so callers can count it as skipped rather than failed.
+ */
+async function markRowFailed(
+  prisma: PrismaClient,
+  rowId: string,
+  data: { status: "failed"; retryable: boolean; error: string | undefined; attempted_at: Date; failed_at: Date; attempts: number },
+): Promise<boolean> {
+  const result = await prisma.emailDelivery.updateMany({
+    where: { id: rowId, status: { not: "cancelled" } },
+    data,
+  });
+  return result.count > 0;
+}
+
 async function markClaimedRowFailed(
   prisma: PrismaClient,
   row: SnapshotRow,
   err: unknown,
-): Promise<void> {
+): Promise<boolean> {
   const nextAttempts = nextMailDrainAttempts(row.attempts);
   const exhausted = isMailDrainAttemptsExhausted(nextAttempts);
-  await prisma.emailDelivery.update({
-    where: { id: row.id },
-    data: {
-      ...deliveryUpdateFromBatchError(err, exhausted),
-      attempts: nextAttempts,
-    },
+  return markRowFailed(prisma, row.id, {
+    ...deliveryUpdateFromBatchError(err, exhausted),
+    attempts: nextAttempts,
   });
 }
 
@@ -168,8 +186,8 @@ async function sendOneFromSnapshot(
   try {
     links = await resolveAttendeeMailLinks(delivery.attendee_id, prisma, baseUrl);
   } catch (err) {
-    await markClaimedRowFailed(prisma, delivery, err);
-    return "failed";
+    const applied = await markClaimedRowFailed(prisma, delivery, err);
+    return applied ? "failed" : "skipped";
   }
 
   const materialized = materializeStoredDeliveryMessage(
@@ -189,23 +207,39 @@ async function sendOneFromSnapshot(
       : `${delivery.attendee_id}:${delivery.purpose}:${delivery.id}`,
   };
 
+  // Re-check right before the actual send, not just at claim time: candidates are read into
+  // memory via a plain SELECT (claimDrainCandidates), so a batch cancelled after this row was
+  // claimed but before it reached the front of the sequential loop still shows "queued" in the
+  // in-memory snapshot. This is the last point where skipping is possible - once sendBatch is
+  // called, the email is out and cannot be recalled.
+  const fresh = await prisma.emailDelivery.findUnique({
+    where: { id: delivery.id },
+    select: { status: true },
+  });
+  if (fresh?.status === "cancelled") {
+    return "skipped";
+  }
+
   try {
     const summary = await sendBatch(mailer, [message]);
     const result = summary.results[0];
     if (!result) {
-      await prisma.emailDelivery.update({
-        where: { id: delivery.id },
-        data: {
-          status: "failed",
-          retryable: !exhausted,
-          error: sanitizeDeliveryError("empty provider result"),
-          attempted_at: new Date(),
-          failed_at: new Date(),
-          attempts: nextAttempts,
-        },
+      // No confirmed provider response for this send attempt - same "was anything actually
+      // attempted" ambiguity as the catch block below, so the same cancelled-row guard applies.
+      const applied = await markRowFailed(prisma, delivery.id, {
+        status: "failed",
+        retryable: !exhausted,
+        error: sanitizeDeliveryError("empty provider result"),
+        attempted_at: new Date(),
+        failed_at: new Date(),
+        attempts: nextAttempts,
       });
-      return "failed";
+      return applied ? "failed" : "skipped";
     }
+    // Unconditional and unguarded on purpose, unlike the failure paths above/below: the provider
+    // already gave a definitive answer about this message (sent or rejected) by this point, so
+    // the row must record that ground truth even if a cancel raced in moments earlier - the
+    // email already left (or was rejected), a stale "cancelled" status would misrepresent that.
     const update = mapSendResultToDelivery(result);
     const failedLike = update.status === "failed" || update.status === "rejected";
     await prisma.emailDelivery.update({
@@ -219,14 +253,14 @@ async function sendOneFromSnapshot(
     });
     return result.status === "accepted" || result.status === "sent" ? "sent" : "failed";
   } catch (err) {
-    await prisma.emailDelivery.update({
-      where: { id: delivery.id },
-      data: {
-        ...deliveryUpdateFromBatchError(err, exhausted),
-        attempts: nextAttempts,
-      },
+    // sendBatch itself threw (e.g. a transport timeout) - ambiguous whether the message went
+    // out, same as the empty-result branch above, so this must not resurrect a cancelled row
+    // into the retry pool either.
+    const applied = await markRowFailed(prisma, delivery.id, {
+      ...deliveryUpdateFromBatchError(err, exhausted),
+      attempts: nextAttempts,
     });
-    return "failed";
+    return applied ? "failed" : "skipped";
   }
 }
 
@@ -264,8 +298,9 @@ export async function drainPendingDeliveries(
       mailer = await createMailer(mailConfig, { exportSink: deps.exportSink });
     } catch (err) {
       for (const row of rows) {
-        await markClaimedRowFailed(prisma, row, err);
-        failed += 1;
+        const applied = await markClaimedRowFailed(prisma, row, err);
+        if (applied) failed += 1;
+        else skipped += 1;
       }
       continue;
     }

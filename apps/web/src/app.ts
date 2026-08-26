@@ -250,7 +250,7 @@ import {
   MAX_TEMPLATE_TEST_SEND_BODY_BYTES,
   MAX_TEMPLATE_METADATA_BODY_BYTES,
 } from "./admin/communication-api-routes.js";
-import { handleBulkSend, handleBulkSendStatus } from "./admin/bulk-send-routes.js";
+import { handleBulkSend, handleBulkSendCancel, handleBulkSendStatus } from "./admin/bulk-send-routes.js";
 import { handleEventStream } from "./admin/checkin-stream-routes.js";
 import {
   handleGetCheckinEvents,
@@ -625,6 +625,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminWalletActionRateLimit = rateLimit(rateLimitStore, "admin:wallet-action");
   const adminWalletActionBulkRateLimit = rateLimit(rateLimitStore, "admin:wallet-action-bulk");
   const adminAttendeeBulkMutationRateLimit = rateLimit(rateLimitStore, "admin:attendee-bulk-mutation");
+  const adminBulkSendCancelRateLimit = rateLimit(rateLimitStore, "admin:bulk-send-cancel");
   const adminClientErrorRateLimit = rateLimit(rateLimitStore, "admin:client-error");
   /** Wraps `adminWalletActionBulkRateLimit` so bulk-delete / bulk-revoke-pass only spend that
    * budget when the event actually has wallet configured - unlike the 3 explicit
@@ -1701,6 +1702,15 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/events/:eventId/send/status/:batchId", staffAdminGate, (c) =>
     handleBulkSendStatus(c, db),
+  );
+  // No guardArchivedEvent - unlike starting a send, stopping one should still work if the event
+  // was archived while a batch was mid-drain.
+  app.post(
+    "/api/admin/events/:eventId/send/:batchId/cancel",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminBulkSendCancelRateLimit,
+    (c) => handleBulkSendCancel(c, db),
   );
   app.get("/api/admin/events/:eventId/deliveries", staffAdminGate, (c) =>
     handleListEventDeliveries(c, db),

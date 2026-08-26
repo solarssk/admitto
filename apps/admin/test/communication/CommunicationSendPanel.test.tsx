@@ -5,6 +5,7 @@ import { CommunicationSendPanel } from "../../src/communication/CommunicationSen
 
 const sendEventBulk = vi.fn();
 const fetchBulkSendStatus = vi.fn();
+const cancelBulkSend = vi.fn();
 const fetchTicketTypes = vi.fn();
 const fetchEventAttendees = vi.fn();
 
@@ -14,6 +15,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     ...actual,
     sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
     fetchBulkSendStatus: (...args: unknown[]) => fetchBulkSendStatus(...args),
+    cancelBulkSend: (...args: unknown[]) => cancelBulkSend(...args),
     fetchTicketTypes: (...args: [string]) => fetchTicketTypes(...args),
     fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
   };
@@ -21,6 +23,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
 
 fetchTicketTypes.mockResolvedValue([]);
 fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 });
+cancelBulkSend.mockResolvedValue({ batchId: "batch-1", cancelled: 0 });
 
 const activeEvent = { archived_at: null };
 const archivedEvent = { archived_at: "2026-01-01T00:00:00.000Z" };
@@ -137,7 +140,7 @@ describe("CommunicationSendPanel", () => {
 
   it("summarizes a completed batch after polling, including both sent and failed counts", async () => {
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
-    fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 1, failed: 1 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 1, failed: 1, cancelled: 0 });
 
     const { container } = render(
       <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
@@ -162,7 +165,7 @@ describe("CommunicationSendPanel", () => {
 
   it("shows a success-toned summary card when the completed batch has no failures", async () => {
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 3, skipped: 0, failed: 0 });
-    fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 3, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 3, failed: 0, cancelled: 0 });
 
     const { container } = render(
       <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
@@ -176,7 +179,7 @@ describe("CommunicationSendPanel", () => {
 
   it("shows Sent/Failed/Remaining stat tiles and a proportional progress bar while polling", async () => {
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 10, skipped: 0, failed: 0 });
-    fetchBulkSendStatus.mockResolvedValue({ queued: 5, sent: 3, failed: 2 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 5, sent: 3, failed: 2, cancelled: 0 });
 
     const { container } = render(
       <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
@@ -219,7 +222,7 @@ describe("CommunicationSendPanel", () => {
     // the status endpoint actually sends back, not just this component's own internal state, so
     // this simulates a still-polling response with nothing to report yet.
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 10, skipped: 0, failed: 0 });
-    fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 0, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 0, failed: 0, cancelled: 0 });
 
     const { container } = render(
       <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
@@ -237,9 +240,79 @@ describe("CommunicationSendPanel", () => {
     expect(screen.getByText("0 sent · 0 failed out of 0 total")).toBeTruthy();
   });
 
+  it("shows a Stop button while polling, gated behind a confirmation dialog", async () => {
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 10, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 5, sent: 3, failed: 2, cancelled: 0 });
+
+    render(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    const stopBtn = await screen.findByRole("button", { name: "Stop" });
+    expect(cancelBulkSend).not.toHaveBeenCalled();
+
+    fireEvent.click(stopBtn);
+    expect(screen.getByText("Stop this send?")).toBeTruthy();
+    expect(cancelBulkSend).not.toHaveBeenCalled();
+
+    // Two "Stop" buttons now exist (the panel's own, and the confirm dialog's) - the dialog's
+    // is the one that actually triggers the API call.
+    fireEvent.click(screen.getAllByRole("button", { name: "Stop" })[1]);
+    await waitFor(() => {
+      expect(cancelBulkSend).toHaveBeenCalledWith("evt-1", "batch-1");
+    });
+  });
+
+  it("shows the cancel API's error inside the Stop confirmation dialog instead of dismissing it", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 10, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 5, sent: 3, failed: 2, cancelled: 0 });
+    cancelBulkSend.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+
+    render(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Stop" })[1]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Failed to stop the send.")).toBeTruthy();
+    });
+    // Still open, not silently dismissed on failure.
+    expect(screen.getByText("Stop this send?")).toBeTruthy();
+    expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
+  it("shows a stopped summary, with the cancelled count and a distinct tone, once a stopped batch finishes draining", async () => {
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 10, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 4, failed: 1, cancelled: 5 });
+
+    const { container } = render(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Send stopped")).toBeTruthy();
+    expect(screen.getByText("4 sent · 1 failed · 5 cancelled out of 10 total")).toBeTruthy();
+    expect(screen.queryByText("Send complete")).toBeNull();
+    // Cancelled counts as a warning-toned outcome, same as a failure - never the plain green
+    // success card for a batch the operator deliberately stopped.
+    expect(container.querySelector(".status-circle--warn")).toBeTruthy();
+
+    const cancelledSegment = container.querySelector(
+      ".send-progress__bar-segment--cancelled",
+    ) as HTMLElement;
+    expect(cancelledSegment.style.width).toBe("50%");
+
+    // Stop button is gone once the batch is done - nothing left to stop.
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  });
+
   it("shows Send another only once the batch has actually finished draining", async () => {
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 1, skipped: 0, failed: 0 });
-    fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 1, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 1, failed: 0, cancelled: 0 });
 
     render(
       <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
@@ -254,8 +327,8 @@ describe("CommunicationSendPanel", () => {
     try {
       sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
       fetchBulkSendStatus
-        .mockResolvedValueOnce({ queued: 2, sent: 0, failed: 0 })
-        .mockResolvedValueOnce({ queued: 0, sent: 2, failed: 0 });
+        .mockResolvedValueOnce({ queued: 2, sent: 0, failed: 0, cancelled: 0 })
+        .mockResolvedValueOnce({ queued: 0, sent: 2, failed: 0, cancelled: 0 });
 
       render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
       fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -874,7 +947,7 @@ describe("CommunicationSendPanel", () => {
     });
     first.unmount();
     await act(async () => {
-      resolveStatus?.({ queued: 0, sent: 2, failed: 0 });
+      resolveStatus?.({ queued: 0, sent: 2, failed: 0, cancelled: 0 });
       await Promise.resolve();
     });
 
@@ -912,7 +985,7 @@ describe("CommunicationSendPanel", () => {
     sendEventBulk.mockReset();
     fetchBulkSendStatus.mockReset();
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
-    fetchBulkSendStatus.mockResolvedValueOnce({ queued: 1, sent: 1, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValueOnce({ queued: 1, sent: 1, failed: 0, cancelled: 0 });
 
     const view = render(
       <CommunicationSendPanel
