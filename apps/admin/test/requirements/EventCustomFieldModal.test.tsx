@@ -261,4 +261,50 @@ describe("EventCustomFieldModal — edit", () => {
       });
     });
   });
+
+  it("sends the new options when a text field is switched to select and given options", async () => {
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({
+      ...dietaryField,
+      type: "select",
+      options: ["A", "B"],
+    });
+    renderModal(dietaryField);
+    fireEvent.click(screen.getByRole("button", { name: "Single choice" }));
+    fireEvent.change(screen.getByLabelText("Select options"), { target: { value: "A\nB" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-dietary", {
+        label: "Dietary requirements",
+        description: null,
+        type: "select",
+        required: false,
+        options: ["A", "B"],
+      });
+    });
+  });
+
+  it("sends the updated options when an operator actually edits a select field's option list", async () => {
+    const shirtField: EventCustomFieldDto = {
+      ...dietaryField,
+      id: "field-shirt",
+      source_field: "shirt_size",
+      label: "Shirt size",
+      type: "select",
+      required: false,
+      options: ["S", "M", "L"],
+    };
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, options: ["S", "M", "L", "XL"] });
+    renderModal(shirtField);
+    fireEvent.change(screen.getByLabelText("Select options"), { target: { value: "S\nM\nL\nXL" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
+        label: "Shirt size",
+        description: null,
+        type: "select",
+        required: false,
+        options: ["S", "M", "L", "XL"],
+      });
+    });
+  });
 });
