@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Event Settings now has an "Event type" field (General tab) and, on the Location tab, a "Venue access details" section for venue room, entrance/door/gate/portal identifiers, venue phone number, Apple Maps place ID, and access-point opening times (venue, doors, gates, box office, parking lots, fan zone). None of these reach a wallet pass on their own - like every other wallet field, they only take effect once mapped in Event Settings → Wallet → Field mapping, the same mechanism that already feeds an attendee's name, event date, and venue onto the pass.
+
+### Changed
+
+- Removed Event Settings → Wallet's "Semantic tags" toggle. It never actually added Siri Suggestions, Maps, or Calendar smart data to a pass - PassCreator's pass API has no field for it, so the request was accepted but silently ignored regardless of the toggle's state. The Field mapping panel now explains that a mapped field also needs a matching binding in that PassCreator template's own Semantic Tags editor to actually reach Siri/Maps/Calendar; simply mapping it in Admitto (as with any other wallet field) is necessary but not sufficient on its own.
+
 ### Security
 
 - The admin/operator/account SPA's client-side error reporting (`POST /api/admin/client-errors`) now has a per-user rate limit (30/minute) - it previously had none, so a stuck browser tab could send this endpoint as many requests as it liked. Also fixed a related gap: a CSP violation that itself blocks this reporting call (for example, a temporarily misconfigured deployment) is no longer reported at all, instead of being reported by re-triggering the exact same blocked call it's describing - closing off a self-inflicted infinite retry loop that could otherwise flood a single browser session's requests and the server's logs indefinitely until the tab was closed or reloaded.

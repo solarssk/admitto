@@ -31,7 +31,7 @@ import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet/passcreator-mapper"
 import { formatEventHoursRange } from "@admitto/shared/region-date-format";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventLocationDto, EventSettingsDto, LogoCropMeta } from "../api/types.js";
+import type { EventLocationDto, EventSettingsDto, EventType, LogoCropMeta } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
 import { EventMailSettingsCard, type EventMailSettingsCardHandle } from "../settings/EventMailSettingsCard.js";
 import {
@@ -39,6 +39,7 @@ import {
   type EventBounceIngestPanelHandle,
 } from "../settings/EventBounceIngestPanel.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
+import { buildEventTypeOptions, EVENT_TYPE_LABELS } from "../settings/eventTypeOptions.js";
 import { SettingsFooter, NO_AUTOFILL_PROPS, SecretFieldRow } from "../settings/mailTransportFormParts.js";
 import type { SecretEditMode } from "../settings/mailSettingsValidation.js";
 import { useAuth } from "../auth/AuthProvider.js";
@@ -84,12 +85,12 @@ type SettingsForm = {
   date: string;
   eventHoursStart: string;
   eventHoursEnd: string;
+  eventType: EventType | "";
   walletEnabled: boolean;
   walletTemplateId: string;
   walletApiKeyEdit: { mode: SecretEditMode; value: string };
   walletAppleEnabled: boolean;
   walletGoogleEnabled: boolean;
-  walletSemanticTagsEnabled: boolean;
   walletFieldMapping: WalletFieldMappingRow[];
   timezone: string;
   capacity: string;
@@ -103,12 +104,12 @@ type SettingsPatch = Partial<{
   date: string;
   event_hours_start: string | null;
   event_hours_end: string | null;
+  event_type: EventType | null;
   wallet_enabled: boolean;
   wallet_template_id: string | null;
   wallet_api_key: string | null;
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
-  wallet_semantic_tags_enabled: boolean;
   wallet_field_mapping: Record<string, string> | null;
   timezone: string;
   capacity: number | null;
@@ -133,11 +134,12 @@ const WALLET_CARD_INTRO =
 const WALLET_PROVIDER_HINT = "PassCreator is the only supported wallet pass provider today.";
 const WALLET_TEMPLATE_HINT = "Which pass design this event's attendees get.";
 const WALLET_API_KEY_HINT = "From the PassCreator dashboard, under API Keys.";
-const WALLET_SEMANTIC_TAGS_DESC = "Adds Siri Suggestions, Maps, and Calendar smart data to the pass.";
 const WALLET_FIELD_MAPPING_HEADER_DESC =
   "Add every field your template's Additional Properties expect. Nothing beyond the QR code is sent to PassCreator until it's mapped here.";
 const WALLET_FIELD_MAPPING_EMPTY_NOTICE =
   "No fields mapped yet - only the QR code is sent to PassCreator. Add a field for each value your template should show (name, event date, ticket type, and so on).";
+const WALLET_FIELD_MAPPING_SEMANTIC_TAGS_NOTICE =
+  "Mapping a field here sends its value to PassCreator, but Siri Suggestions, Maps, and Calendar smart data also needs that value bound in PassCreator's own Semantic Tags panel to a matching {CustomFieldName} placeholder - mapping alone is not enough.";
 
 // Extra "don't act on reflex" pause before the confirm button on the bulk revoke dialogs
 // unlocks — these affect every attendee on the event at once, so they get a brief arming
@@ -181,6 +183,21 @@ const WALLET_PLACEHOLDER_LABELS: Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[num
   country: "Country",
   ticket_type: "Ticket type",
   ticket_url: "Ticket/QR value",
+  event_type: "Event type",
+  venue_room: "Venue room",
+  venue_entrance: "Venue entrance",
+  venue_entrance_door: "Entrance door",
+  venue_entrance_gate: "Entrance gate",
+  venue_entrance_portal: "Entrance portal",
+  venue_phone_number: "Venue phone number",
+  venue_place_id: "Venue place ID",
+  venue_open_time: "Venue open time",
+  venue_close_time: "Venue close time",
+  doors_open_time: "Doors open time",
+  gates_open_time: "Gates open time",
+  box_office_open_time: "Box office open time",
+  parking_lots_open_time: "Parking lots open time",
+  fan_zone_open_time: "Fan zone open time",
 };
 
 /** Groups the Value dropdown's options by category so the list is easier to scan - matches
@@ -210,6 +227,21 @@ const WALLET_PLACEHOLDER_ICONS: Record<(typeof WALLET_MAPPING_PLACEHOLDERS)[numb
   country: "map-pin",
   ticket_type: "ticket",
   ticket_url: "ticket",
+  event_type: "category",
+  venue_room: "map-pin",
+  venue_entrance: "map-pin",
+  venue_entrance_door: "map-pin",
+  venue_entrance_gate: "map-pin",
+  venue_entrance_portal: "map-pin",
+  venue_phone_number: "phone",
+  venue_place_id: "map-pin",
+  venue_open_time: "clock",
+  venue_close_time: "clock",
+  doors_open_time: "clock",
+  gates_open_time: "clock",
+  box_office_open_time: "clock",
+  parking_lots_open_time: "clock",
+  fan_zone_open_time: "clock",
 };
 
 const WALLET_PLACEHOLDER_OPTIONS = WALLET_MAPPING_PLACEHOLDERS.map((id) => ({
@@ -217,6 +249,20 @@ const WALLET_PLACEHOLDER_OPTIONS = WALLET_MAPPING_PLACEHOLDERS.map((id) => ({
   icon: WALLET_PLACEHOLDER_ICONS[id],
   label: WALLET_PLACEHOLDER_LABELS[id],
 }));
+
+/** Basic information's Event type picker - same icon+label SearchableSelect pattern as the
+ * Wallet tab's field mapping "Value" dropdown above, instead of a plain <Select>. Leading blank
+ * option makes the field clearable back to unset, same as the Ticket type picker elsewhere
+ * (AddAttendeeModal.tsx, AttendeeDetailPage.tsx) - SearchableSelect has no other way to unpick a
+ * value once one is selected. */
+const EVENT_TYPE_SELECT_OPTIONS = [
+  { id: "", label: "Not set" },
+  ...buildEventTypeOptions().map((option) => ({
+    id: option.value,
+    label: option.label,
+    icon: option.icon,
+  })),
+];
 
 /** Placeholders whose real value depends on which attendee gets the pass, not on the event alone
  * - there's no single "value for this event" to preview on this page. */
@@ -281,6 +327,38 @@ function computeWalletLocationPlaceholderPreview(
     case "region":
     case "country":
       return location?.address_components?.[id] || WALLET_VALUE_NOT_SET;
+    case "venue_room":
+      return location?.venue_room || WALLET_VALUE_NOT_SET;
+    case "venue_entrance":
+      return location?.venue_entrance || WALLET_VALUE_NOT_SET;
+    case "venue_entrance_door":
+      return location?.venue_entrance_door || WALLET_VALUE_NOT_SET;
+    case "venue_entrance_gate":
+      return location?.venue_entrance_gate || WALLET_VALUE_NOT_SET;
+    case "venue_entrance_portal":
+      return location?.venue_entrance_portal || WALLET_VALUE_NOT_SET;
+    case "venue_phone_number":
+      return location?.venue_phone_number || WALLET_VALUE_NOT_SET;
+    case "venue_place_id":
+      return location?.venue_place_id || WALLET_VALUE_NOT_SET;
+    // Timing fields show the raw "HH:MM" value directly rather than the full zoned ISO instant
+    // buildWalletPassInput computes server-side - this preview's job is "does this event have a
+    // value," not a byte-exact wire-format match, avoiding re-implementing zonedWallClockToUtcIso
+    // client-side.
+    case "venue_open_time":
+      return location?.venue_open_time || WALLET_VALUE_NOT_SET;
+    case "venue_close_time":
+      return location?.venue_close_time || WALLET_VALUE_NOT_SET;
+    case "doors_open_time":
+      return location?.doors_open_time || WALLET_VALUE_NOT_SET;
+    case "gates_open_time":
+      return location?.gates_open_time || WALLET_VALUE_NOT_SET;
+    case "box_office_open_time":
+      return location?.box_office_open_time || WALLET_VALUE_NOT_SET;
+    case "parking_lots_open_time":
+      return location?.parking_lots_open_time || WALLET_VALUE_NOT_SET;
+    case "fan_zone_open_time":
+      return location?.fan_zone_open_time || WALLET_VALUE_NOT_SET;
     default:
       return WALLET_VALUE_NOT_SET;
   }
@@ -292,7 +370,7 @@ function computeWalletLocationPlaceholderPreview(
  * still loading (see the effect that fetches it), `null` once loaded with nothing saved. */
 function computeWalletPlaceholderPreview(
   id: (typeof WALLET_MAPPING_PLACEHOLDERS)[number],
-  form: Pick<SettingsForm, "title" | "date" | "eventHoursStart" | "eventHoursEnd" | "timezone">,
+  form: Pick<SettingsForm, "title" | "date" | "eventHoursStart" | "eventHoursEnd" | "timezone" | "eventType">,
   location: EventLocationDto | null | undefined,
 ): string {
   const attendeeHint = WALLET_ATTENDEE_SCOPED_HINTS[id];
@@ -301,6 +379,7 @@ function computeWalletPlaceholderPreview(
   if (id === "event_date") return formatWalletDatePreview(form.date) ?? WALLET_VALUE_NOT_SET;
   if (id === "event_date_short") return formatWalletDatePreviewShort(form.date) ?? WALLET_VALUE_NOT_SET;
   if (id === "event_hours") return computeWalletEventHoursPreview(form);
+  if (id === "event_type") return form.eventType ? EVENT_TYPE_LABELS[form.eventType] : WALLET_VALUE_NOT_SET;
   if (location === undefined) return "Loading…";
   return computeWalletLocationPlaceholderPreview(id, location);
 }
@@ -324,12 +403,12 @@ function toForm(data: EventSettingsDto): SettingsForm {
     date: data.date.split("T")[0] ?? "",
     eventHoursStart: data.event_hours_start ?? "",
     eventHoursEnd: data.event_hours_end ?? "",
+    eventType: data.event_type ?? "",
     walletEnabled: data.wallet_enabled,
     walletTemplateId: data.wallet_template_id ?? "",
     walletApiKeyEdit: { mode: "idle", value: "" },
     walletAppleEnabled: data.wallet_apple_enabled,
     walletGoogleEnabled: data.wallet_google_enabled,
-    walletSemanticTagsEnabled: data.wallet_semantic_tags_enabled,
     walletFieldMapping: Object.entries(data.wallet_field_mapping ?? {}).map(([key, value]) => ({
       id: crypto.randomUUID(),
       key,
@@ -366,7 +445,6 @@ function buildWalletPatch(
   | "wallet_api_key"
   | "wallet_apple_enabled"
   | "wallet_google_enabled"
-  | "wallet_semantic_tags_enabled"
   | "wallet_field_mapping"
 > {
   const patch: SettingsPatch = {};
@@ -386,9 +464,6 @@ function buildWalletPatch(
   }
   if (form.walletGoogleEnabled !== original.walletGoogleEnabled) {
     patch.wallet_google_enabled = form.walletGoogleEnabled;
-  }
-  if (form.walletSemanticTagsEnabled !== original.walletSemanticTagsEnabled) {
-    patch.wallet_semantic_tags_enabled = form.walletSemanticTagsEnabled;
   }
   if (JSON.stringify(form.walletFieldMapping) !== JSON.stringify(original.walletFieldMapping)) {
     patch.wallet_field_mapping = buildWalletFieldMappingPatch(form.walletFieldMapping);
@@ -460,6 +535,9 @@ function buildSettingsPatch(form: SettingsForm, original: SettingsForm): Setting
   }
   if (form.eventHoursEnd !== original.eventHoursEnd) {
     patch.event_hours_end = form.eventHoursEnd.trim() || null;
+  }
+  if (form.eventType !== original.eventType) {
+    patch.event_type = form.eventType || null;
   }
   if (form.timezone !== original.timezone) patch.timezone = form.timezone;
   if (form.capacity.trim() !== original.capacity.trim()) {
@@ -1528,7 +1606,7 @@ export function EventSettingsPage() {
               />
             </div>
 
-            <div className="settings-field-row">
+            <div className="settings-field-row settings-field-row--3">
               <div className="settings-field-group">
                 <DatePicker
                   label="Date"
@@ -1537,7 +1615,7 @@ export function EventSettingsPage() {
                   disabled={isArchived || saving}
                   onChange={(next) => setForm({ ...form, date: next })}
                 />
-                <span className="at-hint">When the event takes place. Times and reports use the timezone below.</span>
+                <span className="at-hint">When the event takes place.</span>
               </div>
 
               <div className="settings-field-group">
@@ -1550,6 +1628,21 @@ export function EventSettingsPage() {
                   placeholder="500"
                   hint="Leave blank for unlimited."
                   onChange={(e) => setForm({ ...form, capacity: e.target.value })}
+                />
+              </div>
+
+              <div className="settings-field-group">
+                <SearchableSelect
+                  id="event-basic-event-type"
+                  label="Event type"
+                  placeholder="Not set"
+                  searchPlaceholder="Search event types…"
+                  emptyLabel="No event types found"
+                  value={form.eventType}
+                  options={EVENT_TYPE_SELECT_OPTIONS}
+                  disabled={isArchived || saving}
+                  hint="For Wallet's Siri/Maps/Calendar fields."
+                  onChange={(value) => setForm({ ...form, eventType: value as EventType | "" })}
                 />
               </div>
             </div>
@@ -1571,7 +1664,6 @@ export function EventSettingsPage() {
                       value={form.eventHoursEnd}
                       disabled={isArchived || saving}
                       onChange={(value) => setForm({ ...form, eventHoursEnd: value })}
-                      pickerAlign="end"
                     />
                   </div>
                 </div>
@@ -1867,19 +1959,6 @@ export function EventSettingsPage() {
                   />
                 </div>
                 <div className="settings-row smtp-connection-tls-row wallet-platform-row">
-                  <div className="settings-row__text">
-                    <strong>Semantic tags</strong>
-                    <p>{WALLET_SEMANTIC_TAGS_DESC}</p>
-                  </div>
-                  <Switch
-                    id="event-wallet-semantic-tags-enabled"
-                    aria-label="Semantic tags"
-                    checked={form.walletSemanticTagsEnabled}
-                    disabled={isArchived || saving || !form.walletAppleEnabled}
-                    onChange={(e) => setForm({ ...form, walletSemanticTagsEnabled: e.target.checked })}
-                  />
-                </div>
-                <div className="settings-row smtp-connection-tls-row wallet-platform-row">
                   <span className="wallet-platform-row__icon">
                     <i className="ti ti-brand-google" aria-hidden="true" />
                   </span>
@@ -1895,10 +1974,6 @@ export function EventSettingsPage() {
                     onChange={(e) => setForm({ ...form, walletGoogleEnabled: e.target.checked })}
                   />
                 </div>
-                {/* Empty grid cell, paired with Google Wallet's row - pushes Samsung Wallet
-                    below onto its own row instead of sharing Google's, since the 2-column
-                    grid auto-flows every child in DOM order. */}
-                <div aria-hidden="true" />
                 <div className="settings-row smtp-connection-tls-row wallet-platform-row">
                   <span className="wallet-platform-row__icon">
                     <SamsungWalletIcon />
@@ -1917,6 +1992,7 @@ export function EventSettingsPage() {
                 </div>
               </div>
               <div className="wallet-field-mapping">
+                <Notice variant="info">{WALLET_FIELD_MAPPING_SEMANTIC_TAGS_NOTICE}</Notice>
                 <div className="settings-row wallet-field-mapping__header">
                   <div className="settings-row__text">
                     <strong>Field mapping</strong>

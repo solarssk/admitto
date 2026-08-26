@@ -198,6 +198,18 @@
   gap: var(--space-4);
 }
 
+/* Date, Capacity, and Event type together - same reasoning as .settings-field-row, one more
+   short field added to the same row instead of its own mostly-empty line. */
+.settings-field-row--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 900px) {
+  .settings-field-row--3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* Event hours are related to the event's clock, so keep their two compact controls and the
    timezone chooser together on one row whenever the settings card has room. The range hint
    stays with its controls at the standard field-to-hint spacing instead of becoming a separate
@@ -255,9 +267,11 @@
 }
 
 /* Same value as .wallet-field-mapping__row's own margin-top below, so the gap under the
-   header reads identically whether it's followed by the default-mapping notice or the
-   first custom row. */
-.wallet-field-mapping .at-notice {
+   header reads identically whether it's followed by the empty-mapping notice or the
+   first custom row. Excludes the semantic-tags info notice above the header (:first-child) -
+   that one already sits flush against the container's own padding-top; this margin would only
+   push it down an extra, unwanted step. */
+.wallet-field-mapping .at-notice:not(:first-child) {
   margin-top: var(--space-3);
 }
 
@@ -306,18 +320,15 @@
   cursor: help;
 }
 
-/* Wallet toggle rows (Apple/Google/Samsung, plus the iconless Semantic tags feature toggle):
-   a colored circular icon badge spanning both the label and description lines, matching the
-   icon-badge pattern used in modal headers (e.g. requirements.css .event-item-modal__title i)
-   instead of a small inline glyph. With 3 flex children (icon, text, switch), the inherited
-   justify-content: space-between would split the free space into two equal gaps - a huge
-   icon-to-text gap as well as the intended text-to-switch one. Let the text block grow instead,
-   so the icon sits close to its label and only the trailing gap (before the switch) absorbs the
-   free space. The parent .smtp-connection-tls-pair's 2-column grid pairs each platform row with
-   the feature toggle beside it (Apple + Semantic tags share row 1) - every row needs both grid
-   cells filled in DOM order, so a platform row with no feature pair (Google) is followed by an
-   empty spacer div, or the next row's item would auto-flow into that empty cell instead of
-   starting its own row (see the JSX comment above the spacer before Samsung Wallet). */
+/* Wallet toggle rows (Apple/Google/Samsung): a colored circular icon badge spanning both the
+   label and description lines, matching the icon-badge pattern used in modal headers (e.g.
+   requirements.css .event-item-modal__title i) instead of a small inline glyph. With 3 flex
+   children (icon, text, switch), the inherited justify-content: space-between would split the
+   free space into two equal gaps - a huge icon-to-text gap as well as the intended
+   text-to-switch one. Let the text block grow instead, so the icon sits close to its label and
+   only the trailing gap (before the switch) absorbs the free space. The parent
+   .smtp-connection-tls-pair's 2-column grid auto-flows the three rows normally (Apple + Google
+   share row 1, Samsung takes row 2 alone) - no spacer cells needed. */
 .wallet-platform-row {
   gap: var(--space-3);
   justify-content: flex-start;

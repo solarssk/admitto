@@ -167,7 +167,6 @@ const activeEvent = {
   wallet_api_key: { configured: false },
   wallet_apple_enabled: false,
   wallet_google_enabled: false,
-  wallet_semantic_tags_enabled: false,
   wallet_field_mapping: null as Record<string, string> | null,
 };
 
@@ -447,14 +446,11 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByText("Basic information")).toBeTruthy();
     expect(screen.getByText("Status")).toBeTruthy();
     expect(
-      screen.getByText("When the event takes place. Times and reports use the timezone below."),
+      screen.getByText("When the event takes place."),
     ).toBeTruthy();
     const schedule = screen.getByText("Event hours (start)").closest(".settings-event-schedule");
     expect(schedule).not.toBeNull();
     expect(screen.getByText("Event timezone").closest(".settings-event-schedule")).toBe(schedule);
-    expect(screen.getByLabelText("Event hours (end)").closest(".time-input")?.classList).toContain(
-      "time-input--picker-end",
-    );
     const titleInput = screen.getByLabelText("Event title") as HTMLInputElement;
     expect(titleInput.getAttribute("data-bwignore")).toBe("true");
     expect(titleInput.getAttribute("data-1p-ignore")).toBe("true");
@@ -510,6 +506,40 @@ describe("EventSettingsPage tabs", () => {
         event_hours_start: null,
         event_hours_end: null,
       });
+    });
+  });
+
+  it("saves the Event type through the event patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, event_type: "conference" },
+    });
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    fireEvent.click(screen.getByRole("button", { name: "Event type, none selected" }));
+    fireEvent.click(screen.getByRole("button", { name: "Conference" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { event_type: "conference" });
+    });
+  });
+
+  it("clears the Event type back to Not set through the event patch", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, event_type: "conference" });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, event_type: null },
+    });
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    fireEvent.click(screen.getByRole("button", { name: "Event type, Conference" }));
+    fireEvent.click(screen.getByRole("button", { name: "Not set" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { event_type: null });
     });
   });
 
@@ -1095,43 +1125,17 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByText("PassCreator")).toBeTruthy();
     expect(screen.getByLabelText("Apple Wallet")).toBeTruthy();
     expect(screen.getByLabelText("Google Wallet")).toBeTruthy();
-    expect(screen.getByLabelText("Semantic tags")).toBeTruthy();
     expect((screen.getByLabelText("Samsung Wallet") as HTMLInputElement).disabled).toBe(true);
   });
 
-  it("disables the Semantic tags switch while Apple Wallet is off, and enables it once Apple Wallet is on", async () => {
-    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, wallet_apple_enabled: false });
+  it("shows a Notice explaining that field mapping alone does not deliver Semantic Tags", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
     await waitFor(() => {
       expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
     });
 
-    expect((screen.getByLabelText("Semantic tags") as HTMLInputElement).disabled).toBe(true);
-
-    fireEvent.click(screen.getByLabelText("Apple Wallet"));
-    expect((screen.getByLabelText("Semantic tags") as HTMLInputElement).disabled).toBe(false);
-  });
-
-  it("saves the semantic tags toggle through the event patch", async () => {
-    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
-      ...activeEvent,
-      wallet_apple_enabled: true,
-      wallet_semantic_tags_enabled: false,
-    });
-    vi.mocked(patchEvent).mockResolvedValueOnce({
-      event: { ...activeEvent, wallet_apple_enabled: true, wallet_semantic_tags_enabled: true },
-    });
-    renderSettings("/admin/events/evt-1/settings?tab=wallet");
-    await waitFor(() => {
-      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByLabelText("Semantic tags"));
-    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
-
-    await waitFor(() => {
-      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_semantic_tags_enabled: true });
-    });
+    expect(screen.getByText(/mapping alone is not enough/i)).toBeTruthy();
   });
 
   it("saves the wallet API key and platform toggles through the event patch", async () => {
@@ -1500,6 +1504,53 @@ describe("EventSettingsPage tabs", () => {
     // "from"/"until" range for this case), and the abbreviation matches what the real pass sends.
     await waitFor(() => {
       expect(screen.getByRole("tooltip").textContent).toBe("from 18:00 GMT+2");
+    });
+  });
+
+  it("previews the Event type placeholder using its own label, not the raw DB value", async () => {
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce(emptyLocation);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      event_type: "social_gathering",
+      wallet_field_mapping: { category: "event_type" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const trigger = screen.getByRole("button", { name: "Value, Event type" });
+    const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+    const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+    fireEvent.mouseEnter(hintTrigger);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tooltip").textContent).toBe("Social gathering");
+    });
+  });
+
+  it("previews the Event type placeholder as not set when the event has no category", async () => {
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce(emptyLocation);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: { category: "event_type" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const trigger = screen.getByRole("button", { name: "Value, Event type" });
+    const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+    const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+    fireEvent.mouseEnter(hintTrigger);
+
+    await waitFor(() => {
+      expect(screen.getByRole("tooltip").textContent).toBe(
+        "Not set for this event - this field won't be sent.",
+      );
     });
   });
 

@@ -16,6 +16,20 @@ export interface LocationDraft {
   address_components: AddressComponents;
   google_maps_url_override: string;
   apple_maps_url_override: string;
+  venue_room: string;
+  venue_entrance: string;
+  venue_entrance_door: string;
+  venue_entrance_gate: string;
+  venue_entrance_portal: string;
+  venue_phone_number: string;
+  venue_place_id: string;
+  venue_open_time: string;
+  venue_close_time: string;
+  doors_open_time: string;
+  gates_open_time: string;
+  box_office_open_time: string;
+  parking_lots_open_time: string;
+  fan_zone_open_time: string;
 }
 
 function componentsEqual(a: AddressComponents, b: AddressComponents): boolean {
@@ -41,6 +55,20 @@ export function draftFromLocation(data: EventLocationDto): LocationDraft {
     address_components: data.address_components ?? { ...EMPTY_ADDRESS_COMPONENTS },
     google_maps_url_override: data.google_maps_url_override ?? "",
     apple_maps_url_override: data.apple_maps_url_override ?? "",
+    venue_room: data.venue_room ?? "",
+    venue_entrance: data.venue_entrance ?? "",
+    venue_entrance_door: data.venue_entrance_door ?? "",
+    venue_entrance_gate: data.venue_entrance_gate ?? "",
+    venue_entrance_portal: data.venue_entrance_portal ?? "",
+    venue_phone_number: data.venue_phone_number ?? "",
+    venue_place_id: data.venue_place_id ?? "",
+    venue_open_time: data.venue_open_time ?? "",
+    venue_close_time: data.venue_close_time ?? "",
+    doors_open_time: data.doors_open_time ?? "",
+    gates_open_time: data.gates_open_time ?? "",
+    box_office_open_time: data.box_office_open_time ?? "",
+    parking_lots_open_time: data.parking_lots_open_time ?? "",
+    fan_zone_open_time: data.fan_zone_open_time ?? "",
   };
 }
 
@@ -55,7 +83,21 @@ export function isLocationDirty(draft: LocationDraft, saved: LocationDraft): boo
     draft.accessibility_text.trim() !== saved.accessibility_text.trim() ||
     !componentsEqual(draft.address_components, saved.address_components) ||
     draft.google_maps_url_override.trim() !== saved.google_maps_url_override.trim() ||
-    draft.apple_maps_url_override.trim() !== saved.apple_maps_url_override.trim()
+    draft.apple_maps_url_override.trim() !== saved.apple_maps_url_override.trim() ||
+    draft.venue_room.trim() !== saved.venue_room.trim() ||
+    draft.venue_entrance.trim() !== saved.venue_entrance.trim() ||
+    draft.venue_entrance_door.trim() !== saved.venue_entrance_door.trim() ||
+    draft.venue_entrance_gate.trim() !== saved.venue_entrance_gate.trim() ||
+    draft.venue_entrance_portal.trim() !== saved.venue_entrance_portal.trim() ||
+    draft.venue_phone_number.trim() !== saved.venue_phone_number.trim() ||
+    draft.venue_place_id.trim() !== saved.venue_place_id.trim() ||
+    draft.venue_open_time.trim() !== saved.venue_open_time.trim() ||
+    draft.venue_close_time.trim() !== saved.venue_close_time.trim() ||
+    draft.doors_open_time.trim() !== saved.doors_open_time.trim() ||
+    draft.gates_open_time.trim() !== saved.gates_open_time.trim() ||
+    draft.box_office_open_time.trim() !== saved.box_office_open_time.trim() ||
+    draft.parking_lots_open_time.trim() !== saved.parking_lots_open_time.trim() ||
+    draft.fan_zone_open_time.trim() !== saved.fan_zone_open_time.trim()
   );
 }
 
@@ -114,6 +156,62 @@ export function buildEventLocationPatchBody(
   const appleOverride = draft.apple_maps_url_override.trim();
   if (appleOverride !== saved.apple_maps_url_override.trim()) {
     body.apple_maps_url_override = appleOverride || null;
+  }
+
+  const venueRoom = draft.venue_room.trim();
+  if (venueRoom !== saved.venue_room.trim()) body.venue_room = venueRoom || null;
+
+  const venueEntrance = draft.venue_entrance.trim();
+  if (venueEntrance !== saved.venue_entrance.trim()) body.venue_entrance = venueEntrance || null;
+
+  const venueEntranceDoor = draft.venue_entrance_door.trim();
+  if (venueEntranceDoor !== saved.venue_entrance_door.trim()) {
+    body.venue_entrance_door = venueEntranceDoor || null;
+  }
+
+  const venueEntranceGate = draft.venue_entrance_gate.trim();
+  if (venueEntranceGate !== saved.venue_entrance_gate.trim()) {
+    body.venue_entrance_gate = venueEntranceGate || null;
+  }
+
+  const venueEntrancePortal = draft.venue_entrance_portal.trim();
+  if (venueEntrancePortal !== saved.venue_entrance_portal.trim()) {
+    body.venue_entrance_portal = venueEntrancePortal || null;
+  }
+
+  const venuePhoneNumber = draft.venue_phone_number.trim();
+  if (venuePhoneNumber !== saved.venue_phone_number.trim()) {
+    body.venue_phone_number = venuePhoneNumber || null;
+  }
+
+  const venuePlaceId = draft.venue_place_id.trim();
+  if (venuePlaceId !== saved.venue_place_id.trim()) body.venue_place_id = venuePlaceId || null;
+
+  const venueOpenTime = draft.venue_open_time.trim();
+  if (venueOpenTime !== saved.venue_open_time.trim()) body.venue_open_time = venueOpenTime || null;
+
+  const venueCloseTime = draft.venue_close_time.trim();
+  if (venueCloseTime !== saved.venue_close_time.trim()) body.venue_close_time = venueCloseTime || null;
+
+  const doorsOpenTime = draft.doors_open_time.trim();
+  if (doorsOpenTime !== saved.doors_open_time.trim()) body.doors_open_time = doorsOpenTime || null;
+
+  const gatesOpenTime = draft.gates_open_time.trim();
+  if (gatesOpenTime !== saved.gates_open_time.trim()) body.gates_open_time = gatesOpenTime || null;
+
+  const boxOfficeOpenTime = draft.box_office_open_time.trim();
+  if (boxOfficeOpenTime !== saved.box_office_open_time.trim()) {
+    body.box_office_open_time = boxOfficeOpenTime || null;
+  }
+
+  const parkingLotsOpenTime = draft.parking_lots_open_time.trim();
+  if (parkingLotsOpenTime !== saved.parking_lots_open_time.trim()) {
+    body.parking_lots_open_time = parkingLotsOpenTime || null;
+  }
+
+  const fanZoneOpenTime = draft.fan_zone_open_time.trim();
+  if (fanZoneOpenTime !== saved.fan_zone_open_time.trim()) {
+    body.fan_zone_open_time = fanZoneOpenTime || null;
   }
 
   const coordinatesChanged = body.latitude !== undefined || body.longitude !== undefined;
