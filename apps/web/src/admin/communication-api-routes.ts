@@ -598,7 +598,7 @@ export async function handleListEventDeliveries(c: Context, db: PrismaClient): P
   if (forbidden) return forbidden;
 
   const page = positiveIntQuery(c.req.query("page"), 1);
-  const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 100);
+  const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 200);
 
   const filters = buildDeliveryFilters(c);
   if (filters instanceof Response) return filters;
