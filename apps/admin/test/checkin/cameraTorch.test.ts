@@ -89,6 +89,33 @@ describe("useCameraTorch", () => {
     expect(result.current.torchOn).toBe(false);
   });
 
+  it("a second tap before the first applyConstraints resolves still ends up off (bot review — was stuck on)", async () => {
+    const track = mockTrack({ torch: true });
+    const { result } = renderHook(() => useCameraTorch());
+    act(() => result.current.onTrackChange(track));
+
+    // Two taps back to back in the same tick, both before either
+    // applyConstraints call has settled - a prior implementation had both
+    // read the same stale `torchOn` (false) from the same closure, so both
+    // requested `torch: true` and the second tap couldn't turn it off.
+    act(() => {
+      result.current.toggleTorch();
+      result.current.toggleTorch();
+    });
+
+    await act(async () => {
+      // toggleTorch chains each applyConstraints call onto the previous
+      // one's full promise (call → state update), so draining the second
+      // call needs more than one microtask turn.
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+
+    expect(track.applyConstraints).toHaveBeenNthCalledWith(1, { advanced: [{ torch: true }] });
+    expect(track.applyConstraints).toHaveBeenNthCalledWith(2, { advanced: [{ torch: false }] });
+    // The second (later) tap's intent — torch off — is what actually shows.
+    expect(result.current.torchOn).toBe(false);
+  });
+
   it("leaves torchOn unchanged when applyConstraints rejects (capability lied, or a mid-session driver failure)", async () => {
     const track = mockTrack({
       torch: true,

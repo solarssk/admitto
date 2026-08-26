@@ -116,8 +116,8 @@ describe("check-in camera torch toggle — mobile overlay", () => {
     const torchButton = await screen.findByRole("button", { name: "Turn on torch" });
     fireEvent.click(torchButton);
 
-    expect(track.applyConstraints).toHaveBeenCalledWith({ advanced: [{ torch: true }] });
     await screen.findByRole("button", { name: "Turn off torch" });
+    expect(track.applyConstraints).toHaveBeenCalledWith({ advanced: [{ torch: true }] });
   });
 
   it("does not render the torch button for a track that doesn't support it (most phones/laptops)", async () => {
@@ -156,7 +156,7 @@ describe("check-in camera torch toggle — desktop operator action bar", () => {
     const torchButton = await screen.findByRole("button", { name: "Turn on torch" });
     fireEvent.click(torchButton);
 
-    expect(track.applyConstraints).toHaveBeenCalledWith({ advanced: [{ torch: true }] });
     await screen.findByRole("button", { name: "Turn off torch" });
+    expect(track.applyConstraints).toHaveBeenCalledWith({ advanced: [{ torch: true }] });
   });
 });
