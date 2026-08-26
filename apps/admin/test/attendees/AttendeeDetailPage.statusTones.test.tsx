@@ -141,6 +141,19 @@ describe("AttendeeDetailPage status strip icon tones (Codecov review — passSta
 
     expect(chipIconClasses(container, "Attendance")).toContain("attendee-status-chip__icon--neutral");
   });
+
+  it("shows a neutral (not error) Ticket delivery icon for a stopped send, distinct from the RSVP domain's cancelled tone", async () => {
+    // Regression: mailTone() used to resolve the raw "cancelled" status straight against the
+    // shared status-map, landing on the unrelated attendee/RSVP "cancelled" entry (error/red) -
+    // the same collision fixed for MailStatusBadge itself, but this icon read the status
+    // separately and was missed in that pass.
+    mockLoad(baseDetail({ last_mail_status: "cancelled" }));
+    const { container } = renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(chipIconClasses(container, "Ticket delivery")).toContain("attendee-status-chip__icon--neutral");
+    expect(chipIconClasses(container, "Ticket delivery")).not.toContain("attendee-status-chip__icon--error");
+  });
 });
 
 describe("AttendeeDetailPage Activity log tab (Codecov review — action_log rendering was never exercised)", () => {
@@ -206,5 +219,45 @@ describe("AttendeeDetailPage Delivery history (Codecov review — the no-timesta
     await screen.findByRole("heading", { name: "Anna" });
 
     expect(screen.getByText("Your ticket").closest(".attendee-delivery")?.textContent).toContain("-");
+  });
+
+  it("shows a neutral icon tooltip for a cancelled delivery row, not the RSVP domain's error tone", async () => {
+    mockLoad(
+      baseDetail({
+        deliveries: [
+          {
+            id: "del-cancelled",
+            attendee_id: "att-1",
+            attendee_name: "Anna",
+            purpose: "initial",
+            status: "cancelled",
+            provider: "graph",
+            provider_message_id: null,
+            attempts: 1,
+            retryable: null,
+            recipient_email: "anna@example.com",
+            rendered_subject: "Your ticket",
+            template_id: null,
+            template_name: null,
+            queued_at: "2026-01-02T10:00:00.000Z",
+            accepted_at: null,
+            sent_at: null,
+            failed_at: null,
+            error_code: null,
+            error: null,
+            client_timezone: null,
+          },
+        ],
+      }),
+    );
+    const { container } = renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    const row = screen.getByText("Your ticket").closest(".attendee-delivery");
+    expect(row?.querySelector(".ti-ban")).toBeTruthy();
+    const icon = row?.querySelector(".attendee-delivery__icon");
+    expect(icon?.className).toContain("attendee-delivery__icon--neutral");
+    expect(icon?.getAttribute("aria-label")).toBe("Cancelled");
+    expect(container.querySelector(".attendee-delivery__icon--error")).toBeNull();
   });
 });

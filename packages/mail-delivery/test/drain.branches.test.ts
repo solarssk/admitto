@@ -179,6 +179,28 @@ describe("drainPendingDeliveries branch coverage", () => {
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
   });
 
+  it("counts an empty provider result as skipped, not failed, when the row was cancelled during the send call", async () => {
+    await enqueueOne();
+    const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
+    const batchId = "batch-cancel-empty-result-race";
+    await prisma.emailDelivery.update({ where: { id: row.id }, data: { batch_id: batchId } });
+
+    vi.mocked(sendBatch).mockImplementationOnce(async () => {
+      await cancelBulkSendBatch(prisma, EVENT_ID, batchId);
+      return { total: 1, sent: 0, failed: 1, results: [] };
+    });
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
+    const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after.status).toBe("cancelled");
+  });
+
   it("counts rejected provider results as failed", async () => {
     await enqueueOne();
     vi.mocked(sendBatch).mockResolvedValueOnce({
@@ -452,6 +474,30 @@ describe("drainPendingDeliveries branch coverage", () => {
     expect(bad.attempts).toBeGreaterThanOrEqual(1);
     const ok = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_B } });
     expect(ok.status).toBe("accepted");
+  });
+
+  it("counts a row cancelled while mailer setup was failing as skipped, not failed", async () => {
+    // The per-event mailer-setup-failure loop shares markClaimedRowFailed's cancelled-row guard
+    // with the per-row send path - this exercises that guard from the other call site.
+    await enqueueOne();
+    const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
+    const batchId = "batch-cancel-mailer-setup-race";
+    await prisma.emailDelivery.update({ where: { id: row.id }, data: { batch_id: batchId } });
+
+    vi.mocked(resolveMailConfig).mockImplementationOnce(async () => {
+      await cancelBulkSendBatch(prisma, EVENT_ID, batchId);
+      throw new Error("bad transport config");
+    });
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
+    const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after.status).toBe("cancelled");
   });
 
   it("marks claimed rows failed when createMailer throws", async () => {

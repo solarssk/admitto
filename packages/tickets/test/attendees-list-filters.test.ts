@@ -97,6 +97,10 @@ describe("not_sent bucket real behavior (bulk-send-cancel)", () => {
   });
 
   afterAll(async () => {
+    await prisma.emailDelivery.deleteMany({ where: { event_id: EVENT_ID } });
+    await prisma.attendee.deleteMany({ where: { event_id: EVENT_ID } });
+    await prisma.event.delete({ where: { id: EVENT_ID } });
+    await prisma.organization.delete({ where: { id: "org_default" } });
     await prisma.$disconnect();
   });
 

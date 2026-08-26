@@ -264,6 +264,57 @@ describe("CommunicationSendPanel", () => {
     });
   });
 
+  it("dismisses the Stop confirmation dialog on Cancel without calling the cancel API", async () => {
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 10, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 5, sent: 3, failed: 2, cancelled: 0 });
+
+    render(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
+    expect(screen.getByText("Stop this send?")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByText("Stop this send?")).toBeNull();
+    expect(cancelBulkSend).not.toHaveBeenCalled();
+  });
+
+  it("ignores a backdrop dismiss on the Stop dialog while a cancel request is still in flight", async () => {
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 10, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 5, sent: 3, failed: 2, cancelled: 0 });
+    let resolveCancel: ((value: unknown) => void) | undefined;
+    cancelBulkSend.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCancel = resolve;
+        }),
+    );
+
+    const { container } = render(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Stop" })[1]);
+
+    await waitFor(() => {
+      expect(cancelBulkSend).toHaveBeenCalled();
+    });
+    // ModalBackdrop's click-outside-to-close isn't gated by the dialog's own loading state
+    // (unlike its Cancel button, which ConfirmDialog itself disables while loading) - the
+    // guard in the panel's own onCancel handler is what stops a request already in flight
+    // from being dismissed out from under itself.
+    fireEvent.click(container.querySelector(".at-modal-backdrop") as HTMLElement);
+    expect(screen.getByText("Stop this send?")).toBeTruthy();
+
+    await act(async () => {
+      resolveCancel?.({ batchId: "batch-1", cancelled: 5 });
+      await Promise.resolve();
+    });
+  });
+
   it("shows the cancel API's error inside the Stop confirmation dialog instead of dismissing it", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 10, skipped: 0, failed: 0 });

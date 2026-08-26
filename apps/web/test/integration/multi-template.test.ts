@@ -1165,6 +1165,35 @@ describe("multi-template API", () => {
     expect(await res.json()).toEqual({ error: "not_found" });
   });
 
+  it("POST /send/:batchId/cancel returns forbidden for an event outside the caller's organization", async () => {
+    const foreignOrgId = "org-cancel-forbidden";
+    const foreignEventId = "evt-cancel-forbidden";
+    await prisma.organization.upsert({
+      where: { id: foreignOrgId },
+      create: { id: foreignOrgId, name: "Foreign Org", slug: "cancel-forbidden-org" },
+      update: {},
+    });
+    await prisma.event.upsert({
+      where: { id: foreignEventId },
+      create: {
+        id: foreignEventId,
+        title: "Foreign Event",
+        slug: "cancel-forbidden-event",
+        date: new Date("2026-10-01"),
+        organization_id: foreignOrgId,
+      },
+      update: {},
+    });
+
+    const res = await app.request(`/api/admin/events/${foreignEventId}/send/some-batch/cancel`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "forbidden" });
+  });
+
   it("POST /templates/:id/test-send sends using the selected template", async () => {
     await putTicketTemplate(app);
     const TEST_SUBJECT = "BY-ID-CUSTOM-SUBJECT-7f3a";

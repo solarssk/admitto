@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   countDeliveryOutcomes,
   deliveryHistoryIcon,
+  deliveryStatusBadgeKey,
   formatDeliveryHistoryTime,
   formatDeliveryHistoryTimeParts,
   rowTimestamp,
@@ -93,6 +94,18 @@ describe("deliveryHistoryIcon", () => {
   it("uses ban for a cancelled row, distinct from a failure", () => {
     expect(deliveryHistoryIcon("initial", "cancelled")).toBe("ban");
     expect(deliveryHistoryIcon("resend", "cancelled")).toBe("ban");
+  });
+});
+
+describe("deliveryStatusBadgeKey", () => {
+  it("remaps a cancelled EmailDelivery status to the dedicated mail_cancelled badge key", () => {
+    expect(deliveryStatusBadgeKey("cancelled")).toBe("mail_cancelled");
+  });
+
+  it("passes every other status through unchanged", () => {
+    for (const status of ["queued", "accepted", "sent", "delivered", "failed", "bounced", "rejected"]) {
+      expect(deliveryStatusBadgeKey(status)).toBe(status);
+    }
   });
 });
 

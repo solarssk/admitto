@@ -1,6 +1,6 @@
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { claimInitialDelivery } from "../src/claim.js";
 import { resetDb } from "./resetDb.js";
 
@@ -45,6 +45,10 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await prisma.emailDelivery.deleteMany({ where: { attendee_id: ATT_ID } });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 afterAll(async () => {
@@ -207,6 +211,97 @@ describe("claimInitialDelivery", () => {
     expect(row?.status).toBe("queued");
     expect(row?.actor_user_id).toBe("user-retry-actor");
     expect(row?.session_id).toBe("session-retry-actor");
+  });
+
+  it("reclaims a cancelled initial delivery with this request's fresh content, not the stale frozen message", async () => {
+    await prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG_ID,
+        event_id: EVENT_ID,
+        attendee_id: ATT_ID,
+        purpose: "initial",
+        batch_id: "old-cancelled-batch",
+        provider: "export_only",
+        status: "cancelled",
+        attempts: 1,
+        recipient_email: "claim@example.com",
+        rendered_subject: "Stale subject from the stopped send",
+        rendered_html: "<p>Stale body</p>",
+        queued_at: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    });
+
+    const result = await claimInitialDelivery(
+      {
+        ...claimInput,
+        batchId: "fresh-batch",
+        renderedSubject: "Fresh subject",
+        renderedHtml: "<p>Fresh body</p>",
+        actorUserId: "user-reclaim-actor",
+        sessionId: "session-reclaim-actor",
+      },
+      prisma,
+    );
+
+    // Reported as a fresh "send", not "retry_existing" - unlike a failed-row retry, this row's
+    // content just changed underneath it, so it's not meaningfully "the same send, try again".
+    expect(result.action).toBe("send");
+    if (result.action !== "send") return;
+    expect(result.message).toEqual({
+      to: "claim@example.com",
+      subject: "Fresh subject",
+      html: "<p>Fresh body</p>",
+    });
+
+    const row = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: ATT_ID, purpose: "initial" },
+    });
+    expect(row?.id).toBe(result.deliveryId);
+    expect(row?.batch_id).toBe("fresh-batch");
+    expect(row?.status).toBe("queued");
+    expect(row?.rendered_subject).toBe("Fresh subject");
+    expect(row?.rendered_html).toBe("<p>Fresh body</p>");
+    expect(row?.attempts).toBe(1);
+    expect(row?.actor_user_id).toBe("user-reclaim-actor");
+    expect(row?.session_id).toBe("session-reclaim-actor");
+  });
+
+  it("returns skip in_flight when a concurrent claim wins the cancelled-row reclaim", async () => {
+    // A genuine Promise.all race against a real DB doesn't reliably land both calls inside the
+    // same narrow window (in practice the first call's whole claim/update cycle usually finishes
+    // before the second one even reads the row, so the second one already sees "queued" via
+    // classifyExisting rather than losing the guarded update itself) - this instead deterministically
+    // injects the loss at the exact point it matters: right before this call's own guarded
+    // updateMany runs, something else flips the row to "queued" first.
+    const row = await prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG_ID,
+        event_id: EVENT_ID,
+        attendee_id: ATT_ID,
+        purpose: "initial",
+        batch_id: "old-cancelled-batch",
+        provider: "export_only",
+        status: "cancelled",
+        attempts: 1,
+        recipient_email: "claim@example.com",
+        rendered_subject: "Subject",
+        rendered_html: "<p>Hi</p>",
+        queued_at: new Date(),
+      },
+    });
+
+    const realUpdateMany = prisma.emailDelivery.updateMany.bind(prisma.emailDelivery);
+    vi.spyOn(prisma.emailDelivery, "updateMany").mockImplementationOnce(async (args) => {
+      await realUpdateMany({ where: { id: row.id, status: "cancelled" }, data: { status: "queued" } });
+      return realUpdateMany(args);
+    });
+
+    const result = await claimInitialDelivery({ ...claimInput, batchId: "batch-a" }, prisma);
+
+    expect(result).toEqual({ action: "skip", reason: "in_flight" });
+    const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after.status).toBe("queued");
+    expect(after.batch_id).toBe("old-cancelled-batch");
   });
 
   it("returns skip when a concurrent retry claim wins the update", async () => {
