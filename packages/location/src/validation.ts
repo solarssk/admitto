@@ -9,6 +9,8 @@ export const LOCATION_LIMITS = {
   VENUE_NAME_MAX_LENGTH: 300,
   ADDRESS_MAX_LENGTH: 500,
   TEXT_MAX_LENGTH: 2000,
+  /** Venue identifier fields (room, entrance, phone, place ID) - same cap as VENUE_NAME_MAX_LENGTH. */
+  SHORT_TEXT_MAX_LENGTH: 300,
   /** Same cap as other long Location text fields (directions / accessibility). */
   MAPS_URL_OVERRIDE_MAX_LENGTH: 2000,
   LATITUDE_MIN: -90,
@@ -44,6 +46,23 @@ function normalizeText(
   return trimmed;
 }
 
+/** Trims/validates a display-only "HH:MM" 24h wall-clock time field. Same shape as
+ * apps/web/src/admin/admin-helpers.ts's `eventHoursField` Zod regex, applied here at the domain
+ * layer for EventLocation's 7 access-point timing fields. */
+function normalizeTimeField(
+  value: string | null | undefined,
+  fieldName: string,
+): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(trimmed)) {
+    throw new LocationValidationError(`${fieldName} must be a 24h HH:MM time`);
+  }
+  return trimmed;
+}
+
 function normalizeCoordinate(
   value: number | null | undefined,
   min: number,
@@ -72,6 +91,20 @@ export interface NormalizedEventLocationInput {
   address_components?: AddressComponents | null;
   google_maps_url_override?: string | null;
   apple_maps_url_override?: string | null;
+  venue_room?: string | null;
+  venue_entrance?: string | null;
+  venue_entrance_door?: string | null;
+  venue_entrance_gate?: string | null;
+  venue_entrance_portal?: string | null;
+  venue_phone_number?: string | null;
+  venue_place_id?: string | null;
+  venue_open_time?: string | null;
+  venue_close_time?: string | null;
+  doors_open_time?: string | null;
+  gates_open_time?: string | null;
+  box_office_open_time?: string | null;
+  parking_lots_open_time?: string | null;
+  fan_zone_open_time?: string | null;
 }
 
 function normalizeMapZoom(value: number | null | undefined): number | undefined {
@@ -204,6 +237,75 @@ export function normalizeEventLocationInput(input: EventLocationInput): Normaliz
     "apple_maps_url_override",
   );
   if (appleOverride !== undefined) result.apple_maps_url_override = appleOverride;
+
+  const venueRoom = normalizeText(input.venue_room, LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH, "venue_room");
+  if (venueRoom !== undefined) result.venue_room = venueRoom;
+
+  const venueEntrance = normalizeText(
+    input.venue_entrance,
+    LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH,
+    "venue_entrance",
+  );
+  if (venueEntrance !== undefined) result.venue_entrance = venueEntrance;
+
+  const venueEntranceDoor = normalizeText(
+    input.venue_entrance_door,
+    LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH,
+    "venue_entrance_door",
+  );
+  if (venueEntranceDoor !== undefined) result.venue_entrance_door = venueEntranceDoor;
+
+  const venueEntranceGate = normalizeText(
+    input.venue_entrance_gate,
+    LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH,
+    "venue_entrance_gate",
+  );
+  if (venueEntranceGate !== undefined) result.venue_entrance_gate = venueEntranceGate;
+
+  const venueEntrancePortal = normalizeText(
+    input.venue_entrance_portal,
+    LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH,
+    "venue_entrance_portal",
+  );
+  if (venueEntrancePortal !== undefined) result.venue_entrance_portal = venueEntrancePortal;
+
+  const venuePhoneNumber = normalizeText(
+    input.venue_phone_number,
+    LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH,
+    "venue_phone_number",
+  );
+  if (venuePhoneNumber !== undefined) result.venue_phone_number = venuePhoneNumber;
+
+  const venuePlaceId = normalizeText(
+    input.venue_place_id,
+    LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH,
+    "venue_place_id",
+  );
+  if (venuePlaceId !== undefined) result.venue_place_id = venuePlaceId;
+
+  const venueOpenTime = normalizeTimeField(input.venue_open_time, "venue_open_time");
+  if (venueOpenTime !== undefined) result.venue_open_time = venueOpenTime;
+
+  const venueCloseTime = normalizeTimeField(input.venue_close_time, "venue_close_time");
+  if (venueCloseTime !== undefined) result.venue_close_time = venueCloseTime;
+
+  const doorsOpenTime = normalizeTimeField(input.doors_open_time, "doors_open_time");
+  if (doorsOpenTime !== undefined) result.doors_open_time = doorsOpenTime;
+
+  const gatesOpenTime = normalizeTimeField(input.gates_open_time, "gates_open_time");
+  if (gatesOpenTime !== undefined) result.gates_open_time = gatesOpenTime;
+
+  const boxOfficeOpenTime = normalizeTimeField(input.box_office_open_time, "box_office_open_time");
+  if (boxOfficeOpenTime !== undefined) result.box_office_open_time = boxOfficeOpenTime;
+
+  const parkingLotsOpenTime = normalizeTimeField(
+    input.parking_lots_open_time,
+    "parking_lots_open_time",
+  );
+  if (parkingLotsOpenTime !== undefined) result.parking_lots_open_time = parkingLotsOpenTime;
+
+  const fanZoneOpenTime = normalizeTimeField(input.fan_zone_open_time, "fan_zone_open_time");
+  if (fanZoneOpenTime !== undefined) result.fan_zone_open_time = fanZoneOpenTime;
 
   return result;
 }
