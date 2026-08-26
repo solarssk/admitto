@@ -405,7 +405,7 @@ describe("EventCustomFieldModal — edit", () => {
     });
   });
 
-  it("reorders options with the up/down arrow keys on the drag handle", async () => {
+  it("reorders options with the up arrow key on the drag handle", async () => {
     vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, options: ["M", "S", "L"] });
     renderModal(shirtField);
     await waitForUsageLoaded();
@@ -421,6 +421,31 @@ describe("EventCustomFieldModal — edit", () => {
         options: ["M", "S", "L"],
       });
     });
+  });
+
+  it("reorders options with the down arrow key on the drag handle", async () => {
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, options: ["M", "S", "L"] });
+    renderModal(shirtField);
+    await waitForUsageLoaded();
+    const handles = screen.getAllByLabelText(/Drag to reorder/);
+    fireEvent.keyDown(handles[0]!, { key: "ArrowDown" }); // move S below M
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
+        label: "Shirt size",
+        description: null,
+        type: "select",
+        required: false,
+        options: ["M", "S", "L"],
+      });
+    });
+  });
+
+  it("shows an inline error and keeps Save disabled when the usage fetch fails", async () => {
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockRejectedValueOnce(new Error("network error"));
+    renderModal(shirtField);
+    expect(await screen.findByText(/Could not load how many attendees use each option/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Checking usage…" }).hasAttribute("disabled")).toBe(true);
   });
 
   it("gates Save behind a confirmation when a rename affects attendees, and proceeds on Save anyway", async () => {
@@ -446,5 +471,56 @@ describe("EventCustomFieldModal — edit", () => {
         options: ["S", "Medium", "L"],
       });
     });
+  });
+
+  it("cancelling the risky-rename confirmation saves nothing and leaves the draft editable", async () => {
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ M: 42 });
+    renderModal(shirtField);
+    await waitForUsageLoaded();
+    const mInput = screen.getAllByLabelText("Option text")[1]!;
+    fireEvent.change(mInput, { target: { value: "Medium" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("This will affect existing attendees")).toBeTruthy();
+
+    // The modal's own "Cancel" (close the whole form) is also on screen behind the confirmation -
+    // the confirmation's own Cancel is the last one added to the DOM.
+    const cancelButtons = screen.getAllByRole("button", { name: "Cancel" });
+    fireEvent.click(cancelButtons[cancelButtons.length - 1]!);
+    await waitFor(() => {
+      expect(screen.queryByText("This will affect existing attendees")).toBeNull();
+    });
+    expect(updateEventCustomField).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue("Medium")).toBeTruthy();
+  });
+
+  it("uses singular wording when a rename affects exactly one attendee", async () => {
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ S: 1 });
+    renderModal(shirtField);
+    await waitForUsageLoaded();
+    const sInput = screen.getAllByLabelText("Option text")[0]!;
+    fireEvent.change(sInput, { target: { value: "Small" } });
+    expect(await screen.findByText(/1 attendee currently has “S”/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText(/Renaming “S” to “Small” affects 1 attendee\./)).toBeTruthy();
+  });
+
+  it("never saves while the usage-count fetch is still pending, even if the form is submitted directly", async () => {
+    let resolveUsage!: (counts: Record<string, number>) => void;
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveUsage = resolve;
+      }),
+    );
+    const { container } = renderWithToast(
+      <EventCustomFieldModal eventId="evt-1" field={shirtField} onClose={vi.fn()} onSaved={vi.fn()} />,
+    );
+    const form = container.querySelector("#custom-field-form")!;
+    fireEvent.submit(form);
+    expect(updateEventCustomField).not.toHaveBeenCalled();
+
+    resolveUsage({});
+    await waitForUsageLoaded();
   });
 });

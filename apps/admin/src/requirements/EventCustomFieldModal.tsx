@@ -9,7 +9,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventCustomFieldDto } from "../api/types.js";
 import { CUSTOM_FIELD_TYPES } from "./customFieldType.js";
 import { slugifyItemKey } from "./itemKey.js";
-import { newOptionRow, optionRowsFromOptions, OptionsEditor, type OptionRow } from "./OptionsEditor.js";
+import { optionRowsFromOptions, OptionsEditor, type OptionRow } from "./OptionsEditor.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";

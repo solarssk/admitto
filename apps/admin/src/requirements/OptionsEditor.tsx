@@ -146,7 +146,7 @@ export function OptionsEditor({ rows, usageCounts, disabled, onChange }: Readonl
     }
 
     function onPointerMove(e: PointerEvent) {
-      if (!drag || e.pointerId !== drag.pointerId || !list) return;
+      if (drag?.pointerId !== e.pointerId || !list) return;
       const deltaY = e.clientY - drag.startY;
       drag.row.style.transform = `translateY(${deltaY}px)`;
 
@@ -179,10 +179,10 @@ export function OptionsEditor({ rows, usageCounts, disabled, onChange }: Readonl
     }
 
     function onPointerUp(e: PointerEvent) {
-      if (drag && e.pointerId === drag.pointerId) endDrag(true);
+      if (drag?.pointerId === e.pointerId) endDrag(true);
     }
     function onPointerCancel(e: PointerEvent) {
-      if (drag && e.pointerId === drag.pointerId) endDrag(false);
+      if (drag?.pointerId === e.pointerId) endDrag(false);
     }
 
     list.addEventListener("pointerdown", onPointerDown);
@@ -205,6 +205,9 @@ export function OptionsEditor({ rows, usageCounts, disabled, onChange }: Readonl
           const trimmed = row.text.trim();
           const renamed = trimmed !== row.originalText && trimmed !== "" && usage > 0;
           const usageKnown = usageCounts !== null;
+          let usageLabel = "Unused";
+          if (!usageKnown) usageLabel = "…";
+          else if (usage > 0) usageLabel = `${usage} ${usage === 1 ? "attendee" : "attendees"}`;
 
           if (confirmingKey === row.key) {
             return (
@@ -263,7 +266,7 @@ export function OptionsEditor({ rows, usageCounts, disabled, onChange }: Readonl
                 onChange={(e) => updateRow(row.key, e.target.value)}
               />
               <span className={`options-editor__usage${usage === 0 ? " options-editor__usage--unused" : ""}`}>
-                {!usageKnown ? "…" : usage > 0 ? `${usage} ${usage === 1 ? "attendee" : "attendees"}` : "Unused"}
+                {usageLabel}
               </span>
               <IconButton
                 label="Remove option"
