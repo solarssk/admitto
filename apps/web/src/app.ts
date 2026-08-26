@@ -608,6 +608,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminMailSettingsRateLimit = rateLimit(rateLimitStore, "admin:mail-transport-test");
   const adminEventMailSettingsRateLimit = rateLimit(rateLimitStore, "admin:event-mail-transport-test");
   const adminMailDiagnosticsRateLimit = rateLimit(rateLimitStore, "admin:mail-diagnostics");
+  const adminWeatherTestRateLimit = rateLimit(rateLimitStore, "admin:weather-test");
   const adminEventMailDiagnosticsRateLimit = rateLimit(rateLimitStore, "admin:event-mail-diagnostics");
   const adminHealthLiveRateLimit = rateLimit(rateLimitStore, "admin:health-live");
   const adminImportPreviewRateLimit = rateLimit(rateLimitStore, "admin:import-preview");
@@ -620,6 +621,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminWalletMessageJobStatusRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-job-status");
   const adminWalletMessageSendRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-send");
   const adminAttendeePatchRateLimit = rateLimit(rateLimitStore, "admin:attendee-patch");
+  const adminUserRevokeSessionsRateLimit = rateLimit(rateLimitStore, "admin:user-revoke-sessions");
   const adminWalletActionRateLimit = rateLimit(rateLimitStore, "admin:wallet-action");
   const adminWalletActionBulkRateLimit = rateLimit(rateLimitStore, "admin:wallet-action-bulk");
   const adminAttendeeBulkMutationRateLimit = rateLimit(rateLimitStore, "admin:attendee-bulk-mutation");
@@ -1279,6 +1281,7 @@ export function createApp(options: CreateAppOptions = {}) {
     mailSettingsBodyLimit,
     jsonPostCsrf,
     staffAdminGate,
+    adminWeatherTestRateLimit,
     (c) => handlePostWeatherTest(c, db),
   );
   app.post(
@@ -1875,8 +1878,12 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/admin/users/:id/reset-password", jsonPostCsrf, staffAdminGate, (c) =>
     handlePostResetUserPassword(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
-  app.post("/api/admin/users/:id/revoke-sessions", jsonPostCsrf, staffAdminGate, (c) =>
-    handlePostRevokeUserSessions(c, db),
+  app.post(
+    "/api/admin/users/:id/revoke-sessions",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminUserRevokeSessionsRateLimit,
+    (c) => handlePostRevokeUserSessions(c, db, rateLimitStore, mailInjectedBaseUrl),
   );
   app.get("/api/admin/role-assignments", staffAdminGate, (c) => handleGetRoleAssignments(c, db));
   app.get("/api/admin/system-settings", staffAdminGate, (c) => handleGetSystemSettings(c, db));
@@ -2059,8 +2066,12 @@ export function createApp(options: CreateAppOptions = {}) {
   // Identity providers + Cloudflare Access JSON API for the SPA Settings → Identity section (#266).
   // Uses requireAdminAccess (superadmin via canManageInstance) to gate the editor.
   app.get("/api/admin/identity/providers", requireAdminAccess, (c) => handleApiListProviders(c, db));
-  app.post("/api/admin/identity/providers", jsonPostCsrf, requireAdminAccess, (c) =>
-    handleApiCreateProvider(c, db, mailInjectedBaseUrl),
+  app.post(
+    "/api/admin/identity/providers",
+    jsonPostCsrf,
+    requireAdminAccess,
+    adminAuthProviderOpsRateLimit,
+    (c) => handleApiCreateProvider(c, db, mailInjectedBaseUrl),
   );
   app.post(
     "/api/admin/identity/providers/test",
