@@ -57,8 +57,15 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
   else if (isEdit) submitLabel = "Save";
 
   const labelTrimmed = form.label.trim();
+  // Newline-only, matching the field's "one per line" label - splitting on comma too (as this
+  // used to) corrupts any option whose own text contains one (e.g. "Sales, EMEA" stored as a
+  // single option) into two options on every re-parse, which made an edit's options-changed
+  // check see a "change" even when the operator never touched the options box (bot review on
+  // PR #1100 - the exact data-corruption case this file's other options-diffing guard exists to
+  // prevent). Keeping this newline-only makes formFromField's join("\n") / this split round-trip
+  // losslessly for any option content.
   const selectOptions = form.options
-    .split(/[,\n]/)
+    .split("\n")
     .map((s) => s.trim())
     .filter(Boolean);
   const canSubmit =
@@ -87,6 +94,16 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
     setSaving(true);
     try {
       if (isEdit) {
+        // Only send options when they actually changed (or the type just switched away from
+        // "select"): re-sending the same list re-derived from the textarea on every save -
+        // e.g. one that only flips "Required" - risks silently rewriting the stored options with
+        // a round-trip artifact (a comma inside an option gets re-split into two) and, since
+        // attendees' custom_data values match options by exact text, breaks their already-saved
+        // selection for no reason tied to what the operator actually changed.
+        const optionsChanged =
+          form.type === "select"
+            ? JSON.stringify(options) !== JSON.stringify(field.options ?? [])
+            : field.type === "select";
         await updateEventCustomField(eventId, field.id, {
           label,
           // null (not undefined) so the server can tell "clear the previous description" apart
@@ -94,9 +111,9 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
           description: description || null,
           type: form.type,
           required: form.required,
-          // null (not undefined) so the server can tell "clear the previous select's options"
-          // apart from "leave options untouched" - PATCH only updates keys it actually receives.
-          options: form.type === "select" ? options : null,
+          // null clears a previous select's options when switching away from "select"; omitting
+          // the key (undefined) leaves options untouched - PATCH only updates keys it receives.
+          ...(optionsChanged ? { options: form.type === "select" ? options : null } : {}),
         });
       } else {
         await createEventCustomField(eventId, {

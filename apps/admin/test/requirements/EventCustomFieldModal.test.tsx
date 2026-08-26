@@ -186,7 +186,6 @@ describe("EventCustomFieldModal — edit", () => {
         description: null,
         type: "text",
         required: true,
-        options: null,
       });
     });
   });
@@ -211,7 +210,6 @@ describe("EventCustomFieldModal — edit", () => {
         description: "New description",
         type: "text",
         required: false,
-        options: null,
       });
     });
   });
@@ -236,6 +234,100 @@ describe("EventCustomFieldModal — edit", () => {
         type: "text",
         required: false,
         options: null,
+      });
+    });
+  });
+
+  it("does not resend options when saving an unrelated change to a select field", async () => {
+    const shirtField: EventCustomFieldDto = {
+      ...dietaryField,
+      id: "field-shirt",
+      source_field: "shirt_size",
+      label: "Shirt size",
+      type: "select",
+      required: false,
+      options: ["S", "M", "L"],
+    };
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, required: true });
+    renderModal(shirtField);
+    fireEvent.click(screen.getByRole("button", { name: "Required" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
+        label: "Shirt size",
+        description: null,
+        type: "select",
+        required: true,
+      });
+    });
+  });
+
+  it("does not resend options containing a comma when saving an unrelated change", async () => {
+    const territoryField: EventCustomFieldDto = {
+      ...dietaryField,
+      id: "field-territory",
+      source_field: "territory",
+      label: "Territory",
+      type: "select",
+      required: false,
+      options: ["Sales, EMEA", "Sales, APAC"],
+    };
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...territoryField, required: true });
+    renderModal(territoryField);
+    fireEvent.click(screen.getByRole("button", { name: "Required" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-territory", {
+        label: "Territory",
+        description: null,
+        type: "select",
+        required: true,
+      });
+    });
+  });
+
+  it("sends the new options when a text field is switched to select and given options", async () => {
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({
+      ...dietaryField,
+      type: "select",
+      options: ["A", "B"],
+    });
+    renderModal(dietaryField);
+    fireEvent.click(screen.getByRole("button", { name: "Single choice" }));
+    fireEvent.change(screen.getByLabelText("Select options"), { target: { value: "A\nB" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-dietary", {
+        label: "Dietary requirements",
+        description: null,
+        type: "select",
+        required: false,
+        options: ["A", "B"],
+      });
+    });
+  });
+
+  it("sends the updated options when an operator actually edits a select field's option list", async () => {
+    const shirtField: EventCustomFieldDto = {
+      ...dietaryField,
+      id: "field-shirt",
+      source_field: "shirt_size",
+      label: "Shirt size",
+      type: "select",
+      required: false,
+      options: ["S", "M", "L"],
+    };
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, options: ["S", "M", "L", "XL"] });
+    renderModal(shirtField);
+    fireEvent.change(screen.getByLabelText("Select options"), { target: { value: "S\nM\nL\nXL" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
+        label: "Shirt size",
+        description: null,
+        type: "select",
+        required: false,
+        options: ["S", "M", "L", "XL"],
       });
     });
   });
