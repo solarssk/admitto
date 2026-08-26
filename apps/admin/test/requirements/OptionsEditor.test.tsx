@@ -1,9 +1,24 @@
 // @vitest-environment jsdom
+import { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { OptionsEditor, optionRowsFromOptions } from "../../src/requirements/OptionsEditor.js";
+import { OptionsEditor, optionRowsFromOptions, type OptionRow } from "../../src/requirements/OptionsEditor.js";
 
 const ROW_HEIGHT = 40;
+
+/** OptionsEditor is a controlled component - a plain `vi.fn()` onChange never actually updates
+ * `rows`, so a test that needs to see a re-render reflecting an edit (not just assert on the
+ * onChange call) needs a real state owner, same as EventCustomFieldModal is in production. */
+function ControlledOptionsEditor({
+  initial,
+  usageCounts,
+}: {
+  initial: OptionRow[];
+  usageCounts: Record<string, number> | null;
+}) {
+  const [rows, setRows] = useState(initial);
+  return <OptionsEditor rows={rows} usageCounts={usageCounts} onChange={setRows} />;
+}
 
 beforeAll(() => {
   // jsdom has no pointer-capture implementation at all (not even a no-op) - real browsers do,
@@ -190,5 +205,28 @@ describe("OptionsEditor — delete confirmation wording", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Remove option" })[0]!);
 
     expect(screen.getByText(/1 attendee currently have this value/)).toBeTruthy();
+  });
+});
+
+describe("OptionsEditor — blanking an in-use option", () => {
+  it("warns in place when an in-use option's text is cleared, the same as a rename", () => {
+    const initial = optionRowsFromOptions(["S", "M"]);
+    const { container } = render(<ControlledOptionsEditor initial={initial} usageCounts={{ M: 42 }} />);
+
+    const mInput = screen.getAllByLabelText("Option text")[1]!;
+    fireEvent.change(mInput, { target: { value: "" } });
+
+    expect(screen.getByText(/42 attendees currently have “M”\. Clearing this removes the option/)).toBeTruthy();
+    expect(container.querySelector(".options-editor__row--warning")).toBeTruthy();
+  });
+
+  it("does not warn when a brand-new, never-saved row is left or cleared blank", () => {
+    const initial = optionRowsFromOptions(["S"]);
+    const { container } = render(<ControlledOptionsEditor initial={initial} usageCounts={{}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "+ Add option" }));
+
+    expect(container.querySelector(".options-editor__row--warning")).toBeNull();
+    expect(screen.queryByText(/Clearing this removes/)).toBeNull();
   });
 });

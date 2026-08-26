@@ -473,6 +473,31 @@ describe("EventCustomFieldModal — edit", () => {
     });
   });
 
+  it("gates Save behind a confirmation when an in-use option is blanked instead of deleted, and drops it once confirmed", async () => {
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ M: 42 });
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, options: ["S", "L"] });
+    renderModal(shirtField);
+    await waitForUsageLoaded();
+    const mInput = screen.getAllByLabelText("Option text")[1]!;
+    fireEvent.change(mInput, { target: { value: "" } }); // cleared, not deleted via the trash button
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(updateEventCustomField).not.toHaveBeenCalled();
+    expect(await screen.findByText("This will affect existing attendees")).toBeTruthy();
+    expect(screen.getByText(/Removing “M” affects 42 attendees/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save anyway" }));
+    await waitFor(() => {
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
+        label: "Shirt size",
+        description: null,
+        type: "select",
+        required: false,
+        options: ["S", "L"],
+      });
+    });
+  });
+
   it("cancelling the risky-rename confirmation saves nothing and leaves the draft editable", async () => {
     vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ M: 42 });
     renderModal(shirtField);

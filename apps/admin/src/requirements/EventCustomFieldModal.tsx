@@ -96,13 +96,16 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
   // requires the draft to actually differ from the field being edited.
   const dirty = field ? JSON.stringify(form) !== JSON.stringify(formFromField(field)) : true;
 
-  // Options renamed away from a value with attendees currently on it - Save gates on these with
-  // ConfirmDialog instead of sending the PATCH straight away. A plain delete is already
-  // confirmed in place by OptionsEditor itself, so it isn't repeated here.
+  // Options renamed - or blanked, which selectOptions below treats as a removal - away from a
+  // value with attendees currently on it. Save gates on these with ConfirmDialog instead of
+  // sending the PATCH straight away. A row removed via OptionsEditor's own trash button is
+  // already confirmed in place, so it isn't repeated here.
   const riskyRenames = usageCounts
     ? form.options.filter((r) => {
         const trimmed = r.text.trim();
-        return trimmed !== r.originalText && trimmed !== "" && (usageCounts[r.originalText] ?? 0) > 0;
+        const blanked = trimmed === "" && r.originalText !== "";
+        const renamed = !blanked && trimmed !== r.originalText;
+        return (blanked || renamed) && (usageCounts[r.originalText] ?? 0) > 0;
       })
     : [];
 
@@ -327,13 +330,24 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
         }}
       >
         <ul className="custom-field-risky-list">
-          {riskyRenames.map((r) => (
-            <li key={r.key}>
-              Renaming &ldquo;{r.originalText}&rdquo; to &ldquo;{r.text.trim()}&rdquo; affects{" "}
-              {usageCounts?.[r.originalText] ?? 0}{" "}
-              {(usageCounts?.[r.originalText] ?? 0) === 1 ? "attendee" : "attendees"}.
-            </li>
-          ))}
+          {riskyRenames.map((r) => {
+            const trimmed = r.text.trim();
+            const count = usageCounts?.[r.originalText] ?? 0;
+            const attendeeWord = count === 1 ? "attendee" : "attendees";
+            return (
+              <li key={r.key}>
+                {trimmed === "" ? (
+                  <>
+                    Removing &ldquo;{r.originalText}&rdquo; affects {count} {attendeeWord}.
+                  </>
+                ) : (
+                  <>
+                    Renaming &ldquo;{r.originalText}&rdquo; to &ldquo;{trimmed}&rdquo; affects {count} {attendeeWord}.
+                  </>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </ConfirmDialog>
     </div>

@@ -203,7 +203,13 @@ export function OptionsEditor({ rows, usageCounts, disabled, onChange }: Readonl
         {rows.map((row) => {
           const usage = usageOf(usageCounts, row.originalText);
           const trimmed = row.text.trim();
-          const renamed = trimmed !== row.originalText && trimmed !== "" && usage > 0;
+          // Blanking an existing row's text is a removal, not a no-op - selectOptions (the
+          // modal) drops empty rows from what actually gets saved, so this needs the same
+          // in-place warning as a rename or it'd silently vanish from an in-use attendee's
+          // allowed options with no confirmation at all.
+          const blanked = trimmed === "" && row.originalText !== "";
+          const renamed = !blanked && trimmed !== row.originalText && trimmed !== "";
+          const risky = (blanked || renamed) && usage > 0;
           const usageKnown = usageCounts !== null;
           let usageLabel = "Unused";
           if (!usageKnown) usageLabel = "…";
@@ -236,7 +242,7 @@ export function OptionsEditor({ rows, usageCounts, disabled, onChange }: Readonl
 
           return (
             <div
-              className={`options-editor__row${renamed ? " options-editor__row--warning" : ""}`}
+              className={`options-editor__row${risky ? " options-editor__row--warning" : ""}`}
               data-key={row.key}
               key={row.key}
             >
@@ -274,11 +280,13 @@ export function OptionsEditor({ rows, usageCounts, disabled, onChange }: Readonl
                 disabled={disabled || !usageKnown}
                 onClick={() => handleDeleteClick(row)}
               />
-              {renamed && (
+              {risky && (
                 <div className="options-editor__warning">
                   <i className="ti ti-alert-triangle" aria-hidden="true" /> {usage} {usage === 1 ? "attendee" : "attendees"}{" "}
-                  currently {usage === 1 ? "has" : "have"} &ldquo;{row.originalText}&rdquo;. Renaming creates a new
-                  value, so they will need to be reassigned.
+                  currently {usage === 1 ? "has" : "have"} &ldquo;{row.originalText}&rdquo;.{" "}
+                  {blanked
+                    ? "Clearing this removes the option, so they will need to be reassigned."
+                    : "Renaming creates a new value, so they will need to be reassigned."}
                 </div>
               )}
             </div>
