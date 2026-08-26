@@ -4450,6 +4450,18 @@ output.mail-field-hint {
   }
 }
 
+/* On a touch device, @admitto/ui's own font-scale trick (packages/ui/src/styles/components.css)
+   inflates this input's width by 16/14 then scales it back down - but the fixed `4.75rem
+   !important` above overrides that inflated value outright, so it renders scaled down from
+   4.75rem instead of from the inflated size, ending up ~12.5% narrower than the 640px rule
+   above intends. Same fix, same specificity/!important fight, scoped to this field. */
+@media (max-width: 640px) and (pointer: coarse) {
+  .security-settings-row__control .at-input {
+    width: calc(4.75rem / 0.875) !important;
+    max-width: calc(4.75rem / 0.875);
+  }
+}
+
 .mail-field-row {
   display: flex;
   flex-direction: column;
@@ -6019,6 +6031,17 @@ output.mail-field-hint {
   outline: 2px solid var(--brand-500, #3b82f6);
   outline-offset: 1px;
   border-color: var(--brand-500, #3b82f6);
+}
+
+/* @admitto/ui's own font-scale trick (packages/ui/src/styles/components.css) inflates a
+   touch-device select's width by 16/14 then scales it back down so the final box matches
+   desktop - but when a container is wide enough that this legacy `max-width: 24rem` actually
+   binds, it caps the *inflated* pre-scale box at a literal (un-inflated) 24rem, so it renders
+   scaled down to 21rem, 12.5% narrower than the 24rem this rule intends. */
+@media (pointer: coarse) {
+  .at-select {
+    max-width: calc(24rem / 0.875);
+  }
 }
 
 .at-select:disabled {
