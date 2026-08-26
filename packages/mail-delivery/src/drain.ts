@@ -264,6 +264,51 @@ async function sendOneFromSnapshot(
   }
 }
 
+type EventDrainOutcome = { sent: number; failed: number; skipped: number };
+
+/** Drain one event's share of candidates with its own mailer. Split out of
+ * drainPendingDeliveries so each half of the per-event logic (mailer-setup failure vs. the
+ * actual send loop) nests one level shallower - the combined version tripped Sonar's cognitive
+ * complexity limit once the cancelled-row skip counting doubled the branching here. */
+async function drainEventBatch(
+  prisma: PrismaClient,
+  env: NodeJS.ProcessEnv,
+  deps: MailDeliveryDeps,
+  eventId: string,
+  rows: SnapshotRow[],
+  baseUrl: string,
+): Promise<EventDrainOutcome> {
+  let mailer: MailerAdapter;
+  try {
+    const mailConfig = await resolveMailConfig(eventId, prisma, env);
+    mailer = await createMailer(mailConfig, { exportSink: deps.exportSink });
+  } catch (err) {
+    let failed = 0;
+    let skipped = 0;
+    for (const row of rows) {
+      const applied = await markClaimedRowFailed(prisma, row, err);
+      if (applied) failed += 1;
+      else skipped += 1;
+    }
+    return { sent: 0, failed, skipped };
+  }
+
+  let sent = 0;
+  let failed = 0;
+  let skipped = 0;
+  try {
+    for (const row of rows) {
+      const outcome = await sendOneFromSnapshot(row, prisma, mailer, baseUrl);
+      if (outcome === "sent") sent += 1;
+      else if (outcome === "failed") failed += 1;
+      else skipped += 1;
+    }
+  } finally {
+    await mailer.close();
+  }
+  return { sent, failed, skipped };
+}
+
 /**
  * Claim and send pending EmailDelivery rows. Groups by event so each event gets one mailer.
  * Safe under worker advisory lock `mail_delivery`.
@@ -290,31 +335,11 @@ export async function drainPendingDeliveries(
   let sent = 0;
   let failed = 0;
   let skipped = 0;
-
   for (const [eventId, rows] of byEvent) {
-    let mailer: MailerAdapter | undefined;
-    try {
-      const mailConfig = await resolveMailConfig(eventId, prisma, env);
-      mailer = await createMailer(mailConfig, { exportSink: deps.exportSink });
-    } catch (err) {
-      for (const row of rows) {
-        const applied = await markClaimedRowFailed(prisma, row, err);
-        if (applied) failed += 1;
-        else skipped += 1;
-      }
-      continue;
-    }
-
-    try {
-      for (const row of rows) {
-        const outcome = await sendOneFromSnapshot(row, prisma, mailer, baseUrl);
-        if (outcome === "sent") sent += 1;
-        else if (outcome === "failed") failed += 1;
-        else skipped += 1;
-      }
-    } finally {
-      await mailer.close();
-    }
+    const outcome = await drainEventBatch(prisma, env, deps, eventId, rows, baseUrl);
+    sent += outcome.sent;
+    failed += outcome.failed;
+    skipped += outcome.skipped;
   }
 
   return { claimed: candidates.length, sent, failed, skipped, eventIds: [...byEvent.keys()] };
