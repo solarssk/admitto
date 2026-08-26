@@ -4,17 +4,28 @@ type CameraScannerProps = {
   enabled: boolean;
   wedgeActive: boolean;
   onScan: (raw: string) => void;
+  /** Called with the active video track once the camera stream starts, and with null once it
+   * stops - lets a parent reach device-level features (torch) that need direct
+   * MediaStreamTrack access CameraScanner otherwise keeps to itself. */
+  onTrackChange?: (track: MediaStreamTrack | null) => void;
 };
 
 /** Ignore repeated ZXing decodes of the same QR while it stays in frame. */
 const CAMERA_SCAN_COOLDOWN_MS = 2500;
 
-export function CameraScanner({ enabled, wedgeActive, onScan }: Readonly<CameraScannerProps>) {
+export function CameraScanner({
+  enabled,
+  wedgeActive,
+  onScan,
+  onTrackChange,
+}: Readonly<CameraScannerProps>) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
   const onScanRef = useRef(onScan);
+  const onTrackChangeRef = useRef(onTrackChange);
   const lastEmitRef = useRef<{ text: string; at: number } | null>(null);
   onScanRef.current = onScan;
+  onTrackChangeRef.current = onTrackChange;
 
   useEffect(() => {
     if (!enabled || wedgeActive) return;
@@ -82,6 +93,13 @@ export function CameraScanner({ enabled, wedgeActive, onScan }: Readonly<CameraS
           return;
         }
         controls = nextControls;
+        // decodeFromConstraints has already attached the stream to `video`
+        // by the time it resolves (it awaits its own decodeFromStream,
+        // which sets srcObject before returning) - reading it back here is
+        // the only way out to the actual track, since ZXing's own return
+        // value is just start/stop controls.
+        const track = (video.srcObject as MediaStream | null)?.getVideoTracks()[0] ?? null;
+        onTrackChangeRef.current?.(track);
       } catch {
         if (!stopped) setError("Camera unavailable or permission denied.");
       }
@@ -91,6 +109,7 @@ export function CameraScanner({ enabled, wedgeActive, onScan }: Readonly<CameraS
     return () => {
       stopped = true;
       controls?.stop();
+      onTrackChangeRef.current?.(null);
     };
   }, [enabled, wedgeActive]);
 
