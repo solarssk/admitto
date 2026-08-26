@@ -1358,6 +1358,20 @@ describe("POST /api/admin/users/:id/revoke-sessions", () => {
     expect(targetAfter?.last_login_at).toBe(targetBefore?.last_login_at);
     expect(targetAfter?.active_sessions_count).toBe(0);
   });
+
+  it("returns 429 once the per-actor 10/min limit is exhausted", async () => {
+    const userKey = `admin:user-revoke-sessions:user:${superId}:target:${targetId}`;
+    for (let i = 0; i < 10; i++) {
+      await rateLimitStore.hit(userKey, 60_000, 10);
+    }
+
+    const res = await app.request(`/api/admin/users/${targetId}/revoke-sessions`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(429);
+    rateLimitStore.reset();
+  });
 });
 
 describe("POST /api/admin/users/:id/reset-2fa", () => {

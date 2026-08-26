@@ -511,6 +511,30 @@ describe("identity providers API — create", () => {
     await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: body.id } });
     await prisma.identityProvider.delete({ where: { id: body.id } });
   });
+
+  it("returns 429 once the shared admin:oidc-provider-ops limit is exhausted", async () => {
+    // No :id on this route, so the policy's keyOf falls back to its "unknown" provider suffix -
+    // same bucket the test/discover-preview routes fall into for the same reason.
+    const key = `admin:oidc-provider-ops:user:${SUPER_ID}:provider:unknown`;
+    for (let i = 0; i < 10; i++) {
+      await rateLimitStore.hit(key, 60_000, 10);
+    }
+
+    const res = await json("/api/admin/identity/providers", {
+      method: "POST",
+      body: JSON.stringify({
+        display_name: "Rate Limited Create",
+        issuer: "https://idp-api-create-limited.example.com/",
+        client_id: "created-limited-client",
+        authorization_endpoint: "https://idp-api-create-limited.example.com/a",
+        token_endpoint: "https://idp-api-create-limited.example.com/t",
+        jwks_uri: "https://idp-api-create-limited.example.com/j",
+        mappings: [],
+      }),
+    });
+    expect(res.status).toBe(429);
+    rateLimitStore.reset();
+  });
 });
 
 describe("identity providers API — test connection", () => {

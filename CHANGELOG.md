@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Settings → External services' weather connectivity test (`POST /api/admin/external-services/weather/test`) now has a per-user rate limit (5/minute), matching the mail/geocoding connectivity probes it was inconsistent with - it previously had none, and its provider base URL is admin-supplied, so it could otherwise be used to repeatedly trigger outbound requests to an arbitrary host.
+- Creating a new SSO/OIDC identity provider (`POST /api/admin/identity/providers`) now shares the same rate limit already applied to every other route on this resource that performs the identical outbound OIDC-discovery call (test, discover, discover-preview) - it was the one route in that group left uncovered when that protection was added.
+- Force-logging-out a user's sessions (`POST /api/admin/users/:id/revoke-sessions`) now has a per-admin-per-target rate limit (10/minute) - unlike the sibling password-reset and 2FA-reset actions, it previously had no ceiling and no re-authentication step-up at all.
+
 ## [0.6.2] - 2026-08-25
 
 ### Added

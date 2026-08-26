@@ -333,6 +333,10 @@ export const RATE_POLICIES = {
   // both used to share one policy, so 10 probes/hour would have exhausted the test-send route's
   // own new sustained budget too). Same 5/min single-check shape this route always had.
   "admin:mail-diagnostics": authUserScopedPolicy("admin:mail-diagnostics", "admin_mail_diagnostics"),
+  /** Settings → External services' weather connectivity probe - same "no ceiling on a live
+   * outbound call" shape as the mail-transport/diagnostics probes above, and openmeteo's baseUrl
+   * is caller-supplied, so this also bounds how often an admin can point it at an arbitrary host. */
+  "admin:weather-test": authUserScopedPolicy("admin:weather-test", "admin_weather_test"),
   /** On-demand live health probes (Nominatim / OIDC) from Settings → Health check. */
   "admin:health-live": {
     checks: [
@@ -551,6 +555,27 @@ export const RATE_POLICIES = {
         windowMs: 60_000,
         max: 20,
         logOnExceeded: { scope: "admin_attendee_patch", keyHint: "user_attendee" },
+      },
+    ],
+  },
+  // Per-target-user, not per-actor: bounds how fast one admin can loop this against a single
+  // account, matching admin:attendee-patch's reasoning above - a real admin force-logging-out
+  // several different accounts in a row never approaches this, unlike a scripted repeat against
+  // one target. Sibling reset-password/reset-2fa additionally require step-up re-auth; this route
+  // has no such gate, so the rate limit is its only ceiling.
+  "admin:user-revoke-sessions": {
+    checks: [
+      {
+        keyOf: (c) => {
+          const targetId = c.req.param("id");
+          const userId = authUserId(c);
+          return userId
+            ? `admin:user-revoke-sessions:user:${userId}:target:${targetId}`
+            : `admin:user-revoke-sessions:ip:${resolveClientIp(c)}:target:${targetId}`;
+        },
+        windowMs: 60_000,
+        max: 10,
+        logOnExceeded: { scope: "admin_user_revoke_sessions", keyHint: "user_target" },
       },
     ],
   },
