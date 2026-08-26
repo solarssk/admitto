@@ -51,6 +51,20 @@ const putLocationBodySchema = z
     address_components: addressComponentsSchema.optional(),
     google_maps_url_override: z.string().nullish(),
     apple_maps_url_override: z.string().nullish(),
+    venue_room: z.string().nullish(),
+    venue_entrance: z.string().nullish(),
+    venue_entrance_door: z.string().nullish(),
+    venue_entrance_gate: z.string().nullish(),
+    venue_entrance_portal: z.string().nullish(),
+    venue_phone_number: z.string().nullish(),
+    venue_place_id: z.string().nullish(),
+    venue_open_time: z.string().nullish(),
+    venue_close_time: z.string().nullish(),
+    doors_open_time: z.string().nullish(),
+    gates_open_time: z.string().nullish(),
+    box_office_open_time: z.string().nullish(),
+    parking_lots_open_time: z.string().nullish(),
+    fan_zone_open_time: z.string().nullish(),
     // API-layer only — not part of `@admitto/location`'s EventLocationInput, since it isn't a
     // user-editable field with its own validation rules. It only ever rides along with a
     // latitude/longitude change (see the geocoding provenance logic below).
@@ -71,6 +85,20 @@ type EventLocationRow = {
   address_components: Prisma.JsonValue | null;
   google_maps_url_override: string | null;
   apple_maps_url_override: string | null;
+  venue_room: string | null;
+  venue_entrance: string | null;
+  venue_entrance_door: string | null;
+  venue_entrance_gate: string | null;
+  venue_entrance_portal: string | null;
+  venue_phone_number: string | null;
+  venue_place_id: string | null;
+  venue_open_time: string | null;
+  venue_close_time: string | null;
+  doors_open_time: string | null;
+  gates_open_time: string | null;
+  box_office_open_time: string | null;
+  parking_lots_open_time: string | null;
+  fan_zone_open_time: string | null;
 };
 
 /** Stable empty shape returned by GET when no `EventLocation` row exists yet — the tab
@@ -88,6 +116,20 @@ const EMPTY_LOCATION_DTO: EventLocationDto = {
   address_components: null,
   google_maps_url_override: null,
   apple_maps_url_override: null,
+  venue_room: null,
+  venue_entrance: null,
+  venue_entrance_door: null,
+  venue_entrance_gate: null,
+  venue_entrance_portal: null,
+  venue_phone_number: null,
+  venue_place_id: null,
+  venue_open_time: null,
+  venue_close_time: null,
+  doors_open_time: null,
+  gates_open_time: null,
+  box_office_open_time: null,
+  parking_lots_open_time: null,
+  fan_zone_open_time: null,
 };
 
 function serializeLocation(row: EventLocationRow | null): EventLocationDto {
@@ -105,6 +147,20 @@ function serializeLocation(row: EventLocationRow | null): EventLocationDto {
     address_components: parseStoredAddressComponents(row.address_components),
     google_maps_url_override: row.google_maps_url_override,
     apple_maps_url_override: row.apple_maps_url_override,
+    venue_room: row.venue_room,
+    venue_entrance: row.venue_entrance,
+    venue_entrance_door: row.venue_entrance_door,
+    venue_entrance_gate: row.venue_entrance_gate,
+    venue_entrance_portal: row.venue_entrance_portal,
+    venue_phone_number: row.venue_phone_number,
+    venue_place_id: row.venue_place_id,
+    venue_open_time: row.venue_open_time,
+    venue_close_time: row.venue_close_time,
+    doors_open_time: row.doors_open_time,
+    gates_open_time: row.gates_open_time,
+    box_office_open_time: row.box_office_open_time,
+    parking_lots_open_time: row.parking_lots_open_time,
+    fan_zone_open_time: row.fan_zone_open_time,
   };
 }
 
@@ -246,6 +302,20 @@ type WalletRelevantLocationSnapshot = {
   address_components: Prisma.JsonValue | null;
   google_maps_url_override: string | null;
   apple_maps_url_override: string | null;
+  venue_room: string | null;
+  venue_entrance: string | null;
+  venue_entrance_door: string | null;
+  venue_entrance_gate: string | null;
+  venue_entrance_portal: string | null;
+  venue_phone_number: string | null;
+  venue_place_id: string | null;
+  venue_open_time: string | null;
+  venue_close_time: string | null;
+  doors_open_time: string | null;
+  gates_open_time: string | null;
+  box_office_open_time: string | null;
+  parking_lots_open_time: string | null;
+  fan_zone_open_time: string | null;
 };
 
 const EMPTY_WALLET_LOCATION_SNAPSHOT: WalletRelevantLocationSnapshot = {
@@ -258,6 +328,20 @@ const EMPTY_WALLET_LOCATION_SNAPSHOT: WalletRelevantLocationSnapshot = {
   address_components: null,
   google_maps_url_override: null,
   apple_maps_url_override: null,
+  venue_room: null,
+  venue_entrance: null,
+  venue_entrance_door: null,
+  venue_entrance_gate: null,
+  venue_entrance_portal: null,
+  venue_phone_number: null,
+  venue_place_id: null,
+  venue_open_time: null,
+  venue_close_time: null,
+  doors_open_time: null,
+  gates_open_time: null,
+  box_office_open_time: null,
+  parking_lots_open_time: null,
+  fan_zone_open_time: null,
 };
 
 /** True only when one of the wallet-relevant fields' *persisted* value actually differs from
@@ -282,6 +366,20 @@ function walletRelevantLocationFieldsChanged(
     before.accessibility_text !== updated.accessibility_text ||
     before.google_maps_url_override !== updated.google_maps_url_override ||
     before.apple_maps_url_override !== updated.apple_maps_url_override ||
+    before.venue_room !== updated.venue_room ||
+    before.venue_entrance !== updated.venue_entrance ||
+    before.venue_entrance_door !== updated.venue_entrance_door ||
+    before.venue_entrance_gate !== updated.venue_entrance_gate ||
+    before.venue_entrance_portal !== updated.venue_entrance_portal ||
+    before.venue_phone_number !== updated.venue_phone_number ||
+    before.venue_place_id !== updated.venue_place_id ||
+    before.venue_open_time !== updated.venue_open_time ||
+    before.venue_close_time !== updated.venue_close_time ||
+    before.doors_open_time !== updated.doors_open_time ||
+    before.gates_open_time !== updated.gates_open_time ||
+    before.box_office_open_time !== updated.box_office_open_time ||
+    before.parking_lots_open_time !== updated.parking_lots_open_time ||
+    before.fan_zone_open_time !== updated.fan_zone_open_time ||
     JSON.stringify(before.address_components) !== JSON.stringify(updated.address_components)
   );
 }
@@ -449,6 +547,20 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
           ...(componentsJson !== undefined && { address_components: componentsJson }),
           google_maps_url_override: patch.google_maps_url_override ?? null,
           apple_maps_url_override: patch.apple_maps_url_override ?? null,
+          venue_room: patch.venue_room ?? null,
+          venue_entrance: patch.venue_entrance ?? null,
+          venue_entrance_door: patch.venue_entrance_door ?? null,
+          venue_entrance_gate: patch.venue_entrance_gate ?? null,
+          venue_entrance_portal: patch.venue_entrance_portal ?? null,
+          venue_phone_number: patch.venue_phone_number ?? null,
+          venue_place_id: patch.venue_place_id ?? null,
+          venue_open_time: patch.venue_open_time ?? null,
+          venue_close_time: patch.venue_close_time ?? null,
+          doors_open_time: patch.doors_open_time ?? null,
+          gates_open_time: patch.gates_open_time ?? null,
+          box_office_open_time: patch.box_office_open_time ?? null,
+          parking_lots_open_time: patch.parking_lots_open_time ?? null,
+          fan_zone_open_time: patch.fan_zone_open_time ?? null,
           ...geocodingPatch,
         },
         update: {
@@ -460,6 +572,26 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
           ...(patch.directions_text !== undefined && { directions_text: patch.directions_text }),
           ...(patch.accessibility_text !== undefined && { accessibility_text: patch.accessibility_text }),
           ...(componentsJson !== undefined && { address_components: componentsJson }),
+          ...(patch.venue_room !== undefined && { venue_room: patch.venue_room }),
+          ...(patch.venue_entrance !== undefined && { venue_entrance: patch.venue_entrance }),
+          ...(patch.venue_entrance_door !== undefined && { venue_entrance_door: patch.venue_entrance_door }),
+          ...(patch.venue_entrance_gate !== undefined && { venue_entrance_gate: patch.venue_entrance_gate }),
+          ...(patch.venue_entrance_portal !== undefined && {
+            venue_entrance_portal: patch.venue_entrance_portal,
+          }),
+          ...(patch.venue_phone_number !== undefined && { venue_phone_number: patch.venue_phone_number }),
+          ...(patch.venue_place_id !== undefined && { venue_place_id: patch.venue_place_id }),
+          ...(patch.venue_open_time !== undefined && { venue_open_time: patch.venue_open_time }),
+          ...(patch.venue_close_time !== undefined && { venue_close_time: patch.venue_close_time }),
+          ...(patch.doors_open_time !== undefined && { doors_open_time: patch.doors_open_time }),
+          ...(patch.gates_open_time !== undefined && { gates_open_time: patch.gates_open_time }),
+          ...(patch.box_office_open_time !== undefined && {
+            box_office_open_time: patch.box_office_open_time,
+          }),
+          ...(patch.parking_lots_open_time !== undefined && {
+            parking_lots_open_time: patch.parking_lots_open_time,
+          }),
+          ...(patch.fan_zone_open_time !== undefined && { fan_zone_open_time: patch.fan_zone_open_time }),
           ...mapsOverridePatch,
           ...geocodingPatch,
         },

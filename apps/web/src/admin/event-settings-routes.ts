@@ -19,6 +19,7 @@ import {
   enforceLogoPersistenceForDisplayChange,
   type BrandingUpdateData,
   type EventSettingsDto,
+  type EventType,
   type LogoCropMeta,
 } from "@admitto/mail-templates";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
@@ -62,6 +63,19 @@ const dateOnlyField = z
 
 const PG_INT_MAX = 2_147_483_647;
 
+/** Apple PKEventType vocabulary this event can be categorized as (packages/tickets/src/
+ * wallet-pass-input.ts's EVENT_TYPE_TO_APPLE translates the DB key to the literal Apple string). */
+const EVENT_TYPES = [
+  "generic",
+  "live_performance",
+  "movie",
+  "sports",
+  "conference",
+  "convention",
+  "workshop",
+  "social_gathering",
+] as const satisfies readonly EventType[];
+
 /** Shape-only gate; bounds/zoom rules live in `parseLogoCrop` (called after this parses). */
 const logoCropSchema = z
   .object({
@@ -86,12 +100,12 @@ const patchEventSchema = z
     timezone: timezoneField.optional(),
     event_hours_start: eventHoursField,
     event_hours_end: eventHoursField,
+    event_type: z.enum(EVENT_TYPES).nullish(),
     wallet_enabled: z.boolean().optional(),
     wallet_template_id: z.string().trim().max(200).nullish(),
     wallet_api_key: z.string().trim().max(512).nullish(),
     wallet_apple_enabled: z.boolean().optional(),
     wallet_google_enabled: z.boolean().optional(),
-    wallet_semantic_tags_enabled: z.boolean().optional(),
     wallet_field_mapping: z
       .record(
         z.string().trim().min(1).max(60).regex(/^[A-Za-z]\w*$/),
@@ -115,12 +129,12 @@ type EventSettingsRow = {
   timezone: string;
   event_hours_start: string | null;
   event_hours_end: string | null;
+  event_type: string | null;
   wallet_enabled: boolean;
   wallet_template_id: string | null;
   wallet_api_key_enc: string | null;
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
-  wallet_semantic_tags_enabled: boolean;
   wallet_field_mapping: unknown;
   capacity: number | null;
   archived_at: Date | null;
@@ -152,12 +166,12 @@ function serializeEventSettings(
     timezone: normalizeTimeZone(event.timezone) ?? event.timezone,
     event_hours_start: event.event_hours_start,
     event_hours_end: event.event_hours_end,
+    event_type: event.event_type as EventType | null,
     wallet_enabled: event.wallet_enabled,
     wallet_template_id: event.wallet_template_id,
     wallet_api_key: { configured: event.wallet_api_key_enc != null },
     wallet_apple_enabled: event.wallet_apple_enabled,
     wallet_google_enabled: event.wallet_google_enabled,
-    wallet_semantic_tags_enabled: event.wallet_semantic_tags_enabled,
     wallet_field_mapping: parseWalletFieldMapping(event.wallet_field_mapping),
     capacity: event.capacity,
     status: event.archived_at ? "archived" : "active",
@@ -192,12 +206,12 @@ const EVENT_SETTINGS_SELECT = {
   timezone: true,
   event_hours_start: true,
   event_hours_end: true,
+  event_type: true,
   wallet_enabled: true,
   wallet_template_id: true,
   wallet_api_key_enc: true,
   wallet_apple_enabled: true,
   wallet_google_enabled: true,
-  wallet_semantic_tags_enabled: true,
   wallet_field_mapping: true,
   capacity: true,
   archived_at: true,
@@ -376,7 +390,6 @@ type WalletFieldsPatch = {
   wallet_api_key_enc?: string | null;
   wallet_apple_enabled?: boolean;
   wallet_google_enabled?: boolean;
-  wallet_semantic_tags_enabled?: boolean;
   wallet_field_mapping?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
 };
 
@@ -396,9 +409,6 @@ function buildWalletFieldsPatch(patch: PatchEventBody): WalletFieldsPatch {
   if (patch.wallet_google_enabled !== undefined) {
     data.wallet_google_enabled = patch.wallet_google_enabled;
   }
-  if (patch.wallet_semantic_tags_enabled !== undefined) {
-    data.wallet_semantic_tags_enabled = patch.wallet_semantic_tags_enabled;
-  }
   if (patch.wallet_field_mapping !== undefined) {
     const mapping = patch.wallet_field_mapping;
     data.wallet_field_mapping = mapping && Object.keys(mapping).length > 0 ? mapping : Prisma.JsonNull;
@@ -413,6 +423,7 @@ function buildBasicFieldsPatch(patch: PatchEventBody): WalletFieldsPatch & {
   timezone?: string;
   event_hours_start?: string | null;
   event_hours_end?: string | null;
+  event_type?: string | null;
   capacity?: number | null;
 } {
   const data: ReturnType<typeof buildBasicFieldsPatch> = buildWalletFieldsPatch(patch);
@@ -421,6 +432,7 @@ function buildBasicFieldsPatch(patch: PatchEventBody): WalletFieldsPatch & {
   if (patch.timezone !== undefined) data.timezone = patch.timezone;
   if (patch.event_hours_start !== undefined) data.event_hours_start = patch.event_hours_start;
   if (patch.event_hours_end !== undefined) data.event_hours_end = patch.event_hours_end;
+  if (patch.event_type !== undefined) data.event_type = patch.event_type;
   if (patch.capacity !== undefined) data.capacity = patch.capacity;
   return data;
 }
@@ -605,20 +617,18 @@ async function subscribeWalletWebhooksBestEffort(
 }
 
 /** Event fields that can appear in a wallet pass via WALLET_MAPPING_PLACEHOLDERS (event name,
- * hours, date, location) or via the semantic tags toggle - flipping either changes what
- * buildWalletPassInput would produce for an already-issued pass. wallet_apple_enabled is
- * included too: buildWalletPassInput gates `semantics` on it as well as
- * wallet_semantic_tags_enabled (Apple-only data never sent for a Google-only event), so turning
- * Apple Wallet off must also refresh already-issued passes, or a stale semantics payload would
- * linger on-device until some other tracked field happened to change. */
+ * hours, date, location, event type) - flipping any of these changes what buildWalletPassInput
+ * would produce for an already-issued pass. wallet_apple_enabled is included too: PassCreator's
+ * relevantDate (Lock Screen surfacing) is Apple-only, gated on it alone, so turning Apple Wallet
+ * off must also refresh already-issued passes. */
 type WalletRelevantEventSnapshot = {
   title: string;
   date: Date;
   timezone: string;
   event_hours_start: string | null;
   event_hours_end: string | null;
+  event_type: string | null;
   wallet_apple_enabled: boolean;
-  wallet_semantic_tags_enabled: boolean;
 };
 
 /** True only when one of the wallet-relevant fields' *persisted* value actually differs -
@@ -637,8 +647,8 @@ function walletRelevantEventFieldsChanged(
     existing.timezone !== updated.timezone ||
     existing.event_hours_start !== updated.event_hours_start ||
     existing.event_hours_end !== updated.event_hours_end ||
-    existing.wallet_apple_enabled !== updated.wallet_apple_enabled ||
-    existing.wallet_semantic_tags_enabled !== updated.wallet_semantic_tags_enabled
+    existing.event_type !== updated.event_type ||
+    existing.wallet_apple_enabled !== updated.wallet_apple_enabled
   );
 }
 
@@ -707,7 +717,6 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     patch.wallet_api_key !== undefined ||
     patch.wallet_apple_enabled !== undefined ||
     patch.wallet_google_enabled !== undefined ||
-    patch.wallet_semantic_tags_enabled !== undefined ||
     patch.wallet_field_mapping !== undefined;
   if (patchesWallet && !(await canManageInstance(db, c.get("auth").userId))) {
     return c.json({ error: "forbidden" }, 403);
@@ -725,12 +734,12 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     timezone?: string;
     event_hours_start?: string | null;
     event_hours_end?: string | null;
+    event_type?: string | null;
     wallet_enabled?: boolean;
     wallet_template_id?: string | null;
     wallet_api_key_enc?: string | null;
     wallet_apple_enabled?: boolean;
     wallet_google_enabled?: boolean;
-    wallet_semantic_tags_enabled?: boolean;
     wallet_field_mapping?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
     capacity?: number | null;
     logo_url?: string | null;

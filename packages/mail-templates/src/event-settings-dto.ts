@@ -1,5 +1,18 @@
 import type { LogoPersistenceDto } from "./logo-crop.js";
 
+/** Apple PKEventType vocabulary an event can be categorized as - a WALLET_MAPPING_PLACEHOLDERS
+ * entry (`event_type`), translated to the Apple literal (e.g. "PKEventTypeSports") in
+ * packages/tickets/src/wallet-pass-input.ts, not sent to PassCreator on its own. */
+export type EventType =
+  | "generic"
+  | "live_performance"
+  | "movie"
+  | "sports"
+  | "conference"
+  | "convention"
+  | "workshop"
+  | "social_gathering";
+
 /**
  * GET /api/admin/events/:id settings payload (server + admin SPA).
  * Kept in mail-templates next to {@link LogoPersistenceDto} so web and admin share one shape.
@@ -13,6 +26,8 @@ export type EventSettingsDto = {
   /** Display-only 24h "HH:MM" shown on tickets/wallet passes; independently optional. */
   event_hours_start: string | null;
   event_hours_end: string | null;
+  /** Optional event category; null = not set. See {@link EventType}. */
+  event_type: EventType | null;
   /** Master switch for this event's wallet feature - off hides both platform buttons regardless
    * of the per-platform switches below. */
   wallet_enabled: boolean;
@@ -22,9 +37,6 @@ export type EventSettingsDto = {
   wallet_api_key: { configured: boolean };
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
-  /** Apple Wallet semantic tags (Siri Suggestions/Maps/Calendar) - opt-in, Apple only, no
-   * NFC/poster-style. Off by default (ADR 0009 data minimization). */
-  wallet_semantic_tags_enabled: boolean;
   /** PassCreator field key -> Admitto placeholder token (e.g. {"name": "full_name"}). No default
    * mapping - null/empty means nothing beyond the QR code is sent to PassCreator. */
   wallet_field_mapping: Record<string, string> | null;

@@ -70,7 +70,7 @@ export {
 } from "./branding.js";
 export { parseLogoCrop, logoCropFromDb } from "./logo-crop.js";
 export type { LogoCropMeta, LogoPersistenceDto } from "./logo-crop.js";
-export type { EventSettingsDto } from "./event-settings-dto.js";
+export type { EventSettingsDto, EventType } from "./event-settings-dto.js";
 export {
   previewTemplate,
   DEFAULT_SAMPLE_VARS,
