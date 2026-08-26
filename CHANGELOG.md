@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-08-26
+
 ### Added
 
 - Event Settings now has an "Event type" field (General tab) and, on the Location tab, a "Venue access details" section for venue room, entrance/door/gate/portal identifiers, venue phone number, Apple Maps place ID, and access-point opening times (venue, doors, gates, box office, parking lots, fan zone). None of these reach a wallet pass on their own - like every other wallet field, they only take effect once mapped in Event Settings → Wallet → Field mapping, the same mechanism that already feeds an attendee's name, event date, and venue onto the pass.
@@ -1217,7 +1219,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/solarssk/admitto/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/solarssk/admitto/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/solarssk/admitto/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/solarssk/admitto/compare/v0.5.5...v0.6.0
