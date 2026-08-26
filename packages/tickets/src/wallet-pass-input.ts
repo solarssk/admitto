@@ -160,12 +160,14 @@ export function buildWalletPassInput(resolved: ResolvedTicket, barcodeValue: str
   const { attendee, event } = resolved;
   const mapLabel = event.location ?? event.formattedAddress ?? undefined;
   const mapReady = isMapReady(event);
-  // An overnight event (end time earlier than start time) closes on the calendar day *after*
-  // event.date - venue_close_time plays the same role event_hours_end used to for the removed
-  // eventEndDate semantic tag, and needs the same +24h anchor or it resolves to an instant
-  // before the event even starts. The other 6 access-point times (doors/gates/box office/
-  // parking/venue open, fan zone) are all pre-event and stay anchored to event.date itself.
-  const isOvernight = !!event.eventHoursStart && !!event.eventHoursEnd && event.eventHoursEnd < event.eventHoursStart;
+  // An overnight venue (close time earlier than its own open time) closes on the calendar day
+  // *after* event.date, or it resolves to an instant before the venue even opens. Derived from
+  // venue_open_time/venue_close_time themselves, not the event's general eventHoursStart/End -
+  // those are a separate, independently-set field pair (bot review: comparing against event
+  // hours mis-anchors venue_close_time whenever the two pairs disagree or eventHours is unset).
+  // The other 6 access-point times (doors/gates/box office/parking/venue open, fan zone) are all
+  // pre-event and stay anchored to event.date itself.
+  const isOvernight = !!event.venueOpenTime && !!event.venueCloseTime && event.venueCloseTime < event.venueOpenTime;
   const venueCloseDateBase = isOvernight ? new Date(event.date.getTime() + 24 * 60 * 60 * 1000) : event.date;
   return {
     attendeeName: attendee.name,

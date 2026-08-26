@@ -43,8 +43,10 @@ Full type shapes (`WalletPassInput`, `WalletPassResult`, `WalletProviderError`) 
   `wallet_provider_unauthorized`, `_rate_limited`, `_duplicate`, `_not_found`, `_timeout`,
   `_rejected`. Callers branch on `.code`, never on `.message`.
 - **Data minimization.** Send only what `WalletPassInput` actually contains — never reach back
-  into Admitto's database for more. Fields are optional for a reason: nothing beyond the QR/barcode
-  reaches a provider until an admin explicitly maps it in Event Settings → Wallet's Field mapping.
+  into Admitto's database for more. Fields are optional for a reason: nothing beyond the
+  provider-controlled identity fields (barcode/QR value, `userProvidedId`, and — Apple-only, when
+  the event has a start time — `relevantDate` for Lock Screen surfacing) reaches a provider until
+  an admin explicitly maps the rest in Event Settings → Wallet's Field mapping.
 - **No gating authority.** A webhook or callback from your service is a signal Admitto reconciles
   against its own state — never a source of truth for check-in eligibility.
 

@@ -348,33 +348,50 @@ describe("buildWalletPassInput — access-point timing placeholders", () => {
     expect(input.venueOpenTimeLabel).toBeUndefined();
   });
 
-  it("rolls venue_close_time to the next calendar day for an overnight event", () => {
+  it("rolls venue_close_time to the next calendar day for an overnight venue", () => {
     const input = buildWalletPassInput(
       fullResolved({
-        event: { eventHoursStart: "20:00", eventHoursEnd: "01:00", venueCloseTime: "01:30" },
+        event: { venueOpenTime: "20:00", venueCloseTime: "01:30" },
       }),
       "b",
     );
-    // event.date is 2026-09-24; eventHoursEnd (01:00) < eventHoursStart (20:00) marks this
+    // event.date is 2026-09-24; venue_close_time (01:30) < venue_open_time (20:00) marks this
     // overnight, so venue_close_time anchors to 2026-09-25, not the event's own stored day.
     expect(input.venueCloseTimeLabel).toBe("2026-09-25T01:30:00+01:00");
   });
 
-  it("keeps venue_close_time on the event's own day when the event isn't overnight", () => {
+  it("derives the overnight rollover from venue hours, not the event's own eventHoursStart/End", () => {
+    // eventHoursStart/eventHoursEnd are a separate field pair and are unset here entirely - only
+    // venue_open_time/venue_close_time drive the rollover (bot review: comparing against event
+    // hours instead of venue hours mis-anchored this whenever the two pairs disagreed).
     const input = buildWalletPassInput(
-      fullResolved({ event: { eventHoursStart: "09:00", eventHoursEnd: "18:00", venueCloseTime: "19:00" } }),
+      fullResolved({
+        event: {
+          eventHoursStart: null,
+          eventHoursEnd: null,
+          venueOpenTime: "22:00",
+          venueCloseTime: "04:00",
+        },
+      }),
+      "b",
+    );
+    expect(input.venueCloseTimeLabel).toBe("2026-09-25T04:00:00+01:00");
+  });
+
+  it("keeps venue_close_time on the event's own day when the venue isn't overnight", () => {
+    const input = buildWalletPassInput(
+      fullResolved({ event: { venueOpenTime: "09:00", venueCloseTime: "19:00" } }),
       "b",
     );
     expect(input.venueCloseTimeLabel).toBe("2026-09-24T19:00:00+01:00");
   });
 
-  it("does not roll the other 6 access-point times for an overnight event - they stay pre-event, same day", () => {
+  it("does not roll the other 6 access-point times for an overnight venue - they stay pre-event, same day", () => {
     const input = buildWalletPassInput(
       fullResolved({
         event: {
-          eventHoursStart: "20:00",
-          eventHoursEnd: "01:00",
           venueOpenTime: "18:00",
+          venueCloseTime: "01:00",
           doorsOpenTime: "19:00",
           gatesOpenTime: "19:15",
           boxOfficeOpenTime: "18:30",

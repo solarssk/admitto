@@ -1683,6 +1683,10 @@ export function EventSettingsPage() {
           onDirtyChange={setLocationDirty}
           onSavingChange={setLocationSaving}
           onLocationSaved={async () => {
+            // Invalidate the Wallet tab's read-only location snapshot so a saved venue-access
+            // field (room/entrance/opening hours/...) shows up in its field-mapping preview
+            // right away, instead of the value from whenever Wallet was first visited.
+            setWalletLocationPreview(undefined);
             await refreshLayoutEvent?.();
           }}
           onApplyTimezone={async (timezone) => {

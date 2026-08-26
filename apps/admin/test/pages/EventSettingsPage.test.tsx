@@ -586,6 +586,25 @@ describe("EventSettingsPage tabs", () => {
     await waitFor(() => expect(refreshEvent).toHaveBeenCalled());
   });
 
+  it("refetches the Wallet tab's location preview after a Location tab save", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, wallet_template_id: "tmpl-1" });
+    vi.mocked(fetchEventLocation).mockResolvedValue(emptyLocation);
+    vi.mocked(saveEventLocation).mockResolvedValueOnce({ ...emptyLocation, venue_room: "Hall B" });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    await waitFor(() => expect(document.getElementById("event-wallet-template-id")).toBeTruthy());
+    await waitFor(() => expect(fetchEventLocation).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Location" }));
+    await waitFor(() => expect(fetchEventLocation).toHaveBeenCalledTimes(2));
+
+    fireEvent.change(await screen.findByLabelText("Venue room"), { target: { value: "Hall B" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveEventLocation).toHaveBeenCalledWith("evt-1", { venue_room: "Hall B" }));
+    await waitFor(() => expect(fetchEventLocation).toHaveBeenCalledTimes(3));
+  });
+
   it("shows the created date and an active hint in the Status card", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
@@ -1532,6 +1551,68 @@ describe("EventSettingsPage tabs", () => {
       expect(hoverTooltipOf("Parking lots open time").textContent).toBe("07:00"),
     );
     await waitFor(() => expect(hoverTooltipOf("Fan zone open time").textContent).toBe("09:00"));
+  });
+
+  it("shows a not-set fallback for each venue access-point tooltip when the location field is empty", async () => {
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce(emptyLocation);
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_template_id: "tmpl-1",
+      wallet_field_mapping: {
+        room: "venue_room",
+        entrance: "venue_entrance",
+        door: "venue_entrance_door",
+        gate: "venue_entrance_gate",
+        portal: "venue_entrance_portal",
+        phone: "venue_phone_number",
+        placeId: "venue_place_id",
+        venueOpen: "venue_open_time",
+        venueClose: "venue_close_time",
+        doorsOpen: "doors_open_time",
+        gatesOpen: "gates_open_time",
+        boxOffice: "box_office_open_time",
+        parking: "parking_lots_open_time",
+        fanZone: "fan_zone_open_time",
+      },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    const hoverTooltipOf = (label: string): HTMLElement => {
+      document
+        .querySelectorAll(".wallet-field-mapping__hint")
+        .forEach((el) => fireEvent.mouseLeave(el));
+      const trigger = screen.getByRole("button", { name: `Value, ${label}` });
+      const row = trigger.closest(".wallet-field-mapping__row") as HTMLElement;
+      const hintTrigger = row.querySelector(".wallet-field-mapping__hint") as HTMLElement;
+      fireEvent.mouseEnter(hintTrigger);
+      return screen.getByRole("tooltip");
+    };
+
+    for (const label of [
+      "Venue room",
+      "Venue entrance",
+      "Entrance door",
+      "Entrance gate",
+      "Entrance portal",
+      "Venue phone number",
+      "Venue place ID",
+      "Venue open time",
+      "Venue close time",
+      "Doors open time",
+      "Gates open time",
+      "Box office open time",
+      "Parking lots open time",
+      "Fan zone open time",
+    ]) {
+      await waitFor(() =>
+        expect(hoverTooltipOf(label).textContent).toBe(
+          "Not set for this event - this field won't be sent.",
+        ),
+      );
+    }
   });
 
   it("shows a not-set fallback for location tooltips before the Location tab has anything saved", async () => {
