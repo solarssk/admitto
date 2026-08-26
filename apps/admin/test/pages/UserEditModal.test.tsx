@@ -26,8 +26,15 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     revokeUserRole: vi.fn(),
     revokeUserSessions: vi.fn(),
     unlinkUserExternalIdentity: vi.fn(),
+    beginWebauthnAssertion: vi.fn(),
   };
 });
+
+// startAuthentication() calls the real navigator.credentials.get(), which doesn't exist in
+// jsdom - the WebauthnStepUpButton tests drive it through this mock instead.
+vi.mock("@simplewebauthn/browser", () => ({
+  startAuthentication: vi.fn(),
+}));
 
 import {
   deleteAdminUser,
@@ -41,7 +48,9 @@ import {
   revokeUserRole,
   revokeUserSessions,
   unlinkUserExternalIdentity,
+  beginWebauthnAssertion,
 } from "../../src/api/client.js";
+import { startAuthentication } from "@simplewebauthn/browser";
 
 const mockFetchAdminEvents = vi.mocked(fetchAdminEvents);
 const mockFetchAdminOrganizations = vi.mocked(fetchAdminOrganizations);
@@ -54,6 +63,8 @@ const mockDeleteAdminUser = vi.mocked(deleteAdminUser);
 const mockRevokeUserRole = vi.mocked(revokeUserRole);
 const mockRevokeUserSessions = vi.mocked(revokeUserSessions);
 const mockUnlinkUserExternalIdentity = vi.mocked(unlinkUserExternalIdentity);
+const mockBeginWebauthnAssertion = vi.mocked(beginWebauthnAssertion);
+const mockStartAuthentication = vi.mocked(startAuthentication);
 
 const event: EventDto = {
   id: "evt-1",
@@ -1026,7 +1037,7 @@ describe("UserEditModal sign-in security", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
-      expect(mockRevokeUserSessions).toHaveBeenCalledWith("usr-1");
+      expect(mockRevokeUserSessions).toHaveBeenCalledWith("usr-1", undefined);
     });
     expect(onUpdated).toHaveBeenCalledWith({ ...user, active_sessions_count: 2 }, "2 sessions revoked");
     expect(onClose).toHaveBeenCalled();
@@ -1072,6 +1083,31 @@ describe("UserEditModal sign-in security", () => {
 
     expect(screen.queryByRole("dialog", { name: "Revoke all sessions" })).toBeNull();
     expect(mockRevokeUserSessions).not.toHaveBeenCalled();
+  });
+
+  it("ignores Escape (which bypasses the disabled Cancel button) while a revoke request is in flight", async () => {
+    let resolveRevoke: (value: { ok: true; sessionsRevoked: number }) => void = () => {};
+    mockRevokeUserSessions.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveRevoke = resolve; }),
+    );
+    renderModal({ active_sessions_count: 2 });
+    await screen.findByText("2 sessions");
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Revoke sessions/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Revoke all sessions" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+    expect(mockRevokeUserSessions).toHaveBeenCalledTimes(1);
+
+    // The dialog's own Cancel button is disabled while loading, but Escape reaches onCancel
+    // through useModalFocusTrap regardless - the busy guard is what actually stops it here.
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Revoke all sessions" })).toBeTruthy();
+
+    resolveRevoke({ ok: true, sessionsRevoked: 2 });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Revoke all sessions" })).toBeNull();
+    });
   });
 });
 
@@ -1223,7 +1259,60 @@ describe("UserEditModal reset actions on another superadmin - actor step-up", ()
     fireEvent.click(resetButton);
 
     await waitFor(() => {
-      expect(mockResetUserMfa).toHaveBeenCalledWith("usr-1", "123456");
+      expect(mockResetUserMfa).toHaveBeenCalledWith("usr-1", { code: "123456" });
+    });
+  });
+
+  it("resets another superadmin's MFA using a passkey/security key as step-up proof instead of a code", async () => {
+    mockBeginWebauthnAssertion.mockResolvedValue({ options: { challenge: "chal-1" } } as never);
+    mockStartAuthentication.mockResolvedValue({ id: "cred-1" } as never);
+    renderModal(superadminUser);
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset two-factor/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Reset two-factor" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use a passkey or security key" }));
+
+    await waitFor(() => {
+      expect(mockResetUserMfa).toHaveBeenCalledWith("usr-1", { webauthn: { response: { id: "cred-1" } } });
+    });
+  });
+
+  it("requires and sends the actor's own code when revoking another superadmin's sessions", async () => {
+    renderModal({ ...superadminUser, active_sessions_count: 2 });
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Revoke sessions/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Revoke all sessions" });
+    const revokeButton = within(dialog).getByRole("button", { name: "Revoke" });
+    expect(revokeButton).toHaveProperty("disabled", true);
+
+    fireEvent.change(within(dialog).getByLabelText("Your authenticator or backup code"), {
+      target: { value: "123456" },
+    });
+    expect(revokeButton).toHaveProperty("disabled", false);
+    fireEvent.click(revokeButton);
+
+    await waitFor(() => {
+      expect(mockRevokeUserSessions).toHaveBeenCalledWith("usr-1", { code: "123456" });
+    });
+  });
+
+  it("revokes another superadmin's sessions using a passkey/security key as step-up proof instead of a code", async () => {
+    mockBeginWebauthnAssertion.mockResolvedValue({ options: { challenge: "chal-1" } } as never);
+    mockStartAuthentication.mockResolvedValue({ id: "cred-1" } as never);
+    renderModal({ ...superadminUser, active_sessions_count: 2 });
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Revoke sessions/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Revoke all sessions" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use a passkey or security key" }));
+
+    await waitFor(() => {
+      expect(mockRevokeUserSessions).toHaveBeenCalledWith("usr-1", { webauthn: { response: { id: "cred-1" } } });
     });
   });
 
@@ -1265,6 +1354,25 @@ describe("UserEditModal reset actions on another superadmin - actor step-up", ()
     });
   });
 
+  it("resets another superadmin's password using a passkey/security key as step-up proof instead of a code", async () => {
+    mockBeginWebauthnAssertion.mockResolvedValue({ options: { challenge: "chal-1" } } as never);
+    mockStartAuthentication.mockResolvedValue({ id: "cred-1" } as never);
+    renderModal(superadminUser);
+    await screen.findByRole("button", { name: "Save changes" });
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Reset password/ }));
+    fireEvent.change(screen.getByLabelText("New temporary password"), { target: { value: "long-enough-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use a passkey or security key" }));
+
+    await waitFor(() => {
+      expect(mockResetUserPassword).toHaveBeenCalledWith("usr-1", {
+        new_password: "long-enough-password",
+        webauthn: { response: { id: "cred-1" } },
+      });
+    });
+  });
+
   it("surfaces actor_mfa_required with a clear message instead of a generic failure", async () => {
     mockResetUserPassword.mockRejectedValueOnce(
       new ApiError(403, "actor_mfa_required", "actor_mfa_required"),
@@ -1280,7 +1388,7 @@ describe("UserEditModal reset actions on another superadmin - actor step-up", ()
 
     expect(
       await screen.findByText(
-        "You need a confirmed authenticator app, passkey, or security key on your own account before you can reset another superadmin's two-factor or password. If you signed in through single sign-on and have no local password, you can't set one up yourself here - ask another superadmin who already has one confirmed to do this instead.",
+        "You need a confirmed authenticator app, passkey, or security key on your own account before you can reset another superadmin's two-factor or password, or revoke their sessions. If you signed in through single sign-on and have no local password, you can't set one up yourself here - ask another superadmin who already has one confirmed to do this instead.",
       ),
     ).toBeTruthy();
   });

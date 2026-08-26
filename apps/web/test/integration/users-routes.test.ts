@@ -1358,6 +1358,20 @@ describe("POST /api/admin/users/:id/revoke-sessions", () => {
     expect(targetAfter?.last_login_at).toBe(targetBefore?.last_login_at);
     expect(targetAfter?.active_sessions_count).toBe(0);
   });
+
+  it("returns 429 once the per-actor 10/min limit is exhausted", async () => {
+    const userKey = `admin:user-revoke-sessions:user:${superId}:target:${targetId}`;
+    for (let i = 0; i < 10; i++) {
+      await rateLimitStore.hit(userKey, 60_000, 10);
+    }
+
+    const res = await app.request(`/api/admin/users/${targetId}/revoke-sessions`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(429);
+    rateLimitStore.reset();
+  });
 });
 
 describe("POST /api/admin/users/:id/reset-2fa", () => {
@@ -1528,7 +1542,7 @@ async function webauthnStepUpProof(
   return { webauthn: { response } };
 }
 
-describe("POST /api/admin/users/:id/reset-2fa and reset-password — superadmin-on-superadmin step-up", () => {
+describe("POST /api/admin/users/:id/reset-2fa, reset-password, revoke-sessions — superadmin-on-superadmin step-up", () => {
   const SUPER_TARGET_EMAIL = "users-super-target@example.com";
   let superTargetId = "";
   let actorSecret: string;
@@ -1653,6 +1667,84 @@ describe("POST /api/admin/users/:id/reset-2fa and reset-password — superadmin-
       orderBy: { created_at: "desc" },
     });
     expect(audit?.metadata).toMatchObject({ userId: superTargetId, superadminTarget: true });
+  });
+
+  it("revoke-sessions: returns 400 totp_required without a step-up code and leaves the target's sessions active", async () => {
+    await createSession(prisma, { userId: superTargetId, stage: SESSION_STAGE.FULL });
+    const res = await app.request(`/api/admin/users/${superTargetId}/revoke-sessions`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("totp_required");
+    expect(
+      await prisma.session.count({ where: { user_id: superTargetId, revoked_at: null } }),
+    ).toBeGreaterThan(0);
+  });
+
+  it("revoke-sessions: returns 401 invalid_totp for a wrong step-up code and leaves the target's sessions active", async () => {
+    await createSession(prisma, { userId: superTargetId, stage: SESSION_STAGE.FULL });
+    const res = await app.request(`/api/admin/users/${superTargetId}/revoke-sessions`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "000000" }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { code: string }).code).toBe("invalid_totp");
+    expect(
+      await prisma.session.count({ where: { user_id: superTargetId, revoked_at: null } }),
+    ).toBeGreaterThan(0);
+  });
+
+  it("revoke-sessions: succeeds with a correct step-up code and flags the audit log as a superadmin-target reset", async () => {
+    await createSession(prisma, { userId: superTargetId, stage: SESSION_STAGE.FULL });
+    const res = await app.request(`/api/admin/users/${superTargetId}/revoke-sessions`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ code: generateTotpCode(actorSecret) }),
+    });
+    expect(res.status).toBe(200);
+    expect(
+      await prisma.session.count({ where: { user_id: superTargetId, revoked_at: null } }),
+    ).toBe(0);
+
+    const audit = await prisma.adminAuditLog.findFirst({
+      where: { organization_id: ORG_USERS, action_type: "user_sessions_revoked", actor_user_id: superId },
+      orderBy: { created_at: "desc" },
+    });
+    expect(audit?.metadata).toMatchObject({ userId: superTargetId, superadminTarget: true });
+  });
+
+  it("revoke-sessions: returns 403 actor_mfa_required (not a silent skip) when the actor has no confirmed local TOTP, and leaves the target's sessions active", async () => {
+    await createSession(prisma, { userId: superTargetId, stage: SESSION_STAGE.FULL });
+    await prisma.userMfaMethod.deleteMany({ where: { user_id: superId } });
+    const oidcActorSession = await createSession(prisma, {
+      userId: superId,
+      stage: SESSION_STAGE.FULL,
+      authMethod: AUTH_METHOD.OIDC,
+    });
+    const oidcActorCookie = `admitto_session=${oidcActorSession.rawToken}`;
+
+    const res = await app.request(`/api/admin/users/${superTargetId}/revoke-sessions`, {
+      method: "POST",
+      headers: { Cookie: oidcActorCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("actor_mfa_required");
+    expect(
+      await prisma.session.count({ where: { user_id: superTargetId, revoked_at: null } }),
+    ).toBeGreaterThan(0);
+  });
+
+  it("does not require step-up when revoking sessions for a non-superadmin target, even though the actor is a superadmin", async () => {
+    await createSession(prisma, { userId: targetId, stage: SESSION_STAGE.FULL });
+    const res = await app.request(`/api/admin/users/${targetId}/revoke-sessions`, {
+      method: "POST",
+      headers: { Cookie: superCookie, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
   });
 
   it("reset-2fa: returns 403 actor_mfa_required (not a silent skip) when the actor has no confirmed local TOTP, and leaves the target's MFA untouched", async () => {

@@ -1398,7 +1398,17 @@ export async function handlePostResetUserPassword(
 }
 
 /** POST /api/admin/users/:id/revoke-sessions — revoke all sessions for a user. */
-export async function handlePostRevokeUserSessions(c: Context, db: PrismaClient): Promise<Response> {
+/** POST /api/admin/users/:id/revoke-sessions — force-logout a user. Revoking another superadmin's
+ * sessions additionally requires the ACTOR to step up with their own TOTP/recovery code
+ * (actorMustStepUpForReset) and is flagged distinctly in the audit trail, same as reset-2fa and
+ * reset-password above - without it, a compromised superadmin session could force-logout every
+ * other superadmin (rate-limited per target, not per actor, so that alone doesn't stop a sweep). */
+export async function handlePostRevokeUserSessions(
+  c: Context,
+  db: PrismaClient,
+  rateLimitStore: RateLimitStore,
+  injectedBaseUrl?: string,
+): Promise<Response> {
   const denied = await requireSuperadmin(c, db);
   if (denied) return denied;
 
@@ -1408,23 +1418,45 @@ export async function handlePostRevokeUserSessions(c: Context, db: PrismaClient)
   const user = await db.user.findUnique({ where: { id }, select: { id: true, email: true } });
   if (!user) return c.json({ error: "not_found" }, 404);
 
-  const orgId = await resolveInstanceOrganizationId(db);
-  const audit = adminAuditFromContext(c);
-  const actorUserId = c.get("auth").userId;
+  const body = (await c.req.json().catch(() => null)) as unknown;
+  const parsedStepUpBody = z.object(stepUpProofFields).strict().safeParse(body ?? {});
+  if (!parsedStepUpBody.success) return c.json({ error: "invalid body" }, 400);
+  const stepUpBody = parsedStepUpBody.data;
 
-  const { sessionsRevoked } = await db.$transaction(async (tx) => {
-    const revoked = await revokeUserAuthState(tx, id);
-    await writeAdminAuditLog(tx, {
-      organizationId: orgId,
+  const auth = c.get("auth");
+  const actorUserId = auth.userId;
+  const requiresStepUp = await actorMustStepUpForReset(db, actorUserId, id);
+
+  const gated = await runAdminResetWithActorStepUp(
+    c,
+    db,
+    rateLimitStore,
+    {
+      requiresStepUp,
       actorUserId,
-      sessionId: audit.sessionId,
-      ip: audit.ip,
-      timezone: audit.timezone,
-      actionType: "user_sessions_revoked",
-      metadata: { userId: id, sessionsRevoked: revoked.sessionsRevoked },
-    });
-    return revoked;
-  });
+      currentSessionId: auth.sessionId,
+      stepUpBody,
+      rateLimitAction: "admin-revoke-sessions-superadmin",
+      injectedBaseUrl,
+    },
+    async (tx, orgId, audit) => {
+      const revoked = await revokeUserAuthState(tx, id);
+      await writeAdminAuditLog(tx, {
+        organizationId: orgId,
+        actorUserId,
+        sessionId: audit.sessionId,
+        ip: audit.ip,
+        timezone: audit.timezone,
+        actionType: "user_sessions_revoked",
+        metadata: requiresStepUp
+          ? { userId: id, sessionsRevoked: revoked.sessionsRevoked, superadminTarget: true }
+          : { userId: id, sessionsRevoked: revoked.sessionsRevoked },
+      });
+      return { ok: true as const, sessionsRevoked: revoked.sessionsRevoked };
+    },
+  );
+  if (!gated.ok) return gated.response;
+  const { sessionsRevoked } = gated.value;
 
   emitSystemLog("security", "info", "user_sessions_revoked", {
     targetUserId: user.id,
@@ -1432,6 +1464,7 @@ export async function handlePostRevokeUserSessions(c: Context, db: PrismaClient)
     sessionsRevoked,
     actorUserId,
     actorEmail: await resolveActorEmailForLog(db, actorUserId),
+    ...(requiresStepUp ? { superadminTarget: true } : {}),
   });
 
   return c.json({ ok: true, sessionsRevoked });
