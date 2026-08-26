@@ -75,6 +75,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await prisma.session.deleteMany({ where: { user_id: superId } });
+  await prisma.userMfaMethod.deleteMany({ where: { user_id: superId } });
+  await prisma.roleAssignment.deleteMany({ where: { user_id: superId } });
+  await prisma.user.deleteMany({ where: { id: superId } });
   await prisma?.$disconnect();
 });
 

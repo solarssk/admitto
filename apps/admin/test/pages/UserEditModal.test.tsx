@@ -1073,6 +1073,31 @@ describe("UserEditModal sign-in security", () => {
     expect(screen.queryByRole("dialog", { name: "Revoke all sessions" })).toBeNull();
     expect(mockRevokeUserSessions).not.toHaveBeenCalled();
   });
+
+  it("ignores Escape (which bypasses the disabled Cancel button) while a revoke request is in flight", async () => {
+    let resolveRevoke: (value: { ok: true; sessionsRevoked: number }) => void = () => {};
+    mockRevokeUserSessions.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveRevoke = resolve; }),
+    );
+    renderModal({ active_sessions_count: 2 });
+    await screen.findByText("2 sessions");
+
+    openMoreActions();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Revoke sessions/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Revoke all sessions" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+    expect(mockRevokeUserSessions).toHaveBeenCalledTimes(1);
+
+    // The dialog's own Cancel button is disabled while loading, but Escape reaches onCancel
+    // through useModalFocusTrap regardless - the busy guard is what actually stops it here.
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Revoke all sessions" })).toBeTruthy();
+
+    resolveRevoke({ ok: true, sessionsRevoked: 2 });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Revoke all sessions" })).toBeNull();
+    });
+  });
 });
 
 describe("UserEditModal reset actions", () => {
