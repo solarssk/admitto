@@ -1,10 +1,16 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, IconButton, ModalBackdrop, Tooltip, useToast } from "@admitto/ui";
-import { createEventCustomField, updateEventCustomField } from "../api/client.js";
+import {
+  createEventCustomField,
+  fetchEventCustomFieldOptionUsage,
+  updateEventCustomField,
+} from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventCustomFieldDto } from "../api/types.js";
 import { CUSTOM_FIELD_TYPES } from "./customFieldType.js";
 import { slugifyItemKey } from "./itemKey.js";
+import { newOptionRow, optionRowsFromOptions, OptionsEditor, type OptionRow } from "./OptionsEditor.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import "./requirements.css";
@@ -23,11 +29,11 @@ type FormState = {
   description: string;
   type: "text" | "select" | "boolean";
   required: boolean;
-  options: string;
+  options: OptionRow[];
 };
 
 function emptyForm(): FormState {
-  return { label: "", source_field: "", description: "", type: "text", required: false, options: "" };
+  return { label: "", source_field: "", description: "", type: "text", required: false, options: [] };
 }
 
 function formFromField(field: EventCustomFieldDto): FormState {
@@ -37,7 +43,7 @@ function formFromField(field: EventCustomFieldDto): FormState {
     description: field.description ?? "",
     type: field.type,
     required: field.required,
-    options: field.options?.join("\n") ?? "",
+    options: optionRowsFromOptions(field.options),
   };
 }
 
@@ -47,27 +53,41 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
   const isEdit = field !== null;
   const [form, setForm] = useState<FormState>(() => (field ? formFromField(field) : emptyForm()));
   const [saving, setSaving] = useState(false);
+  // null = usage counts for the current select field are still loading; {} for create mode or a
+  // non-select field, where there's nothing to fetch. Delete/rename-risk checks in OptionsEditor
+  // and below both treat null as "unknown", never as "unused" - see the fetch effect below.
+  const [usageCounts, setUsageCounts] = useState<Record<string, number> | null>(() =>
+    isEdit && field.type === "select" ? null : {},
+  );
+  const [usageError, setUsageError] = useState(false);
+  const [confirmRiskyRenames, setConfirmRiskyRenames] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(panelRef, true, onClose);
   useOverscrollBounceGuard(scrollRef);
 
+  useEffect(() => {
+    if (!isEdit || field.type !== "select") return;
+    const controller = new AbortController();
+    fetchEventCustomFieldOptionUsage(eventId, field.id, controller.signal)
+      .then((counts) => setUsageCounts(counts))
+      .catch(() => {
+        if (!controller.signal.aborted) setUsageError(true);
+      });
+    return () => controller.abort();
+    // Fetches once for the field this modal was opened with - eventId/field.id/field.type don't
+    // change while it's open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const usageLoading = usageCounts === null;
   let submitLabel = "Create field";
   if (saving) submitLabel = "Saving…";
+  else if (usageLoading) submitLabel = "Checking usage…";
   else if (isEdit) submitLabel = "Save";
 
   const labelTrimmed = form.label.trim();
-  // Newline-only, matching the field's "one per line" label - splitting on comma too (as this
-  // used to) corrupts any option whose own text contains one (e.g. "Sales, EMEA" stored as a
-  // single option) into two options on every re-parse, which made an edit's options-changed
-  // check see a "change" even when the operator never touched the options box (bot review on
-  // PR #1100 - the exact data-corruption case this file's other options-diffing guard exists to
-  // prevent). Keeping this newline-only makes formFromField's join("\n") / this split round-trip
-  // losslessly for any option content.
-  const selectOptions = form.options
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const selectOptions = form.options.map((r) => r.text.trim()).filter(Boolean);
   const canSubmit =
     labelTrimmed.length > 0 &&
     form.source_field.length > 0 &&
@@ -75,6 +95,16 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
   // Create mode always has "something new to save" once canSubmit is true; edit mode also
   // requires the draft to actually differ from the field being edited.
   const dirty = field ? JSON.stringify(form) !== JSON.stringify(formFromField(field)) : true;
+
+  // Options renamed away from a value with attendees currently on it - Save gates on these with
+  // ConfirmDialog instead of sending the PATCH straight away. A plain delete is already
+  // confirmed in place by OptionsEditor itself, so it isn't repeated here.
+  const riskyRenames = usageCounts
+    ? form.options.filter((r) => {
+        const trimmed = r.text.trim();
+        return trimmed !== r.originalText && trimmed !== "" && (usageCounts[r.originalText] ?? 0) > 0;
+      })
+    : [];
 
   function updateLabel(value: string) {
     setForm((f) => ({
@@ -84,9 +114,17 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
     }));
   }
 
-  async function handleSave(e: React.FormEvent) {
+  function handleFormSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || usageLoading) return;
+    if (riskyRenames.length > 0) {
+      setConfirmRiskyRenames(true);
+      return;
+    }
+    void performSave();
+  }
+
+  async function performSave() {
     const label = labelTrimmed;
     const source_field = form.source_field;
     const description = form.description.trim();
@@ -157,7 +195,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
             </div>
             <IconButton label="Close" onClick={onClose} icon={<i className="ti ti-x" />} />
           </div>
-          <form id="custom-field-form" className="event-item-modal__body" onSubmit={(e) => void handleSave(e)}>
+          <form id="custom-field-form" className="event-item-modal__body" onSubmit={handleFormSubmit}>
             <div className="at-field">
               <div className="add-item-label-row">
                 <label className="at-label" htmlFor="cf-label">
@@ -226,7 +264,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
                       type="button"
                       className={`contents-row__type-btn${form.type === value ? " contents-row__type-btn--active" : ""}`}
                       onClick={() => {
-                        setForm((f) => ({ ...f, type: value, options: value === "select" ? f.options : "" }));
+                        setForm((f) => ({ ...f, type: value, options: value === "select" ? f.options : [] }));
                       }}
                       aria-pressed={form.type === value}
                       aria-label={btnLabel}
@@ -242,17 +280,17 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
               </span>
               {form.type === "select" && (
                 <>
-                  <label className="at-label" htmlFor="cf-options">
-                    Options (one per line)
-                  </label>
-                  <textarea
-                    id="cf-options"
-                    className="at-textarea"
-                    rows={3}
-                    value={form.options}
-                    onChange={(e) => setForm((f) => ({ ...f, options: e.target.value }))}
-                    placeholder={"Vegetarian\nVegan\nGluten-free"}
-                    aria-label="Select options"
+                  <span className="at-label">Options</span>
+                  {usageError && (
+                    <p className="at-hint" role="alert">
+                      Could not load how many attendees use each option. Try reopening this field.
+                    </p>
+                  )}
+                  <OptionsEditor
+                    rows={form.options}
+                    usageCounts={usageCounts}
+                    disabled={saving}
+                    onChange={(rows) => setForm((f) => ({ ...f, options: rows }))}
                   />
                 </>
               )}
@@ -263,13 +301,41 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
               <Button type="button" variant="ghost" disabled={saving} onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="submit" form="custom-field-form" variant="primary" disabled={!canSubmit || saving || !dirty}>
+              <Button
+                type="submit"
+                form="custom-field-form"
+                variant="primary"
+                disabled={!canSubmit || saving || !dirty || usageLoading}
+              >
                 {submitLabel}
               </Button>
             </div>
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmRiskyRenames}
+        icon={<i className="ti ti-alert-triangle" />}
+        title="This will affect existing attendees"
+        message="Renaming these options changes what attendees currently have selected - they'll show as unset until reassigned."
+        confirmLabel="Save anyway"
+        confirmVariant="warning"
+        onCancel={() => setConfirmRiskyRenames(false)}
+        onConfirm={() => {
+          setConfirmRiskyRenames(false);
+          void performSave();
+        }}
+      >
+        <ul className="custom-field-risky-list">
+          {riskyRenames.map((r) => (
+            <li key={r.key}>
+              Renaming &ldquo;{r.originalText}&rdquo; to &ldquo;{r.text.trim()}&rdquo; affects{" "}
+              {usageCounts?.[r.originalText] ?? 0}{" "}
+              {(usageCounts?.[r.originalText] ?? 0) === 1 ? "attendee" : "attendees"}.
+            </li>
+          ))}
+        </ul>
+      </ConfirmDialog>
     </div>
   );
 }

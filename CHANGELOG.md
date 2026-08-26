@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Editing a select-type custom field's options is now a structured list instead of a plain "one per line" textarea. Each option shows how many attendees currently have it selected, warns in place before a rename that would affect them, asks for confirmation before removing an option that's in use, and blocks Save behind a summary of anything risky an operator hasn't explicitly acknowledged. Options can also be reordered by drag (mouse, touch, or pen) or, with the drag handle focused, the up/down arrow keys.
+
 ### Fixed
 
 - Editing an event's custom field definition (for example toggling "Required") no longer re-sends its select options as a side effect. Previously any save re-derived and rewrote the full options list from the edit form regardless of whether the operator touched it, which could silently diverge from the list an attendee's already-saved value was chosen against - once that happened, the attendee's saved selection stopped matching any current option, so it showed as unset in Edit attendee and had to be re-picked before the form could be saved again.

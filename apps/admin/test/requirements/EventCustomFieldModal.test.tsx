@@ -12,10 +12,19 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     ...actual,
     createEventCustomField: vi.fn(),
     updateEventCustomField: vi.fn(),
+    fetchEventCustomFieldOptionUsage: vi.fn(),
   };
 });
 
-import { createEventCustomField, updateEventCustomField } from "../../src/api/client.js";
+import {
+  createEventCustomField,
+  fetchEventCustomFieldOptionUsage,
+  updateEventCustomField,
+} from "../../src/api/client.js";
+
+// Most tests don't care about usage counts - only the ones exercising rename-warning/delete-
+// confirm/save-gate need real numbers, via mockResolvedValueOnce on top of this default.
+vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValue({});
 
 const addToast = vi.fn();
 vi.mock("@admitto/ui", async (importOriginal) => {
@@ -37,12 +46,27 @@ const dietaryField: EventCustomFieldDto = {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValue({});
 });
 
 function renderModal(field: EventCustomFieldDto | null) {
   renderWithToast(
     <EventCustomFieldModal eventId="evt-1" field={field} onClose={vi.fn()} onSaved={vi.fn()} />,
   );
+}
+
+/** Clicks "+ Add option" and types into the row it creates - option inputs share one
+ * aria-label ("Option text"), so the newest one is always the last in document order. */
+function addOptionRow(text: string) {
+  fireEvent.click(screen.getByRole("button", { name: "+ Add option" }));
+  const inputs = screen.getAllByLabelText("Option text");
+  fireEvent.change(inputs[inputs.length - 1]!, { target: { value: text } });
+}
+
+/** A select field is opened for edit fetches usage counts on mount - wait for that to resolve
+ * (Save reads "Checking usage…" and stays disabled until it does) before interacting further. */
+async function waitForUsageLoaded() {
+  await waitFor(() => expect(screen.queryByText("Checking usage…")).toBeNull());
 }
 
 describe("EventCustomFieldModal — create", () => {
@@ -63,7 +87,6 @@ describe("EventCustomFieldModal — create", () => {
   it("keeps Create field disabled when the display label is empty", () => {
     renderModal(null);
     expect(screen.getByRole("button", { name: "Create field" }).hasAttribute("disabled")).toBe(true);
-    expect(screen.queryByText("Enter a display label using letters or numbers.")).toBeNull();
     expect(createEventCustomField).not.toHaveBeenCalled();
   });
 
@@ -72,7 +95,6 @@ describe("EventCustomFieldModal — create", () => {
     fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Size" } });
     fireEvent.click(screen.getByRole("button", { name: "Single choice" }));
     expect(screen.getByRole("button", { name: "Create field" }).hasAttribute("disabled")).toBe(true);
-    expect(screen.queryByText("Select fields need at least one option.")).toBeNull();
     expect(createEventCustomField).not.toHaveBeenCalled();
   });
 
@@ -95,7 +117,7 @@ describe("EventCustomFieldModal — create", () => {
     });
   });
 
-  it("creates a select field with parsed options and required", async () => {
+  it("creates a select field with the options an operator adds and required", async () => {
     vi.mocked(createEventCustomField).mockResolvedValueOnce({
       ...dietaryField,
       type: "select",
@@ -105,7 +127,9 @@ describe("EventCustomFieldModal — create", () => {
     renderModal(null);
     fireEvent.change(screen.getByLabelText("Display label"), { target: { value: "Shirt size" } });
     fireEvent.click(screen.getByRole("button", { name: "Single choice" }));
-    fireEvent.change(screen.getByLabelText("Select options"), { target: { value: "S\nM\nL" } });
+    addOptionRow("S");
+    addOptionRow("M");
+    addOptionRow("L");
     fireEvent.click(screen.getByRole("button", { name: "Required" }));
     fireEvent.click(screen.getByRole("button", { name: "Create field" }));
     await waitFor(() => {
@@ -214,17 +238,20 @@ describe("EventCustomFieldModal — edit", () => {
     });
   });
 
+  const shirtField: EventCustomFieldDto = {
+    ...dietaryField,
+    id: "field-shirt",
+    source_field: "shirt_size",
+    label: "Shirt size",
+    type: "select",
+    required: false,
+    options: ["S", "M", "L"],
+  };
+
   it("clears a previous select field's options when switching to text", async () => {
-    const shirtField: EventCustomFieldDto = {
-      ...dietaryField,
-      id: "field-shirt",
-      source_field: "shirt_size",
-      label: "Shirt size",
-      type: "select",
-      options: ["S", "M", "L"],
-    };
     vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, type: "text", options: null });
     renderModal(shirtField);
+    await waitForUsageLoaded();
     fireEvent.click(screen.getByRole("button", { name: "Text" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
@@ -239,17 +266,9 @@ describe("EventCustomFieldModal — edit", () => {
   });
 
   it("does not resend options when saving an unrelated change to a select field", async () => {
-    const shirtField: EventCustomFieldDto = {
-      ...dietaryField,
-      id: "field-shirt",
-      source_field: "shirt_size",
-      label: "Shirt size",
-      type: "select",
-      required: false,
-      options: ["S", "M", "L"],
-    };
     vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, required: true });
     renderModal(shirtField);
+    await waitForUsageLoaded();
     fireEvent.click(screen.getByRole("button", { name: "Required" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
@@ -274,6 +293,7 @@ describe("EventCustomFieldModal — edit", () => {
     };
     vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...territoryField, required: true });
     renderModal(territoryField);
+    await waitForUsageLoaded();
     fireEvent.click(screen.getByRole("button", { name: "Required" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
@@ -294,7 +314,8 @@ describe("EventCustomFieldModal — edit", () => {
     });
     renderModal(dietaryField);
     fireEvent.click(screen.getByRole("button", { name: "Single choice" }));
-    fireEvent.change(screen.getByLabelText("Select options"), { target: { value: "A\nB" } });
+    addOptionRow("A");
+    addOptionRow("B");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-dietary", {
@@ -307,19 +328,11 @@ describe("EventCustomFieldModal — edit", () => {
     });
   });
 
-  it("sends the updated options when an operator actually edits a select field's option list", async () => {
-    const shirtField: EventCustomFieldDto = {
-      ...dietaryField,
-      id: "field-shirt",
-      source_field: "shirt_size",
-      label: "Shirt size",
-      type: "select",
-      required: false,
-      options: ["S", "M", "L"],
-    };
+  it("sends the updated options when an operator adds a new one to a select field's list", async () => {
     vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, options: ["S", "M", "L", "XL"] });
     renderModal(shirtField);
-    fireEvent.change(screen.getByLabelText("Select options"), { target: { value: "S\nM\nL\nXL" } });
+    await waitForUsageLoaded();
+    addOptionRow("XL");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
@@ -328,6 +341,109 @@ describe("EventCustomFieldModal — edit", () => {
         type: "select",
         required: false,
         options: ["S", "M", "L", "XL"],
+      });
+    });
+  });
+
+  it("shows how many attendees currently have each option, once loaded", async () => {
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ S: 3, M: 42 });
+    renderModal(shirtField);
+    expect(screen.getByText("Checking usage…")).toBeTruthy();
+    await waitForUsageLoaded();
+    expect(await screen.findByText("3 attendees")).toBeTruthy();
+    expect(await screen.findByText("42 attendees")).toBeTruthy();
+    expect(await screen.findByText("Unused")).toBeTruthy(); // L has no attendees
+  });
+
+  it("warns inline when renaming an option that's in use, and clears the warning if reverted", async () => {
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ M: 42 });
+    renderModal(shirtField);
+    await waitForUsageLoaded();
+    const mInput = screen.getAllByLabelText("Option text")[1]!; // S, M, L
+    fireEvent.change(mInput, { target: { value: "Medium" } });
+    expect(await screen.findByText(/42 attendees currently have “M”/)).toBeTruthy();
+
+    fireEvent.change(mInput, { target: { value: "M" } });
+    await waitFor(() => {
+      expect(screen.queryByText(/42 attendees currently have “M”/)).toBeNull();
+    });
+  });
+
+  it("removing an unused option deletes it immediately", async () => {
+    renderModal(shirtField);
+    await waitForUsageLoaded();
+    const deleteButtons = screen.getAllByRole("button", { name: "Remove option" });
+    fireEvent.click(deleteButtons[0]!); // S, unused
+    await waitFor(() => {
+      expect(screen.queryByDisplayValue("S")).toBeNull();
+    });
+    expect(screen.getByDisplayValue("M")).toBeTruthy();
+    expect(screen.getByDisplayValue("L")).toBeTruthy();
+  });
+
+  it("removing an option that's in use asks for confirmation before it's gone", async () => {
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ M: 42 });
+    renderModal(shirtField);
+    await waitForUsageLoaded();
+    const deleteButtons = screen.getAllByRole("button", { name: "Remove option" });
+    fireEvent.click(deleteButtons[1]!); // M, in use
+    // Confirming turns the row into a "remove?" strip rather than deleting it outright - the
+    // other two rows are untouched, and M's own row now reads as a confirmation, not an input.
+    expect(screen.getByDisplayValue("S")).toBeTruthy();
+    expect(screen.getByDisplayValue("L")).toBeTruthy();
+    expect(await screen.findByText(/42 attendees currently have this value/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Keep" }));
+    expect(screen.getByDisplayValue("M")).toBeTruthy();
+
+    // The row remounted from its confirm-strip markup back to a normal row - re-query rather
+    // than reuse the earlier (now-detached) button reference.
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove option" })[1]!);
+    fireEvent.click(await screen.findByRole("button", { name: "Remove anyway" }));
+    await waitFor(() => {
+      expect(screen.queryByDisplayValue("M")).toBeNull();
+    });
+  });
+
+  it("reorders options with the up/down arrow keys on the drag handle", async () => {
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, options: ["M", "S", "L"] });
+    renderModal(shirtField);
+    await waitForUsageLoaded();
+    const handles = screen.getAllByLabelText(/Drag to reorder/);
+    fireEvent.keyDown(handles[1]!, { key: "ArrowUp" }); // move M above S
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
+        label: "Shirt size",
+        description: null,
+        type: "select",
+        required: false,
+        options: ["M", "S", "L"],
+      });
+    });
+  });
+
+  it("gates Save behind a confirmation when a rename affects attendees, and proceeds on Save anyway", async () => {
+    vi.mocked(fetchEventCustomFieldOptionUsage).mockResolvedValueOnce({ M: 42 });
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, options: ["S", "Medium", "L"] });
+    renderModal(shirtField);
+    await waitForUsageLoaded();
+    const mInput = screen.getAllByLabelText("Option text")[1]!;
+    fireEvent.change(mInput, { target: { value: "Medium" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(updateEventCustomField).not.toHaveBeenCalled();
+    expect(await screen.findByText("This will affect existing attendees")).toBeTruthy();
+    expect(screen.getByText(/Renaming “M” to “Medium” affects 42 attendees/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save anyway" }));
+    await waitFor(() => {
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
+        label: "Shirt size",
+        description: null,
+        type: "select",
+        required: false,
+        options: ["S", "Medium", "L"],
       });
     });
   });

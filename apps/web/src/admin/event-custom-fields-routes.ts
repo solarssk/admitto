@@ -3,7 +3,12 @@ import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
 import { isReservedCustomDataSourceField, writeBulkActionLog } from "@admitto/tickets";
-import { adminAuditFromContext, assertEventManageAccess, requireEventId } from "./admin-helpers.js";
+import {
+  adminAuditFromContext,
+  assertEventManageAccess,
+  countAttendeesByCustomFieldValue,
+  requireEventId,
+} from "./admin-helpers.js";
 
 /** Per-event cap on custom attendee data field definitions - same placement/rationale as
  * MAX_IMAGE_ASSETS_PER_EVENT (bounds growth, generous for real use). */
@@ -258,6 +263,32 @@ export async function handlePatchEventCustomField(c: Context, db: PrismaClient):
     return row;
   });
   return c.json(serializeCustomField(updated));
+}
+
+/** GET /api/admin/events/:eventId/custom-fields/:fieldId/option-usage — how many attendees
+ * currently have each of a select field's option values, keyed by the option's own text (there's
+ * no stable per-option id - a value's usage tracks its current text, same as the matching logic
+ * in the attendee form). Fetched on demand by the edit-field modal, not folded into the list
+ * response above, since that would run one raw-SQL aggregate per select field on every load of
+ * the Requirements page for data an operator usually never opens. */
+export async function handleGetEventCustomFieldOptionUsage(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+  const fieldId = c.req.param("fieldId");
+  if (!fieldId) return c.json({ error: "fieldId required" }, 400);
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const existing = await loadCustomFieldInEvent(db, eventId, fieldId);
+  if (!existing) return c.json({ error: "forbidden" }, 403);
+  if (existing.type !== "select") {
+    return c.json({ error: "not_a_select_field" }, 400);
+  }
+
+  const counts = await countAttendeesByCustomFieldValue(db, eventId, existing.source_field);
+  return c.json({ counts: Object.fromEntries(counts) });
 }
 
 /** DELETE /api/admin/events/:eventId/custom-fields/:fieldId — blocked (409 field_in_use) while
