@@ -12,6 +12,9 @@ type CkInlineCameraProps = {
   onScan: (raw: string) => void;
   onClose: () => void;
   onReset: () => void;
+  /** Forwarded to CameraScanner - see its own prop for details. Optional since not every
+   * mount site (e.g. tests) cares about torch. */
+  onTrackChange?: (track: MediaStreamTrack | null) => void;
 };
 
 export function CkInlineCamera({
@@ -21,6 +24,7 @@ export function CkInlineCamera({
   onScan,
   onClose,
   onReset,
+  onTrackChange,
 }: Readonly<CkInlineCameraProps>) {
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -48,6 +52,7 @@ export function CkInlineCamera({
           enabled={!scannerPaused}
           wedgeActive={wedgeActive}
           onScan={onScan}
+          onTrackChange={onTrackChange}
         />
         {overlayScanResult ? (
           // CheckInPage never sets scanResult (so this never receives one)

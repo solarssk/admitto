@@ -78,22 +78,24 @@ export function PhoneCountrySelect({ id, label, value, disabled, onChange }: Rea
           ref={panelRef}
           style={panelStyle}
         >
-          <input
-            type="text"
-            id={`${id}-search`}
-            name={`${id}-search`}
-            className="phone-country-select__search"
-            placeholder="Search country or code"
-            aria-label="Search country or dial code"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && results.length > 0) {
-                e.preventDefault();
-                handleSelect(results[0]!);
-              }
-            }}
-          />
+          <div className="at-control">
+            <input
+              type="text"
+              id={`${id}-search`}
+              name={`${id}-search`}
+              className="phone-country-select__search"
+              placeholder="Search country or code"
+              aria-label="Search country or dial code"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && results.length > 0) {
+                  e.preventDefault();
+                  handleSelect(results[0]!);
+                }
+              }}
+            />
+          </div>
           <ul className="phone-country-select__list" aria-label="Countries">
             {results.length === 0 ? (
               <li className="phone-country-select__empty">No countries match.</li>
