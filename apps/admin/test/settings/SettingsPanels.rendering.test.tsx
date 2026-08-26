@@ -2007,6 +2007,24 @@ describe("SystemLogsPanel rendering", () => {
     fireEvent.click(screen.getByRole("radio", { name: "System" }));
   }
 
+  /** jsdom never computes real layout - scrollHeight/clientHeight both default to 0, so a
+   * meaningful scroll-to-bottom assertion needs to stub a console taller than its viewport, the
+   * same shape a real buffer-full live tail would have. Stubbed on Element.prototype and applied
+   * before render (rather than on the console element once found) so there's no window where the
+   * scroll effect - which can fire as early as the initial mount, before the console element even
+   * exists to grab a reference to - might read jsdom's real 0/0 instead. Returns a restore
+   * function; call it once the assertion is done so later tests keep jsdom's real behaviour. */
+  function stubConsoleDimensions() {
+    const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, "scrollHeight")!;
+    const clientHeightDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, "clientHeight")!;
+    Object.defineProperty(Element.prototype, "scrollHeight", { configurable: true, get: () => 4000 });
+    Object.defineProperty(Element.prototype, "clientHeight", { configurable: true, get: () => 400 });
+    return () => {
+      Object.defineProperty(Element.prototype, "scrollHeight", scrollHeightDescriptor);
+      Object.defineProperty(Element.prototype, "clientHeight", clientHeightDescriptor);
+    };
+  }
+
   it("fetches with no since on mount and renders returned entries", async () => {
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     vi.mocked(fetchSystemLogs).mockResolvedValueOnce({
@@ -2054,72 +2072,80 @@ describe("SystemLogsPanel rendering", () => {
   });
 
   it("scrolls straight to the newest entry on initial load, like a live tail (PO review)", async () => {
-    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
-    // A controllable promise, not mockResolvedValueOnce - the scrollHeight/clientHeight stubs
-    // below must land on the console element before entries actually populate, or the scroll
-    // effect could already have run (against jsdom's default 0/0 layout) by the time this test
-    // gets to apply them.
-    let resolveFetch!: (value: Awaited<ReturnType<typeof fetchSystemLogs>>) => void;
-    vi.mocked(fetchSystemLogs).mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveFetch = resolve;
-      }),
-    );
+    const restoreConsoleDimensions = stubConsoleDimensions();
+    try {
+      vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+      // A controllable promise, not mockResolvedValueOnce - entries must only populate once this
+      // test says so, well after the fetch has actually kicked off.
+      let resolveFetch!: (value: Awaited<ReturnType<typeof fetchSystemLogs>>) => void;
+      vi.mocked(fetchSystemLogs).mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+      );
 
-    renderWithToast(<AuditLogPanel />);
-    await screen.findByText("No audit log entries yet");
-    openSystemLogsView();
-    const console_ = await screen.findByRole("log");
+      renderWithToast(<AuditLogPanel />);
+      await screen.findByText("No audit log entries yet");
+      openSystemLogsView();
+      const console_ = await screen.findByRole("log");
+      console_.scrollTop = 0;
 
-    // jsdom never computes real layout - scrollHeight/clientHeight both default to 0, so a
-    // meaningful assertion needs to stub a console taller than its viewport, the same shape a
-    // real buffer-full live tail would have.
-    Object.defineProperty(console_, "scrollHeight", { value: 4000, configurable: true });
-    Object.defineProperty(console_, "clientHeight", { value: 400, configurable: true });
-    console_.scrollTop = 0;
+      resolveFetch({
+        entries: [{ id: 1, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "http_request" }],
+        cursor: 1,
+      });
+      await screen.findByText("http_request");
 
-    resolveFetch({
-      entries: [{ id: 1, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "http_request" }],
-      cursor: 1,
-    });
-    await screen.findByText("http_request");
-
-    expect(console_.scrollTop).toBe(4000);
+      // findByText can observe the committed text as soon as React updates the DOM, which can
+      // race ahead of the passive scroll effect that reads/writes scrollTop for that same commit
+      // (bot review) - waitFor lets the assertion retry until that effect has actually run,
+      // instead of assuming it already has the instant the text appears.
+      await waitFor(() => {
+        expect(console_.scrollTop).toBe(4000);
+      });
+    } finally {
+      restoreConsoleDimensions();
+    }
   });
 
   it("still scrolls to the newest entry once shown again, if the snapshot resolved while the operator was on Audit/Security (PO review)", async () => {
-    vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
-    let resolveFetch!: (value: Awaited<ReturnType<typeof fetchSystemLogs>>) => void;
-    vi.mocked(fetchSystemLogs).mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveFetch = resolve;
-      }),
-    );
+    const restoreConsoleDimensions = stubConsoleDimensions();
+    try {
+      vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
+      let resolveFetch!: (value: Awaited<ReturnType<typeof fetchSystemLogs>>) => void;
+      vi.mocked(fetchSystemLogs).mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+      );
 
-    renderWithToast(<AuditLogPanel />);
-    await screen.findByText("No audit log entries yet");
-    openSystemLogsView();
-    const console_ = await screen.findByRole("log");
-    Object.defineProperty(console_, "scrollHeight", { value: 4000, configurable: true });
-    Object.defineProperty(console_, "clientHeight", { value: 400, configurable: true });
-    console_.scrollTop = 0;
+      renderWithToast(<AuditLogPanel />);
+      await screen.findByText("No audit log entries yet");
+      openSystemLogsView();
+      const console_ = await screen.findByRole("log");
+      console_.scrollTop = 0;
 
-    // LogsPanelViews keeps SystemLogsPanel mounted (just display:none) while another tab is
-    // shown - switching away before the in-flight snapshot resolves reproduces the real race:
-    // the console is unmeasurable (scrollHeight collapses to 0 while hidden) at the moment
-    // entries actually populate.
-    fireEvent.click(screen.getByRole("radio", { name: "Audit" }));
-    resolveFetch({
-      entries: [{ id: 1, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "http_request" }],
-      cursor: 1,
-    });
-    // Present in the DOM already (just hidden behind display:none) once entries actually
-    // update - waiting for it confirms the state settled before switching back.
-    await screen.findByText("http_request");
+      // LogsPanelViews keeps SystemLogsPanel mounted (just display:none) while another tab is
+      // shown - switching away before the in-flight snapshot resolves reproduces the real race:
+      // in a real browser the console is unmeasurable (scrollHeight collapses to 0) while hidden,
+      // so the scroll-to-bottom effect must also rerun once the operator switches back.
+      fireEvent.click(screen.getByRole("radio", { name: "Audit" }));
+      resolveFetch({
+        entries: [{ id: 1, ts: "2026-01-01T12:00:00.000Z", level: "info", source: "api", message: "http_request" }],
+        cursor: 1,
+      });
+      // Present in the DOM already (just hidden behind display:none) once entries actually
+      // update - waiting for it confirms the state settled before switching back.
+      await screen.findByText("http_request");
 
-    openSystemLogsView();
+      openSystemLogsView();
 
-    expect(console_.scrollTop).toBe(4000);
+      await waitFor(() => {
+        expect(console_.scrollTop).toBe(4000);
+      });
+    } finally {
+      restoreConsoleDimensions();
+    }
   });
 
   it("shows a Retry action on load failure and recovers once clicked", async () => {
