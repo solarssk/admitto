@@ -146,8 +146,8 @@ describe("CommunicationSendPanel", () => {
 
     expect(await screen.findByText("Send complete")).toBeTruthy();
     expect(screen.getByText("1 sent · 1 failed out of 2 total")).toBeTruthy();
-    // A batch with failures uses the same warning tone as resultVariant() would - never a
-    // green success card contradicting a failed delivery.
+    // A batch with failures gets the warning tone, never a green success card contradicting a
+    // failed delivery.
     expect(container.querySelector(".status-circle--warn")).toBeTruthy();
     expect(container.querySelector(".status-circle--ok")).toBeNull();
 
@@ -211,6 +211,30 @@ describe("CommunicationSendPanel", () => {
     // server-side - hidden while polling so an operator can't abandon-view an in-flight send
     // (or fire a second, concurrent one) with no indication the first is still running.
     expect(screen.queryByRole("button", { name: "Send another" })).toBeNull();
+  });
+
+  it("shows a zero-width bar and 0% instead of NaN when the status endpoint reports an all-zero batch", async () => {
+    // Defends the total > 0 ? ... : 0 guards in SendProgressBar/SendProgressStats - total is
+    // always the originally-queued count in the normal flow, but the guard exists for whatever
+    // the status endpoint actually sends back, not just this component's own internal state, so
+    // this simulates a still-polling response with nothing to report yet.
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 10, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 0, failed: 0 });
+
+    const { container } = render(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    // queued: 0 also ends polling (phase flips to "done"), so this exercises the same guards a
+    // second time via SendCompleteSummary's own SendProgressBar - both call sites are covered.
+    await screen.findByText("Send complete");
+
+    const sentSegment = container.querySelector(".send-progress__bar-segment--sent") as HTMLElement;
+    const failedSegment = container.querySelector(".send-progress__bar-segment--failed") as HTMLElement;
+    expect(sentSegment.style.width).toBe("0%");
+    expect(failedSegment.style.width).toBe("0%");
+    expect(screen.getByText("0 sent · 0 failed out of 0 total")).toBeTruthy();
   });
 
   it("shows Send another only once the batch has actually finished draining", async () => {

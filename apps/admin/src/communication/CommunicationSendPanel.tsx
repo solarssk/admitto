@@ -71,15 +71,12 @@ const RECIPIENT_OPTIONS: ReadonlyArray<{
   },
 ];
 
-/** Notice tone for the send/queue result: "info" while still in flight, "warning" when nothing
- * useful happened (no match, nothing queued) or some messages failed, "success" otherwise. */
-function resultVariant(
-  phase: SendPhase,
-  batchStatus: BatchStatus | null,
-): "info" | "success" | "warning" {
-  if (phase === "polling") return "info";
-  if (!batchStatus) return "warning";
-  return batchStatus.failed > 0 ? "warning" : "success";
+/** Notice tone for the two remaining plain-text result cases (SendCompleteSummary owns its own
+ * tone for the batch-finished case, so this only ever renders while still polling, or done with
+ * no batch to summarize - "no recipients matched", "no emails queued", or a failed status check,
+ * none of which have a success reading). */
+function resultVariant(phase: SendPhase): "info" | "warning" {
+  return phase === "polling" ? "info" : "warning";
 }
 
 /** Two-segment bar out of `queued + sent + failed`: green for sent, red for failed, the rest
@@ -105,11 +102,14 @@ function SendProgressBar({ batchStatus }: Readonly<{ batchStatus: BatchStatus }>
 
 /** Sent / Failed / Remaining stat tiles shown while a batch is still draining. "Remaining" is
  * the operator-facing label for the internal `queued` field - clearer than exposing the queue
- * terminology in the UI. */
+ * terminology in the UI. Unlike SendProgressBar (also used from the done-state summary, where a
+ * malformed status response could in principle report nothing at all), this component only ever
+ * renders while polling - and polling only continues while `queued` is still positive - so
+ * `total` is always positive here too; no zero-guard needed on the percentage. */
 function SendProgressStats({ batchStatus }: Readonly<{ batchStatus: BatchStatus }>) {
   const total = batchStatus.queued + batchStatus.sent + batchStatus.failed;
   const processed = batchStatus.sent + batchStatus.failed;
-  const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
+  const percent = Math.round((processed / total) * 100);
   return (
     <div className="send-progress">
       <div className="send-progress__stats">
@@ -138,8 +138,10 @@ function SendProgressStats({ batchStatus }: Readonly<{ batchStatus: BatchStatus 
 }
 
 /** Done-state summary card, replacing the plain result Notice once a batch has actually
- * finished draining (batchStatus present). Tone mirrors resultVariant()'s own success/warning
- * split so the card never contradicts the top-level status it's replacing. */
+ * finished draining (batchStatus present) - computes its own success/warning tone rather than
+ * reusing resultVariant() (that one always reads "warning" once polling ends, since none of its
+ * own no-batch cases - no match, nothing queued, a failed status check - have a success reading;
+ * only this card's own batchStatus tells whether the completed send was actually clean). */
 function SendCompleteSummary({ batchStatus }: Readonly<{ batchStatus: BatchStatus }>) {
   const total = batchStatus.queued + batchStatus.sent + batchStatus.failed;
   const hasFailures = batchStatus.failed > 0;
@@ -526,14 +528,14 @@ export function CommunicationSendPanel({
         {(phase === "polling" || phase === "done") && (
           <>
             {phase === "polling" && resultMessage && (
-              <Notice variant={resultVariant(phase, batchStatus)} as="output">
+              <Notice variant={resultVariant(phase)} as="output">
                 {resultMessage}
               </Notice>
             )}
             {phase === "polling" && batchStatus && <SendProgressStats batchStatus={batchStatus} />}
             {phase === "done" && batchStatus && !error && <SendCompleteSummary batchStatus={batchStatus} />}
             {phase === "done" && (!batchStatus || error) && resultMessage && (
-              <Notice variant={resultVariant(phase, batchStatus)} as="output">
+              <Notice variant={resultVariant(phase)} as="output">
                 {resultMessage}
               </Notice>
             )}
