@@ -212,9 +212,13 @@ export function TimeInput({
 
   // Places the picker with `position: fixed`, computed from the trigger's own
   // getBoundingClientRect() - same technique as DatePicker/TimezoneSelect. Flips above the
-  // trigger when it doesn't fit below, and clamps horizontally to the viewport (so the
-  // right-most field in a row opens directly under itself instead of overflowing past the
-  // card edge).
+  // trigger when it doesn't fit below, clamps horizontally to the viewport (so the right-most
+  // field in a row opens directly under itself instead of overflowing past the card edge), and
+  // clamps its own height + scrolls when neither side has room for the panel's full height (a
+  // short viewport - landscape mobile, a zoomed page) - without this, `top` was computed from
+  // the panel's full natural height regardless of whether that fit, so the panel could render
+  // partly or fully off-screen with no way to reach it (closePicker on outside scroll rules out
+  // "just scroll the page instead").
   useLayoutEffect(() => {
     if (!pickerOpen) return;
     const trigger = containerRef.current;
@@ -229,13 +233,23 @@ export function TimeInput({
       const spaceBelow = viewport.bottom - rect.bottom;
       const spaceAbove = rect.top - viewport.top;
       const above = spaceBelow < panelHeight + PICKER_GAP_PX && spaceAbove > spaceBelow;
-      const top = above ? rect.top - panelHeight - PICKER_GAP_PX : rect.bottom + PICKER_GAP_PX;
+      const available = Math.max(0, (above ? spaceAbove : spaceBelow) - PICKER_GAP_PX - VIEWPORT_PAD_PX);
+      const maxHeight = panelHeight > available ? available : undefined;
+      const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
+      const top = above ? rect.top - usedHeight - PICKER_GAP_PX : rect.bottom + PICKER_GAP_PX;
       let left = rect.left;
       left = Math.min(left, viewport.right - VIEWPORT_PAD_PX - panelWidth);
       left = Math.max(left, viewport.left + VIEWPORT_PAD_PX);
 
       setPickerAbove(above);
-      setPickerStyle({ position: "fixed", top, left, visibility: "visible" });
+      setPickerStyle({
+        position: "fixed",
+        top,
+        left,
+        maxHeight: maxHeight !== undefined ? `${maxHeight}px` : undefined,
+        overflowY: maxHeight !== undefined ? "auto" : undefined,
+        visibility: "visible",
+      });
     };
     updatePlacement();
     return attachFixedOverlayLifecycle(panel, updatePlacement, () => closePicker("scroll"));

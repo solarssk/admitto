@@ -318,4 +318,20 @@ describe("TimeInput", () => {
     // clamped to stay within the viewport instead of opening off to the right of it.
     expect(Number.parseFloat(dialog.style.left)).toBeLessThanOrEqual(1024 - 8 - 200);
   });
+
+  it("clamps the picker's own height and scrolls when neither above nor below has room for it", () => {
+    mockPlacementLayout({
+      rect: { top: 50, bottom: 90, left: 50 },
+      panelHeight: 500,
+      panelWidth: 200,
+      innerWidth: 1024,
+      innerHeight: 200,
+    });
+    render(<TimeInput ariaLabel="Start time" value="" onChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Choose time" });
+    expect(dialog.style.maxHeight).toBe("96px");
+    expect(dialog.style.overflowY).toBe("auto");
+  });
 });
