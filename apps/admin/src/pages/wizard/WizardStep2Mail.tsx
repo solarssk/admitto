@@ -112,9 +112,9 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
 
     const saveSettings = async (): Promise<boolean> => {
       if (!apiData) return false;
-      const validation = validateMailDraft(draft);
-      if (!validation.valid) {
-        setValidationErrors(validation.errors);
+      const errors = validateMailDraft(draft, fieldLocked);
+      if (Object.keys(errors).length > 0) {
+        setValidationErrors(Object.values(errors));
         return false;
       }
       setValidationErrors([]);
@@ -147,9 +147,9 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
     }));
 
     const handleTestSend = async () => {
-      const validation = validateMailDraft(draft);
-      if (!validation.valid) {
-        setValidationErrors(validation.errors);
+      const errors = validateMailDraft(draft, fieldLocked);
+      if (Object.keys(errors).length > 0) {
+        setValidationErrors(Object.values(errors));
         return;
       }
       if (draft.provider === "export_only" || !draft.provider) {
@@ -199,8 +199,11 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
             {validationErrors.length > 0 && (
               <Notice variant="error" role="alert">
                 <ul className="setup-wizard__error-list">
-                  {validationErrors.map((e) => (
-                    <li key={e}>{e}</li>
+                  {validationErrors.map((e, i) => (
+                    // Index key, not the message text - two different fields can produce
+                    // the identical "Keep it under N characters." message (same max
+                    // length), and a text key would silently dedupe them.
+                    <li key={i}>{e}</li>
                   ))}
                 </ul>
               </Notice>

@@ -18,6 +18,7 @@ import {
   MailTransportCard,
   PowerAutomateCard,
   runTestSend,
+  scrollToFirstInvalidField,
   SenderCard,
   SendTestEmailCard,
   SettingsFooter,
@@ -42,8 +43,8 @@ export function MailTransportPanel() {
     showLoading,
     loadError,
     setLoadError,
-    validationErrors,
-    setValidationErrors,
+    fieldErrors,
+    setFieldErrors,
     saving,
     setSaving,
     testEmail,
@@ -53,7 +54,6 @@ export function MailTransportPanel() {
     testResult,
     setTestResult,
     loadAbortRef,
-    validationErrorsRef,
     testGenerationRef,
     updateDraft,
     updateSecrets,
@@ -66,10 +66,8 @@ export function MailTransportPanel() {
   } = useConnectionTest("Could not test the SMTP connection.");
 
   useEffect(() => {
-    if (validationErrors.length > 0) {
-      validationErrorsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [validationErrors, validationErrorsRef]);
+    if (Object.keys(fieldErrors).length > 0) scrollToFirstInvalidField();
+  }, [fieldErrors]);
 
   const applyResponse = useCallback(
     (data: MailSettingsResponse) => {
@@ -78,10 +76,10 @@ export function MailTransportPanel() {
       setDraft(nextDraft);
       setSavedDraft(nextDraft);
       setSecrets(emptySecretEdits());
-      setValidationErrors([]);
+      setFieldErrors({});
       clearProbeResult();
     },
-    [clearProbeResult, setDraft, setSavedDraft, setSecrets, setValidationErrors],
+    [clearProbeResult, setDraft, setSavedDraft, setSecrets, setFieldErrors],
   );
 
   const loadSettings = useCallback(async () => {
@@ -119,12 +117,13 @@ export function MailTransportPanel() {
 
   const handleSave = async () => {
     if (!apiData) return;
-    const validation = validateMailDraft(draft);
-    if (!validation.valid) {
-      setValidationErrors(validation.errors);
+    const errors = validateMailDraft(draft, fieldLocked);
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      addToast("Please fix the highlighted fields.", "error");
       return;
     }
-    setValidationErrors([]);
+    setFieldErrors({});
     setSaving(true);
     try {
       const lockedKeys = new Set(
@@ -146,7 +145,7 @@ export function MailTransportPanel() {
   const handleReset = () => {
     setDraft(savedDraft);
     setSecrets(emptySecretEdits());
-    setValidationErrors([]);
+    setFieldErrors({});
     clearProbeResult();
   };
 
@@ -251,7 +250,7 @@ export function MailTransportPanel() {
       />
 
       {provider !== "" && (
-        <SenderCard draft={draft} fieldLocked={fieldLocked} updateDraft={updateDraft} />
+        <SenderCard draft={draft} fieldLocked={fieldLocked} updateDraft={updateDraft} errors={fieldErrors} />
       )}
 
       {provider === "smtp" && (
@@ -262,6 +261,7 @@ export function MailTransportPanel() {
           smtpPasswordField={apiData.fields.smtpPassword}
           smtpPasswordEdit={secrets.smtpPassword}
           updateSecrets={updateSecrets}
+          errors={fieldErrors}
           onTestConnection={() => void handleTestConnection()}
           testing={probeTesting}
           testBlocked={hasUnsavedChanges}
@@ -278,6 +278,7 @@ export function MailTransportPanel() {
           graphClientSecretField={apiData.fields.graphClientSecret}
           graphClientSecretEdit={secrets.graphClientSecret}
           updateSecrets={updateSecrets}
+          errors={fieldErrors}
         />
       )}
 
@@ -303,8 +304,6 @@ export function MailTransportPanel() {
       />
 
       <SettingsFooter
-        validationErrors={validationErrors}
-        validationErrorsRef={validationErrorsRef}
         hasUnsavedChanges={hasUnsavedChanges}
         saving={saving}
         onReset={handleReset}

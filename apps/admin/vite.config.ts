@@ -66,6 +66,14 @@ export default defineConfig({
           if (id.includes("node_modules/@vvo/tzdb") || id.includes("node_modules/tzdata")) {
             return "tzdata";
           }
+          // The IANA TLD list backing mail-settings email/domain validation is shared by
+          // three separate lazy routes (Settings, Event Settings, Setup Wizard) - Rollup's
+          // default splitting merged that shared dependency into the main entry chunk
+          // instead of its own async one, so every page load paid for it. Force it into its
+          // own chunk, same fix as tzdata above.
+          if (id.includes("/settings/knownTlds.ts")) {
+            return "known-tlds";
+          }
         },
       },
     },

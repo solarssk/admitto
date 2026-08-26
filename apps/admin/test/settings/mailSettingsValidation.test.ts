@@ -12,18 +12,17 @@ describe("validateMailDraft — SMTP port", () => {
   it("rejects a non-integer port string", () => {
     const draft = { ...emptyMailDraft(), provider: "smtp" as const, host: "smtp.example.com", port: "25.5" };
 
-    const { valid, errors } = validateMailDraft(draft);
+    const errors = validateMailDraft(draft);
 
-    expect(valid).toBe(false);
-    expect(errors).toContain("SMTP port must be between 1 and 65535.");
+    expect(errors.port).toBe("SMTP port must be between 1 and 65535.");
   });
 
   it("accepts a valid integer port", () => {
     const draft = { ...emptyMailDraft(), provider: "smtp" as const, host: "smtp.example.com", port: "587" };
 
-    const { errors } = validateMailDraft(draft);
+    const errors = validateMailDraft(draft);
 
-    expect(errors).not.toContain("SMTP port must be between 1 and 65535.");
+    expect(errors.port).toBeUndefined();
   });
 });
 
@@ -36,10 +35,10 @@ describe("validateMailDraft — provider-specific requirements", () => {
       fromAddress: "still-not-an-email",
     });
 
-    expect(result).toEqual({ valid: true, errors: [] });
+    expect(result).toEqual({});
   });
 
-  it("reports all SMTP sender and connection errors together", () => {
+  it("reports all SMTP sender and connection errors together, keyed by field", () => {
     const result = validateMailDraft({
       ...emptyMailDraft(),
       provider: "smtp",
@@ -50,16 +49,37 @@ describe("validateMailDraft — provider-specific requirements", () => {
       port: "70000",
     });
 
-    expect(result.valid).toBe(false);
-    expect(result.errors).toEqual(
-      expect.arrayContaining([
-        "Reply-to must be a valid email.",
-        "Envelope from must be a valid email.",
-        "From address must be a valid email.",
-        "SMTP host is required.",
-        "SMTP port must be between 1 and 65535.",
-      ]),
-    );
+    expect(result).toEqual({
+      replyTo: "Reply-to must be a valid email.",
+      envelopeFrom: "Envelope from must be a valid email.",
+      fromAddress: "From address must be a valid email.",
+      host: "SMTP host is required.",
+      port: "SMTP port must be between 1 and 65535.",
+    });
+  });
+
+  it("rejects an email address with a single-character TLD", () => {
+    const result = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: "587",
+      fromAddress: "sender@example.c",
+    });
+
+    expect(result.fromAddress).toBe("From address must be a valid email.");
+  });
+
+  it("accepts an email address with a two-character TLD", () => {
+    const result = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: "587",
+      fromAddress: "sender@example.co",
+    });
+
+    expect(result.fromAddress).toBeUndefined();
   });
 
   it("uses the Graph mailbox as the effective sender for allowed-domain validation", () => {
@@ -76,14 +96,12 @@ describe("validateMailDraft — provider-specific requirements", () => {
       provider: "graph",
       tenantId: "tenant-id",
       clientId: "client-id",
-      mailbox: "service@other.example",
+      mailbox: "service@other.org",
       allowedFromDomain: "example.com",
     });
 
-    expect(matchingMailbox).toEqual({ valid: true, errors: [] });
-    expect(mismatchedMailbox.errors).toContain(
-      "From address must use the allowed domain (example.com).",
-    );
+    expect(matchingMailbox).toEqual({});
+    expect(mismatchedMailbox.mailbox).toBe("Mailbox must use the allowed domain (example.com).");
   });
 
   it("requires Graph credentials and a valid mailbox or sender", () => {
@@ -93,14 +111,11 @@ describe("validateMailDraft — provider-specific requirements", () => {
       mailbox: "not-an-email",
     });
 
-    expect(result.errors).toEqual(
-      expect.arrayContaining([
-        "Tenant ID is required.",
-        "Client ID is required.",
-        "Mailbox must be a valid email.",
-      ]),
-    );
-    expect(result.errors).not.toContain("Mailbox or from address is required.");
+    expect(result).toEqual({
+      tenantId: "Tenant ID is required.",
+      clientId: "Client ID is required.",
+      mailbox: "Mailbox must be a valid email.",
+    });
   });
 
   it("requires one Graph sender when neither a mailbox nor a from address is supplied", () => {
@@ -111,7 +126,7 @@ describe("validateMailDraft — provider-specific requirements", () => {
       clientId: "client-id",
     });
 
-    expect(result.errors).toEqual(["Mailbox or from address is required."]);
+    expect(result).toEqual({ mailbox: "Mailbox or from address is required." });
   });
 
   it("does not apply an allowed-domain check when the selected provider has no sender", () => {
@@ -123,13 +138,221 @@ describe("validateMailDraft — provider-specific requirements", () => {
       allowedFromDomain: "example.com",
     });
 
-    expect(result.errors).toEqual(["From address must be a valid email."]);
+    expect(result).toEqual({ fromAddress: "From address must be a valid email." });
   });
 
   it.each(["powerautomate", "export_only"] as const)("requires a sender for %s", (provider) => {
     const result = validateMailDraft({ ...emptyMailDraft(), provider });
 
-    expect(result.errors).toContain("From address must be a valid email.");
+    expect(result.fromAddress).toBe("From address must be a valid email.");
+  });
+});
+
+describe("validateMailDraft — field length and format guards", () => {
+  it("caps free-text sender fields at the server's own length limits", () => {
+    const result = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: "587",
+      fromAddress: "sender@example.com",
+      fromName: "x".repeat(201),
+      replyTo: `${"x".repeat(250)}@example.com`,
+    });
+
+    expect(result.fromName).toBe("Keep it under 200 characters.");
+    expect(result.replyTo).toBe("Keep it under 254 characters.");
+  });
+
+  it("requires Allowed from domain to look like a bare domain", () => {
+    const noDot = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: "587",
+      fromAddress: "sender@example.com",
+      allowedFromDomain: "notadomain",
+    });
+    const withScheme = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: "587",
+      fromAddress: "sender@example.com",
+      allowedFromDomain: "https://example.com",
+    });
+    const valid = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: "587",
+      fromAddress: "sender@example.com",
+      allowedFromDomain: "example.com",
+    });
+
+    expect(noDot.allowedFromDomain).toBe("Enter a bare domain, e.g. example.com.");
+    expect(withScheme.allowedFromDomain).toBe("Enter a bare domain, e.g. example.com.");
+    expect(valid.allowedFromDomain).toBeUndefined();
+  });
+
+  it("rejects a scheme without the double slash, e.g. a pasted 'http:example.com'", () => {
+    const result = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: "587",
+      fromAddress: "sender@example.com",
+      allowedFromDomain: "http:example.com",
+    });
+
+    expect(result.allowedFromDomain).toBe("Enter a bare domain, e.g. example.com.");
+  });
+
+  it.each(["local", "test", "invalid", "example", "localhost", "internal", "lan", "corp", "con"])(
+    "rejects Allowed from domain '.%s' - not a real IANA-delegated TLD",
+    (fakeTld) => {
+      const result = validateMailDraft({
+        ...emptyMailDraft(),
+        provider: "smtp",
+        host: "smtp.example.com",
+        port: "587",
+        fromAddress: "sender@example.com",
+        allowedFromDomain: `mail.${fakeTld}`,
+      });
+
+      expect(result.allowedFromDomain).toBe("Enter a bare domain, e.g. example.com.");
+    },
+  );
+
+  it.each(["com", "co", "io", "org", "net", "pl", "xyz", "dev"])(
+    "accepts Allowed from domain '.%s' - a real IANA-delegated TLD",
+    (realTld) => {
+      const result = validateMailDraft({
+        ...emptyMailDraft(),
+        provider: "smtp",
+        host: "smtp.example.com",
+        port: "587",
+        fromAddress: `sender@example.${realTld}`,
+        allowedFromDomain: `example.${realTld}`,
+      });
+
+      expect(result.allowedFromDomain).toBeUndefined();
+    },
+  );
+
+  it("rejects a From address on a reserved, non-delegated TLD like .local", () => {
+    const result = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: "587",
+      fromAddress: "admin@mailserver.local",
+    });
+
+    expect(result.fromAddress).toBe("From address must be a valid email.");
+  });
+
+  it("does not also run the domain-mismatch check when the domain field itself is malformed", () => {
+    const result = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: "587",
+      fromAddress: "sender@example.com",
+      allowedFromDomain: "not a domain",
+    });
+
+    expect(result.allowedFromDomain).toBe("Enter a bare domain, e.g. example.com.");
+    expect(result.fromAddress).toBeUndefined();
+  });
+
+  it("rejects a HELO/EHLO name with spaces or over the length limit", () => {
+    const withSpace = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: "587",
+      heloName: "mail server",
+    });
+    const tooLong = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: "587",
+      heloName: "x".repeat(254),
+    });
+
+    expect(withSpace.heloName).toBe("Must not contain spaces.");
+    expect(tooLong.heloName).toBe("Keep it under 253 characters.");
+  });
+
+  it.each([
+    ["rateLimitPerMinute", "Rate limit"],
+    ["maxConnections", "Max connections"],
+    ["maxMessages", "Max messages per connection"],
+    ["connectionTimeout", "Connection timeout"],
+    ["greetingTimeout", "Greeting timeout"],
+    ["socketTimeout", "Socket timeout"],
+  ] as const)("rejects a non-positive-integer %s", (field, label) => {
+    const zero = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: "587",
+      [field]: "0",
+    });
+    const notNumeric = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: "587",
+      [field]: "abc",
+    });
+    const valid = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: "587",
+      [field]: "5",
+    });
+
+    expect(zero[field]).toBe(`${label} must be a positive whole number.`);
+    expect(notNumeric[field]).toBe(`${label} must be a positive whole number.`);
+    expect(valid[field]).toBeUndefined();
+  });
+
+  it("leaves advanced tuning fields unvalidated when blank or the provider isn't SMTP", () => {
+    const blank = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: "587",
+    });
+    const nonSmtp = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "graph",
+      tenantId: "tenant-id",
+      clientId: "client-id",
+      mailbox: "shared@example.com",
+      maxConnections: "-5",
+    });
+
+    expect(blank.maxConnections).toBeUndefined();
+    expect(nonSmtp.maxConnections).toBeUndefined();
+  });
+
+  it("caps Graph tenant/client IDs and mailbox at the server's length limits", () => {
+    const result = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "graph",
+      tenantId: "x".repeat(65),
+      clientId: "x".repeat(65),
+      mailbox: `${"x".repeat(250)}@example.com`,
+    });
+
+    expect(result.tenantId).toBe("Keep it under 64 characters.");
+    expect(result.clientId).toBe("Keep it under 64 characters.");
+    expect(result.mailbox).toBe("Keep it under 254 characters.");
   });
 });
 

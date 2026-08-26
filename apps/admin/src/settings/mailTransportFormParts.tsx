@@ -4,7 +4,15 @@
  * grid, secret field UI, provider-specific cards, test result preview, and footer
  * are identical between the two scopes; only what fetches/saves/tests differs.
  */
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Badge, Button, Card, HintLabel, Input, Notice, Switch, Tooltip } from "@admitto/ui";
 import type {
   MailPlainFieldDto,
@@ -15,7 +23,15 @@ import type {
 } from "../api/types.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import { emptyMailDraft, emptySecretEdits, type MailDraft, type SecretEdits } from "./mailSettingsValidation.js";
+import {
+  ADVANCED_TUNING_FIELD_KEYS,
+  emptyMailDraft,
+  emptySecretEdits,
+  isValidEmail,
+  type MailDraft,
+  type MailFieldErrors,
+  type SecretEdits,
+} from "./mailSettingsValidation.js";
 import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
 import { formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
 import { describeSmtpBounceCode } from "../utils/smtpBounceCodes.js";
@@ -422,11 +438,15 @@ export function SenderCard({
   draft,
   fieldLocked,
   updateDraft,
+  errors = {},
   disabled = false,
 }: Readonly<{
   draft: MailDraft;
   fieldLocked: FieldLocked;
   updateDraft: (patch: Partial<MailDraft>) => void;
+  /** Field-level validation errors, shown as a red border + inline message on the field
+   * they belong to (see `Input`'s own `error` prop) rather than in a separate list. */
+  errors?: MailFieldErrors;
   /** Read-only override independent of `fieldLocked` (env-managed) — e.g. an archived event. */
   disabled?: boolean;
 }>) {
@@ -446,6 +466,8 @@ export function SenderCard({
           value={draft.fromAddress}
           disabled={isDisabled("fromAddress")}
           onChange={(e) => updateDraft({ fromAddress: e.target.value })}
+          error={errors.fromAddress}
+          hint="The address recipients see as the sender."
           {...NO_AUTOFILL_PROPS}
         />
         <Input
@@ -453,6 +475,8 @@ export function SenderCard({
           value={draft.fromName}
           disabled={isDisabled("fromName")}
           onChange={(e) => updateDraft({ fromName: e.target.value })}
+          error={errors.fromName}
+          hint="Display name shown next to the From address."
         />
         <Input
           label="Reply-to"
@@ -461,6 +485,8 @@ export function SenderCard({
           value={draft.replyTo}
           disabled={isDisabled("replyTo")}
           onChange={(e) => updateDraft({ replyTo: e.target.value })}
+          error={errors.replyTo}
+          hint="Where replies go, if different from the From address."
           {...NO_AUTOFILL_PROPS}
         />
         <Input
@@ -471,6 +497,7 @@ export function SenderCard({
           disabled={isDisabled("envelopeFrom")}
           {...NO_AUTOFILL_PROPS}
           onChange={(e) => updateDraft({ envelopeFrom: e.target.value })}
+          error={errors.envelopeFrom}
           hint="SMTP MAIL FROM / return-path."
         />
         <Input
@@ -478,11 +505,42 @@ export function SenderCard({
           value={draft.allowedFromDomain}
           disabled={isDisabled("allowedFromDomain")}
           onChange={(e) => updateDraft({ allowedFromDomain: e.target.value })}
+          error={errors.allowedFromDomain}
           hint="Optional. Send fails when From (or Graph mailbox) is outside this domain."
         />
         </div>
       </div>
     </Card>
+  );
+}
+
+/** Wraps the SMTP card's collapsed "Advanced tuning" section. A field inside stays hidden
+ * (and its Toast-announced error unreachable) unless the disclosure is open, so this forces
+ * it open on every failed-Save validation pass that leaves one of its own fields errored -
+ * without ever forcing it *closed*, so the operator can still freely toggle it the rest of
+ * the time. Keyed on `errors` itself (a fresh object every Save, even when the same fields
+ * still fail) rather than the derived `hasError` boolean, so re-opening isn't skipped when
+ * an operator manually collapses the section again without fixing the field inside it and
+ * clicks Save again - a boolean that stays `true` across both attempts wouldn't re-trigger. */
+function AdvancedTuningDisclosure({
+  errors,
+  children,
+}: Readonly<{ errors: MailFieldErrors; children: ReactNode }>) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const hasError = ADVANCED_TUNING_FIELD_KEYS.some((key) => errors[key]);
+  useEffect(() => {
+    if (hasError && detailsRef.current) detailsRef.current.open = true;
+  }, [errors, hasError]);
+
+  return (
+    <details className="disclosure" ref={detailsRef}>
+      <summary className="disclosure__summary">
+        <i className="ti ti-chevron-right" aria-hidden="true" /> Advanced tuning
+      </summary>
+      <div className="disclosure__body">
+        <div className="mail-transport-section">{children}</div>
+      </div>
+    </details>
   );
 }
 
@@ -493,6 +551,7 @@ export function SmtpConnectionCard({
   smtpPasswordField,
   smtpPasswordEdit,
   updateSecrets,
+  errors = {},
   disabled = false,
   onTestConnection,
   testing = false,
@@ -506,6 +565,9 @@ export function SmtpConnectionCard({
   smtpPasswordField: MailSecretFieldDto;
   smtpPasswordEdit: SecretEdits[keyof SecretEdits];
   updateSecrets: (updater: (prev: SecretEdits) => SecretEdits) => void;
+  /** Field-level validation errors, shown as a red border + inline message on the field
+   * they belong to (see `Input`'s own `error` prop) rather than in a separate list. */
+  errors?: MailFieldErrors;
   /** Read-only override independent of `fieldLocked` (env-managed) — e.g. an archived event. */
   disabled?: boolean;
   /** When set, shows Test connection (SMTP verify, no send). */
@@ -533,6 +595,7 @@ export function SmtpConnectionCard({
             value={draft.host}
             disabled={isDisabled("host")}
             onChange={(e) => updateDraft({ host: e.target.value })}
+            error={errors.host}
             placeholder="smtp.example.com"
           />
           <Input
@@ -541,6 +604,7 @@ export function SmtpConnectionCard({
             value={draft.port}
             disabled={isDisabled("port")}
             onChange={(e) => updateDraft({ port: e.target.value })}
+            error={errors.port}
             placeholder="587"
           />
           <Input
@@ -548,6 +612,7 @@ export function SmtpConnectionCard({
             value={draft.user}
             disabled={isDisabled("user")}
             onChange={(e) => updateDraft({ user: e.target.value })}
+            error={errors.user}
             {...NO_AUTOFILL_PROPS}
           />
           <div className="smtp-connection-password-and-test">
@@ -632,83 +697,83 @@ export function SmtpConnectionCard({
           </div>
         </div>
 
-        <details className="disclosure">
-          <summary className="disclosure__summary">
-            <i className="ti ti-chevron-right" aria-hidden="true" /> Advanced tuning
-          </summary>
-          <div className="disclosure__body">
-            <div className="mail-transport-section">
-              <div className="mail-tuning__toggles">
-                <Switch
-                  label="Connection pool"
-                  checked={draft.pool}
-                  disabled={isDisabled("pool")}
-                  onChange={(e) => updateDraft({ pool: e.target.checked })}
-                />
-                <Switch
-                  label="Verify TLS certificate"
-                  checked={draft.tlsRejectUnauthorized}
-                  disabled={isDisabled("tlsRejectUnauthorized")}
-                  onChange={(e) => updateDraft({ tlsRejectUnauthorized: e.target.checked })}
-                />
-              </div>
-              <div className="mail-field-row">
-                <Input
-                  label="HELO/EHLO name"
-                  value={draft.heloName}
-                  disabled={isDisabled("heloName")}
-                  onChange={(e) => updateDraft({ heloName: e.target.value })}
-                />
-              </div>
-              <div className="mail-tuning__limits">
-                <Input
-                  label="Rate limit (per minute)"
-                  inputMode="numeric"
-                  value={draft.rateLimitPerMinute}
-                  disabled={isDisabled("rateLimitPerMinute")}
-                  onChange={(e) => updateDraft({ rateLimitPerMinute: e.target.value })}
-                />
-                <Input
-                  label="Max connections"
-                  inputMode="numeric"
-                  value={draft.maxConnections}
-                  disabled={isDisabled("maxConnections")}
-                  onChange={(e) => updateDraft({ maxConnections: e.target.value })}
-                />
-                <Input
-                  label="Max messages per connection"
-                  inputMode="numeric"
-                  value={draft.maxMessages}
-                  disabled={isDisabled("maxMessages")}
-                  onChange={(e) => updateDraft({ maxMessages: e.target.value })}
-                />
-              </div>
-              <div className="mail-tuning__timeouts">
-                <Input
-                  label="Connection timeout (ms)"
-                  inputMode="numeric"
-                  value={draft.connectionTimeout}
-                  disabled={isDisabled("connectionTimeout")}
-                  onChange={(e) => updateDraft({ connectionTimeout: e.target.value })}
-                />
-                <Input
-                  label="Greeting timeout (ms)"
-                  inputMode="numeric"
-                  value={draft.greetingTimeout}
-                  disabled={isDisabled("greetingTimeout")}
-                  onChange={(e) => updateDraft({ greetingTimeout: e.target.value })}
-                />
-                <Input
-                  label="Socket timeout (ms)"
-                  inputMode="numeric"
-                  value={draft.socketTimeout}
-                  disabled={isDisabled("socketTimeout")}
-                  onChange={(e) => updateDraft({ socketTimeout: e.target.value })}
-                />
-              </div>
-            </div>
+        <AdvancedTuningDisclosure errors={errors}>
+          <div className="mail-tuning__toggles">
+            <Switch
+              label="Connection pool"
+              checked={draft.pool}
+              disabled={isDisabled("pool")}
+              onChange={(e) => updateDraft({ pool: e.target.checked })}
+            />
+            <Switch
+              label="Verify TLS certificate"
+              checked={draft.tlsRejectUnauthorized}
+              disabled={isDisabled("tlsRejectUnauthorized")}
+              onChange={(e) => updateDraft({ tlsRejectUnauthorized: e.target.checked })}
+            />
           </div>
-        </details>
+          <div className="mail-field-row">
+            <Input
+              label="HELO/EHLO name"
+              value={draft.heloName}
+              disabled={isDisabled("heloName")}
+              onChange={(e) => updateDraft({ heloName: e.target.value })}
+              error={errors.heloName}
+            />
+          </div>
+          <div className="mail-tuning__limits">
+            <Input
+              label="Rate limit (per minute)"
+              inputMode="numeric"
+              value={draft.rateLimitPerMinute}
+              disabled={isDisabled("rateLimitPerMinute")}
+              onChange={(e) => updateDraft({ rateLimitPerMinute: e.target.value })}
+              error={errors.rateLimitPerMinute}
+            />
+            <Input
+              label="Max connections"
+              inputMode="numeric"
+              value={draft.maxConnections}
+              disabled={isDisabled("maxConnections")}
+              onChange={(e) => updateDraft({ maxConnections: e.target.value })}
+              error={errors.maxConnections}
+            />
+            <Input
+              label="Max messages per connection"
+              inputMode="numeric"
+              value={draft.maxMessages}
+              disabled={isDisabled("maxMessages")}
+              onChange={(e) => updateDraft({ maxMessages: e.target.value })}
+              error={errors.maxMessages}
+            />
+          </div>
+          <div className="mail-tuning__timeouts">
+            <Input
+              label="Connection timeout (ms)"
+              inputMode="numeric"
+              value={draft.connectionTimeout}
+              disabled={isDisabled("connectionTimeout")}
+              onChange={(e) => updateDraft({ connectionTimeout: e.target.value })}
+              error={errors.connectionTimeout}
+            />
+            <Input
+              label="Greeting timeout (ms)"
+              inputMode="numeric"
+              value={draft.greetingTimeout}
+              disabled={isDisabled("greetingTimeout")}
+              onChange={(e) => updateDraft({ greetingTimeout: e.target.value })}
+              error={errors.greetingTimeout}
+            />
+            <Input
+              label="Socket timeout (ms)"
+              inputMode="numeric"
+              value={draft.socketTimeout}
+              disabled={isDisabled("socketTimeout")}
+              onChange={(e) => updateDraft({ socketTimeout: e.target.value })}
+              error={errors.socketTimeout}
+            />
+          </div>
+        </AdvancedTuningDisclosure>
       </div>
       </div>
     </Card>
@@ -722,6 +787,7 @@ export function GraphCard({
   graphClientSecretField,
   graphClientSecretEdit,
   updateSecrets,
+  errors = {},
   disabled = false,
 }: Readonly<{
   draft: MailDraft;
@@ -730,6 +796,9 @@ export function GraphCard({
   graphClientSecretField: MailSecretFieldDto;
   graphClientSecretEdit: SecretEdits[keyof SecretEdits];
   updateSecrets: (updater: (prev: SecretEdits) => SecretEdits) => void;
+  /** Field-level validation errors, shown as a red border + inline message on the field
+   * they belong to (see `Input`'s own `error` prop) rather than in a separate list. */
+  errors?: MailFieldErrors;
   /** Read-only override independent of `fieldLocked` (env-managed) — e.g. an archived event. */
   disabled?: boolean;
 }>) {
@@ -781,6 +850,7 @@ export function GraphCard({
             value={draft.mailbox}
             disabled={isDisabled("mailbox")}
             onChange={(e) => updateDraft({ mailbox: e.target.value })}
+            error={errors.mailbox}
             placeholder="shared@contoso.com"
             {...NO_AUTOFILL_PROPS}
           />
@@ -789,6 +859,7 @@ export function GraphCard({
             value={draft.tenantId}
             disabled={isDisabled("tenantId")}
             onChange={(e) => updateDraft({ tenantId: e.target.value })}
+            error={errors.tenantId}
             placeholder="00000000-0000-0000-0000-000000000000"
           />
           <Input
@@ -796,6 +867,7 @@ export function GraphCard({
             value={draft.clientId}
             disabled={isDisabled("clientId")}
             onChange={(e) => updateDraft({ clientId: e.target.value })}
+            error={errors.clientId}
             placeholder="00000000-0000-0000-0000-000000000000"
           />
           <SecretFieldRow
@@ -1206,20 +1278,22 @@ export function ValidationErrorList({
   errorsRef,
 }: Readonly<{
   errors: string[];
-  errorsRef: RefObject<HTMLUListElement | null>;
+  errorsRef?: RefObject<HTMLUListElement | null>;
 }>) {
   if (errors.length === 0) return null;
   return (
-    <ul ref={errorsRef} role="alert" className="text-error">
-      {errors.map((e) => (
-        <li key={e}>{e}</li>
-      ))}
-    </ul>
+    <Notice variant="error" role="alert">
+      <ul ref={errorsRef}>
+        {errors.map((e) => (
+          <li key={e}>{e}</li>
+        ))}
+      </ul>
+    </Notice>
   );
 }
 
 export function SettingsFooter({
-  validationErrors,
+  validationErrors = [],
   validationErrorsRef,
   hasUnsavedChanges,
   saving,
@@ -1227,8 +1301,11 @@ export function SettingsFooter({
   onReset,
   onSave,
 }: Readonly<{
-  validationErrors: string[];
-  validationErrorsRef: RefObject<HTMLUListElement | null>;
+  /** Callers migrated to field-level errors (see `errors` on SenderCard/SmtpConnectionCard/
+   * GraphCard) have nothing left to show here and can omit this entirely - only Security/
+   * ExternalServices still render an aggregate list through this prop. */
+  validationErrors?: string[];
+  validationErrorsRef?: RefObject<HTMLUListElement | null>;
   hasUnsavedChanges: boolean;
   saving: boolean;
   /** Label while `saving` is true (e.g. "Uploading…" for a logo transfer). */
@@ -1320,6 +1397,18 @@ export function testSendErrorMessage(err: unknown): string {
   return operatorApiErrorMessage(err, "Send failed.");
 }
 
+/** Scrolls the first invalid field into view after a failed Save. General by design - it
+ * doesn't know or care which card the field lives in (Sender/SMTP/Graph/Advanced tuning),
+ * it just finds whichever Input the shared `error` prop marked aria-invalid. Prefers
+ * searching within the current `[role="tabpanel"]:not([hidden])` so a stale error left in
+ * a visited-but-inactive tab (Settings/Event Settings tabs stay mounted-but-hidden, not
+ * unmounted, once visited) is never targeted by mistake; falls back to the whole document
+ * when there's no tabpanel ancestor (e.g. this component rendered standalone). */
+export function scrollToFirstInvalidField(): void {
+  const scope = document.querySelector('[role="tabpanel"]:not([hidden])') ?? document;
+  scope.querySelector('[aria-invalid="true"]')?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
 /** Draft/secret/save-state, shared verbatim between MailTransportPanel and
  * EventMailSettingsCard — only what fetches/saves/tests the data differs per caller. */
 export function useMailSettingsFormState() {
@@ -1328,13 +1417,12 @@ export function useMailSettingsFormState() {
   const [savedDraft, setSavedDraft] = useState<MailDraft>(emptyMailDraft());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [fieldErrors, setFieldErrors] = useState<MailFieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [testEmail, setTestEmail] = useState("");
   const [testSending, setTestSending] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
-  const validationErrorsRef = useRef<HTMLUListElement | null>(null);
   // Bumped by every draft/secret edit so an in-flight test-send response can detect
   // it's now stale (config changed while the request was in the air) and skip
   // resurrecting a result the operator already moved past.
@@ -1371,8 +1459,8 @@ export function useMailSettingsFormState() {
     showLoading,
     loadError,
     setLoadError,
-    validationErrors,
-    setValidationErrors,
+    fieldErrors,
+    setFieldErrors,
     saving,
     setSaving,
     testEmail,
@@ -1382,24 +1470,10 @@ export function useMailSettingsFormState() {
     testResult,
     setTestResult,
     loadAbortRef,
-    validationErrorsRef,
     testGenerationRef,
     updateDraft,
     updateSecrets,
   };
-}
-
-/** Client-side plausibility check only — the server does the authoritative validation.
- * Plain indexOf/slice rather than a regex — SonarCloud flagged the equivalent
- * /^[^\s@]+@[^\s@]+\.[^\s@]+$/ pattern as super-linear on adversarial input. */
-function isPlausibleEmail(value: string): boolean {
-  if (/\s/.test(value)) return false;
-  const parts = value.split("@");
-  if (parts.length !== 2) return false;
-  const [local, domain] = parts;
-  if (!local || !domain) return false;
-  const dot = domain.indexOf(".");
-  return dot > 0 && dot < domain.length - 1;
 }
 
 /** Validates the recipient, sends via `send`, and resolves the result into `TestResult` -
@@ -1416,7 +1490,7 @@ export async function runTestSend(params: {
 }): Promise<void> {
   const { testEmail, draft, send, testGenerationRef, setTestSending, setTestResult, addToast } = params;
   const to = testEmail.trim();
-  if (!isPlausibleEmail(to)) {
+  if (!isValidEmail(to)) {
     addToast("Enter a valid email address.", "error");
     return;
   }

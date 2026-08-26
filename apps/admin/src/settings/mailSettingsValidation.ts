@@ -1,4 +1,5 @@
 import type { MailProvider, MailSettingsFieldsDto, SaveMailSettingsBody } from "../api/types.js";
+import { isKnownTld } from "./knownTlds.js";
 
 export type MailDraft = {
   provider: MailProvider | "";
@@ -34,7 +35,39 @@ export type SecretEdits = Record<
   { mode: SecretEditMode; value: string }
 >;
 
-const EMAIL_RE = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
+/** local@domain shape, no whitespace, exactly one "@", and - unlike a length-only check -
+ * the domain's final label must be a real IANA-delegated TLD (knownTlds.ts), so a typo
+ * ("user@example.con") or a reserved, non-delegated name ("user@host.local") is caught,
+ * not just an obviously-truncated one. Plain string ops rather than a regex - see this
+ * function's own re-export use in mailTransportFormParts.tsx (isPlausibleEmail used to be
+ * a byte-for-byte second copy of this) for why regex is avoided here. Exported so that
+ * caller reuses this instead of re-implementing it. */
+export function isValidEmail(value: string): boolean {
+  if (/\s/.test(value)) return false;
+  const parts = value.split("@");
+  if (parts.length !== 2) return false;
+  const [local, domain] = parts;
+  if (!local || !domain) return false;
+  const dot = domain.lastIndexOf(".");
+  if (dot <= 0) return false;
+  return isKnownTld(domain.slice(dot + 1));
+}
+
+/** Mirrors the server's authoritative length limits (mail-settings-shared.ts's
+ * putMailSettingsBodySchema) so a value the client accepts never gets rejected on save. */
+const MAX_LENGTHS = {
+  fromAddress: 254,
+  fromName: 200,
+  replyTo: 254,
+  envelopeFrom: 254,
+  allowedFromDomain: 253,
+  host: 253,
+  user: 254,
+  heloName: 253,
+  mailbox: 254,
+  tenantId: 64,
+  clientId: 64,
+} as const;
 
 export function emptyMailDraft(): MailDraft {
   return {
@@ -88,91 +121,216 @@ function optionalInt(value: string): number | undefined {
   return n;
 }
 
-function validateEmailFields(draft: MailDraft): string[] {
-  if (!draft.provider) return [];
+/** Field → message. One message per field - later checks below don't overwrite a field
+ * that an earlier, more fundamental check already flagged. */
+export type MailFieldErrors = Partial<Record<keyof MailDraft, string>>;
 
-  const errors: string[] = [];
+function validateEmailFields(draft: MailDraft, errors: MailFieldErrors): void {
+  if (!draft.provider) return;
+
+  const fromName = draft.fromName.trim();
+  if (fromName.length > MAX_LENGTHS.fromName) {
+    errors.fromName = `Keep it under ${MAX_LENGTHS.fromName} characters.`;
+  }
   const reply = draft.replyTo.trim();
-  if (reply && !EMAIL_RE.test(reply)) {
-    errors.push("Reply-to must be a valid email.");
+  if (reply && !isValidEmail(reply)) {
+    errors.replyTo = "Reply-to must be a valid email.";
+  } else if (reply.length > MAX_LENGTHS.replyTo) {
+    errors.replyTo = `Keep it under ${MAX_LENGTHS.replyTo} characters.`;
   }
   const envelope = draft.envelopeFrom.trim();
-  if (envelope && !EMAIL_RE.test(envelope)) {
-    errors.push("Envelope from must be a valid email.");
+  if (envelope && !isValidEmail(envelope)) {
+    errors.envelopeFrom = "Envelope from must be a valid email.";
+  } else if (envelope.length > MAX_LENGTHS.envelopeFrom) {
+    errors.envelopeFrom = `Keep it under ${MAX_LENGTHS.envelopeFrom} characters.`;
   }
   const from = draft.fromAddress.trim();
-  if (from && !EMAIL_RE.test(from)) {
-    errors.push("From address must be a valid email.");
+  if (from && !isValidEmail(from)) {
+    errors.fromAddress = "From address must be a valid email.";
+  } else if (from.length > MAX_LENGTHS.fromAddress) {
+    errors.fromAddress = `Keep it under ${MAX_LENGTHS.fromAddress} characters.`;
   }
-  return errors;
 }
 
-function validateFromAddressRequired(draft: MailDraft): string[] {
+function validateFromAddressRequired(draft: MailDraft, errors: MailFieldErrors): void {
   const requiresFrom =
     draft.provider === "smtp" ||
     draft.provider === "powerautomate" ||
     draft.provider === "export_only";
-  if (!requiresFrom) return [];
+  if (!requiresFrom || errors.fromAddress) return;
 
-  return draft.fromAddress.trim() ? [] : ["From address must be a valid email."];
+  if (!draft.fromAddress.trim()) errors.fromAddress = "From address must be a valid email.";
 }
 
-function validateSmtpFields(draft: MailDraft): string[] {
-  if (draft.provider !== "smtp") return [];
+function validateSmtpFields(draft: MailDraft, errors: MailFieldErrors): void {
+  if (draft.provider !== "smtp") return;
 
-  const errors: string[] = [];
-  if (!draft.host.trim()) errors.push("SMTP host is required.");
+  const host = draft.host.trim();
+  if (!host) errors.host = "SMTP host is required.";
+  else if (host.length > MAX_LENGTHS.host) errors.host = `Keep it under ${MAX_LENGTHS.host} characters.`;
+
   const port = optionalInt(draft.port);
   if (port === undefined || Number.isNaN(port) || port < 1 || port > 65535) {
-    errors.push("SMTP port must be between 1 and 65535.");
+    errors.port = "SMTP port must be between 1 and 65535.";
   }
-  return errors;
+
+  const user = draft.user.trim();
+  if (user.length > MAX_LENGTHS.user) errors.user = `Keep it under ${MAX_LENGTHS.user} characters.`;
+
+  const helo = draft.heloName.trim();
+  if (helo.length > MAX_LENGTHS.heloName) {
+    errors.heloName = `Keep it under ${MAX_LENGTHS.heloName} characters.`;
+  } else if (/\s/.test(helo)) {
+    errors.heloName = "Must not contain spaces.";
+  }
 }
 
-function validateGraphFields(draft: MailDraft): string[] {
-  if (draft.provider !== "graph") return [];
+const TUNING_FIELD_KEYS = [
+  "maxConnections",
+  "maxMessages",
+  "rateLimitPerMinute",
+  "connectionTimeout",
+  "greetingTimeout",
+  "socketTimeout",
+] as const satisfies ReadonlyArray<keyof MailDraft>;
 
-  const errors: string[] = [];
-  if (!draft.tenantId.trim()) errors.push("Tenant ID is required.");
-  if (!draft.clientId.trim()) errors.push("Client ID is required.");
+const TUNING_FIELD_LABELS: Record<(typeof TUNING_FIELD_KEYS)[number], string> = {
+  maxConnections: "Max connections",
+  maxMessages: "Max messages per connection",
+  rateLimitPerMinute: "Rate limit",
+  connectionTimeout: "Connection timeout",
+  greetingTimeout: "Greeting timeout",
+  socketTimeout: "Socket timeout",
+};
+
+/** Every field validated inside SmtpConnectionCard's collapsed "Advanced tuning"
+ * `<details>` - the single source of truth for which fields must force that section open
+ * on error, so a future addition to TUNING_FIELD_KEYS can't be forgotten there. */
+export const ADVANCED_TUNING_FIELD_KEYS = [
+  "heloName",
+  ...TUNING_FIELD_KEYS,
+] as const satisfies ReadonlyArray<keyof MailDraft>;
+
+/** Each of these is optional (blank = provider default) but, when set, is sent to the
+ * server as a positive integer - an invalid value here previously failed silently: the
+ * save-body builder's own int guard just dropped it, so the operator's edit vanished with
+ * no feedback at all. */
+function validateTuningFields(draft: MailDraft, errors: MailFieldErrors): void {
+  if (draft.provider !== "smtp") return;
+
+  for (const key of TUNING_FIELD_KEYS) {
+    if (!draft[key].trim()) continue;
+    const n = optionalInt(draft[key]);
+    if (n === undefined || Number.isNaN(n) || n < 1) {
+      errors[key] = `${TUNING_FIELD_LABELS[key]} must be a positive whole number.`;
+    }
+  }
+}
+
+function validateGraphFields(draft: MailDraft, errors: MailFieldErrors): void {
+  if (draft.provider !== "graph") return;
+
+  const tenantId = draft.tenantId.trim();
+  if (!tenantId) errors.tenantId = "Tenant ID is required.";
+  else if (tenantId.length > MAX_LENGTHS.tenantId) {
+    errors.tenantId = `Keep it under ${MAX_LENGTHS.tenantId} characters.`;
+  }
+
+  const clientId = draft.clientId.trim();
+  if (!clientId) errors.clientId = "Client ID is required.";
+  else if (clientId.length > MAX_LENGTHS.clientId) {
+    errors.clientId = `Keep it under ${MAX_LENGTHS.clientId} characters.`;
+  }
+
   const mailbox = draft.mailbox.trim();
   const from = draft.fromAddress.trim();
   if (!mailbox && !from) {
-    errors.push("Mailbox or from address is required.");
+    errors.mailbox = "Mailbox or from address is required.";
+  } else if (mailbox && !isValidEmail(mailbox)) {
+    errors.mailbox = "Mailbox must be a valid email.";
+  } else if (mailbox.length > MAX_LENGTHS.mailbox) {
+    errors.mailbox = `Keep it under ${MAX_LENGTHS.mailbox} characters.`;
   }
-  if (mailbox && !EMAIL_RE.test(mailbox)) {
-    errors.push("Mailbox must be a valid email.");
-  }
-  return errors;
 }
 
-function validateAllowedDomain(draft: MailDraft): string[] {
-  const allowedDomain = draft.allowedFromDomain.trim().toLowerCase().replace(/^@/, "");
-  if (!allowedDomain || !draft.provider) return [];
+function normalizeDomain(raw: string): string {
+  return raw.trim().toLowerCase().replace(/^@/, "");
+}
 
+/** A bare hostname shape - no scheme, no "@", no port, at least one label before a real
+ * TLD (knownTlds.ts). The server itself only enforces length here (mail-settings-shared.ts),
+ * so this is a client-side plausibility check only, same spirit as isValidEmail above -
+ * it also catches a reserved, non-delegated name like "mail.local" that a length-only
+ * check would wave through. Rejects any ":" (not just "://") so "http:example.com" -
+ * missing the double slash but still not a bare domain - doesn't slip through. */
+function isPlausibleDomain(value: string): boolean {
+  if (/\s/.test(value) || value.includes("@") || value.includes(":")) return false;
+  const dot = value.lastIndexOf(".");
+  if (dot <= 0) return false;
+  return isKnownTld(value.slice(dot + 1));
+}
+
+/** Format/length check on the Allowed from domain field itself. Runs before the
+ * cross-field mismatch check below, which needs a well-formed domain to compare against. */
+function validateAllowedDomainField(draft: MailDraft, errors: MailFieldErrors): void {
+  const raw = draft.allowedFromDomain.trim();
+  if (!raw) return;
+
+  if (raw.length > MAX_LENGTHS.allowedFromDomain) {
+    errors.allowedFromDomain = `Keep it under ${MAX_LENGTHS.allowedFromDomain} characters.`;
+    return;
+  }
+  if (!isPlausibleDomain(normalizeDomain(raw))) {
+    errors.allowedFromDomain = "Enter a bare domain, e.g. example.com.";
+  }
+}
+
+/** The allowed-domain restriction checks whichever field actually supplies the sending
+ * address - From address normally, or the Graph mailbox when From address is blank - and
+ * flags that same field, so the red border lands on the field the operator needs to fix. */
+function validateAllowedDomain(draft: MailDraft, errors: MailFieldErrors): void {
+  if (errors.allowedFromDomain) return;
+  const allowedDomain = normalizeDomain(draft.allowedFromDomain);
+  if (!allowedDomain || !draft.provider) return;
+
+  let effectiveField: "fromAddress" | "mailbox" = "fromAddress";
   let effectiveFrom = draft.fromAddress.trim();
   if (draft.provider === "graph" && !effectiveFrom) {
     effectiveFrom = draft.mailbox.trim();
+    effectiveField = "mailbox";
   }
-  if (!effectiveFrom) return [];
+  if (!effectiveFrom || errors[effectiveField]) return;
 
   const domain = effectiveFrom.split("@")[1]?.toLowerCase();
   if (!domain || domain !== allowedDomain) {
-    return [`From address must use the allowed domain (${allowedDomain}).`];
+    const fieldLabel = effectiveField === "mailbox" ? "Mailbox" : "From address";
+    errors[effectiveField] = `${fieldLabel} must use the allowed domain (${allowedDomain}).`;
   }
-  return [];
 }
 
-export function validateMailDraft(draft: MailDraft): { valid: boolean; errors: string[] } {
-  const errors: string[] = [
-    ...validateEmailFields(draft),
-    ...validateFromAddressRequired(draft),
-    ...validateSmtpFields(draft),
-    ...validateGraphFields(draft),
-    ...validateAllowedDomain(draft),
-  ];
-
-  return { valid: errors.length === 0, errors };
+/** `fieldLocked` is env-managed fields (rendered as disabled inputs the operator cannot
+ * edit - see fieldLocked in MailTransportPanel/EventMailSettingsCard/WizardStep2Mail).
+ * Errors on those fields are dropped: an operator can't fix a value that isn't theirs to
+ * edit, and buildSaveMailSettingsBody already excludes locked fields from what gets saved,
+ * so a bad env value there would otherwise permanently block Save on every other field too. */
+export function validateMailDraft(
+  draft: MailDraft,
+  fieldLocked?: (key: keyof MailDraft) => boolean,
+): MailFieldErrors {
+  const errors: MailFieldErrors = {};
+  validateEmailFields(draft, errors);
+  validateFromAddressRequired(draft, errors);
+  validateSmtpFields(draft, errors);
+  validateTuningFields(draft, errors);
+  validateGraphFields(draft, errors);
+  validateAllowedDomainField(draft, errors);
+  validateAllowedDomain(draft, errors);
+  if (fieldLocked) {
+    for (const key of Object.keys(errors) as Array<keyof MailFieldErrors>) {
+      if (fieldLocked(key)) delete errors[key];
+    }
+  }
+  return errors;
 }
 
 function setClearableString(
