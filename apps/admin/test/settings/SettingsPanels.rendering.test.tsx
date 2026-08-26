@@ -2096,7 +2096,13 @@ describe("SystemLogsPanel rendering", () => {
       });
       await screen.findByText("http_request");
 
-      expect(console_.scrollTop).toBe(4000);
+      // findByText can observe the committed text as soon as React updates the DOM, which can
+      // race ahead of the passive scroll effect that reads/writes scrollTop for that same commit
+      // (bot review) - waitFor lets the assertion retry until that effect has actually run,
+      // instead of assuming it already has the instant the text appears.
+      await waitFor(() => {
+        expect(console_.scrollTop).toBe(4000);
+      });
     } finally {
       restoreConsoleDimensions();
     }
@@ -2134,7 +2140,9 @@ describe("SystemLogsPanel rendering", () => {
 
       openSystemLogsView();
 
-      expect(console_.scrollTop).toBe(4000);
+      await waitFor(() => {
+        expect(console_.scrollTop).toBe(4000);
+      });
     } finally {
       restoreConsoleDimensions();
     }
