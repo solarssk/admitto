@@ -53,6 +53,13 @@ type CameraOverlayProps = {
    * it to guard against a double-tap firing two undo requests. */
   onUndo?: () => Promise<unknown> | void;
   showUndo?: boolean;
+  /** Forwarded to CameraScanner - see its own prop for details. */
+  onTrackChange?: (track: MediaStreamTrack | null) => void;
+  /** Only rendered once the active track has actually reported the capability - see
+   * useCameraTorch's own doc for why. */
+  torchSupported?: boolean;
+  torchOn?: boolean;
+  onToggleTorch?: () => void;
 };
 
 export function CameraOverlay({
@@ -81,6 +88,10 @@ export function CameraOverlay({
   onUndo,
   showUndo,
   transportError,
+  onTrackChange,
+  torchSupported,
+  torchOn,
+  onToggleTorch,
 }: Readonly<CameraOverlayProps>) {
   const [scanSoundMuted, toggleScanSoundMuted] = useScanSoundMuted();
   const [manualMode, setManualMode] = useState(false);
@@ -202,6 +213,18 @@ export function CameraOverlay({
         >
           <i className={scanSoundMuteIconClass(scanSoundMuted)} aria-hidden="true" />
         </button>
+        {torchSupported && (
+          <button
+            type="button"
+            className="ck-overlay__torch"
+            aria-pressed={torchOn}
+            aria-label={torchOn ? "Turn off torch" : "Turn on torch"}
+            title={torchOn ? "Turn off torch" : "Turn on torch"}
+            onClick={onToggleTorch}
+          >
+            <i className={`ti ti-bulb${torchOn ? "" : "-off"}`} aria-hidden="true" />
+          </button>
+        )}
         <button
           type="button"
           className="ck-overlay__close"
@@ -228,6 +251,7 @@ export function CameraOverlay({
               enabled={!manualMode && !scanResult && !pending && !itemStepActive}
               wedgeActive={wedgeActive}
               onScan={onScan}
+              onTrackChange={onTrackChange}
             />
             {renderFrameContent()}
           </div>
