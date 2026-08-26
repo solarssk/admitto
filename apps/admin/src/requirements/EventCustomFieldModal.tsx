@@ -57,8 +57,15 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
   else if (isEdit) submitLabel = "Save";
 
   const labelTrimmed = form.label.trim();
+  // Newline-only, matching the field's "one per line" label - splitting on comma too (as this
+  // used to) corrupts any option whose own text contains one (e.g. "Sales, EMEA" stored as a
+  // single option) into two options on every re-parse, which made an edit's options-changed
+  // check see a "change" even when the operator never touched the options box (bot review on
+  // PR #1100 - the exact data-corruption case this file's other options-diffing guard exists to
+  // prevent). Keeping this newline-only makes formFromField's join("\n") / this split round-trip
+  // losslessly for any option content.
   const selectOptions = form.options
-    .split(/[,\n]/)
+    .split("\n")
     .map((s) => s.trim())
     .filter(Boolean);
   const canSubmit =

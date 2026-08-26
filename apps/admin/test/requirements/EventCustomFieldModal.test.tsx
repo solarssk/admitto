@@ -262,6 +262,30 @@ describe("EventCustomFieldModal — edit", () => {
     });
   });
 
+  it("does not resend options containing a comma when saving an unrelated change", async () => {
+    const territoryField: EventCustomFieldDto = {
+      ...dietaryField,
+      id: "field-territory",
+      source_field: "territory",
+      label: "Territory",
+      type: "select",
+      required: false,
+      options: ["Sales, EMEA", "Sales, APAC"],
+    };
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...territoryField, required: true });
+    renderModal(territoryField);
+    fireEvent.click(screen.getByRole("button", { name: "Required" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-territory", {
+        label: "Territory",
+        description: null,
+        type: "select",
+        required: true,
+      });
+    });
+  });
+
   it("sends the new options when a text field is switched to select and given options", async () => {
     vi.mocked(updateEventCustomField).mockResolvedValueOnce({
       ...dietaryField,
