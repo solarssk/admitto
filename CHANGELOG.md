@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Communication → Send's bulk-send progress now shows Sent/Failed/Remaining stat tiles and a two-segment progress bar while a batch drains, and a "Send complete" summary card once it finishes, instead of a single plain-text line. The "Send another" button is now hidden until the batch has actually finished draining - it previously appeared as soon as sending started, and clicking it mid-send stopped the page from tracking that batch (with no way to check on it again) without cancelling anything server-side, so an operator could unknowingly fire a second, concurrent send while the first was still in flight.
+
 ### Fixed
 
 - Text fields, selects, and searchable-select/phone-country search boxes on mobile/touch devices now render at the same visual size as their desktop 14px counterparts, instead of visibly larger. The underlying computed font-size is unchanged (still 16px, which is what stops iOS Safari from auto-zooming the page on focus) - the field is instead rendered at that size and then scaled back down to the desktop box's exact dimensions, so the protection against iOS's zoom-on-focus still applies. Multi-line text areas are unaffected (still a plain 16px on touch devices, as before).
