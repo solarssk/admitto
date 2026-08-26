@@ -18,6 +18,24 @@ export interface EventLocationDto {
   google_maps_url_override: string | null;
   /** Manual Apple Maps deep link; null = build from coordinates. */
   apple_maps_url_override: string | null;
+  /** Venue identifiers exposed as Wallet field-mapping placeholders (WALLET_MAPPING_PLACEHOLDERS) -
+   * only reach a pass once an admin maps them in Event Settings -> Wallet. */
+  venue_room: string | null;
+  venue_entrance: string | null;
+  venue_entrance_door: string | null;
+  venue_entrance_gate: string | null;
+  venue_entrance_portal: string | null;
+  venue_phone_number: string | null;
+  /** Apple Maps' own place identifier - admin-entered, Admitto has no automatic way to derive it. */
+  venue_place_id: string | null;
+  /** Access-point opening times, "HH:MM" wall-clock strings tied to the event's single `date`. */
+  venue_open_time: string | null;
+  venue_close_time: string | null;
+  doors_open_time: string | null;
+  gates_open_time: string | null;
+  box_office_open_time: string | null;
+  parking_lots_open_time: string | null;
+  fan_zone_open_time: string | null;
 }
 
 /** Fields an admin can submit via `PUT .../location`. All optional/nullable — omit a key to
@@ -33,6 +51,20 @@ export interface EventLocationInput {
   address_components?: AddressComponents | null;
   google_maps_url_override?: string | null;
   apple_maps_url_override?: string | null;
+  venue_room?: string | null;
+  venue_entrance?: string | null;
+  venue_entrance_door?: string | null;
+  venue_entrance_gate?: string | null;
+  venue_entrance_portal?: string | null;
+  venue_phone_number?: string | null;
+  venue_place_id?: string | null;
+  venue_open_time?: string | null;
+  venue_close_time?: string | null;
+  doors_open_time?: string | null;
+  gates_open_time?: string | null;
+  box_office_open_time?: string | null;
+  parking_lots_open_time?: string | null;
+  fan_zone_open_time?: string | null;
 }
 
 /** One geocoding candidate returned by a provider search. `name` is the localized place/POI name

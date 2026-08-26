@@ -1040,36 +1040,45 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(row.wallet_google_enabled).toBe(true);
   });
 
-  it("toggles wallet_semantic_tags_enabled (superadmin) - off by default", async () => {
-    try {
-      const before = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
-      expect(before.wallet_semantic_tags_enabled).toBe(false);
+  it("updates event_type (org admin, not wallet-gated) and clears it with null", async () => {
+    const original = await prisma.event.findUniqueOrThrow({
+      where: { id: EVENT_SET },
+      select: { event_type: true },
+    });
 
-      const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+    try {
+      const setRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
         method: "PATCH",
-        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet_semantic_tags_enabled: true }),
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ event_type: "conference" }),
       });
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as { event: { wallet_semantic_tags_enabled: boolean } };
-      expect(body.event.wallet_semantic_tags_enabled).toBe(true);
+      expect(setRes.status).toBe(200);
+      const setBody = (await setRes.json()) as { event: { event_type: string | null } };
+      expect(setBody.event.event_type).toBe("conference");
+
+      const clearRes = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ event_type: null }),
+      });
+      expect(clearRes.status).toBe(200);
+      const clearBody = (await clearRes.json()) as { event: { event_type: string | null } };
+      expect(clearBody.event.event_type).toBeNull();
     } finally {
       await prisma.event.update({
         where: { id: EVENT_SET },
-        data: { wallet_semantic_tags_enabled: false },
+        data: original,
       });
     }
   });
 
-  it("returns 403 when an organisation admin tries to toggle wallet_semantic_tags_enabled", async () => {
+  it("rejects an event_type value outside the known Apple PKEventType vocabulary", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
       method: "PATCH",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ wallet_semantic_tags_enabled: true }),
+      body: JSON.stringify({ event_type: "not_a_real_type" }),
     });
-    expect(res.status).toBe(403);
-    const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
-    expect(row.wallet_semantic_tags_enabled).toBe(false);
+    expect(res.status).toBe(400);
   });
 
   it("toggles the wallet_enabled master switch (superadmin)", async () => {
@@ -1207,19 +1216,15 @@ describe("PATCH /api/admin/events/:eventId", () => {
       });
     });
 
-    it("enqueues an event-wide wallet_push job when wallet_semantic_tags_enabled is toggled", async () => {
-      // PUSH_EVENT is fully configured (template + key), so this save also runs
-      // subscribeWalletWebhooksBestEffort (patchesWallet is true for this field) - stub the
-      // PassCreator client the same way "webhook subscription on wallet-config save" below
-      // does, or this makes a real network call and hangs until the test times out (no network
-      // egress in CI).
-      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
-      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+    it("enqueues an event-wide wallet_push job when event_type is changed", async () => {
+      // event_type is not wallet-gated (patchesWallet stays false for it), so unlike the
+      // wallet_apple_enabled test below, this save never runs subscribeWalletWebhooksBestEffort -
+      // no PassCreatorClient stubbing needed.
       try {
         const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
           method: "PATCH",
           headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
-          body: JSON.stringify({ wallet_semantic_tags_enabled: true }),
+          body: JSON.stringify({ event_type: "conference" }),
         });
 
         expect(res.status).toBe(200);
@@ -1230,13 +1235,11 @@ describe("PATCH /api/admin/events/:eventId", () => {
           result_json: { request: { kind: "event_wide", eventId: PUSH_EVENT } },
         });
       } finally {
-        listSpy.mockRestore();
-        subscribeSpy.mockRestore();
-        await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_semantic_tags_enabled: false } });
+        await prisma.event.update({ where: { id: PUSH_EVENT }, data: { event_type: null } });
       }
     });
 
-    it("enqueues an event-wide wallet_push job when wallet_apple_enabled is toggled (semantics gating depends on it too)", async () => {
+    it("enqueues an event-wide wallet_push job when wallet_apple_enabled is toggled (relevantDate gating depends on it too)", async () => {
       const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
       const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
       try {

@@ -1,7 +1,6 @@
 export type {
   WalletPassInput,
   WalletPassResult,
-  WalletPassSemantics,
   WalletProviderErrorCode,
 } from "./types.js";
 export { WalletProviderError } from "./types.js";

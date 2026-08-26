@@ -196,11 +196,11 @@ export type ResolvedTicket = {
     walletApiKeyEnc: string | null;
     walletAppleEnabled: boolean;
     walletGoogleEnabled: boolean;
-    /** Apple Wallet semantic tags opt-in (Siri Suggestions/Maps/Calendar); no NFC/poster-style,
-     * Apple only - buildWalletPassInput also gates this on walletAppleEnabled. */
-    walletSemanticTagsEnabled: boolean;
     /** PassCreator field key -> Admitto placeholder token; null/empty uses the default mapping. */
     walletFieldMapping: Record<string, string> | null;
+    /** Optional event category (Apple PKEventType vocabulary key, e.g. "sports") - a
+     * WALLET_MAPPING_PLACEHOLDERS entry like every other field here. */
+    eventType: string | null;
     /** Short venue display name (`EventLocation.venue_name`). */
     location: string | null;
     logoUrl: string | null;
@@ -227,5 +227,21 @@ export type ResolvedTicket = {
     googleMapsUrlOverride: string | null;
     /** Manual Apple Maps URL when set; otherwise ticket builds from lat/lng. */
     appleMapsUrlOverride: string | null;
+    /** Venue identifiers/opening times - WALLET_MAPPING_PLACEHOLDERS entries, only reach a pass
+     * once an admin maps them in Event Settings -> Wallet. */
+    venueRoom: string | null;
+    venueEntrance: string | null;
+    venueEntranceDoor: string | null;
+    venueEntranceGate: string | null;
+    venueEntrancePortal: string | null;
+    venuePhoneNumber: string | null;
+    venuePlaceId: string | null;
+    venueOpenTime: string | null;
+    venueCloseTime: string | null;
+    doorsOpenTime: string | null;
+    gatesOpenTime: string | null;
+    boxOfficeOpenTime: string | null;
+    parkingLotsOpenTime: string | null;
+    fanZoneOpenTime: string | null;
   };
 };

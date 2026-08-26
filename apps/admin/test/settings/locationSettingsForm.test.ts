@@ -21,6 +21,20 @@ const EMPTY_LOCATION: EventLocationDto = {
   address_components: null,
   google_maps_url_override: null,
   apple_maps_url_override: null,
+  venue_room: null,
+  venue_entrance: null,
+  venue_entrance_door: null,
+  venue_entrance_gate: null,
+  venue_entrance_portal: null,
+  venue_phone_number: null,
+  venue_place_id: null,
+  venue_open_time: null,
+  venue_close_time: null,
+  doors_open_time: null,
+  gates_open_time: null,
+  box_office_open_time: null,
+  parking_lots_open_time: null,
+  fan_zone_open_time: null,
 };
 
 const FULL_LOCATION: EventLocationDto = {
@@ -43,6 +57,20 @@ const FULL_LOCATION: EventLocationDto = {
   },
   google_maps_url_override: null,
   apple_maps_url_override: null,
+  venue_room: null,
+  venue_entrance: null,
+  venue_entrance_door: null,
+  venue_entrance_gate: null,
+  venue_entrance_portal: null,
+  venue_phone_number: null,
+  venue_place_id: null,
+  venue_open_time: null,
+  venue_close_time: null,
+  doors_open_time: null,
+  gates_open_time: null,
+  box_office_open_time: null,
+  parking_lots_open_time: null,
+  fan_zone_open_time: null,
 };
 
 describe("draftFromLocation", () => {
@@ -65,6 +93,20 @@ describe("draftFromLocation", () => {
       },
       google_maps_url_override: "",
       apple_maps_url_override: "",
+      venue_room: "",
+      venue_entrance: "",
+      venue_entrance_door: "",
+      venue_entrance_gate: "",
+      venue_entrance_portal: "",
+      venue_phone_number: "",
+      venue_place_id: "",
+      venue_open_time: "",
+      venue_close_time: "",
+      doors_open_time: "",
+      gates_open_time: "",
+      box_office_open_time: "",
+      parking_lots_open_time: "",
+      fan_zone_open_time: "",
     });
   });
 
@@ -116,6 +158,15 @@ describe("isLocationDirty", () => {
     expect(isLocationDirty({ ...saved, directions_text: "New directions" }, saved)).toBe(true);
     expect(isLocationDirty({ ...saved, accessibility_text: "New notes" }, saved)).toBe(true);
   });
+
+  it("is true when a venue identifier field changes", () => {
+    expect(isLocationDirty({ ...saved, venue_room: "Hall B" }, saved)).toBe(true);
+    expect(isLocationDirty({ ...saved, venue_place_id: "I4CCAB9B9CD77B6BA" }, saved)).toBe(true);
+  });
+
+  it("is true when an access-point timing field changes", () => {
+    expect(isLocationDirty({ ...saved, doors_open_time: "08:30" }, saved)).toBe(true);
+  });
 });
 
 describe("buildEventLocationPatchBody", () => {
@@ -144,6 +195,24 @@ describe("buildEventLocationPatchBody", () => {
     expect(buildEventLocationPatchBody(draft, saved, null)).toEqual({
       accessibility_text: null,
     });
+  });
+
+  it("includes a changed venue identifier field, and clears an already-set one to null when emptied", () => {
+    const setDraft: LocationDraft = { ...saved, venue_room: "Hall B" };
+    expect(buildEventLocationPatchBody(setDraft, saved, null)).toEqual({ venue_room: "Hall B" });
+
+    const savedWithRoom: LocationDraft = { ...saved, venue_room: "Hall B" };
+    const clearDraft: LocationDraft = { ...savedWithRoom, venue_room: "" };
+    expect(buildEventLocationPatchBody(clearDraft, savedWithRoom, null)).toEqual({ venue_room: null });
+  });
+
+  it("includes a changed access-point timing field, and clears an already-set one to null when emptied", () => {
+    const setDraft: LocationDraft = { ...saved, doors_open_time: "08:30" };
+    expect(buildEventLocationPatchBody(setDraft, saved, null)).toEqual({ doors_open_time: "08:30" });
+
+    const savedWithTime: LocationDraft = { ...saved, doors_open_time: "08:30" };
+    const clearDraft: LocationDraft = { ...savedWithTime, doors_open_time: "" };
+    expect(buildEventLocationPatchBody(clearDraft, savedWithTime, null)).toEqual({ doors_open_time: null });
   });
 
   it("trims the address and clears it to null when only whitespace remains", () => {

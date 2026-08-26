@@ -78,6 +78,23 @@ const mockReverse = vi.mocked(reverseGeocoding);
 const mockFetchTiles = vi.mocked(fetchMapTileConfig);
 const mockFetchTimezone = vi.mocked(fetchTimezoneForCoordinates);
 
+const EMPTY_VENUE_ACCESS_FIELDS = {
+  venue_room: null,
+  venue_entrance: null,
+  venue_entrance_door: null,
+  venue_entrance_gate: null,
+  venue_entrance_portal: null,
+  venue_phone_number: null,
+  venue_place_id: null,
+  venue_open_time: null,
+  venue_close_time: null,
+  doors_open_time: null,
+  gates_open_time: null,
+  box_office_open_time: null,
+  parking_lots_open_time: null,
+  fan_zone_open_time: null,
+};
+
 const EMPTY_LOCATION: EventLocationDto = {
   venue_name: null,
   formatted_address: null,
@@ -91,6 +108,7 @@ const EMPTY_LOCATION: EventLocationDto = {
   address_components: null,
   google_maps_url_override: null,
   apple_maps_url_override: null,
+  ...EMPTY_VENUE_ACCESS_FIELDS,
 };
 
 const SAVED_LOCATION: EventLocationDto = {
@@ -113,6 +131,7 @@ const SAVED_LOCATION: EventLocationDto = {
   },
   google_maps_url_override: null,
   apple_maps_url_override: null,
+  ...EMPTY_VENUE_ACCESS_FIELDS,
 };
 
 const TILE_CONFIG: MapTileConfigDto = {
@@ -1265,6 +1284,93 @@ describe("LocationSettingsPanel — editable fields", () => {
       expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", {
         directions_text: "Use the east entrance.",
         accessibility_text: "Step-free entrance.",
+      }),
+    );
+  });
+
+  it("saves the venue access identifier fields (room, entrance, door/gate/portal, phone, place ID)", async () => {
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockSaveLocation.mockResolvedValue({
+      ...EMPTY_LOCATION,
+      venue_room: "Hall B",
+      venue_entrance: "Main entrance",
+      venue_entrance_door: "Door 3",
+      venue_entrance_gate: "Gate B",
+      venue_entrance_portal: "North Portal",
+      venue_phone_number: "+91 80 4252 1000",
+      venue_place_id: "I4CCAB9B9CD77B6BA",
+    });
+    renderPanel();
+
+    fireEvent.change(await screen.findByLabelText("Venue room"), { target: { value: "Hall B" } });
+    fireEvent.change(screen.getByLabelText("Venue entrance"), { target: { value: "Main entrance" } });
+    fireEvent.change(screen.getByLabelText("Entrance door"), { target: { value: "Door 3" } });
+    fireEvent.change(screen.getByLabelText("Entrance gate"), { target: { value: "Gate B" } });
+    fireEvent.change(screen.getByLabelText("Entrance portal"), { target: { value: "North Portal" } });
+    fireEvent.change(screen.getByLabelText("Venue phone number"), {
+      target: { value: "+91 80 4252 1000" },
+    });
+    fireEvent.change(screen.getByLabelText("Venue Place ID"), {
+      target: { value: "I4CCAB9B9CD77B6BA" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", {
+        venue_room: "Hall B",
+        venue_entrance: "Main entrance",
+        venue_entrance_door: "Door 3",
+        venue_entrance_gate: "Gate B",
+        venue_entrance_portal: "North Portal",
+        venue_phone_number: "+91 80 4252 1000",
+        venue_place_id: "I4CCAB9B9CD77B6BA",
+      }),
+    );
+  });
+
+  it("saves the Opening hours fields after expanding the disclosure", async () => {
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockSaveLocation.mockResolvedValue({
+      ...EMPTY_LOCATION,
+      venue_open_time: "08:00",
+      venue_close_time: "23:00",
+      doors_open_time: "08:30",
+      gates_open_time: "08:45",
+      box_office_open_time: "08:15",
+      parking_lots_open_time: "07:00",
+      fan_zone_open_time: "09:00",
+    });
+    renderPanel();
+
+    await screen.findByLabelText("Venue room");
+    fireEvent.click(screen.getByText("Opening hours"));
+
+    fireEvent.change(await screen.findByLabelText("Venue opens"), { target: { value: "08:00" } });
+    fireEvent.blur(screen.getByLabelText("Venue opens"));
+    fireEvent.change(screen.getByLabelText("Venue closes"), { target: { value: "23:00" } });
+    fireEvent.blur(screen.getByLabelText("Venue closes"));
+    fireEvent.change(screen.getByLabelText("Doors open"), { target: { value: "08:30" } });
+    fireEvent.blur(screen.getByLabelText("Doors open"));
+    fireEvent.change(screen.getByLabelText("Gates open"), { target: { value: "08:45" } });
+    fireEvent.blur(screen.getByLabelText("Gates open"));
+    fireEvent.change(screen.getByLabelText("Box office opens"), { target: { value: "08:15" } });
+    fireEvent.blur(screen.getByLabelText("Box office opens"));
+    fireEvent.change(screen.getByLabelText("Parking lots open"), { target: { value: "07:00" } });
+    fireEvent.blur(screen.getByLabelText("Parking lots open"));
+    fireEvent.change(screen.getByLabelText("Fan zone opens"), { target: { value: "09:00" } });
+    fireEvent.blur(screen.getByLabelText("Fan zone opens"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", {
+        venue_open_time: "08:00",
+        venue_close_time: "23:00",
+        doors_open_time: "08:30",
+        gates_open_time: "08:45",
+        box_office_open_time: "08:15",
+        parking_lots_open_time: "07:00",
+        fan_zone_open_time: "09:00",
       }),
     );
   });

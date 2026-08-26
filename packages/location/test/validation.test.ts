@@ -60,6 +60,69 @@ describe("normalizeEventLocationInput", () => {
     expect(() => normalizeEventLocationInput({ [field]: value })).not.toThrow();
   });
 
+  it.each([
+    "venue_room",
+    "venue_entrance",
+    "venue_entrance_door",
+    "venue_entrance_gate",
+    "venue_entrance_portal",
+    "venue_phone_number",
+    "venue_place_id",
+  ])("trims %s and clears it with empty/whitespace", (field) => {
+    const trimmed = normalizeEventLocationInput({ [field]: "  Conference Hall B  " });
+    expect(trimmed[field as keyof typeof trimmed]).toBe("Conference Hall B");
+    const cleared = normalizeEventLocationInput({ [field]: "   " });
+    expect(cleared[field as keyof typeof cleared]).toBeNull();
+  });
+
+  it.each([
+    "venue_room",
+    "venue_entrance",
+    "venue_entrance_door",
+    "venue_entrance_gate",
+    "venue_entrance_portal",
+    "venue_phone_number",
+    "venue_place_id",
+  ])("rejects %s longer than SHORT_TEXT_MAX_LENGTH", (field) => {
+    const tooLong = "a".repeat(LOCATION_LIMITS.SHORT_TEXT_MAX_LENGTH + 1);
+    expect(() => normalizeEventLocationInput({ [field]: tooLong })).toThrow(LocationValidationError);
+  });
+
+  it.each([
+    "venue_open_time",
+    "venue_close_time",
+    "doors_open_time",
+    "gates_open_time",
+    "box_office_open_time",
+    "parking_lots_open_time",
+    "fan_zone_open_time",
+  ])("accepts a valid 24h HH:MM value for %s", (field) => {
+    const result = normalizeEventLocationInput({ [field]: "09:30" });
+    expect(result[field as keyof typeof result]).toBe("09:30");
+  });
+
+  it.each([
+    "venue_open_time",
+    "venue_close_time",
+    "doors_open_time",
+    "gates_open_time",
+    "box_office_open_time",
+    "parking_lots_open_time",
+    "fan_zone_open_time",
+  ])("clears %s with empty string and passes explicit null through", (field) => {
+    expect(normalizeEventLocationInput({ [field]: "" })[field as keyof ReturnType<typeof normalizeEventLocationInput>]).toBeNull();
+    expect(normalizeEventLocationInput({ [field]: null })[field as keyof ReturnType<typeof normalizeEventLocationInput>]).toBeNull();
+  });
+
+  it.each(["9:30", "24:00", "12:60", "not-a-time", "09:30:00"])(
+    "rejects an invalid time value %s for a timing field",
+    (value) => {
+      expect(() => normalizeEventLocationInput({ doors_open_time: value })).toThrow(
+        LocationValidationError,
+      );
+    },
+  );
+
   it("accepts valid coordinates at the boundary", () => {
     const result = normalizeEventLocationInput({ latitude: -90, longitude: 180 });
     expect(result).toEqual({ latitude: -90, longitude: 180 });

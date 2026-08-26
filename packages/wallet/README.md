@@ -32,7 +32,6 @@ data. PassCreator is presentation and delivery only - it never gates check-in (A
 import type {
   WalletPassProvider,
   WalletPassInput,
-  WalletPassSemantics,
   WalletPassResult,
   WalletPassRegistrationStatus,
   WalletProviderErrorCode,
@@ -80,62 +79,54 @@ template - `PassCreatorClient.listWebhooks()` is explicitly account-wide, for ex
 PassCreator account backs multiple events, a leaked key can affect all of them at the provider; use
 a dedicated PassCreator service user scoped to one template for real per-event isolation.
 
-## Data flow: field mapping (existing) vs semantics (new)
+## Data flow: field mapping is the only mechanism (semantics API field does not exist)
 
-Two separate, independently-configured mechanisms both feed the same `POST`/`PATCH` body:
+Earlier revisions of this integration also built and sent a top-level `data.semantics` object,
+believing PassCreator's API passed it straight through into the issued pass's Apple `semantics`
+dictionary. **This was wrong and has been removed.** `semantics` is not a documented field of
+`POST /api/v3/pass` (confirmed against `developer.passcreator.com/en/api/v3/pass`), and empirical
+testing - diffing a real downloaded `.pkpass`/`pass.json` before and after editing the PassCreator
+template - showed it never reached the output pass regardless of what was sent. PassCreator
+silently ignores unknown request fields rather than rejecting them, so the request always looked
+like it worked.
 
-- **Field mapping** (`toPassCreatorData`'s `custom` object) - fully admin-configured, no default
-  vocabulary. PassCreator templates don't share a common Additional Property naming convention, so
-  Admitto never guesses; an admin maps every field their specific template expects (Event Settings
-  → Wallet → Field mapping). Nothing beyond the QR barcode is sent until explicitly mapped.
-- **Semantic tags** (`toPassCreatorData`'s `semantics` object, `WalletPassSemantics`) - Apple's own
-  fixed-vocabulary PassKit `semantics` dictionary (`eventName`, `eventStartDate`, `eventEndDate`,
-  `venueName`, `venueLocation`, `entranceDescription`, `attendeeName`, `duration`), populated
-  automatically by `buildWalletPassInput()` from Event/Attendee data - no per-field admin
-  configuration, just one event-level opt-in switch (`wallet_semantic_tags_enabled`, default off).
-  Powers Siri Suggestions / Maps / Calendar smart surfacing on Apple Wallet. Requires no NFC, no
-  PassCreator account approval, and has no effect on Google Wallet.
+The only mechanism that actually works is the same one that already powers the pass's visible
+fields (Name, Venue, Date, Hours): **field mapping** (`toPassCreatorData`'s `custom` object) - an
+admin maps every field their template's Additional Properties expect (Event Settings → Wallet →
+Field mapping); nothing beyond the QR barcode is sent until explicitly mapped. To get a value into
+one of Apple's Semantic Tags (Siri Suggestions / Maps / Calendar smart surfacing), the admin must
+do **two** things, on two different systems, both required:
 
-`eventStartDate`/`eventEndDate` are computed from the event's stored UTC calendar day plus its
-"HH:MM" hours fields, resolved in the event's own IANA timezone - see the doc comments on
-`zonedDateTimeToIso`/`tzOffsetSuffix` in `packages/tickets/src/wallet-pass-input.ts` for the exact
-day-boundary and DST-transition handling (both were real bugs once; the comments explain why the
-current approach avoids them).
+1. In Admitto's Field mapping table, map a placeholder (e.g. `event_type`, `venue_room`,
+   `doors_open_time` - see `WALLET_MAPPING_PLACEHOLDERS`) to a PassCreator Additional Property name.
+2. In that PassCreator template's own Editor UI, register that Additional Property as a Custom
+   Field (if it doesn't already exist), then bind the matching Semantic Tags panel field to
+   `{thatCustomFieldName}`.
 
-### Standard: every date/time value sent to Apple is a real ISO 8601 instant
+Admitto's job ends at step 1: it can supply the *data*, but the *binding* between an Apple semantic
+key and a Custom Field lives entirely inside PassCreator's template editor, outside Admitto's
+control - there is no API to configure that side.
 
-Every date/time field in `WalletPassSemantics` (and any future one) is built with
-`zonedDateTimeToIso` - never a bare `"HH:MM"`, never a date without a UTC offset. This is
-independent from the visible-text formatting in `region-date-format.ts` (below): semantics are
-machine-readable metadata for Apple/Siri, field-mapping labels are human-readable text - the two
-never need to agree, and a new date-typed semantic tag should reuse `zonedDateTimeToIso`, not a
-new conversion.
+`WALLET_MAPPING_PLACEHOLDERS` includes both general-purpose placeholders (name, date, address
+fields, usable for any Additional Property) and ones added specifically because they match Apple's
+Semantic Tags vocabulary: `event_type`, `venue_room`, `venue_entrance`(`_door`/`_gate`/`_portal`),
+`venue_phone_number`, `venue_place_id`, and the seven access-point timing placeholders
+(`venue_open_time`/`venue_close_time`/`doors_open_time`/`gates_open_time`/`box_office_open_time`/
+`parking_lots_open_time`/`fan_zone_open_time`). `venue_place_id` (Apple Maps' own place identifier)
+has no automatic source - Admitto's geocoding is Nominatim/OSM-based, not Apple MapKit, so an admin
+must look it up manually in the Apple Maps app and enter it in Event Settings → Location.
 
-### Semantic tag coverage (data minimization, ADR 0009)
+### Standard: every date/time placeholder sent to Apple is a real ISO 8601 instant
 
-A tag is only sent when Admitto's domain model actually has the data - never guessed or defaulted.
-
-| Sent today | Source |
-|---|---|
-| `eventName` | `event.title` |
-| `eventType` | fixed `"PKEventTypeGeneric"` (no event-category field in the model) |
-| `eventStartDate` / `eventEndDate` | `event.date` + hours + `event.timezone`, via `zonedDateTimeToIso` |
-| `duration` | computed from the resolved start/end instants, not wall-clock subtraction - correct across most DST transitions, but `zonedDateTimeToIso` resolves each bound's offset independently by probing its own wall-clock value as a proxy instant, so a same-day start/end pair that both land on the same side of that proxy check (while the real local clock skips a spring-forward hour between them) can still compute an incorrect duration - not a guaranteed-correct civil-time resolution |
-| `venueName` | `event.location` |
-| `venueLocation` | `event.latitude`/`longitude` |
-| `entranceDescription` | `event.directionsText` |
-| `attendeeName` | `attendee.name` |
-
-| Available to add, not sent yet | Source |
-|---|---|
-| `admissionLevel` | `attendee.ticket_type` - already computed as `ticketTypeLabel` on `WalletPassInput`, but only reaches PassCreator if an admin maps a field to the `ticket_type` placeholder (Event Settings → Wallet → Field mapping); with no mapping configured, `toPassCreatorData` sends only `semantics` and the provider-controlled base fields |
-| `venueRegionName` | `event.addressComponents.city` / `.region` |
-
-Deliberately not sent - no corresponding field in Admitto's domain model: `venueRoom`,
-`venueEntrance`/`venueEntranceGate`/`venueEntranceDoor` (no separate "room"/"gate" field, only free
-text), `venueDoorsOpenDate`/`venueGatesOpenDate` (no concept of a doors-open time distinct from
-`eventHoursStart`), `seats` (no assigned seating), and the sports/performance-specific tags (no
-matching event category).
+The seven `*OpenTimeLabel` fields on `WalletPassInput` are built with `zonedDateTimeToIso` from the
+event's stored UTC calendar day, an "HH:MM" field, and `event.timezone` - never a bare `"HH:MM"`,
+never a date without a UTC offset. See the doc comments on `zonedDateTimeToIso`/`tzOffsetSuffix` in
+`packages/tickets/src/wallet-pass-input.ts` for the exact day-boundary and DST-transition handling
+(both were real bugs once; the comments explain why the current approach avoids them). This is
+independent from the visible-text formatting in `region-date-format.ts` (below): these are
+machine-readable values for a Semantic Tag, field-mapping labels elsewhere are human-readable text
+- the two never need to agree, and a new date-typed placeholder should reuse `zonedDateTimeToIso`,
+not a new conversion.
 
 ### Visible field text: region-aware formatting (`packages/tickets/src/region-date-format.ts`)
 
@@ -166,7 +157,7 @@ implementation.
 EC public key above. `apps/cli`'s `registration-sync` job polls `getRegistrationStatus()` as a
 fallback for events the webhook may have missed. `wallet_push` (`AdminJob`) is the background job
 that re-syncs already-issued passes when a wallet-relevant event field changes (title, date, hours,
-timezone, the Apple Wallet toggle, or the semantic tags toggle) - see
+timezone, event type, or the Apple Wallet toggle) - see
 `walletRelevantEventFieldsChanged` in `apps/web/src/admin/event-settings-routes.ts`. Two things this
 job does *not* cover: it only targets `status: "active"` passes (`drain-wallet-push-jobs.ts`), so a
 voided pass stays untouched until it's restored *and* separately reissued - `restorePass()` only

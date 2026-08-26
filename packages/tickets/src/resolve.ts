@@ -135,6 +135,20 @@ type LocationDetailsForTicket = {
   accessibility_text: string | null;
   google_maps_url_override?: string | null;
   apple_maps_url_override?: string | null;
+  venue_room?: string | null;
+  venue_entrance?: string | null;
+  venue_entrance_door?: string | null;
+  venue_entrance_gate?: string | null;
+  venue_entrance_portal?: string | null;
+  venue_phone_number?: string | null;
+  venue_place_id?: string | null;
+  venue_open_time?: string | null;
+  venue_close_time?: string | null;
+  doors_open_time?: string | null;
+  gates_open_time?: string | null;
+  box_office_open_time?: string | null;
+  parking_lots_open_time?: string | null;
+  fan_zone_open_time?: string | null;
 } | null;
 
 export function toResolved(
@@ -147,12 +161,12 @@ export function toResolved(
     event: {
       id: string; title: string; slug: string; date: Date; timezone: string;
       event_hours_start: string | null; event_hours_end: string | null;
+      event_type: string | null;
       wallet_enabled: boolean;
       wallet_template_id: string | null;
       wallet_api_key_enc: string | null;
       wallet_apple_enabled: boolean;
       wallet_google_enabled: boolean;
-      wallet_semantic_tags_enabled: boolean;
       wallet_field_mapping: unknown;
       location_details?: LocationDetailsForTicket;
       logo_url: string | null; header_image_url: string | null;
@@ -192,8 +206,8 @@ export function toResolved(
       walletApiKeyEnc: row.event.wallet_api_key_enc,
       walletAppleEnabled: row.event.wallet_apple_enabled,
       walletGoogleEnabled: row.event.wallet_google_enabled,
-      walletSemanticTagsEnabled: row.event.wallet_semantic_tags_enabled,
       walletFieldMapping: parseWalletFieldMapping(row.event.wallet_field_mapping),
+      eventType: row.event.event_type,
       location: loc?.venue_name ?? null,
       logoUrl: resolveTicketLogoUrl(row.event),
       formattedAddress: loc?.formatted_address ?? null,
@@ -205,6 +219,20 @@ export function toResolved(
       accessibilityText: loc?.accessibility_text ?? null,
       googleMapsUrlOverride: loc?.google_maps_url_override ?? null,
       appleMapsUrlOverride: loc?.apple_maps_url_override ?? null,
+      venueRoom: loc?.venue_room ?? null,
+      venueEntrance: loc?.venue_entrance ?? null,
+      venueEntranceDoor: loc?.venue_entrance_door ?? null,
+      venueEntranceGate: loc?.venue_entrance_gate ?? null,
+      venueEntrancePortal: loc?.venue_entrance_portal ?? null,
+      venuePhoneNumber: loc?.venue_phone_number ?? null,
+      venuePlaceId: loc?.venue_place_id ?? null,
+      venueOpenTime: loc?.venue_open_time ?? null,
+      venueCloseTime: loc?.venue_close_time ?? null,
+      doorsOpenTime: loc?.doors_open_time ?? null,
+      gatesOpenTime: loc?.gates_open_time ?? null,
+      boxOfficeOpenTime: loc?.box_office_open_time ?? null,
+      parkingLotsOpenTime: loc?.parking_lots_open_time ?? null,
+      fanZoneOpenTime: loc?.fan_zone_open_time ?? null,
     },
   };
 }
