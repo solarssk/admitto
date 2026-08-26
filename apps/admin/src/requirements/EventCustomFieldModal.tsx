@@ -87,6 +87,16 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
     setSaving(true);
     try {
       if (isEdit) {
+        // Only send options when they actually changed (or the type just switched away from
+        // "select"): re-sending the same list re-derived from the textarea on every save -
+        // e.g. one that only flips "Required" - risks silently rewriting the stored options with
+        // a round-trip artifact (a comma inside an option gets re-split into two) and, since
+        // attendees' custom_data values match options by exact text, breaks their already-saved
+        // selection for no reason tied to what the operator actually changed.
+        const optionsChanged =
+          form.type === "select"
+            ? JSON.stringify(options) !== JSON.stringify(field.options ?? [])
+            : field.type === "select";
         await updateEventCustomField(eventId, field.id, {
           label,
           // null (not undefined) so the server can tell "clear the previous description" apart
@@ -94,9 +104,9 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
           description: description || null,
           type: form.type,
           required: form.required,
-          // null (not undefined) so the server can tell "clear the previous select's options"
-          // apart from "leave options untouched" - PATCH only updates keys it actually receives.
-          options: form.type === "select" ? options : null,
+          // null clears a previous select's options when switching away from "select"; omitting
+          // the key (undefined) leaves options untouched - PATCH only updates keys it receives.
+          ...(optionsChanged ? { options: form.type === "select" ? options : null } : {}),
         });
       } else {
         await createEventCustomField(eventId, {

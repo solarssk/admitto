@@ -186,7 +186,6 @@ describe("EventCustomFieldModal — edit", () => {
         description: null,
         type: "text",
         required: true,
-        options: null,
       });
     });
   });
@@ -211,7 +210,6 @@ describe("EventCustomFieldModal — edit", () => {
         description: "New description",
         type: "text",
         required: false,
-        options: null,
       });
     });
   });
@@ -236,6 +234,30 @@ describe("EventCustomFieldModal — edit", () => {
         type: "text",
         required: false,
         options: null,
+      });
+    });
+  });
+
+  it("does not resend options when saving an unrelated change to a select field", async () => {
+    const shirtField: EventCustomFieldDto = {
+      ...dietaryField,
+      id: "field-shirt",
+      source_field: "shirt_size",
+      label: "Shirt size",
+      type: "select",
+      required: false,
+      options: ["S", "M", "L"],
+    };
+    vi.mocked(updateEventCustomField).mockResolvedValueOnce({ ...shirtField, required: true });
+    renderModal(shirtField);
+    fireEvent.click(screen.getByRole("button", { name: "Required" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(updateEventCustomField).toHaveBeenCalledWith("evt-1", "field-shirt", {
+        label: "Shirt size",
+        description: null,
+        type: "select",
+        required: true,
       });
     });
   });
