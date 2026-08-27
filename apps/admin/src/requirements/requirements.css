@@ -77,6 +77,14 @@
   width: auto;
 }
 
+/* Block wrapper around the Active-column Switch (see RequirementsPage.tsx) - flex instead of
+   the default block so the div's own box shrinks to the switch's height instead of a text
+   line box, which otherwise leaves the switch pinned to the top of extra line-height slop. */
+.requirements-status-cell {
+  display: flex;
+  align-items: center;
+}
+
 /* Active (Switch) and Required (Yes/No) share the same column so they line up. */
 .requirements-item-status-col {
   width: 8.5rem;
