@@ -62,7 +62,19 @@ function passkeyLoginScript(scriptNonce: string): string {
 (function () {
   var btn = document.getElementById("passkey-login-btn");
   var errorBox = document.getElementById("passkey-login-error");
-  if (!btn || !window.PublicKeyCredential) return;
+  if (!btn) return;
+  if (!window.PublicKeyCredential) {
+    // No other button is left in the shared list (no SSO providers configured) - hide the
+    // now-empty list and its "or" divider too, instead of leaving a dangling divider with
+    // nothing above it and the password form right below.
+    var list = document.getElementById("auth-alt-signin-list");
+    if (list && !list.querySelector(".auth-btn-sso")) {
+      list.hidden = true;
+      var divider = document.getElementById("auth-alt-signin-divider");
+      if (divider) divider.hidden = true;
+    }
+    return;
+  }
   btn.hidden = false;
 
   function b64urlToBuffer(b64url) {
@@ -219,7 +231,7 @@ function renderAltSignInBlock(passkeyLoginEnabled: boolean, ssoProviders: LoginS
   if (!passkeyLoginEnabled && ssoProviders.length === 0) return "";
   const passkeyButton = passkeyLoginEnabled ? renderPasskeyLoginButton(next) : "";
   const ssoButtons = renderSsoButtons(ssoProviders, next);
-  return `<div class="auth-sso-list">${passkeyButton}${ssoButtons}</div><div class="auth-divider">or</div>`;
+  return `<div class="auth-sso-list" id="auth-alt-signin-list">${passkeyButton}${ssoButtons}</div><div class="auth-divider" id="auth-alt-signin-divider">or</div>`;
 }
 
 /** Render the operator sign-in form HTML (optional uniform error message). `passkeyLoginEnabled`
