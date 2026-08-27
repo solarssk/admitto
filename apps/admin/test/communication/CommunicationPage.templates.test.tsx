@@ -551,7 +551,7 @@ describe("CommunicationPage templates", () => {
     fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Request failed.")).toBeTruthy();
+      expect(screen.getByText("Update failed.")).toBeTruthy();
       expect(screen.getByRole("dialog", { name: "Edit template" })).toBeTruthy();
     });
   });
@@ -948,7 +948,7 @@ describe("CommunicationPage templates", () => {
     });
     fireEvent.click(within(createDialog).getByRole("button", { name: "Create" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Create failed/);
     });
   });
 
@@ -986,7 +986,7 @@ describe("CommunicationPage templates", () => {
 
     await waitFor(
       () => {
-        expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+        expect(screen.getByTestId("at-toast").textContent).toMatch(/Preview failed/);
       },
       { timeout: 2000 },
     );
@@ -1110,7 +1110,7 @@ describe("CommunicationPage templates", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Reminder" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to load template/);
     });
   });
 
@@ -1125,7 +1125,7 @@ describe("CommunicationPage templates", () => {
     saveEventTemplateById.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     fireEvent.click(screen.getByRole("button", { name: "Save *" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Save failed/);
     });
   });
 
@@ -1690,7 +1690,6 @@ describe("CommunicationPage templates", () => {
     });
 
     expect(screen.queryByText("Update failed.")).toBeNull();
-    expect(screen.queryByText("Request failed.")).toBeNull();
   });
 
   it("disables content Save while a metadata save is in flight", async () => {
