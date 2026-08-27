@@ -5,6 +5,31 @@
   gap: var(--space-2);
 }
 
+/* Done-state summary card only (not the live-polling view) - same bordered-box pattern as
+   the Send test email result (.mail-preview): a neutral frame whose border color alone carries
+   the ok/warn/error tone. Doesn't share .send-progress's layout rules - it has no bar or stat
+   tiles to stack, just the one summary row - but still needs its own display:flex since <output>
+   defaults to inline, which would otherwise shrink the border to the text's width. */
+.send-progress--summary {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  background: var(--surface-card);
+}
+
+.send-progress--ok {
+  border-color: var(--status-ok);
+}
+
+.send-progress--warn {
+  border-color: var(--status-warn);
+}
+
+.send-progress--error {
+  border-color: var(--status-error);
+}
+
 .send-progress__stats {
   display: flex;
   gap: var(--space-3);
@@ -52,6 +77,9 @@
 }
 .send-progress__bar-segment--sent { background: var(--status-ok); }
 .send-progress__bar-segment--failed { background: var(--status-error); }
+/* Stopped by an operator, not a delivery error - muted gray keeps it visually distinct from the
+   red "failed" segment right next to it. */
+.send-progress__bar-segment--cancelled { background: var(--at-gray-400); }
 
 @media (prefers-reduced-motion: reduce) {
   .send-progress__bar-segment {

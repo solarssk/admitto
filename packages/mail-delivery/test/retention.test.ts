@@ -28,6 +28,10 @@ async function seedDelivery(input: {
   retryable?: boolean | null;
   renderedHtml?: string | null;
   renderedSubject?: string | null;
+  /** Cancelled rows have no dedicated timestamp column - retention gates them on `updated_at`
+   * instead (see staleSnapshotWhere), so tests for that branch need to set it explicitly rather
+   * than relying on the real current time `@updatedAt` would otherwise stamp on create. */
+  updatedAt?: Date;
 }) {
   await prisma.emailDelivery.create({
     data: {
@@ -46,6 +50,7 @@ async function seedDelivery(input: {
       accepted_at: input.acceptedAt ?? null,
       failed_at: input.failedAt ?? null,
       retryable: input.retryable ?? null,
+      ...(input.updatedAt ? { updated_at: input.updatedAt } : {}),
     },
   });
 }
@@ -148,13 +153,23 @@ describe("nullifyDeliverySnapshots", () => {
       id: "delivery-retention-queued",
       status: "queued",
     });
+    await seedDelivery({
+      id: "delivery-retention-stale-cancelled",
+      status: "cancelled",
+      updatedAt: daysAgo(75),
+    });
+    await seedDelivery({
+      id: "delivery-retention-recent-cancelled",
+      status: "cancelled",
+      updatedAt: daysAgo(5),
+    });
 
     const result = await nullifyDeliverySnapshots(prisma, {
       now: NOW,
       retentionDays: RETENTION_DAYS,
       batchSize: 1,
     });
-    expect(result.deliveries).toBe(4);
+    expect(result.deliveries).toBe(5);
 
     const staleSent = await prisma.emailDelivery.findUniqueOrThrow({
       where: { id: "delivery-retention-stale-sent" },
@@ -191,6 +206,17 @@ describe("nullifyDeliverySnapshots", () => {
       where: { id: "delivery-retention-queued" },
     });
     expect(queued.rendered_html).toBe("<p>Hello Guest</p>");
+
+    const staleCancelled = await prisma.emailDelivery.findUniqueOrThrow({
+      where: { id: "delivery-retention-stale-cancelled" },
+    });
+    expect(staleCancelled.rendered_html).toBeNull();
+    expect(staleCancelled.rendered_subject).toBeNull();
+
+    const recentCancelled = await prisma.emailDelivery.findUniqueOrThrow({
+      where: { id: "delivery-retention-recent-cancelled" },
+    });
+    expect(recentCancelled.rendered_html).toBe("<p>Hello Guest</p>");
 
     const secondRun = await nullifyDeliverySnapshots(prisma, {
       now: NOW,

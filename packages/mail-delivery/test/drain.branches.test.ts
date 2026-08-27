@@ -8,7 +8,7 @@ import { MailConfigError, resolveMailConfig, setMailSettings } from "@admitto/ma
 import { generateToken } from "@admitto/tickets";
 import { createMailer, sendBatch } from "@admitto/mailer";
 import { resolveAttendeeMailLinks } from "../src/links.js";
-import { drainPendingDeliveries, sendTicketEmails } from "../src/index.js";
+import { cancelBulkSendBatch, claimInitialDelivery, drainPendingDeliveries, sendTicketEmails } from "../src/index.js";
 import { resetDb } from "./resetDb.js";
 
 vi.mock("@admitto/mailer", async (importOriginal) => {
@@ -179,6 +179,28 @@ describe("drainPendingDeliveries branch coverage", () => {
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
   });
 
+  it("counts an empty provider result as skipped, not failed, when the row was cancelled during the send call", async () => {
+    await enqueueOne();
+    const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
+    const batchId = "batch-cancel-empty-result-race";
+    await prisma.emailDelivery.update({ where: { id: row.id }, data: { batch_id: batchId } });
+
+    vi.mocked(sendBatch).mockImplementationOnce(async () => {
+      await cancelBulkSendBatch(prisma, EVENT_ID, batchId);
+      return { total: 1, sent: 0, failed: 1, results: [] };
+    });
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
+    const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after.status).toBe("cancelled");
+  });
+
   it("counts rejected provider results as failed", async () => {
     await enqueueOne();
     vi.mocked(sendBatch).mockResolvedValueOnce({
@@ -285,6 +307,160 @@ describe("drainPendingDeliveries branch coverage", () => {
     }
   });
 
+  it("skips a row cancelled between claim and send, without overwriting its cancelled status", async () => {
+    // Reproduces the exact race the cancel feature depends on: claimDrainCandidates() reads
+    // this row via a plain SELECT while it's still "queued", so it stays in this tick's
+    // in-memory candidate list even if a concurrent cancelBulkSendBatch() call flips its DB row
+    // to "cancelled" afterward - resolveAttendeeMailLinks is the one async gap between that
+    // claim-time read and drain.ts's own fresh status re-check right before the mailer call.
+    await enqueueOne();
+    const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
+    const batchId = "batch-cancel-race";
+    await prisma.emailDelivery.update({ where: { id: row.id }, data: { batch_id: batchId } });
+
+    vi.mocked(resolveAttendeeMailLinks).mockImplementationOnce(async (...args) => {
+      await cancelBulkSendBatch(prisma, EVENT_ID, batchId);
+      const actual = await vi.importActual<typeof import("../src/links.js")>("../src/links.js");
+      return actual.resolveAttendeeMailLinks(...args);
+    });
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
+    expect(sendBatch).not.toHaveBeenCalled();
+    const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after.status).toBe("cancelled");
+  });
+
+  it("does not resurrect a cancelled row into the retry pool when the link resolution that raced the cancel then fails", async () => {
+    // The failure-path counterpart of the test above: markClaimedRowFailed used to write
+    // status:"failed", retryable:true by id with no guard, silently undoing a cancellation
+    // that landed while resolveAttendeeMailLinks was in flight - a later tick would then pick
+    // the "failed"+retryable row back up via the retryable-failed candidate query and actually
+    // send the email the admin had stopped. Asserts across two ticks that this cannot happen.
+    await enqueueOne();
+    const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
+    const batchId = "batch-cancel-race-failure";
+    await prisma.emailDelivery.update({ where: { id: row.id }, data: { batch_id: batchId } });
+
+    vi.mocked(resolveAttendeeMailLinks).mockImplementationOnce(async () => {
+      await cancelBulkSendBatch(prisma, EVENT_ID, batchId);
+      throw new Error("link resolution blew up after the cancel landed");
+    });
+
+    const firstTick = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(firstTick).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
+    expect(sendBatch).not.toHaveBeenCalled();
+
+    const afterFirstTick = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
+    expect(afterFirstTick.status).toBe("cancelled");
+    expect(afterFirstTick.retryable).not.toBe(true);
+
+    // A later tick must not find anything to retry - the row is "cancelled", not the
+    // "failed"+retryable state the old unconditional update would have left it in.
+    const secondTick = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(secondTick).toEqual({ claimed: 0, sent: 0, failed: 0, skipped: 0, eventIds: [] });
+    expect(sendBatch).not.toHaveBeenCalled();
+    const finalRow = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
+    expect(finalRow.status).toBe("cancelled");
+  });
+
+  it("does not resurrect a cancelled row when sendBatch itself throws after the cancel landed", async () => {
+    await enqueueOne();
+    const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
+    const batchId = "batch-cancel-race-sendbatch-throw";
+    await prisma.emailDelivery.update({ where: { id: row.id }, data: { batch_id: batchId } });
+
+    // The fresh pre-send status re-check (drain.ts) only runs right before sendBatch - it
+    // cannot see a cancel that lands during resolveAttendeeMailLinks and then again during
+    // sendBatch itself, so the guard on the failure write is what actually protects this case.
+    vi.mocked(resolveAttendeeMailLinks).mockImplementationOnce(async (...args) => {
+      const actual = await vi.importActual<typeof import("../src/links.js")>("../src/links.js");
+      return actual.resolveAttendeeMailLinks(...args);
+    });
+    vi.mocked(sendBatch).mockImplementationOnce(async () => {
+      await cancelBulkSendBatch(prisma, EVENT_ID, batchId);
+      throw new Error("transport timeout right as the cancel landed");
+    });
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
+    const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after.status).toBe("cancelled");
+    expect(after.retryable).not.toBe(true);
+  });
+
+  it("does not let a stale in-flight send's success clobber a row cancelled then reclaimed while it was still pending", async () => {
+    // A stricter version of the two races above: here the operator doesn't just cancel while
+    // this send is in flight, they immediately resend to the same attendee too (claimInitialDelivery's
+    // reclaim_cancelled path) - all before this exact sendBatch call returns. status: "cancelled"
+    // is no longer true by the time it resolves (the reclaim already flipped it back to
+    // "queued", under a new batch with fresh content) - only queued_at, bumped by the reclaim,
+    // catches that this row moved on since this attempt claimed it.
+    await enqueueOne();
+    const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
+    const originalBatchId = row.batch_id;
+
+    vi.mocked(sendBatch).mockImplementationOnce(async (...args) => {
+      await cancelBulkSendBatch(prisma, EVENT_ID, originalBatchId as string);
+      await claimInitialDelivery(
+        {
+          organizationId: "org-drain-b",
+          eventId: EVENT_ID,
+          attendeeId: "att-drain-branch",
+          batchId: "batch-reclaim-race",
+          provider: "export_only",
+          recipientEmail: "branch@example.com",
+          renderedSubject: "Fresh subject after reclaim",
+          renderedHtml: "<p>Fresh body after reclaim</p>",
+        },
+        prisma,
+      );
+      const actual = await vi.importActual<typeof import("@admitto/mailer")>("@admitto/mailer");
+      return actual.sendBatch(...args);
+    });
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+
+    // The original attempt's result (a real, successful send) can no longer be safely recorded
+    // against this row - it moved on to a new attempt mid-flight - so it's dropped rather than
+    // written, and this tick counts it skipped rather than sent.
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
+
+    const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
+    // The reclaim's own state survives untouched - not clobbered back to the stale pre-cancel
+    // attempt's batch, content, or a "sent"/"failed" status the reclaimed send never produced.
+    expect(after.batch_id).toBe("batch-reclaim-race");
+    expect(after.status).toBe("queued");
+    expect(after.rendered_subject).toBe("Fresh subject after reclaim");
+    expect(after.rendered_html).toBe("<p>Fresh body after reclaim</p>");
+  });
+
   it("marks claimed rows failed when mailer setup throws and continues other events", async () => {
     const EVENT_B = "evt-mail-drain-branches-b";
     await prisma.event.upsert({
@@ -349,6 +525,30 @@ describe("drainPendingDeliveries branch coverage", () => {
     expect(bad.attempts).toBeGreaterThanOrEqual(1);
     const ok = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_B } });
     expect(ok.status).toBe("accepted");
+  });
+
+  it("counts a row cancelled while mailer setup was failing as skipped, not failed", async () => {
+    // The per-event mailer-setup-failure loop shares markClaimedRowFailed's cancelled-row guard
+    // with the per-row send path - this exercises that guard from the other call site.
+    await enqueueOne();
+    const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
+    const batchId = "batch-cancel-mailer-setup-race";
+    await prisma.emailDelivery.update({ where: { id: row.id }, data: { batch_id: batchId } });
+
+    vi.mocked(resolveMailConfig).mockImplementationOnce(async () => {
+      await cancelBulkSendBatch(prisma, EVENT_ID, batchId);
+      throw new Error("bad transport config");
+    });
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
+    const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after.status).toBe("cancelled");
   });
 
   it("marks claimed rows failed when createMailer throws", async () => {

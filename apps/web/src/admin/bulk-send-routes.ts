@@ -3,6 +3,7 @@ import type { Prisma, PrismaClient } from "@admitto/db";
 import { z } from "zod";
 import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
 import {
+  cancelBulkSendBatch,
   sendTicketEmails,
   type MailDeliveryDeps,
   type SendTicketEmailsResult,
@@ -103,6 +104,12 @@ export type BulkSendStatusDto = {
   queued: number;
   sent: number;
   failed: number;
+  cancelled: number;
+};
+
+export type BulkSendCancelDto = {
+  batchId: string;
+  cancelled: number;
 };
 
 /** Resolve event/org ticket MailTemplate id when persisted; undefined for built-in fallback. */
@@ -291,6 +298,7 @@ async function respondEmptyBulkSend(
     queued: 0,
     skipped: 0,
     failed: 0,
+    batchId: null,
   });
   return c.json({
     batchId: null,
@@ -430,6 +438,7 @@ export async function handleBulkSend(
     queued,
     skipped,
     failed,
+    batchId: sendResult.batchId,
   });
 
   return c.json({
@@ -464,6 +473,7 @@ export async function handleBulkSendStatus(c: Context, db: PrismaClient): Promis
   let queued = 0;
   let sent = 0;
   let failed = 0;
+  let cancelled = 0;
 
   for (const row of rows) {
     if (row.status === "queued") queued += 1;
@@ -471,6 +481,8 @@ export async function handleBulkSendStatus(c: Context, db: PrismaClient): Promis
       sent += 1;
     } else if (row.status === "failed" || row.status === "bounced" || row.status === "rejected") {
       failed += 1;
+    } else if (row.status === "cancelled") {
+      cancelled += 1;
     }
   }
 
@@ -480,7 +492,48 @@ export async function handleBulkSendStatus(c: Context, db: PrismaClient): Promis
     queued,
     sent,
     failed,
+    cancelled,
   } satisfies BulkSendStatusDto);
+}
+
+/** POST /api/admin/events/:eventId/send/:batchId/cancel
+ *
+ * Stops a still-draining bulk-send batch. Guarded so cancelling twice, or cancelling after the
+ * batch already finished, is a harmless no-op (cancelled: 0) rather than an error - the operator
+ * doesn't need to know the exact moment the last row left "queued" for this to be safe to click. */
+export async function handleBulkSendCancel(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const batchId = c.req.param("batchId")?.trim();
+  if (!batchId) return c.json({ error: "batchId required" }, 400);
+
+  const exists = await db.emailDelivery.findFirst({
+    where: { event_id: eventId, batch_id: batchId },
+    select: { id: true },
+  });
+  if (!exists) {
+    return c.json({ error: "not_found" }, 404);
+  }
+
+  const { cancelled } = await cancelBulkSendBatch(db, eventId, batchId);
+
+  try {
+    await writeBulkActionLog(db, {
+      event_id: eventId,
+      action_type: "mail_bulk_send_cancelled",
+      audit: adminAuditFromContext(c),
+      metadata: { batch_id: batchId, cancelled },
+    });
+  } catch (err) {
+    console.error("bulk send cancel audit log failed:", err);
+  }
+
+  return c.json({ batchId, cancelled } satisfies BulkSendCancelDto);
 }
 
 async function auditBulkSend(
@@ -493,6 +546,9 @@ async function auditBulkSend(
     queued: number;
     skipped: number;
     failed: number;
+    /** Null for the zero-recipient case (respondEmptyBulkSend) - no batch was ever created,
+     * so there's nothing for a later mail_bulk_send_cancelled entry to join back to. */
+    batchId: string | null;
   },
 ): Promise<void> {
   try {
@@ -511,6 +567,10 @@ async function auditBulkSend(
         queued: meta.queued,
         skipped: meta.skipped,
         failed: meta.failed,
+        // Lets an auditor join this row to a later mail_bulk_send_cancelled entry for the same
+        // batch (see handleBulkSendCancel) - without it there's no way to tell which send a
+        // stop applied to beyond loose timestamp/operator proximity.
+        batch_id: meta.batchId,
       },
     });
   } catch (err) {
