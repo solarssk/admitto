@@ -573,3 +573,268 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- Wallets tab ----
+   No page-scoped tab bar or margin hacks here: the tab strip is the shared @admitto/ui <Tabs>
+   component (.at-tabs, styled + spaced by packages/ui/src/styles/shell.css), and every card
+   below is a direct child of .screen, which already applies the standard 18px gap between
+   siblings (shell.css) - adding a per-card margin here would double up on that gap. */
+
+/* Even 50/50 split, not .reports-panels' 1.2fr/1fr - that ratio exists for Event Day's own
+   "Hourly admissions" card specifically (it can show up to 24 hourly bars, see the comment on
+   .reports-chart below), which doesn't apply to any of these three rows: each pairs two equally-
+   weighted cards (gauge+breakdown vs. donut, list vs. chart, list vs. rings). */
+.wallets-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+/* Same breakpoint as .reports-panels above - two ApexCharts-driven cards (a gauge/donut plus its
+   own legend or breakdown list) each need real width to stay legible; below it they were
+   squeezing into two ~200px columns with wrapping legend text and near-illegible rings. */
+@media (max-width: 960px) {
+  .wallets-panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Container, not just a viewport media query - .wallets-compare-ring's own shrink query below
+   needs to react to this CARD's actual rendered width, not the viewport's. Measured directly
+   (not assumed): the 2-up layout doesn't monotonically get roomier as the viewport grows - the
+   sidebar's own collapse/expand breakpoints land at different points than 960px, so a card here
+   can measure anywhere from ~360px to ~450px right around where 2-up starts, well before the
+   comfortably-wide 1-up phone range or the wide desktop range on either side of it. */
+.wallets-panels > .at-card {
+  container-type: inline-size;
+}
+
+/* Same pattern as .overview-card--header-fixed (EventOverviewPage.tsx/staff.css) - a grid row's
+   default `align-items: stretch` already makes this card match its taller row-mate ("Time to
+   wallet tap", a 230px chart), .at-card itself doesn't turn that extra height into usable space
+   (its body has no flex:1), so the difference just sat as dead air below this card's own
+   (shorter) content.
+
+   Only .wallets-compare (the rings row) gets flex:1 and grows into that leftover space - an
+   earlier version put flex:1/justify-content:center on the whole body instead, which centered
+   the description paragraph along with the rings and pulled it down away from the divider,
+   out of step with every sibling card ("Time to wallet tap" included) where the description
+   sits right under it. This keeps that same top-anchored description and only lets the rings
+   section (which already centers its own children via .wallets-compare's existing
+   align-items/justify-content) absorb and center within the extra height. */
+.wallets-card--centered {
+  display: flex;
+  flex-direction: column;
+}
+
+.wallets-card--centered .at-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.wallets-card--centered .wallets-compare {
+  flex: 1;
+}
+
+/* .reports-breakdown-list's shared 258px max-height (reports-page.css) was tuned for its Event
+   day pairing, not this card's own row-mate here ("Cumulative passes issued", a fixed 220px
+   chart) - at 258px a long ticket-type list made this card's own natural height (description +
+   list + padding) exceed that chart card's natural height, so the grid row's default
+   `align-items: stretch` stretched "Cumulative passes issued" to match and left dead air below
+   its chart instead. 165px keeps this card's total at or under the chart card's own 268px body
+   (24px padding + 220px chart + 24px padding), measured directly against this card's own
+   description height, not assumed. */
+.wallets-ticket-breakdown .reports-breakdown-list {
+  max-height: 165px;
+}
+
+/* Card description line - matches .settings-card-intro (event-settings-page.css), the app's
+   actual established convention for a card-body intro line under a title ("Set the event
+   details used across admin and tickets.", the Wallet push history card's intro, etc.):
+   fs-sm/text-muted, not fs-body/text-secondary (that's the page-level PageHeader subtitle, a
+   different, larger context) and not the even fainter .reports-muted. */
+.wallets-description {
+  margin: 0 0 var(--space-4);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  max-width: 68ch;
+}
+
+.wallets-description:last-child {
+  margin-bottom: 0;
+}
+
+.wallets-adoption {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+}
+
+.wallets-adoption__breakdown {
+  flex: 1;
+  min-width: 220px;
+}
+
+/* HTML overlay for the adoption gauge's center label - see AdoptionGauge in
+   WalletsReportsTab.tsx for why this isn't ApexCharts' own dataLabels.total. */
+.wallets-gauge-overlay {
+  position: relative;
+  width: 256px;
+  flex: none;
+}
+
+.wallets-gauge-overlay__center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.wallets-gauge-overlay__value {
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-bold);
+  line-height: 1.1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.wallets-gauge-overlay__label {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ---- Wallet vs. admission comparison: two independent gauges, not a bar list - these are two
+   separate groups (not parts of one whole), each its own 0-100% rate, with the delta pill between
+   them (it's the difference BETWEEN the two, not a caption for the pair).
+
+   Ring size is a continuous function of this row's own width (container query units), not a
+   snap between two hand-picked pixel tiers at one breakpoint - an earlier version switched
+   180px->85px at a single `max-width` threshold, which by construction only fits the two exact
+   widths it was tuned against and re-breaks (wraps or overflows) at any width in between that
+   wasn't one of the checked samples. `container-type: inline-size` here (not just relying on the
+   outer .at-card's own container context) makes `cqi` mean "% of this exact flex row's inline
+   size", so the formula below is checked against the very box it needs to fit into, not an
+   outer ancestor whose padding would otherwise have to be guessed.
+
+   --ring-scale (0..1, derived from --ring-size) is the single source of truth for "how
+   compressed is this row right now" - every element below that needs to shrink in step with the
+   rings (the chart's own transform, the delta pill's padding/font) reads from this one value
+   instead of each carrying its own independently-guessed breakpoint, which is what let the ring
+   and the pill drift out of proportion with each other in an earlier version. */
+.wallets-compare {
+  container-type: inline-size;
+  /* Two straight segments meeting (continuously - no jump) at ~332px of this row's own width,
+     not one line through the whole range: a single line safe at the 222px floor (~55px ring)
+     undershoots badly at a common phone width like 332px (~103-106px, measured as looking
+     visibly "unadjusted" next to the label text under it, which doesn't shrink at the same
+     rate), but a line generous enough at 332px (~115px) overshoots the 222px floor's overflow
+     budget. Those two requirements can't both be satisfied by one slope - below 332px the ramp
+     is steep (222px: ~55px, the largest that still leaves room for the delta pill + two gaps
+     without overflowing) so a common phone at ~332px already reads as a properly-sized ~115px
+     ring; above 332px the ramp is shallower, carrying that up to the full 180px once the row is
+     genuinely desktop-wide (~510px+, measured across 560px-2000px+ viewports).
+
+     min() of the two segment formulas picks whichever is smaller at any given width, which is
+     exactly the steep segment below the crossing point and the shallow one above it (verified:
+     the steep line is smaller for width < ~332px, the shallow one is smaller everywhere after) -
+     an `@container` condition on THIS same element instead of `min()` doesn't work: a container
+     cannot gate its own style based on its own size (the CSS spec blocks that as circular), so a
+     `@container (min-width: 332px) { .wallets-compare { ... } }` block here silently tested the
+     parent .at-card's width instead (it also has container-type) - confirmed by the segment
+     switching at the card's width crossing 332px, not this row's. min() sidesteps that
+     entirely since it's plain value computation, not a conditional style rule. */
+  --ring-size: clamp(48px, min(calc(-66px + 54.5cqi), calc(-6px + 36.5cqi)), 180px);
+  --ring-scale: calc(var(--ring-size) / 180px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.wallets-compare-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.wallets-compare-ring {
+  width: var(--ring-size);
+  height: var(--ring-size);
+  flex: none;
+  overflow: hidden;
+}
+
+/* The chart inside always renders at a fixed 180x180 canvas (see AdmissionGauge) - this scales
+   that render down to match the wrapper's own (fluid) size above, so the two can never drift out
+   of sync with each other the way two independently-tuned values could. calc() dividing one
+   length by another to get a bare scale factor is standard CSS (Values and Units Level 4) and has
+   been supported across evergreen browsers for years; scaling an SVG-based chart this way stays
+   crisp at any factor, unlike scaling a raster image. */
+.wallets-compare-ring > div {
+  transform: scale(var(--ring-scale));
+  transform-origin: top left;
+}
+
+/* ApexCharts reserves a fixed margin inside a radialBar's own SVG canvas (room for a chart title
+   it never gets, since none is set here) - the drawn ring itself sits well inside its own box,
+   measured at ~33px of empty space below the visible ring before the label even starts at full
+   180px size. Negative margin pulls the label up into that reserved space instead of leaving it
+   as dead air - but that reserved space is INSIDE the chart's own div, so it shrinks along with
+   everything else once `.wallets-compare-ring > div` is scaled down (see --ring-scale above). A
+   plain fixed -24px doesn't shrink with it, so at a small ring size it pulls the label up further
+   than the (now much smaller) reserved space actually leaves room for, dragging the label up into
+   the ring's own visible bottom edge - confirmed by measuring their rects directly at 375px
+   (label top above ring bottom by exactly 24px, i.e. the fixed margin was the entire overlap).
+   Scaling the margin by the same --ring-scale keeps the two in the same proportion at every
+   size, the same fix already applied to the delta pill below. */
+.wallets-compare-group__label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  margin-top: calc(var(--ring-scale) * -24px);
+}
+
+.wallets-compare-group__sub {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.wallets-compare-delta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Font-size floors at 11px regardless of --ring-scale - text stays legible even once the rings
+   have shrunk to their own smallest size, where a literal scale*13px would read closer to 4px.
+   Padding has no such legibility floor, so it's left to shrink in step with --ring-scale down to
+   its own clamp() minimum - that's what actually fixes a pill that otherwise stayed full-size
+   next to rings a third their previous diameter and read as oversized/disconnected from them. */
+.wallets-compare-delta__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: clamp(11px, calc(var(--ring-scale) * 13px), 13px);
+  font-weight: var(--fw-bold);
+  color: var(--status-ok-fg);
+  background: var(--status-ok-tint);
+  padding: clamp(3px, calc(var(--ring-scale) * 5px), 5px) clamp(8px, calc(var(--ring-scale) * 14px), 14px);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.wallets-compare-arrow {
+  font-size: clamp(11px, calc(var(--ring-scale) * 16px), 16px);
+  color: var(--border-strong);
+}

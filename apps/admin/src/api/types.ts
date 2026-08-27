@@ -1876,6 +1876,41 @@ export interface EventReportsResponse {
   }>;
 }
 
+export interface EventWalletReportsResponse {
+  total_attendees: number;
+  synced_at: string | null;
+  adoption: {
+    got_pass: number;
+    got_pass_pct: number;
+    confirmed: number;
+    confirmed_pct: number;
+    cancelled: number;
+  };
+  platform: {
+    apple_only: number;
+    google_only: number;
+    both: number;
+    not_installed: number;
+  };
+  by_ticket_type: Array<{
+    key: string | null;
+    type: string;
+    color: TicketTypeColor;
+    total: number;
+    got_pass: number;
+    pct: number;
+  }>;
+  issued_by_day: Array<{ date: string; count: number; cumulative: number }>;
+  time_to_wallet_tap: {
+    average_days: number | null;
+    buckets: Array<{ key: "same_day" | "1_3" | "4_7" | "8_plus"; count: number; pct: number }>;
+  };
+  admission_by_wallet: {
+    with_wallet: { total: number; admitted: number; pct: number };
+    without_wallet: { total: number; admitted: number; pct: number };
+  };
+}
+
 // --- Identity providers & Cloudflare Access (SPA Settings → Identity, #266) ---
 
 export interface IdentityProviderListItem {
