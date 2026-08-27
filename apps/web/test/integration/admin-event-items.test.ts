@@ -22,6 +22,7 @@ const PASSWORD = "admin-ei-pass-123";
 
 const ITEM_GIFTBAG = "ei_giftbag_a";
 const ITEM_SOCKS = "ei_socks_a";
+const ITEM_RACE_B = "ei_race_b_a";
 const ATT_EI = "att-admin-ei-1";
 
 let prisma: PrismaClient;
@@ -89,6 +90,7 @@ async function seed(client: PrismaClient) {
       { event_id: EVENT_EI_A, source_field: "sock_size", label: "Socks size" },
       { event_id: EVENT_EI_A, source_field: "meal_choice", label: "Meal choice" },
       { event_id: EVENT_EI_A, source_field: "badge_color", label: "Badge color" },
+      { event_id: EVENT_EI_A, source_field: "race_field", label: "Race field" },
     ],
   });
 
@@ -111,6 +113,12 @@ async function seed(client: PrismaClient) {
         label: "Socks",
         enabled: false,
         config: { content_fields: ["sock_size"] },
+      },
+      {
+        id: ITEM_RACE_B,
+        event_id: EVENT_EI_A,
+        key: "race_item_b",
+        label: "Race item B",
       },
     ],
   });
@@ -199,8 +207,13 @@ describe("GET /api/admin/events/:eventId/items", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: { key: string; icon: string | null; config: unknown }[] };
     // "badge" is auto-backfilled for legacy events missing it (see event-items.ts),
-    // alongside the fixture-seeded "giftbag" and "socks".
-    expect(body.items.map((i) => i.key).sort()).toEqual(["badge", "giftbag", "socks"]);
+    // alongside the fixture-seeded "giftbag", "socks", and "race_item_b".
+    expect(body.items.map((i) => i.key).sort()).toEqual([
+      "badge",
+      "giftbag",
+      "race_item_b",
+      "socks",
+    ]);
     const giftbag = body.items.find((i) => i.key === "giftbag");
     expect(giftbag?.icon).toBeNull();
     expect(giftbag?.config).toEqual({
@@ -1156,6 +1169,60 @@ describe("ops-config", () => {
         },
       },
     });
+  });
+});
+
+describe("content_fields conflict under real concurrency", () => {
+  // Regression for a mixed-isolation-level race: a plain content_fields-bearing create ran at
+  // Read Committed while only a disabling/badge-affecting PATCH ran at Serializable. The PATCH's
+  // whole-transaction snapshot is fixed at its acquireEventCustomFieldsLock SELECT, before that
+  // lock wait completes - so once the create committed and released the lock, the unblocked PATCH
+  // could still miss the create's just-committed field assignment and let both succeed. Both
+  // sides must run Serializable (+ retry) for Postgres to force the loser to retry with a fresh,
+  // post-commit snapshot instead of silently double-assigning the field.
+  it("lets only one of a concurrent create and a disabling PATCH claim the same field", async () => {
+    const [createRes, patchRes] = await Promise.all([
+      app.request(`/api/admin/events/${EVENT_EI_A}/items`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+        body: JSON.stringify({
+          key: "race_item_a",
+          label: "Race item A",
+          config: { content_fields: ["race_field"] },
+        }),
+      }),
+      app.request(`/api/admin/events/${EVENT_EI_A}/items/${ITEM_RACE_B}`, {
+        method: "PATCH",
+        headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+        body: JSON.stringify({
+          enabled: false,
+          config: { content_fields: ["race_field"] },
+        }),
+      }),
+    ]);
+
+    const results = [
+      { label: "create", res: createRes },
+      { label: "patch", res: patchRes },
+    ];
+    const successes = results.filter((r) => r.res.status === 200 || r.res.status === 201);
+    const conflicts = results.filter((r) => r.res.status === 409);
+
+    expect(successes).toHaveLength(1);
+    expect(conflicts).toHaveLength(1);
+
+    const conflictBody = (await conflicts[0]!.res.json()) as { error: string; field: string };
+    expect(conflictBody.error).toBe("content_field_in_use");
+    expect(conflictBody.field).toBe("race_field");
+
+    const allItems = await prisma.eventItem.findMany({
+      where: { event_id: EVENT_EI_A },
+      select: { key: true, config: true },
+    });
+    const owners = allItems.filter((item) =>
+      (item.config as { content_fields?: string[] } | null)?.content_fields?.includes("race_field"),
+    );
+    expect(owners).toHaveLength(1);
   });
 });
 

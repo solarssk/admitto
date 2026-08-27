@@ -306,44 +306,55 @@ export async function handleCreateEventItem(c: Context, db: PrismaClient): Promi
     return c.json({ error: "validation_failed" }, 400);
   }
 
+  // Serializable (+ runSerializableTransaction's retry) whenever content_fields is set, for the
+  // same reason handlePatchEventItem's needsSerializable does - a plain transaction's snapshot is
+  // fixed at the acquireEventCustomFieldsLock SELECT, before that lock wait completes, so it can
+  // miss a same-field assignment that committed while this one was blocked. Every side touching
+  // content_fields must use this same protocol for a genuine conflict to force a retry.
+  const needsSerializable = (parsed.data.config?.content_fields?.length ?? 0) > 0;
+
   try {
-    const row = await db.$transaction(async (tx) => {
-      if (parsed.data.config?.content_fields?.length) {
-        await acquireEventCustomFieldsLock(tx, eventId);
-        await validateConfigContentFields(tx, eventId, parsed.data.config.content_fields);
-      }
-      const created = await tx.eventItem.create({
-        data: {
+    const row = await runSerializableTransaction(
+      db,
+      async (tx) => {
+        if (parsed.data.config?.content_fields?.length) {
+          await acquireEventCustomFieldsLock(tx, eventId);
+          await validateConfigContentFields(tx, eventId, parsed.data.config.content_fields);
+        }
+        const created = await tx.eventItem.create({
+          data: {
+            event_id: eventId,
+            key: parsed.data.key,
+            label: parsed.data.label,
+            description: parsed.data.description ?? null,
+            type: "item",
+            enabled: true,
+            icon: normalizeEventItemIconForStorage(parsed.data.icon) ?? null,
+            config: (parsed.data.config ?? undefined) as Prisma.InputJsonValue | undefined,
+          },
+          select: {
+            id: true,
+            key: true,
+            label: true,
+            description: true,
+            type: true,
+            enabled: true,
+            icon: true,
+            config: true,
+          },
+        });
+
+        await writeBulkActionLog(tx, {
           event_id: eventId,
-          key: parsed.data.key,
-          label: parsed.data.label,
-          description: parsed.data.description ?? null,
-          type: "item",
-          enabled: true,
-          icon: normalizeEventItemIconForStorage(parsed.data.icon) ?? null,
-          config: (parsed.data.config ?? undefined) as Prisma.InputJsonValue | undefined,
-        },
-        select: {
-          id: true,
-          key: true,
-          label: true,
-          description: true,
-          type: true,
-          enabled: true,
-          icon: true,
-          config: true,
-        },
-      });
+          action_type: "event_item_created",
+          audit: adminAuditFromContext(c),
+          metadata: { item_key: created.key },
+        });
 
-      await writeBulkActionLog(tx, {
-        event_id: eventId,
-        action_type: "event_item_created",
-        audit: adminAuditFromContext(c),
-        metadata: { item_key: created.key },
-      });
-
-      return created;
-    });
+        return created;
+      },
+      needsSerializable ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable } : undefined,
+    );
 
     return c.json(serializeEventItem(row), 201);
   } catch (err) {
@@ -438,7 +449,15 @@ function computePatchTransactionFlags(
   );
   const needsBadgeSync =
     existing.key === "badge" && (disabling || (badgeUsableBefore && !badgeUsableAfter));
-  const needsSerializable = disabling || needsBadgeSync;
+  // A plain (non-Serializable) transaction here would fix its snapshot at the
+  // acquireEventCustomFieldsLock SELECT - before that SELECT's lock wait completes - so if it
+  // waits behind a create/PATCH that assigns the same content_field, it can still miss that
+  // committed assignment once unblocked. Serializable alone doesn't refresh the snapshot either,
+  // but paired with runSerializableTransaction's retry it forces a real conflict to abort and
+  // retry with a fresh snapshot - which only works when every side touching content_fields uses
+  // the same protocol (see handleCreateEventItem).
+  const changesContentFields = (patchInput.config?.content_fields?.length ?? 0) > 0;
+  const needsSerializable = disabling || needsBadgeSync || changesContentFields;
 
   return { disabling, needsBadgeSync, needsSerializable };
 }
