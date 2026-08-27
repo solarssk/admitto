@@ -33,6 +33,7 @@ body.ticket-page { margin: 0; box-sizing: border-box; width: 100%; overflow-x: c
 .ticket__body--public-error { padding: 28px 24px 32px; }
 .at-public-error { margin: 0; display: flex; flex-direction: column; align-items: center; text-align: center; }
 .at-public-error__icon { display: flex; align-items: center; justify-content: center; width: 3.5rem; height: 3.5rem; margin-bottom: 0.75rem; color: var(--primary, #066fd1); opacity: 0.85; }
+.at-public-error--danger .at-public-error__icon { color: var(--status-error, #d63939); }
 .at-public-error__icon svg { width: 100%; height: 100%; display: block; }
 .at-public-error__code { margin: 0 0 0.35rem; font-size: 3rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1; color: var(--text-primary, #1d273b); }
 .at-public-error__heading { margin: 0 0 0.5rem; font-size: 1.125rem; font-weight: 700; color: var(--text-primary, #1d273b); }
@@ -44,7 +45,7 @@ body.ticket-page { margin: 0; box-sizing: border-box; width: 100%; overflow-x: c
 .ticket__qr img { width: 220px; height: 220px; display: block; }
 .ticket__token { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: var(--text-muted, #64748b); font-size: 0.75rem; margin: 10px 0 0; word-break: break-all; }
 .ticket__perf { height: 0; border-top: 2px dashed var(--border, #e6e7e9); margin: 6px 0; }
-.ticket__wallet-error { margin: 12px 20px 0; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, #dc2626 12%, transparent); color: #b91c1c; font-size: 0.8125rem; text-align: center; }
+.ticket__wallet-error { margin: 12px 20px 0; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--status-error, #d63939) 12%, transparent); color: var(--status-error-fg, #9b1c1c); font-size: 0.8125rem; text-align: center; }
 .ticket__wallets { padding: 16px 16px 8px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; align-items: flex-end; }
 /* Both frames share Google's 48dp minimum so the Google badge is never smaller than Apple.
  * Official Apple SVG paints ~47px of ink in a 48px box (1px empty under the pill). Scale the
