@@ -738,10 +738,10 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
   try {
     if (archiveMode === "archive") {
       await archiveEvent(eventId);
-      addToast("Event archived", "success");
+      addToast("Event archived.", "success");
     } else {
       await unarchiveEvent(eventId);
-      addToast("Event unarchived", "success");
+      addToast("Event unarchived.", "success");
     }
     setArchiveOpen(false);
     setMailCardResetKey((n) => n + 1);

@@ -110,7 +110,7 @@ describe("AttendeesPage load errors", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Could not load attendees")).toBeTruthy();
-      expect(screen.getByText("Failed to load attendees.")).toBeTruthy();
+      expect(screen.getByText("Could not load attendees.")).toBeTruthy();
     });
     expect(reportApiError).not.toHaveBeenCalled();
   });

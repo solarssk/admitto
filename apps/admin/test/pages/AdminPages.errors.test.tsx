@@ -666,7 +666,7 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByText("Failed to load report.")).toBeTruthy();
+      expect(screen.getByText("Could not load report data.")).toBeTruthy();
     });
     expect(screen.queryByText("internal transport detail")).toBeNull();
   });
@@ -702,7 +702,7 @@ describe("ReportsPage operator errors", () => {
     fireEvent.click(screen.getByRole("button", { name: "Export report" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed/);
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
@@ -803,7 +803,7 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByText("Failed to load report.")).toBeTruthy();
+      expect(screen.getByText("Could not load report data.")).toBeTruthy();
     });
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => {
