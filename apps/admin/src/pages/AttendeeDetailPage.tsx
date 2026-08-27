@@ -2626,7 +2626,7 @@ export function AttendeeDetailPage() {
         title="Revoke check-in?"
         message={`This un-admits ${detail.name}. They'll show as not checked in and will need to be scanned or admitted again to re-enter. This works regardless of when or how they were originally checked in.`}
         confirmLabel="Revoke"
-        confirmVariant="danger"
+        confirmVariant="warning"
         loading={revokeBusy}
         errorMessage={revokeError ?? undefined}
         onConfirm={() => void handleRevokeCheckIn()}
