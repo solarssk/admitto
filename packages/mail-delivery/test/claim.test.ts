@@ -266,6 +266,65 @@ describe("claimInitialDelivery", () => {
     expect(row?.session_id).toBe("session-reclaim-actor");
   });
 
+  it("bumps created_at on reclaim so it outranks a delivery the attendee received between the cancel and the reclaim", async () => {
+    // "Latest delivery for this attendee" (the Attendees mail-status filter/badge, the delivery
+    // log, viewed.ts) is always created_at DESC, id DESC. A cancelled row can sit for a long
+    // time before it's reclaimed - long enough for the attendee to get a genuinely later
+    // delivery in between (a custom-template send, here) - so the reclaim has to move
+    // created_at forward too, not just queued_at, or that older-by-the-clock-but-actually-
+    // superseded row keeps outranking the freshly completed reclaim.
+    const original = await prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG_ID,
+        event_id: EVENT_ID,
+        attendee_id: ATT_ID,
+        purpose: "initial",
+        batch_id: "old-cancelled-batch",
+        provider: "export_only",
+        status: "cancelled",
+        attempts: 1,
+        recipient_email: "claim@example.com",
+        rendered_subject: "Stale subject from the stopped send",
+        rendered_html: "<p>Stale body</p>",
+        queued_at: new Date("2026-01-01T00:00:00.000Z"),
+        created_at: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    });
+    const inBetweenResend = await prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG_ID,
+        event_id: EVENT_ID,
+        attendee_id: ATT_ID,
+        purpose: "resend",
+        batch_id: "custom-notice-batch",
+        provider: "export_only",
+        status: "sent",
+        attempts: 1,
+        recipient_email: "claim@example.com",
+        rendered_subject: "A heads-up while the ticket send was stopped",
+        rendered_html: "<p>Notice</p>",
+        queued_at: new Date("2026-01-02T00:00:00.000Z"),
+        created_at: new Date("2026-01-02T00:00:00.000Z"),
+      },
+    });
+
+    const result = await claimInitialDelivery(
+      { ...claimInput, batchId: "fresh-batch", renderedSubject: "Fresh subject", renderedHtml: "<p>Fresh body</p>" },
+      prisma,
+    );
+    expect(result.action).toBe("send");
+
+    const reclaimed = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: original.id } });
+    expect(reclaimed.created_at.getTime()).toBeGreaterThan(inBetweenResend.created_at.getTime());
+
+    const [latest] = await prisma.emailDelivery.findMany({
+      where: { attendee_id: ATT_ID },
+      orderBy: [{ created_at: "desc" }, { id: "desc" }],
+      take: 1,
+    });
+    expect(latest?.id).toBe(original.id);
+  });
+
   it("returns skip in_flight when a concurrent claim wins the cancelled-row reclaim", async () => {
     // A genuine Promise.all race against a real DB doesn't reliably land both calls inside the
     // same narrow window (in practice the first call's whole claim/update cycle usually finishes

@@ -8,7 +8,7 @@ import { MailConfigError, resolveMailConfig, setMailSettings } from "@admitto/ma
 import { generateToken } from "@admitto/tickets";
 import { createMailer, sendBatch } from "@admitto/mailer";
 import { resolveAttendeeMailLinks } from "../src/links.js";
-import { cancelBulkSendBatch, drainPendingDeliveries, sendTicketEmails } from "../src/index.js";
+import { cancelBulkSendBatch, claimInitialDelivery, drainPendingDeliveries, sendTicketEmails } from "../src/index.js";
 import { resetDb } from "./resetDb.js";
 
 vi.mock("@admitto/mailer", async (importOriginal) => {
@@ -408,6 +408,57 @@ describe("drainPendingDeliveries branch coverage", () => {
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
     expect(after.status).toBe("cancelled");
     expect(after.retryable).not.toBe(true);
+  });
+
+  it("does not let a stale in-flight send's success clobber a row cancelled then reclaimed while it was still pending", async () => {
+    // A stricter version of the two races above: here the operator doesn't just cancel while
+    // this send is in flight, they immediately resend to the same attendee too (claimInitialDelivery's
+    // reclaim_cancelled path) - all before this exact sendBatch call returns. status: "cancelled"
+    // is no longer true by the time it resolves (the reclaim already flipped it back to
+    // "queued", under a new batch with fresh content) - only queued_at, bumped by the reclaim,
+    // catches that this row moved on since this attempt claimed it.
+    await enqueueOne();
+    const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
+    const originalBatchId = row.batch_id;
+
+    vi.mocked(sendBatch).mockImplementationOnce(async (...args) => {
+      await cancelBulkSendBatch(prisma, EVENT_ID, originalBatchId as string);
+      await claimInitialDelivery(
+        {
+          organizationId: "org-drain-b",
+          eventId: EVENT_ID,
+          attendeeId: "att-drain-branch",
+          batchId: "batch-reclaim-race",
+          provider: "export_only",
+          recipientEmail: "branch@example.com",
+          renderedSubject: "Fresh subject after reclaim",
+          renderedHtml: "<p>Fresh body after reclaim</p>",
+        },
+        prisma,
+      );
+      const actual = await vi.importActual<typeof import("@admitto/mailer")>("@admitto/mailer");
+      return actual.sendBatch(...args);
+    });
+
+    const drain = await drainPendingDeliveries(
+      prisma,
+      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+      { exportSink: () => undefined },
+      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
+    );
+
+    // The original attempt's result (a real, successful send) can no longer be safely recorded
+    // against this row - it moved on to a new attempt mid-flight - so it's dropped rather than
+    // written, and this tick counts it skipped rather than sent.
+    expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
+
+    const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
+    // The reclaim's own state survives untouched - not clobbered back to the stale pre-cancel
+    // attempt's batch, content, or a "sent"/"failed" status the reclaimed send never produced.
+    expect(after.batch_id).toBe("batch-reclaim-race");
+    expect(after.status).toBe("queued");
+    expect(after.rendered_subject).toBe("Fresh subject after reclaim");
+    expect(after.rendered_html).toBe("<p>Fresh body after reclaim</p>");
   });
 
   it("marks claimed rows failed when mailer setup throws and continues other events", async () => {

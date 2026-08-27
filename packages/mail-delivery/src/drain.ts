@@ -53,6 +53,7 @@ type SnapshotRow = {
   recipient_email: string | null;
   rendered_subject: string | null;
   rendered_html: string | null;
+  queued_at: Date;
 };
 
 const SNAPSHOT_SELECT = {
@@ -66,6 +67,7 @@ const SNAPSHOT_SELECT = {
   recipient_email: true,
   rendered_subject: true,
   rendered_html: true,
+  queued_at: true,
 } as const;
 
 const SNAPSHOT_READY = {
@@ -87,21 +89,29 @@ function deliveryUpdateFromBatchError(err: unknown, exhausted: boolean) {
 }
 
 /**
- * Marks a row failed (retryable, unless attempts are exhausted) - guarded against a row a
- * concurrent cancelBulkSendBatch() has already moved to "cancelled". Every one of this
- * function's callers runs when no send was actually attempted or confirmed (link resolution
- * failed, the mailer itself failed to set up); an unconditional update-by-id here would silently
- * undo the cancellation and put the row back in the retry pool, where a later drain tick would
- * actually send an email the operator stopped. Returns false (no-op) when the row was already
- * cancelled, so callers can count it as skipped rather than failed.
+ * Marks a row failed (retryable, unless attempts are exhausted) - guarded two ways against a row
+ * this exact attempt no longer owns. `status: { not: "cancelled" }` stops a concurrent
+ * cancelBulkSendBatch() from being undone: every one of this function's callers runs when no
+ * send was actually attempted or confirmed (link resolution failed, the mailer itself failed to
+ * set up), so an unconditional write here would silently put a cancelled row back in the retry
+ * pool, where a later drain tick would actually send an email the operator stopped. `queued_at`
+ * matching the value this attempt originally claimed stops a *reclaimed* row from being undone
+ * the same way: claimInitialDelivery's reclaim_cancelled path can flip a cancelled row straight
+ * back to "queued" (with fresh content, under a new batch) while this exact attempt's send call
+ * is still outstanding - `status: { not: "cancelled" }` alone would then match (the row reads
+ * "queued", not "cancelled") and overwrite the *new* attempt's row with this stale one's error.
+ * queued_at is bumped by every claim/retry/reclaim, so a mismatch means someone else already
+ * moved this row on. Returns false (no-op) either way, so callers can count it as skipped rather
+ * than failed.
  */
 async function markRowFailed(
   prisma: PrismaClient,
   rowId: string,
+  queuedAt: Date,
   data: { status: "failed"; retryable: boolean; error: string | undefined; attempted_at: Date; failed_at: Date; attempts: number },
 ): Promise<boolean> {
   const result = await prisma.emailDelivery.updateMany({
-    where: { id: rowId, status: { not: "cancelled" } },
+    where: { id: rowId, status: { not: "cancelled" }, queued_at: queuedAt },
     data,
   });
   return result.count > 0;
@@ -114,7 +124,7 @@ async function markClaimedRowFailed(
 ): Promise<boolean> {
   const nextAttempts = nextMailDrainAttempts(row.attempts);
   const exhausted = isMailDrainAttemptsExhausted(nextAttempts);
-  return markRowFailed(prisma, row.id, {
+  return markRowFailed(prisma, row.id, row.queued_at, {
     ...deliveryUpdateFromBatchError(err, exhausted),
     attempts: nextAttempts,
   });
@@ -225,8 +235,8 @@ async function sendOneFromSnapshot(
     const result = summary.results[0];
     if (!result) {
       // No confirmed provider response for this send attempt - same "was anything actually
-      // attempted" ambiguity as the catch block below, so the same cancelled-row guard applies.
-      const applied = await markRowFailed(prisma, delivery.id, {
+      // attempted" ambiguity as the catch block below, so the same guards apply.
+      const applied = await markRowFailed(prisma, delivery.id, delivery.queued_at, {
         status: "failed",
         retryable: !exhausted,
         error: sanitizeDeliveryError("empty provider result"),
@@ -236,14 +246,17 @@ async function sendOneFromSnapshot(
       });
       return applied ? "failed" : "skipped";
     }
-    // Unconditional and unguarded on purpose, unlike the failure paths above/below: the provider
-    // already gave a definitive answer about this message (sent or rejected) by this point, so
-    // the row must record that ground truth even if a cancel raced in moments earlier - the
-    // email already left (or was rejected), a stale "cancelled" status would misrepresent that.
+    // Guarded on queued_at alone (not status): the provider already gave a definitive answer
+    // about this message (sent or rejected) by this point, so a plain cancel with no reclaim
+    // (queued_at unchanged) must still record that ground truth over a stale "cancelled" - the
+    // email already left (or was rejected) regardless of the cancel. A reclaim in the meantime
+    // (claimInitialDelivery's reclaim_cancelled path) bumps queued_at when it puts the row back
+    // in the queue under a new batch with fresh content, so the guard fails there and this
+    // stale result is dropped instead of clobbering the row the operator just re-sent.
     const update = mapSendResultToDelivery(result);
     const failedLike = update.status === "failed" || update.status === "rejected";
-    await prisma.emailDelivery.update({
-      where: { id: delivery.id },
+    const applied = await prisma.emailDelivery.updateMany({
+      where: { id: delivery.id, queued_at: delivery.queued_at },
       data: {
         ...update,
         provider: result.provider,
@@ -251,12 +264,15 @@ async function sendOneFromSnapshot(
         ...(failedLike && exhausted ? { retryable: false } : {}),
       },
     });
+    if (applied.count === 0) {
+      return "skipped";
+    }
     return result.status === "accepted" || result.status === "sent" ? "sent" : "failed";
   } catch (err) {
     // sendBatch itself threw (e.g. a transport timeout) - ambiguous whether the message went
     // out, same as the empty-result branch above, so this must not resurrect a cancelled row
-    // into the retry pool either.
-    const applied = await markRowFailed(prisma, delivery.id, {
+    // into the retry pool, or clobber one a reclaim has since put back in the queue, either.
+    const applied = await markRowFailed(prisma, delivery.id, delivery.queued_at, {
       ...deliveryUpdateFromBatchError(err, exhausted),
       attempts: nextAttempts,
     });

@@ -166,7 +166,12 @@ async function claimReclaimCancelled(
 ): Promise<ClaimResult> {
   // Full refresh, not just a status flip: a cancelled row can be arbitrarily old, so this
   // reclaims it with this request's fresh template/content/actor - not the stale frozen
-  // message (or template) it originally queued under.
+  // message (or template) it originally queued under. created_at moves too, not just
+  // queued_at: every "latest delivery for this attendee" query (the Attendees mail-status
+  // filter/badge, the delivery log, viewed.ts) orders by created_at DESC - leaving the
+  // original value would let a delivery the attendee received *after* the cancel but *before*
+  // this reclaim (a resend, a custom-template send) keep outranking this one even once it's
+  // actually completed.
   const claimed = await prisma.emailDelivery.updateMany({
     where: {
       id: existingId,
@@ -175,6 +180,7 @@ async function claimReclaimCancelled(
     data: {
       status: "queued",
       queued_at: now,
+      created_at: now,
       batch_id: input.batchId,
       template_id: input.templateId,
       template_label_snapshot: input.templateLabel ?? null,
