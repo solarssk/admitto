@@ -2016,8 +2016,8 @@ describe("CommunicationPage templates", () => {
     fetchEventTemplates.mockResolvedValue([ticketRow]);
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
     fetchBulkSendStatus
-      .mockResolvedValueOnce({ queued: 2, sent: 0, failed: 0 })
-      .mockResolvedValueOnce({ queued: 0, sent: 2, failed: 0 });
+      .mockResolvedValueOnce({ queued: 2, sent: 0, failed: 0, cancelled: 0 })
+      .mockResolvedValueOnce({ queued: 0, sent: 2, failed: 0, cancelled: 0 });
 
     renderSendPage();
     await waitFor(() => {

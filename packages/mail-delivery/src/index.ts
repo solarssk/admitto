@@ -5,6 +5,8 @@ export type {
   DrainPendingDeliveriesOptions,
   DrainPendingDeliveriesResult,
 } from "./drain.js";
+export { cancelBulkSendBatch } from "./cancel.js";
+export type { CancelBulkSendBatchResult } from "./cancel.js";
 export {
   MAX_MAIL_DRAIN_ATTEMPTS,
   MAIL_DRAIN_BACKOFF_BASE_MS,

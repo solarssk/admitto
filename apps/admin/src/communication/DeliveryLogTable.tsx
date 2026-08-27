@@ -9,7 +9,7 @@ import { PaginationFooter } from "../components/PaginationFooter.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
-import { deliveryLocalTime, formatDateTime, purposeLabel, rowTimestamp, templateLabel } from "./delivery-format.js";
+import { deliveryLocalTime, deliveryStatusBadgeKey, formatDateTime, purposeLabel, rowTimestamp, templateLabel } from "./delivery-format.js";
 import { DeliveryDetailsModal } from "./DeliveryDetailsModal.js";
 import { DeliveryRowMenu } from "./DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "./SentMessagePreviewModal.js";
@@ -100,6 +100,7 @@ function DeliveryToolbar({
               { id: "failed", label: "Failed" },
               { id: "bounced", label: "Bounced" },
               { id: "rejected", label: "Rejected" },
+              { id: "cancelled", label: "Cancelled" },
             ]}
             onChange={(id) => onStatusChange(id as NonNullable<EventDeliveriesListParams["status"]>)}
           />
@@ -253,7 +254,7 @@ function DeliveryListContent({
                 {templateLabel(row)}
               </span>
               <span className="communication-card__meta-item">{purposeLabel(row.purpose)}</span>
-              <StatusBadge status={row.status} />
+              <StatusBadge status={deliveryStatusBadgeKey(row.status)} />
             </div>
           </div>
         ))}
@@ -295,7 +296,7 @@ function DeliveryListContent({
               </td>
               <td>{purposeLabel(row.purpose)}</td>
               <td>
-                <StatusBadge status={row.status} />
+                <StatusBadge status={deliveryStatusBadgeKey(row.status)} />
               </td>
               <td className="mono muted">
                 {formatDateTime(rowTimestamp(row))}

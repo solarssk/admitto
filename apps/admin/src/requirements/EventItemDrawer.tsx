@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from "react";
+import { useMemo, useRef, useEffect, useState } from "react";
 import { Button, IconButton, Input, ModalBackdrop, Notice, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -9,6 +9,7 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { EventCustomFieldDto, EventItemConfigDto, EventItemDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { customFieldTypeIcon } from "./customFieldType.js";
+import { disambiguatedLabel, findDuplicateLabels } from "./duplicateLabels.js";
 import { DEFAULT_EVENT_ITEM_ICON, IconPicker, normalizeEventItemIconForForm } from "./IconPicker.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
@@ -19,6 +20,8 @@ export interface EventItemDrawerProps {
   item: EventItemDto;
   /** The event's full custom field registry, for the "show as hint here" picker. */
   customFields: EventCustomFieldDto[];
+  /** All of the event's items, to detect a field already claimed by a sibling item. */
+  items: EventItemDto[];
   onClose: () => void;
   onUpdated: () => void;
 }
@@ -63,7 +66,14 @@ function toConfig(form: FormState, itemKey: string): EventItemConfigDto {
 }
 
 /** Centered modal to edit or delete a single event item. */
-export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdated }: EventItemDrawerProps) {
+export function EventItemDrawer({
+  eventId,
+  item,
+  customFields,
+  items,
+  onClose,
+  onUpdated,
+}: Readonly<EventItemDrawerProps>) {
   const { addToast } = useToast();
   const [form, setForm] = useState<FormState>(() => toForm(item));
   const [saving, setSaving] = useState(false);
@@ -76,8 +86,24 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
   // "badge" is auto-recreated by the server (ensureBadgeEventItem) — deleting it
   // would silently reappear, so deletion is blocked; disable it instead.
   const isDefaultItem = item.key === "badge";
+
+  // Fields already picked by a sibling item — each field belongs on exactly one item's
+  // check-in card, so offering it here too would just duplicate the same hint.
+  const fieldOwners = useMemo(() => {
+    const owners = new Map<string, EventItemDto>();
+    for (const other of items) {
+      if (other.id === item.id) continue;
+      for (const field of other.config?.content_fields ?? []) {
+        owners.set(field, other);
+      }
+    }
+    return owners;
+  }, [items, item.id]);
   const headerIcon = form.icon ?? item.icon ?? DEFAULT_EVENT_ITEM_ICON;
   const dirty = JSON.stringify(form) !== JSON.stringify(toForm(item));
+  // Two custom fields can share a display label (only source_field is required to be unique) -
+  // append the slug to disambiguate, same trigger CSV export/import already use.
+  const duplicateFieldLabels = findDuplicateLabels(customFields.map((f) => f.label));
 
   useEffect(() => {
     setForm(toForm(item));
@@ -230,26 +256,41 @@ export function EventItemDrawer({ eventId, item, customFields, onClose, onUpdate
                   </Notice>
                 ) : (
                   <div className="requirements-field-stack">
-                    {customFields.map((field) => (
-                      <label
-                        key={field.id}
-                        className="requirements-item-cell requirements-field-picker-row"
-                      >
-                        <input
-                          type="checkbox"
-                          aria-label={field.label}
-                          checked={form.content_fields.includes(field.source_field)}
-                          onChange={(e) => toggleContentField(field.source_field, e.target.checked)}
-                        />
-                        <i className={`ti ${customFieldTypeIcon(field.type)}`} aria-hidden="true" />
-                        <div className="requirements-item-info">
-                          <div className="requirements-item-name">{field.label}</div>
-                          <div className="requirements-item-id">
-                            <code>{field.source_field}</code>
-                          </div>
-                        </div>
-                      </label>
-                    ))}
+                    {customFields.map((field) => {
+                      const checked = form.content_fields.includes(field.source_field);
+                      const claimedBy = fieldOwners.get(field.source_field);
+                      const disabled = !checked && !!claimedBy;
+                      const label = disambiguatedLabel(
+                        field.label,
+                        field.source_field,
+                        duplicateFieldLabels,
+                      );
+                      return (
+                        <Tooltip
+                          key={field.id}
+                          className="requirements-field-picker-tip"
+                          content={claimedBy ? `Already shown on "${claimedBy.label}"` : undefined}
+                        >
+                          <label
+                            className={`requirements-item-cell requirements-field-picker-row${
+                              disabled ? " requirements-field-picker-row--disabled" : ""
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              aria-label={label}
+                              checked={checked}
+                              disabled={disabled}
+                              onChange={(e) => toggleContentField(field.source_field, e.target.checked)}
+                            />
+                            <i className={`ti ${customFieldTypeIcon(field.type)}`} aria-hidden="true" />
+                            <div className="requirements-item-info">
+                              <div className="requirements-item-name">{label}</div>
+                            </div>
+                          </label>
+                        </Tooltip>
+                      );
+                    })}
                   </div>
                 )}
               </div>

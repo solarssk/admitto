@@ -32,6 +32,7 @@ const CODE_MESSAGES: Record<string, string> = {
   cannot_revoke_current: "You cannot revoke your current session.",
   cannot_revoke_own_session: "You cannot revoke your current session.",
   challenge_expired: "This passkey/security key setup request expired. Start again.",
+  content_field_in_use: "This field is already shown on another item. Uncheck it there first.",
   delivery_not_created: "Could not create the delivery.",
   delivery_not_found: "Delivery not found.",
   duplicate_issuer: "An identity provider with this issuer already exists.",

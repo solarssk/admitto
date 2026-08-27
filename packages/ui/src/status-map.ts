@@ -19,6 +19,14 @@ export const STATUS_MAP: Record<string, StatusMeta> = {
   registered: { variant: "neutral", label: "Registered" },
   confirmed: { variant: "confirmed", label: "Confirmed" },
   cancelled: { variant: "error", label: "Cancelled" },
+  // Deliberately a distinct key from "cancelled" above, not a reuse of it - that one is the
+  // attendee/RSVP domain's cancellation (a genuine error-red badge). An EmailDelivery row
+  // stopped mid-send by an operator isn't a delivery failure, so it gets its own neutral tone
+  // instead of colliding with the unrelated RSVP meaning. Callers must remap "cancelled" to
+  // this key themselves for EmailDelivery status values (see deliveryStatusBadgeKey in
+  // apps/admin/src/communication/delivery-format.ts) - this map has no domain scoping of its
+  // own to do that automatically.
+  mail_cancelled: { variant: "neutral", label: "Cancelled" },
   queued: { variant: "warn", label: "Pending" },
   // ADR 0007 accepted_only: SMTP/Graph handoff is operator-visible success.
   accepted: { variant: "ok", label: "Sent" },

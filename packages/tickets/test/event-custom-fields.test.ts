@@ -3,8 +3,11 @@ import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import {
   UnknownContentFieldError,
+  ContentFieldAlreadyAssignedError,
   loadEventCustomDataFields,
   validateContentFieldReferences,
+  findConflictingContentField,
+  assertContentFieldsNotAssignedElsewhere,
 } from "../src/event-custom-fields.js";
 
 describe("loadEventCustomDataFields", () => {
@@ -151,5 +154,99 @@ describe("validateContentFieldReferences", () => {
     expect(() =>
       validateContentFieldReferences(new Set(["a", "b"]), ["a", "b", "c"]),
     ).toThrow(UnknownContentFieldError);
+  });
+});
+
+describe("findConflictingContentField", () => {
+  it("returns null for an empty content_fields list regardless of sibling items", () => {
+    expect(
+      findConflictingContentField(
+        [{ key: "giftbag", label: "Gift bag", config: { content_fields: ["shirt_size"] } }],
+        [],
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null when there are no sibling items", () => {
+    expect(findConflictingContentField([], ["shirt_size"])).toBeNull();
+  });
+
+  it("returns null when no sibling item references any of the candidate fields", () => {
+    expect(
+      findConflictingContentField(
+        [{ key: "giftbag", label: "Gift bag", config: { content_fields: ["dietary"] } }],
+        ["shirt_size"],
+      ),
+    ).toBeNull();
+  });
+
+  it("returns the conflicting field and the sibling item that already has it", () => {
+    expect(
+      findConflictingContentField(
+        [{ key: "giftbag", label: "Gift bag", config: { content_fields: ["shirt_size"] } }],
+        ["shirt_size"],
+      ),
+    ).toEqual({ sourceField: "shirt_size", itemKey: "giftbag", itemLabel: "Gift bag" });
+  });
+
+  it("checks every sibling item, not just the first", () => {
+    expect(
+      findConflictingContentField(
+        [
+          { key: "badge", label: "Badge", config: { content_fields: ["dietary"] } },
+          { key: "giftbag", label: "Gift bag", config: { content_fields: ["shirt_size"] } },
+        ],
+        ["shirt_size"],
+      ),
+    ).toEqual({ sourceField: "shirt_size", itemKey: "giftbag", itemLabel: "Gift bag" });
+  });
+
+  it("tolerates a sibling with null config or a non-array content_fields", () => {
+    expect(
+      findConflictingContentField(
+        [
+          { key: "badge", label: "Badge", config: null },
+          { key: "socks", label: "Socks", config: { content_fields: "not-an-array" } },
+        ],
+        ["shirt_size"],
+      ),
+    ).toBeNull();
+  });
+
+  it("skips a non-string entry within content_fields but still catches a real match", () => {
+    expect(
+      findConflictingContentField(
+        [{ key: "giftbag", label: "Gift bag", config: { content_fields: [123, "shirt_size"] } }],
+        ["shirt_size"],
+      ),
+    ).toEqual({ sourceField: "shirt_size", itemKey: "giftbag", itemLabel: "Gift bag" });
+  });
+});
+
+describe("assertContentFieldsNotAssignedElsewhere", () => {
+  it("passes when findConflictingContentField would return null", () => {
+    expect(() =>
+      assertContentFieldsNotAssignedElsewhere(
+        [{ key: "giftbag", label: "Gift bag", config: { content_fields: ["dietary"] } }],
+        ["shirt_size"],
+      ),
+    ).not.toThrow();
+  });
+
+  it("throws ContentFieldAlreadyAssignedError carrying the conflict details", () => {
+    try {
+      assertContentFieldsNotAssignedElsewhere(
+        [{ key: "giftbag", label: "Gift bag", config: { content_fields: ["shirt_size"] } }],
+        ["shirt_size"],
+      );
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(ContentFieldAlreadyAssignedError);
+      const typed = err as ContentFieldAlreadyAssignedError;
+      expect(typed.sourceField).toBe("shirt_size");
+      expect(typed.itemKey).toBe("giftbag");
+      expect(typed.itemLabel).toBe("Gift bag");
+      expect(typed.message).toBe("content_field_already_assigned:shirt_size");
+    }
   });
 });
