@@ -10,6 +10,7 @@ import {
   SESSION_COOKIE_NAME,
   TRUSTED_DEVICE_COOKIE_NAME,
   LOGIN_NEXT,
+  type LoginNext,
   login,
   logout,
   validatePartialSession,
@@ -30,11 +31,15 @@ import {
   markBackupCodesAcknowledged,
   resolveSetupComplete,
   getWebauthnEnabled,
+  getPasskeyLoginEnabled,
   beginWebauthnAssertion,
   beginWebauthnRegistration,
   finishWebauthnRegistration,
   createTrustedDevice,
+  beginPasskeyLogin,
+  loginWithPasskey,
 } from "@admitto/auth";
+import { generateToken } from "@admitto/crypto";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
 import { checkMfaVerifyRateLimit, checkWebauthnStepUpRateLimit, resolveMfaClientIp } from "./mfa-rate-limit.js";
 import {
@@ -542,6 +547,109 @@ export async function handlePostMfaWebauthnVerify(
     partial.userId,
     partial.sessionId,
     result.stage ?? SESSION_STAGE.FULL,
+    parsed.data.next,
+  );
+  return c.json({ ok: true, next }, 200);
+}
+
+/**
+ * POST /api/auth/login/webauthn/begin, start a discoverable-credential ("usernameless") passkey
+ * login ceremony - the sole factor for signing in, not a step-up after a password, so unlike
+ * `handlePostMfaWebauthnBegin` this runs with no session (partial or otherwise) at all. The
+ * challenge is stashed under a fresh opaque ceremony token (not a session id - there is none yet)
+ * that the client must echo back to `/finish`.
+ */
+export async function handlePostPasskeyLoginBegin(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
+  if (!(await getWebauthnEnabled(db)) || !(await getPasskeyLoginEnabled(db))) {
+    return c.json({ code: "passkey_login_disabled" }, 403);
+  }
+
+  const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
+  if (rp instanceof Response) return rp;
+
+  const ceremony = generateToken();
+  const begin = await beginPasskeyLogin(rp.rpID);
+  stashWebauthnChallenge("passkey-login", ceremony, begin.challenge);
+
+  return c.json({ ceremony, options: begin.options });
+}
+
+/** `loginWithPasskey` never returns MFA_REQUIRED/ENROLLMENT_REQUIRED (see its doc comment), so
+ * only these three outcomes are reachable here. */
+function sessionStageForLoginNext(next: LoginNext): SessionStage {
+  if (next === LOGIN_NEXT.BACKUP_CODES_REQUIRED) return SESSION_STAGE.BACKUP_CODES_REQUIRED;
+  if (next === LOGIN_NEXT.CHANGE_PASSWORD) return SESSION_STAGE.CHANGE_PASSWORD_REQUIRED;
+  return SESSION_STAGE.FULL;
+}
+
+const passkeyLoginFinishSchema = z
+  .object({
+    ceremony: z.string().min(1).max(256),
+    response: webauthnAuthenticationResponseSchema,
+    next: z.string().optional(),
+    timezone: z.string().optional(),
+  })
+  .strict();
+
+/**
+ * POST /api/auth/login/webauthn/finish, complete a discoverable-credential passkey login and
+ * issue a full session directly - see `loginWithPasskey`'s doc comment for why this never routes
+ * to an MFA step. Reuses `resolvePostMfaLandingPath` for the post-auth landing path: despite the
+ * name, its stage-driven branches (backup codes owed / forced password change / else the normal
+ * landing) apply exactly the same regardless of which first factor reached that stage.
+ */
+export async function handlePostPasskeyLoginFinish(
+  c: Context,
+  db: PrismaClient,
+  injectedBaseUrl?: string,
+): Promise<Response> {
+  if (!(await getWebauthnEnabled(db)) || !(await getPasskeyLoginEnabled(db))) {
+    return c.json({ code: "passkey_login_disabled" }, 403);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON" }, 400);
+  }
+  const parsed = passkeyLoginFinishSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid body" }, 400);
+
+  const challenge = consumeWebauthnChallenge("passkey-login", parsed.data.ceremony);
+  if (!challenge) return c.json({ code: "challenge_expired" }, 400);
+
+  const rp = await resolveWebauthnRp(c, db, injectedBaseUrl);
+  if (rp instanceof Response) return rp;
+
+  const result = await loginWithPasskey(db, {
+    response: parsed.data.response as AuthenticationResponseJSON,
+    challenge,
+    rp,
+    ip: resolveClientIp(c),
+    userAgent: c.req.header("user-agent"),
+    timezone: parseOptionalClientTimezone(parsed.data.timezone),
+  });
+
+  // Same generic response for every failure reason (unknown credential, bad signature, inactive
+  // account) as handlePostLogin's password path - distinguishing them would tell an attacker
+  // whether a given credential ID belongs to a real, deactivated account.
+  if (!result.ok) {
+    return c.json({ code: "invalid_webauthn" }, 401);
+  }
+
+  setSessionCookie(c, result.rawToken);
+
+  const next = await resolvePostMfaLandingPath(
+    c,
+    db,
+    result.userId,
+    result.sessionId,
+    sessionStageForLoginNext(result.next),
     parsed.data.next,
   );
   return c.json({ ok: true, next }, 200);
