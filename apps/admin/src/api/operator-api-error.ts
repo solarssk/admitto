@@ -1,4 +1,4 @@
-import { ApiError } from "./client.js";
+import { ApiError, type ZodFlattenedDetails } from "./client.js";
 
 const MACHINE_CODE = /^[a-z][a-z0-9_]*$/;
 
@@ -203,12 +203,27 @@ function statusFallback(err: ApiError, fallback: string): string {
   return fallback;
 }
 
+/** A Zod `.flatten()` field message is already written to be operator-safe (the schema's own
+ * `.min()`/`.refine()` text), and names the actual field - shown ahead of the generic
+ * `validation_failed` mapping whenever the server computed something more specific than
+ * "Check the form and try again." */
+function zodDetailMessage(details: ZodFlattenedDetails | undefined): string | undefined {
+  if (!details?.fieldErrors) return undefined;
+  const messages = Object.values(details.fieldErrors)
+    .flatMap((value) => (Array.isArray(value) ? value : []))
+    .filter((message): message is string => typeof message === "string" && message.trim().length > 0);
+  return messages.length > 0 ? messages.join(" ") : undefined;
+}
+
 /**
  * Operator-safe text for toasts and inline errors.
  * Unknown server detail is logged and replaced with `fallback`.
  */
 export function operatorApiErrorMessage(err: unknown, fallback: string): string {
   if (!(err instanceof ApiError)) return fallback;
+
+  const fieldDetail = zodDetailMessage(err.details);
+  if (fieldDetail) return fieldDetail;
 
   const mapped = messageForKnownCode(err);
   if (mapped) return mapped;

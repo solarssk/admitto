@@ -12,6 +12,22 @@ describe("operatorApiErrorMessage", () => {
     expect(operatorApiErrorMessage(err, "Failed.")).toBe("That email is already in use.");
   });
 
+  it("prefers a Zod field-error detail over the generic validation_failed mapping", () => {
+    const err = new ApiError(400, "validation_failed", "validation_failed", undefined, {
+      fieldErrors: { api_key: ["API key is required."], base_url: ["Enter a valid public http(s) URL."] },
+    });
+    expect(operatorApiErrorMessage(err, "Failed.")).toBe(
+      "API key is required. Enter a valid public http(s) URL.",
+    );
+  });
+
+  it("falls back to the generic validation_failed mapping when details has no field messages", () => {
+    const err = new ApiError(400, "validation_failed", "validation_failed", undefined, {
+      fieldErrors: {},
+    });
+    expect(operatorApiErrorMessage(err, "Failed.")).toBe("Check the form and try again.");
+  });
+
   it("explains the bulk-send rate limit", () => {
     expect(
       operatorApiErrorMessage(new ApiError(429, "bulk_send_rate_limited", "bulk_send_rate_limited"), "Send failed."),
