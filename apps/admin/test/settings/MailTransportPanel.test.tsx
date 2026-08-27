@@ -212,6 +212,26 @@ describe("MailTransportPanel — provider rendering (#406/#408/#409)", () => {
     expect(screen.getByLabelText("Rate limit (per minute)")).toBeTruthy();
   });
 
+  it("re-opens Advanced tuning on every failed save, not just the first, even if manually closed in between", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("SMTP host")).toBeTruthy();
+    });
+    const details = screen.getByText("Advanced tuning").closest("details");
+    if (!details) throw new Error("Advanced tuning <details> not found");
+    expect(details.open).toBe(false);
+
+    fireEvent.change(screen.getByLabelText("Max connections"), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(details.open).toBe(true));
+
+    // Operator manually collapses it again without fixing the still-invalid field.
+    details.open = false;
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(details.open).toBe(true));
+  });
+
   it("renders Graph branch fields and the Entra setup guide without crashing", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(graphFields()));
     renderWithToast(<MailTransportPanel />);
@@ -476,6 +496,7 @@ describe("MailTransportPanel — test send gating (#410)", () => {
     ["not-an-email", "not an email address"],
     ["tester @example.com", "contains whitespace"],
     ["tester@", "has an empty domain part"],
+    ["tester@example.c", "has a single-character TLD"],
   ])(
     "shows a toast and does not call the API when the recipient email %s (%s)",
     async (invalidRecipient) => {
@@ -771,7 +792,7 @@ describe("MailTransportPanel — toast vs inline consistency (#4)", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
-  it("shows client-side validation errors inline (not toasted) and scrolls them into view", async () => {
+  it("shows client-side validation errors on the field itself and toasts a summary", async () => {
     mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
     renderWithToast(<MailTransportPanel />);
     await waitFor(() => {
@@ -780,11 +801,64 @@ describe("MailTransportPanel — toast vs inline consistency (#4)", () => {
     fireEvent.change(screen.getByLabelText("From address"), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
-      expect(screen.getByRole("alert").textContent).toMatch(/From address must be a valid email/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Please fix the highlighted fields/);
     });
+    const fromAddressInput = screen.getByLabelText("From address");
+    expect(fromAddressInput.getAttribute("aria-invalid")).toBe("true");
+    const describedBy = fromAddressInput.getAttribute("aria-describedby");
+    expect(describedBy && document.getElementById(describedBy)?.textContent).toMatch(
+      /From address must be a valid email/,
+    );
     expect(mockSave).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("at-toast")).toBeNull();
-    expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+    // "nearest", not "center" - this is the fix for the original report (the page visibly
+    // re-centering on every failed Save even when the field was already on screen).
+    expect(fromAddressInput.scrollIntoView).toHaveBeenCalledWith(
+      expect.objectContaining({ block: "nearest" }),
+    );
+    expect(document.activeElement).toBe(fromAddressInput);
+  });
+
+  it("clears a field's stale error as soon as the operator edits it, without waiting for the next Save", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("From address")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("From address"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("From address").getAttribute("aria-invalid")).toBe("true");
+    });
+
+    fireEvent.change(screen.getByLabelText("From address"), { target: { value: "fixed@example.com" } });
+
+    expect(screen.getByLabelText("From address").getAttribute("aria-invalid")).not.toBe("true");
+  });
+
+  it("ignores a validation error on an env-locked field - the operator can't fix what they can't edit", async () => {
+    // heloName has a space in it (fails the new whitespace check) but is env-locked, so the
+    // operator has no way to fix it. It must not block Save on an unrelated field.
+    mockFetch.mockResolvedValueOnce(
+      makeResponse(smtpFields({ heloName: plain("bad helo name", { source: "env", locked: true }) })),
+    );
+    mockSave.mockResolvedValueOnce(
+      makeResponse(
+        smtpFields({
+          fromName: plain("New Name"),
+          heloName: plain("bad helo name", { source: "env", locked: true }),
+        }),
+      ),
+    );
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("From name")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("From name"), { target: { value: "New Name" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Mail settings saved/);
+    });
+    expect(mockSave).toHaveBeenCalledTimes(1);
   });
 
   it("toasts a successful save", async () => {
