@@ -13,6 +13,8 @@ export interface SecuritySettingsDraft {
   trustedDays: string;
   mfaRoles: string[];
   cspTrustedOriginsRaw: string;
+  webauthnEnabled: boolean;
+  passkeyLoginEnabled: boolean;
 }
 
 /** Parse a draft text field, clamp to bounds, and fall back when empty or non-numeric. */
@@ -41,6 +43,8 @@ export function draftFromSettings(s: SystemSettingsDto): SecuritySettingsDraft {
     trustedDays: String(s.trusted_device_days.value),
     mfaRoles: [...s.mfa_required_roles.value],
     cspTrustedOriginsRaw: joinListInput(s.csp_trusted_origins.value),
+    webauthnEnabled: s.webauthn_enabled.value,
+    passkeyLoginEnabled: s.passkey_login_enabled.value,
   };
 }
 
@@ -142,6 +146,20 @@ export function buildSecurityPatchBody(
     sortedOriginsKey(cspTrustedOrigins) !== sortedOriginsKey(settings.csp_trusted_origins.value),
     () => {
       body.csp_trusted_origins = cspTrustedOrigins;
+    },
+  );
+  applyIfEditable(
+    fieldLocked(settings.webauthn_enabled.source),
+    draft.webauthnEnabled !== settings.webauthn_enabled.value,
+    () => {
+      body.webauthn_enabled = draft.webauthnEnabled;
+    },
+  );
+  applyIfEditable(
+    fieldLocked(settings.passkey_login_enabled.source),
+    draft.passkeyLoginEnabled !== settings.passkey_login_enabled.value,
+    () => {
+      body.passkey_login_enabled = draft.passkeyLoginEnabled;
     },
   );
 
