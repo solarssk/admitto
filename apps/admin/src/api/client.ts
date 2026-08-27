@@ -2863,6 +2863,48 @@ export async function fetchEventWalletReports(
   return parseJson<EventWalletReportsResponse>(res);
 }
 
+/** Download the wallets CSV export (one row per attendee) and trigger browser save - same
+ * fetch-blob-then-anchor-click pattern as exportEventReportsCsv above, `report=wallets` is the
+ * only difference in the request itself. */
+export async function exportEventWalletReportsCsv(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=csv&report=wallets`,
+    { credentials: "same-origin", signal },
+  );
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as ApiErrorBody;
+      message = messageFromApiErrorBody(body) ?? message;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message);
+  }
+
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const filename = match?.[1] ?? "wallets.csv";
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** Same-origin URL for the wallets printable HTML report (open in new tab for Save as PDF). */
+export function eventWalletReportsPrintUrl(eventId: string): string {
+  return `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=pdf&report=wallets`;
+}
+
 // --- Identity providers & Cloudflare Access (SPA Settings → Identity, #266) ---
 
 /** List configured OIDC identity providers (superadmin). */

@@ -5,7 +5,9 @@ import { Badge, Button, Card, EmptyState, HintLabel, PageHeader, Skeleton, Tabs,
 import {
   ApiError,
   eventReportsPrintUrl,
+  eventWalletReportsPrintUrl,
   exportEventReportsCsv,
+  exportEventWalletReportsCsv,
   fetchEventReports,
   fetchTicketTypes,
 } from "../api/client.js";
@@ -902,7 +904,14 @@ export function ReportsPage() {
 
     setExportingCsv(true);
     try {
-      await exportEventReportsCsv(eventId, ac.signal);
+      // Exports whatever tab is active, not always the admission log - a Wallets-tab CSV shares
+      // nothing with Event day's per-admission rows (see WalletsReportsTab.tsx), so this branches
+      // to a wholly separate request rather than a shared "export the current tab" helper.
+      if (activeTab === "wallets") {
+        await exportEventWalletReportsCsv(eventId, ac.signal);
+      } else {
+        await exportEventReportsCsv(eventId, ac.signal);
+      }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       const fallback = "Export failed.";
@@ -920,12 +929,13 @@ export function ReportsPage() {
     } finally {
       if (!ac.signal.aborted) setExportingCsv(false);
     }
-  }, [eventId, exportingCsv, addToast, reportApiError]);
+  }, [eventId, exportingCsv, activeTab, addToast, reportApiError]);
 
   const handleExportPdf = useCallback(() => {
     if (!eventId) return;
-    window.open(eventReportsPrintUrl(eventId), "_blank", "noopener,noreferrer");
-  }, [eventId]);
+    const url = activeTab === "wallets" ? eventWalletReportsPrintUrl(eventId) : eventReportsPrintUrl(eventId);
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, [eventId, activeTab]);
 
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // the skeleton on and off faster than it can register as loading — show it only once
@@ -963,7 +973,12 @@ export function ReportsPage() {
         actions={
           <ReportsExportMenu
             exportingCsv={exportingCsv}
-            disabled={loading || !!error}
+            // Only Event day's own loading/error gates the button - the Wallets tab loads and
+            // exports independently (WalletsReportsTab owns its own fetch, ReportsPage never
+            // sees its loading state), so gating on Event day's state while Wallets is active
+            // would disable the button for a fetch that has nothing to do with what it's about
+            // to export.
+            disabled={activeTab === "eventday" && (loading || !!error)}
             isDesktop={isDesktop}
             onExport={handleExport}
           />
