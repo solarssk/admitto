@@ -14,8 +14,11 @@ export type AttendeeExportRsvpStatus = (typeof ATTENDEE_EXPORT_RSVP_STATUSES)[nu
 
 /** Mail-delivery filter buckets — the list's Mail column shows the LATEST delivery's status
  * per attendee, so these buckets classify that latest status (not "any delivery ever"):
- * `not_sent` = no delivery rows at all, `sent` = accepted/sent/delivered, `pending` = queued,
- * `failed` = failed/bounced/rejected. Buckets rather than the seven raw statuses because
+ * `not_sent` = no delivery rows at all, OR the latest one is "cancelled" (an operator stopped
+ * a bulk send before this attendee's turn - they still need the ticket exactly like someone who
+ * was never queued, so they belong in the same "who still needs one" bucket, not "failed" -
+ * nothing about their mail actually went wrong); `sent` = accepted/sent/delivered; `pending` =
+ * queued; `failed` = failed/bounced/rejected. Buckets rather than the eight raw statuses because
  * that's the operator question ("who never got a mail / whose mail failed"), matching the
  * Overview page's Sent/Pending/Failed email-delivery card. */
 export const ATTENDEE_MAIL_STATUS_FILTERS = ["not_sent", "sent", "pending", "failed"] as const;
@@ -167,7 +170,15 @@ function attendeeRsvpStatusSql(rsvp_status?: AttendeeExportRsvpStatus) {
 function attendeeMailStatusSql(mail_status?: AttendeeMailStatusFilter) {
   if (!mail_status) return Prisma.empty;
   if (mail_status === "not_sent") {
-    return Prisma.sql`AND NOT EXISTS (SELECT 1 FROM "EmailDelivery" ed WHERE ed.attendee_id = a.id)`;
+    return Prisma.sql`AND (
+      NOT EXISTS (SELECT 1 FROM "EmailDelivery" ed WHERE ed.attendee_id = a.id)
+      OR (
+        SELECT ed.status FROM "EmailDelivery" ed
+        WHERE ed.attendee_id = a.id
+        ORDER BY ed.created_at DESC, ed.id DESC
+        LIMIT 1
+      ) = 'cancelled'
+    )`;
   }
   const statuses = mailFilterStatuses(mail_status);
   return Prisma.sql`AND (

@@ -828,6 +828,13 @@ export interface BulkSendStatusResponse {
   queued: number;
   sent: number;
   failed: number;
+  cancelled: number;
+}
+
+/** Response from POST `/send/:batchId/cancel`. */
+export interface BulkSendCancelResponse {
+  batchId: string;
+  cancelled: number;
 }
 
 /** Audience filter for POST `/api/admin/events/:eventId/wallet-message/send` - narrower than
@@ -1061,7 +1068,7 @@ export interface SaveMailSettingsBody {
 export interface EventDeliveriesListParams {
   page?: number;
   pageSize?: number;
-  status?: "all" | "queued" | "accepted" | "sent" | "delivered" | "failed" | "bounced" | "rejected";
+  status?: "all" | "queued" | "accepted" | "sent" | "delivered" | "failed" | "bounced" | "rejected" | "cancelled";
   purpose?: "all" | "initial" | "resend";
   /** Case-insensitive match against attendee name/email. */
   search?: string;
