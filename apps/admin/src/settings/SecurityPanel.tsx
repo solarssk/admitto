@@ -335,6 +335,7 @@ export function SecurityPanel() {
             max={90}
             savedValue={settings.trusted_device_days.value}
             source={settings.trusted_device_days.source}
+            showDivider={false}
             onChange={(trustedDays) => setDraft({ ...draft, trustedDays })}
           />
         </div>
