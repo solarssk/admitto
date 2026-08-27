@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type RefObject } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { Card, HintLabel, Button, EmptyState, useToast } from "@admitto/ui";
 import {
@@ -23,10 +23,10 @@ import {
   emptySecretEdits,
   isMailSettingsDirty,
   smtpProviderDraftDefaults,
-  validateMailDraft,
 } from "./mailSettingsValidation.js";
 import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
 import {
+  computeLockedKeys,
   draftFromFields,
   GraphCard,
   PowerAutomateCard,
@@ -37,6 +37,8 @@ import {
   SmtpConnectionCard,
   TransportTileGrid,
   useMailSettingsFormState,
+  useScrollToFirstInvalidFieldOnError,
+  validateAndReportErrors,
   type FieldLocked,
 } from "./mailTransportFormParts.js";
 
@@ -185,10 +187,6 @@ export const EventMailSettingsCard = forwardRef<
     /** When false, omit the card footer so the host can render one shared Save/Reset for the
      * whole Mail tab (bounce panel included). Defaults to true for standalone/unit use. */
     embeddedFooter?: boolean;
-    /** Forwarded when the host owns the footer and needs to show this card's validation list. */
-    onValidationErrorsChange?: (errors: string[]) => void;
-    /** Host-owned list element for scroll-into-view when `embeddedFooter` is false. */
-    validationErrorsListRef?: RefObject<HTMLUListElement | null>;
     /** Rendered above Send test email (e.g. Bounce detection on the Event Mailing tab). */
     children?: ReactNode;
   }>
@@ -200,8 +198,6 @@ export const EventMailSettingsCard = forwardRef<
     onSavingChange,
     onSaved,
     embeddedFooter = true,
-    onValidationErrorsChange,
-    validationErrorsListRef,
     children,
   },
   ref,
@@ -228,8 +224,8 @@ export const EventMailSettingsCard = forwardRef<
     showLoading,
     loadError,
     setLoadError,
-    validationErrors,
-    setValidationErrors,
+    fieldErrors,
+    setFieldErrors,
     saving,
     setSaving,
     testEmail,
@@ -239,7 +235,6 @@ export const EventMailSettingsCard = forwardRef<
     testResult,
     setTestResult,
     loadAbortRef,
-    validationErrorsRef,
     testGenerationRef,
     updateDraft,
     updateSecrets,
@@ -250,6 +245,8 @@ export const EventMailSettingsCard = forwardRef<
     run: runConnectionTest,
     clearResult: clearProbeResult,
   } = useConnectionTest("Could not test the SMTP connection.");
+  useScrollToFirstInvalidFieldOnError(fieldErrors);
+
   const [bounceVerify, setBounceVerify] = useState(false);
   const [bounceIngestReady, setBounceIngestReady] = useState(false);
   const [bounceReadyKey, setBounceReadyKey] = useState(0);
@@ -262,15 +259,6 @@ export const EventMailSettingsCard = forwardRef<
   // (load, save, revert) so the next "first switch" after that behaves the same way.
   const dedicatedDraftSeededRef = useRef(false);
 
-  useEffect(() => {
-    if (validationErrors.length > 0) {
-      (validationErrorsListRef ?? validationErrorsRef).current?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    }
-  }, [validationErrors, validationErrorsListRef, validationErrorsRef]);
-
   const applyResponse = useCallback(
     (data: EventMailSettingsResponse) => {
       const nextDraft = draftFromFields(data.fields);
@@ -281,11 +269,11 @@ export const EventMailSettingsCard = forwardRef<
       setDraft(nextDraft);
       setSavedDraft(nextDraft);
       setSecrets(emptySecretEdits());
-      setValidationErrors([]);
+      setFieldErrors({});
       clearProbeResult();
       dedicatedDraftSeededRef.current = false;
     },
-    [clearProbeResult, setDraft, setSavedDraft, setSecrets, setValidationErrors],
+    [clearProbeResult, setDraft, setSavedDraft, setSecrets, setFieldErrors],
   );
 
   const loadSettings = useCallback(async () => {
@@ -351,19 +339,10 @@ export const EventMailSettingsCard = forwardRef<
   const handleSave = async (): Promise<EventMailSettingsSaveResult> => {
     if (!apiData) return "blocked";
     if (mode === "dedicated") {
-      const validation = validateMailDraft(draft);
-      if (!validation.valid) {
-        setValidationErrors(validation.errors);
-        return "blocked";
-      }
-      setValidationErrors([]);
+      if (!validateAndReportErrors(draft, fieldLocked, setFieldErrors, addToast)) return "blocked";
       setSaving(true);
       try {
-        const lockedKeys = new Set(
-          (Object.keys(apiData.fields) as Array<keyof typeof apiData.fields>).filter((key) =>
-            fieldLocked(key),
-          ),
-        );
+        const lockedKeys = computeLockedKeys(apiData.fields, fieldLocked);
         const body = buildSaveMailSettingsBody(draft, secrets, lockedKeys);
         const data = await saveEventMailSettings(eventId, body);
         applyResponse(data);
@@ -385,7 +364,7 @@ export const EventMailSettingsCard = forwardRef<
       return "noop";
     }
 
-    setValidationErrors([]);
+    setFieldErrors({});
     setRevertError(null);
     setConfirmRevertOpen(true);
     return "confirm_pending";
@@ -411,7 +390,7 @@ export const EventMailSettingsCard = forwardRef<
     setMode(savedMode);
     setDraft(savedDraft);
     setSecrets(emptySecretEdits());
-    setValidationErrors([]);
+    setFieldErrors({});
     dedicatedDraftSeededRef.current = false;
   };
 
@@ -431,10 +410,6 @@ export const EventMailSettingsCard = forwardRef<
   useEffect(() => {
     onSavingChange?.(saving);
   }, [saving, onSavingChange]);
-
-  useEffect(() => {
-    onValidationErrorsChange?.(validationErrors);
-  }, [validationErrors, onValidationErrorsChange]);
 
   // Org mode always tests the saved organization transport, never leftover edits from a
   // dedicated draft the admin switched away from (CodeRabbit review) — inherited -> dedicated
@@ -610,6 +585,7 @@ export const EventMailSettingsCard = forwardRef<
               draft={draft}
               fieldLocked={fieldLocked}
               updateDraft={updateDraft}
+              errors={fieldErrors}
               disabled={isArchived}
             />
           )}
@@ -622,6 +598,7 @@ export const EventMailSettingsCard = forwardRef<
               smtpPasswordField={apiData.fields.smtpPassword}
               smtpPasswordEdit={secrets.smtpPassword}
               updateSecrets={updateSecrets}
+              errors={fieldErrors}
               disabled={isArchived}
               onTestConnection={() => void handleTestConnection()}
               testing={probeTesting}
@@ -639,6 +616,7 @@ export const EventMailSettingsCard = forwardRef<
               graphClientSecretField={apiData.fields.graphClientSecret}
               graphClientSecretEdit={secrets.graphClientSecret}
               updateSecrets={updateSecrets}
+              errors={fieldErrors}
               disabled={isArchived}
             />
           )}
@@ -679,8 +657,6 @@ export const EventMailSettingsCard = forwardRef<
       ) : (
         embeddedFooter && (
           <SettingsFooter
-            validationErrors={validationErrors}
-            validationErrorsRef={validationErrorsRef}
             hasUnsavedChanges={hasUnsavedChanges}
             saving={saving}
             onReset={handleReset}

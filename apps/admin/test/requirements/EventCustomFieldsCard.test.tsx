@@ -87,7 +87,7 @@ describe("EventCustomFieldsCard", () => {
     expect(dietaryRow).not.toBeNull();
     expect(shirtRow).not.toBeNull();
 
-    expect(within(dietaryRow!).getByText("dietary")).toBeTruthy();
+    expect(within(dietaryRow!).queryByText("dietary")).toBeNull();
     expect(within(dietaryRow!).getByText("Allergies and meal preferences")).toBeTruthy();
     expect(within(dietaryRow!).getByLabelText("Text")).toBeTruthy();
     expect(within(dietaryRow!).getByText("No")).toBeTruthy();
@@ -95,6 +95,16 @@ describe("EventCustomFieldsCard", () => {
     expect(within(shirtRow!).getByText("Yes")).toBeTruthy();
     expect(within(shirtRow!).getByLabelText("Single choice")).toBeTruthy();
     expect(within(shirtRow!).queryByText("Single choice")).toBeNull();
+  });
+
+  it("disambiguates two fields that share a display label with their slug", () => {
+    const shirtA: EventCustomFieldDto = { ...dietaryField, id: "f-shirt-a", source_field: "shirt_size", label: "Shirt size" };
+    const shirtB: EventCustomFieldDto = { ...dietaryField, id: "f-shirt-b", source_field: "shirt_size_2", label: "Shirt size" };
+    renderCard([shirtA, shirtB]);
+
+    expect(screen.getByText("Shirt size (shirt_size)")).toBeTruthy();
+    expect(screen.getByText("Shirt size (shirt_size_2)")).toBeTruthy();
+    expect(screen.queryByText("Shirt size")).toBeNull();
   });
 
   it("shows the add-field modal with a header subtitle", () => {

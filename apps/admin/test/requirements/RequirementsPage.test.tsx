@@ -380,6 +380,20 @@ describe("RequirementsPage — Add item and Edit item", () => {
     expect(await screen.findByText("Physical badge at the door.")).toBeTruthy();
   });
 
+  it("disambiguates two items that share a display label with their key", async () => {
+    fetchEventItems.mockResolvedValue([
+      { ...badgeItem, id: "item-a", key: "vip_badge", label: "VIP" },
+      { ...badgeItem, id: "item-b", key: "vip_wristband", label: "VIP" },
+    ]);
+    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
+
+    renderPage();
+
+    expect(await screen.findByText("VIP (vip_badge)")).toBeTruthy();
+    expect(screen.getByText("VIP (vip_wristband)")).toBeTruthy();
+    expect(screen.queryByText("VIP")).toBeNull();
+  });
+
   it("clicking Add item again while the modal is already open closes it", async () => {
     fetchEventItems.mockResolvedValue([]);
     fetchOpsConfig.mockResolvedValue(makeOpsConfig());

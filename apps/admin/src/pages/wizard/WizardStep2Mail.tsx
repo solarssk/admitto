@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Button, Input, Notice, Switch, useToast } from "@admitto/ui";
+import { Button, Input, Switch, useToast } from "@admitto/ui";
 import {
   fetchMailSettings,
   saveMailSettings,
@@ -26,7 +26,7 @@ import {
   type SecretEdits,
 } from "../../settings/mailSettingsValidation.js";
 import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "../../settings/mailProviderOptions.js";
-import { draftFromFields } from "../../settings/mailTransportFormParts.js";
+import { draftFromFields, ValidationErrorList } from "../../settings/mailTransportFormParts.js";
 import { SearchableSelect } from "../../components/SearchableSelect.js";
 import { useDelayedLoading } from "../../hooks/useDelayedLoading.js";
 import { useWizard } from "./WizardContext.js";
@@ -112,9 +112,9 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
 
     const saveSettings = async (): Promise<boolean> => {
       if (!apiData) return false;
-      const validation = validateMailDraft(draft);
-      if (!validation.valid) {
-        setValidationErrors(validation.errors);
+      const errors = validateMailDraft(draft, fieldLocked);
+      if (Object.keys(errors).length > 0) {
+        setValidationErrors(Object.values(errors));
         return false;
       }
       setValidationErrors([]);
@@ -147,9 +147,9 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
     }));
 
     const handleTestSend = async () => {
-      const validation = validateMailDraft(draft);
-      if (!validation.valid) {
-        setValidationErrors(validation.errors);
+      const errors = validateMailDraft(draft, fieldLocked);
+      if (Object.keys(errors).length > 0) {
+        setValidationErrors(Object.values(errors));
         return;
       }
       if (draft.provider === "export_only" || !draft.provider) {
@@ -196,15 +196,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
 
         {!loading && apiData && (
           <>
-            {validationErrors.length > 0 && (
-              <Notice variant="error" role="alert">
-                <ul className="setup-wizard__error-list">
-                  {validationErrors.map((e) => (
-                    <li key={e}>{e}</li>
-                  ))}
-                </ul>
-              </Notice>
-            )}
+            <ValidationErrorList errors={validationErrors} className="setup-wizard__error-list" />
 
             <div className="setup-wizard__mail-form">
               <div className="at-field">

@@ -9,6 +9,7 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { EventCustomFieldDto, EventItemConfigDto, EventItemDto } from "../api/types.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { customFieldTypeIcon } from "./customFieldType.js";
+import { disambiguatedLabel, findDuplicateLabels } from "./duplicateLabels.js";
 import { DEFAULT_EVENT_ITEM_ICON, IconPicker, normalizeEventItemIconForForm } from "./IconPicker.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
@@ -100,6 +101,9 @@ export function EventItemDrawer({
   }, [items, item.id]);
   const headerIcon = form.icon ?? item.icon ?? DEFAULT_EVENT_ITEM_ICON;
   const dirty = JSON.stringify(form) !== JSON.stringify(toForm(item));
+  // Two custom fields can share a display label (only source_field is required to be unique) -
+  // append the slug to disambiguate, same trigger CSV export/import already use.
+  const duplicateFieldLabels = findDuplicateLabels(customFields.map((f) => f.label));
 
   useEffect(() => {
     setForm(toForm(item));
@@ -256,6 +260,11 @@ export function EventItemDrawer({
                       const checked = form.content_fields.includes(field.source_field);
                       const claimedBy = fieldOwners.get(field.source_field);
                       const disabled = !checked && !!claimedBy;
+                      const label = disambiguatedLabel(
+                        field.label,
+                        field.source_field,
+                        duplicateFieldLabels,
+                      );
                       return (
                         <Tooltip
                           key={field.id}
@@ -269,17 +278,14 @@ export function EventItemDrawer({
                           >
                             <input
                               type="checkbox"
-                              aria-label={field.label}
+                              aria-label={label}
                               checked={checked}
                               disabled={disabled}
                               onChange={(e) => toggleContentField(field.source_field, e.target.checked)}
                             />
                             <i className={`ti ${customFieldTypeIcon(field.type)}`} aria-hidden="true" />
                             <div className="requirements-item-info">
-                              <div className="requirements-item-name">{field.label}</div>
-                              <div className="requirements-item-id">
-                                <code>{field.source_field}</code>
-                              </div>
+                              <div className="requirements-item-name">{label}</div>
                             </div>
                           </label>
                         </Tooltip>
