@@ -48,6 +48,10 @@ function fieldLocked(source: SettingSource): boolean {
   return source === "env";
 }
 
+function overThreshold(value: number | null, threshold: number, message: string): string | undefined {
+  return value !== null && value > threshold ? message : undefined;
+}
+
 function SecurityFieldWarning({ message }: Readonly<{ message: string }>) {
   return (
     <Tooltip content={message} className="security-field-warning-trigger">
@@ -267,11 +271,7 @@ export function SecurityPanel() {
             max={720}
             savedValue={savedSessionTtlH}
             source={settings.session_ttl_ms.source}
-            warningMessage={
-              sessionTtlH !== null && sessionTtlH > ABSOLUTE_LIFETIME_WARNING_HOURS
-                ? ABSOLUTE_LIFETIME_WARNING
-                : undefined
-            }
+            warningMessage={overThreshold(sessionTtlH, ABSOLUTE_LIFETIME_WARNING_HOURS, ABSOLUTE_LIFETIME_WARNING)}
             onChange={(sessionTtlH) => setDraft({ ...draft, sessionTtlH })}
           />
 
@@ -284,11 +284,7 @@ export function SecurityPanel() {
             max={240}
             savedValue={savedSessionIdleM}
             source={settings.session_idle_timeout_ms.source}
-            warningMessage={
-              sessionIdleM !== null && sessionIdleM > ADMIN_IDLE_WARNING_MINUTES
-                ? ADMIN_IDLE_WARNING
-                : undefined
-            }
+            warningMessage={overThreshold(sessionIdleM, ADMIN_IDLE_WARNING_MINUTES, ADMIN_IDLE_WARNING)}
             onChange={(sessionIdleM) => setDraft({ ...draft, sessionIdleM })}
           />
 
@@ -301,11 +297,7 @@ export function SecurityPanel() {
             max={168}
             savedValue={savedOpTtlH}
             source={settings.operator_session_ttl_ms.source}
-            warningMessage={
-              opTtlH !== null && opTtlH > ABSOLUTE_LIFETIME_WARNING_HOURS
-                ? ABSOLUTE_LIFETIME_WARNING
-                : undefined
-            }
+            warningMessage={overThreshold(opTtlH, ABSOLUTE_LIFETIME_WARNING_HOURS, ABSOLUTE_LIFETIME_WARNING)}
             onChange={(opTtlH) => setDraft({ ...draft, opTtlH })}
           />
 
@@ -318,11 +310,7 @@ export function SecurityPanel() {
             max={480}
             savedValue={savedOpIdleM}
             source={settings.operator_session_idle_timeout_ms.source}
-            warningMessage={
-              opIdleM !== null && opIdleM > OPERATOR_IDLE_WARNING_MINUTES
-                ? OPERATOR_IDLE_WARNING
-                : undefined
-            }
+            warningMessage={overThreshold(opIdleM, OPERATOR_IDLE_WARNING_MINUTES, OPERATOR_IDLE_WARNING)}
             onChange={(opIdleM) => setDraft({ ...draft, opIdleM })}
           />
 
