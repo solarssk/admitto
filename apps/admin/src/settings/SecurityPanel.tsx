@@ -378,6 +378,7 @@ export function SecurityPanel() {
             <div className="security-settings-row__control">
               <Switch
                 id="security-webauthn-enabled"
+                aria-label="Passkey / security key sign-in"
                 label={draft.webauthnEnabled ? "On" : "Off"}
                 checked={draft.webauthnEnabled}
                 disabled={webauthnLocked}
@@ -398,6 +399,7 @@ export function SecurityPanel() {
             <div className="security-settings-row__control">
               <Switch
                 id="security-passkey-login-enabled"
+                aria-label="Passkey sign-in on the login page"
                 label={draft.passkeyLoginEnabled ? "On" : "Off"}
                 checked={draft.passkeyLoginEnabled}
                 disabled={passkeyLoginLocked || !draft.webauthnEnabled}
