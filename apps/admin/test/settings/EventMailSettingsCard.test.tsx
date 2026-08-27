@@ -435,6 +435,7 @@ describe("EventMailSettingsCard — switching to dedicated", () => {
     await waitFor(() => {
       expect(screen.getByText("SMTP host is required.")).toBeTruthy();
     });
+    expect(screen.getByTestId("at-toast").textContent).toMatch(/Please fix the highlighted fields/);
     expect(mockSave).not.toHaveBeenCalled();
   });
 

@@ -1135,10 +1135,8 @@ export function EventSettingsPage() {
   const [mailSaving, setMailSaving] = useState(false);
   const [bounceDirty, setBounceDirty] = useState(false);
   const [bounceSaving, setBounceSaving] = useState(false);
-  const [mailValidationErrors, setMailValidationErrors] = useState<string[]>([]);
   const mailCardRef = useRef<EventMailSettingsCardHandle>(null);
   const bouncePanelRef = useRef<EventBounceIngestPanelHandle>(null);
-  const mailTabValidationErrorsRef = useRef<HTMLUListElement>(null);
   // Archiving and the bulk Danger Zone actions below reload `event` but never touch
   // EventMailSettingsCard's own internal draft/secrets state, so a pending mail edit would
   // otherwise survive them despite the confirm dialogs promising unsaved changes are lost
@@ -1780,8 +1778,6 @@ export function EventSettingsPage() {
             onDirtyChange={setMailDirty}
             onSavingChange={setMailSaving}
             onSaved={() => bouncePanelRef.current?.refresh()}
-            onValidationErrorsChange={setMailValidationErrors}
-            validationErrorsListRef={mailTabValidationErrorsRef}
           >
             <EventBounceIngestPanel
               key={`bounce-${mailCardResetKey}`}
@@ -1795,8 +1791,6 @@ export function EventSettingsPage() {
           </EventMailSettingsCard>
           {!isArchived && (
             <SettingsFooter
-              validationErrors={mailValidationErrors}
-              validationErrorsRef={mailTabValidationErrorsRef}
               hasUnsavedChanges={mailTabDirty}
               saving={mailTabSaving}
               onReset={() => {
