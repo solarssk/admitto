@@ -1,0 +1,154 @@
+/* Structured options editor for a select-type EventCustomField (replaces the old "one per
+   line" textarea) - a row per option, with a usage-count badge, drag-to-reorder handle, inline
+   rename warning, and an in-row delete confirmation. Column widths use CSS subgrid so the
+   handle/input/badge/delete stay aligned across every row regardless of label length - a plain
+   per-row grid would size each row's "auto" columns independently. */
+
+.options-editor__list {
+  display: grid;
+  grid-template-columns: var(--control-h-sm) 1fr auto auto;
+  gap: var(--space-1);
+  max-height: 17rem;
+  overflow-y: auto;
+  margin-bottom: var(--space-2);
+  padding-right: var(--space-1);
+}
+
+.options-editor__row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1);
+  border-radius: var(--radius);
+  border: var(--border-width) solid transparent;
+  background: var(--surface-card);
+  touch-action: pan-y;
+  transition: transform var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+
+.options-editor__row--warning {
+  background: var(--status-warn-tint);
+  border-color: var(--status-warn);
+}
+
+.options-editor__row--dragging {
+  position: relative;
+  z-index: 1;
+  transition: none;
+  box-shadow: var(--shadow-md);
+}
+
+.options-editor__handle {
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-disabled);
+  cursor: grab;
+  touch-action: none;
+}
+
+.options-editor__handle:hover,
+.options-editor__handle:focus-visible {
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+}
+
+.options-editor__row--dragging .options-editor__handle {
+  cursor: grabbing;
+}
+
+.options-editor__input {
+  height: var(--control-h-sm);
+}
+
+.options-editor__usage {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-2);
+  white-space: nowrap;
+  justify-self: end;
+}
+
+.options-editor__usage--unused {
+  color: var(--text-disabled);
+  background: transparent;
+  border-style: dashed;
+}
+
+.options-editor__warning {
+  grid-column: 2 / span 3;
+  font-size: var(--fs-xs);
+  color: var(--status-warn-fg);
+  padding: 0 var(--space-1) var(--space-1);
+}
+
+.options-editor__confirm {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  background: var(--status-error-tint);
+  border: var(--border-width) solid var(--status-error);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-xs);
+  color: var(--status-error-fg);
+}
+
+.options-editor__confirm-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.options-editor__confirm-btn {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  border: var(--border-width) solid var(--status-error);
+  background: transparent;
+  color: var(--status-error-fg);
+  cursor: pointer;
+}
+
+.options-editor__confirm-btn--danger {
+  background: var(--status-error);
+  color: var(--text-on-primary);
+  border-color: var(--status-error);
+}
+
+.options-editor__add {
+  width: 100%;
+  padding: var(--space-2);
+  border: var(--border-width) dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.options-editor__add:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-tint);
+}
+
+.options-editor__add:disabled,
+.options-editor__handle:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
