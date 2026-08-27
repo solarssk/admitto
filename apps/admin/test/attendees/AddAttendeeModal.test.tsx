@@ -112,6 +112,37 @@ describe("AddAttendeeModal", () => {
     });
   });
 
+  it.each([
+    ["unknown_custom_data_field", undefined, "One of the attribute fields was removed from this event. Refresh and try again."],
+    ["required_custom_data_field_missing", "dietary", "Dietary is required."],
+    ["validation_failed", "dietary", "Dietary has an invalid value."],
+  ])("explains the %s custom-data validation response inline for the specific field", async (code, field, message) => {
+    mockFetchEventCustomFields.mockResolvedValueOnce([
+      {
+        id: "fld-1",
+        source_field: "dietary",
+        label: "Dietary",
+        description: null,
+        type: "text",
+        required: false,
+        options: null,
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    mockCreateAttendee.mockRejectedValueOnce(new ApiError(400, code, code, undefined, field));
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan" } });
+    fireEvent.change(screen.getByLabelText("Last name *"), { target: { value: "Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
+    await waitFor(() => {
+      expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      );
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add attendee" }));
+    expect(await screen.findByText(message)).toBeTruthy();
+  });
+
   it("populates the Ticket type dropdown from the event's catalog and submits the selected key (batch 04 / #351)", async () => {
     vi.mocked(fetchTicketTypes).mockResolvedValueOnce([
       { id: "tt-1", key: "vip", label: "VIP", color: "purple", sort_order: 0, attendee_count: 0, created_at: "2026-01-01T00:00:00.000Z" },

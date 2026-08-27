@@ -188,12 +188,13 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
   });
 
   it.each([
-    ["unknown_custom_data_field", "Event configuration changed. Reload this page to edit attributes."],
-    ["required_custom_data_field_missing", "Could not save attribute fields. Check required values and options."],
-  ])("explains the %s custom-data validation response inline", async (code, message) => {
+    ["unknown_custom_data_field", undefined, "One of the attribute fields was removed from this event. Refresh and try again."],
+    ["required_custom_data_field_missing", "dietary", "Dietary is required."],
+    ["validation_failed", "dietary", "Dietary has an invalid value."],
+  ])("explains the %s custom-data validation response inline for the specific field", async (code, field, message) => {
     const { ApiError } = await import("../../src/api/client.js");
     mockLoad(baseDetail());
-    updateAttendee.mockRejectedValueOnce(new ApiError(400, code, code));
+    updateAttendee.mockRejectedValueOnce(new ApiError(400, code, code, undefined, field));
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
@@ -202,6 +203,22 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText(message)).toBeTruthy();
+  });
+
+  it("falls back to a generic message when the server doesn't identify a field", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockLoad(baseDetail());
+    updateAttendee.mockRejectedValueOnce(
+      new ApiError(400, "required_custom_data_field_missing", "required_custom_data_field_missing"),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Dietary"), { target: { value: "vegetarian" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Check the attribute fields and try again.")).toBeTruthy();
   });
 
   it("opens the Resend ticket panel", async () => {

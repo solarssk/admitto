@@ -67,6 +67,7 @@ import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
 import {
   allCustomDataEntries,
+  customDataApiErrorMessage,
   readCustomDataField,
   validateCustomFieldsForm,
 } from "../attendees/customData.js";
@@ -1415,8 +1416,10 @@ type SaveErrorOutcome =
   | { kind: "message"; message: string };
 
 /** Classifies a failed profile save into the UI action it should trigger — extracted out of
- * handleSave (SonarCloud S3776). */
-function classifySaveError(err: unknown): SaveErrorOutcome {
+ * handleSave (SonarCloud S3776). Shares its custom-data-error copy with AddAttendeeModal via
+ * `customDataApiErrorMessage` (docs/dev/error-and-notice-copy.md rule 1: one message per cause,
+ * not the same generic string reimplemented at every call site). */
+function classifySaveError(err: unknown, attributeFields: CustomDataFieldDef[]): SaveErrorOutcome {
   if (err instanceof ApiError && err.status === 409) {
     if (hasApiErrorCode(err, "email_conflict")) return { kind: "email_conflict" };
     if (hasApiErrorCode(err, "stale_write")) return { kind: "stale_write" };
@@ -1431,9 +1434,9 @@ function classifySaveError(err: unknown): SaveErrorOutcome {
   ) {
     return {
       kind: "message",
-      message: hasApiErrorCode(err, "unknown_custom_data_field")
-        ? "Event configuration changed. Reload this page to edit attributes."
-        : "Could not save attribute fields. Check required values and options.",
+      message:
+        customDataApiErrorMessage(attributeFields, err) ??
+        "Check the attribute fields and try again.",
     };
   }
   return { kind: "message", message: operatorApiErrorMessage(err, "Failed to save changes.") };
@@ -1731,7 +1734,7 @@ export function AttendeeDetailPage() {
       addToast("Profile saved", "success");
     } catch (err) {
       if (!isStillSelected(target)) return;
-      const outcome = classifySaveError(err);
+      const outcome = classifySaveError(err, attributeFields);
       if (outcome.kind === "email_conflict") {
         setEmailConflict(true);
       } else if (outcome.kind === "stale_write") {

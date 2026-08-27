@@ -5,6 +5,7 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { AttendeeDetailDto, TicketTypeDto } from "../api/types.js";
 import { CustomDataFieldInput } from "./CustomDataFieldInput.js";
 import {
+  customDataApiErrorMessage,
   fetchAttendeeCustomFields,
   initialCustomFieldValues,
   validateCustomFieldsForm,
@@ -173,9 +174,14 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
       } else if (
         err instanceof ApiError &&
         err.status === 400 &&
-        (hasApiErrorCode(err, "required_custom_data_field_missing") || hasApiErrorCode(err, "validation_failed"))
+        (hasApiErrorCode(err, "required_custom_data_field_missing") ||
+          hasApiErrorCode(err, "unknown_custom_data_field") ||
+          hasApiErrorCode(err, "validation_failed"))
       ) {
-        setError("Check required attribute fields and option values.");
+        setError(
+          customDataApiErrorMessage(attributeFields, err) ??
+            "Check the attribute fields and try again.",
+        );
       } else {
         setError(operatorApiErrorMessage(err, "Failed to add attendee. Try again."));
       }

@@ -119,6 +119,6 @@ describe("handleExportSelectedAttendees artifact failures", () => {
 
     const res = await handleExportSelectedAttendees(c as never, db as never);
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "unknown_custom_data_field" });
+    expect(await res.json()).toEqual({ error: "unknown_custom_data_field", field: "sock_size" });
   });
 });

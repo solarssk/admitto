@@ -162,13 +162,17 @@ export type EventFullMeta = {
   projected?: number;
 };
 
-/** Thrown when an admin API request fails; may include structured `event_full` metadata on 409. */
+/** Thrown when an admin API request fails; may include structured `event_full` metadata on 409, or
+ * a `field` slug on 400s where the server identified which field caused the error (see
+ * docs/dev/error-and-notice-copy.md rule 2). Callers use this to render a per-field message
+ * instead of a blob. */
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
     public readonly code?: string,
     public readonly eventFull?: EventFullMeta,
+    public readonly field?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -179,6 +183,7 @@ type ApiErrorBody = {
   error?: unknown;
   detail?: unknown;
   code?: unknown;
+  field?: unknown;
   capacity?: number;
   current?: number;
   incoming?: number;
@@ -220,15 +225,17 @@ async function parseJson<T>(res: Response): Promise<T> {
     let message = res.statusText || `HTTP ${res.status}`;
     let code: string | undefined;
     let eventFull: EventFullMeta | undefined;
+    let field: string | undefined;
     try {
       const body = (await res.json()) as ApiErrorBody;
       message = messageFromApiErrorBody(body) ?? message;
       code = apiErrorCodeFromBody(body);
       eventFull = eventFullFromBody(body);
+      field = stringField(body.field);
     } catch {
       /* ignore */
     }
-    throw new ApiError(res.status, message, code, eventFull);
+    throw new ApiError(res.status, message, code, eventFull, field);
   }
   return (await res.json()) as T;
 }
