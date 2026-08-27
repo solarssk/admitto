@@ -40,6 +40,7 @@ vi.mock("react-router", async (importOriginal) => {
 
 const updateAttendee = vi.fn();
 const resendTicket = vi.fn();
+const fetchEventCustomFields = vi.fn();
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -49,6 +50,10 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     resendTicket: (...args: unknown[]) => resendTicket(...args),
     fetchAttendeeDetail: vi.fn(),
     revokeAttendeeCheckIn: vi.fn(),
+    // classifySaveError re-fetches field defs on a custom-data validation error (race with
+    // another admin's concurrent edit) - defaults to the same fields the page already loaded
+    // with, individual tests override when they need to simulate a since-changed definition.
+    fetchEventCustomFields: (...args: unknown[]) => fetchEventCustomFields(...args),
     fetchTicketTypes: vi.fn().mockResolvedValue([
       { id: "tt-1", key: "vip", label: "VIP", color: "purple", sort_order: 0, attendee_count: 1, created_at: "2026-01-01T00:00:00.000Z" },
       { id: "tt-2", key: "standard", label: "Standard", color: "gray", sort_order: 1, attendee_count: 0, created_at: "2026-01-01T00:00:00.000Z" },
@@ -85,6 +90,19 @@ function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
 
 const attributeFields = [{ label: "Dietary", source_field: "dietary", type: "text" as const }];
 
+// Full EventCustomFieldDto shape fetchAttendeeCustomFields resolves - only source_field/label/
+// type/options actually matter to customDataApiErrorMessage, the rest just satisfy the type.
+const dietaryCustomField = {
+  id: "fld-1",
+  source_field: "dietary",
+  label: "Dietary",
+  description: null,
+  type: "text" as const,
+  required: false,
+  options: null,
+  created_at: "2026-01-01T00:00:00.000Z",
+};
+
 function mockLoad(detail: ReturnType<typeof baseDetail>) {
   loadAttendeeDetailData.mockResolvedValueOnce({ detail, attributeFields, itemsWarning: null });
 }
@@ -101,6 +119,7 @@ function renderPage() {
 
 beforeEach(() => {
   mockMatchMedia(true);
+  fetchEventCustomFields.mockResolvedValue([dietaryCustomField]);
 });
 
 afterEach(() => {
@@ -203,6 +222,28 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText(message)).toBeTruthy();
+  });
+
+  it("re-fetches field defs before describing a validation failure, so a since-removed option isn't quoted as still valid", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    mockLoad(baseDetail());
+    // Loaded with "S"/"M"/"L"; another admin removes "L" before this save lands, so the server
+    // rejects it against its now-current ["S", "M"] - the message must reflect that.
+    fetchEventCustomFields.mockResolvedValue([
+      { ...dietaryCustomField, type: "select", options: ["S", "M"] },
+    ]);
+    updateAttendee.mockRejectedValueOnce(
+      new ApiError(400, "validation_failed", "validation_failed", undefined, "dietary"),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Dietary"), { target: { value: "L" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Dietary must be one of: S, M.")).toBeTruthy();
+    expect(fetchEventCustomFields).toHaveBeenCalled();
   });
 
   it("falls back to a generic message when the server doesn't identify a field", async () => {

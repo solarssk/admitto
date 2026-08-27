@@ -1323,10 +1323,24 @@ function computeRsvpChange(
  * error payload, keeping the field slug so the client can render a per-field message instead of a
  * blob (docs/dev/error-and-notice-copy.md rule 2). `invalid_custom_data_value` keeps the existing
  * `validation_failed` wire code for compatibility, only the field slug is new. */
+/** The only error messages packages/tickets/src/validate-custom-data.ts actually throws, all in
+ * `<code>:<field_slug>` form. Anything else caught here (a DB error from loadEventCustomDataFields,
+ * an export failure, ...) must never be parsed for a field - its message can contain a colon for
+ * unrelated reasons (a host:port, a stack frame) and isn't safe to echo into the response body. */
+const CUSTOM_DATA_ERROR_CODES = new Set([
+  "unknown_custom_data_field",
+  "required_custom_data_field_missing",
+  "invalid_custom_data_value",
+  "validation_failed",
+]);
+
 function customDataErrorPayload(err: unknown): { error: string; field?: string } {
   const message = err instanceof Error ? err.message : "";
   const separator = message.indexOf(":");
   const code = separator === -1 ? message : message.slice(0, separator);
+  if (!CUSTOM_DATA_ERROR_CODES.has(code)) {
+    return { error: "validation_failed" };
+  }
   const field = separator === -1 ? undefined : message.slice(separator + 1) || undefined;
   if (code === "unknown_custom_data_field" || code === "required_custom_data_field_missing") {
     return field ? { error: code, field } : { error: code };

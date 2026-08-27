@@ -178,8 +178,14 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
           hasApiErrorCode(err, "unknown_custom_data_field") ||
           hasApiErrorCode(err, "validation_failed"))
       ) {
+        // Another admin may have changed this field's options/type between this modal's load and
+        // this submit - the server just validated against its current config, so re-fetch before
+        // describing the failure instead of quoting the (possibly now-wrong) options this form
+        // loaded with. Falls back to what's already in state if the re-fetch itself fails.
+        const freshFields = await fetchAttendeeCustomFields(eventId).catch(() => attributeFields);
+        setAttributeFields(freshFields);
         setError(
-          customDataApiErrorMessage(attributeFields, err) ??
+          customDataApiErrorMessage(freshFields, err) ??
             "Check the attribute fields and try again.",
         );
       } else {
