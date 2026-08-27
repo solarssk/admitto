@@ -103,7 +103,7 @@ import {
 } from "./auth/mfa-rate-limit.js";
 import { createCrossSitePostGuard } from "./auth/same-origin-post.js";
 import { createCheckinStreamConcurrencyLimit } from "./checkin-stream-limit.js";
-import { handleLogin, handleLogout, handleMe, handlePostSessionDeviceLabel, handleMfaVerify, handlePostMfaWebauthnBegin, handlePostMfaWebauthnVerify, handlePostMfaRememberDevice, handlePostMfaWebauthnEnrollBegin, handlePostMfaWebauthnEnrollFinish, handleTotpEnroll, handleTotpConfirm, handleTotpBackupCodesComplete } from "./auth/routes.js";
+import { handleLogin, handleLogout, handleMe, handlePostSessionDeviceLabel, handleMfaVerify, handlePostMfaWebauthnBegin, handlePostMfaWebauthnVerify, handlePostMfaRememberDevice, handlePostMfaWebauthnEnrollBegin, handlePostMfaWebauthnEnrollFinish, handleTotpEnroll, handleTotpConfirm, handleTotpBackupCodesComplete, handlePostPasskeyLoginBegin, handlePostPasskeyLoginFinish } from "./auth/routes.js";
 import {
   handleGetMfaEnroll,
   handleGetMfaEnrollBackupCodes,
@@ -577,6 +577,20 @@ export function createApp(options: CreateAppOptions = {}) {
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, { format: "json" });
   const loginRateLimitHtml = createLoginRateLimitMiddleware(rateLimitStore, { format: "text" });
+  // Own buckets, not loginRateLimitJson - a passkey-login round trip has no session and no
+  // email to also throttle per-account against. Begin and finish each get their own bucket
+  // (see policies.ts's "auth:passkey-login-begin-ip" / "-finish-ip") rather than sharing one -
+  // a shared bucket meant every successful sign-in spent 2 of its 10 hits, and a cancelled or
+  // retried ceremony spent more, so a handful of staff signing in behind the same office/VPN/NAT
+  // address within a minute could lock everyone else out even with every ceremony succeeding.
+  const passkeyLoginBeginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, {
+    format: "json",
+    policyKey: "auth:passkey-login-begin-ip",
+  });
+  const passkeyLoginFinishRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, {
+    format: "json",
+    policyKey: "auth:passkey-login-finish-ip",
+  });
   const accountIpRateLimit = rateLimit(rateLimitStore, "auth:account-ip");
   const oidcAuthRateLimit = rateLimit(rateLimitStore, "auth:oidc");
   const mfaEnrollRateLimitJson = createMfaEnrollRateLimitMiddleware(rateLimitStore, { format: "json" });
@@ -2028,6 +2042,18 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.post("/api/auth/mfa/remember-device", jsonPostCsrf, requireSession, (c) =>
     handlePostMfaRememberDevice(c, db),
+  );
+  // No requirePartialSession/requireSession here - a discoverable-credential passkey login is
+  // the sole first factor, there is no session (partial or otherwise) until it succeeds.
+  app.post("/api/auth/login/webauthn/begin", jsonPostCsrf, passkeyLoginBeginRateLimitJson, (c) =>
+    handlePostPasskeyLoginBegin(c, db, mailInjectedBaseUrl),
+  );
+  app.post(
+    "/api/auth/login/webauthn/finish",
+    jsonPostCsrf,
+    passkeyLoginFinishRateLimitJson,
+    webauthnBodyLimit,
+    (c) => handlePostPasskeyLoginFinish(c, db, mailInjectedBaseUrl),
   );
   app.post(
     "/api/auth/mfa/webauthn/register/begin",

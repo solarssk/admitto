@@ -195,6 +195,7 @@ export type RateLimitScope =
   | "admin_mail_diagnostics"
   | "admin_event_mail_diagnostics"
   | "admin_weather_test"
+  | "passkey_login_ip"
   | "admin_bulk_send_cancel";
 
 /** Emit `auth.login.success` as JSON to stdout (no password/token fields) and persist a durable
@@ -202,18 +203,23 @@ export type RateLimitScope =
  * internal accountability case this log exists for, matching the already-unredacted actor
  * identification in the per-org Audit log (`AdminAuditLog`, resolved via `actor_email` in
  * audit-routes.ts). */
-export async function logLoginSuccess(db: Db, ctx: LoginAuditContext & { userId: string }): Promise<void> {
+export async function logLoginSuccess(
+  db: Db,
+  ctx: LoginAuditContext & { userId: string; method?: "manual" | "passkey" },
+): Promise<void> {
+  const method = ctx.method ?? "manual";
   emitAuditEvent("auth.login.success", {
     email: ctx.email,
     ip: ctx.ip ?? null,
     userAgent: ctx.userAgent ?? null,
+    method,
   });
   await writeSecurityAuditLog(db, {
     event_type: "auth.login.success",
     user_id: ctx.userId,
     ip: ctx.ip ?? null,
     actor_timezone: ctx.timezone ?? null,
-    metadata: { userAgent: ctx.userAgent ?? null },
+    metadata: { userAgent: ctx.userAgent ?? null, method },
   });
 }
 

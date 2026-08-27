@@ -14,6 +14,7 @@ import {
   getInstanceUrl,
   getCspTrustedOrigins,
   getWebauthnEnabled,
+  getPasskeyLoginEnabled,
   validateCspTrustedOrigins,
   CspTrustedOriginsError,
   MAX_CSP_TRUSTED_ORIGINS,
@@ -26,6 +27,7 @@ import {
   SETTING_INSTANCE_URL,
   SETTING_CSP_TRUSTED_ORIGINS,
   SETTING_WEBAUTHN_ENABLED,
+  SETTING_PASSKEY_LOGIN_ENABLED,
 } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog } from "@admitto/shared/system-log";
@@ -59,6 +61,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     instanceUrl,
     cspTrustedOrigins,
     webauthnEnabled,
+    passkeyLoginEnabled,
     adminTtlSrc,
     opTtlSrc,
     adminIdleSrc,
@@ -68,6 +71,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     instanceUrlSrc,
     cspTrustedOriginsSrc,
     webauthnEnabledSrc,
+    passkeyLoginEnabledSrc,
   ] = await Promise.all([
     getSessionTtlAdminMs(db),
     getSessionTtlOperatorMs(db),
@@ -78,6 +82,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     getInstanceUrl(db),
     getCspTrustedOrigins(db),
     getWebauthnEnabled(db),
+    getPasskeyLoginEnabled(db),
     getSettingSource(db, SETTING_SESSION_TTL),
     getSettingSource(db, SETTING_OPERATOR_SESSION_TTL),
     getSettingSource(db, SETTING_SESSION_IDLE_TIMEOUT),
@@ -87,6 +92,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     getSettingSource(db, SETTING_INSTANCE_URL),
     getSettingSource(db, SETTING_CSP_TRUSTED_ORIGINS),
     getSettingSource(db, SETTING_WEBAUTHN_ENABLED),
+    getSettingSource(db, SETTING_PASSKEY_LOGIN_ENABLED),
   ]);
 
   return {
@@ -99,6 +105,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     instance_url: { value: instanceUrl, source: instanceUrlSrc },
     csp_trusted_origins: { value: cspTrustedOrigins, source: cspTrustedOriginsSrc },
     webauthn_enabled: { value: webauthnEnabled, source: webauthnEnabledSrc },
+    passkey_login_enabled: { value: passkeyLoginEnabled, source: passkeyLoginEnabledSrc },
   };
 }
 
@@ -166,6 +173,7 @@ const patchSchema = z
     instance_url: instanceUrlSchema.nullable().optional(),
     csp_trusted_origins: cspTrustedOriginsSchema.nullable().optional(),
     webauthn_enabled: z.boolean().nullable().optional(),
+    passkey_login_enabled: z.boolean().nullable().optional(),
   })
   .strict();
 
@@ -179,6 +187,7 @@ const KEY_MAP = {
   instance_url: SETTING_INSTANCE_URL,
   csp_trusted_origins: SETTING_CSP_TRUSTED_ORIGINS,
   webauthn_enabled: SETTING_WEBAUTHN_ENABLED,
+  passkey_login_enabled: SETTING_PASSKEY_LOGIN_ENABLED,
 } as const satisfies Record<string, string>;
 
 /** Idle-timeout field paired with the absolute-lifetime field it must not exceed. */

@@ -1252,8 +1252,9 @@ const webauthnRegisterBeginSchema = z.object({ attachment: webauthnAttachmentSch
 
 /**
  * POST /api/account/mfa/webauthn/register/begin, start a passkey/security-key registration
- * ceremony (local-password accounts only, same gate as TOTP, this app never treats WebAuthn as
- * a passwordless primary login method, only a second factor alongside a local password).
+ * ceremony (local-password accounts only, same gate as TOTP). Registering here is what makes a
+ * credential eligible for both the second-factor step-up flow and, when enabled in Settings, the
+ * discoverable-credential first-factor login at `/api/auth/login/webauthn/*`.
  */
 export async function handlePostAccountWebauthnRegisterBegin(
   c: Context,
