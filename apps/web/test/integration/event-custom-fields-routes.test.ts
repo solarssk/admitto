@@ -34,6 +34,8 @@ const EXTRA_FIXTURE_EVENT_IDS = ["evt-custom-fields-limit", "evt-custom-fields-l
 
 async function seed(client: PrismaClient) {
   const fixtureEventIds = [EVENT_CF, EVENT_CF_OTHER, ...EXTRA_FIXTURE_EVENT_IDS];
+  // Attendee has an FK to Event, so this must run before the event.deleteMany below.
+  await client.attendee.deleteMany({ where: { event_id: { in: fixtureEventIds } } });
   await client.eventItem.deleteMany({ where: { event_id: { in: fixtureEventIds } } });
   await client.eventCustomField.deleteMany({ where: { event_id: { in: fixtureEventIds } } });
   await client.roleAssignment.deleteMany({ where: { scope_id: { in: [ORG_CF, EVENT_CF, EVENT_CF_OTHER] } } });
@@ -511,6 +513,95 @@ describe("PATCH /api/admin/events/:eventId/custom-fields/:fieldId", () => {
       headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
       body: JSON.stringify({ label: "Hijacked" }),
     });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("GET /api/admin/events/:eventId/custom-fields/:fieldId/option-usage", () => {
+  it("returns 403 for operator", async () => {
+    const created = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF, source_field: "usage_op", label: "Usage", type: "select", options: ["S", "M"] },
+    });
+    const res = await app.request(
+      `/api/admin/events/${EVENT_CF}/custom-fields/${created.id}/option-usage`,
+      { headers: { Cookie: opCookie } },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("groups attendees by their current custom_data value", async () => {
+    const created = await prisma.eventCustomField.create({
+      data: {
+        event_id: EVENT_CF,
+        source_field: "usage_shirt",
+        label: "Shirt size",
+        type: "select",
+        options: ["S", "M", "L"],
+      },
+    });
+    await prisma.attendee.createMany({
+      data: [
+        { event_id: EVENT_CF, email: "usage1@example.com", name: "Usage One", custom_data: { usage_shirt: "M" } },
+        { event_id: EVENT_CF, email: "usage2@example.com", name: "Usage Two", custom_data: { usage_shirt: "M" } },
+        { event_id: EVENT_CF, email: "usage3@example.com", name: "Usage Three", custom_data: { usage_shirt: "S" } },
+        // No usage_shirt at all - must not be counted as any value.
+        { event_id: EVENT_CF, email: "usage4@example.com", name: "Usage Four", custom_data: { other_field: "x" } },
+      ],
+    });
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_CF}/custom-fields/${created.id}/option-usage`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { counts: Record<string, number> };
+    expect(body.counts).toEqual({ M: 2, S: 1 });
+    // "L" has zero attendees - simply absent, not present with a 0.
+    expect(body.counts.L).toBeUndefined();
+  });
+
+  it("never counts an attendee from a different event", async () => {
+    const created = await prisma.eventCustomField.create({
+      data: {
+        event_id: EVENT_CF,
+        source_field: "usage_isolated",
+        label: "Isolated",
+        type: "select",
+        options: ["A"],
+      },
+    });
+    await prisma.attendee.create({
+      data: { event_id: EVENT_CF_OTHER, email: "usage-other@example.com", name: "Other Event", custom_data: { usage_isolated: "A" } },
+    });
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_CF}/custom-fields/${created.id}/option-usage`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { counts: Record<string, number> };
+    expect(body.counts).toEqual({});
+  });
+
+  it("rejects a non-select field", async () => {
+    const created = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF, source_field: "usage_text", label: "Text field" },
+    });
+    const res = await app.request(
+      `/api/admin/events/${EVENT_CF}/custom-fields/${created.id}/option-usage`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 403 for a field belonging to a different event", async () => {
+    const created = await prisma.eventCustomField.create({
+      data: { event_id: EVENT_CF_OTHER, source_field: "usage_other_evt", label: "Other", type: "select", options: ["A"] },
+    });
+    const res = await app.request(
+      `/api/admin/events/${EVENT_CF}/custom-fields/${created.id}/option-usage`,
+      { headers: { Cookie: adminCookie } },
+    );
     expect(res.status).toBe(403);
   });
 });
