@@ -194,7 +194,8 @@ export type RateLimitScope =
   | "admin_mail_test_recipient"
   | "admin_mail_diagnostics"
   | "admin_event_mail_diagnostics"
-  | "admin_weather_test";
+  | "admin_weather_test"
+  | "admin_bulk_send_cancel";
 
 /** Emit `auth.login.success` as JSON to stdout (no password/token fields) and persist a durable
  * `SecurityAuditLog` row. Full email, not redacted - staff/operator sign-in is exactly the

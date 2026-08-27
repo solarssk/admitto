@@ -51,5 +51,17 @@ describe("STATUS_MAP", () => {
     for (const key of ["queued", "accepted", "sent", "delivered", "failed", "rejected", "bounced"]) {
       expect(STATUS_MAP[key]).toBeDefined();
     }
+    // "cancelled" is deliberately excluded from this list, even though it's a valid
+    // EmailDeliveryStatus value - that raw key already belongs to the unrelated attendee/RSVP
+    // domain (error/red, see "covers all attendee statuses" above). Callers must remap an
+    // EmailDelivery "cancelled" status to "mail_cancelled" before resolving it (see
+    // deliveryStatusBadgeKey, apps/admin/src/communication/delivery-format.ts) - asserted below.
+  });
+
+  it("gives EmailDelivery's cancelled status its own neutral tone, distinct from attendee/RSVP cancellation", () => {
+    expect(resolveStatusMeta("mail_cancelled")).toEqual({ variant: "neutral", label: "Cancelled" });
+    // Same label, deliberately different (non-error) tone from the RSVP-domain "cancelled" -
+    // an operator stopping a send is not a delivery failure.
+    expect(resolveStatusMeta("mail_cancelled").variant).not.toBe(resolveStatusMeta("cancelled").variant);
   });
 });
