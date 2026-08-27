@@ -4,7 +4,7 @@
  */
 import type { PrismaClient } from "@admitto/db";
 import { materializeStoredDeliveryMessage } from "@admitto/mail-templates";
-import { createMailer, sendBatch, type MailerAdapter } from "@admitto/mailer";
+import { createMailer, sendBatch, type BatchSummary, type MailerAdapter } from "@admitto/mailer";
 import { resolveMailConfig } from "@admitto/mailer-config";
 import { resolveBaseUrl } from "./baseUrl.js";
 import {
@@ -182,6 +182,55 @@ async function claimDrainCandidates(
   return [...queued, ...dueFailed];
 }
 
+/** Records the outcome of a completed sendBatch call - split out of sendOneFromSnapshot so its
+ * own branching (no confirmed result vs. a definitive sent/rejected one, plus the queued_at
+ * guard's own count===0 case) nests one level shallower, matching drainEventBatch's earlier
+ * extraction for the same reason. */
+async function recordSendOutcome(
+  prisma: PrismaClient,
+  delivery: SnapshotRow,
+  summary: BatchSummary,
+  nextAttempts: number,
+  exhausted: boolean,
+): Promise<"sent" | "failed" | "skipped"> {
+  const result = summary.results[0];
+  if (!result) {
+    // No confirmed provider response for this send attempt - same "was anything actually
+    // attempted" ambiguity as sendOneFromSnapshot's catch block, so the same guards apply.
+    const applied = await markRowFailed(prisma, delivery.id, delivery.queued_at, {
+      status: "failed",
+      retryable: !exhausted,
+      error: sanitizeDeliveryError("empty provider result"),
+      attempted_at: new Date(),
+      failed_at: new Date(),
+      attempts: nextAttempts,
+    });
+    return applied ? "failed" : "skipped";
+  }
+  // Guarded on queued_at alone (not status): the provider already gave a definitive answer
+  // about this message (sent or rejected) by this point, so a plain cancel with no reclaim
+  // (queued_at unchanged) must still record that ground truth over a stale "cancelled" - the
+  // email already left (or was rejected) regardless of the cancel. A reclaim in the meantime
+  // (claimInitialDelivery's reclaim_cancelled path) bumps queued_at when it puts the row back
+  // in the queue under a new batch with fresh content, so the guard fails there and this
+  // stale result is dropped instead of clobbering the row the operator just re-sent.
+  const update = mapSendResultToDelivery(result);
+  const failedLike = update.status === "failed" || update.status === "rejected";
+  const applied = await prisma.emailDelivery.updateMany({
+    where: { id: delivery.id, queued_at: delivery.queued_at },
+    data: {
+      ...update,
+      provider: result.provider,
+      attempts: nextAttempts,
+      ...(failedLike && exhausted ? { retryable: false } : {}),
+    },
+  });
+  if (applied.count === 0) {
+    return "skipped";
+  }
+  return result.status === "accepted" || result.status === "sent" ? "sent" : "failed";
+}
+
 async function sendOneFromSnapshot(
   delivery: SnapshotRow,
   prisma: PrismaClient,
@@ -232,42 +281,7 @@ async function sendOneFromSnapshot(
 
   try {
     const summary = await sendBatch(mailer, [message]);
-    const result = summary.results[0];
-    if (!result) {
-      // No confirmed provider response for this send attempt - same "was anything actually
-      // attempted" ambiguity as the catch block below, so the same guards apply.
-      const applied = await markRowFailed(prisma, delivery.id, delivery.queued_at, {
-        status: "failed",
-        retryable: !exhausted,
-        error: sanitizeDeliveryError("empty provider result"),
-        attempted_at: new Date(),
-        failed_at: new Date(),
-        attempts: nextAttempts,
-      });
-      return applied ? "failed" : "skipped";
-    }
-    // Guarded on queued_at alone (not status): the provider already gave a definitive answer
-    // about this message (sent or rejected) by this point, so a plain cancel with no reclaim
-    // (queued_at unchanged) must still record that ground truth over a stale "cancelled" - the
-    // email already left (or was rejected) regardless of the cancel. A reclaim in the meantime
-    // (claimInitialDelivery's reclaim_cancelled path) bumps queued_at when it puts the row back
-    // in the queue under a new batch with fresh content, so the guard fails there and this
-    // stale result is dropped instead of clobbering the row the operator just re-sent.
-    const update = mapSendResultToDelivery(result);
-    const failedLike = update.status === "failed" || update.status === "rejected";
-    const applied = await prisma.emailDelivery.updateMany({
-      where: { id: delivery.id, queued_at: delivery.queued_at },
-      data: {
-        ...update,
-        provider: result.provider,
-        attempts: nextAttempts,
-        ...(failedLike && exhausted ? { retryable: false } : {}),
-      },
-    });
-    if (applied.count === 0) {
-      return "skipped";
-    }
-    return result.status === "accepted" || result.status === "sent" ? "sent" : "failed";
+    return await recordSendOutcome(prisma, delivery, summary, nextAttempts, exhausted);
   } catch (err) {
     // sendBatch itself threw (e.g. a transport timeout) - ambiguous whether the message went
     // out, same as the empty-result branch above, so this must not resurrect a cancelled row
