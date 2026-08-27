@@ -613,6 +613,13 @@ export interface EventCustomFieldsListResponse {
   items: EventCustomFieldDto[];
 }
 
+/** How many attendees currently have each option value of a select-type EventCustomField,
+ * keyed by the option's own text - a value with no attendees is simply absent, not present
+ * with a 0. */
+export interface EventCustomFieldOptionUsageResponse {
+  counts: Record<string, number>;
+}
+
 export interface CreateEventCustomFieldBody {
   source_field: string;
   label: string;
