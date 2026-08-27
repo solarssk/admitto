@@ -150,15 +150,12 @@ describe("CommunicationSendPanel", () => {
     expect(await screen.findByText("Send complete")).toBeTruthy();
     expect(screen.getByText("1 sent · 1 failed out of 2 total")).toBeTruthy();
     // A batch with failures gets the warning tone, never a green success card contradicting a
-    // failed delivery.
+    // failed delivery. The whole card is framed in that tone's color, same bordered-box
+    // pattern as the Send test email result.
     expect(container.querySelector(".status-circle--warn")).toBeTruthy();
     expect(container.querySelector(".status-circle--ok")).toBeNull();
-
-    // No neutral/remaining segment left at done - the two segments split the full bar.
-    const sentSegment = container.querySelector(".send-progress__bar-segment--sent") as HTMLElement;
-    const failedSegment = container.querySelector(".send-progress__bar-segment--failed") as HTMLElement;
-    expect(sentSegment.style.width).toBe("50%");
-    expect(failedSegment.style.width).toBe("50%");
+    expect(container.querySelector(".send-progress--warn")).toBeTruthy();
+    expect(container.querySelector(".send-progress--ok")).toBeNull();
 
     expect(fetchBulkSendStatus).toHaveBeenCalledWith("evt-1", "batch-1", expect.any(AbortSignal));
   });
@@ -175,6 +172,42 @@ describe("CommunicationSendPanel", () => {
     expect(await screen.findByText("3 sent · 0 failed out of 3 total")).toBeTruthy();
     expect(container.querySelector(".status-circle--ok")).toBeTruthy();
     expect(container.querySelector(".status-circle--warn")).toBeNull();
+    expect(container.querySelector(".send-progress--ok")).toBeTruthy();
+    expect(container.querySelector(".send-progress--warn")).toBeNull();
+  });
+
+  it("escalates to the error tone, not the amber warning, when most of the batch failed", async () => {
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 12, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 1, failed: 11, cancelled: 0 });
+
+    const { container } = render(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("1 sent · 11 failed out of 12 total")).toBeTruthy();
+    // A near-total failure usually means the transport itself is broken, not a handful of bad
+    // addresses - worth the same red tone as a stop, but a distinct icon (ti-circle-x, this
+    // app's existing "send failed" icon from the Send test email result) since the two red
+    // outcomes mean different things.
+    expect(container.querySelector(".status-circle--error")).toBeTruthy();
+    expect(container.querySelector(".ti-circle-x")).toBeTruthy();
+    expect(container.querySelector(".ti-ban")).toBeNull();
+    expect(container.querySelector(".send-progress--error")).toBeTruthy();
+  });
+
+  it("stays at the amber warning right at the 50% failure boundary, not the error tone", async () => {
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 2, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 1, failed: 1, cancelled: 0 });
+
+    const { container } = render(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await screen.findByText("1 sent · 1 failed out of 2 total");
+    expect(container.querySelector(".status-circle--warn")).toBeTruthy();
+    expect(container.querySelector(".status-circle--error")).toBeNull();
   });
 
   it("shows Sent/Failed/Remaining stat tiles and a proportional progress bar while polling", async () => {
@@ -216,11 +249,10 @@ describe("CommunicationSendPanel", () => {
     expect(screen.queryByRole("button", { name: "Send another" })).toBeNull();
   });
 
-  it("shows a zero-width bar and 0% instead of NaN when the status endpoint reports an all-zero batch", async () => {
-    // Defends the total > 0 ? ... : 0 guards in SendProgressBar/SendProgressStats - total is
-    // always the originally-queued count in the normal flow, but the guard exists for whatever
-    // the status endpoint actually sends back, not just this component's own internal state, so
-    // this simulates a still-polling response with nothing to report yet.
+  it("shows a plain success summary instead of NaN when the status endpoint reports an all-zero batch", async () => {
+    // Defends summaryTone()'s total > 0 && ... guard on the broken-ratio check - the status
+    // endpoint could in principle report nothing at all even though that's not the normal flow,
+    // and 0/0 must not read as "broken" (or throw) just because it happens to divide cleanly.
     sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 10, skipped: 0, failed: 0 });
     fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 0, failed: 0, cancelled: 0 });
 
@@ -229,15 +261,11 @@ describe("CommunicationSendPanel", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    // queued: 0 also ends polling (phase flips to "done"), so this exercises the same guards a
-    // second time via SendCompleteSummary's own SendProgressBar - both call sites are covered.
     await screen.findByText("Send complete");
 
-    const sentSegment = container.querySelector(".send-progress__bar-segment--sent") as HTMLElement;
-    const failedSegment = container.querySelector(".send-progress__bar-segment--failed") as HTMLElement;
-    expect(sentSegment.style.width).toBe("0%");
-    expect(failedSegment.style.width).toBe("0%");
     expect(screen.getByText("0 sent · 0 failed out of 0 total")).toBeTruthy();
+    expect(container.querySelector(".status-circle--ok")).toBeTruthy();
+    expect(container.querySelector(".status-circle--error")).toBeNull();
   });
 
   it("shows a Stop button while polling, gated behind a confirmation dialog", async () => {
@@ -348,16 +376,34 @@ describe("CommunicationSendPanel", () => {
     expect(await screen.findByText("Send stopped")).toBeTruthy();
     expect(screen.getByText("4 sent · 1 failed · 5 cancelled out of 10 total")).toBeTruthy();
     expect(screen.queryByText("Send complete")).toBeNull();
-    // Cancelled counts as a warning-toned outcome, same as a failure - never the plain green
-    // success card for a batch the operator deliberately stopped.
-    expect(container.querySelector(".status-circle--warn")).toBeTruthy();
-
-    const cancelledSegment = container.querySelector(
-      ".send-progress__bar-segment--cancelled",
-    ) as HTMLElement;
-    expect(cancelledSegment.style.width).toBe("50%");
+    // An operator-initiated stop is a more attention-worthy outcome than a plain delivery
+    // failure, so it gets the error tone (and wins over the warn tone the failure alone would
+    // get) - never the plain green success card for a batch the operator deliberately stopped.
+    // Framed in that tone's color, same bordered-box pattern as the Send test email result.
+    expect(container.querySelector(".status-circle--error")).toBeTruthy();
+    expect(container.querySelector(".status-circle--warn")).toBeNull();
+    expect(container.querySelector(".ti-ban")).toBeTruthy();
+    expect(container.querySelector(".send-progress--error")).toBeTruthy();
+    expect(container.querySelector(".send-progress--warn")).toBeNull();
 
     // Stop button is gone once the batch is done - nothing left to stop.
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  });
+
+  it("still uses the error tone for a stop with zero failures, not the amber tone a plain failure gets", async () => {
+    sendEventBulk.mockResolvedValue({ batchId: "batch-1", queued: 1, skipped: 0, failed: 0 });
+    fetchBulkSendStatus.mockResolvedValue({ queued: 0, sent: 0, failed: 0, cancelled: 1 });
+
+    const { container } = render(
+      <CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("Send stopped")).toBeTruthy();
+    expect(container.querySelector(".status-circle--error")).toBeTruthy();
+    expect(container.querySelector(".status-circle--warn")).toBeNull();
+    expect(container.querySelector(".status-circle--ok")).toBeNull();
+    expect(container.querySelector(".send-progress--error")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
   });
 

@@ -82,13 +82,14 @@ function resultVariant(phase: SendPhase): "info" | "warning" {
 
 /** Bar out of `queued + sent + failed + cancelled`: green for sent, red for failed, muted gray
  * for cancelled (stopped by an operator, not a delivery error - kept visually distinct from
- * failed), the rest left as the track's own neutral background (queued). At done, queued is 0
- * so the bar reads as fully sent/failed/cancelled with no neutral remainder. */
+ * failed), the rest left as the track's own neutral background (queued). Only ever rendered from
+ * SendProgressStats, which only renders while `queued` is still positive - so `total` is always
+ * positive too; no zero-guard needed. */
 function SendProgressBar({ batchStatus }: Readonly<{ batchStatus: BatchStatus }>) {
   const total = batchStatus.queued + batchStatus.sent + batchStatus.failed + batchStatus.cancelled;
-  const sentPct = total > 0 ? (batchStatus.sent / total) * 100 : 0;
-  const failedPct = total > 0 ? (batchStatus.failed / total) * 100 : 0;
-  const cancelledPct = total > 0 ? (batchStatus.cancelled / total) * 100 : 0;
+  const sentPct = (batchStatus.sent / total) * 100;
+  const failedPct = (batchStatus.failed / total) * 100;
+  const cancelledPct = (batchStatus.cancelled / total) * 100;
   return (
     <div className="send-progress__bar">
       <div
@@ -109,10 +110,9 @@ function SendProgressBar({ batchStatus }: Readonly<{ batchStatus: BatchStatus }>
 
 /** Sent / Failed / Remaining stat tiles shown while a batch is still draining. "Remaining" is
  * the operator-facing label for the internal `queued` field - clearer than exposing the queue
- * terminology in the UI. Unlike SendProgressBar (also used from the done-state summary, where a
- * malformed status response could in principle report nothing at all), this component only ever
- * renders while polling - and polling only continues while `queued` is still positive - so
- * `total` is always positive here too; no zero-guard needed on the percentage. */
+ * terminology in the UI. Only ever renders while polling - and polling only continues while
+ * `queued` is still positive - so `total` is always positive here too; no zero-guard needed on
+ * the percentage. */
 function SendProgressStats({ batchStatus }: Readonly<{ batchStatus: BatchStatus }>) {
   const total = batchStatus.queued + batchStatus.sent + batchStatus.failed + batchStatus.cancelled;
   // Cancelled rows count as "processed" - they're no longer waiting on anything, same as a sent
@@ -148,27 +148,46 @@ function SendProgressStats({ batchStatus }: Readonly<{ batchStatus: BatchStatus 
   );
 }
 
+/** A batch where most attempts failed usually means the transport itself is broken (bad
+ * credentials, provider outage), not a handful of stale addresses - worth a stronger signal than
+ * the same amber warning a single bounce out of hundreds gets. */
+const BROKEN_FAILURE_RATIO = 0.5;
+
+/** Done-state summary card's status-circle tone/icon, matching the tone priority its heading
+ * already implies: an operator-initiated stop is a more attention-worthy outcome than a plain
+ * delivery failure, so it wins even when the batch also has failures. A majority-failed batch
+ * (no stop involved) gets the same error tone as a stop, but ti-circle-x - the icon this app
+ * already uses for "send failed" (TestResultPreview) - keeps the two red outcomes visually
+ * distinct from each other. */
+function summaryTone(batchStatus: BatchStatus): { tone: "ok" | "warn" | "error"; icon: string } {
+  if (batchStatus.cancelled > 0) return { tone: "error", icon: "ti-ban" };
+  const total = batchStatus.sent + batchStatus.failed + batchStatus.cancelled;
+  if (batchStatus.failed > 0 && total > 0 && batchStatus.failed / total > BROKEN_FAILURE_RATIO) {
+    return { tone: "error", icon: "ti-circle-x" };
+  }
+  if (batchStatus.failed > 0) return { tone: "warn", icon: "ti-alert-triangle" };
+  return { tone: "ok", icon: "ti-circle-check" };
+}
+
 /** Done-state summary card, replacing the plain result Notice once a batch has actually
- * finished draining (batchStatus present) - computes its own success/warning tone rather than
- * reusing resultVariant() (that one always reads "warning" once polling ends, since none of its
- * own no-batch cases - no match, nothing queued, a failed status check - have a success reading;
- * only this card's own batchStatus tells whether the completed send was actually clean). Tone/
- * heading also account for an operator-initiated stop, not just failures - a stopped batch is
- * neither a clean success nor a delivery failure, but it's not the unqualified "Send complete" a
- * fully-drained batch gets either. */
+ * finished draining (batchStatus present) - computes its own success/warning/error tone rather
+ * than reusing resultVariant() (that one always reads "warning" once polling ends, since none of
+ * its own no-batch cases - no match, nothing queued, a failed status check - have a success
+ * reading; only this card's own batchStatus tells whether the completed send was actually
+ * clean). Tone/heading also account for an operator-initiated stop, not just failures - a
+ * stopped batch is neither a clean success nor a delivery failure, but it's not the unqualified
+ * "Send complete" a fully-drained batch gets either. No progress bar here (unlike the live
+ * polling view) - the border's tone plus the count line already say everything the bar would,
+ * so a static one here was only repeating the same signal a second time. */
 function SendCompleteSummary({ batchStatus }: Readonly<{ batchStatus: BatchStatus }>) {
   const total = batchStatus.queued + batchStatus.sent + batchStatus.failed + batchStatus.cancelled;
   const hasCancellations = batchStatus.cancelled > 0;
-  const hasFailures = batchStatus.failed > 0;
-  const isWarning = hasFailures || hasCancellations;
+  const { tone, icon } = summaryTone(batchStatus);
   return (
-    <output className="send-progress">
+    <output className={`send-progress--summary send-progress--${tone}`}>
       <div className="send-progress__summary">
-        <span
-          className={`status-circle ${isWarning ? "status-circle--warn" : "status-circle--ok"}`}
-          aria-hidden="true"
-        >
-          <i className={`ti ${isWarning ? "ti-alert-triangle" : "ti-circle-check"}`} aria-hidden="true" />
+        <span className={`status-circle status-circle--${tone}`} aria-hidden="true">
+          <i className={`ti ${icon}`} aria-hidden="true" />
         </span>
         <div className="send-progress__summary-text">
           <strong className="send-progress__summary-heading">
@@ -180,7 +199,6 @@ function SendCompleteSummary({ batchStatus }: Readonly<{ batchStatus: BatchStatu
           </span>
         </div>
       </div>
-      <SendProgressBar batchStatus={batchStatus} />
     </output>
   );
 }
