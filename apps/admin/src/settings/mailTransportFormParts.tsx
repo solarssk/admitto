@@ -1284,8 +1284,11 @@ export function ValidationErrorList({
   return (
     <Notice variant="error" role="alert">
       <ul ref={errorsRef}>
-        {errors.map((e) => (
-          <li key={e}>{e}</li>
+        {/* Index key, not the message text - two different fields (e.g. two CSP trusted
+            origins) can produce the identical message, and a text key would silently
+            dedupe them. The list is always fully replaced, never reordered in place. */}
+        {errors.map((e, i) => (
+          <li key={i}>{e}</li> // NOSONAR — index key is intentional, see comment above (typescript:S6479)
         ))}
       </ul>
     </Notice>
@@ -1397,16 +1400,22 @@ export function testSendErrorMessage(err: unknown): string {
   return operatorApiErrorMessage(err, "Send failed.");
 }
 
-/** Scrolls the first invalid field into view after a failed Save. General by design - it
- * doesn't know or care which card the field lives in (Sender/SMTP/Graph/Advanced tuning),
- * it just finds whichever Input the shared `error` prop marked aria-invalid. Prefers
- * searching within the current `[role="tabpanel"]:not([hidden])` so a stale error left in
- * a visited-but-inactive tab (Settings/Event Settings tabs stay mounted-but-hidden, not
- * unmounted, once visited) is never targeted by mistake; falls back to the whole document
- * when there's no tabpanel ancestor (e.g. this component rendered standalone). */
+/** Scrolls the first invalid field into view after a failed Save, and moves focus to it so
+ * assistive technology announces its aria-describedby error text immediately. General by
+ * design - it doesn't know or care which card the field lives in (Sender/SMTP/Graph/
+ * Advanced tuning), it just finds whichever Input the shared `error` prop marked
+ * aria-invalid. `block: "nearest"`, not "center" - this exists specifically to fix a page
+ * that visibly re-centered on every failed Save even when the field was already on screen;
+ * "nearest" only moves the minimum needed and does nothing when it's already in view.
+ * Prefers searching within the current `[role="tabpanel"]:not([hidden])` so a stale error
+ * left in a visited-but-inactive tab (Settings/Event Settings tabs stay mounted-but-hidden,
+ * not unmounted, once visited) is never targeted by mistake; falls back to the whole
+ * document when there's no tabpanel ancestor (e.g. this component rendered standalone). */
 export function scrollToFirstInvalidField(): void {
   const scope = document.querySelector('[role="tabpanel"]:not([hidden])') ?? document;
-  scope.querySelector('[aria-invalid="true"]')?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const field = scope.querySelector<HTMLElement>('[aria-invalid="true"]');
+  field?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  field?.focus();
 }
 
 /** Draft/secret/save-state, shared verbatim between MailTransportPanel and
@@ -1434,6 +1443,15 @@ export function useMailSettingsFormState() {
     testGenerationRef.current += 1;
     setTestResult(null);
     setDraft((prev) => ({ ...prev, ...patch }));
+    // Clear each touched field's own stale error immediately, rather than leaving its red
+    // border/message up until the next Save re-validates everything from scratch.
+    const patched = Object.keys(patch) as Array<keyof MailFieldErrors>;
+    setFieldErrors((prev) => {
+      if (!patched.some((key) => key in prev)) return prev;
+      const next = { ...prev };
+      for (const key of patched) delete next[key];
+      return next;
+    });
   };
 
   const updateSecrets = (updater: (prev: SecretEdits) => SecretEdits) => {

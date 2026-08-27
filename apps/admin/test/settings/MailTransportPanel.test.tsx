@@ -810,7 +810,29 @@ describe("MailTransportPanel — toast vs inline consistency (#4)", () => {
       /From address must be a valid email/,
     );
     expect(mockSave).not.toHaveBeenCalled();
-    expect(fromAddressInput.scrollIntoView).toHaveBeenCalled();
+    // "nearest", not "center" - this is the fix for the original report (the page visibly
+    // re-centering on every failed Save even when the field was already on screen).
+    expect(fromAddressInput.scrollIntoView).toHaveBeenCalledWith(
+      expect.objectContaining({ block: "nearest" }),
+    );
+    expect(document.activeElement).toBe(fromAddressInput);
+  });
+
+  it("clears a field's stale error as soon as the operator edits it, without waiting for the next Save", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse(smtpFields()));
+    renderWithToast(<MailTransportPanel />);
+    await waitFor(() => {
+      expect(screen.getByLabelText("From address")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("From address"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("From address").getAttribute("aria-invalid")).toBe("true");
+    });
+
+    fireEvent.change(screen.getByLabelText("From address"), { target: { value: "fixed@example.com" } });
+
+    expect(screen.getByLabelText("From address").getAttribute("aria-invalid")).not.toBe("true");
   });
 
   it("ignores a validation error on an env-locked field - the operator can't fix what they can't edit", async () => {

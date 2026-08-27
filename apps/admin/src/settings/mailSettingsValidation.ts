@@ -35,22 +35,36 @@ export type SecretEdits = Record<
   { mode: SecretEditMode; value: string }
 >;
 
-/** local@domain shape, no whitespace, exactly one "@", and - unlike a length-only check -
- * the domain's final label must be a real IANA-delegated TLD (knownTlds.ts), so a typo
- * ("user@example.con") or a reserved, non-delegated name ("user@host.local") is caught,
- * not just an obviously-truncated one. Plain string ops rather than a regex - see this
- * function's own re-export use in mailTransportFormParts.tsx (isPlausibleEmail used to be
- * a byte-for-byte second copy of this) for why regex is avoided here. Exported so that
- * caller reuses this instead of re-implementing it. */
+/** A single dot-separated domain label: non-empty, max 63 chars (RFC 1035), letters/digits/
+ * hyphens only, no leading or trailing hyphen. Bounded, unambiguous character classes - not
+ * the kind of pattern that backtracks on adversarial input. */
+function isValidDomainLabel(label: string): boolean {
+  if (label.length === 0 || label.length > 63) return false;
+  return /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label);
+}
+
+/** At least one label before a real IANA-delegated TLD (knownTlds.ts), and every label -
+ * not just the TLD - must itself look like a valid domain label. Catches a typo'd or
+ * reserved TLD ("example.con", "host.local") the same as before, plus a malformed domain
+ * shape a TLD-only check would wave through ("example..com", "-example.com"). */
+function isValidDomain(domain: string): boolean {
+  const labels = domain.split(".");
+  if (labels.length < 2 || !labels.every(isValidDomainLabel)) return false;
+  return isKnownTld(labels[labels.length - 1]);
+}
+
+/** local@domain shape, no whitespace, exactly one "@". Plain string ops rather than a
+ * regex for the "@" split - see this function's own re-export use in
+ * mailTransportFormParts.tsx (isPlausibleEmail used to be a byte-for-byte second copy of
+ * this) for why regex is avoided there. Exported so that caller reuses this instead of
+ * re-implementing it. */
 export function isValidEmail(value: string): boolean {
   if (/\s/.test(value)) return false;
   const parts = value.split("@");
   if (parts.length !== 2) return false;
   const [local, domain] = parts;
   if (!local || !domain) return false;
-  const dot = domain.lastIndexOf(".");
-  if (dot <= 0) return false;
-  return isKnownTld(domain.slice(dot + 1));
+  return isValidDomain(domain);
 }
 
 /** Mirrors the server's authoritative length limits (mail-settings-shared.ts's
@@ -257,17 +271,14 @@ function normalizeDomain(raw: string): string {
   return raw.trim().toLowerCase().replace(/^@/, "");
 }
 
-/** A bare hostname shape - no scheme, no "@", no port, at least one label before a real
- * TLD (knownTlds.ts). The server itself only enforces length here (mail-settings-shared.ts),
- * so this is a client-side plausibility check only, same spirit as isValidEmail above -
- * it also catches a reserved, non-delegated name like "mail.local" that a length-only
- * check would wave through. Rejects any ":" (not just "://") so "http:example.com" -
- * missing the double slash but still not a bare domain - doesn't slip through. */
+/** A bare hostname shape - no scheme, no "@", no port, every label valid (isValidDomain)
+ * ending in a real TLD (knownTlds.ts). The server itself only enforces length here
+ * (mail-settings-shared.ts), so this is a client-side plausibility check only, same spirit
+ * as isValidEmail above. Rejects any ":" (not just "://") so "http:example.com" - missing
+ * the double slash but still not a bare domain - doesn't slip through. */
 function isPlausibleDomain(value: string): boolean {
   if (/\s/.test(value) || value.includes("@") || value.includes(":")) return false;
-  const dot = value.lastIndexOf(".");
-  if (dot <= 0) return false;
-  return isKnownTld(value.slice(dot + 1));
+  return isValidDomain(value);
 }
 
 /** Format/length check on the Allowed from domain field itself. Runs before the
@@ -287,8 +298,16 @@ function validateAllowedDomainField(draft: MailDraft, errors: MailFieldErrors): 
 
 /** The allowed-domain restriction checks whichever field actually supplies the sending
  * address - From address normally, or the Graph mailbox when From address is blank - and
- * flags that same field, so the red border lands on the field the operator needs to fix. */
-function validateAllowedDomain(draft: MailDraft, errors: MailFieldErrors): void {
+ * flags that same field, so the red border lands on the field the operator needs to fix.
+ * Exception: when that sender field is env-locked, the operator can't act on an error
+ * placed there (validateMailDraft strips locked-field errors entirely) - the mismatch is
+ * just as real, so it's redirected onto the editable Allowed from domain field instead of
+ * silently disappearing. */
+function validateAllowedDomain(
+  draft: MailDraft,
+  errors: MailFieldErrors,
+  fieldLocked?: (key: keyof MailDraft) => boolean,
+): void {
   if (errors.allowedFromDomain) return;
   const allowedDomain = normalizeDomain(draft.allowedFromDomain);
   if (!allowedDomain || !draft.provider) return;
@@ -304,7 +323,11 @@ function validateAllowedDomain(draft: MailDraft, errors: MailFieldErrors): void 
   const domain = effectiveFrom.split("@")[1]?.toLowerCase();
   if (!domain || domain !== allowedDomain) {
     const fieldLabel = effectiveField === "mailbox" ? "Mailbox" : "From address";
-    errors[effectiveField] = `${fieldLabel} must use the allowed domain (${allowedDomain}).`;
+    if (fieldLocked?.(effectiveField) && !fieldLocked("allowedFromDomain")) {
+      errors.allowedFromDomain = `Allowed from domain must match the ${fieldLabel.toLowerCase()} domain (${domain}).`;
+    } else {
+      errors[effectiveField] = `${fieldLabel} must use the allowed domain (${allowedDomain}).`;
+    }
   }
 }
 
@@ -324,7 +347,7 @@ export function validateMailDraft(
   validateTuningFields(draft, errors);
   validateGraphFields(draft, errors);
   validateAllowedDomainField(draft, errors);
-  validateAllowedDomain(draft, errors);
+  validateAllowedDomain(draft, errors, fieldLocked);
   if (fieldLocked) {
     for (const key of Object.keys(errors) as Array<keyof MailFieldErrors>) {
       if (fieldLocked(key)) delete errors[key];

@@ -199,11 +199,11 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
             {validationErrors.length > 0 && (
               <Notice variant="error" role="alert">
                 <ul className="setup-wizard__error-list">
+                  {/* Index key, not the message text - two different fields can produce
+                      the identical "Keep it under N characters." message (same max
+                      length), and a text key would silently dedupe them. */}
                   {validationErrors.map((e, i) => (
-                    // Index key, not the message text - two different fields can produce
-                    // the identical "Keep it under N characters." message (same max
-                    // length), and a text key would silently dedupe them.
-                    <li key={i}>{e}</li>
+                    <li key={i}>{e}</li> // NOSONAR — index key is intentional, see comment above (typescript:S6479)
                   ))}
                 </ul>
               </Notice>

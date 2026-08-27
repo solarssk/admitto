@@ -104,6 +104,33 @@ describe("validateMailDraft — provider-specific requirements", () => {
     expect(mismatchedMailbox.mailbox).toBe("Mailbox must use the allowed domain (example.com).");
   });
 
+  it("redirects an allowed-domain mismatch onto Allowed from domain when the sender field is env-locked", () => {
+    const draft = {
+      ...emptyMailDraft(),
+      provider: "smtp" as const,
+      host: "smtp.example.com",
+      port: "587",
+      fromAddress: "sender@other.org",
+      allowedFromDomain: "example.com",
+    };
+    const fromAddressLocked = (key: keyof typeof draft) => key === "fromAddress";
+
+    // Without fieldLocked: the mismatch lands on fromAddress as usual.
+    expect(validateMailDraft(draft).fromAddress).toBe(
+      "From address must use the allowed domain (example.com).",
+    );
+
+    // fromAddress is locked (env-managed) - the operator can't fix an error placed there,
+    // and validateMailDraft strips locked-field errors entirely, so a naive implementation
+    // would submit the known-mismatched value with no error shown at all. It must be
+    // redirected onto the still-editable Allowed from domain field instead.
+    const result = validateMailDraft(draft, fromAddressLocked);
+    expect(result.fromAddress).toBeUndefined();
+    expect(result.allowedFromDomain).toBe(
+      "Allowed from domain must match the from address domain (other.org).",
+    );
+  });
+
   it("requires Graph credentials and a valid mailbox or sender", () => {
     const result = validateMailDraft({
       ...emptyMailDraft(),
@@ -206,6 +233,34 @@ describe("validateMailDraft — field length and format guards", () => {
     });
 
     expect(result.allowedFromDomain).toBe("Enter a bare domain, e.g. example.com.");
+  });
+
+  it.each(["example..com", "-example.com", "example-.com", "example.com."])(
+    "rejects a malformed domain label in Allowed from domain: '%s'",
+    (malformed) => {
+      const result = validateMailDraft({
+        ...emptyMailDraft(),
+        provider: "smtp",
+        host: "smtp.example.com",
+        port: "587",
+        fromAddress: "sender@example.com",
+        allowedFromDomain: malformed,
+      });
+
+      expect(result.allowedFromDomain).toBe("Enter a bare domain, e.g. example.com.");
+    },
+  );
+
+  it("rejects a From address with a malformed domain label, e.g. a double dot", () => {
+    const result = validateMailDraft({
+      ...emptyMailDraft(),
+      provider: "smtp",
+      host: "smtp.example.com",
+      port: "587",
+      fromAddress: "sender@example..com",
+    });
+
+    expect(result.fromAddress).toBe("From address must be a valid email.");
   });
 
   it.each(["local", "test", "invalid", "example", "localhost", "internal", "lan", "corp", "con"])(
