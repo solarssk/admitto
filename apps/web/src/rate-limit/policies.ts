@@ -676,6 +676,22 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  // Deliberately its own bucket, not shared with admin:attendee-bulk-mutation - that budget
+  // (20/60s per user+event) is easily exhausted by routine bulk-checkin/bulk-revoke/bulk-rsvp
+  // cleanup earlier in the same session, and this route is the one safety mechanism for damage
+  // control on a bad send: it must not be blocked by unrelated bulk-attendee work. Generous
+  // enough that a legitimate operator retry (e.g. after a transient network error) never trips
+  // it, while still bounded.
+  "admin:bulk-send-cancel": {
+    checks: [
+      {
+        keyOf: (c) => adminUserEventKey(c, "bulk-send-cancel"),
+        windowMs: 60_000,
+        max: 30,
+        logOnExceeded: { scope: "admin_bulk_send_cancel", keyHint: "user_event" },
+      },
+    ],
+  },
   "admin:resend-bulk": {
     checks: [
       {

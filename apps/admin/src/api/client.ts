@@ -45,6 +45,7 @@ import type {
   MailTemplateListItem,
   MailTemplateDetail,
   BulkSendBody,
+  BulkSendCancelResponse,
   BulkSendDryRunResponse,
   BulkSendQueuedResponse,
   BulkSendStatusResponse,
@@ -1575,6 +1576,19 @@ export async function fetchBulkSendStatus(
     { credentials: "same-origin", signal },
   );
   return parseJson<BulkSendStatusResponse>(res);
+}
+
+/** Stop a still-draining bulk send batch. Rows not yet actually sent are marked cancelled;
+ * see packages/mail-delivery/src/cancel.ts for exactly how "still draining" is defined. */
+export async function cancelBulkSend(
+  eventId: string,
+  batchId: string,
+): Promise<BulkSendCancelResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/send/${encodeURIComponent(batchId)}/cancel`,
+    jsonPostInit({}),
+  );
+  return parseJson<BulkSendCancelResponse>(res);
 }
 
 /** Queue or dry-run a wallet message send for selected attendees (see BulkSendFilter's

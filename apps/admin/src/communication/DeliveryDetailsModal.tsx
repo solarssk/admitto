@@ -7,7 +7,7 @@ import type { DeliveryDetailDto, DeliveryDto } from "../api/types.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { describeSmtpBounceCode } from "../utils/smtpBounceCodes.js";
-import { formatDeliveryHistoryTime, purposeLabel, rowTimestamp, templateLabel } from "./delivery-format.js";
+import { deliveryStatusBadgeKey, formatDeliveryHistoryTime, purposeLabel, rowTimestamp, templateLabel } from "./delivery-format.js";
 import "./delivery-modals.css";
 
 const SENT_AT_HINT =
@@ -251,7 +251,7 @@ export function DeliveryDetailsModal({
                     <div>
                       <dt>Status</dt>
                       <dd>
-                        <StatusBadge status={detail.status} />
+                        <StatusBadge status={deliveryStatusBadgeKey(detail.status)} />
                       </dd>
                     </div>
                     <div>

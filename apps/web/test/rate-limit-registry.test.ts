@@ -47,6 +47,7 @@ const EXPECTED_POLICIES: Record<
   "admin:wallet-action": { windowMs: [60_000], max: [10], checks: 1 },
   "admin:wallet-action-bulk": { windowMs: [600_000], max: [10], checks: 1 },
   "admin:attendee-bulk-mutation": { windowMs: [60_000], max: [20], checks: 1 },
+  "admin:bulk-send-cancel": { windowMs: [60_000], max: [30], checks: 1 },
   "checkin:scan": { windowMs: [60_000], max: [120], checks: 1 },
   "checkin:history": { windowMs: [60_000], max: [180], checks: 1 },
   "checkin:stream": { windowMs: [60_000], max: [12], checks: 1 },
@@ -195,6 +196,12 @@ describe("RATE_POLICIES registry", () => {
     );
     expect(RATE_POLICIES["admin:attendee-bulk-mutation"].checks[0]!.keyOf(ctx)).toBe(
       "admin:attendee-bulk-mutation:user:user-42:event:evt-1",
+    );
+    // Deliberately its own bucket, not admin:attendee-bulk-mutation's - see the policy's own
+    // comment for why (unrelated bulk-attendee cleanup work must not be able to exhaust the
+    // budget for the one safety action that stops a bad send).
+    expect(RATE_POLICIES["admin:bulk-send-cancel"].checks[0]!.keyOf(ctx)).toBe(
+      "admin:bulk-send-cancel:user:user-42:event:evt-1",
     );
   });
 

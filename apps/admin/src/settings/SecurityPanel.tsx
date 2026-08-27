@@ -174,7 +174,7 @@ export function SecurityPanel() {
   const handleSave = async () => {
     if (!settings || !draft) return;
     if (cspTrustedOriginsErrors(draft.cspTrustedOriginsRaw).length > 0) {
-      validationErrorsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      validationErrorsRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       return;
     }
     setSaving(true);
