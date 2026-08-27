@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Editing a select-type custom field's options is now a structured list instead of a plain "one per line" textarea. Each option shows how many attendees currently have it selected, warns in place before a rename that would affect them, asks for confirmation before removing an option that's in use, and blocks Save behind a summary of anything risky an operator hasn't explicitly acknowledged. Options can also be reordered by drag (mouse, touch, or pen) or, with the drag handle focused, the up/down arrow keys.
 - Check-in's camera scanner gained a torch toggle, next to the existing mute/close controls on both the mobile full-screen scanner and the desktop/tablet inline camera. Only appears once the active camera actually reports the capability, since most laptop webcams and every iPhone don't - so it stays out of the way rather than sitting there doing nothing.
 
 ### Changed

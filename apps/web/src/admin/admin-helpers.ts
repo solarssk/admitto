@@ -43,6 +43,25 @@ export async function countAttendeesByEvent(
   return new Map(counts.map((row) => [row.event_id, row._count._all]));
 }
 
+/** Per-value attendee counts for one event custom field, keyed by the raw `custom_data` string
+ * value (e.g. "Men's M" -> 3). `custom_data` is an unindexed Json column and Prisma's `groupBy`
+ * can't group on a JSON path, so this groups in raw SQL instead - `sourceField` binds as an
+ * ordinary parameter to the `->>'key'` operator's value position, not as an identifier, so this
+ * carries no injection risk regardless of the field's own slug validation. */
+export async function countAttendeesByCustomFieldValue(
+  db: PrismaClient,
+  eventId: string,
+  sourceField: string,
+): Promise<Map<string, number>> {
+  const rows = await db.$queryRaw<{ value: string; count: number }[]>(Prisma.sql`
+    SELECT custom_data->>${sourceField} AS value, COUNT(*)::int AS count
+    FROM "Attendee"
+    WHERE event_id = ${eventId} AND custom_data->>${sourceField} IS NOT NULL
+    GROUP BY value
+  `);
+  return new Map(rows.map((row) => [row.value, row.count]));
+}
+
 /** Return 403 when the session user cannot manage the event; otherwise null. */
 export async function assertEventManageAccess(
   c: Context,
