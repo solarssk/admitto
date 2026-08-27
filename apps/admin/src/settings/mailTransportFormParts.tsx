@@ -28,6 +28,7 @@ import {
   emptyMailDraft,
   emptySecretEdits,
   isValidEmail,
+  validateMailDraft,
   type MailDraft,
   type MailFieldErrors,
   type SecretEdits,
@@ -71,6 +72,38 @@ export interface TestResult {
 }
 
 export type FieldLocked = (key: keyof MailSettingsFieldsDto) => boolean;
+
+/** The env-locked subset of a saved response's fields - shared because MailTransportPanel
+ * and EventMailSettingsCard's handleSave both build this identically before calling
+ * buildSaveMailSettingsBody, which needs it to know which fields not to send back. */
+export function computeLockedKeys(
+  fields: MailSettingsFieldsDto,
+  fieldLocked: FieldLocked,
+): Set<keyof MailSettingsFieldsDto> {
+  return new Set(
+    (Object.keys(fields) as Array<keyof MailSettingsFieldsDto>).filter((key) => fieldLocked(key)),
+  );
+}
+
+/** Runs validateMailDraft and, on failure, sets fieldErrors and toasts the generic summary -
+ * shared because MailTransportPanel and EventMailSettingsCard's handleSave both do this
+ * identically. Returns true when valid (caller should proceed to save) and false when
+ * blocked (caller returns early with whatever its own signature needs). */
+export function validateAndReportErrors(
+  draft: MailDraft,
+  fieldLocked: (key: keyof MailDraft) => boolean,
+  setFieldErrors: (errors: MailFieldErrors) => void,
+  addToast: (message: string, variant?: "success" | "error" | "info" | "warning") => void,
+): boolean {
+  const errors = validateMailDraft(draft, fieldLocked);
+  if (Object.keys(errors).length > 0) {
+    setFieldErrors(errors);
+    addToast("Please fix the highlighted fields.", "error");
+    return false;
+  }
+  setFieldErrors({});
+  return true;
+}
 
 function strValue(fd: MailPlainFieldDto<string | null>): string {
   return fd.value ?? "";

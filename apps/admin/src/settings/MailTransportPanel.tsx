@@ -9,10 +9,10 @@ import {
   emptySecretEdits,
   isMailSettingsDirty,
   smtpProviderDraftDefaults,
-  validateMailDraft,
 } from "./mailSettingsValidation.js";
 import { buildMailProviderOptions } from "./mailProviderOptions.js";
 import {
+  computeLockedKeys,
   draftFromFields,
   GraphCard,
   MailTransportCard,
@@ -24,6 +24,7 @@ import {
   SettingsFooter,
   SmtpConnectionCard,
   useMailSettingsFormState,
+  validateAndReportErrors,
   type FieldLocked,
 } from "./mailTransportFormParts.js";
 
@@ -117,20 +118,10 @@ export function MailTransportPanel() {
 
   const handleSave = async () => {
     if (!apiData) return;
-    const errors = validateMailDraft(draft, fieldLocked);
-    if (Object.keys(errors).length > 0) {
-      setFieldErrors(errors);
-      addToast("Please fix the highlighted fields.", "error");
-      return;
-    }
-    setFieldErrors({});
+    if (!validateAndReportErrors(draft, fieldLocked, setFieldErrors, addToast)) return;
     setSaving(true);
     try {
-      const lockedKeys = new Set(
-        (Object.keys(apiData.fields) as Array<keyof typeof apiData.fields>).filter((key) =>
-          fieldLocked(key),
-        ),
-      );
+      const lockedKeys = computeLockedKeys(apiData.fields, fieldLocked);
       const body = buildSaveMailSettingsBody(draft, secrets, lockedKeys);
       const data = await saveMailSettings(body);
       applyResponse(data);

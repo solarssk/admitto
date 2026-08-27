@@ -23,10 +23,10 @@ import {
   emptySecretEdits,
   isMailSettingsDirty,
   smtpProviderDraftDefaults,
-  validateMailDraft,
 } from "./mailSettingsValidation.js";
 import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
 import {
+  computeLockedKeys,
   draftFromFields,
   GraphCard,
   PowerAutomateCard,
@@ -38,6 +38,7 @@ import {
   SmtpConnectionCard,
   TransportTileGrid,
   useMailSettingsFormState,
+  validateAndReportErrors,
   type FieldLocked,
 } from "./mailTransportFormParts.js";
 
@@ -341,20 +342,10 @@ export const EventMailSettingsCard = forwardRef<
   const handleSave = async (): Promise<EventMailSettingsSaveResult> => {
     if (!apiData) return "blocked";
     if (mode === "dedicated") {
-      const errors = validateMailDraft(draft, fieldLocked);
-      if (Object.keys(errors).length > 0) {
-        setFieldErrors(errors);
-        addToast("Please fix the highlighted fields.", "error");
-        return "blocked";
-      }
-      setFieldErrors({});
+      if (!validateAndReportErrors(draft, fieldLocked, setFieldErrors, addToast)) return "blocked";
       setSaving(true);
       try {
-        const lockedKeys = new Set(
-          (Object.keys(apiData.fields) as Array<keyof typeof apiData.fields>).filter((key) =>
-            fieldLocked(key),
-          ),
-        );
+        const lockedKeys = computeLockedKeys(apiData.fields, fieldLocked);
         const body = buildSaveMailSettingsBody(draft, secrets, lockedKeys);
         const data = await saveEventMailSettings(eventId, body);
         applyResponse(data);
