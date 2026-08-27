@@ -306,55 +306,50 @@ export async function handleCreateEventItem(c: Context, db: PrismaClient): Promi
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  // Serializable (+ runSerializableTransaction's retry) whenever content_fields is set, for the
-  // same reason handlePatchEventItem's needsSerializable does - a plain transaction's snapshot is
-  // fixed at the acquireEventCustomFieldsLock SELECT, before that lock wait completes, so it can
-  // miss a same-field assignment that committed while this one was blocked. Every side touching
-  // content_fields must use this same protocol for a genuine conflict to force a retry.
-  const needsSerializable = (parsed.data.config?.content_fields?.length ?? 0) > 0;
-
   try {
-    const row = await runSerializableTransaction(
-      db,
-      async (tx) => {
-        if (parsed.data.config?.content_fields?.length) {
-          await acquireEventCustomFieldsLock(tx, eventId);
-          await validateConfigContentFields(tx, eventId, parsed.data.config.content_fields);
-        }
-        const created = await tx.eventItem.create({
-          data: {
-            event_id: eventId,
-            key: parsed.data.key,
-            label: parsed.data.label,
-            description: parsed.data.description ?? null,
-            type: "item",
-            enabled: true,
-            icon: normalizeEventItemIconForStorage(parsed.data.icon) ?? null,
-            config: (parsed.data.config ?? undefined) as Prisma.InputJsonValue | undefined,
-          },
-          select: {
-            id: true,
-            key: true,
-            label: true,
-            description: true,
-            type: true,
-            enabled: true,
-            icon: true,
-            config: true,
-          },
-        });
-
-        await writeBulkActionLog(tx, {
+    const row = await db.$transaction(async (tx) => {
+      if (parsed.data.config?.content_fields?.length) {
+        await acquireEventCustomFieldsLock(tx, eventId);
+        // Reads go through `db` (a fresh statement on its own connection), not `tx` - once the
+        // lock above is acquired, no other content_fields-assigning transaction for this event
+        // can be mid-commit (it would be blocked on the same lock), so `db` sees the definitive
+        // latest state. Reading via `tx` instead would risk this transaction's own snapshot,
+        // which under Serializable/Repeatable Read is fixed as of *before* the lock wait even
+        // started - see the same comment on validatePatchContentFields.
+        await validateConfigContentFields(db, eventId, parsed.data.config.content_fields);
+      }
+      const created = await tx.eventItem.create({
+        data: {
           event_id: eventId,
-          action_type: "event_item_created",
-          audit: adminAuditFromContext(c),
-          metadata: { item_key: created.key },
-        });
+          key: parsed.data.key,
+          label: parsed.data.label,
+          description: parsed.data.description ?? null,
+          type: "item",
+          enabled: true,
+          icon: normalizeEventItemIconForStorage(parsed.data.icon) ?? null,
+          config: (parsed.data.config ?? undefined) as Prisma.InputJsonValue | undefined,
+        },
+        select: {
+          id: true,
+          key: true,
+          label: true,
+          description: true,
+          type: true,
+          enabled: true,
+          icon: true,
+          config: true,
+        },
+      });
 
-        return created;
-      },
-      needsSerializable ? { isolationLevel: Prisma.TransactionIsolationLevel.Serializable } : undefined,
-    );
+      await writeBulkActionLog(tx, {
+        event_id: eventId,
+        action_type: "event_item_created",
+        audit: adminAuditFromContext(c),
+        metadata: { item_key: created.key },
+      });
+
+      return created;
+    });
 
     return c.json(serializeEventItem(row), 201);
   } catch (err) {
@@ -449,15 +444,7 @@ function computePatchTransactionFlags(
   );
   const needsBadgeSync =
     existing.key === "badge" && (disabling || (badgeUsableBefore && !badgeUsableAfter));
-  // A plain (non-Serializable) transaction here would fix its snapshot at the
-  // acquireEventCustomFieldsLock SELECT - before that SELECT's lock wait completes - so if it
-  // waits behind a create/PATCH that assigns the same content_field, it can still miss that
-  // committed assignment once unblocked. Serializable alone doesn't refresh the snapshot either,
-  // but paired with runSerializableTransaction's retry it forces a real conflict to abort and
-  // retry with a fresh snapshot - which only works when every side touching content_fields uses
-  // the same protocol (see handleCreateEventItem).
-  const changesContentFields = (patchInput.config?.content_fields?.length ?? 0) > 0;
-  const needsSerializable = disabling || needsBadgeSync || changesContentFields;
+  const needsSerializable = disabling || needsBadgeSync;
 
   return { disabling, needsBadgeSync, needsSerializable };
 }
@@ -468,11 +455,23 @@ type PatchContentFieldsCheck =
   | { ok: false; reason: "content_field_in_use"; field: string; itemLabel: string };
 
 /** Rejects config.content_fields entries that don't exist in the event's EventCustomField
- * registry, or that are already claimed by a different event item, inside the caller's
- * transaction. Mirrors validateConfigContentFields's checks but reports back to the caller
- * instead of throwing, since the PATCH transaction needs to return a typed { ok: false } outcome
- * rather than unwind via an exception. */
+ * registry, or that are already claimed by a different event item. Mirrors
+ * validateConfigContentFields's checks but reports back to the caller instead of throwing, since
+ * the PATCH transaction needs to return a typed { ok: false } outcome rather than unwind via an
+ * exception.
+ *
+ * `tx` is only used to acquire the lock (a `pg_advisory_xact_lock` must run in the caller's own
+ * transaction to auto-release on commit/rollback). The reads afterward deliberately go through
+ * `db` (the plain PrismaClient, a fresh statement on its own connection) instead of `tx`: once
+ * the lock is held, no other content_fields-assigning transaction for this event can be
+ * mid-commit (it would be blocked on the same lock), so `db` sees the definitive latest state.
+ * Reading via `tx` instead risks this PATCH's own transaction snapshot when it also runs
+ * Serializable for the disabling/badge-sync check below (computePatchTransactionFlags) - that
+ * snapshot is fixed as of *before* the lock-acquiring statement's wait even completes, so it can
+ * still miss a same-field assignment that committed while this transaction was blocked on the
+ * lock, letting two concurrent requests both believe the field was free. */
 async function validatePatchContentFields(
+  db: PrismaClient,
   tx: Prisma.TransactionClient,
   eventId: string,
   itemId: string,
@@ -480,12 +479,12 @@ async function validatePatchContentFields(
 ): Promise<PatchContentFieldsCheck> {
   if (!config?.content_fields?.length) return { ok: true };
   await acquireEventCustomFieldsLock(tx, eventId);
-  const registryFields = await loadEventCustomDataFields(tx, eventId);
+  const registryFields = await loadEventCustomDataFields(db, eventId);
   const allowed = new Set(registryFields.map((f) => f.source_field));
   const unknownField = config.content_fields.find((f) => !allowed.has(f));
   if (unknownField) return { ok: false, reason: "unknown_content_field", field: unknownField };
 
-  const siblings = await loadSiblingEventItems(tx, eventId, itemId);
+  const siblings = await loadSiblingEventItems(db, eventId, itemId);
   const conflict = findConflictingContentField(siblings, config.content_fields);
   if (conflict) {
     return {
@@ -537,6 +536,7 @@ async function syncBadgeAtEntryOff(
 /** Body of the PATCH transaction: validates content_fields, blocks disabling an in-use item,
  * applies the update, re-syncs "badge_at_entry" when needed, and writes the audit log. */
 type ApplyEventItemPatchOptions = {
+  db: PrismaClient;
   c: Context;
   eventId: string;
   itemId: string;
@@ -550,6 +550,7 @@ type ApplyEventItemPatchOptions = {
 async function applyEventItemPatch(
   tx: Prisma.TransactionClient,
   {
+    db,
     c,
     eventId,
     itemId,
@@ -560,7 +561,7 @@ async function applyEventItemPatch(
     needsBadgeSync,
   }: ApplyEventItemPatchOptions,
 ): Promise<PatchEventItemOutcome> {
-  const fieldsCheck = await validatePatchContentFields(tx, eventId, itemId, config);
+  const fieldsCheck = await validatePatchContentFields(db, tx, eventId, itemId, config);
   if (!fieldsCheck.ok) {
     if (fieldsCheck.reason === "unknown_content_field") {
       return { ok: false, reason: "unknown_content_field", field: fieldsCheck.field };
@@ -649,6 +650,7 @@ export async function handlePatchEventItem(c: Context, db: PrismaClient): Promis
     db,
     (tx) =>
       applyEventItemPatch(tx, {
+        db,
         c,
         eventId,
         itemId,
