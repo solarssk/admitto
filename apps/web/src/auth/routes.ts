@@ -10,6 +10,7 @@ import {
   SESSION_COOKIE_NAME,
   TRUSTED_DEVICE_COOKIE_NAME,
   LOGIN_NEXT,
+  type LoginNext,
   login,
   logout,
   validatePartialSession,
@@ -577,6 +578,14 @@ export async function handlePostPasskeyLoginBegin(
   return c.json({ ceremony, options: begin.options });
 }
 
+/** `loginWithPasskey` never returns MFA_REQUIRED/ENROLLMENT_REQUIRED (see its doc comment), so
+ * only these three outcomes are reachable here. */
+function sessionStageForLoginNext(next: LoginNext): SessionStage {
+  if (next === LOGIN_NEXT.BACKUP_CODES_REQUIRED) return SESSION_STAGE.BACKUP_CODES_REQUIRED;
+  if (next === LOGIN_NEXT.CHANGE_PASSWORD) return SESSION_STAGE.CHANGE_PASSWORD_REQUIRED;
+  return SESSION_STAGE.FULL;
+}
+
 const passkeyLoginFinishSchema = z
   .object({
     ceremony: z.string().min(1).max(256),
@@ -640,11 +649,7 @@ export async function handlePostPasskeyLoginFinish(
     db,
     result.userId,
     result.sessionId,
-    result.next === LOGIN_NEXT.BACKUP_CODES_REQUIRED
-      ? SESSION_STAGE.BACKUP_CODES_REQUIRED
-      : result.next === LOGIN_NEXT.CHANGE_PASSWORD
-        ? SESSION_STAGE.CHANGE_PASSWORD_REQUIRED
-        : SESSION_STAGE.FULL,
+    sessionStageForLoginNext(result.next),
     parsed.data.next,
   );
   return c.json({ ok: true, next }, 200);
