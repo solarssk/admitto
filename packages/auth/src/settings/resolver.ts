@@ -139,6 +139,15 @@ export async function getWebauthnEnabled(
   return typeof v === "boolean" ? v : (SETTING_DEFAULTS.get("webauthn_enabled") as boolean);
 }
 
+/** Whether the login page offers "Sign in with a passkey" from SystemSettings
+ * (`passkey_login_enabled`, default disabled). */
+export async function getPasskeyLoginEnabled(
+  prisma: PrismaClient | Prisma.TransactionClient,
+): Promise<boolean> {
+  const v = await getSetting<boolean>(prisma, "passkey_login_enabled");
+  return typeof v === "boolean" ? v : (SETTING_DEFAULTS.get("passkey_login_enabled") as boolean);
+}
+
 /** Role names that require MFA (from SystemSettings `mfa_required_roles`, JSON array or CSV). */
 export async function getMfaRequiredRoles(
   prisma: PrismaClient | Prisma.TransactionClient,

@@ -59,6 +59,25 @@ function authUserScopedPolicy(
   };
 }
 
+/** Shared shape for anonymous routes limited per client IP. */
+function ipScopedPolicy(
+  keyPrefix: string,
+  scope: RateLimitScope,
+  max: number,
+  windowMs = 60_000,
+): RatePolicy {
+  return {
+    checks: [
+      {
+        keyOf: (c) => `${keyPrefix}:ip:${resolveClientIp(c)}`,
+        windowMs,
+        max,
+        logOnExceeded: { scope },
+      },
+    ],
+  };
+}
+
 /**
  * Limits consumed only by inline rate-limit helpers, not {@link rateLimit} middleware.
  * Kept separate so these names are excluded from {@link RatePolicyName} at compile time.
@@ -236,6 +255,16 @@ export const RATE_POLICIES = {
       },
     ],
   },
+  /** Own buckets, deliberately separate from auth:login-ip: a passkey-login round trip has no
+   * email to also throttle per-account against (unlike the password route's
+   * checkLoginEmailRateLimit), so this is the only defense-in-depth layer this ceremony gets
+   * against an IP hammering it with junk assertions. Begin and finish are separate buckets
+   * rather than one shared one - a shared bucket meant every successful sign-in spent 2 of its
+   * 10 hits (a cancelled/retried ceremony spent more), so a handful of staff signing in behind
+   * the same office/VPN/NAT address within a minute could lock everyone else out even with
+   * every ceremony succeeding (Codex P2 review, PR #1108). */
+  "auth:passkey-login-begin-ip": ipScopedPolicy("auth:passkey-login-begin", "passkey_login_ip", 10),
+  "auth:passkey-login-finish-ip": ipScopedPolicy("auth:passkey-login-finish", "passkey_login_ip", 10),
   /** Whole /api/account/* route group - own IP bucket, deliberately separate from
    * auth:login-ip. These routes run before requireSession (some pre-date the current
    * caller's session even being established), so without their own bucket a handful of

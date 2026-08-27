@@ -125,10 +125,11 @@ type SecurityDto = {
   instance_url: SettingField<string | null>;
   csp_trusted_origins: SettingField<string[]>;
   webauthn_enabled: SettingField<boolean>;
+  passkey_login_enabled: SettingField<boolean>;
 };
 
 describe("GET /api/admin/system-settings", () => {
-  it("returns all 9 keys with source=default on fresh DB", async () => {
+  it("returns all 10 keys with source=default on fresh DB", async () => {
     const res = await app.request("/api/admin/system-settings", {
       headers: { Cookie: superCookie },
     });
@@ -146,6 +147,8 @@ describe("GET /api/admin/system-settings", () => {
     expect(body.csp_trusted_origins.value).toEqual([]);
     expect(body.webauthn_enabled.source).toBe("default");
     expect(body.webauthn_enabled.value).toBe(true);
+    expect(body.passkey_login_enabled.source).toBe("default");
+    expect(body.passkey_login_enabled.value).toBe(false);
     expect(typeof body.session_ttl_ms.value).toBe("number");
     expect(typeof body.session_idle_timeout_ms.value).toBe("number");
     expect(typeof body.operator_session_idle_timeout_ms.value).toBe("number");
@@ -526,6 +529,22 @@ describe("PATCH /api/admin/system-settings", () => {
     const body = (await res.json()) as SecurityDto;
     expect(body.webauthn_enabled.value).toBe(false);
     expect(body.webauthn_enabled.source).toBe("db");
+  });
+
+  it("updates passkey_login_enabled to true and source becomes db", async () => {
+    const res = await app.request("/api/admin/system-settings", {
+      method: "PATCH",
+      headers: {
+        Cookie: superCookie,
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ passkey_login_enabled: true }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as SecurityDto;
+    expect(body.passkey_login_enabled.value).toBe(true);
+    expect(body.passkey_login_enabled.source).toBe("db");
   });
 
   it("env-locked webauthn_enabled key returns 400 'managed by environment'", async () => {

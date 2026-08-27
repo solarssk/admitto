@@ -10,6 +10,8 @@ import {
   validateSession,
   validatePartialSession,
   resolveOidcEndSessionRedirect,
+  getWebauthnEnabled,
+  getPasskeyLoginEnabled,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
@@ -80,8 +82,15 @@ export async function handleGetLogin(c: Context, db: PrismaClient): Promise<Resp
   const errorParam = c.req.query("error") ?? undefined;
   const sso = await loadLoginSsoProviders(db);
   const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
+  const passkeyLoginEnabled = (await getWebauthnEnabled(db)) && (await getPasskeyLoginEnabled(db));
   const scriptNonce = createAuthPageScriptNonce();
-  return htmlResponse(c, renderLoginForm(scriptNonce, errorParam, next, sso), scriptNonce, 200, trustedOrigins);
+  return htmlResponse(
+    c,
+    renderLoginForm(scriptNonce, errorParam, next, sso, passkeyLoginEnabled),
+    scriptNonce,
+    200,
+    trustedOrigins,
+  );
 }
 
 async function parseLoginForm(c: Context): Promise<Record<string, string>> {
@@ -113,10 +122,17 @@ export async function handlePostLogin(
   const next = resolveOptionalSafeRedirectPath(rawNext);
   const sso = await loadLoginSsoProviders(db);
   const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
+  const passkeyLoginEnabled = (await getWebauthnEnabled(db)) && (await getPasskeyLoginEnabled(db));
 
   if (!email || !password) {
     const scriptNonce = createAuthPageScriptNonce();
-    return htmlResponse(c, renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso), scriptNonce, 401, trustedOrigins);
+    return htmlResponse(
+      c,
+      renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso, passkeyLoginEnabled),
+      scriptNonce,
+      401,
+      trustedOrigins,
+    );
   }
 
   const result = await login(db, {
@@ -133,7 +149,13 @@ export async function handlePostLogin(
       return c.text("Too many requests", 429);
     }
     const scriptNonce = createAuthPageScriptNonce();
-    return htmlResponse(c, renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso), scriptNonce, 401, trustedOrigins);
+    return htmlResponse(
+      c,
+      renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso, passkeyLoginEnabled),
+      scriptNonce,
+      401,
+      trustedOrigins,
+    );
   }
 
   setSessionCookie(c, result.rawToken);

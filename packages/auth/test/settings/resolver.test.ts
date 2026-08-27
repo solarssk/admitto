@@ -9,6 +9,7 @@ import {
   getSessionIdleTimeoutOperatorMs,
   getTrustedDeviceDays,
   getWebauthnEnabled,
+  getPasskeyLoginEnabled,
   setSetting,
 } from "../../src/settings/resolver.js";
 import {
@@ -167,5 +168,15 @@ describe("typed settings fallbacks", () => {
 
   it("falls back to the default (enabled) for webauthn_enabled when nothing is persisted", async () => {
     await expect(getWebauthnEnabled(envOnlyMockPrisma)).resolves.toBe(true);
+  });
+
+  it("resolves the persisted value for passkey_login_enabled", async () => {
+    const prisma = settingsMockPrisma({ passkey_login_enabled: true });
+
+    await expect(getPasskeyLoginEnabled(prisma)).resolves.toBe(true);
+  });
+
+  it("falls back to the default (disabled) for passkey_login_enabled when nothing is persisted", async () => {
+    await expect(getPasskeyLoginEnabled(envOnlyMockPrisma)).resolves.toBe(false);
   });
 });
