@@ -65,7 +65,14 @@ function toConfig(form: FormState, itemKey: string): EventItemConfigDto {
 }
 
 /** Centered modal to edit or delete a single event item. */
-export function EventItemDrawer({ eventId, item, customFields, items, onClose, onUpdated }: EventItemDrawerProps) {
+export function EventItemDrawer({
+  eventId,
+  item,
+  customFields,
+  items,
+  onClose,
+  onUpdated,
+}: Readonly<EventItemDrawerProps>) {
   const { addToast } = useToast();
   const [form, setForm] = useState<FormState>(() => toForm(item));
   const [saving, setSaving] = useState(false);

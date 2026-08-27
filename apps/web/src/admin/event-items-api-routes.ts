@@ -10,6 +10,7 @@ import {
   loadEventCustomDataFields,
   validateContentFieldReferences,
   UnknownContentFieldError,
+  findConflictingContentField,
   assertContentFieldsNotAssignedElsewhere,
   ContentFieldAlreadyAssignedError,
   type EventItemConfig,
@@ -162,25 +163,25 @@ async function loadSiblingEventItems(
   });
 }
 
-/** Rejects config.content_fields entries that don't exist in the event's EventCustomField
- * registry, or that are already used by a different event item - throws UnknownContentFieldError
- * or ContentFieldAlreadyAssignedError respectively, caught by the caller and mapped to a 4xx.
- * Takes a transaction client so the caller can run this after acquireEventCustomFieldsLock,
- * serializing against a concurrent field delete (see event-custom-fields-routes.ts) - without
- * that, a field could be deleted between this check and the item's commit, leaving content_fields
- * pointing at a source_field that no longer exists. */
+/** Rejects content_fields entries that don't exist in the event's EventCustomField registry, or
+ * that are already used by a different event item - throws UnknownContentFieldError or
+ * ContentFieldAlreadyAssignedError respectively, caught by the caller and mapped to a 4xx. Takes
+ * a transaction client so the caller can run this after acquireEventCustomFieldsLock, serializing
+ * against a concurrent field delete (see event-custom-fields-routes.ts) - without that, a field
+ * could be deleted between this check and the item's commit, leaving content_fields pointing at a
+ * source_field that no longer exists. Only called by the caller once it has already confirmed
+ * `contentFields` is non-empty. */
 async function validateConfigContentFields(
   db: PrismaClient | Prisma.TransactionClient,
   eventId: string,
-  config: EventItemConfig | undefined,
+  contentFields: string[],
   excludeItemId?: string,
 ): Promise<void> {
-  if (!config?.content_fields?.length) return;
   const registryFields = await loadEventCustomDataFields(db, eventId);
   const allowed = new Set(registryFields.map((f) => f.source_field));
-  validateContentFieldReferences(allowed, config.content_fields);
+  validateContentFieldReferences(allowed, contentFields);
   const siblings = await loadSiblingEventItems(db, eventId, excludeItemId);
-  assertContentFieldsNotAssignedElsewhere(siblings, config.content_fields);
+  assertContentFieldsNotAssignedElsewhere(siblings, contentFields);
 }
 
 /** Require `:itemId` route param or return 400. */
@@ -309,7 +310,7 @@ export async function handleCreateEventItem(c: Context, db: PrismaClient): Promi
     const row = await db.$transaction(async (tx) => {
       if (parsed.data.config?.content_fields?.length) {
         await acquireEventCustomFieldsLock(tx, eventId);
-        await validateConfigContentFields(tx, eventId, parsed.data.config);
+        await validateConfigContentFields(tx, eventId, parsed.data.config.content_fields);
       }
       const created = await tx.eventItem.create({
         data: {
@@ -466,18 +467,14 @@ async function validatePatchContentFields(
   if (unknownField) return { ok: false, reason: "unknown_content_field", field: unknownField };
 
   const siblings = await loadSiblingEventItems(tx, eventId, itemId);
-  try {
-    assertContentFieldsNotAssignedElsewhere(siblings, config.content_fields);
-  } catch (err) {
-    if (err instanceof ContentFieldAlreadyAssignedError) {
-      return {
-        ok: false,
-        reason: "content_field_in_use",
-        field: err.sourceField,
-        itemLabel: err.itemLabel,
-      };
-    }
-    throw err;
+  const conflict = findConflictingContentField(siblings, config.content_fields);
+  if (conflict) {
+    return {
+      ok: false,
+      reason: "content_field_in_use",
+      field: conflict.sourceField,
+      itemLabel: conflict.itemLabel,
+    };
   }
   return { ok: true };
 }

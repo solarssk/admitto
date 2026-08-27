@@ -257,6 +257,14 @@ describe("EventItemDrawer", () => {
     });
   });
 
+  it("does not flag a field as claimed by a sibling item with no config", () => {
+    renderDrawer(giftbagItem, [shirtSizeField], [giftbagItem, badgeWithNullConfig]);
+
+    const checkbox = screen.getByRole("checkbox", { name: /Shirt size/ }) as HTMLInputElement;
+    expect(checkbox.disabled).toBe(false);
+    expect(getTooltipText(checkbox)).toBeNull();
+  });
+
   it("disables a hint already used by a different item, with an explanatory tooltip", () => {
     const otherItemWithHint: EventItemDto = {
       ...giftbagItem,
