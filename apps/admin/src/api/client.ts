@@ -140,6 +140,7 @@ import type {
   EventImageAssetsListResponse,
   EventCustomFieldDto,
   EventCustomFieldsListResponse,
+  EventCustomFieldOptionUsageResponse,
   CreateEventCustomFieldBody,
   UpdateEventCustomFieldPatch,
   TicketTypeDto,
@@ -645,6 +646,21 @@ export async function updateEventCustomField(
     jsonPatchInit(patch),
   );
   return parseJson<EventCustomFieldDto>(res);
+}
+
+/** How many attendees currently have each option value of a select-type custom field - fetched
+ * on demand when the edit modal opens, not part of the list/create/patch responses above. */
+export async function fetchEventCustomFieldOptionUsage(
+  eventId: string,
+  fieldId: string,
+  signal?: AbortSignal,
+): Promise<Record<string, number>> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/custom-fields/${encodeURIComponent(fieldId)}/option-usage`,
+    { credentials: "same-origin", signal },
+  );
+  const data = await parseJson<EventCustomFieldOptionUsageResponse>(res);
+  return data.counts;
 }
 
 /** Delete a custom field. Rejected with 409 field_in_use while an event item still shows it as an
