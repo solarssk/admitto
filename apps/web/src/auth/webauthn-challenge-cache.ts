@@ -3,8 +3,18 @@ import { WEBAUTHN_CHALLENGE_TTL_MS } from "@admitto/auth/constants";
 /** "register" (My Account, or the login-time enroll flow) vs "assert" (login verify / step-up) vs
  * "passkey-login" (first-factor discoverable-credential login, keyed by a server-issued opaque
  * ceremony token instead of a session id - there is no session at all before this ceremony
- * completes) — kept separate so a user with one ceremony type mid-flight under a session (or
- * ceremony token) can't collide with a different one under the same key. */
+ * completes) - kept separate so a user with one ceremony type mid-flight under a session (or
+ * ceremony token) can't collide with a different one under the same key.
+ *
+ * Process-local (in-memory Map below, not Redis-backed) for all three purposes: a ceremony's
+ * begin/finish round trip must land on the same app instance. Fine for this deployment's default
+ * docker-compose (one `app` container, no `deploy.replicas` set - unlike `worker`, which is
+ * pinned to 1 explicitly for its own locking reasons). A self-hoster running multiple app
+ * replicas behind a non-sticky load balancer would see intermittent `challenge_expired` on all
+ * three purposes, not just "passkey-login" - a known, pre-existing limitation this type doesn't
+ * introduce. Moving to Redis (the existing rate-limit store already has a client) would need
+ * SETEX + a single-use GETDEL-style consume for all three purposes at once, so it's left as a
+ * follow-up rather than folded into this change. */
 export type WebauthnChallengePurpose = "register" | "assert" | "passkey-login";
 
 interface ChallengeEntry {
