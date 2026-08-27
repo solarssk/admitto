@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Communication → Send's bulk-send progress now shows Sent/Failed/Remaining stat tiles and a two-segment progress bar while a batch drains, and a "Send complete" summary card once it finishes, instead of a single plain-text line. The "Send another" button is now hidden until the batch has actually finished draining - it previously appeared as soon as sending started, and clicking it mid-send stopped the page from tracking that batch (with no way to check on it again) without cancelling anything server-side, so an operator could unknowingly fire a second, concurrent send while the first was still in flight.
-- Requirements no longer shows an item's or custom field's internal slug (e.g. `giftbag`, `t_shirt_size`) under its display name in the Event items list, the Custom attendee fields list, or the "Attendee data field" picker - these are purely internal identifiers with no bearing on how operators or admins use the feature, so they're no longer part of the everyday view.
+- Requirements no longer shows an item's or custom field's internal slug (e.g. `giftbag`, `t_shirt_size`) under its display name in the Event items list, the Custom attendee fields list, or the "Attendee data field" picker - these are purely internal identifiers with no bearing on how operators or admins use the feature, so they're no longer part of the everyday view. The slug still reappears in parentheses, but only for a name that collides with another item's or field's (both only require the slug to be unique, not the display name) - otherwise two same-named rows, or checkboxes in the picker, would be impossible to tell apart.
 
 ### Fixed
 

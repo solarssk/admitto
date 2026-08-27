@@ -97,6 +97,16 @@ describe("EventCustomFieldsCard", () => {
     expect(within(shirtRow!).queryByText("Single choice")).toBeNull();
   });
 
+  it("disambiguates two fields that share a display label with their slug", () => {
+    const shirtA: EventCustomFieldDto = { ...dietaryField, id: "f-shirt-a", source_field: "shirt_size", label: "Shirt size" };
+    const shirtB: EventCustomFieldDto = { ...dietaryField, id: "f-shirt-b", source_field: "shirt_size_2", label: "Shirt size" };
+    renderCard([shirtA, shirtB]);
+
+    expect(screen.getByText("Shirt size (shirt_size)")).toBeTruthy();
+    expect(screen.getByText("Shirt size (shirt_size_2)")).toBeTruthy();
+    expect(screen.queryByText("Shirt size")).toBeNull();
+  });
+
   it("shows the add-field modal with a header subtitle", () => {
     renderCard([]);
     fireEvent.click(screen.getByRole("button", { name: "Add field" }));

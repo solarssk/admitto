@@ -6,6 +6,7 @@ import type { EventCustomFieldDto, EventDto } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { customFieldTypeIcon, customFieldTypeLabel } from "./customFieldType.js";
+import { disambiguatedLabel, findDuplicateLabels } from "./duplicateLabels.js";
 import { EventCustomFieldModal } from "./EventCustomFieldModal.js";
 
 const CUSTOM_FIELDS_HINT =
@@ -23,11 +24,13 @@ export interface EventCustomFieldsCardProps {
 function CustomFieldRow({
   field,
   event,
+  duplicateLabels,
   onEdit,
   onDelete,
 }: {
   readonly field: EventCustomFieldDto;
   readonly event: EventDto;
+  readonly duplicateLabels: ReadonlySet<string>;
   readonly onEdit: () => void;
   readonly onDelete: () => void;
 }) {
@@ -43,7 +46,9 @@ function CustomFieldRow({
             </span>
           </Tooltip>
           <div className="requirements-item-info">
-            <div className="requirements-item-name">{field.label}</div>
+            <div className="requirements-item-name">
+              {disambiguatedLabel(field.label, field.source_field, duplicateLabels)}
+            </div>
           </div>
         </div>
       </td>
@@ -132,6 +137,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, showLoa
         />
       );
     }
+    const duplicateLabels = findDuplicateLabels(fields.map((field) => field.label));
     return (
       <div className="attendees-table-wrap">
         <table className="table">
@@ -149,6 +155,7 @@ export function EventCustomFieldsCard({ eventId, event, fields, loading, showLoa
                 key={field.id}
                 field={field}
                 event={event}
+                duplicateLabels={duplicateLabels}
                 onEdit={() => setEditField(field)}
                 onDelete={() => setDeleteTarget(field)}
               />

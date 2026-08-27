@@ -19,6 +19,7 @@ import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useInFlightIds } from "../hooks/useInFlightIds.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
+import { disambiguatedLabel, findDuplicateLabels } from "../requirements/duplicateLabels.js";
 import { EventCustomFieldsCard } from "../requirements/EventCustomFieldsCard.js";
 import { EventItemDrawer } from "../requirements/EventItemDrawer.js";
 import { DEFAULT_EVENT_ITEM_ICON } from "../requirements/IconPicker.js";
@@ -80,6 +81,7 @@ function EventItemsTableBody({
       </tr>
     );
   }
+  const duplicateLabels = findDuplicateLabels(items.map((item) => item.label));
   return (
     <>
       {items.map((item) => (
@@ -88,7 +90,9 @@ function EventItemsTableBody({
             <div className="requirements-item-cell">
               <i className={`ti ti-${item.icon ?? DEFAULT_EVENT_ITEM_ICON}`} aria-hidden="true" />
               <div className="requirements-item-info">
-                <div className="requirements-item-name">{item.label}</div>
+                <div className="requirements-item-name">
+                  {disambiguatedLabel(item.label, item.key, duplicateLabels)}
+                </div>
               </div>
             </div>
           </td>

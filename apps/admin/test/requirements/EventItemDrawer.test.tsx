@@ -53,6 +53,12 @@ const shirtSizeField: EventCustomFieldDto = {
   created_at: "2026-01-01T00:00:00.000Z",
 };
 
+const shirtSizeFieldDuplicateLabel: EventCustomFieldDto = {
+  ...shirtSizeField,
+  id: "field-shirt-2",
+  source_field: "shirt_size_2",
+};
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -196,6 +202,15 @@ describe("EventItemDrawer", () => {
   it("shows a hint instead of a picker when the event has no custom fields yet", () => {
     renderDrawer(giftbagItem, []);
     expect(screen.getByText(/No custom fields defined for this event yet/)).toBeTruthy();
+  });
+
+  it("disambiguates two custom fields that share a display label", () => {
+    renderDrawer(giftbagItem, [shirtSizeField, shirtSizeFieldDuplicateLabel]);
+
+    expect(screen.getByRole("checkbox", { name: "Shirt size (shirt_size)" })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "Shirt size (shirt_size_2)" })).toBeTruthy();
+    expect(screen.getByText("Shirt size (shirt_size)")).toBeTruthy();
+    expect(screen.getByText("Shirt size (shirt_size_2)")).toBeTruthy();
   });
 
   it("edits details and icon, checks a custom field hint, then saves the assembled payload", async () => {
