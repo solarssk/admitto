@@ -62,17 +62,17 @@ function securityDraftHasChanges(settings: SystemSettingsDto, draft: SecuritySet
 }
 
 function anySecurityEnvLocked(settings: SystemSettingsDto): boolean {
-  return (
-    fieldLocked(settings.session_ttl_ms.source) ||
-    fieldLocked(settings.session_idle_timeout_ms.source) ||
-    fieldLocked(settings.operator_session_ttl_ms.source) ||
-    fieldLocked(settings.operator_session_idle_timeout_ms.source) ||
-    fieldLocked(settings.trusted_device_days.source) ||
-    fieldLocked(settings.mfa_required_roles.source) ||
-    fieldLocked(settings.csp_trusted_origins.source) ||
-    fieldLocked(settings.webauthn_enabled.source) ||
-    fieldLocked(settings.passkey_login_enabled.source)
-  );
+  return [
+    settings.session_ttl_ms.source,
+    settings.session_idle_timeout_ms.source,
+    settings.operator_session_ttl_ms.source,
+    settings.operator_session_idle_timeout_ms.source,
+    settings.trusted_device_days.source,
+    settings.mfa_required_roles.source,
+    settings.csp_trusted_origins.source,
+    settings.webauthn_enabled.source,
+    settings.passkey_login_enabled.source,
+  ].some(fieldLocked);
 }
 
 interface SecurityNumericRowProps {
