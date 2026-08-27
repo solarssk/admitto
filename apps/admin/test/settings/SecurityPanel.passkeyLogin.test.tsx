@@ -49,6 +49,19 @@ describe("SecurityPanel — passkey sign-in", () => {
     expect(el<HTMLInputElement>("security-passkey-login-enabled").checked).toBe(false);
   });
 
+  it("gives each switch a stable, descriptive accessible name instead of just \"On\"/\"Off\"", async () => {
+    vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
+    renderWithToastAndRouter(<SecurityPanel />);
+
+    await screen.findByText("Passkey / security key sign-in");
+    expect(
+      screen.getByRole("switch", { name: "Passkey / security key sign-in" }),
+    ).toBe(el<HTMLInputElement>("security-webauthn-enabled"));
+    expect(
+      screen.getByRole("switch", { name: "Passkey sign-in on the login page" }),
+    ).toBe(el<HTMLInputElement>("security-passkey-login-enabled"));
+  });
+
   it("saves passkey_login_enabled when toggled on", async () => {
     vi.mocked(fetchSecuritySettings).mockResolvedValue(baseSettings);
     vi.mocked(patchSecuritySettings).mockResolvedValue({
