@@ -17,6 +17,8 @@ const baseSettings: SystemSettingsDto = {
   mfa_required_roles: { value: ["superadmin"], source: "default" },
   instance_url: { value: null, source: "default" },
   csp_trusted_origins: { value: [], source: "default" },
+  webauthn_enabled: { value: true, source: "default" },
+  passkey_login_enabled: { value: false, source: "default" },
 };
 
 const baseDraft = {
@@ -27,6 +29,8 @@ const baseDraft = {
   trustedDays: "30",
   mfaRoles: ["superadmin"],
   cspTrustedOriginsRaw: "",
+  webauthnEnabled: true,
+  passkeyLoginEnabled: false,
 };
 
 function fieldLocked(source: "env" | "db" | "default") {
@@ -169,6 +173,33 @@ describe("buildSecurityPatchBody", () => {
     const result = buildSecurityPatchBody(
       { ...baseSettings, csp_trusted_origins: { value: [], source: "env" } },
       { ...baseDraft, cspTrustedOriginsRaw: "https://example.com" },
+      fieldLocked,
+    );
+    expect(result.hasChanges).toBe(false);
+    expect(result.body).toEqual({});
+  });
+
+  it("includes webauthn_enabled and passkey_login_enabled when toggled", () => {
+    const result = buildSecurityPatchBody(
+      baseSettings,
+      { ...baseDraft, webauthnEnabled: false, passkeyLoginEnabled: true },
+      fieldLocked,
+    );
+    expect(result.hasChanges).toBe(true);
+    expect(result.body).toEqual({
+      webauthn_enabled: false,
+      passkey_login_enabled: true,
+    });
+  });
+
+  it("skips webauthn_enabled and passkey_login_enabled when env-locked", () => {
+    const result = buildSecurityPatchBody(
+      {
+        ...baseSettings,
+        webauthn_enabled: { value: true, source: "env" },
+        passkey_login_enabled: { value: false, source: "env" },
+      },
+      { ...baseDraft, webauthnEnabled: false, passkeyLoginEnabled: true },
       fieldLocked,
     );
     expect(result.hasChanges).toBe(false);

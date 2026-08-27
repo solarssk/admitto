@@ -67,6 +67,7 @@ export {
   getTrustedDeviceDays,
   getMfaRequiredRoles,
   getWebauthnEnabled,
+  getPasskeyLoginEnabled,
 } from "./settings/resolver.js";
 export {
   SETTING_SESSION_TTL,
@@ -83,6 +84,7 @@ export {
   SETTING_SETUP_COMPLETE,
   SETTING_INSTANCE_URL,
   SETTING_WEBAUTHN_ENABLED,
+  SETTING_PASSKEY_LOGIN_ENABLED,
   SETTING_CSP_TRUSTED_ORIGINS,
 } from "./settings/keys.js";
 export { getInstanceUrl } from "./settings/instance-url.js";
@@ -201,13 +203,21 @@ export {
   logout,
   completeMfa,
   completeMfaWithWebauthn,
+  loginWithPasskey,
   loginNextAfterFullSession,
   type LoginInput,
   type LoginResult,
   type CompleteMfaInput,
   type CompleteMfaResult,
   type CompleteMfaWithWebauthnInput,
+  type LoginWithPasskeyInput,
 } from "./login.js";
+export {
+  beginPasskeyLogin,
+  finishPasskeyLogin,
+  type BeginPasskeyLoginResult,
+  type FinishPasskeyLoginResult,
+} from "./webauthn-login.js";
 export {
   bootstrapSuperadmin,
   superadminInstanceExists,

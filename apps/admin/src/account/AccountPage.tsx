@@ -1247,7 +1247,7 @@ export function AccountPage() {
             {credentials.length > 0 ? `${credentials.length} registered` : "Not configured"}
           </span>
         </div>
-        {(canAdd || credentials.length > 0) && (
+        {(account.has_local_password || credentials.length > 0) && (
           <div className="account-mfa-method__action">
             {credentials.length > 0 ? (
               <Button
@@ -1261,7 +1261,7 @@ export function AccountPage() {
               <Button
                 type="button"
                 variant="primary"
-                disabled={adding}
+                disabled={adding || !canAdd}
                 onClick={() => {
                   if (isPasskey) {
                     setAddPasskeyLabel(""); setAddPasskeyError(null); setAddPasskeyOpen(true);
@@ -1755,9 +1755,9 @@ export function AccountPage() {
             </p>
           )}
           {account.has_local_password && !account.webauthn_enabled && (
-            <p className="account-info-block">
+            <Notice variant="info" style={{ marginTop: "var(--space-3)" }}>
               Passkeys and security keys are turned off for this instance. Ask an administrator to enable them.
-            </p>
+            </Notice>
           )}
       </Card>
     );
