@@ -70,8 +70,6 @@ function anySecurityEnvLocked(settings: SystemSettingsDto): boolean {
     settings.trusted_device_days.source,
     settings.mfa_required_roles.source,
     settings.csp_trusted_origins.source,
-    settings.webauthn_enabled.source,
-    settings.passkey_login_enabled.source,
   ].some(fieldLocked);
 }
 
@@ -369,50 +367,6 @@ export function SecurityPanel() {
 
           <div className="security-settings-item">
             <div className="settings-row__text">
-              <strong>Passkey / security key sign-in</strong>
-              <p>
-                Allow passkeys and security keys as a two-factor method, and (when the option
-                below is also on) as a way to sign in without a password.
-              </p>
-            </div>
-            <div className="security-settings-row__control">
-              <Switch
-                id="security-webauthn-enabled"
-                aria-label="Passkey / security key sign-in"
-                label={draft.webauthnEnabled ? "On" : "Off"}
-                checked={draft.webauthnEnabled}
-                disabled={webauthnLocked}
-                onChange={() => setDraft({ ...draft, webauthnEnabled: !draft.webauthnEnabled })}
-              />
-            </div>
-          </div>
-          <div className="security-settings-row-divider" aria-hidden="true" />
-
-          <div className="security-settings-item">
-            <div className="settings-row__text">
-              <strong>Passkey sign-in on the login page</strong>
-              <p>
-                Show a "Sign in with a passkey" option on the sign-in screen for accounts with a
-                registered passkey. Password sign-in always stays available.
-              </p>
-            </div>
-            <div className="security-settings-row__control">
-              <Switch
-                id="security-passkey-login-enabled"
-                aria-label="Passkey sign-in on the login page"
-                label={draft.passkeyLoginEnabled ? "On" : "Off"}
-                checked={draft.passkeyLoginEnabled}
-                disabled={passkeyLoginLocked || !draft.webauthnEnabled}
-                onChange={() =>
-                  setDraft({ ...draft, passkeyLoginEnabled: !draft.passkeyLoginEnabled })
-                }
-              />
-            </div>
-          </div>
-          <div className="security-settings-row-divider" aria-hidden="true" />
-
-          <div className="security-settings-item">
-            <div className="settings-row__text">
               <strong>Trusted third-party script origins</strong>
               <p>{CSP_TRUSTED_ORIGINS_DESCRIPTION}</p>
             </div>
@@ -433,6 +387,61 @@ export function SecurityPanel() {
             </div>
           </div>
         </div>
+        </div>
+      </Card>
+
+      <Card title="Passkeys" actions={<EnvBadge locked={webauthnLocked} />}>
+        <div className="settings-card-stack">
+          <div className="mail-transport-section security-settings-rows">
+            <div className="security-settings-item">
+              <div className="settings-row__text">
+                <strong>Passkey / security key sign-in</strong>
+                <p>
+                  Allow passkeys and security keys as a two-factor method. Turn on Passkey login
+                  below to also let accounts sign in without a password.
+                </p>
+              </div>
+              <div className="security-settings-row__control">
+                <Switch
+                  id="security-webauthn-enabled"
+                  aria-label="Passkey / security key sign-in"
+                  label={draft.webauthnEnabled ? "On" : "Off"}
+                  checked={draft.webauthnEnabled}
+                  disabled={webauthnLocked}
+                  onChange={() => setDraft({ ...draft, webauthnEnabled: !draft.webauthnEnabled })}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card title="Passkey login" actions={<EnvBadge locked={passkeyLoginLocked} />}>
+        <div className="settings-card-stack">
+          <div className="mail-transport-section security-settings-rows">
+            <div className="security-settings-item">
+              <div className="settings-row__text">
+                <strong>Passkey sign-in on the login page</strong>
+                <p>
+                  Show a "Sign in with a passkey" option on the sign-in screen for accounts with a
+                  registered passkey. Password sign-in always stays available. Requires Passkey /
+                  security key sign-in turned on above.
+                </p>
+              </div>
+              <div className="security-settings-row__control">
+                <Switch
+                  id="security-passkey-login-enabled"
+                  aria-label="Passkey sign-in on the login page"
+                  label={draft.passkeyLoginEnabled ? "On" : "Off"}
+                  checked={draft.passkeyLoginEnabled}
+                  disabled={passkeyLoginLocked || !draft.webauthnEnabled}
+                  onChange={() =>
+                    setDraft({ ...draft, passkeyLoginEnabled: !draft.passkeyLoginEnabled })
+                  }
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </Card>
 
