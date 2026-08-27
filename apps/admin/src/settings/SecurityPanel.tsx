@@ -42,8 +42,7 @@ const MFA_ROLES = [
 const SECURITY_NUMERIC_INPUT_STYLE = { width: "8rem", flexShrink: 0 } as const;
 const SECURITY_CARD_HINT =
   "Already signed-in staff keep their current session until it expires or they sign out.";
-const SECURITY_CARD_INTRO =
-  "How long staff stay signed in, how long a device can skip the authenticator app, and which roles must use one.";
+const SECURITY_CARD_INTRO = "How long staff stay signed in, and how long a device can skip the authenticator app.";
 
 function fieldLocked(source: SettingSource): boolean {
   return source === "env";
@@ -68,8 +67,6 @@ function anySecurityEnvLocked(settings: SystemSettingsDto): boolean {
     settings.operator_session_ttl_ms.source,
     settings.operator_session_idle_timeout_ms.source,
     settings.trusted_device_days.source,
-    settings.mfa_required_roles.source,
-    settings.csp_trusted_origins.source,
   ].some(fieldLocked);
 }
 
@@ -138,7 +135,8 @@ function SecurityNumericRow({
   );
 }
 
-/** Settings panel — security policies: session TTL, remember-device duration, and MFA role requirements. Env-locked fields are read-only. */
+/** Settings panel — session duration policy, sign-in methods (MFA role requirements, passkeys),
+ * and trusted third-party script origins, each its own card. Env-locked fields are read-only. */
 export function SecurityPanel() {
   const { addToast } = useToast();
   const validationErrorsRef = useRef<HTMLUListElement>(null);
@@ -213,7 +211,7 @@ export function SecurityPanel() {
   if (loading) {
     if (!showLoading) return null;
     return (
-      <Card title={<HintLabel hint={SECURITY_CARD_HINT}>Security</HintLabel>}>
+      <Card title={<HintLabel hint={SECURITY_CARD_HINT}>Sessions</HintLabel>}>
         <p className="sessions-status">Loading…</p>
       </Card>
     );
@@ -221,7 +219,7 @@ export function SecurityPanel() {
 
   if (error || !settings || !draft) {
     return (
-      <Card title={<HintLabel hint={SECURITY_CARD_HINT}>Security</HintLabel>}>
+      <Card title={<HintLabel hint={SECURITY_CARD_HINT}>Sessions</HintLabel>}>
         <div className="sessions-status">
           <p>{error ?? "Unexpected error."}</p>
           <Button type="button" variant="secondary" onClick={load}>
@@ -254,7 +252,7 @@ export function SecurityPanel() {
   return (
     <>
       <Card
-        title={<HintLabel hint={SECURITY_CARD_HINT}>Security</HintLabel>}
+        title={<HintLabel hint={SECURITY_CARD_HINT}>Sessions</HintLabel>}
         actions={<EnvBadge locked={anySecurityEnvLocked(settings)} />}
       >
         <div className="settings-card-stack">
@@ -339,66 +337,47 @@ export function SecurityPanel() {
             source={settings.trusted_device_days.source}
             onChange={(trustedDays) => setDraft({ ...draft, trustedDays })}
           />
-
-          <div className="security-settings-item">
-            <div className="settings-row__text">
-              <strong>Authenticator app required by role</strong>
-              <p>
-                Which roles must enter a code from an authenticator app at sign-in. Local accounts
-                only; single sign-on is exempt.
-              </p>
-            </div>
-            <div className="security-settings-row__control security-mfa-section__switches">
-              <div className="security-settings-field__warning-slot">
-                {mfaEmpty ? <SecurityFieldWarning message={MFA_EMPTY_WARNING} /> : null}
-              </div>
-              {MFA_ROLES.map((role) => (
-                <Switch
-                  key={role.value}
-                  label={role.label}
-                  checked={draft.mfaRoles.includes(role.value)}
-                  disabled={mfaLocked}
-                  onChange={() => toggleRole(role.value)}
-                />
-              ))}
-            </div>
-          </div>
-          <div className="security-settings-row-divider" aria-hidden="true" />
-
-          <div className="security-settings-item">
-            <div className="settings-row__text">
-              <strong>Trusted third-party script origins</strong>
-              <p>{CSP_TRUSTED_ORIGINS_DESCRIPTION}</p>
-            </div>
-            <div className="security-settings-row__control">
-              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-                {cspTrustedOrigins.length > 0 ? (
-                  <SecurityFieldWarning message={CSP_TRUSTED_ORIGINS_WARNING} />
-                ) : null}
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={cspTrustedOriginsLocked}
-                  onClick={() => setCspOriginsModalOpen(true)}
-                >
-                  Manage origins
-                </Button>
-              </div>
-            </div>
-          </div>
         </div>
         </div>
       </Card>
 
-      <Card title="Passkeys" actions={<EnvBadge locked={webauthnLocked} />}>
+      <Card
+        title="Sign-in"
+        actions={<EnvBadge locked={mfaLocked || webauthnLocked || passkeyLoginLocked} />}
+      >
         <div className="settings-card-stack">
           <div className="mail-transport-section security-settings-rows">
             <div className="security-settings-item">
               <div className="settings-row__text">
+                <strong>Authenticator app required by role</strong>
+                <p>
+                  Which roles must enter a code from an authenticator app at sign-in. Local
+                  accounts only; single sign-on is exempt.
+                </p>
+              </div>
+              <div className="security-settings-row__control security-mfa-section__switches">
+                <div className="security-settings-field__warning-slot">
+                  {mfaEmpty ? <SecurityFieldWarning message={MFA_EMPTY_WARNING} /> : null}
+                </div>
+                {MFA_ROLES.map((role) => (
+                  <Switch
+                    key={role.value}
+                    label={role.label}
+                    checked={draft.mfaRoles.includes(role.value)}
+                    disabled={mfaLocked}
+                    onChange={() => toggleRole(role.value)}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="security-settings-row-divider" aria-hidden="true" />
+
+            <div className="security-settings-item">
+              <div className="settings-row__text">
                 <strong>Passkey / security key sign-in</strong>
                 <p>
-                  Allow passkeys and security keys as a two-factor method. Turn on Passkey login
-                  below to also let accounts sign in without a password.
+                  Allow passkeys and security keys as a two-factor method. Turn on Passkey sign-in
+                  on the login page below to also let accounts sign in without a password.
                 </p>
               </div>
               <div className="security-settings-row__control">
@@ -412,13 +391,8 @@ export function SecurityPanel() {
                 />
               </div>
             </div>
-          </div>
-        </div>
-      </Card>
+            <div className="security-settings-row-divider" aria-hidden="true" />
 
-      <Card title="Passkey login" actions={<EnvBadge locked={passkeyLoginLocked} />}>
-        <div className="settings-card-stack">
-          <div className="mail-transport-section security-settings-rows">
             <div className="security-settings-item">
               <div className="settings-row__text">
                 <strong>Passkey sign-in on the login page</strong>
@@ -439,6 +413,34 @@ export function SecurityPanel() {
                     setDraft({ ...draft, passkeyLoginEnabled: !draft.passkeyLoginEnabled })
                   }
                 />
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card title="Third-party scripts" actions={<EnvBadge locked={cspTrustedOriginsLocked} />}>
+        <div className="settings-card-stack">
+          <div className="mail-transport-section security-settings-rows">
+            <div className="security-settings-item">
+              <div className="settings-row__text">
+                <strong>Trusted third-party script origins</strong>
+                <p>{CSP_TRUSTED_ORIGINS_DESCRIPTION}</p>
+              </div>
+              <div className="security-settings-row__control">
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+                  {cspTrustedOrigins.length > 0 ? (
+                    <SecurityFieldWarning message={CSP_TRUSTED_ORIGINS_WARNING} />
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={cspTrustedOriginsLocked}
+                    onClick={() => setCspOriginsModalOpen(true)}
+                  >
+                    Manage origins
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
