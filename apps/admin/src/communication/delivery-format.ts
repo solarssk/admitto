@@ -47,20 +47,33 @@ export function deliveryLocalTime(row: Pick<DeliveryDto, "client_timezone">, iso
   return formatZonedClockTime(iso, row.client_timezone);
 }
 
+/** StatusBadge (packages/ui) resolves its tone from one flat, cross-domain string map keyed by
+ * the raw status value - EmailDelivery's "cancelled" would otherwise collide with the unrelated
+ * AttendeeStatus "cancelled" (RSVP cancellation, styled as an error/red badge) and make a
+ * deliberately-stopped send render as if it had failed. Remaps to status-map.ts's dedicated
+ * "mail_cancelled" key everywhere an EmailDelivery status reaches StatusBadge/MailStatusBadge. */
+export function deliveryStatusBadgeKey(status: string): string {
+  return status === "cancelled" ? "mail_cancelled" : status;
+}
+
 export function purposeLabel(purpose: string): string {
   return purpose === "resend" ? "Resend" : "Initial";
 }
 
 /** Tabler icon for a Delivery history row.
  * Failure terminal states use `mail-exclamation` (envelope + !) so the shape itself reads as
- * "something went wrong", not only the red tint. Otherwise the purpose icon stays: ticket for
- * the first send, mail-forward for resends. */
+ * "something went wrong", not only the red tint. A cancelled row (operator stopped a still-
+ * draining batch) gets `ban` - deliberately distinct from a failure, since nothing went wrong.
+ * Otherwise the purpose icon stays: ticket for the first send, mail-forward for resends. */
 export function deliveryHistoryIcon(
   purpose: string,
   status?: string,
-): "ticket" | "mail-forward" | "mail-exclamation" {
+): "ticket" | "mail-forward" | "mail-exclamation" | "ban" {
   if (status === "bounced" || status === "failed" || status === "rejected") {
     return "mail-exclamation";
+  }
+  if (status === "cancelled") {
+    return "ban";
   }
   return purpose === "resend" ? "mail-forward" : "ticket";
 }

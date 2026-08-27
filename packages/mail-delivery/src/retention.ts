@@ -21,6 +21,10 @@ const DEFAULT_PURGE_BATCH_SIZE = 1000;
 // window, a row stuck there is treated as terminal for data-minimisation purposes.
 const SUCCESS_TERMINAL_STATUSES = ["accepted", "sent", "delivered"] as const;
 const FAILURE_TERMINAL_STATUSES = ["failed", "bounced", "rejected"] as const;
+// "cancelled" (an operator stopped a still-draining bulk send) has no dedicated timestamp column
+// of its own - `updated_at` is bumped by the cancelling `updateMany` and nothing legitimately
+// touches a cancelled row afterward (drain.ts and retry.ts both exclude it), so it's a safe,
+// migration-free stand-in for "when this became terminal".
 
 /** Clamp an optional caller-provided batch size to a safe positive integer. */
 function normalizeBatchSize(batchSize: number | undefined): number {
@@ -66,6 +70,10 @@ function staleSnapshotWhere(cutoff: Date): Prisma.EmailDeliveryWhereInput {
           {
             status: { in: [...FAILURE_TERMINAL_STATUSES] },
             failed_at: { lte: cutoff },
+          },
+          {
+            status: "cancelled",
+            updated_at: { lte: cutoff },
           },
         ],
       },

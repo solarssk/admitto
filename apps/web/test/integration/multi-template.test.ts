@@ -760,6 +760,7 @@ describe("multi-template API", () => {
       expect(audit.metadata).toEqual({
         template_id: null,
         filter: "no_delivery",
+        batch_id: null,
         queued: 0,
         skipped: 0,
         failed: 0,
@@ -1004,6 +1005,16 @@ describe("multi-template API", () => {
           purpose: "resend",
           provider: "export_only",
         },
+        {
+          id: "del-cancelled",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          attendee_id: attendee.id,
+          batch_id: batchId,
+          status: "cancelled",
+          purpose: "resend",
+          provider: "export_only",
+        },
       ],
     });
 
@@ -1016,8 +1027,9 @@ describe("multi-template API", () => {
       queued: number;
       sent: number;
       failed: number;
+      cancelled: number;
     };
-    expect(body).toEqual({ batchId, total: 4, queued: 1, sent: 1, failed: 2 });
+    expect(body).toEqual({ batchId, total: 5, queued: 1, sent: 1, failed: 2, cancelled: 1 });
   });
 
   it("GET /send/status returns not_found for a batch outside the event", async () => {
@@ -1027,6 +1039,159 @@ describe("multi-template API", () => {
 
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "not_found" });
+  });
+
+  it("POST /send/:batchId/cancel stops only still-queued rows for that batch", async () => {
+    const batchId = "batch-cancel-route";
+    const otherBatchId = "batch-cancel-route-other";
+    const attendee = await prisma.attendee.create({
+      data: {
+        id: "att-cancel-route",
+        event_id: EVENT_A,
+        email: "cancel-route@example.com",
+        name: "Cancel Route",
+      },
+    });
+    await prisma.emailDelivery.createMany({
+      data: [
+        {
+          id: "del-cancel-route-queued-1",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          attendee_id: attendee.id,
+          batch_id: batchId,
+          status: "queued",
+          purpose: "resend",
+          provider: "export_only",
+        },
+        {
+          id: "del-cancel-route-queued-2",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          attendee_id: attendee.id,
+          batch_id: batchId,
+          status: "queued",
+          purpose: "resend",
+          provider: "export_only",
+        },
+        {
+          id: "del-cancel-route-already-sent",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          attendee_id: attendee.id,
+          batch_id: batchId,
+          status: "sent",
+          purpose: "resend",
+          provider: "export_only",
+        },
+        {
+          id: "del-cancel-route-other-batch",
+          organization_id: ORG_A,
+          event_id: EVENT_A,
+          attendee_id: attendee.id,
+          batch_id: otherBatchId,
+          status: "queued",
+          purpose: "resend",
+          provider: "export_only",
+        },
+      ],
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/send/${batchId}/cancel`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ batchId, cancelled: 2 });
+
+    const rows = await prisma.emailDelivery.findMany({
+      where: { id: { in: ["del-cancel-route-queued-1", "del-cancel-route-queued-2", "del-cancel-route-already-sent", "del-cancel-route-other-batch"] } },
+      select: { id: true, status: true },
+    });
+    const statusById = Object.fromEntries(rows.map((r) => [r.id, r.status]));
+    expect(statusById["del-cancel-route-queued-1"]).toBe("cancelled");
+    expect(statusById["del-cancel-route-queued-2"]).toBe("cancelled");
+    // Already-terminal and other-batch rows are untouched - the guarded updateMany only
+    // matches status:"queued" rows for this exact batch_id.
+    expect(statusById["del-cancel-route-already-sent"]).toBe("sent");
+    expect(statusById["del-cancel-route-other-batch"]).toBe("queued");
+  });
+
+  it("POST /send/:batchId/cancel is a harmless no-op once every row already finished", async () => {
+    const batchId = "batch-cancel-already-done";
+    const attendee = await prisma.attendee.create({
+      data: {
+        id: "att-cancel-already-done",
+        event_id: EVENT_A,
+        email: "cancel-already-done@example.com",
+        name: "Cancel Already Done",
+      },
+    });
+    await prisma.emailDelivery.create({
+      data: {
+        id: "del-cancel-already-done",
+        organization_id: ORG_A,
+        event_id: EVENT_A,
+        attendee_id: attendee.id,
+        batch_id: batchId,
+        status: "sent",
+        purpose: "resend",
+        provider: "export_only",
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/send/${batchId}/cancel`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ batchId, cancelled: 0 });
+
+    const row = await prisma.emailDelivery.findUniqueOrThrow({
+      where: { id: "del-cancel-already-done" },
+    });
+    expect(row.status).toBe("sent");
+  });
+
+  it("POST /send/:batchId/cancel returns not_found for a batch that never existed", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/send/no-such-batch/cancel`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not_found" });
+  });
+
+  it("POST /send/:batchId/cancel returns forbidden for an event outside the caller's organization", async () => {
+    const foreignOrgId = "org-cancel-forbidden";
+    const foreignEventId = "evt-cancel-forbidden";
+    await prisma.organization.upsert({
+      where: { id: foreignOrgId },
+      create: { id: foreignOrgId, name: "Foreign Org", slug: "cancel-forbidden-org" },
+      update: {},
+    });
+    await prisma.event.upsert({
+      where: { id: foreignEventId },
+      create: {
+        id: foreignEventId,
+        title: "Foreign Event",
+        slug: "cancel-forbidden-event",
+        date: new Date("2026-10-01"),
+        organization_id: foreignOrgId,
+      },
+      update: {},
+    });
+
+    const res = await app.request(`/api/admin/events/${foreignEventId}/send/some-batch/cancel`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "forbidden" });
   });
 
   it("POST /templates/:id/test-send sends using the selected template", async () => {

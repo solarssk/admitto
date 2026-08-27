@@ -84,7 +84,7 @@ import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
 import { ROLE_BADGE_VARIANT, ROLE_LABELS } from "../auth/role-labels.js";
-import { formatDeliveryHistoryTimeParts, deliveryHistoryIcon, rowTimestamp, countDeliveryOutcomes } from "../communication/delivery-format.js";
+import { formatDeliveryHistoryTimeParts, deliveryHistoryIcon, deliveryStatusBadgeKey, rowTimestamp, countDeliveryOutcomes } from "../communication/delivery-format.js";
 import { DeliveryRowMenu } from "../communication/DeliveryRowMenu.js";
 import { SentMessagePreviewModal } from "../communication/SentMessagePreviewModal.js";
 import { DeliveryDetailsModal } from "../communication/DeliveryDetailsModal.js";
@@ -648,7 +648,7 @@ function rsvpTone(status: RsvpStatus): ChipTone {
  * (info/confirmed/vip/primary) don't apply to any mail delivery status. */
 function mailTone(status: string | null): ChipTone {
   if (!status) return "neutral";
-  const variant = resolveStatusMeta(status).variant;
+  const variant = resolveStatusMeta(deliveryStatusBadgeKey(status)).variant;
   return variant === "ok" || variant === "warn" || variant === "error" ? variant : "neutral";
 }
 
@@ -1018,7 +1018,7 @@ function AttendeeOverviewTab({
             <div className="attendee-deliveries-scroll at-scroll">
               <ul className="attendee-deliveries">
                 {detail.deliveries.map((delivery) => {
-                  const statusMeta = resolveStatusMeta(delivery.status);
+                  const statusMeta = resolveStatusMeta(deliveryStatusBadgeKey(delivery.status));
                   const iconTone = statusMeta.variant;
                   const timeParts = formatDeliveryHistoryTimeParts(
                     rowTimestamp(delivery),
