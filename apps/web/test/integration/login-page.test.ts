@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { hashPassword, createSession } from "@admitto/auth";
+import { hashPassword, createSession, SETTING_WEBAUTHN_ENABLED, SETTING_PASSKEY_LOGIN_ENABLED } from "@admitto/auth";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 
@@ -153,6 +153,49 @@ describe("GET /login", () => {
     expect(html).not.toContain("phishing-message");
     expect(html).not.toContain('role="alert"');
   });
+
+  it("omits the passkey sign-in button by default (setting off)", async () => {
+    const res = await app.request("/login");
+    const html = await res.text();
+    expect(html).not.toContain("passkey-login-btn");
+  });
+
+  it("shows the passkey sign-in button once both settings are on", async () => {
+    await prisma.systemSettings.upsert({
+      where: { key: SETTING_PASSKEY_LOGIN_ENABLED },
+      create: { key: SETTING_PASSKEY_LOGIN_ENABLED, value_json: "true" },
+      update: { value_json: "true" },
+    });
+    try {
+      const res = await app.request("/login");
+      const html = await res.text();
+      expect(html).toContain("passkey-login-btn");
+    } finally {
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_PASSKEY_LOGIN_ENABLED } });
+    }
+  });
+
+  it("still omits the passkey button when passkey_login_enabled is on but webauthn_enabled is off", async () => {
+    await prisma.systemSettings.upsert({
+      where: { key: SETTING_PASSKEY_LOGIN_ENABLED },
+      create: { key: SETTING_PASSKEY_LOGIN_ENABLED, value_json: "true" },
+      update: { value_json: "true" },
+    });
+    await prisma.systemSettings.upsert({
+      where: { key: SETTING_WEBAUTHN_ENABLED },
+      create: { key: SETTING_WEBAUTHN_ENABLED, value_json: "false" },
+      update: { value_json: "false" },
+    });
+    try {
+      const res = await app.request("/login");
+      const html = await res.text();
+      expect(html).not.toContain("passkey-login-btn");
+    } finally {
+      await prisma.systemSettings.deleteMany({
+        where: { key: { in: [SETTING_PASSKEY_LOGIN_ENABLED, SETTING_WEBAUTHN_ENABLED] } },
+      });
+    }
+  });
 });
 
 describe("POST /login", () => {
@@ -200,6 +243,25 @@ describe("POST /login", () => {
     const html = await res.text();
     expect(html).toContain("Invalid email or password");
     expect(sessionCookie(res)).toBeUndefined();
+  });
+
+  it("keeps the passkey sign-in button on the re-rendered form after a wrong password", async () => {
+    await prisma.systemSettings.upsert({
+      where: { key: SETTING_PASSKEY_LOGIN_ENABLED },
+      create: { key: SETTING_PASSKEY_LOGIN_ENABLED, value_json: "true" },
+      update: { value_json: "true" },
+    });
+    try {
+      const res = await app.request("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", ...sameOrigin },
+        body: new URLSearchParams({ email: "operator@example.com", password: "wrong" }).toString(),
+      });
+      expect(res.status).toBe(401);
+      expect(await res.text()).toContain("passkey-login-btn");
+    } finally {
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_PASSKEY_LOGIN_ENABLED } });
+    }
   });
 
   it("persists device_label via session API", async () => {

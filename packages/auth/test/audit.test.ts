@@ -145,9 +145,24 @@ describe("audit", () => {
           user_display_name: null,
           ip: "1.2.3.4",
           actor_timezone: null,
-          metadata: { userAgent: "curl/8.0" },
+          metadata: { userAgent: "curl/8.0", method: "manual" },
         },
       });
+    });
+
+    it("defaults to method \"manual\" when the caller doesn't specify one, and records \"passkey\" when it does", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logLoginSuccess(fakeDb(create, { email: "bob@example.com", display_name: null }), {
+        email: "bob@example.com",
+        userId: "user-1",
+        method: "passkey",
+      });
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ metadata: expect.objectContaining({ method: "passkey" }) }),
+        }),
+      );
     });
 
     it("persists actor_timezone when the login context carries a browser zone", async () => {

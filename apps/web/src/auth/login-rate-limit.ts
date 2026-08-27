@@ -10,15 +10,20 @@ import type { RateLimitStore } from "../rate-limit/types.js";
  */
 export function createLoginRateLimitMiddleware(
   store: RateLimitStore,
-  options: { format?: "json" | "text" } = {},
+  options: {
+    format?: "json" | "text";
+    policyKey?: "auth:login-ip" | "auth:passkey-login-begin-ip" | "auth:passkey-login-finish-ip";
+  } = {},
 ) {
   const format = options.format ?? "json";
-  const check = RATE_POLICIES["auth:login-ip"].checks[0];
+  const policyKey = options.policyKey ?? "auth:login-ip";
+  const check = RATE_POLICIES[policyKey].checks[0];
+  const scope = policyKey === "auth:login-ip" ? "login_ip" : "passkey_login_ip";
   return async (c: Context, next: Next): Promise<Response | void> => {
     const ip = resolveClientIp(c);
     const { allowed } = await store.hit(check.keyOf(c), check.windowMs, check.max);
     if (!allowed) {
-      logRateLimitExceeded({ scope: "login_ip", ip });
+      logRateLimitExceeded({ scope, ip });
       return format === "text"
         ? c.text("Too many requests", 429)
         : c.json({ error: "too many requests" }, 429);

@@ -1323,6 +1323,8 @@ export interface SystemSettingsDto {
   mfa_required_roles: SecuritySettingField<string[]>;
   instance_url: SecuritySettingField<string | null>;
   csp_trusted_origins: SecuritySettingField<string[]>;
+  webauthn_enabled: SecuritySettingField<boolean>;
+  passkey_login_enabled: SecuritySettingField<boolean>;
 }
 
 export interface PatchSystemSettingsBody {
@@ -1334,6 +1336,8 @@ export interface PatchSystemSettingsBody {
   mfa_required_roles?: string[] | null;
   instance_url?: string | null;
   csp_trusted_origins?: string[] | null;
+  webauthn_enabled?: boolean | null;
+  passkey_login_enabled?: boolean | null;
 }
 
 export interface RoleAssignmentDto {

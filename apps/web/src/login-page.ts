@@ -3,6 +3,7 @@ import {
   authTimezoneCaptureScript,
   AUTH_PAGE_CSS,
   AUTH_SSO_BUTTON_ICON_SVG,
+  AUTH_PASSKEY_BUTTON_ICON_SVG,
   renderAuthBrand,
   renderAuthDocument,
   renderAuthPage,
@@ -49,6 +50,127 @@ function loginAutofillClearScript(scriptNonce: string): string {
 }
 
 /**
+ * "Sign in with a passkey" ceremony: discoverable-credential (usernameless) WebAuthn login
+ * against /api/auth/login/webauthn/{begin,finish}. Same hand-rolled base64url + WebAuthn call as
+ * mfa-page.ts's mfaWebauthnScript (no bundler on this page family, so each inline <script> is
+ * self-contained rather than importing a shared helper module). The one real difference from that
+ * MFA ceremony: begin's response carries an opaque `ceremony` token (there is no session yet to
+ * key the stashed challenge by) that must be echoed back verbatim to finish.
+ */
+function passkeyLoginScript(scriptNonce: string): string {
+  return String.raw`<script nonce="${scriptNonce}">
+(function () {
+  var btn = document.getElementById("passkey-login-btn");
+  var errorBox = document.getElementById("passkey-login-error");
+  if (!btn) return;
+  if (!window.PublicKeyCredential) {
+    // No other button is left in the shared list (no SSO providers configured) - hide the
+    // now-empty list and its "or" divider too, instead of leaving a dangling divider with
+    // nothing above it and the password form right below.
+    var list = document.getElementById("auth-alt-signin-list");
+    if (list && !list.querySelector(".auth-btn-sso")) {
+      list.hidden = true;
+      var divider = document.getElementById("auth-alt-signin-divider");
+      if (divider) divider.hidden = true;
+    }
+    return;
+  }
+  btn.hidden = false;
+
+  function b64urlToBuffer(b64url) {
+    var b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+    var pad = b64.length % 4 === 0 ? "" : new Array(5 - (b64.length % 4)).join("=");
+    var bin = atob(b64 + pad);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+
+  function bufferToB64url(buf) {
+    var bytes = new Uint8Array(buf);
+    var bin = "";
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function showError() {
+    btn.disabled = false;
+    if (errorBox) errorBox.hidden = false;
+  }
+
+  function runCeremony() {
+    btn.disabled = true;
+    if (errorBox) errorBox.hidden = true;
+
+    fetch("/api/auth/login/webauthn/begin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    })
+      .then(function (res) { return res.json().then(function (data) { return { res: res, data: data }; }); })
+      .then(function (begin) {
+        if (!begin.res.ok || !begin.data.options) throw new Error("begin_failed");
+        var ceremony = begin.data.ceremony;
+        var publicKey = begin.data.options;
+        publicKey.challenge = b64urlToBuffer(publicKey.challenge);
+        publicKey.allowCredentials = (publicKey.allowCredentials || []).map(function (cred) {
+          return { id: b64urlToBuffer(cred.id), type: cred.type, transports: cred.transports };
+        });
+        return navigator.credentials.get({ publicKey: publicKey }).then(function (assertion) {
+          return { ceremony: ceremony, assertion: assertion };
+        });
+      })
+      .then(function (result) {
+        var assertion = result.assertion;
+        var timezone;
+        try {
+          timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+        } catch (e) {
+          timezone = undefined;
+        }
+        return fetch("/api/auth/login/webauthn/finish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ceremony: result.ceremony,
+            response: {
+              id: assertion.id,
+              rawId: bufferToB64url(assertion.rawId),
+              type: assertion.type,
+              clientExtensionResults: assertion.getClientExtensionResults ? assertion.getClientExtensionResults() : {},
+              response: {
+                clientDataJSON: bufferToB64url(assertion.response.clientDataJSON),
+                authenticatorData: bufferToB64url(assertion.response.authenticatorData),
+                signature: bufferToB64url(assertion.response.signature),
+                userHandle: assertion.response.userHandle ? bufferToB64url(assertion.response.userHandle) : undefined,
+              },
+            },
+            next: btn.dataset.next,
+            timezone: timezone,
+          }),
+        });
+      })
+      .then(function (res) { return res.json().then(function (data) { return { res: res, data: data }; }); })
+      .then(function (finish) {
+        if (finish.res.ok && finish.data.ok) {
+          window.location.href = finish.data.next;
+          return;
+        }
+        showError();
+      })
+      .catch(function () {
+        // Includes NotAllowedError (user cancelled, timed out, or has no passkey on this
+        // device/browser) - stay on the page, the password form below remains usable.
+        showError();
+      });
+  }
+
+  btn.addEventListener("click", runCeremony);
+})();
+</script>`;
+}
+
+/**
  * Security headers for server-rendered operator login pages (nonce-gated submit script).
  * Referrer-Policy same-origin is the primary CSRF signal for HTML form POSTs (Safari);
  * Sec-Fetch-Site in same-origin-post.ts is a legacy-UA fallback only.
@@ -80,24 +202,47 @@ function loginErrorMessage(error?: string): string | undefined {
 
 const SSO_ICON_SVG = AUTH_SSO_BUTTON_ICON_SVG;
 
-function renderSsoBlock(ssoProviders: LoginSsoProvider[], next?: string): string {
-  if (ssoProviders.length === 0) return "";
-  const buttons = ssoProviders
+function renderSsoButtons(ssoProviders: LoginSsoProvider[], next?: string): string {
+  return ssoProviders
     .map((p) => {
       const nextQuery = next ? `?next=${encodeURIComponent(next)}` : "";
       const startUrl = `/api/auth/oidc/${encodeURIComponent(p.id)}/start${nextQuery}`;
       return `<a href="${esc(startUrl)}" class="auth-btn-secondary auth-btn-sso">${SSO_ICON_SVG}${esc(p.button_label)}</a>`;
     })
     .join("");
-  return `<div class="auth-sso-list">${buttons}</div><div class="auth-divider">or</div>`;
 }
 
-/** Render the operator sign-in form HTML (optional uniform error message). */
+/**
+ * "Sign in with a passkey" button, next to (not replacing) the password form below - hidden by
+ * default and only shown by passkeyLoginScript once it confirms the browser supports WebAuthn.
+ * `next` rides along as a data attribute (no hidden form field exists for this standalone
+ * button) so the script can forward it to /api/auth/login/webauthn/finish and preserve the same
+ * post-login destination a password sign-in would have used.
+ */
+function renderPasskeyLoginButton(next?: string): string {
+  const nextAttr = next ? ` data-next="${esc(next)}"` : "";
+  return `<button type="button" class="auth-btn-secondary" id="passkey-login-btn" hidden${nextAttr}>${AUTH_PASSKEY_BUTTON_ICON_SVG}Sign in with a passkey</button>`;
+}
+
+/** Combined "alternative to typing your password" list: passkey button (if enabled) and/or SSO
+ * provider links, one shared divider before the password form - either, both, or neither may be
+ * present depending on instance configuration. */
+function renderAltSignInBlock(passkeyLoginEnabled: boolean, ssoProviders: LoginSsoProvider[], next?: string): string {
+  if (!passkeyLoginEnabled && ssoProviders.length === 0) return "";
+  const passkeyButton = passkeyLoginEnabled ? renderPasskeyLoginButton(next) : "";
+  const ssoButtons = renderSsoButtons(ssoProviders, next);
+  return `<div class="auth-sso-list" id="auth-alt-signin-list">${passkeyButton}${ssoButtons}</div><div class="auth-divider" id="auth-alt-signin-divider">or</div>`;
+}
+
+/** Render the operator sign-in form HTML (optional uniform error message). `passkeyLoginEnabled`
+ * shows the "Sign in with a passkey" button - callers gate this on both the webauthn_enabled and
+ * passkey_login_enabled instance settings (see handleGetLogin), not just one. */
 export function renderLoginForm(
   scriptNonce: string,
   error?: string,
   next?: string,
   ssoProviders: LoginSsoProvider[] = [],
+  passkeyLoginEnabled = false,
 ): string {
   const ssoFailed = error === "oidc_failed";
   const loginError = !ssoFailed ? loginErrorMessage(error) : undefined;
@@ -112,14 +257,22 @@ export function renderLoginForm(
     ? renderNoticeHtml({ variant: "error", role: "alert", message: loginError })
     : "";
   const nextField = next ? `<input type="hidden" name="next" value="${esc(next)}">` : "";
-  const ssoBlock = renderSsoBlock(ssoProviders, next);
+  const altSignInBlock = renderAltSignInBlock(passkeyLoginEnabled, ssoProviders, next);
+  const passkeyErrorBlock = passkeyLoginEnabled
+    ? `<div class="auth-webauthn-error" id="passkey-login-error" hidden>${renderNoticeHtml({
+        variant: "error",
+        role: "alert",
+        message: "Could not sign in with your passkey. Try again, or use your email and password below.",
+      })}</div>`
+    : "";
 
   const card = `${renderAuthBrand()}
     <h2 class="auth-page-action">Sign in</h2>
     <p class="subtitle">Internal event access gateway</p>
     ${ssoFallbackBlock}
     ${errorBlock}
-    ${ssoBlock}
+    ${passkeyErrorBlock}
+    ${altSignInBlock}
     <form method="post" action="/login" aria-label="Admitto sign in">
       ${nextField}
       <input type="hidden" name="timezone" value="" autocomplete="off">
@@ -135,11 +288,12 @@ export function renderLoginForm(
     </form>
     <p class="auth-footer">Admitto is an internal tool.<br>Access is managed by your IT administrator.</p>`;
 
+  const passkeyScript = passkeyLoginEnabled ? `\n${passkeyLoginScript(scriptNonce)}` : "";
   return renderAuthDocument({
     step: "Sign in",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: `${authFormSubmitScript(scriptNonce)}\n${authTimezoneCaptureScript(scriptNonce, { ssoLinks: true })}\n${loginAutofillClearScript(scriptNonce)}`,
+    scripts: `${authFormSubmitScript(scriptNonce)}\n${authTimezoneCaptureScript(scriptNonce, { ssoLinks: true })}\n${loginAutofillClearScript(scriptNonce)}${passkeyScript}`,
   });
 }
 
