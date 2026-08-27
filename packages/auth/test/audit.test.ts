@@ -145,12 +145,12 @@ describe("audit", () => {
           user_display_name: null,
           ip: "1.2.3.4",
           actor_timezone: null,
-          metadata: { userAgent: "curl/8.0", method: "password" },
+          metadata: { userAgent: "curl/8.0", method: "manual" },
         },
       });
     });
 
-    it("defaults to method \"password\" when the caller doesn't specify one, and records \"passkey\" when it does", async () => {
+    it("defaults to method \"manual\" when the caller doesn't specify one, and records \"passkey\" when it does", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const create = vi.fn().mockResolvedValue({});
       await logLoginSuccess(fakeDb(create, { email: "bob@example.com", display_name: null }), {

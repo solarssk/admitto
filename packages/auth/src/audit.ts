@@ -205,9 +205,9 @@ export type RateLimitScope =
  * audit-routes.ts). */
 export async function logLoginSuccess(
   db: Db,
-  ctx: LoginAuditContext & { userId: string; method?: "password" | "passkey" },
+  ctx: LoginAuditContext & { userId: string; method?: "manual" | "passkey" },
 ): Promise<void> {
-  const method = ctx.method ?? "password";
+  const method = ctx.method ?? "manual";
   emitAuditEvent("auth.login.success", {
     email: ctx.email,
     ip: ctx.ip ?? null,
