@@ -276,11 +276,12 @@ export function renderLoginForm(
     </form>
     <p class="auth-footer">Admitto is an internal tool.<br>Access is managed by your IT administrator.</p>`;
 
+  const passkeyScript = passkeyLoginEnabled ? `\n${passkeyLoginScript(scriptNonce)}` : "";
   return renderAuthDocument({
     step: "Sign in",
     body: renderAuthPage(card),
     css: AUTH_PAGE_CSS,
-    scripts: `${authFormSubmitScript(scriptNonce)}\n${authTimezoneCaptureScript(scriptNonce, { ssoLinks: true })}\n${loginAutofillClearScript(scriptNonce)}${passkeyLoginEnabled ? `\n${passkeyLoginScript(scriptNonce)}` : ""}`,
+    scripts: `${authFormSubmitScript(scriptNonce)}\n${authTimezoneCaptureScript(scriptNonce, { ssoLinks: true })}\n${loginAutofillClearScript(scriptNonce)}${passkeyScript}`,
   });
 }
 
