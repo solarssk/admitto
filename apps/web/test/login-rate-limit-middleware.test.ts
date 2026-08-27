@@ -41,13 +41,13 @@ describe("createLoginRateLimitMiddleware", () => {
     expect(await blocked.text()).toBe("Too many requests");
   });
 
-  it("uses a separate budget from auth:login-ip when policyKey is auth:passkey-login-ip", async () => {
+  it("uses a separate budget from auth:login-ip when policyKey is auth:passkey-login-begin-ip", async () => {
     const store = new InMemoryRateLimitStore();
     const app = new Hono();
     app.post("/api/auth/login", createLoginRateLimitMiddleware(store), (c) => c.json({ ok: true }));
     app.post(
       "/api/auth/login/webauthn/begin",
-      createLoginRateLimitMiddleware(store, { policyKey: "auth:passkey-login-ip" }),
+      createLoginRateLimitMiddleware(store, { policyKey: "auth:passkey-login-begin-ip" }),
       (c) => c.json({ ok: true }),
     );
 
@@ -57,6 +57,29 @@ describe("createLoginRateLimitMiddleware", () => {
     expect((await app.request("/api/auth/login", { method: "POST" })).status).toBe(429);
     // The password login IP is exhausted, but the passkey-login bucket for the same IP is not.
     expect((await app.request("/api/auth/login/webauthn/begin", { method: "POST" })).status).toBe(200);
+  });
+
+  it("keeps passkey-login begin and finish on independent budgets, so a full ceremony doesn't spend one shared bucket twice", async () => {
+    const store = new InMemoryRateLimitStore();
+    const app = new Hono();
+    app.post(
+      "/api/auth/login/webauthn/begin",
+      createLoginRateLimitMiddleware(store, { policyKey: "auth:passkey-login-begin-ip" }),
+      (c) => c.json({ ok: true }),
+    );
+    app.post(
+      "/api/auth/login/webauthn/finish",
+      createLoginRateLimitMiddleware(store, { policyKey: "auth:passkey-login-finish-ip" }),
+      (c) => c.json({ ok: true }),
+    );
+
+    for (let i = 0; i < LOGIN_IP_MAX; i++) {
+      expect((await app.request("/api/auth/login/webauthn/begin", { method: "POST" })).status).toBe(200);
+    }
+    expect((await app.request("/api/auth/login/webauthn/begin", { method: "POST" })).status).toBe(429);
+    // begin's bucket is exhausted, but finish's separate bucket for the same IP is not - a
+    // shared bucket would have failed this (only 5 of the 10 "logins" would ever complete).
+    expect((await app.request("/api/auth/login/webauthn/finish", { method: "POST" })).status).toBe(200);
   });
 });
 

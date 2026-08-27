@@ -10,7 +10,10 @@ import type { RateLimitStore } from "../rate-limit/types.js";
  */
 export function createLoginRateLimitMiddleware(
   store: RateLimitStore,
-  options: { format?: "json" | "text"; policyKey?: "auth:login-ip" | "auth:passkey-login-ip" } = {},
+  options: {
+    format?: "json" | "text";
+    policyKey?: "auth:login-ip" | "auth:passkey-login-begin-ip" | "auth:passkey-login-finish-ip";
+  } = {},
 ) {
   const format = options.format ?? "json";
   const policyKey = options.policyKey ?? "auth:login-ip";

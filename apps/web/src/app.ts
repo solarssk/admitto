@@ -577,11 +577,19 @@ export function createApp(options: CreateAppOptions = {}) {
   const publicRateLimit = createPublicRateLimitMiddleware(rateLimitStore);
   const loginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, { format: "json" });
   const loginRateLimitHtml = createLoginRateLimitMiddleware(rateLimitStore, { format: "text" });
-  // Own bucket, not loginRateLimitJson - a passkey-login begin/finish round trip has no session
-  // and no email to also throttle per-account against (see policies.ts's "auth:passkey-login-ip").
-  const passkeyLoginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, {
+  // Own buckets, not loginRateLimitJson - a passkey-login round trip has no session and no
+  // email to also throttle per-account against. Begin and finish each get their own bucket
+  // (see policies.ts's "auth:passkey-login-begin-ip" / "-finish-ip") rather than sharing one -
+  // a shared bucket meant every successful sign-in spent 2 of its 10 hits, and a cancelled or
+  // retried ceremony spent more, so a handful of staff signing in behind the same office/VPN/NAT
+  // address within a minute could lock everyone else out even with every ceremony succeeding.
+  const passkeyLoginBeginRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, {
     format: "json",
-    policyKey: "auth:passkey-login-ip",
+    policyKey: "auth:passkey-login-begin-ip",
+  });
+  const passkeyLoginFinishRateLimitJson = createLoginRateLimitMiddleware(rateLimitStore, {
+    format: "json",
+    policyKey: "auth:passkey-login-finish-ip",
   });
   const accountIpRateLimit = rateLimit(rateLimitStore, "auth:account-ip");
   const oidcAuthRateLimit = rateLimit(rateLimitStore, "auth:oidc");
@@ -2037,13 +2045,13 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   // No requirePartialSession/requireSession here - a discoverable-credential passkey login is
   // the sole first factor, there is no session (partial or otherwise) until it succeeds.
-  app.post("/api/auth/login/webauthn/begin", jsonPostCsrf, passkeyLoginRateLimitJson, (c) =>
+  app.post("/api/auth/login/webauthn/begin", jsonPostCsrf, passkeyLoginBeginRateLimitJson, (c) =>
     handlePostPasskeyLoginBegin(c, db, mailInjectedBaseUrl),
   );
   app.post(
     "/api/auth/login/webauthn/finish",
     jsonPostCsrf,
-    passkeyLoginRateLimitJson,
+    passkeyLoginFinishRateLimitJson,
     webauthnBodyLimit,
     (c) => handlePostPasskeyLoginFinish(c, db, mailInjectedBaseUrl),
   );
