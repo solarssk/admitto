@@ -236,14 +236,28 @@ export const RATE_POLICIES = {
       },
     ],
   },
-  /** Own bucket, deliberately separate from auth:login-ip: a passkey-login begin/finish round
-   * trip has no email to also throttle per-account against (unlike the password route's
+  /** Own buckets, deliberately separate from auth:login-ip: a passkey-login round trip has no
+   * email to also throttle per-account against (unlike the password route's
    * checkLoginEmailRateLimit), so this is the only defense-in-depth layer this ceremony gets
-   * against an IP hammering it with junk assertions. */
-  "auth:passkey-login-ip": {
+   * against an IP hammering it with junk assertions. Begin and finish are separate buckets
+   * rather than one shared one - a shared bucket meant every successful sign-in spent 2 of its
+   * 10 hits (a cancelled/retried ceremony spent more), so a handful of staff signing in behind
+   * the same office/VPN/NAT address within a minute could lock everyone else out even with
+   * every ceremony succeeding (Codex P2 review, PR #1108). */
+  "auth:passkey-login-begin-ip": {
     checks: [
       {
-        keyOf: (c) => `auth:passkey-login:ip:${resolveClientIp(c)}`,
+        keyOf: (c) => `auth:passkey-login-begin:ip:${resolveClientIp(c)}`,
+        windowMs: 60_000,
+        max: 10,
+        logOnExceeded: { scope: "passkey_login_ip" },
+      },
+    ],
+  },
+  "auth:passkey-login-finish-ip": {
+    checks: [
+      {
+        keyOf: (c) => `auth:passkey-login-finish:ip:${resolveClientIp(c)}`,
         windowMs: 60_000,
         max: 10,
         logOnExceeded: { scope: "passkey_login_ip" },
