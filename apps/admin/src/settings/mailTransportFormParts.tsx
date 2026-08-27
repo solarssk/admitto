@@ -1453,6 +1453,15 @@ export function scrollToFirstInvalidField(): void {
   field?.focus();
 }
 
+/** Calls scrollToFirstInvalidField whenever a fresh, non-empty fieldErrors object is set -
+ * i.e. on every failed Save, not just the first. Shared because MailTransportPanel and
+ * EventMailSettingsCard both need this identically. */
+export function useScrollToFirstInvalidFieldOnError(fieldErrors: MailFieldErrors): void {
+  useEffect(() => {
+    if (Object.keys(fieldErrors).length > 0) scrollToFirstInvalidField();
+  }, [fieldErrors]);
+}
+
 /** Draft/secret/save-state, shared verbatim between MailTransportPanel and
  * EventMailSettingsCard — only what fetches/saves/tests the data differs per caller. */
 export function useMailSettingsFormState() {

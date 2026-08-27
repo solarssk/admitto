@@ -31,13 +31,13 @@ import {
   GraphCard,
   PowerAutomateCard,
   runTestSend,
-  scrollToFirstInvalidField,
   SenderCard,
   SendTestEmailCard,
   SettingsFooter,
   SmtpConnectionCard,
   TransportTileGrid,
   useMailSettingsFormState,
+  useScrollToFirstInvalidFieldOnError,
   validateAndReportErrors,
   type FieldLocked,
 } from "./mailTransportFormParts.js";
@@ -245,10 +245,7 @@ export const EventMailSettingsCard = forwardRef<
     run: runConnectionTest,
     clearResult: clearProbeResult,
   } = useConnectionTest("Could not test the SMTP connection.");
-
-  useEffect(() => {
-    if (Object.keys(fieldErrors).length > 0) scrollToFirstInvalidField();
-  }, [fieldErrors]);
+  useScrollToFirstInvalidFieldOnError(fieldErrors);
 
   const [bounceVerify, setBounceVerify] = useState(false);
   const [bounceIngestReady, setBounceIngestReady] = useState(false);

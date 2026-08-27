@@ -18,12 +18,12 @@ import {
   MailTransportCard,
   PowerAutomateCard,
   runTestSend,
-  scrollToFirstInvalidField,
   SenderCard,
   SendTestEmailCard,
   SettingsFooter,
   SmtpConnectionCard,
   useMailSettingsFormState,
+  useScrollToFirstInvalidFieldOnError,
   validateAndReportErrors,
   type FieldLocked,
 } from "./mailTransportFormParts.js";
@@ -65,10 +65,7 @@ export function MailTransportPanel() {
     run: runConnectionTest,
     clearResult: clearProbeResult,
   } = useConnectionTest("Could not test the SMTP connection.");
-
-  useEffect(() => {
-    if (Object.keys(fieldErrors).length > 0) scrollToFirstInvalidField();
-  }, [fieldErrors]);
+  useScrollToFirstInvalidFieldOnError(fieldErrors);
 
   const applyResponse = useCallback(
     (data: MailSettingsResponse) => {
