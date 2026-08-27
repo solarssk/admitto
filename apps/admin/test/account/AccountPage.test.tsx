@@ -3233,14 +3233,18 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     expect(mockDeleteWebauthnCredential).toHaveBeenCalledWith("cred-2", undefined);
   });
 
-  it("hides Add passkey/Add security key and shows a note when webauthn is disabled for the instance", async () => {
+  it("shows a disabled Add passkey/Add security key and a note when webauthn is disabled for the instance", async () => {
     mockLoadedAccount({ ...baseAccount, webauthn_enabled: false });
 
     renderWithToast(<AccountPage />);
     await waitFor(() => {
       expect(screen.getByText("Passkey")).toBeTruthy();
     });
-    expect(screen.queryAllByRole("button", { name: "Add" })).toHaveLength(0);
+    // Both rows still show Add, but disabled - hiding it entirely gave no indication the
+    // feature exists at all, just that it's off (P0 UX review).
+    const addButtons = screen.queryAllByRole("button", { name: "Add" });
+    expect(addButtons).toHaveLength(2);
+    addButtons.forEach((button) => expect(button.hasAttribute("disabled")).toBe(true));
     expect(
       screen.getByText(
         "Passkeys and security keys are turned off for this instance. Ask an administrator to enable them.",
@@ -3248,7 +3252,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     ).toBeTruthy();
   });
 
-  it("keeps Manage available for an already-registered passkey even when webauthn is disabled for the instance", async () => {
+  it("keeps Manage available for an already-registered passkey, and shows a disabled Add for security keys, when webauthn is disabled for the instance", async () => {
     mockLoadedAccount({
       ...baseAccount,
       webauthn_enabled: false,
@@ -3259,8 +3263,12 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
-    // Add is still gone - only removal/inspection of what's already registered stays available.
-    expect(screen.queryAllByRole("button", { name: "Add" })).toHaveLength(0);
+    // The passkey row only offers Manage for the one already registered - a second passkey
+    // isn't addable here regardless of the instance setting. The security-key row has none
+    // registered, so it shows its own (disabled) Add instead.
+    expect(within(passkeyRow()).queryByRole("button", { name: "Add" })).toBeNull();
+    const securityKeyAdd = within(securityKeyRow()).getByRole("button", { name: "Add" });
+    expect(securityKeyAdd.hasAttribute("disabled")).toBe(true);
   });
 
   it("disables Add inside the Manage passkeys dialog when webauthn is disabled for the instance", async () => {
