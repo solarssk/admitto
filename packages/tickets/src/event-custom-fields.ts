@@ -48,3 +48,51 @@ export function validateContentFieldReferences(allowed: Set<string>, contentFiel
     }
   }
 }
+
+/** Thrown when an EventItem's `content_fields` entry is already used by a different EventItem in
+ * the same event - each custom field is meant to appear on exactly one item's check-in card. */
+export class ContentFieldAlreadyAssignedError extends Error {
+  constructor(
+    public readonly sourceField: string,
+    public readonly itemKey: string,
+    public readonly itemLabel: string,
+  ) {
+    super(`content_field_already_assigned:${sourceField}`);
+  }
+}
+
+export type ContentFieldConflict = { sourceField: string; itemKey: string; itemLabel: string };
+
+/** Finds the first `contentFields` entry already referenced by a sibling item's own
+ * content_fields, or null when there's no overlap - otherwise the same "Shirt size: L" hint would
+ * silently render on two different check-in cards. `otherItems` must exclude the item being
+ * written to (a PATCH keeping its own existing field selected is not a conflict with itself). */
+export function findConflictingContentField(
+  otherItems: { key: string; label: string; config: unknown }[],
+  contentFields: string[],
+): ContentFieldConflict | null {
+  if (contentFields.length === 0) return null;
+  const candidates = new Set(contentFields);
+  for (const other of otherItems) {
+    const cfg = other.config as { content_fields?: unknown } | null;
+    const otherFields = Array.isArray(cfg?.content_fields) ? cfg.content_fields : [];
+    for (const field of otherFields) {
+      if (typeof field === "string" && candidates.has(field)) {
+        return { sourceField: field, itemKey: other.key, itemLabel: other.label };
+      }
+    }
+  }
+  return null;
+}
+
+/** Throwing wrapper around findConflictingContentField, for callers (POST) that validate via
+ * exceptions rather than a discriminated return. */
+export function assertContentFieldsNotAssignedElsewhere(
+  otherItems: { key: string; label: string; config: unknown }[],
+  contentFields: string[],
+): void {
+  const conflict = findConflictingContentField(otherItems, contentFields);
+  if (conflict) {
+    throw new ContentFieldAlreadyAssignedError(conflict.sourceField, conflict.itemKey, conflict.itemLabel);
+  }
+}

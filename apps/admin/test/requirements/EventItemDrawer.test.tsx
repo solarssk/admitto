@@ -64,12 +64,17 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderDrawer(item: EventItemDto, customFields: EventCustomFieldDto[] = []) {
+function renderDrawer(
+  item: EventItemDto,
+  customFields: EventCustomFieldDto[] = [],
+  items: EventItemDto[] = [item],
+) {
   renderWithToast(
     <EventItemDrawer
       eventId="evt-1"
       item={item}
       customFields={customFields}
+      items={items}
       onClose={vi.fn()}
       onUpdated={vi.fn()}
     />,
@@ -265,6 +270,26 @@ describe("EventItemDrawer", () => {
         expect.objectContaining({ config: { requires_return: false, content_fields: [] } }),
       );
     });
+  });
+
+  it("does not flag a field as claimed by a sibling item with no config", () => {
+    renderDrawer(giftbagItem, [shirtSizeField], [giftbagItem, badgeWithNullConfig]);
+
+    const checkbox = screen.getByRole("checkbox", { name: /Shirt size/ }) as HTMLInputElement;
+    expect(checkbox.disabled).toBe(false);
+    expect(getTooltipText(checkbox)).toBeNull();
+  });
+
+  it("disables a hint already used by a different item, with an explanatory tooltip", () => {
+    const otherItemWithHint: EventItemDto = {
+      ...giftbagItem,
+      config: { requires_return: false, content_fields: ["shirt_size"] },
+    };
+    renderDrawer(badgeWithNullConfig, [shirtSizeField], [badgeWithNullConfig, otherItemWithHint]);
+
+    const checkbox = screen.getByRole("checkbox", { name: /Shirt size/ }) as HTMLInputElement;
+    expect(checkbox.disabled).toBe(true);
+    expect(getTooltipText(checkbox)).toMatch(/Already shown on "Gift bag"/);
   });
 
   it("toggles Issue on check-in for the badge item and saves it", async () => {

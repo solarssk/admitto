@@ -708,6 +708,7 @@ export function RequirementsPage() {
           eventId={eventId}
           item={selectedItem}
           customFields={customFields}
+          items={items}
           onClose={() => setSelectedItem(null)}
           onUpdated={() => {
             setReloadToken((n) => n + 1);
