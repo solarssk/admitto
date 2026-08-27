@@ -7,15 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Editing a select-type custom field's options is now a structured list instead of a plain "one per line" textarea. Each option shows how many attendees currently have it selected, warns in place before a rename that would affect them, asks for confirmation before removing an option that's in use, and blocks Save behind a summary of anything risky an operator hasn't explicitly acknowledged. Options can also be reordered by drag (mouse, touch, or pen) or, with the drag handle focused, the up/down arrow keys.
+- Check-in's camera scanner gained a torch toggle, next to the existing mute/close controls on both the mobile full-screen scanner and the desktop/tablet inline camera. Only appears once the active camera actually reports the capability, since most laptop webcams and every iPhone don't - so it stays out of the way rather than sitting there doing nothing.
+
 ### Changed
 
 - Mail settings validation errors (Organisation and per-event Mail tabs, and the setup wizard) now show inline on the specific field that's wrong, with a red border and message, instead of a single list at the bottom of the page. Save shows a "Please fix the highlighted fields" notification and scrolls to the first problem field.
 - From address, Reply-to, Envelope from, Mailbox, and Allowed from domain now check that the domain's top-level part is a real, currently delegated one (for example rejecting a typo like "example.con" or a placeholder like "mail.local"), not just that it looks roughly email-shaped.
+- Communication → Send's bulk-send progress now shows Sent/Failed/Remaining stat tiles and a two-segment progress bar while a batch drains, and a "Send complete" summary card once it finishes, instead of a single plain-text line. The "Send another" button is now hidden until the batch has actually finished draining - it previously appeared as soon as sending started, and clicking it mid-send stopped the page from tracking that batch (with no way to check on it again) without cancelling anything server-side, so an operator could unknowingly fire a second, concurrent send while the first was still in flight.
 
 ### Fixed
 
 - Organisation and per-event Mail settings no longer jump when Save is clicked with an invalid field - clicking Save repeatedly used to re-scroll the page every time, even when the error was already visible.
 - SMTP advanced tuning fields (rate limit, max connections, max messages, connection/greeting/socket timeouts) that fail validation are no longer silently dropped on save with no feedback - they're now checked and show an error like every other field.
+- Text fields, selects, and searchable-select/phone-country search boxes on mobile/touch devices now render at the same visual size as their desktop 14px counterparts, instead of visibly larger. The underlying computed font-size is unchanged (still 16px, which is what stops iOS Safari from auto-zooming the page on focus) - the field is instead rendered at that size and then scaled back down to the desktop box's exact dimensions, so the protection against iOS's zoom-on-focus still applies. Multi-line text areas are unaffected (still a plain 16px on touch devices, as before).
 - Editing an event's custom field definition (for example toggling "Required") no longer re-sends its select options as a side effect. Previously any save re-derived and rewrote the full options list from the edit form regardless of whether the operator touched it, which could silently diverge from the list an attendee's already-saved value was chosen against - once that happened, the attendee's saved selection stopped matching any current option, so it showed as unset in Edit attendee and had to be re-picked before the form could be saved again.
 - Communication → Delivery log no longer silently drops rows when "Rows per page" is set to 200. The API capped the actual page size at 100 regardless of what was requested, while the "Showing X-Y of Z" / page count still reflected the full total - so a 200-per-page view looked like it was missing entries and its page count didn't match what was on screen. The cap now matches the 200 option the dropdown already offered.
 

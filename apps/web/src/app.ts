@@ -220,6 +220,7 @@ import {
   handleCreateEventCustomField,
   handlePatchEventCustomField,
   handleDeleteEventCustomField,
+  handleGetEventCustomFieldOptionUsage,
 } from "./admin/event-custom-fields-routes.js";
 import {
   handleListEventTicketTypes,
@@ -1323,6 +1324,11 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/events/:eventId/custom-fields", staffAdminGate, (c) =>
     handleListEventCustomFields(c, db),
+  );
+  app.get(
+    "/api/admin/events/:eventId/custom-fields/:fieldId/option-usage",
+    staffAdminGate,
+    (c) => handleGetEventCustomFieldOptionUsage(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/custom-fields",

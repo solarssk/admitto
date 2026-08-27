@@ -50,7 +50,7 @@ function isValidDomainLabel(label: string): boolean {
 function isValidDomain(domain: string): boolean {
   const labels = domain.split(".");
   if (labels.length < 2 || !labels.every(isValidDomainLabel)) return false;
-  return isKnownTld(labels[labels.length - 1]);
+  return isKnownTld(labels.at(-1)!);
 }
 
 /** local@domain shape, no whitespace, exactly one "@". Plain string ops rather than a

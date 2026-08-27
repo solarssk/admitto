@@ -80,12 +80,22 @@
 }
 
 /* iOS Safari auto-zooms the page on focus when a text input's computed font-size is under
-   16px. `font: inherit` above pulls in the ambient 14px body size; override explicitly here,
-   matching the same fix (pointer: coarse, not a max-width - see its own comment) for
-   .at-input/.at-select/.at-textarea in packages/ui. */
+   16px. `font: inherit` above pulls in the ambient 14px body size. Rather than a plain bump
+   (which read visibly larger than the surrounding 14px UI - PO report), this reproduces the
+   desktop box pixel-for-pixel: every length scaled up by 16/14, then the whole box
+   `transform: scale(14/16)`'d back down - see .at-input/.at-select's own version of this
+   comment in packages/ui/src/styles/components.css for the full math (and
+   searchable-select.css's identical treatment of its own search box). `.at-control`'s own
+   overflow:hidden + height clip (packages/ui) is what makes the oversized pre-transform box
+   render at the real control height - see the wrapper in PhoneCountrySelect.tsx. */
 @media (pointer: coarse) {
-  .phone-country-select__search {
+  .at-control > .phone-country-select__search {
     font-size: 16px;
+    width: calc(100% / 0.875);
+    height: calc(var(--control-h) / 0.875);
+    padding: calc(var(--space-2) / 0.875) calc(var(--space-3) / 0.875);
+    transform: scale(0.875);
+    transform-origin: top left;
   }
 }
 

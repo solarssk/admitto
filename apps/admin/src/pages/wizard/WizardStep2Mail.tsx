@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Button, Input, Notice, Switch, useToast } from "@admitto/ui";
+import { Button, Input, Switch, useToast } from "@admitto/ui";
 import {
   fetchMailSettings,
   saveMailSettings,
@@ -26,7 +26,7 @@ import {
   type SecretEdits,
 } from "../../settings/mailSettingsValidation.js";
 import { buildMailProviderOptions, MAIL_PROVIDER_LABELS } from "../../settings/mailProviderOptions.js";
-import { draftFromFields } from "../../settings/mailTransportFormParts.js";
+import { draftFromFields, ValidationErrorList } from "../../settings/mailTransportFormParts.js";
 import { SearchableSelect } from "../../components/SearchableSelect.js";
 import { useDelayedLoading } from "../../hooks/useDelayedLoading.js";
 import { useWizard } from "./WizardContext.js";
@@ -196,18 +196,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
 
         {!loading && apiData && (
           <>
-            {validationErrors.length > 0 && (
-              <Notice variant="error" role="alert">
-                <ul className="setup-wizard__error-list">
-                  {/* Index key, not the message text - two different fields can produce
-                      the identical "Keep it under N characters." message (same max
-                      length), and a text key would silently dedupe them. */}
-                  {validationErrors.map((e, i) => (
-                    <li key={i}>{e}</li> // NOSONAR — index key is intentional, see comment above (typescript:S6479)
-                  ))}
-                </ul>
-              </Notice>
-            )}
+            <ValidationErrorList errors={validationErrors} className="setup-wizard__error-list" />
 
             <div className="setup-wizard__mail-form">
               <div className="at-field">

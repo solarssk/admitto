@@ -1276,14 +1276,16 @@ export function MailTransportCard({
 export function ValidationErrorList({
   errors,
   errorsRef,
+  className,
 }: Readonly<{
   errors: string[];
   errorsRef?: RefObject<HTMLUListElement | null>;
+  className?: string;
 }>) {
   if (errors.length === 0) return null;
   return (
     <Notice variant="error" role="alert">
-      <ul ref={errorsRef}>
+      <ul ref={errorsRef} className={className}>
         {/* Index key, not the message text - two different fields (e.g. two CSP trusted
             origins) can produce the identical message, and a text key would silently
             dedupe them. The list is always fully replaced, never reordered in place. */}
