@@ -26,6 +26,9 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
 }));
 
 let mockArchivedAt: string | null = null;
+let mockWalletEnabled = true;
+let mockWalletAppleEnabled = true;
+let mockWalletGoogleEnabled = true;
 
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
@@ -40,6 +43,15 @@ vi.mock("react-router", async (importOriginal) => {
         timezone: "Europe/Warsaw",
         location: null,
         attendee_count: 1,
+        get wallet_enabled() {
+          return mockWalletEnabled;
+        },
+        get wallet_apple_enabled() {
+          return mockWalletAppleEnabled;
+        },
+        get wallet_google_enabled() {
+          return mockWalletGoogleEnabled;
+        },
         get archived_at() {
           return mockArchivedAt;
         },
@@ -150,6 +162,9 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   mockArchivedAt = null;
+  mockWalletEnabled = true;
+  mockWalletAppleEnabled = true;
+  mockWalletGoogleEnabled = true;
   vi.unstubAllGlobals();
 });
 
@@ -189,6 +204,20 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(screen.getByRole("menuitem", { name: /Push updates/ })).toBeTruthy();
       expect(screen.getByRole("menuitem", { name: /Delete wallet pass/ })).toBeTruthy();
       expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
+    });
+
+    it("hides every wallet lifecycle action, even for an active pass, once the event's Wallet feature is disabled", async () => {
+      mockWalletEnabled = false;
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Restore wallet pass/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Push updates/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Delete wallet pass/ })).toBeNull();
     });
   });
 
@@ -539,6 +568,20 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       const icons = document.querySelectorAll(".attendee-status-chip__icon--neutral");
       expect(icons.length).toBeGreaterThan(0);
     });
+
+    it("shows Sent, not Added, when the only confirmed registration is on a platform that's since been disabled", async () => {
+      mockWalletAppleEnabled = false;
+      mockLoad(
+        baseDetail({
+          wallet_pass: walletPass({ status: "active", apple_active_registrations: 1, google_active_registrations: 0 }),
+        }),
+      );
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      expect(screen.getByText("Sent")).toBeTruthy();
+      expect(screen.queryByText("Added")).toBeNull();
+    });
   });
 
   describe("First downloaded (formatFirstDownloadedAt)", () => {
@@ -630,5 +673,85 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       // Only the Apple link menu item renders once wallet_google_link is null.
       expect(screen.queryByRole("menuitem", { name: /Copy Google Wallet link/ })).toBeNull();
     });
+  });
+
+  it("shows Voided, Last updated, Last system status update, and Last error rows once the pass has that data", async () => {
+    mockLoad(
+      baseDetail({
+        wallet_pass: walletPass({
+          voided_at: "2026-02-01T00:00:00.000Z",
+          last_synced_at: "2026-02-02T00:00:00.000Z",
+          registration_checked_at: "2026-02-03T00:00:00.000Z",
+          last_error_code: "wallet_provider_unauthorized",
+        }),
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.getByText("Voided")).toBeTruthy();
+    expect(screen.getByText("Last updated")).toBeTruthy();
+    expect(screen.getByText("Last system status update")).toBeTruthy();
+    expect(screen.getByText("Last error")).toBeTruthy();
+    expect(screen.getByText("wallet_provider_unauthorized")).toBeTruthy();
+  });
+});
+
+describe("AttendeeDetailPage — Wallet card gated by the event's platform toggles", () => {
+  it("hides the Wallet card entirely when the event's master wallet switch is off", async () => {
+    mockWalletEnabled = false;
+    mockLoad(baseDetail({ wallet_pass: walletPass() }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    // Selector disambiguates from the Wallet status chip elsewhere on the page (see the identical
+    // comment on "Wallet status chip tone" above) - a plain getByText("Wallet") matches both.
+    expect(screen.queryByText("Wallet", { selector: ".at-card__title" })).toBeNull();
+    expect(screen.queryByLabelText("Apple Wallet: Registered")).toBeNull();
+  });
+
+  it("hides the Wallet card when the master switch is on but both individual platforms are off", async () => {
+    mockWalletAppleEnabled = false;
+    mockWalletGoogleEnabled = false;
+    mockLoad(baseDetail({ wallet_pass: walletPass() }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.queryByText("Wallet", { selector: ".at-card__title" })).toBeNull();
+  });
+
+  it.each([
+    [() => { mockWalletGoogleEnabled = false; }, "Apple Wallet", "Google Wallet"],
+    [() => { mockWalletAppleEnabled = false; }, "Google Wallet", "Apple Wallet"],
+  ] as const)("shows only the enabled platform's row when just one toggle is on", async (disableOne, shownLabel, hiddenLabel) => {
+    disableOne();
+    mockLoad(
+      baseDetail({
+        wallet_pass: walletPass({ apple_active_registrations: 1, google_active_registrations: 1 }),
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.getByText("Wallet", { selector: ".at-card__title" })).toBeTruthy();
+    expect(screen.getByText(shownLabel)).toBeTruthy();
+    expect(screen.queryByText(hiddenLabel)).toBeNull();
+  });
+
+  it("omits Copy Apple Wallet link from the wallet links menu when Apple Wallet is disabled, even with a stored apple link", async () => {
+    mockWalletAppleEnabled = false;
+    mockLoad(
+      baseDetail({
+        wallet_pass: walletPass(),
+        wallet_apple_link: "https://example.com/apple",
+        wallet_google_link: "https://example.com/android",
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Wallet pass links" }));
+    expect(screen.queryByRole("menuitem", { name: /Copy Apple Wallet link/ })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: /Copy Google Wallet link/ })).toBeTruthy();
   });
 });

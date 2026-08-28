@@ -3,7 +3,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { getTooltipText, makeOrgAdminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { baseAttendeeDetailEvent, getTooltipText, makeOrgAdminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 const revokeAttendeeCheckIn = vi.fn();
@@ -26,16 +26,7 @@ vi.mock("react-router", async (importOriginal) => {
   return {
     ...actual,
     useOutletContext: () => ({
-      event: {
-        id: "evt-1",
-        title: "Demo",
-        slug: "demo",
-        date: "2026-06-01",
-        timezone: "Europe/Warsaw",
-        location: null,
-        attendee_count: 1,
-        archived_at: null,
-      },
+      event: baseAttendeeDetailEvent,
     }),
   };
 });

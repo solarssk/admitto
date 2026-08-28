@@ -146,6 +146,9 @@ export interface EventSummary {
   created_by_timezone: string | null;
   archived_by_user_id: string | null;
   archived_by_timezone: string | null;
+  wallet_enabled: boolean;
+  wallet_apple_enabled: boolean;
+  wallet_google_enabled: boolean;
 }
 
 const eventSelect = {
@@ -166,6 +169,9 @@ const eventSelect = {
   created_by_timezone: true,
   archived_by_user_id: true,
   archived_by_timezone: true,
+  wallet_enabled: true,
+  wallet_apple_enabled: true,
+  wallet_google_enabled: true,
 } as const;
 
 /** Maps the raw `eventSelect` row (which has `location_details.venue_name`, a relation) to the

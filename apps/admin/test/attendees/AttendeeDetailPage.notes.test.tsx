@@ -22,6 +22,9 @@ let outletEvent = {
   timezone: "Europe/Warsaw",
   location: null,
   attendee_count: 1,
+  wallet_enabled: true,
+  wallet_apple_enabled: true,
+  wallet_google_enabled: true,
   archived_at: null as string | null,
   organization_id: "org-1",
 };
