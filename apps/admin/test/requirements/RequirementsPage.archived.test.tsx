@@ -13,16 +13,8 @@ const fetchEventCustomFields = vi.fn();
 const fetchOpsConfig = vi.fn();
 const reportApiError = vi.fn();
 
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    code?: string;
-    constructor(status: number, message: string, code?: string) {
-      super(message);
-      this.status = status;
-      this.code = code;
-    }
-  },
+vi.mock("../../src/api/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchEventItems: (...args: unknown[]) => fetchEventItems(...args),
   fetchEventCustomFields: (...args: unknown[]) => fetchEventCustomFields(...args),
   fetchOpsConfig: (...args: unknown[]) => fetchOpsConfig(...args),

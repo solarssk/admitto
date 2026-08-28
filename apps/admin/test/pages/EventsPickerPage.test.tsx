@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import type { EventDto } from "../../src/api/types.js";
 import { EventsPickerPage } from "../../src/pages/EventsPickerPage.js";
 
-const adminAssignments = [{ role: "admin", scope_type: "organization", scope_id: "org-1" }];
+const adminAssignments = [makeOrgAdminAssignment()];
 
 const createdEvent: EventDto = {
   id: "evt-new",
@@ -48,6 +48,7 @@ vi.mock("../../src/events/CreateEventModal.js", () => ({
 }));
 
 import { fetchAdminEvents } from "../../src/api/client.js";
+import { makeOrgAdminAssignment } from "../test-utils.js";
 
 afterEach(cleanup);
 

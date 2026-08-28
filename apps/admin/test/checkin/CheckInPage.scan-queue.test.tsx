@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
+import { connectionStateValue } from "../test-utils.js";
 
 const fetchCheckInHistory = vi.fn();
 const fetchCheckInStats = vi.fn();
@@ -24,7 +25,7 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
 }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ state: "connected", reportApiError: vi.fn() }),
+  useConnectionState: () => connectionStateValue("connected"),
 }));
 
 vi.mock("../../src/hooks/useIsDesktop.js", () => ({
@@ -32,15 +33,9 @@ vi.mock("../../src/hooks/useIsDesktop.js", () => ({
   isDesktopViewport: () => true,
 }));
 
-vi.mock("../../src/api/client.js", () => ({
+vi.mock("../../src/api/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
   fetchCheckInHistory: (...args: unknown[]) => fetchCheckInHistory(...args),
   fetchCheckInStats: (...args: unknown[]) => fetchCheckInStats(...args),
   fetchCheckInOpsConfig: (...args: unknown[]) => fetchCheckInOpsConfig(...args),

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage, recoverLegacyAfterDelete, resolveTestSendTemplateLabel } from "../../src/pages/CommunicationPage.js";
 import { makeEmailPreviewInert } from "../../src/communication/inertEmailPreview.js";
-import { getTooltipText, renderWithToast } from "../test-utils.js";
+import { clickKeepEditing, getTooltipText, renderWithToast } from "../test-utils.js";
 
 const fetchEventTemplates = vi.fn();
 const fetchEventTemplate = vi.fn();
@@ -30,16 +30,8 @@ vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => ({ reportApiError }),
 }));
 
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    code?: string;
-    constructor(status: number, message: string, code?: string) {
-      super(message);
-      this.status = status;
-      this.code = code;
-    }
-  },
+vi.mock("../../src/api/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   TemplateValidationError: class TemplateValidationError extends Error {
     errors: string[];
     constructor(errors: string[] = []) {
@@ -1044,7 +1036,7 @@ describe("CommunicationPage templates", () => {
     });
 
     fireEvent.click(screen.getByRole("radio", { name: "MJML" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Keep editing" }));
+    await clickKeepEditing();
     expect(screen.getByLabelText("HTML body")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Switch format" })).toBeNull();
   });

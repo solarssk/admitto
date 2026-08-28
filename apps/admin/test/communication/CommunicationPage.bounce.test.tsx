@@ -26,14 +26,8 @@ vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => ({ reportApiError }),
 }));
 
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
+vi.mock("../../src/api/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   TemplateValidationError: class TemplateValidationError extends Error {},
   fetchEventOverview: (...args: unknown[]) => fetchEventOverview(...args),
   fetchEventTemplate: (...args: unknown[]) => fetchEventTemplate(...args),

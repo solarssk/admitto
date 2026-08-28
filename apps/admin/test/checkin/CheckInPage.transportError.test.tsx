@@ -50,15 +50,9 @@ vi.mock("@admitto/ui", async (importOriginal) => {
   return { ...actual, useToast: () => ({ addToast: vi.fn() }) };
 });
 
-vi.mock("../../src/api/client.js", () => ({
+vi.mock("../../src/api/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchTicketTypes: vi.fn().mockResolvedValue([]),
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
   fetchCheckInHistory: (...a: unknown[]) => fetchCheckInHistory(...a),
   fetchCheckInStats: (...a: unknown[]) => fetchCheckInStats(...a),
   fetchCheckInOpsConfig: (...a: unknown[]) => fetchCheckInOpsConfig(...a),

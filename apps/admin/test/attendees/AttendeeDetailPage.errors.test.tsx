@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ApiError } from "../../src/api/client.js";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { makeSuperadminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 
@@ -17,7 +17,7 @@ vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
 });
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ assignments: [{ role: "superadmin", scope_type: "instance", scope_id: null }] }),
+  useAuth: () => ({ assignments: [makeSuperadminAssignment()] }),
 }));
 
 vi.mock("react-router", async (importOriginal) => {

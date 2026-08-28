@@ -3,7 +3,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { makeOrgAdminAssignment, makeSuperadminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 const updateAttendee = vi.fn();
@@ -17,7 +17,7 @@ vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
 });
 
 let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [
-  { role: "admin", scope_type: "organization", scope_id: "org-1" },
+  makeOrgAdminAssignment(),
 ];
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
@@ -99,7 +99,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-  mockAssignments = [{ role: "admin", scope_type: "organization", scope_id: "org-1" }];
+  mockAssignments = [makeOrgAdminAssignment()];
   vi.unstubAllGlobals();
 });
 
@@ -250,7 +250,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
   });
 
   it("lets a superadmin override the capacity block and retries with force: true", async () => {
-    mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
+    mockAssignments = [makeSuperadminAssignment()];
     mockLoad(baseDetail({ status: "revoked" }));
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
@@ -285,7 +285,7 @@ describe("AttendeeDetailPage — Revoke pass / Restore pass (consolidated confir
   });
 
   it("clears a cancelled capacity override before Restore pass is reopened", async () => {
-    mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
+    mockAssignments = [makeSuperadminAssignment()];
     mockLoad(baseDetail({ status: "revoked" }));
     mockLoad(baseDetail({ status: "registered" }));
     renderPage();

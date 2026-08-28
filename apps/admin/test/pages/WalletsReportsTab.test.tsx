@@ -4,23 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WalletsReportsTab } from "../../src/pages/WalletsReportsTab.js";
 import { ApiError } from "../../src/api/client.js";
 import type { EventWalletReportsResponse } from "../../src/api/types.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { connectionStateValue, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const fetchEventWalletReports = vi.fn();
 const reportApiError = vi.fn();
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ state: "connected", reportApiError }),
+  useConnectionState: () => connectionStateValue("connected", reportApiError),
 }));
 
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
+vi.mock("../../src/api/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchEventWalletReports: (...args: unknown[]) => fetchEventWalletReports(...args),
 }));
 

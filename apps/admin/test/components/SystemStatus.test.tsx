@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { resetSystemStatusCache, SystemStatus } from "../../src/components/SystemStatus.js";
 import { UserMenu } from "../../src/components/UserMenu.js";
 import type { AuthUser, RoleAssignment } from "../../src/api/types.js";
+import { makeSuperadminAssignment } from "../test-utils.js";
 
 const fetchSetupChecks = vi.fn();
 const fetchEventMailSettings = vi.fn();
@@ -17,7 +18,7 @@ function eventMailSettings(provider: string | null, hasEventOverride: boolean, f
   return { hasEventOverride, failedDeliveries, fields: { provider: { value: provider } } };
 }
 
-const SUPERADMIN: RoleAssignment[] = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
+const SUPERADMIN: RoleAssignment[] = [makeSuperadminAssignment()];
 const OPERATOR: RoleAssignment[] = [{ role: "operator", scope_type: "event", scope_id: "evt-1" }];
 
 const OK_CHECKS = {

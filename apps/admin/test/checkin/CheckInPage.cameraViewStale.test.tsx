@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
+import { connectionStateValue } from "../test-utils.js";
 
 // Captures the real onScan callback CameraOverlay wires into CameraScanner
 // (the same one a real camera decode would invoke) so a scan can be
@@ -58,18 +59,12 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
 }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ state: "connected", reportApiError: vi.fn() }),
+  useConnectionState: () => connectionStateValue("connected"),
 }));
 
-vi.mock("../../src/api/client.js", () => ({
+vi.mock("../../src/api/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchTicketTypes: vi.fn().mockResolvedValue([]),
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
   fetchCheckInHistory: (...args: unknown[]) => fetchCheckInHistory(...args),
   fetchCheckInStats: (...args: unknown[]) => fetchCheckInStats(...args),
   fetchCheckInOpsConfig: (...args: unknown[]) => fetchCheckInOpsConfig(...args),

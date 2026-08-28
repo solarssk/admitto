@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import type { RoleAssignment } from "../../src/api/types.js";
 import { AdminGuard, OperatorGuard, SuperadminGuard } from "../../src/auth/RoleRouter.js";
+import { makeOrgAdminAssignment, makeSuperadminAssignment } from "../test-utils.js";
 
 let assignments: RoleAssignment[] = [];
 
@@ -16,8 +17,8 @@ afterEach(() => {
   assignments = [];
 });
 
-const superadminAssignment: RoleAssignment = { role: "superadmin", scope_type: "instance", scope_id: null };
-const orgAdminAssignment: RoleAssignment = { role: "admin", scope_type: "organization", scope_id: "org-1" };
+const superadminAssignment: RoleAssignment = makeSuperadminAssignment();
+const orgAdminAssignment: RoleAssignment = makeOrgAdminAssignment();
 const operatorAssignment: RoleAssignment = { role: "operator", scope_type: "event", scope_id: "evt-1" };
 
 describe("OperatorGuard", () => {

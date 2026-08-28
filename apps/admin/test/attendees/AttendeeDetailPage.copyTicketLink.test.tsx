@@ -5,7 +5,7 @@ import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { ApiError } from "../../src/api/client.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { makeOrgAdminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 const fetchTicketLink = vi.fn();
@@ -19,7 +19,7 @@ vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
 });
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ assignments: [{ role: "admin", scope_type: "organization", scope_id: "org-1" }] }),
+  useAuth: () => ({ assignments: [makeOrgAdminAssignment()] }),
 }));
 
 vi.mock("react-router", async (importOriginal) => {

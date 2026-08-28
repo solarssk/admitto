@@ -29,16 +29,8 @@ vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => ({ reportApiError }),
 }));
 
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    code?: string;
-    constructor(status: number, message: string, code?: string) {
-      super(message);
-      this.status = status;
-      this.code = code;
-    }
-  },
+vi.mock("../../src/api/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
   fetchTicketTypes: vi.fn().mockResolvedValue([]),
   fetchEventItems: vi.fn().mockResolvedValue([]),

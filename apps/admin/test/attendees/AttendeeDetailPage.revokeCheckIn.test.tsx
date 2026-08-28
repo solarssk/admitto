@@ -3,7 +3,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { getTooltipText, makeOrgAdminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 const revokeAttendeeCheckIn = vi.fn();
@@ -18,7 +18,7 @@ vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
 });
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ assignments: [{ role: "admin", scope_type: "organization", scope_id: "org-1" }] }),
+  useAuth: () => ({ assignments: [makeOrgAdminAssignment()] }),
 }));
 
 vi.mock("react-router", async (importOriginal) => {

@@ -12,10 +12,10 @@ import { ReportsPage } from "../../src/pages/ReportsPage.js";
 import { EventsPickerPage } from "../../src/pages/EventsPickerPage.js";
 import { ImportPage } from "../../src/pages/ImportPage.js";
 import { DeviceLabelStep } from "../../src/pages/DeviceLabelStep.js";
-import { getTooltipText, mockMatchMedia, renderWithToast, renderWithToastAndRouter } from "../test-utils.js";
+import { getTooltipText, makeSuperadminAssignment, mockMatchMedia, renderWithToast, renderWithToastAndRouter } from "../test-utils.js";
 
 const superadminAssignments = [
-  { role: "superadmin", scope_type: "instance", scope_id: null },
+  makeSuperadminAssignment(),
 ];
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
