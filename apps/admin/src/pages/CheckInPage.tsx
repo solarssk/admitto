@@ -1133,7 +1133,7 @@ export function CheckInPage({
       setTransportError(
         err.status === 401
           ? "Session expired. Sign in again."
-          : operatorApiErrorMessage(err, "Request failed."),
+          : operatorApiErrorMessage(err, "Request failed. Try again."),
       );
     } else {
       setTransportError("Request failed. Try again.");
@@ -1361,7 +1361,7 @@ export function CheckInPage({
     reportApiError(err.status);
     return err.status === 401
       ? "Session expired. Sign in again."
-      : operatorApiErrorMessage(err, "Request failed.");
+      : operatorApiErrorMessage(err, "Request failed. Try again.");
   };
 
   const handleLookupResults = async (

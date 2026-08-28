@@ -9,7 +9,24 @@ import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const fetchEventReports = vi.fn();
 const fetchTicketTypes = vi.fn();
+const fetchEventWalletReports = vi.fn();
+const exportEventReportsCsv = vi.fn();
+const exportEventWalletReportsCsv = vi.fn();
 const reportApiError = vi.fn();
+
+// vi.mock factories are hoisted above this file's own top-level bindings, so the class referenced
+// inside the factory below must go through vi.hoisted() - a plain top-level `class MockApiError`
+// would throw "Cannot access 'MockApiError' before initialization" when the factory runs.
+const { MockApiError } = vi.hoisted(() => {
+  class MockApiError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.status = status;
+    }
+  }
+  return { MockApiError };
+});
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
 
@@ -24,18 +41,22 @@ vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => ({ state: "connected", reportApiError }),
 }));
 
+// react-apexcharts has no jsdom/ResizeObserver setup in this project (apps/admin/vitest.config.ts
+// has no polyfill) - stub it so mounting WalletsReportsTab (rendered once the Wallets tab is
+// clicked below) doesn't depend on a third-party charting library actually working in jsdom.
+vi.mock("react-apexcharts", () => ({
+  default: () => null,
+}));
+
 vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
+  ApiError: MockApiError,
   fetchEventReports: (...args: unknown[]) => fetchEventReports(...args),
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
-  exportEventReportsCsv: vi.fn(),
+  exportEventReportsCsv: (...args: unknown[]) => exportEventReportsCsv(...args),
   eventReportsPrintUrl: (eventId: string) => `/api/admin/events/${eventId}/reports/export?format=pdf`,
+  fetchEventWalletReports: (...args: unknown[]) => fetchEventWalletReports(...args),
+  exportEventWalletReportsCsv: (...args: unknown[]) => exportEventWalletReportsCsv(...args),
+  eventWalletReportsPrintUrl: (eventId: string) => `/api/admin/events/${eventId}/reports/export?format=pdf&report=wallets`,
 }));
 
 function reportFixture(
@@ -62,6 +83,23 @@ function reportFixture(
     by_checkin_method: [],
     by_operator: [],
     ...overrides,
+  };
+}
+
+function walletFixture(): import("../../src/api/types.js").EventWalletReportsResponse {
+  return {
+    total_attendees: 4,
+    synced_at: null,
+    passes_truncated: false,
+    adoption: { got_pass: 2, got_pass_pct: 50, confirmed: 1, confirmed_pct: 50, cancelled: 0 },
+    platform: { apple_only: 1, google_only: 0, both: 0, not_installed: 1 },
+    by_ticket_type: [],
+    issued_by_day: [],
+    time_to_wallet_tap: { average_days: null, buckets: [] },
+    admission_by_wallet: {
+      with_wallet: { total: 1, admitted: 1, pct: 100 },
+      without_wallet: { total: 3, admitted: 0, pct: 0 },
+    },
   };
 }
 
@@ -468,5 +506,147 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
 
     expect(await screen.findByText("No matches")).toBeTruthy();
     expect(screen.queryByText("Vip Guest")).toBeNull();
+  });
+});
+
+describe("ReportsPage — Wallets tab", () => {
+  /** Clicks the Wallets tab and waits for the switch to genuinely settle - the initial
+   * admissions-tab fetch (fired on mount, independent of anything below) has resolved, the wallet
+   * fetch has fired, and the tab's own aria-selected state reflects the switch. Root-caused via a
+   * CI-only failure (passed locally every time, failed repeatedly on GitHub's own runner): every
+   * test below used to click Wallets immediately after renderPage(), leaving the still-in-flight
+   * admissions fetch's own pending state update racing the tab switch under CI's heavier
+   * scheduling contention - a race this project's local dev machine never reproduced. Settling the
+   * first fetch before triggering the second state transition removes that overlap entirely. */
+  async function clickWalletsTab() {
+    await waitFor(() => expect(fetchEventReports).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
+    await waitFor(() => {
+      expect(fetchEventWalletReports).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("tab", { name: "Wallets", selected: true })).toBeTruthy();
+    });
+  }
+
+  it("mounts WalletsReportsTab and fetches wallet data once the Wallets tab is clicked", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    fetchEventWalletReports.mockResolvedValue(walletFixture());
+    renderPage();
+
+    expect(fetchEventWalletReports).not.toHaveBeenCalled();
+    await clickWalletsTab();
+  });
+
+  it("does not refetch wallet data when switching tabs away and back (display:contents keeps it mounted)", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    fetchEventWalletReports.mockResolvedValue(walletFixture());
+    renderPage();
+
+    await clickWalletsTab();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Event day" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
+
+    // A brief tick for any accidental re-fetch to have fired.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetchEventWalletReports).toHaveBeenCalledTimes(1);
+  });
+
+  it("exports the wallets CSV, not the admissions CSV, while the Wallets tab is active", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    fetchEventWalletReports.mockResolvedValue(walletFixture());
+    // mockReset (not just a fresh mockResolvedValue) - clearAllMocks in afterEach doesn't touch a
+    // mock's queued *Once implementations or its persistent default, only call history, so a full
+    // reset here guarantees this test's own setup can't be shadowed by whatever an earlier test
+    // left behind.
+    exportEventWalletReportsCsv.mockReset().mockResolvedValue(undefined);
+    renderPage();
+
+    await clickWalletsTab();
+
+    fireEvent.click(screen.getByRole("button", { name: /Export/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
+
+    await waitFor(() => expect(exportEventWalletReportsCsv).toHaveBeenCalledTimes(1));
+  });
+
+  it("exports the admissions CSV on the default Event day tab, not the wallets one", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    renderPage();
+    await waitFor(() => expect(fetchEventReports).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /Export/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
+
+    await waitFor(() => expect(exportEventReportsCsv).toHaveBeenCalledTimes(1));
+    expect(fetchEventWalletReports).not.toHaveBeenCalled();
+  });
+
+  it("shows a generic toast when the wallets CSV export throws a non-ApiError", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    fetchEventWalletReports.mockResolvedValue(walletFixture());
+    // mockReset, not mockRejectedValueOnce alone - see the identical comment on the CSV-export
+    // test above.
+    exportEventWalletReportsCsv.mockReset().mockRejectedValueOnce(new TypeError("network down"));
+    renderPage();
+
+    await clickWalletsTab();
+
+    fireEvent.click(screen.getByRole("button", { name: /Export/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
+
+    // Matches AdminPages.errors.test.tsx's own proven-reliable pattern for this exact scenario
+    // (toasts a generic export failure for a non-API error) - getByTestId + textContent + toMatch
+    // inside waitFor, not findByText.
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed/);
+    });
+  });
+
+  it("reports the API error status and toasts the export-failed message when the wallets CSV export fails with an ApiError", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    fetchEventWalletReports.mockResolvedValue(walletFixture());
+    // mockReset, not mockRejectedValueOnce alone - see the identical comment on the CSV-export
+    // test above.
+    exportEventWalletReportsCsv.mockReset().mockRejectedValueOnce(new MockApiError(500, "boom"));
+    renderPage();
+
+    await clickWalletsTab();
+
+    fireEvent.click(screen.getByRole("button", { name: /Export/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
+
+    // reportApiError is only called inside the `err instanceof ApiError` branch of
+    // handleExportCsv's catch block, before either the toast or the 401 redirect - checking it
+    // first gives a direct signal on whether that branch was even entered, rather than only
+    // seeing the toast's own (possibly generic-branch) text.
+    await waitFor(() => {
+      expect(reportApiError).toHaveBeenCalledWith(500);
+    });
+    // Status 500 with no known code falls through operatorApiErrorMessage's own safety checks to
+    // its fallback argument, which handleExportCsv now shares with the non-ApiError branch below
+    // (fix(admin) 2fcf00c0 deduped the two so an API error and a generic failure read identically) -
+    // this and the non-ApiError test above intentionally converge on the same toast text; what
+    // differs is that reportApiError fires only for the ApiError case, asserted above.
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed\./);
+    });
+  });
+
+  it("opens the wallets PDF print URL, not the admissions one, while the Wallets tab is active", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    fetchEventWalletReports.mockResolvedValue(walletFixture());
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    renderPage();
+
+    await clickWalletsTab();
+
+    fireEvent.click(screen.getByRole("button", { name: /Export/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /PDF/ }));
+
+    expect(openSpy).toHaveBeenCalledWith(
+      expect.stringContaining("report=wallets"),
+      "_blank",
+      "noopener,noreferrer",
+    );
   });
 });

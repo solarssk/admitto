@@ -2,6 +2,7 @@ export { splitCsvLine } from "./csvUtils.js";
 export { redactEmail } from "./redact.js";
 export { NO_COMPRESSION_HEADERS } from "./noCompressionHeaders.js";
 export type { DeliveryDetailDto, DeliveryDto } from "./deliveryDto.js";
+export type { EventWalletReportsResponse } from "./eventWalletReportsDto.js";
 export type { HealthOverallStatus, HealthRowStatus } from "./healthStatus.js";
 export {
   SUPPORTED_LOCALE_TAGS,
@@ -16,6 +17,7 @@ export {
   type PreferredTimeFormat,
 } from "./preferredTimeFormat.js";
 export { zonedWallClockToUtcIso } from "./zonedWallClock.js";
+export { MAIL_PROVIDER_LABELS, type MailProviderId } from "./mailProviderLabels.js";
 export {
   celsiusToFahrenheit,
   formatTempChip,

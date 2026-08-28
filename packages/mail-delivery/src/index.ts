@@ -61,7 +61,13 @@ export { buildAttendeeMailLinks, resolveAttendeeMailLinks } from "./links.js";
 export type { AttendeeMailLinks, AttendeeLinkInput, EventLinkInput } from "./links.js";
 export { mapSendResultToDelivery } from "./mapSendResult.js";
 export type { DeliveryStatusUpdate } from "./mapSendResult.js";
-export { sanitizeDeliveryError, clientSafeDeliveryError, transportTestErrorForAdmin, imapTestErrorForAdmin } from "./sanitizeError.js";
+export {
+  sanitizeDeliveryError,
+  clientSafeDeliveryError,
+  transportTestErrorForAdmin,
+  imapTestErrorForAdmin,
+  GENERIC_SEND_FAILED_MESSAGE,
+} from "./sanitizeError.js";
 export { claimInitialDelivery, createResendDelivery } from "./claim.js";
 export type { ClaimResult, FrozenMessage } from "./claim.js";
 export { resolveBaseUrl } from "./baseUrl.js";

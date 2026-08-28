@@ -237,7 +237,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--surface-page, #f8fafc);
+  background: var(--surface-page, #f1f5f9);
   border: none;
   border-right: var(--border-width) solid var(--border-strong);
   cursor: pointer;

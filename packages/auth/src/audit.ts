@@ -25,7 +25,7 @@ async function resolveUserIdentitySnapshot(
   }
 }
 
-/** The 13 auth/security event types persisted to the durable `SecurityAuditLog` table (issue
+/** The 15 auth/security event types persisted to the durable `SecurityAuditLog` table (issue
  * #473), in addition to the stdout/ring-buffer emit every event in this module already gets.
  * Deliberately narrower than this module's full event surface: `auth.rate_limit.exceeded` (11
  * call sites spanning login, MFA, OIDC, admin imports, check-in — an infra/throttle signal better
@@ -45,7 +45,8 @@ export type SecurityAuditEventType =
   | "auth.oidc.success"
   | "auth.oidc.superadmin_revoke_blocked"
   | "auth.access.denied"
-  | "auth.trusted_device.created";
+  | "auth.trusted_device.created"
+  | "auth.trusted_device.used";
 
 /**
  * Persist a security/auth event to the durable `SecurityAuditLog` table (issue #473). Never
@@ -520,24 +521,47 @@ export async function logAccessDenied(
   });
 }
 
-/** Emit `auth.trusted_device.created` when MFA completion remembers a device (skips MFA on
- * future logins on that device for its configured lifetime, see `trusted_device_days`), and
- * persist a durable `SecurityAuditLog` row (P0 security review — this was the one MFA outcome
- * with no audit trail). */
-export async function logTrustedDeviceCreated(db: Db, ctx: MfaAuditContext): Promise<void> {
-  emitAuditEvent("auth.trusted_device.created", {
+type TrustedDeviceEventType = "auth.trusted_device.created" | "auth.trusted_device.used";
+
+/** Shared shape of both trusted-device events - only `event_type` differs between "a device was
+ * remembered" and "a remembered device's cookie was used to skip MFA". */
+async function logTrustedDeviceEvent(
+  db: Db,
+  eventType: TrustedDeviceEventType,
+  ctx: MfaAuditContext,
+): Promise<void> {
+  emitAuditEvent(eventType, {
     user_fingerprint: fingerprint(ctx.userId),
     session_fingerprint: ctx.sessionId ? fingerprint(ctx.sessionId) : null,
     ip: ctx.ip ?? null,
     userAgent: ctx.userAgent ?? null,
   });
   await writeSecurityAuditLog(db, {
-    event_type: "auth.trusted_device.created",
+    event_type: eventType,
     user_id: ctx.userId,
     ip: ctx.ip ?? null,
     actor_timezone: ctx.timezone ?? null,
     metadata: { sessionId: ctx.sessionId ?? null, userAgent: ctx.userAgent ?? null },
   });
+}
+
+/** Emit `auth.trusted_device.created` when MFA completion remembers a device (skips MFA on
+ * future logins on that device for its configured lifetime, see `trusted_device_days`), and
+ * persist a durable `SecurityAuditLog` row (P0 security review — this was the one MFA outcome
+ * with no audit trail). */
+export async function logTrustedDeviceCreated(db: Db, ctx: MfaAuditContext): Promise<void> {
+  await logTrustedDeviceEvent(db, "auth.trusted_device.created", ctx);
+}
+
+/** Emit `auth.trusted_device.used` when a "remember this device" cookie skips the MFA step on
+ * login, and persist a durable `SecurityAuditLog` row. Without this, a trusted-device MFA skip
+ * was indistinguishable from an ordinary password-only login in every audit trail (the row this
+ * function reads from is only ever written at *creation* time, by `logTrustedDeviceCreated`) -
+ * the one remaining gap once `validateTrustedDevice` stopped requiring the request's IP to match
+ * (see that function's own doc comment), so a stolen password + stolen cookie pair used from a
+ * different network now leaves a queryable trace even though it's no longer blocked outright. */
+export async function logTrustedDeviceUsed(db: Db, ctx: MfaAuditContext): Promise<void> {
+  await logTrustedDeviceEvent(db, "auth.trusted_device.used", ctx);
 }
 
 /** Emit `auth.login.repeated_failures` once consecutive failed attempts against a single

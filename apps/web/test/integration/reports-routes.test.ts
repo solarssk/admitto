@@ -18,9 +18,11 @@ const EVENT_REP = "evt-reports-test";
 const EVENT_REP_B = "evt-reports-test-b";
 const EVENT_EMPTY = "evt-reports-empty";
 const EVENT_MISSING = "evt-reports-missing";
+const EVENT_WALLETS = "evt-reports-wallets";
 
 const EMAIL_ADMIN = "reports-admin@example.com";
 const EMAIL_ADMIN_B = "reports-admin-b@example.com";
+const EMAIL_ADMIN_WALLETS = "reports-admin-wallets@example.com";
 const EMAIL_OP = "reports-op@example.com";
 const PASSWORD = "reports-test-pass-123";
 
@@ -31,14 +33,29 @@ const ATT_STD_2 = "att-reports-std-2";
 const ATT_STD_3 = "att-reports-std-3";
 const ATT_NO_SHOW = "att-reports-no-show";
 
+const ATT_W_APPLE = "att-reports-w-apple";
+const ATT_W_BOTH = "att-reports-w-both";
+const ATT_W_GOOGLE = "att-reports-w-google";
+const ATT_W_NOT_INSTALLED = "att-reports-w-not-installed";
+const ATT_W_VOIDED = "att-reports-w-voided";
+const ATT_W_NOPASS = "att-reports-w-nopass";
+const ATT_W_NOTYPE = "att-reports-w-notype";
+const ATT_W_LEGACY_TYPE = "att-reports-w-legacy-type";
+
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let adminId: string;
 let adminBId: string;
+let adminWalletsId: string;
 let opId: string;
 let adminCookie = "";
 let adminBCookie = "";
 let opCookie = "";
+// A dedicated admin session for the wallets export tests (rather than reusing adminCookie) -
+// admin:export rate-limits per user+route (hono/route's routePath, not the eventId param), so
+// reusing adminCookie here would share a single 10-per-hour budget with every admissions export
+// test above and trip the limiter (Codecov coverage follow-up, PR #1125).
+let adminWalletsCookie = "";
 
 function mkAttendeeToken() {
   const token = generateToken();
@@ -65,21 +82,25 @@ async function createUnvalidatedAttendees(
 }
 
 async function seed(client: PrismaClient) {
-  const eventIds = [EVENT_REP, EVENT_REP_B, EVENT_EMPTY];
+  const eventIds = [EVENT_REP, EVENT_REP_B, EVENT_EMPTY, EVENT_WALLETS];
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
+  await client.emailDelivery.deleteMany({ where: { event_id: { in: eventIds } } });
+  await client.walletPass.deleteMany({ where: { attendee: { event_id: { in: eventIds } } } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.ticketType.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.roleAssignment.deleteMany({
     where: { OR: [{ scope_id: { in: [ORG_REP, ORG_REP_B, ...eventIds] } }] },
   });
   await client.session.deleteMany({
-    where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_OP] } } },
+    where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS, EMAIL_OP] } } },
   });
   await client.userMfaMethod.deleteMany({
-    where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B] } } },
+    where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS] } } },
   });
-  await client.user.deleteMany({ where: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_OP] } } });
+  await client.user.deleteMany({
+    where: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS, EMAIL_OP] } },
+  });
   await client.event.deleteMany({ where: { id: { in: eventIds } } });
   await client.organization.deleteMany({ where: { id: { in: [ORG_REP, ORG_REP_B] } } });
 
@@ -116,6 +137,13 @@ async function seed(client: PrismaClient) {
         date: new Date("2026-12-01T12:00:00.000Z"),
         organization_id: ORG_REP,
       },
+      {
+        id: EVENT_WALLETS,
+        title: "Wallets Reports Event",
+        slug: "reports-wallets",
+        date: new Date("2027-06-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
     ],
   });
 
@@ -123,25 +151,29 @@ async function seed(client: PrismaClient) {
     data: [
       { event_id: EVENT_REP, key: "Standard", label: "Standard", sort_order: 0 },
       { event_id: EVENT_REP, key: "VIP", label: "VIP", color: "purple", sort_order: 1 },
+      { event_id: EVENT_WALLETS, key: "General", label: "General", sort_order: 0 },
     ],
   });
 
   const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
   const adminBUser = await client.user.create({ data: { email: EMAIL_ADMIN_B, password_hash } });
+  const adminWalletsUser = await client.user.create({ data: { email: EMAIL_ADMIN_WALLETS, password_hash } });
   const opUser = await client.user.create({ data: { email: EMAIL_OP, password_hash } });
   adminId = adminUser.id;
   adminBId = adminBUser.id;
+  adminWalletsId = adminWalletsUser.id;
   opId = opUser.id;
 
   await client.roleAssignment.createMany({
     data: [
       { user_id: adminId, role: "admin", scope_type: "organization", scope_id: ORG_REP },
       { user_id: adminBId, role: "admin", scope_type: "organization", scope_id: ORG_REP_B },
+      { user_id: adminWalletsId, role: "admin", scope_type: "organization", scope_id: ORG_REP },
       { user_id: opId, role: "operator", scope_type: "event", scope_id: EVENT_REP },
     ],
   });
 
-  for (const userId of [adminId, adminBId]) {
+  for (const userId of [adminId, adminBId, adminWalletsId]) {
     await client.userMfaMethod.create({
       data: {
         user_id: userId,
@@ -245,6 +277,193 @@ async function seed(client: PrismaClient) {
       },
     ],
   });
+
+  const walletIssuedAt = new Date("2026-01-15T10:00:00.000Z");
+  const walletAdmittedAt = new Date("2026-01-16T09:00:00.000Z");
+
+  await client.attendee.createMany({
+    data: [
+      {
+        id: ATT_W_APPLE,
+        event_id: EVENT_WALLETS,
+        email: "w-apple@example.com",
+        name: "Wallets Apple",
+        ticket_type: "General",
+        admitted_at: walletAdmittedAt,
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_W_BOTH,
+        event_id: EVENT_WALLETS,
+        email: "w-both@example.com",
+        name: "Wallets Both",
+        ticket_type: "General",
+        admitted_at: walletAdmittedAt,
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_W_GOOGLE,
+        event_id: EVENT_WALLETS,
+        email: "w-google@example.com",
+        name: "Wallets Google",
+        ticket_type: "General",
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_W_NOT_INSTALLED,
+        event_id: EVENT_WALLETS,
+        email: "w-not-installed@example.com",
+        name: "Wallets Not Installed",
+        ticket_type: "General",
+        admitted_at: walletAdmittedAt,
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_W_VOIDED,
+        event_id: EVENT_WALLETS,
+        email: "w-voided@example.com",
+        name: "Wallets Voided",
+        ticket_type: "General",
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_W_NOPASS,
+        event_id: EVENT_WALLETS,
+        email: "w-nopass@example.com",
+        name: "Wallets No Pass",
+        ticket_type: "General",
+        admitted_at: walletAdmittedAt,
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_W_NOTYPE,
+        event_id: EVENT_WALLETS,
+        email: "w-notype@example.com",
+        name: "Wallets No Type",
+        ticket_type: null,
+        admitted_at: walletAdmittedAt,
+        ...mkAttendeeToken(),
+      },
+    ],
+  });
+
+  // ticket_type "Retired" has no TicketType catalog row for EVENT_WALLETS - the FK added in
+  // migration 20260714210009_add_attendee_ticket_type_fk requires bypassing normal inserts, same
+  // as createUnvalidatedAttendees' own doc comment explains.
+  await createUnvalidatedAttendees(client, [
+    {
+      id: ATT_W_LEGACY_TYPE,
+      event_id: EVENT_WALLETS,
+      email: "w-legacy-type@example.com",
+      name: "Wallets Legacy Type",
+      ticket_type: "Retired",
+      ...mkAttendeeToken(),
+    },
+  ]);
+
+  await client.walletPass.createMany({
+    data: [
+      {
+        attendee_id: ATT_W_APPLE,
+        status: "active",
+        issued_at: walletIssuedAt,
+        apple_active_registrations: 1,
+        google_active_registrations: 0,
+        registration_checked_at: new Date("2026-01-16T00:00:00.000Z"),
+      },
+      {
+        attendee_id: ATT_W_BOTH,
+        status: "active",
+        issued_at: walletIssuedAt,
+        apple_active_registrations: 2,
+        google_active_registrations: 1,
+        registration_checked_at: new Date("2026-01-20T00:00:00.000Z"),
+      },
+      {
+        attendee_id: ATT_W_GOOGLE,
+        status: "active",
+        issued_at: walletIssuedAt,
+        apple_active_registrations: 0,
+        google_active_registrations: 3,
+        registration_checked_at: new Date("2026-01-10T00:00:00.000Z"),
+      },
+      {
+        attendee_id: ATT_W_NOT_INSTALLED,
+        status: "active",
+        issued_at: walletIssuedAt,
+        apple_active_registrations: 0,
+        google_active_registrations: 0,
+      },
+      {
+        attendee_id: ATT_W_VOIDED,
+        status: "voided",
+        issued_at: walletIssuedAt,
+        voided_at: new Date("2026-01-18T00:00:00.000Z"),
+        apple_active_registrations: 0,
+        google_active_registrations: 0,
+      },
+      {
+        attendee_id: ATT_W_NOTYPE,
+        status: "active",
+        issued_at: walletIssuedAt,
+        apple_active_registrations: 1,
+        google_active_registrations: 0,
+      },
+      {
+        attendee_id: ATT_W_LEGACY_TYPE,
+        status: "active",
+        issued_at: walletIssuedAt,
+        apple_active_registrations: 1,
+        google_active_registrations: 0,
+      },
+    ],
+  });
+
+  // 3 whole days before walletIssuedAt - exercises time_to_wallet_tap's "1_3" bucket. No other
+  // wallet attendee besides ATT_W_NOT_INSTALLED (below) gets an EmailDelivery row, so they're
+  // excluded from the average/bucket entirely (computeTapDays returns null with no sent_at).
+  await client.emailDelivery.create({
+    data: {
+      organization_id: ORG_REP,
+      event_id: EVENT_WALLETS,
+      attendee_id: ATT_W_APPLE,
+      purpose: "initial",
+      provider: "export_only",
+      status: "sent",
+      sent_at: new Date("2026-01-12T10:00:00.000Z"),
+    },
+  });
+
+  // A hard-bounced initial send followed by a successful resend - regression coverage for
+  // WALLET_PASS_AGGREGATE_SELECT/WALLET_EXPORT_ATTENDEE_SELECT only counting the earliest
+  // non-bounced delivery across both purposes, not just "initial" (bot review on PR #1125:
+  // applyBounceResult retains sent_at on a hard bounce, so a "purpose: initial" filter alone
+  // would still pick the bounced send's timestamp). The bounced initial is 10 whole days before
+  // walletIssuedAt (would land in the "8_plus" bucket if wrongly used); the resend is 5 whole
+  // days before (lands in "4_7") - a wrong pick here changes both the bucket and the average.
+  await client.emailDelivery.createMany({
+    data: [
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_WALLETS,
+        attendee_id: ATT_W_NOT_INSTALLED,
+        purpose: "initial",
+        provider: "export_only",
+        status: "bounced",
+        sent_at: new Date("2026-01-05T10:00:00.000Z"),
+        failed_at: new Date("2026-01-05T11:00:00.000Z"),
+      },
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_WALLETS,
+        attendee_id: ATT_W_NOT_INSTALLED,
+        purpose: "resend",
+        provider: "export_only",
+        status: "sent",
+        sent_at: new Date("2026-01-10T10:00:00.000Z"),
+      },
+    ],
+  });
 }
 
 beforeAll(async () => {
@@ -259,9 +478,11 @@ beforeAll(async () => {
 
   const adminSession = await createSession(prisma, { userId: adminId, stage: SESSION_STAGE.FULL });
   const adminBSession = await createSession(prisma, { userId: adminBId, stage: SESSION_STAGE.FULL });
+  const adminWalletsSession = await createSession(prisma, { userId: adminWalletsId, stage: SESSION_STAGE.FULL });
   const opSession = await createSession(prisma, { userId: opId, stage: SESSION_STAGE.FULL });
   adminCookie = `admitto_session=${adminSession.rawToken}`;
   adminBCookie = `admitto_session=${adminBSession.rawToken}`;
+  adminWalletsCookie = `admitto_session=${adminWalletsSession.rawToken}`;
   opCookie = `admitto_session=${opSession.rawToken}`;
 });
 
@@ -1598,6 +1819,28 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(body.error).toBe("format must be csv or pdf");
   });
 
+  it("defaults to csv when format is omitted", async () => {
+    // adminWalletsCookie, not adminCookie - see the identical comment on the "invalid report"
+    // test below (separate admin:export rate-limit bucket).
+    const res = await app.request(`/api/admin/events/${EVENT_REP}/reports/export`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/csv");
+  });
+
+  it("returns 400 for invalid report", async () => {
+    // adminWalletsCookie, not adminCookie - a distinct rate-limit bucket so this doesn't compete
+    // with the admin:export budget the tests below already use up (see adminWalletsCookie's own
+    // doc comment above).
+    const res = await app.request(`/api/admin/events/${EVENT_REP}/reports/export?format=csv&report=bogus`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("report must be admissions or wallets");
+  });
+
   it("returns 403 for operator on CSV export", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_REP}/reports/export?format=csv`, {
       headers: { Cookie: opCookie },
@@ -1700,5 +1943,236 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(meta.format).toBe("csv");
     expect(meta.count).toBe(5);
     expect(meta.truncated).toBe(false);
+  });
+});
+
+describe("GET /api/admin/events/:eventId/reports/wallets", () => {
+  it("returns 401 without auth", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/wallets`);
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 for operator (staff admin gate)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_REP}/reports/wallets`, {
+      headers: { Cookie: opCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for admin without event org access", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/wallets`, {
+      headers: { Cookie: adminBCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns zero-adoption summary for an event with no attendees", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EMPTY}/reports/wallets`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      total_attendees: number;
+      synced_at: string | null;
+      passes_truncated: boolean;
+      adoption: { got_pass: number; confirmed: number; cancelled: number };
+      issued_by_day: unknown[];
+    };
+    expect(body.total_attendees).toBe(0);
+    expect(body.synced_at).toBeNull();
+    expect(body.passes_truncated).toBe(false);
+    expect(body.adoption.got_pass).toBe(0);
+    expect(body.adoption.confirmed).toBe(0);
+    expect(body.adoption.cancelled).toBe(0);
+    expect(body.issued_by_day).toEqual([]);
+  });
+
+  it("aggregates adoption, platform mix, ticket-type breakdown, time-to-tap, and admission-by-wallet-status", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/wallets`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      total_attendees: number;
+      synced_at: string | null;
+      passes_truncated: boolean;
+      adoption: { got_pass: number; got_pass_pct: number; confirmed: number; confirmed_pct: number; cancelled: number };
+      platform: { apple_only: number; google_only: number; both: number; not_installed: number };
+      by_ticket_type: Array<{ key: string | null; type: string; total: number; got_pass: number; pct: number }>;
+      issued_by_day: Array<{ count: number; cumulative: number }>;
+      time_to_wallet_tap: {
+        average_days: number | null;
+        buckets: Array<{ key: string; count: number; pct: number }>;
+      };
+      admission_by_wallet: {
+        with_wallet: { total: number; admitted: number; pct: number };
+        without_wallet: { total: number; admitted: number; pct: number };
+      };
+    };
+
+    expect(body.total_attendees).toBe(8);
+    // The most recently registration_checked_at pass (ATT_W_BOTH, 2026-01-20) wins, not the
+    // most recently issued or the seed's insertion order.
+    expect(body.synced_at).toBe(new Date("2026-01-20T00:00:00.000Z").toISOString());
+    expect(body.passes_truncated).toBe(false);
+
+    expect(body.adoption.got_pass).toBe(7); // every wallet attendee except ATT_W_NOPASS
+    expect(body.adoption.got_pass_pct).toBeCloseTo(87.5);
+    expect(body.adoption.confirmed).toBe(5); // apple/google/both/notype/legacy - not_installed and voided excluded
+    expect(body.adoption.confirmed_pct).toBeCloseTo(71.4);
+    expect(body.adoption.cancelled).toBe(1); // ATT_W_VOIDED
+
+    expect(body.platform).toEqual({ apple_only: 3, google_only: 1, both: 1, not_installed: 2 });
+
+    const general = body.by_ticket_type.find((t) => t.key === "General");
+    expect(general).toBeDefined();
+    expect(general!.total).toBe(6);
+    expect(general!.got_pass).toBe(5);
+    expect(general!.pct).toBeCloseTo(83.3);
+
+    const none = body.by_ticket_type.find((t) => t.key === null);
+    expect(none).toBeDefined();
+    expect(none!.type).toBe("(none)");
+    expect(none!.total).toBe(1);
+    expect(none!.got_pass).toBe(1);
+
+    const notInCatalog = body.by_ticket_type.find((t) => t.key === "Retired");
+    expect(notInCatalog).toBeDefined();
+    expect(notInCatalog!.type).toBe("(not in catalog)");
+    expect(notInCatalog!.total).toBe(1);
+    expect(notInCatalog!.got_pass).toBe(1);
+
+    // Every pass was issued on the same seeded day - assert on the first real entry and the
+    // final cumulative rather than array length, since the zero-fill-through-today extension
+    // (EventWalletReportsResponse.issued_by_day's own doc comment) makes the array length
+    // depend on the real calendar date the suite happens to run on.
+    expect(body.issued_by_day[0]!.count).toBe(7);
+    expect(body.issued_by_day[0]!.cumulative).toBe(7);
+    expect(body.issued_by_day.at(-1)!.cumulative).toBe(7);
+
+    // ATT_W_APPLE (sent 3 whole days before its pass was issued) and ATT_W_NOT_INSTALLED (bounced
+    // initial 10 days before, successful resend 5 days before - the resend must win) are the only
+    // two contributors; every other wallet attendee has no successful ticket-email send, so
+    // computeTapDays returns null for them and they're excluded from both the average and every
+    // bucket. A wrong "purpose: initial"-only pick would use ATT_W_NOT_INSTALLED's bounced 10-day
+    // gap instead, landing it in "8_plus" and shifting the average to 6.5.
+    expect(body.time_to_wallet_tap.average_days).toBe(4);
+    const bucket13 = body.time_to_wallet_tap.buckets.find((b) => b.key === "1_3");
+    expect(bucket13!.count).toBe(1);
+    expect(bucket13!.pct).toBe(50);
+    const bucket47 = body.time_to_wallet_tap.buckets.find((b) => b.key === "4_7");
+    expect(bucket47!.count).toBe(1);
+    expect(bucket47!.pct).toBe(50);
+    for (const key of ["same_day", "8_plus"]) {
+      expect(body.time_to_wallet_tap.buckets.find((b) => b.key === key)!.count).toBe(0);
+    }
+
+    expect(body.admission_by_wallet.with_wallet).toEqual({ total: 5, admitted: 3, pct: 60 });
+    expect(body.admission_by_wallet.without_wallet.total).toBe(3);
+    expect(body.admission_by_wallet.without_wallet.admitted).toBe(2);
+  });
+});
+
+describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
+  it("returns 403 for admin without event org access", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/export?format=csv&report=wallets`, {
+      headers: { Cookie: adminBCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns a wallets CSV with one row per attendee, including those with no pass", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/export?format=csv&report=wallets`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/csv");
+    expect(res.headers.get("Content-Disposition")).toContain('filename="wallets-reports-wallets-');
+    expect(res.headers.get("X-Wallets-Export-Total")).toBe("8");
+    expect(res.headers.get("X-Wallets-Export-Truncated")).toBe("false");
+
+    const text = await res.text();
+    const lines = text.replace(/^﻿/, "").split("\r\n");
+    expect(lines[0]).toContain('"Confirmed platform"');
+    // rows are ordered by name asc: "Wallets Apple" sorts first among the 8 seeded names.
+    const appleRow = lines.find((l) => l.includes('"Wallets Apple"'));
+    expect(appleRow).toContain('"Apple"');
+    const bothRow = lines.find((l) => l.includes('"Wallets Both"'));
+    expect(bothRow).toContain('"Both"');
+    const nopassRow = lines.find((l) => l.includes('"Wallets No Pass"'));
+    expect(nopassRow).toContain('"No pass"');
+    // ATT_W_NOT_INSTALLED's wallet_pass has no registration_checked_at (never synced) - the
+    // active/inactive counts and confirmed-platform columns must stay blank, not export the
+    // unknown state as an affirmative 0/"None" (bot review: that would misrepresent "never
+    // synced" as "confirmed not installed" in an archive meant for later recomputation).
+    const notInstalledRow = lines.find((l) => l.includes('"Wallets Not Installed"'));
+    expect(notInstalledRow).toBeDefined();
+    const cells = notInstalledRow!.split(",").map((c) => c.replace(/^"|"$/g, ""));
+    expect(cells.slice(5, 10)).toEqual(["", "", "", "", ""]);
+  });
+
+  it("returns printable HTML for a wallets pdf export", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/export?format=pdf&report=wallets`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/html");
+    const html = await res.text();
+    expect(html).toContain("Wallets Reports Event");
+    // synced_at is set (ATT_W_BOTH's registration_checked_at, the most recent) - the meta line
+    // should surface it, not silently omit sync freshness the way a bare "Generated" timestamp
+    // would (bot review: a shared PDF can otherwise misleadingly look current).
+    expect(html).toContain("Synced ");
+    expect(html).not.toContain("Not synced yet");
+    // ATT_W_APPLE and ATT_W_NOT_INSTALLED both contribute a tap-day sample (see the GET aggregate
+    // test's time_to_wallet_tap assertions above), so average_days isn't null here - the bucket
+    // rows should render, not the buckets-always-populated dead-code fallback text.
+    expect(html).toContain("1-3 days");
+    expect(html).not.toContain("Not enough data yet");
+    // EVENT_WALLETS has 8 seeded passes, nowhere near WALLET_AGGREGATE_MAX - the partial-sample
+    // warning must stay absent (the passes_truncated: true path itself would need 50,001+ seeded
+    // passes to exercise directly, impractical for an integration test; this only guards the
+    // false-path regression).
+    expect(html).not.toContain("partial sample");
+  });
+
+  it("shows every empty/not-synced state in the wallets pdf for an event with no attendees", async () => {
+    // adminWalletsCookie, not adminCookie - see the identical comment on the "invalid report"
+    // test above (separate admin:export rate-limit bucket; adminCookie's is exhausted by the
+    // many other /reports/export calls throughout this describe block).
+    const res = await app.request(`/api/admin/events/${EVENT_EMPTY}/reports/export?format=pdf&report=wallets`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // EVENT_EMPTY has zero attendees, so got_pass, by_ticket_type, and average_days are all at
+    // their empty/null defaults - exercises the fallback branch of every one of these three
+    // buckets-or-list-always-populated ternaries at once, plus the never-synced meta line.
+    expect(html).toContain("Not synced yet");
+    expect(html).not.toContain("Synced ");
+    expect(html).toContain("No passes issued");
+    expect(html).toContain("No attendees");
+    expect(html).toContain("Not enough data yet");
+  });
+
+  it("audit: reports_exported records report=wallets, not the admissions default", async () => {
+    await prisma.attendeeActionLog.deleteMany({
+      where: { event_id: EVENT_WALLETS, action_type: "reports_exported" },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/export?format=csv&report=wallets`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_WALLETS, action_type: "reports_exported" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    const meta = log!.metadata as Record<string, unknown>;
+    expect(meta.report).toBe("wallets");
+    expect(meta.format).toBe("csv");
+    expect(meta.count).toBe(8);
   });
 });

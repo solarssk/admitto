@@ -108,6 +108,7 @@ import type {
   EventContactDto,
   EventResourceDto,
   EventReportsResponse,
+  EventWalletReportsResponse,
   AccountDto,
   PatchAccountProfileBody,
   PatchAccountPasswordBody,
@@ -2811,44 +2812,56 @@ export async function fetchEventReports(
   return parseJson<EventReportsResponse>(res);
 }
 
+/** Fetch a CSV/PDF export URL, then hand the response to downloadExportResponse (the same
+ * validate-then-save helper delivery-log/attendees/audit-log exports already use) - shared by
+ * exportEventReportsCsv and exportEventWalletReportsCsv, which otherwise only differ in the
+ * request URL and fallback filename (SonarCloud flagged the near-identical bodies as new-code
+ * duplication on PR #1126; an earlier fix for that re-duplicated downloadExportResponse's own
+ * body instead of reusing it). */
+async function downloadExportBlob(url: string, fallbackFilename: string, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(url, { credentials: "same-origin", signal });
+  await downloadExportResponse(res, fallbackFilename);
+}
+
 /** Download admission log CSV export and trigger browser save. */
-export async function exportEventReportsCsv(
-  eventId: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  const res = await fetch(
+export async function exportEventReportsCsv(eventId: string, signal?: AbortSignal): Promise<void> {
+  return downloadExportBlob(
     `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=csv`,
-    { credentials: "same-origin", signal },
+    "admissions.csv",
+    signal,
   );
-  if (!res.ok) {
-    let message = `HTTP ${res.status}`;
-    try {
-      const body = (await res.json()) as ApiErrorBody;
-      message = messageFromApiErrorBody(body) ?? message;
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(res.status, message);
-  }
-
-  const blob = await res.blob();
-  const disposition = res.headers.get("Content-Disposition") ?? "";
-  const match = /filename="([^"]+)"/.exec(disposition);
-  const filename = match?.[1] ?? "admissions.csv";
-
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 /** Same-origin URL for printable HTML report (open in new tab for Save as PDF). */
 export function eventReportsPrintUrl(eventId: string): string {
   return `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=pdf`;
+}
+
+export async function fetchEventWalletReports(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<EventWalletReportsResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/reports/wallets`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<EventWalletReportsResponse>(res);
+}
+
+/** Download the wallets CSV export (one row per attendee) and trigger browser save - same
+ * fetch-blob-then-anchor-click pattern as exportEventReportsCsv above, `report=wallets` is the
+ * only difference in the request itself. */
+export async function exportEventWalletReportsCsv(eventId: string, signal?: AbortSignal): Promise<void> {
+  return downloadExportBlob(
+    `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=csv&report=wallets`,
+    "wallets.csv",
+    signal,
+  );
+}
+
+/** Same-origin URL for the wallets printable HTML report (open in new tab for Save as PDF). */
+export function eventWalletReportsPrintUrl(eventId: string): string {
+  return `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=pdf&report=wallets`;
 }
 
 // --- Identity providers & Cloudflare Access (SPA Settings → Identity, #266) ---
