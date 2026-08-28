@@ -205,6 +205,20 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(screen.getByRole("menuitem", { name: /Delete wallet pass/ })).toBeTruthy();
       expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
     });
+
+    it("hides every wallet lifecycle action, even for an active pass, once the event's Wallet feature is disabled", async () => {
+      mockWalletEnabled = false;
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Restore wallet pass/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Push updates/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Delete wallet pass/ })).toBeNull();
+    });
   });
 
   describe("Void wallet pass", () => {
@@ -553,6 +567,20 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
 
       const icons = document.querySelectorAll(".attendee-status-chip__icon--neutral");
       expect(icons.length).toBeGreaterThan(0);
+    });
+
+    it("shows Sent, not Added, when the only confirmed registration is on a platform that's since been disabled", async () => {
+      mockWalletAppleEnabled = false;
+      mockLoad(
+        baseDetail({
+          wallet_pass: walletPass({ status: "active", apple_active_registrations: 1, google_active_registrations: 0 }),
+        }),
+      );
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      expect(screen.getByText("Sent")).toBeTruthy();
+      expect(screen.queryByText("Added")).toBeNull();
     });
   });
 

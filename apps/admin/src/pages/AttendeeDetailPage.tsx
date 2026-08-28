@@ -129,6 +129,7 @@ function MoreActionsMenu({
   onRevokeItems,
   onRestorePass,
   onRevokePass,
+  walletPlatforms,
   walletPass,
   walletBusy,
   onVoidWallet,
@@ -158,6 +159,7 @@ function MoreActionsMenu({
   onRevokeItems: () => void;
   onRestorePass: () => void;
   onRevokePass: () => void;
+  walletPlatforms: EnabledWalletPlatforms;
   walletPass: WalletPassActionDto | null;
   walletBusy: boolean;
   onVoidWallet: () => void;
@@ -282,9 +284,12 @@ function MoreActionsMenu({
             }}
           />
           {/* Own divider only when the group itself renders something (walletPass in an
-              active/voided state) - an unconditional one here would leave an empty gap between
-              two adjacent dividers whenever the attendee has no wallet pass yet (bot review). */}
-          {hasWalletLifecycleActions(walletPass) && (
+              active/voided state, and the event still offers at least one wallet platform - an
+              admin who turns Wallet off shouldn't still be able to void/restore/push/delete a
+              pass through this menu even though the Wallet card itself is now hidden, bot
+              review) - an unconditional one here would leave an empty gap between two adjacent
+              dividers whenever the attendee has no wallet pass yet (bot review). */}
+          {walletPlatforms.any && hasWalletLifecycleActions(walletPass) && (
             <>
               <hr className="more-actions-menu__divider" />
               <WalletActionMenuItems
@@ -2241,6 +2246,7 @@ export function AttendeeDetailPage() {
                 setRevokeError(null);
                 setActiveRevoke("pass");
               }}
+              walletPlatforms={walletPlatforms}
               walletPass={detail.wallet_pass}
               walletBusy={walletBusy}
               onVoidWallet={() => {
@@ -2330,7 +2336,7 @@ export function AttendeeDetailPage() {
               <strong>Wallet</strong>
               <WalletStatusBadge
                 status={detail.wallet_pass?.status ?? null}
-                installed={!!detail.wallet_pass && isWalletPassInstalled(detail.wallet_pass)}
+                installed={!!detail.wallet_pass && isWalletPassInstalled(detail.wallet_pass, walletPlatforms)}
               />
             </div>
           </div>
