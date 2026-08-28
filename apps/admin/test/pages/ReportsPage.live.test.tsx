@@ -547,7 +547,11 @@ describe("ReportsPage — Wallets tab", () => {
   it("exports the wallets CSV, not the admissions CSV, while the Wallets tab is active", async () => {
     fetchEventReports.mockResolvedValue(reportFixture(5));
     fetchEventWalletReports.mockResolvedValue(walletFixture());
-    exportEventWalletReportsCsv.mockResolvedValue(undefined);
+    // mockReset (not just a fresh mockResolvedValue) - clearAllMocks in afterEach doesn't touch a
+    // mock's queued *Once implementations or its persistent default, only call history, so a full
+    // reset here guarantees this test's own setup can't be shadowed by whatever an earlier test
+    // left behind.
+    exportEventWalletReportsCsv.mockReset().mockResolvedValue(undefined);
     renderPage();
 
     await clickWalletsTab();
@@ -573,7 +577,9 @@ describe("ReportsPage — Wallets tab", () => {
   it("shows a generic toast when the wallets CSV export throws a non-ApiError", async () => {
     fetchEventReports.mockResolvedValue(reportFixture(5));
     fetchEventWalletReports.mockResolvedValue(walletFixture());
-    exportEventWalletReportsCsv.mockRejectedValueOnce(new TypeError("network down"));
+    // mockReset, not mockRejectedValueOnce alone - see the identical comment on the CSV-export
+    // test above.
+    exportEventWalletReportsCsv.mockReset().mockRejectedValueOnce(new TypeError("network down"));
     renderPage();
 
     await clickWalletsTab();
@@ -592,7 +598,9 @@ describe("ReportsPage — Wallets tab", () => {
   it("shows the resolved API error message when the wallets CSV export fails with an ApiError", async () => {
     fetchEventReports.mockResolvedValue(reportFixture(5));
     fetchEventWalletReports.mockResolvedValue(walletFixture());
-    exportEventWalletReportsCsv.mockRejectedValueOnce(new ApiError(500, "boom"));
+    // mockReset, not mockRejectedValueOnce alone - see the identical comment on the CSV-export
+    // test above.
+    exportEventWalletReportsCsv.mockReset().mockRejectedValueOnce(new ApiError(500, "boom"));
     renderPage();
 
     await clickWalletsTab();
