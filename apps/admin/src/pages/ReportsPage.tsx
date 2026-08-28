@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router";
+import { Link, useOutletContext, useParams, useSearchParams } from "react-router";
 import { Badge, Button, Card, EmptyState, HintLabel, PageHeader, Skeleton, Tabs, ticketTypeChartColor, useToast } from "@admitto/ui";
+import { enabledWalletPlatforms } from "@admitto/shared";
 import {
   ApiError,
   eventReportsPrintUrl,
@@ -12,7 +13,7 @@ import {
   fetchTicketTypes,
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventReportsResponse, RsvpStatus, TicketTypeDto } from "../api/types.js";
+import type { EventDto, EventReportsResponse, RsvpStatus, TicketTypeDto } from "../api/types.js";
 import { WalletsReportsTab } from "./WalletsReportsTab.js";
 import { RSVP_LABELS, RSVP_VARIANTS } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
@@ -738,6 +739,15 @@ function applyReconcileResult(
 
 export function ReportsPage() {
   const { eventId } = useParams();
+  const { event } = useOutletContext<{ event: EventDto }>();
+  // Stable across the frequent re-renders this page gets from live check-ins (ADR 0014's SSE
+  // feed) - WalletsReportsTab.tsx is wrapped in memo() specifically to survive those, which only
+  // works if every prop it receives (this one included) keeps the same reference when nothing it
+  // actually depends on has changed.
+  const walletPlatforms = useMemo(
+    () => enabledWalletPlatforms(event),
+    [event.wallet_enabled, event.wallet_apple_enabled, event.wallet_google_enabled],
+  );
   const { addToast } = useToast();
   const { reportApiError } = useConnectionState();
   const isDesktop = useIsDesktop();
@@ -752,15 +762,24 @@ export function ReportsPage() {
   // unmount-driven remount was re-issuing its full aggregate query (loadWalletReportsAggregates -
   // several joined queries plus an in-process aggregation pass) from scratch on every switch,
   // even seconds apart with no underlying data change.
-  const [walletsTabVisited, setWalletsTabVisited] = useState(() => reportsTabFromSearch(searchParams) === "wallets");
+  const [walletsTabVisited, setWalletsTabVisited] = useState(
+    () => reportsTabFromSearch(searchParams) === "wallets" && walletPlatforms.any,
+  );
 
   // The URL is the source of truth for the active tab, so a reload or a shared link lands back
   // on the same one instead of always resetting to Event day - same pattern as UsersPage/SettingsPage.
+  // A stale/shared ?tab=wallets link on an event with no wallet platform enabled falls back to
+  // Event day instead of landing on a tab the Tabs control below no longer offers.
   useEffect(() => {
-    const target = reportsTabFromSearch(searchParams);
+    const requested = reportsTabFromSearch(searchParams);
+    const target = requested === "wallets" && !walletPlatforms.any ? "eventday" : requested;
+    if (target !== requested) {
+      setSearchParams({ tab: target }, { replace: true });
+      return;
+    }
     if (target !== activeTab) setActiveTab(target);
     if (target === "wallets") setWalletsTabVisited(true);
-  }, [searchParams, activeTab]);
+  }, [searchParams, activeTab, walletPlatforms.any, setSearchParams]);
 
   const [data, setData] = useState<EventReportsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -977,7 +996,7 @@ export function ReportsPage() {
       <Tabs
         tabs={[
           { id: "eventday", label: "Event day" },
-          { id: "wallets", label: "Wallets" },
+          ...(walletPlatforms.any ? [{ id: "wallets" as const, label: "Wallets" }] : []),
         ]}
         value={activeTab}
         onChange={(id) => setSearchParams({ tab: id }, { replace: true })}
@@ -992,7 +1011,7 @@ export function ReportsPage() {
         // exactly as they were before this wrapper existed. display:none when hidden still works
         // the normal way (contents has no "hidden" state of its own to toggle).
         <div style={{ display: activeTab === "wallets" ? "contents" : "none" }}>
-          <WalletsReportsTab eventId={eventId} />
+          <WalletsReportsTab eventId={eventId} walletPlatforms={walletPlatforms} />
         </div>
       )}
 

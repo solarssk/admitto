@@ -30,6 +30,36 @@ const { MockApiError } = vi.hoisted(() => {
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
 
+let mockWalletEnabled = true;
+let mockWalletAppleEnabled = true;
+let mockWalletGoogleEnabled = true;
+
+vi.mock("react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router")>();
+  return {
+    ...actual,
+    // ReportsPage now reads the event (for its wallet platform toggles) from outlet context, same
+    // as AttendeeDetailPage/AttendeesPage - this test renders it directly under MemoryRouter with
+    // no ancestor route actually providing one, so the real useOutletContext would return
+    // undefined. Both platforms enabled by default so existing tests (written before wallet
+    // gating existed) keep seeing the Wallets tab unconditionally; getters (not captured values) so
+    // a test can flip these mid-run and have the very next render see the new value.
+    useOutletContext: () => ({
+      event: {
+        get wallet_enabled() {
+          return mockWalletEnabled;
+        },
+        get wallet_apple_enabled() {
+          return mockWalletAppleEnabled;
+        },
+        get wallet_google_enabled() {
+          return mockWalletGoogleEnabled;
+        },
+      },
+    }),
+  };
+});
+
 vi.mock("../../src/hooks/useEventStream.js", () => ({
   useEventStream: (_eventId: string, onCheckin: (event: StreamCheckinEvent) => void) => {
     streamHandler = onCheckin;
@@ -143,6 +173,9 @@ beforeEach(() => {
   // useIsDesktop(), which reads window.matchMedia - jsdom doesn't implement it. Defaults to
   // desktop so existing table-shaped assertions keep working unchanged.
   mockMatchMedia(true);
+  mockWalletEnabled = true;
+  mockWalletAppleEnabled = true;
+  mockWalletGoogleEnabled = true;
 });
 
 afterEach(() => {
@@ -648,5 +681,53 @@ describe("ReportsPage — Wallets tab", () => {
       "_blank",
       "noopener,noreferrer",
     );
+  });
+});
+
+describe("ReportsPage — wallet platform gating", () => {
+  it("omits the Wallets tab entirely when the event has wallet_enabled=false", async () => {
+    mockWalletEnabled = false;
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    renderPage();
+
+    await waitFor(() => expect(fetchEventReports).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("tab", { name: "Wallets" })).toBeNull();
+  });
+
+  it("omits the Wallets tab when both wallet_apple_enabled and wallet_google_enabled are false, even with wallet_enabled=true", async () => {
+    mockWalletAppleEnabled = false;
+    mockWalletGoogleEnabled = false;
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    renderPage();
+
+    await waitFor(() => expect(fetchEventReports).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("tab", { name: "Wallets" })).toBeNull();
+  });
+
+  it("keeps the Wallets tab when only one platform is enabled", async () => {
+    mockWalletGoogleEnabled = false;
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    renderPage();
+
+    await waitFor(() => expect(fetchEventReports).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("tab", { name: "Wallets" })).toBeTruthy();
+  });
+
+  it("redirects a stale ?tab=wallets link back to Event day when wallets are disabled for the event", async () => {
+    mockWalletEnabled = false;
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports?tab=wallets"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "Event day", selected: true })).toBeTruthy();
+    });
+    expect(screen.queryByRole("tab", { name: "Wallets" })).toBeNull();
+    expect(fetchEventWalletReports).not.toHaveBeenCalled();
   });
 });

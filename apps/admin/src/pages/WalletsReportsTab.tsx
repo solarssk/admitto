@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { ApexOptions } from "apexcharts";
 import Chart from "react-apexcharts";
 import { Button, Card, EmptyState, HintLabel, Notice, ticketTypeChartColor } from "@admitto/ui";
+import type { EnabledWalletPlatforms } from "@admitto/shared";
 import { ApiError, fetchEventWalletReports } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventWalletReportsResponse } from "../api/types.js";
@@ -124,18 +125,35 @@ function AdoptionGauge({
  * Google, Samsung), then the two "doesn't map to one platform" buckets (multiple, none) - not
  * alphabetical, not by expected size, but grouping like with like reads clearest in a legend a
  * viewer scans top to bottom (PO review). */
-const PLATFORM_COLORS = [APPLE_ORANGE, GOOGLE_BLUE, SAMSUNG_TEAL, MULTI_PURPLE, GRAY_400];
-// Named the same way as a real wallet app, not a bare provider name - "Samsung" alone reads like
-// an unfinished sentence next to "Apple Wallet"/"Google Wallet".
-const PLATFORM_LABELS = ["Apple Wallet", "Google Wallet", "Samsung Wallet", "More than one wallet", "No wallet installed"];
+interface PlatformSlice {
+  label: string;
+  color: string;
+  count: number;
+}
 
-/** Single source of truth for the PLATFORM_LABELS/PLATFORM_COLORS index order - both the donut's
- * own series and the breakdown list's counts need the exact same positional mapping (including
- * the hardcoded 0 placeholder for Samsung, which has no PassCreator signal yet), and two
- * independent hand-written copies of this array could silently drift apart later (e.g. if real
- * Samsung data is wired in and only one copy gets updated). */
-function platformCounts(platform: EventWalletReportsResponse["platform"]): number[] {
-  return [platform.apple_only, platform.google_only, 0, platform.both, platform.not_installed];
+/** Single source of truth for the donut's slices and the breakdown list's rows - both need the
+ * exact same set, in the exact same order, and two independent hand-written copies could silently
+ * drift apart later (e.g. if real Samsung data is wired in and only one copy gets updated).
+ * Apple/Google slices - and "more than one wallet", which only means something once two platforms
+ * are both offered - drop out entirely (not just to a 0% slice) when the event's own Wallet
+ * settings don't offer that platform, matching the same enabledPlatforms gating the Wallets tab
+ * itself, the PDF export, and the CSV export all now share. Samsung has no enable/disable toggle
+ * of its own (no PassCreator signal yet either) - its reserved, always-0 legend entry is
+ * unaffected by which of Apple/Google are on. */
+function platformSlices(
+  platform: EventWalletReportsResponse["platform"],
+  enabledPlatforms: EnabledWalletPlatforms,
+): PlatformSlice[] {
+  return [
+    enabledPlatforms.apple && { label: "Apple Wallet", color: APPLE_ORANGE, count: platform.apple_only },
+    enabledPlatforms.google && { label: "Google Wallet", color: GOOGLE_BLUE, count: platform.google_only },
+    // Named the same way as a real wallet app, not a bare provider name - "Samsung" alone reads
+    // like an unfinished sentence next to "Apple Wallet"/"Google Wallet".
+    { label: "Samsung Wallet", color: SAMSUNG_TEAL, count: 0 },
+    enabledPlatforms.apple &&
+      enabledPlatforms.google && { label: "More than one wallet", color: MULTI_PURPLE, count: platform.both },
+    { label: "No wallet installed", color: GRAY_400, count: platform.not_installed },
+  ].filter((slice): slice is PlatformSlice => slice !== false);
 }
 
 /** Own legend replaced by the same fixed-circle-plus-BreakdownRows shape as AdoptionGauge, not
@@ -145,12 +163,21 @@ function platformCounts(platform: EventWalletReportsResponse["platform"]): numbe
  * the actual cause). Both cards now build the same "fixed circle | flexible list" row, so the two
  * circles size and center identically at every breakpoint instead of two unrelated layouts
  * happening to look similar at one specific width. */
-function PlatformDonut({ platform, issued }: Readonly<{ platform: EventWalletReportsResponse["platform"]; issued: number }>) {
-  const series = platformCounts(platform);
+function PlatformDonut({
+  platform,
+  issued,
+  enabledPlatforms,
+}: Readonly<{
+  platform: EventWalletReportsResponse["platform"];
+  issued: number;
+  enabledPlatforms: EnabledWalletPlatforms;
+}>) {
+  const slices = platformSlices(platform, enabledPlatforms);
+  const series = slices.map((s) => s.count);
   const options: ApexOptions = {
     chart: { type: "donut", fontFamily: FONT_FAMILY },
-    labels: PLATFORM_LABELS,
-    colors: PLATFORM_COLORS,
+    labels: slices.map((s) => s.label),
+    colors: slices.map((s) => s.color),
     stroke: { width: 2, colors: ["#ffffff"] },
     // Both native ApexCharts label paths off - see AdoptionGauge above for why this same HTML
     // overlay exists at all: its center text is a standardized fs-h1/fs-xs pair shared by both
@@ -191,14 +218,17 @@ function PlatformDonut({ platform, issued }: Readonly<{ platform: EventWalletRep
   );
 }
 
-function platformBreakdownRows(platform: EventWalletReportsResponse["platform"], issued: number): BreakdownRow[] {
-  const counts = platformCounts(platform);
-  return PLATFORM_LABELS.map((label, i) => ({
-    id: label,
-    label,
-    meta: `${counts[i]} · ${pctOf(counts[i]!, issued)}%`,
-    pct: pctOf(counts[i]!, issued),
-    color: PLATFORM_COLORS[i]!,
+function platformBreakdownRows(
+  platform: EventWalletReportsResponse["platform"],
+  issued: number,
+  enabledPlatforms: EnabledWalletPlatforms,
+): BreakdownRow[] {
+  return platformSlices(platform, enabledPlatforms).map((slice) => ({
+    id: slice.label,
+    label: slice.label,
+    meta: `${slice.count} · ${pctOf(slice.count, issued)}%`,
+    pct: pctOf(slice.count, issued),
+    color: slice.color,
   }));
 }
 
@@ -409,8 +439,14 @@ function AdmissionCompare({ data }: Readonly<{ data: EventWalletReportsResponse[
 // stays mounted underneath even while Event Day is the visible one - without memo, each of those
 // unrelated re-renders reconstructed fresh ApexCharts options/series objects here and made every
 // chart replay its entrance animation for no reason (a periodic "jump" with no data actually
-// changing). eventId is the only prop and is stable for the component's whole mounted lifetime.
-export const WalletsReportsTab = memo(function WalletsReportsTab({ eventId }: Readonly<{ eventId: string }>) {
+// changing). eventId is stable for the component's whole mounted lifetime; walletPlatforms must
+// stay reference-stable across those same unrelated re-renders too (ReportsPage.tsx memoizes it),
+// or every SSE-driven re-render would defeat this memo() exactly the way an unmemoized eventId
+// would.
+export const WalletsReportsTab = memo(function WalletsReportsTab({
+  eventId,
+  walletPlatforms,
+}: Readonly<{ eventId: string; walletPlatforms: EnabledWalletPlatforms }>) {
   const { reportApiError } = useConnectionState();
   const abortRef = useRef<AbortController | null>(null);
   const [data, setData] = useState<EventWalletReportsResponse | null>(null);
@@ -520,12 +556,15 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({ eventId }: Re
         </Card>
         <Card title={<HintLabel hint={syncedHint(data.synced_at)}>Wallet platform</HintLabel>}>
           <p className="wallets-description">
-            Attendees who already have a pass issued, split by which wallet app(s) picked it up - one pass can register on more than one at once.
+            Attendees who already have a pass issued, split by which wallet app picked it up
+            {walletPlatforms.apple && walletPlatforms.google
+              ? " - one pass can register on more than one at once."
+              : "."}
           </p>
           <div className="wallets-adoption">
-            <PlatformDonut platform={data.platform} issued={data.adoption.got_pass} />
+            <PlatformDonut platform={data.platform} issued={data.adoption.got_pass} enabledPlatforms={walletPlatforms} />
             <div className="wallets-adoption__breakdown">
-              <BreakdownRows rows={platformBreakdownRows(data.platform, data.adoption.got_pass)} />
+              <BreakdownRows rows={platformBreakdownRows(data.platform, data.adoption.got_pass, walletPlatforms)} />
             </div>
           </div>
         </Card>

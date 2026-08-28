@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
-import type { EventWalletReportsResponse } from "@admitto/shared";
+import { enabledWalletPlatforms, type EventWalletReportsResponse } from "@admitto/shared";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { loadEventTicketTypes, writeBulkActionLog, type TicketTypeInfo } from "@admitto/tickets";
 import {
@@ -630,8 +630,15 @@ interface WalletPassAggregates {
 }
 
 /** Single pass over the (possibly sampled - see WALLET_AGGREGATE_MAX) pass rows, building every
- * per-pass-derived number the response needs in one place rather than several separate loops. */
-function aggregateWalletPasses(passes: WalletPassAggregateRow[]): WalletPassAggregates {
+ * per-pass-derived number the response needs in one place rather than several separate loops.
+ * `enabledPlatforms` zeroes a disabled platform's active-registration count before classification,
+ * so a pass registered only on a platform the event owner has since turned off reads as "not
+ * installed" here (and in adoption.confirmed, which not_installed is derived from below) rather
+ * than as a still-live confirmation of a platform the Wallets tab no longer offers. */
+export function aggregateWalletPasses(
+  passes: WalletPassAggregateRow[],
+  enabledPlatforms: { apple: boolean; google: boolean },
+): WalletPassAggregates {
   let confirmed = 0;
   let cancelled = 0;
   let appleOnly = 0;
@@ -644,7 +651,9 @@ function aggregateWalletPasses(passes: WalletPassAggregateRow[]): WalletPassAggr
   let tapDayCount = 0;
 
   for (const pass of passes) {
-    const platform = classifyPassPlatform(pass.apple_active_registrations ?? 0, pass.google_active_registrations ?? 0);
+    const appleActive = enabledPlatforms.apple ? (pass.apple_active_registrations ?? 0) : 0;
+    const googleActive = enabledPlatforms.google ? (pass.google_active_registrations ?? 0) : 0;
+    const platform = classifyPassPlatform(appleActive, googleActive);
     if (platform === "both") both++;
     else if (platform === "apple_only") appleOnly++;
     else if (platform === "google_only") googleOnly++;
@@ -748,6 +757,7 @@ async function loadWalletReportsAggregates(
   eventId: string,
   timeZone: string,
   eventDate: Date,
+  enabledPlatforms: { apple: boolean; google: boolean },
 ): Promise<EventWalletReportsResponse> {
   // "Confirmed" (active on at least one platform), not merely issued - see
   // EventWalletReportsResponse.admission_by_wallet's own doc comment for why. Built once and
@@ -807,7 +817,7 @@ async function loadWalletReportsAggregates(
   ]);
 
   const { confirmed, cancelled, appleOnly, googleOnly, both, mostRecentSync, gotPassByType, bucketCounts, tapDaySum, tapDayCount } =
-    aggregateWalletPasses(passes);
+    aggregateWalletPasses(passes, enabledPlatforms);
 
   const gotPass = passes.length;
   const totalByType = mergeTicketTypeCounts(byTypeTotalRaw);
@@ -870,11 +880,15 @@ export async function handleGetWalletReports(c: Context, db: PrismaClient): Prom
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const event = await db.event.findUnique({ where: { id: eventId }, select: { timezone: true, date: true } });
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: { timezone: true, date: true, wallet_enabled: true, wallet_apple_enabled: true, wallet_google_enabled: true },
+  });
   if (!event) return c.json({ error: "not_found" }, 404);
 
   const timeZone = resolvePreviewEventTimeZone(event.timezone);
-  const body = await loadWalletReportsAggregates(db, eventId, timeZone, event.date);
+  const platforms = enabledWalletPlatforms(event);
+  const body = await loadWalletReportsAggregates(db, eventId, timeZone, event.date, platforms);
   return c.json(body);
 }
 
@@ -1214,7 +1228,17 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
 
   const event = await db.event.findUnique({
     where: { id: eventId },
-    select: { id: true, title: true, date: true, slug: true, capacity: true, timezone: true },
+    select: {
+      id: true,
+      title: true,
+      date: true,
+      slug: true,
+      capacity: true,
+      timezone: true,
+      wallet_enabled: true,
+      wallet_apple_enabled: true,
+      wallet_google_enabled: true,
+    },
   });
   if (!event) return c.json({ error: "not_found" }, 404);
 
@@ -1222,9 +1246,10 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
   const dateStamp = new Date().toISOString().slice(0, 10).replaceAll("-", "");
 
   if (reportRaw === "wallets") {
+    const platforms = enabledWalletPlatforms(event);
     return formatRaw === "csv"
-      ? exportWalletReportsCsv(db, c, eventId, event, timeZone, dateStamp)
-      : exportWalletReportsPdf(db, c, eventId, event, timeZone);
+      ? exportWalletReportsCsv(db, c, eventId, event, timeZone, dateStamp, platforms)
+      : exportWalletReportsPdf(db, c, eventId, event, timeZone, platforms);
   }
 
   return formatRaw === "csv"
@@ -1266,11 +1291,12 @@ type WalletExportAttendeeRow = Prisma.AttendeeGetPayload<{ select: typeof WALLET
 /** One CSV row for exportWalletReportsCsv below - pulled out of the row-mapping callback since
  * its own branching (a wallet-pass-present/absent check per column, plus the confirmed-platform
  * lookup) pushed that callback's own cognitive complexity over the limit. */
-function buildWalletExportCsvRow(
+export function buildWalletExportCsvRow(
   row: WalletExportAttendeeRow,
   catalog: TicketTypeInfo[],
   timeZone: string,
   operatorDisplayMap: Record<string, UserDisplayRow>,
+  enabledPlatforms: { apple: boolean; google: boolean },
 ): string {
   const pass = row.wallet_pass;
   const appleActive = pass?.apple_active_registrations ?? 0;
@@ -1282,6 +1308,18 @@ function buildWalletExportCsvRow(
   // affirmative "confirmed not installed" result and corrupt any downstream recompute from this
   // archive (bot review).
   const synced = pass?.registration_checked_at != null;
+  // A disabled platform's own two columns go blank the same way an unsynced pass's do - the event
+  // owner turned that platform off, so a stale registration from before it was disabled is no
+  // longer a relevant "confirmed" signal; matches the same platform toggles the Wallets tab and
+  // PDF are gated by (WalletsReportsTab.tsx, exportWalletReportsPdf below).
+  const appleColumnsBlank = !synced || !enabledPlatforms.apple;
+  const googleColumnsBlank = !synced || !enabledPlatforms.google;
+  const confirmedPlatform = synced
+    ? confirmedPlatformLabel(
+        enabledPlatforms.apple ? appleActive : 0,
+        enabledPlatforms.google ? googleActive : 0,
+      )
+    : "";
 
   return [
     row.name,
@@ -1289,11 +1327,11 @@ function buildWalletExportCsvRow(
     resolveTicketTypeLabel(catalog, row.ticket_type),
     pass?.status ?? "No pass",
     pass?.issued_at ? formatAdmittedAtExport(pass.issued_at, timeZone) : "",
-    synced ? String(appleActive) : "",
-    synced ? String(pass!.apple_inactive_registrations ?? 0) : "",
-    synced ? String(googleActive) : "",
-    synced ? String(pass!.google_inactive_registrations ?? 0) : "",
-    synced ? confirmedPlatformLabel(appleActive, googleActive) : "",
+    appleColumnsBlank ? "" : String(appleActive),
+    appleColumnsBlank ? "" : String(pass!.apple_inactive_registrations ?? 0),
+    googleColumnsBlank ? "" : String(googleActive),
+    googleColumnsBlank ? "" : String(pass!.google_inactive_registrations ?? 0),
+    confirmedPlatform,
     pass?.voided_at ? formatAdmittedAtExport(pass.voided_at, timeZone) : "",
     pass?.registration_checked_at ? formatAdmittedAtExport(pass.registration_checked_at, timeZone) : "",
     emailSentAt ? formatAdmittedAtExport(emailSentAt, timeZone) : "",
@@ -1320,6 +1358,7 @@ async function exportWalletReportsCsv(
   event: { title: string; slug: string },
   timeZone: string,
   dateStamp: string,
+  enabledPlatforms: { apple: boolean; google: boolean },
 ): Promise<Response> {
   const [totalAttendees, rows, catalog] = await Promise.all([
     db.attendee.count({ where: { event_id: eventId } }),
@@ -1359,7 +1398,7 @@ async function exportWalletReportsCsv(
   ];
   const header = columns.map((col) => quoteCsvCell(col)).join(",");
 
-  const dataRows = rows.map((row) => buildWalletExportCsvRow(row, catalog, timeZone, operatorDisplayMap));
+  const dataRows = rows.map((row) => buildWalletExportCsvRow(row, catalog, timeZone, operatorDisplayMap, enabledPlatforms));
 
   const truncationNotice = truncated
     ? [
@@ -1399,8 +1438,9 @@ async function exportWalletReportsPdf(
   eventId: string,
   event: { title: string; date: Date },
   timeZone: string,
+  enabledPlatforms: { apple: boolean; google: boolean },
 ): Promise<Response> {
-  const aggregates = await loadWalletReportsAggregates(db, eventId, timeZone, event.date);
+  const aggregates = await loadWalletReportsAggregates(db, eventId, timeZone, event.date, enabledPlatforms);
   const eventDate = event.date.toISOString().slice(0, 10);
 
   // Same buckets-always-populated issue as tapRows below: these 4 rows exist even with zero
@@ -1411,11 +1451,15 @@ async function exportWalletReportsPdf(
     aggregates.adoption.got_pass === 0
       ? ""
       : [
-          { label: "Apple Wallet only", count: aggregates.platform.apple_only },
-          { label: "Google Wallet only", count: aggregates.platform.google_only },
-          { label: "More than one wallet", count: aggregates.platform.both },
+          enabledPlatforms.apple && { label: "Apple Wallet only", count: aggregates.platform.apple_only },
+          enabledPlatforms.google && { label: "Google Wallet only", count: aggregates.platform.google_only },
+          // "More than one wallet" only has a meaning once two platforms are both offered -
+          // aggregateWalletPasses already zeroes .both to 0 when only one is enabled, but the row
+          // label itself would still misleadingly imply the option exists.
+          enabledPlatforms.apple && enabledPlatforms.google && { label: "More than one wallet", count: aggregates.platform.both },
           { label: "No wallet installed", count: aggregates.platform.not_installed },
         ]
+          .filter((row): row is { label: string; count: number } => row !== false)
           .map(
             (row) =>
               `<tr><td>${escapeHtml(row.label)}</td><td>${row.count}</td><td>${oneDecimalPct(row.count, aggregates.adoption.got_pass)}%</td></tr>`,
