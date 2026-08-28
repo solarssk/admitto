@@ -4239,7 +4239,10 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       }),
     });
     expect(invalidOption.status).toBe(400);
-    expect((await invalidOption.json()) as { error: string }).toEqual({ error: "validation_failed" });
+    expect((await invalidOption.json()) as { error: string; field?: string }).toEqual({
+      error: "validation_failed",
+      field: "shirt_size",
+    });
 
     const clearRequired = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_A2}`, {
       method: "PATCH",
@@ -4250,8 +4253,9 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       }),
     });
     expect(clearRequired.status).toBe(400);
-    expect((await clearRequired.json()) as { error: string }).toEqual({
+    expect((await clearRequired.json()) as { error: string; field?: string }).toEqual({
       error: "required_custom_data_field_missing",
+      field: "shirt_size",
     });
   });
 
@@ -4307,8 +4311,9 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       }),
     });
     expect(res.status).toBe(400);
-    expect((await res.json()) as { error: string }).toEqual({
+    expect((await res.json()) as { error: string; field?: string }).toEqual({
       error: "required_custom_data_field_missing",
+      field: "shirt_size",
     });
   });
 
@@ -4331,8 +4336,9 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       }),
     });
     expect(res.status).toBe(400);
-    expect((await res.json()) as { error: string }).toEqual({
+    expect((await res.json()) as { error: string; field?: string }).toEqual({
       error: "required_custom_data_field_missing",
+      field: "shirt_size",
     });
   });
 
@@ -4355,7 +4361,10 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       }),
     });
     expect(res.status).toBe(400);
-    expect((await res.json()) as { error: string }).toEqual({ error: "validation_failed" });
+    expect((await res.json()) as { error: string; field?: string }).toEqual({
+      error: "validation_failed",
+      field: "shirt_size",
+    });
 
     await prisma.eventCustomField.update({
       where: { event_id_source_field: { event_id: EVENT_A, source_field: "shirt_size" } },
@@ -6607,8 +6616,9 @@ describe("Attendees v2 — RSVP and manual create", () => {
       }),
     });
     expect(res.status).toBe(400);
-    expect((await res.json()) as { error: string }).toEqual({
+    expect((await res.json()) as { error: string; field?: string }).toEqual({
       error: "required_custom_data_field_missing",
+      field: "shirt_size",
     });
 
     await prisma.eventCustomField.update({
