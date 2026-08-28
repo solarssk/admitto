@@ -624,9 +624,32 @@ describe("ReportsPage — Wallets tab", () => {
     });
     // See the identical comment on the non-ApiError test above for why this matches
     // AdminPages.errors.test.tsx's own proven-reliable toast-assertion shape.
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed\./);
-    });
+    try {
+      await waitFor(() => {
+        expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed\./);
+      });
+    } catch (assertionError) {
+      // Temporary CI-only diagnostics for a flake that has never reproduced locally - dumps the
+      // mock's actual call/result history and every current toast so the next CI failure (if any)
+      // shows ground truth instead of forcing another guess-and-push cycle. Remove once resolved.
+      console.error(
+        "[diag] exportEventWalletReportsCsv.mock.calls:",
+        JSON.stringify(exportEventWalletReportsCsv.mock.calls),
+      );
+      console.error(
+        "[diag] exportEventWalletReportsCsv.mock.results:",
+        exportEventWalletReportsCsv.mock.results.map((r) => ({
+          type: r.type,
+          value: r.value instanceof Error ? { name: r.value.name, message: r.value.message, status: (r.value as { status?: number }).status } : r.value,
+        })),
+      );
+      console.error(
+        "[diag] all at-toast elements:",
+        screen.queryAllByTestId("at-toast").map((el) => el.textContent),
+      );
+      console.error("[diag] reportApiError.mock.calls:", JSON.stringify(reportApiError.mock.calls));
+      throw assertionError;
+    }
   });
 
   it("opens the wallets PDF print URL, not the admissions one, while the Wallets tab is active", async () => {
