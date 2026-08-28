@@ -3,6 +3,7 @@ import {
   buildTicketFontSrc,
   buildTicketImgSrc,
   getTicketPageSecurityHeaders,
+  renderForbidden,
   renderNotFound,
   renderRevoked,
   renderServerError,
@@ -130,12 +131,14 @@ describe("renderRevoked", () => {
     expect(html).not.toContain("apple-wallet-badge");
     expect(html).not.toContain("Getting there");
     expect(html).toContain("ticket__status-notice");
+    expect(html).toContain('role="alert"');
   });
 
   it("renders revoked tickets with revoked wording in the ticket card", () => {
     const html = renderRevoked(revokedTicket(), null, "revoked");
     expect(html).toContain("Ticket revoked");
     expect(html).toContain("ticket__status-notice");
+    expect(html).toContain('role="alert"');
     expect(html).toContain("Bob Example");
     expect(html).toContain("Main Hall");
     expect(html).toContain("Standard");
@@ -161,7 +164,7 @@ describe("renderPublicErrorPage (404 / 500)", () => {
   it("renders a branded 500 with status code and generic copy", () => {
     const html = renderServerError();
     expect(html).toContain("ticket-page");
-    expect(html).toContain("at-public-error");
+    expect(html).toContain('class="at-public-error at-public-error--danger" role="status"');
     expect(html).toContain('class="at-public-error__code">500<');
     expect(html).toContain("Something went wrong");
     expect(html).toContain("Unable to load this page right now. Please try again later.");
@@ -171,10 +174,18 @@ describe("renderPublicErrorPage (404 / 500)", () => {
     expect(html).not.toContain("Unable to render this ticket");
   });
 
-  it("renders a branded 404 with status code and generic copy", () => {
+  it("renders a branded 403 with the danger treatment and the given message", () => {
+    const html = renderForbidden("No matching session.");
+    expect(html).toContain('class="at-public-error at-public-error--danger" role="status"');
+    expect(html).toContain('class="at-public-error__code">403<');
+    expect(html).toContain("Access denied");
+    expect(html).toContain("No matching session.");
+  });
+
+  it("renders a branded 404 with status code and generic copy, without the danger treatment", () => {
     const html = renderNotFound();
     expect(html).toContain("ticket-page");
-    expect(html).toContain("at-public-error");
+    expect(html).toContain('class="at-public-error" role="status"');
     expect(html).toContain('class="at-public-error__code">404<');
     expect(html).toContain("Not found");
     expect(html).toContain("This link is invalid or the page no longer exists.");

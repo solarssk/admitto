@@ -707,7 +707,7 @@ function handleLoadDataError(
   if (err instanceof DOMException && err.name === "AbortError") return;
   setData(null);
   if (!(err instanceof ApiError)) {
-    setError("Failed to load report.");
+    setError("Could not load report data.");
     return;
   }
   reportApiError(err.status);
@@ -716,7 +716,7 @@ function handleLoadDataError(
     window.location.assign(`/login?next=${next}`);
     return;
   }
-  setError(err.status === 403 ? "You do not have access to this event." : operatorApiErrorMessage(err, "Request failed."));
+  setError(err.status === 403 ? "You do not have access to this event." : operatorApiErrorMessage(err, "Could not load report data."));
 }
 
 /** Applies a resolved reconcile fetch: replaces `data` and folds the optimistic delta back down
@@ -905,6 +905,7 @@ export function ReportsPage() {
       await exportEventReportsCsv(eventId, ac.signal);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
+      const fallback = "Export failed.";
       if (err instanceof ApiError) {
         reportApiError(err.status);
         if (err.status === 401) {
@@ -912,9 +913,9 @@ export function ReportsPage() {
           window.location.assign(`/login?next=${next}`);
           return;
         }
-        addToast(operatorApiErrorMessage(err, "Request failed."), "error");
+        addToast(operatorApiErrorMessage(err, fallback), "error");
       } else {
-        addToast("Export failed", "error");
+        addToast(fallback, "error");
       }
     } finally {
       if (!ac.signal.aborted) setExportingCsv(false);
@@ -1005,7 +1006,7 @@ export function ReportsPage() {
       {activeTab === "eventday" && !loading && error && (
         <EmptyState
           icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
-          title="Failed to load report"
+          title="Could not load report"
           description={error}
           action={
             <Button variant="secondary" onClick={() => void loadData()}>

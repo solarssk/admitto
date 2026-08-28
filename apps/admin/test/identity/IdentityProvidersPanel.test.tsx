@@ -154,7 +154,7 @@ describe("IdentityProvidersPanel", () => {
   });
 
   it("shows error state with retry when providers fail to load", async () => {
-    mockProviders.mockRejectedValueOnce(new Error("boom"));
+    mockProviders.mockRejectedValueOnce(new ApiError(500, "discovery_failed", "discovery_failed"));
     mockCf.mockResolvedValueOnce({
       enabled: false,
       teamDomain: "",
@@ -166,8 +166,13 @@ describe("IdentityProvidersPanel", () => {
     renderPanel();
 
     await waitFor(() => {
-      expect(screen.getByText("Couldn't load providers")).toBeTruthy();
+      expect(screen.getByText("Could not load providers")).toBeTruthy();
     });
+    expect(
+      screen.getByText(
+        "Could not fetch OIDC discovery from the issuer URL. Check the URL is reachable and exposes .well-known/openid-configuration.",
+      ),
+    ).toBeTruthy();
     const retry = screen.getByRole("button", { name: "Retry" });
     mockProviders.mockResolvedValueOnce({ providers: [] });
     fireEvent.click(retry);
@@ -339,8 +344,11 @@ describe("IdentityProvidersPanel", () => {
     renderPanel();
 
     await waitFor(() => {
-      expect(screen.getByText("Couldn't load Cloudflare Access")).toBeTruthy();
+      expect(screen.getByText("Could not load Cloudflare Access")).toBeTruthy();
     });
+    expect(
+      screen.getByText("Could not load the Cloudflare Access configuration."),
+    ).toBeTruthy();
     mockCf.mockResolvedValueOnce({
       enabled: false,
       teamDomain: "",

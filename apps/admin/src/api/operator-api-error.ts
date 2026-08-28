@@ -2,8 +2,11 @@ import { ApiError } from "./client.js";
 
 const MACHINE_CODE = /^[a-z][a-z0-9_]*$/;
 
-/** Known API error codes and operator-safe literals mapped to UI copy. */
-const CODE_MESSAGES: Record<string, string> = {
+/** Known API error codes and operator-safe literals mapped to UI copy. Exported only for the
+ * coverage guard in operator-api-error.coverage.test.ts, which checks every snake_case error
+ * code the server can emit has an entry here (or explicit inline handling). Not meant as a
+ * general-purpose lookup elsewhere; call operatorApiErrorMessage()/hasApiErrorCode() instead. */
+export const CODE_MESSAGES: Record<string, string> = {
   actor_mfa_required:
     "You need a confirmed authenticator app, passkey, or security key on your own account before you can reset another superadmin's two-factor or password, or revoke their sessions. If you signed in through single sign-on and have no local password, you can't set one up yourself here - ask another superadmin who already has one confirmed to do this instead.",
   api_key_required:
@@ -131,6 +134,111 @@ const CODE_MESSAGES: Record<string, string> = {
   webauthn_disabled: "Passkeys and security keys are turned off for this instance. Ask an administrator to enable them.",
   wrong_password: "Current password is incorrect.",
   "file too large": "File exceeds the 5 MB limit. Split the file and import in parts.",
+  "Note too long": "This note is too long. Shorten it and try again.",
+  already_initialized: "This instance is already set up. Sign in instead.",
+  "assetId required": "Image asset ID is missing from the request.",
+  "attendeeId required": "Attendee ID is missing from the request.",
+  attendee_not_issued: "This attendee hasn't been issued a ticket yet.",
+  // Shared by save actions (event settings, branding) and destructive ones (archive, unarchive,
+  // delete) alike - "save" framing would mislead on the latter, so this stays action-neutral.
+  audit_failed: "This action could not be completed. Try again.",
+  badge_item_inactive: 'Enable the badge item (or turn on "Issue on check-in") before badging at entry.',
+  "body required": "Enter a note before saving.",
+  bounce_probe_unavailable:
+    "Could not set up the bounce-detection test. Check your mail settings and try again.",
+  bulk_wallet_action_in_progress: "A wallet action is already running for this attendee. Wait for it to finish.",
+  "credential id required": "Passkey/security key ID is missing from the request.",
+  current_password_required: "Enter your current password to unlink single sign-on.",
+  default_item: "The badge item can't be deleted. Disable it instead.",
+  "deliveryId required": "Delivery ID is missing from the request.",
+  device_label_too_long: "Device label is too long.",
+  "empty file": "The file is empty.",
+  "eventId required": "Event ID is missing from the request.",
+  event_not_found: "Event not found.",
+  "export_only is not allowed in production": "Export-only mail mode isn't allowed on a production instance.",
+  "fieldId required": "Field ID is missing from the request.",
+  "file required": "Choose a file to upload.",
+  "format must be csv": "Export format must be CSV.",
+  "format must be csv or pdf": "Export format must be CSV or PDF.",
+  "format must be xlsx, csv, or pdf": "Export format must be XLSX, CSV, or PDF.",
+  "id required": "ID is missing from the request.",
+  insufficient_verification:
+    "This account has no password or confirmed two-factor method to verify with. Ask a superadmin for help.",
+  "invalid JSON": "Invalid request.",
+  "invalid body": "Check the form and try again.",
+  "invalid form data": "Could not read the upload. Try again.",
+  "invalid json": "Invalid request.",
+  invalid_body: "Could not read the request. Try again.",
+  invalid_crop: "Crop settings are invalid. Adjust the crop and try again.",
+  invalid_device_label: "Device label must be text.",
+  invalid_event_id: "Invalid event ID.",
+  invalid_org_id: "Invalid organization ID.",
+  invalid_request: "Check the form and try again.",
+  invalid_tile_url: "That map tile URL isn't valid. Check the format and try again.",
+  invalid_type: 'Type must be "link" or "file".',
+  invalid_upload_url: "That upload URL isn't valid.",
+  invalid_url: "Enter a valid web address, starting with http:// or https://.",
+  invalid_webauthn: "Could not verify the passkey/security key. Try again.",
+  "itemId required": "Item ID is missing from the request.",
+  "itemKey required": "Item key is missing from the request.",
+  key_conflict: "That key is already in use. Try again.",
+  label_conflict: "A ticket type with this name already exists.",
+  "managed by environment": "This setting is controlled by an environment variable and can't be changed here.",
+  missing_param: "Required information is missing from the request.",
+  name_required: "Name is required.",
+  no_credentials: "No passkey or security key is registered for this account.",
+  no_wallet_pass: "This attendee has no wallet pass to act on.",
+  "not found": "The requested item was not found.",
+  not_a_select_field: "This field isn't a select-type field.",
+  not_ready: "Export isn't ready yet. Try again in a moment.",
+  "org_name required": "Organization name is required.",
+  passkey_login_disabled: "Passkey sign-in is turned off for this instance.",
+  "passwords do not match": "New password and confirmation don't match.",
+  persisted_branding_url: "This file is still used as a logo, image, or font. Remove it there first.",
+  persisted_image_asset: "This file is still used in this event's image library. Remove it there first.",
+  provider_managed_roles_exist:
+    "Some of your roles are managed by an identity provider. Ask an administrator to remove them first.",
+  "q required": "Enter a search term.",
+  reuse_smtp_unavailable:
+    "This event's mail transport isn't SMTP, so its credentials can't be reused for bounce detection.",
+  "scanned required": "No QR code or barcode was scanned.",
+  "session id required": "Session ID is missing from the request.",
+  session_not_editable: "This session can no longer be edited.",
+  slug_taken: "An event with this URL slug already exists.",
+  "targetState required": "Target state is missing from the request.",
+  title_required: "Title is required.",
+  "too many rows": "File exceeds the row limit. Split the file and import in parts.",
+  "typeId required": "Ticket type ID is missing from the request.",
+  type_in_use: "This ticket type is still assigned to attendees and can't be deleted.",
+  type_limit_reached: "This event has reached its ticket type limit.",
+  unknown_ticket_type: "That ticket type no longer exists in this event's catalog.",
+  url_required: "URL is required.",
+  "user id required": "User ID is missing from the request.",
+  validation_error: "Check the form and try again.",
+  wallet_not_configured: "Wallet isn't configured for this event.",
+  wallet_pass_changed: "This wallet pass changed while updating. Reload and try again.",
+  wallet_pass_not_refreshable:
+    "This wallet pass was never registered with the provider, so its status can't be refreshed.",
+  wallet_provider_duplicate: "The wallet provider already has a matching pass. Refresh and try again.",
+  wallet_provider_not_found: "The wallet provider couldn't find this pass. It may have been removed there.",
+  wallet_provider_rate_limited: "The wallet provider is rate-limiting requests. Wait a moment and try again.",
+  wallet_provider_rejected: "The wallet provider rejected this request. Try again, or check the wallet configuration.",
+  wallet_provider_timeout: "The wallet provider didn't respond in time. Try again.",
+  wallet_provider_unauthorized: "The wallet provider rejected the configured API key. Check the wallet configuration.",
+  wallet_status_check_inconclusive: "Could not confirm the wallet pass status. Try again shortly.",
+  already_archived: "This event is already archived.",
+  cf_access_jwt_invalid: "Cloudflare Access could not verify this request.",
+  cf_access_no_admin_access: "Cloudflare Access is not granting you admin access. Check your Access policy.",
+  event_not_deletable:
+    "This event still has attendees, items, or other data attached, and can't be deleted. Remove that data first, or archive the event instead.",
+  invalid_jwt: "Cloudflare Access token is invalid.",
+  not_archived: "This event isn't archived.",
+  not_deletable:
+    "This event still has attendees, items, or other data attached, and can't be deleted. Remove that data first, or archive the event instead.",
+  password_mismatch: "Passwords don't match.",
+  password_too_short: "Password is too short.",
+  resend_global_limit: "Too many ticket resends right now. Wait a moment and try again.",
+  support_contact_required: "A support contact is required before this weather provider can be used. Set one in Settings.",
 };
 
 /** Longest keys first so substring fallback prefers specific codes over shorter ones. */
@@ -203,12 +311,36 @@ function statusFallback(err: ApiError, fallback: string): string {
   return fallback;
 }
 
+/** A Zod `.flatten()` field message is already written to be operator-safe (the schema's own
+ * `.min()`/`.refine()` text), and names the actual field - shown ahead of the generic
+ * `validation_failed` mapping whenever the server computed something more specific than
+ * "Check the form and try again." `details` is parsed off any error body regardless of status or
+ * code (client.ts's parseJson), so a response that isn't actually the server's Zod-validation
+ * shape must not get a free pass around the same checks every other server detail goes through -
+ * restricted to exactly the 400/validation_failed shape the server sends this on, and the joined
+ * message still has to pass isOperatorSafeDetail (per-field text is safe by construction, but
+ * several joined together could still exceed the length cap). */
+function zodDetailMessage(err: ApiError): string | undefined {
+  if (err.status !== 400 || normalizedCode(err) !== "validation_failed") return undefined;
+  const fieldErrors = err.details?.fieldErrors;
+  if (!fieldErrors) return undefined;
+  const messages = Object.values(fieldErrors)
+    .flatMap((value) => (Array.isArray(value) ? value : []))
+    .filter((message): message is string => typeof message === "string" && message.trim().length > 0);
+  if (messages.length === 0) return undefined;
+  const joined = messages.join(" ");
+  return isOperatorSafeDetail(joined) ? joined : undefined;
+}
+
 /**
  * Operator-safe text for toasts and inline errors.
  * Unknown server detail is logged and replaced with `fallback`.
  */
 export function operatorApiErrorMessage(err: unknown, fallback: string): string {
   if (!(err instanceof ApiError)) return fallback;
+
+  const fieldDetail = zodDetailMessage(err);
+  if (fieldDetail) return fieldDetail;
 
   const mapped = messageForKnownCode(err);
   if (mapped) return mapped;
