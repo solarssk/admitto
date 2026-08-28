@@ -4,8 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { CheckInEntryPage } from "../../src/pages/CheckInEntryPage.js";
 
+const { reportApiError } = vi.hoisted(() => ({ reportApiError: vi.fn() }));
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => {
-  const connectionState = { reportApiError: vi.fn() };
+  const connectionState = { reportApiError };
   return { useConnectionState: () => connectionState };
 });
 
@@ -14,9 +15,12 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   return { ...actual, fetchCheckInEvents: vi.fn() };
 });
 
-import { fetchCheckInEvents } from "../../src/api/client.js";
+import { ApiError, fetchCheckInEvents } from "../../src/api/client.js";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 function renderAt(initialPath: string) {
   return render(
@@ -121,5 +125,29 @@ describe("CheckInEntryPage", () => {
         screen.getByText("No events with check-in access were found for your account."),
       ).toBeTruthy();
     });
+  });
+
+  it("shows a load error and reports it when the request fails as an ApiError", async () => {
+    vi.mocked(fetchCheckInEvents).mockRejectedValue(new ApiError(500, "secret_internal"));
+
+    renderAt("/operator");
+
+    await waitFor(() => {
+      expect(screen.getByText("Could not load check-in events.")).toBeTruthy();
+    });
+    expect(reportApiError).toHaveBeenCalledWith(500);
+    expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
+  it("shows the same load error when the request fails outside the API layer", async () => {
+    vi.mocked(fetchCheckInEvents).mockRejectedValue(new Error("network down"));
+
+    renderAt("/operator");
+
+    await waitFor(() => {
+      expect(screen.getByText("Could not load check-in events.")).toBeTruthy();
+    });
+    expect(reportApiError).not.toHaveBeenCalled();
+    expect(screen.queryByText("network down")).toBeNull();
   });
 });

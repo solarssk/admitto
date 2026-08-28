@@ -206,6 +206,29 @@ describe("AddAttendeeModal", () => {
     );
   });
 
+  it("shows an inline alert when the attribute-field registry fails to load, and clears it on reopen", async () => {
+    mockFetchEventCustomFields.mockRejectedValueOnce(new Error("network down"));
+    const { rerender } = render(
+      <AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />,
+    );
+
+    const alert = await screen.findByText("Could not load attribute fields. Try reopening the dialog.");
+    expect(alert.getAttribute("role")).toBe("alert");
+
+    // No Retry button (same as the ticket-type catalog's sibling error) - closing and reopening
+    // the dialog re-runs the load effect, which is this component's retry path.
+    rerender(
+      <AddAttendeeModal eventId="evt-1" open={false} onClose={() => {}} onCreated={() => {}} />,
+    );
+    rerender(
+      <AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText("Could not load attribute fields. Try reopening the dialog.")).toBeNull();
+    });
+  });
+
   it("shows an inline alert when the ticket-type catalog fails to load, and clears it on reopen", async () => {
     vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
     const { rerender } = render(
