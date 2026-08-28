@@ -144,6 +144,9 @@ vi.mock("react-router", async (importOriginal) => {
         location: null,
         attendee_count: 3,
         archived_at: null,
+        wallet_enabled: true,
+        wallet_apple_enabled: true,
+        wallet_google_enabled: true,
       },
     }),
   };

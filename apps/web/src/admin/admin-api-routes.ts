@@ -89,6 +89,10 @@ type EventJsonRow = {
   created_by_timezone: string | null;
   archived_by_user_id: string | null;
   archived_by_timezone: string | null;
+  wallet_enabled: boolean;
+  wallet_apple_enabled: boolean;
+  wallet_google_enabled: boolean;
+  wallet_samsung_enabled: boolean;
 };
 
 /** List-card `/m/` path when maps are enabled and the event has a complete pin; otherwise null. */
@@ -146,6 +150,10 @@ export function serializeEventDto(
     archived_by_display_name: archivedBy?.display_name ?? null,
     archived_by_email: archivedBy?.email ?? null,
     archived_by_timezone: normalizeNullableTimeZone(event.archived_by_timezone),
+    wallet_enabled: event.wallet_enabled,
+    wallet_apple_enabled: event.wallet_apple_enabled,
+    wallet_google_enabled: event.wallet_google_enabled,
+    wallet_samsung_enabled: event.wallet_samsung_enabled,
     ...(count !== undefined ? { attendee_count: count } : {}),
   };
 }
@@ -153,6 +161,25 @@ export function serializeEventDto(
 export type EventDtoJson = ReturnType<typeof serializeEventDto> & {
   weather?: WeatherSummaryDto | null;
 };
+
+/** Strips the wallet platform toggles from an already-serialized event DTO - used only for the
+ * operator-facing check-in event picker (checkin-api-routes.ts), which has no legitimate need to
+ * know which wallet platforms an admin has enabled for an event, unlike the admin picker's own use
+ * of serializeEventDto. Applied after attachWeatherToEventDtos, not before, so that helper's own
+ * EventDtoJson[] typing doesn't need to special-case a narrower shape. */
+export function omitWalletSettings<
+  T extends {
+    wallet_enabled: boolean;
+    wallet_apple_enabled: boolean;
+    wallet_google_enabled: boolean;
+    wallet_samsung_enabled: boolean;
+  },
+>(
+  dto: T,
+): Omit<T, "wallet_enabled" | "wallet_apple_enabled" | "wallet_google_enabled" | "wallet_samsung_enabled"> {
+  const { wallet_enabled, wallet_apple_enabled, wallet_google_enabled, wallet_samsung_enabled, ...rest } = dto;
+  return rest;
+}
 
 /** Attach Open-Meteo day summaries (null omitted when weather disabled / no pin). */
 export async function attachWeatherToEventDtos(

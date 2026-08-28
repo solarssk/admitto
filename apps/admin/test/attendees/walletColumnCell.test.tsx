@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import type { EnabledWalletPlatforms } from "@admitto/shared";
 import { WalletColumnCell } from "../../src/attendees/walletColumnCell.js";
+
+const BOTH_ENABLED: EnabledWalletPlatforms = { apple: true, google: true, samsung: false, any: true };
 
 afterEach(() => {
   cleanup();
@@ -9,7 +12,7 @@ afterEach(() => {
 
 describe("WalletColumnCell", () => {
   it("shows both platform icons muted, labelled Not added, when no WalletPass row exists", () => {
-    render(<WalletColumnCell status={null} />);
+    render(<WalletColumnCell status={null} enabledPlatforms={BOTH_ENABLED} />);
     const apple = screen.getByLabelText("Apple Wallet: Not added");
     const google = screen.getByLabelText("Google Wallet: Not added");
     expect(apple.className).not.toContain("attendees-table-v2__wallet-icon--active");
@@ -25,6 +28,7 @@ describe("WalletColumnCell", () => {
           google_active_registrations: 0,
           google_inactive_registrations: 0,
         }}
+        enabledPlatforms={BOTH_ENABLED}
       />,
     );
     const apple = screen.getByLabelText("Apple Wallet: Registered");
@@ -42,11 +46,63 @@ describe("WalletColumnCell", () => {
           google_active_registrations: 0,
           google_inactive_registrations: 1,
         }}
+        enabledPlatforms={BOTH_ENABLED}
       />,
     );
     const apple = screen.getByLabelText("Apple Wallet: Status unknown");
     const google = screen.getByLabelText("Google Wallet: Unregistered");
     expect(apple.className).not.toContain("attendees-table-v2__wallet-icon--active");
     expect(google.className).not.toContain("attendees-table-v2__wallet-icon--active");
+  });
+
+  it("renders nothing when neither platform is enabled for the event", () => {
+    const { container } = render(
+      <WalletColumnCell
+        status={null}
+        enabledPlatforms={{ apple: false, google: false, samsung: false, any: false }}
+      />,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("shows only the Apple icon when only Apple Wallet is enabled", () => {
+    render(
+      <WalletColumnCell
+        status={null}
+        enabledPlatforms={{ apple: true, google: false, samsung: false, any: true }}
+      />,
+    );
+    expect(screen.getByLabelText("Apple Wallet: Not added")).toBeTruthy();
+    expect(screen.queryByLabelText(/Google Wallet/)).toBeNull();
+    expect(screen.queryByLabelText(/Samsung Wallet/)).toBeNull();
+  });
+
+  it("shows the Samsung icon, always muted, when Samsung Wallet is enabled alongside a real platform", () => {
+    render(
+      <WalletColumnCell
+        status={null}
+        enabledPlatforms={{ apple: true, google: true, samsung: true, any: true }}
+      />,
+    );
+    const samsung = screen.getByLabelText("Samsung Wallet: Not supported yet");
+    expect(samsung).toBeTruthy();
+    // No samsung_active_registrations field exists anywhere (no PassCreator API support yet) -
+    // this can never be "active", unlike Apple/Google above.
+    expect(samsung.className).not.toContain("attendees-table-v2__wallet-icon--active");
+  });
+
+  it("omits the Samsung icon when Samsung Wallet is disabled, even with Apple/Google both on", () => {
+    render(<WalletColumnCell status={null} enabledPlatforms={BOTH_ENABLED} />);
+    expect(screen.queryByLabelText(/Samsung Wallet/)).toBeNull();
+  });
+
+  it("renders nothing at all when only Samsung Wallet is enabled - Apple/Google being off still hides the whole column", () => {
+    const { container } = render(
+      <WalletColumnCell
+        status={null}
+        enabledPlatforms={{ apple: false, google: false, samsung: true, any: false }}
+      />,
+    );
+    expect(container.firstChild).toBeNull();
   });
 });

@@ -100,7 +100,21 @@ export interface EventDto {
   archived_by_display_name?: string | null;
   archived_by_email?: string | null;
   archived_by_timezone?: string | null;
+  wallet_enabled: boolean;
+  wallet_apple_enabled: boolean;
+  wallet_google_enabled: boolean;
+  wallet_samsung_enabled: boolean;
 }
+
+/** GET /api/checkin/events' own event shape - EventDto minus the wallet platform toggles, which
+ * the server deliberately omits from that response (security review: an operator has no
+ * legitimate need to see which wallet platforms an admin enabled for an event). A full EventDto
+ * still structurally satisfies this type, so shared display components (EventCard) can accept
+ * either without a cast. */
+export type CheckInEventDto = Omit<
+  EventDto,
+  "wallet_enabled" | "wallet_apple_enabled" | "wallet_google_enabled" | "wallet_samsung_enabled"
+>;
 
 export interface CreateEventBody {
   title: string;

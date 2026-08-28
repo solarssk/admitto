@@ -106,6 +106,7 @@ const patchEventSchema = z
     wallet_api_key: z.string().trim().max(512).nullish(),
     wallet_apple_enabled: z.boolean().optional(),
     wallet_google_enabled: z.boolean().optional(),
+    wallet_samsung_enabled: z.boolean().optional(),
     wallet_field_mapping: z
       .record(
         z.string().trim().min(1).max(60).regex(/^[A-Za-z]\w*$/),
@@ -135,6 +136,7 @@ type EventSettingsRow = {
   wallet_api_key_enc: string | null;
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
+  wallet_samsung_enabled: boolean;
   wallet_field_mapping: unknown;
   capacity: number | null;
   archived_at: Date | null;
@@ -172,6 +174,7 @@ function serializeEventSettings(
     wallet_api_key: { configured: event.wallet_api_key_enc != null },
     wallet_apple_enabled: event.wallet_apple_enabled,
     wallet_google_enabled: event.wallet_google_enabled,
+    wallet_samsung_enabled: event.wallet_samsung_enabled,
     wallet_field_mapping: parseWalletFieldMapping(event.wallet_field_mapping),
     capacity: event.capacity,
     status: event.archived_at ? "archived" : "active",
@@ -212,6 +215,7 @@ const EVENT_SETTINGS_SELECT = {
   wallet_api_key_enc: true,
   wallet_apple_enabled: true,
   wallet_google_enabled: true,
+  wallet_samsung_enabled: true,
   wallet_field_mapping: true,
   capacity: true,
   archived_at: true,
@@ -390,6 +394,7 @@ type WalletFieldsPatch = {
   wallet_api_key_enc?: string | null;
   wallet_apple_enabled?: boolean;
   wallet_google_enabled?: boolean;
+  wallet_samsung_enabled?: boolean;
   wallet_field_mapping?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
 };
 
@@ -408,6 +413,9 @@ function buildWalletFieldsPatch(patch: PatchEventBody): WalletFieldsPatch {
   }
   if (patch.wallet_google_enabled !== undefined) {
     data.wallet_google_enabled = patch.wallet_google_enabled;
+  }
+  if (patch.wallet_samsung_enabled !== undefined) {
+    data.wallet_samsung_enabled = patch.wallet_samsung_enabled;
   }
   if (patch.wallet_field_mapping !== undefined) {
     const mapping = patch.wallet_field_mapping;
@@ -717,6 +725,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     patch.wallet_api_key !== undefined ||
     patch.wallet_apple_enabled !== undefined ||
     patch.wallet_google_enabled !== undefined ||
+    patch.wallet_samsung_enabled !== undefined ||
     patch.wallet_field_mapping !== undefined;
   if (patchesWallet && !(await canManageInstance(db, c.get("auth").userId))) {
     return c.json({ error: "forbidden" }, 403);
@@ -740,6 +749,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     wallet_api_key_enc?: string | null;
     wallet_apple_enabled?: boolean;
     wallet_google_enabled?: boolean;
+    wallet_samsung_enabled?: boolean;
     wallet_field_mapping?: Prisma.InputJsonValue | typeof Prisma.JsonNull;
     capacity?: number | null;
     logo_url?: string | null;
