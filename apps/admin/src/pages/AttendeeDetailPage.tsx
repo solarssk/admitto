@@ -1507,7 +1507,12 @@ export function AttendeeDetailPage() {
   // consumer of the same helper, doesn't silently stop working because of an unmemoized prop here).
   const walletPlatforms = useMemo(
     () => enabledWalletPlatforms(event),
-    [event.wallet_enabled, event.wallet_apple_enabled, event.wallet_google_enabled],
+    [
+      event.wallet_enabled,
+      event.wallet_apple_enabled,
+      event.wallet_google_enabled,
+      event.wallet_samsung_enabled,
+    ],
   );
   const { assignments, user } = useAuth();
   const superadmin = isSuperadmin(assignments);

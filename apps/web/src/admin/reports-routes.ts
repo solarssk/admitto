@@ -882,7 +882,14 @@ export async function handleGetWalletReports(c: Context, db: PrismaClient): Prom
 
   const event = await db.event.findUnique({
     where: { id: eventId },
-    select: { timezone: true, date: true, wallet_enabled: true, wallet_apple_enabled: true, wallet_google_enabled: true },
+    select: {
+      timezone: true,
+      date: true,
+      wallet_enabled: true,
+      wallet_apple_enabled: true,
+      wallet_google_enabled: true,
+      wallet_samsung_enabled: true,
+    },
   });
   if (!event) return c.json({ error: "not_found" }, 404);
 
@@ -1238,6 +1245,7 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
       wallet_enabled: true,
       wallet_apple_enabled: true,
       wallet_google_enabled: true,
+      wallet_samsung_enabled: true,
     },
   });
   if (!event) return c.json({ error: "not_found" }, 404);

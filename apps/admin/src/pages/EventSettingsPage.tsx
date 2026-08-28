@@ -91,6 +91,7 @@ type SettingsForm = {
   walletApiKeyEdit: { mode: SecretEditMode; value: string };
   walletAppleEnabled: boolean;
   walletGoogleEnabled: boolean;
+  walletSamsungEnabled: boolean;
   walletFieldMapping: WalletFieldMappingRow[];
   timezone: string;
   capacity: string;
@@ -110,6 +111,7 @@ type SettingsPatch = Partial<{
   wallet_api_key: string | null;
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
+  wallet_samsung_enabled: boolean;
   wallet_field_mapping: Record<string, string> | null;
   timezone: string;
   capacity: number | null;
@@ -371,6 +373,7 @@ function toForm(data: EventSettingsDto): SettingsForm {
     walletApiKeyEdit: { mode: "idle", value: "" },
     walletAppleEnabled: data.wallet_apple_enabled,
     walletGoogleEnabled: data.wallet_google_enabled,
+    walletSamsungEnabled: data.wallet_samsung_enabled,
     walletFieldMapping: Object.entries(data.wallet_field_mapping ?? {}).map(([key, value]) => ({
       id: crypto.randomUUID(),
       key,
@@ -407,6 +410,7 @@ function buildWalletPatch(
   | "wallet_api_key"
   | "wallet_apple_enabled"
   | "wallet_google_enabled"
+  | "wallet_samsung_enabled"
   | "wallet_field_mapping"
 > {
   const patch: SettingsPatch = {};
@@ -426,6 +430,9 @@ function buildWalletPatch(
   }
   if (form.walletGoogleEnabled !== original.walletGoogleEnabled) {
     patch.wallet_google_enabled = form.walletGoogleEnabled;
+  }
+  if (form.walletSamsungEnabled !== original.walletSamsungEnabled) {
+    patch.wallet_samsung_enabled = form.walletSamsungEnabled;
   }
   if (JSON.stringify(form.walletFieldMapping) !== JSON.stringify(original.walletFieldMapping)) {
     patch.wallet_field_mapping = buildWalletFieldMappingPatch(form.walletFieldMapping);
@@ -1945,9 +1952,9 @@ export function EventSettingsPage() {
                   <Switch
                     id="event-wallet-samsung-enabled"
                     aria-label="Samsung Wallet"
-                    checked={false}
-                    disabled
-                    onChange={() => {}}
+                    checked={form.walletSamsungEnabled}
+                    disabled={isArchived || saving}
+                    onChange={(e) => setForm({ ...form, walletSamsungEnabled: e.target.checked })}
                   />
                 </div>
               </div>

@@ -103,6 +103,7 @@ export interface EventDto {
   wallet_enabled: boolean;
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
+  wallet_samsung_enabled: boolean;
 }
 
 export interface CreateEventBody {

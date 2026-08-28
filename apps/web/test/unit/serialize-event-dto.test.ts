@@ -25,6 +25,7 @@ const baseRow = {
   wallet_enabled: true,
   wallet_apple_enabled: true,
   wallet_google_enabled: true,
+  wallet_samsung_enabled: true,
 };
 
 function setMaps(tiles: Partial<ReturnType<typeof defaultMapTileConfig>> = {}) {
@@ -81,10 +82,12 @@ describe("serializeEventDto — has_coordinates / map_preview_path", () => {
       wallet_enabled: true,
       wallet_apple_enabled: false,
       wallet_google_enabled: true,
+      wallet_samsung_enabled: false,
     });
     expect(dto.wallet_enabled).toBe(true);
     expect(dto.wallet_apple_enabled).toBe(false);
     expect(dto.wallet_google_enabled).toBe(true);
+    expect(dto.wallet_samsung_enabled).toBe(false);
   });
 
   it("builds a cache-busting list preview path when maps are enabled and a pin exists", () => {

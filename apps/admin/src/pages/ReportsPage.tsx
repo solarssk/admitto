@@ -746,7 +746,12 @@ export function ReportsPage() {
   // actually depends on has changed.
   const walletPlatforms = useMemo(
     () => enabledWalletPlatforms(event),
-    [event.wallet_enabled, event.wallet_apple_enabled, event.wallet_google_enabled],
+    [
+      event.wallet_enabled,
+      event.wallet_apple_enabled,
+      event.wallet_google_enabled,
+      event.wallet_samsung_enabled,
+    ],
   );
   const { addToast } = useToast();
   const { reportApiError } = useConnectionState();

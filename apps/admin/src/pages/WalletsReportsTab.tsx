@@ -120,8 +120,9 @@ function AdoptionGauge({
  * device, say), so the five slices here are mutually exclusive (apple-only / google-only /
  * samsung / multiple / not installed) and always sum to the issued total, instead of two
  * independent "% with Apple" and "% with Google" numbers that could each look high while
- * double-counting the same passes. Samsung has no PassCreator signal yet - its slice is always
- * 0, reserving the legend entry without a fake percentage. Ordered single-platform-first (Apple,
+ * double-counting the same passes. Samsung has no PassCreator signal yet - its slice's count is
+ * always 0, reserving the legend entry without a fake percentage, once its own toggle offers it at
+ * all. Ordered single-platform-first (Apple,
  * Google, Samsung), then the two "doesn't map to one platform" buckets (multiple, none) - not
  * alphabetical, not by expected size, but grouping like with like reads clearest in a legend a
  * viewer scans top to bottom (PO review). */
@@ -134,12 +135,15 @@ interface PlatformSlice {
 /** Single source of truth for the donut's slices and the breakdown list's rows - both need the
  * exact same set, in the exact same order, and two independent hand-written copies could silently
  * drift apart later (e.g. if real Samsung data is wired in and only one copy gets updated).
- * Apple/Google slices - and "more than one wallet", which only means something once two platforms
- * are both offered - drop out entirely (not just to a 0% slice) when the event's own Wallet
- * settings don't offer that platform, matching the same enabledPlatforms gating the Wallets tab
- * itself, the PDF export, and the CSV export all now share. Samsung has no enable/disable toggle
- * of its own (no PassCreator signal yet either) - its reserved, always-0 legend entry is
- * unaffected by which of Apple/Google are on. */
+ * Every platform's slice - Apple, Google, and Samsung alike - and "more than one wallet", which
+ * only means something once two platforms are both offered, drop out entirely (not just to a 0%
+ * slice) when the event's own Wallet settings don't offer that platform, matching the same
+ * enabledPlatforms gating the Wallets tab itself, the PDF export, and the CSV export all now
+ * share. Samsung's own toggle exists ahead of any real PassCreator support (see its schema
+ * comment) purely so this gating is already in place; its count stays 0 either way. "More than one
+ * wallet" only ever reflects Apple+Google (the only combination `platform.both` can actually
+ * represent) - it stays gated on those two specifically, not on "2+ platforms enabled" in general,
+ * since enabling Samsung alongside just one of them proves nothing about any pass having both. */
 function platformSlices(
   platform: EventWalletReportsResponse["platform"],
   enabledPlatforms: EnabledWalletPlatforms,
@@ -149,7 +153,7 @@ function platformSlices(
     enabledPlatforms.google && { label: "Google Wallet", color: GOOGLE_BLUE, count: platform.google_only },
     // Named the same way as a real wallet app, not a bare provider name - "Samsung" alone reads
     // like an unfinished sentence next to "Apple Wallet"/"Google Wallet".
-    { label: "Samsung Wallet", color: SAMSUNG_TEAL, count: 0 },
+    enabledPlatforms.samsung && { label: "Samsung Wallet", color: SAMSUNG_TEAL, count: 0 },
     enabledPlatforms.apple &&
       enabledPlatforms.google && { label: "More than one wallet", color: MULTI_PURPLE, count: platform.both },
     { label: "No wallet installed", color: GRAY_400, count: platform.not_installed },

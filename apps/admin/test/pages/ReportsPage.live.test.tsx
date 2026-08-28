@@ -33,6 +33,7 @@ let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
 let mockWalletEnabled = true;
 let mockWalletAppleEnabled = true;
 let mockWalletGoogleEnabled = true;
+let mockWalletSamsungEnabled = true;
 
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
@@ -54,6 +55,9 @@ vi.mock("react-router", async (importOriginal) => {
         },
         get wallet_google_enabled() {
           return mockWalletGoogleEnabled;
+        },
+        get wallet_samsung_enabled() {
+          return mockWalletSamsungEnabled;
         },
       },
     }),
@@ -176,6 +180,7 @@ beforeEach(() => {
   mockWalletEnabled = true;
   mockWalletAppleEnabled = true;
   mockWalletGoogleEnabled = true;
+  mockWalletSamsungEnabled = true;
 });
 
 afterEach(() => {

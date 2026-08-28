@@ -92,6 +92,7 @@ type EventJsonRow = {
   wallet_enabled: boolean;
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
+  wallet_samsung_enabled: boolean;
 };
 
 /** List-card `/m/` path when maps are enabled and the event has a complete pin; otherwise null. */
@@ -152,6 +153,7 @@ export function serializeEventDto(
     wallet_enabled: event.wallet_enabled,
     wallet_apple_enabled: event.wallet_apple_enabled,
     wallet_google_enabled: event.wallet_google_enabled,
+    wallet_samsung_enabled: event.wallet_samsung_enabled,
     ...(count !== undefined ? { attendee_count: count } : {}),
   };
 }
