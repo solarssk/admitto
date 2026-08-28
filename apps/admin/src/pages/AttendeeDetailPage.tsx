@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
-import { enabledWalletPlatforms } from "@admitto/shared";
+import { enabledWalletPlatforms, type EnabledWalletPlatforms } from "@admitto/shared";
 import {
   Avatar,
   Badge,
@@ -789,6 +789,7 @@ function AttendeeOverviewTab({
   customDataEntries,
   eventItems,
   event,
+  walletPlatforms,
 }: Readonly<{
   detail: AttendeeDetailDto;
   ticketTypes: TicketTypeDto[];
@@ -796,11 +797,11 @@ function AttendeeOverviewTab({
   customDataEntries: Array<[string, string, string]>;
   eventItems: AttendeeDetailDto["event_items"];
   event: EventDto;
+  walletPlatforms: EnabledWalletPlatforms;
 }>) {
   const [sentMessageRow, setSentMessageRow] = useState<DeliveryDto | null>(null);
   const [detailsRow, setDetailsRow] = useState<DeliveryDto | null>(null);
   const deliveryCounts = countDeliveryOutcomes(detail.deliveries);
-  const walletPlatforms = enabledWalletPlatforms(event);
 
   // React Router reuses this same AttendeeDetailPage/AttendeeOverviewTab instance across
   // :attendeeId param changes - without this, a delivery modal left open while navigating to a
@@ -1494,6 +1495,15 @@ function classifyPassStatusError(err: unknown): PassStatusErrorOutcome {
 export function AttendeeDetailPage() {
   const { eventId, attendeeId } = useParams();
   const { event } = useOutletContext<{ event: EventDto }>();
+  // Stable across re-renders that don't change the event's own wallet toggles - enabledWalletPlatforms
+  // returns a fresh object each call, and this reference flows down to AttendeeOverviewTab (a plain
+  // function component, not memoized, so this doesn't currently gate a re-render skip either way -
+  // kept stable anyway so a future memo() on that component, or on WalletsReportsTab.tsx's own
+  // consumer of the same helper, doesn't silently stop working because of an unmemoized prop here).
+  const walletPlatforms = useMemo(
+    () => enabledWalletPlatforms(event),
+    [event.wallet_enabled, event.wallet_apple_enabled, event.wallet_google_enabled],
+  );
   const { assignments, user } = useAuth();
   const superadmin = isSuperadmin(assignments);
   const orgAdmin = isOrgAdmin(assignments, event.organization_id);
@@ -2311,18 +2321,20 @@ export function AttendeeDetailPage() {
             )}
           </div>
         </div>
-        <div className="attendee-status-chip">
-          <span className={`attendee-status-chip__icon attendee-status-chip__icon--${walletTone(detail.wallet_pass)}`}>
-            <i className="ti ti-wallet" aria-hidden="true" />
-          </span>
-          <div className="attendee-status-chip__body">
-            <strong>Wallet</strong>
-            <WalletStatusBadge
-              status={detail.wallet_pass?.status ?? null}
-              installed={!!detail.wallet_pass && isWalletPassInstalled(detail.wallet_pass)}
-            />
+        {walletPlatforms.any && (
+          <div className="attendee-status-chip">
+            <span className={`attendee-status-chip__icon attendee-status-chip__icon--${walletTone(detail.wallet_pass)}`}>
+              <i className="ti ti-wallet" aria-hidden="true" />
+            </span>
+            <div className="attendee-status-chip__body">
+              <strong>Wallet</strong>
+              <WalletStatusBadge
+                status={detail.wallet_pass?.status ?? null}
+                installed={!!detail.wallet_pass && isWalletPassInstalled(detail.wallet_pass)}
+              />
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <Tabs
@@ -2343,6 +2355,7 @@ export function AttendeeDetailPage() {
           customDataEntries={customDataEntries}
           eventItems={eventItems}
           event={event}
+          walletPlatforms={walletPlatforms}
         />
       )}
 
