@@ -231,7 +231,7 @@ describe("ActiveSessionsTab rendering", () => {
     renderWithToast(<ActiveSessionsTab />);
 
     const retry = await screen.findByRole("button", { name: "Retry" });
-    expect(document.querySelector(".sessions-status p")?.textContent).toMatch(/Failed to load sessions/);
+    expect(document.querySelector(".sessions-status p")?.textContent).toMatch(/Could not load sessions/);
     expect(screen.queryByText("secret_internal")).toBeNull();
 
     fireEvent.click(retry);

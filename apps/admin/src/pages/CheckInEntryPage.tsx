@@ -29,9 +29,9 @@ export function CheckInEntryPage() {
         if (cancelled) return;
         if (err instanceof ApiError) {
           reportApiError(err.status);
-          setError("Failed to load check-in events.");
+          setError("Could not load check-in events.");
         } else {
-          setError("Failed to load check-in events.");
+          setError("Could not load check-in events.");
         }
       } finally {
         if (!cancelled) setLoading(false);

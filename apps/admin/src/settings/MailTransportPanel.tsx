@@ -95,7 +95,7 @@ export function MailTransportPanel() {
       // Inline + Retry only (no toast) — this is an initial-load failure with a
       // persistent retry control, not a transient action outcome. See AGENTS.md's
       // toast-vs-inline table.
-      setLoadError("Failed to load mail settings.");
+      setLoadError("Could not load mail settings.");
       setApiData(null);
     } finally {
       if (!ac.signal.aborted) setLoading(false);

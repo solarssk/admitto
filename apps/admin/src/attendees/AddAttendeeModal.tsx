@@ -66,7 +66,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
       .catch(() => {
         if (!cancelled) {
           setAttributeFields([]);
-          setAttributeFieldsError("Failed to load attribute fields. Try reopening the dialog.");
+          setAttributeFieldsError("Could not load attribute fields. Try reopening the dialog.");
         }
       })
       .finally(() => {
@@ -96,7 +96,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
       .catch((err: unknown) => {
         if (!cancelled) {
           setTicketTypes([]);
-          setTicketTypesError(operatorApiErrorMessage(err, "Failed to load ticket types."));
+          setTicketTypesError(operatorApiErrorMessage(err, "Could not load ticket types."));
         }
       })
       .finally(() => {

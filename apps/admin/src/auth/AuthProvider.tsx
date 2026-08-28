@@ -59,7 +59,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
         window.location.assign(`/login?next=${next}`);
         return;
       }
-      setAuthError(operatorApiErrorMessage(err, "Failed to load session"));
+      setAuthError(operatorApiErrorMessage(err, "Could not load session"));
       setUser(null);
       setAssignments([]);
       setDeviceLabel(null);

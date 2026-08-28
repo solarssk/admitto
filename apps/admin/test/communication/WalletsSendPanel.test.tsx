@@ -233,7 +233,7 @@ describe("WalletsSendPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("alert").textContent).toBe("Failed to load send status.");
+      expect(screen.getByRole("alert").textContent).toBe("Could not load send status.");
     });
   });
 
@@ -385,7 +385,7 @@ describe("WalletsSendPanel", () => {
     });
 
     // Cancelled path must not resurrect error UI after unmount.
-    expect(screen.queryByText("Failed to load ticket types.")).toBeNull();
+    expect(screen.queryByText("Could not load ticket types.")).toBeNull();
   });
 
   it("ignores poll results and poll failures after the panel unmounts mid-send", async () => {
@@ -436,7 +436,7 @@ describe("WalletsSendPanel", () => {
 
     // Neither the succeeded result nor the poll-failure error may reach the DOM after unmount.
     expect(screen.queryByText("Sent to 2.")).toBeNull();
-    expect(screen.queryByText("Failed to load send status.")).toBeNull();
+    expect(screen.queryByText("Could not load send status.")).toBeNull();
   });
 
   it("ignores a late dry-run count after the event changes mid-request", async () => {

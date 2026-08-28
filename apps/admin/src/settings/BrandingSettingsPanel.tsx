@@ -422,7 +422,7 @@ export function BrandingSettingsPanel() {
       setLoadedOk(true);
     } catch {
       if (signal.aborted) return;
-      setLoadError("Failed to load branding settings. Use Retry to reload.");
+      setLoadError("Could not load branding settings. Use Retry to reload.");
     } finally {
       if (!signal.aborted) setLoading(false);
     }

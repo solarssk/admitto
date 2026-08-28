@@ -291,7 +291,7 @@ describe("CommunicationPage templates", () => {
 
     renderPage();
 
-    expect(await screen.findByText("Failed to load template.")).toBeTruthy();
+    expect(await screen.findByText("Could not load template.")).toBeTruthy();
     expect(reportApiError).not.toHaveBeenCalled();
   });
 
@@ -313,7 +313,7 @@ describe("CommunicationPage templates", () => {
 
     renderPage();
 
-    expect(await screen.findByText("Failed to load template.")).toBeTruthy();
+    expect(await screen.findByText("Could not load template.")).toBeTruthy();
     expect(reportApiError).toHaveBeenCalledWith(500);
   });
 
@@ -1128,7 +1128,7 @@ describe("CommunicationPage templates", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Reminder" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to load template/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not load template/);
     });
   });
 
@@ -1142,7 +1142,7 @@ describe("CommunicationPage templates", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Reminder" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to load template/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not load template/);
     });
   });
 

@@ -159,7 +159,7 @@ export function LocationSettingsPanel({
       if (ac.signal.aborted) return;
 
       if (locationResult.status === "rejected") {
-        setLoadError("Failed to load location settings.");
+        setLoadError("Could not load location settings.");
         setApiData(null);
         setTileConfig(null);
         return;

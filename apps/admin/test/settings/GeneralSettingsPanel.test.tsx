@@ -74,7 +74,7 @@ describe("GeneralSettingsPanel", () => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     });
     expect(screen.getByText("Could not load organisation settings")).toBeTruthy();
-    expect(screen.getByText(/Failed to load organisation settings/)).toBeTruthy();
+    expect(screen.getByText("Could not load organisation settings.")).toBeTruthy();
     expect(screen.queryByText("secret_internal")).toBeNull();
     expect(screen.queryByTestId("at-toast")).toBeNull();
   });

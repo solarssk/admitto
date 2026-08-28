@@ -84,7 +84,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
         } catch (err) {
           if (ac.signal.aborted) return;
           addToast(
-            operatorApiErrorMessage(err, "Failed to load mail settings."),
+            operatorApiErrorMessage(err, "Could not load mail settings."),
             "error",
           );
         } finally {

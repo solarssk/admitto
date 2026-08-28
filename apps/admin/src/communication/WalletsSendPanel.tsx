@@ -110,7 +110,7 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
       .catch((err: unknown) => {
         if (cancelled) return;
         setTicketTypes([]);
-        setTicketTypesError(operatorApiErrorMessage(err, "Failed to load ticket types."));
+        setTicketTypesError(operatorApiErrorMessage(err, "Could not load ticket types."));
       });
     return () => {
       cancelled = true;
@@ -147,7 +147,7 @@ export function WalletsSendPanel({ event, eventId, text }: Readonly<WalletsSendP
         }, 2000);
       } catch (err) {
         if (cancelled || ac.signal.aborted) return;
-        setError(operatorApiErrorMessage(err, "Failed to load send status."));
+        setError(operatorApiErrorMessage(err, "Could not load send status."));
         setResultMessage(null);
         setPhase("done");
       }

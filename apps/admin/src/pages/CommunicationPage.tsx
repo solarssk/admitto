@@ -430,7 +430,7 @@ function handleInitialTemplateLoadError(
 ): void {
   if (isCancelled()) return;
   if (!(err instanceof ApiError)) {
-    setError("Failed to load template.");
+    setError("Could not load template.");
     return;
   }
   reportApiError(err.status);
@@ -439,7 +439,7 @@ function handleInitialTemplateLoadError(
     window.location.assign(`/login?next=${next}`);
     return;
   }
-  setError(err.status === 403 ? "You do not have access to this event." : "Failed to load template.");
+  setError(err.status === 403 ? "You do not have access to this event." : "Could not load template.");
 }
 
 /** Maps a failed deliveries load to UI state, or suppresses it for a silent poll tick (mirrors
@@ -463,7 +463,7 @@ function handleDeliveriesLoadError(
       return;
     }
   }
-  setDeliveriesError("Failed to load deliveries.");
+  setDeliveriesError("Could not load deliveries.");
 }
 
 /** Retries loading the "ticket" template detail after a delete (the template that just got deleted
@@ -1737,7 +1737,7 @@ export function CommunicationPage() {
         applyLoadedTemplateSelection(key, result);
       } catch (err) {
         if (seq !== templateSelectionSeqRef.current) return;
-        const fallback = "Failed to load template.";
+        const fallback = "Could not load template.";
         if (err instanceof ApiError) {
           reportApiError(err.status);
           addToast(operatorApiErrorMessage(err, fallback), "error");

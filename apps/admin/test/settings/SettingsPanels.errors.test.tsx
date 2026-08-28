@@ -113,7 +113,7 @@ describe("SecurityPanel operator errors", () => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     });
     expect(document.querySelector(".sessions-status p")?.textContent).toMatch(
-      /Failed to load security settings/,
+      /Could not load security settings/,
     );
   });
 
@@ -156,7 +156,7 @@ describe("AuditLogPanel operator errors", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     });
-    expect(screen.getByText(/Failed to load audit log/)).toBeTruthy();
+    expect(screen.getByText("Could not load audit log.")).toBeTruthy();
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
 });
@@ -221,12 +221,12 @@ describe("EventArchivingPanel operator errors", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     });
-    expect(screen.getByText(/Failed to load events/)).toBeTruthy();
+    expect(screen.getByText(/Could not load events/)).toBeTruthy();
 
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([sampleEvent]);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await screen.findByText("Summit");
-    expect(screen.queryByText(/Failed to load events/)).toBeNull();
+    expect(screen.queryByText(/Could not load events/)).toBeNull();
   });
 
   it("shows operator-safe action failure in confirm dialog", async () => {

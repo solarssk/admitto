@@ -629,7 +629,7 @@ async function loadEventSettings(deps: LoadEventSettingsDeps): Promise<void> {
     if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
       setNotFound(true);
     } else {
-      addToast(operatorApiErrorMessage(err, "Failed to load event settings"), "error");
+      addToast(operatorApiErrorMessage(err, "Could not load event settings"), "error");
     }
   } finally {
     setLoading(false);

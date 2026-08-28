@@ -78,7 +78,7 @@ export function EventArchivingPanel() {
       setEvents(list);
     } catch (err) {
       if (signal?.aborted) return;
-      const message = operatorApiErrorMessage(err, "Failed to load events.");
+      const message = operatorApiErrorMessage(err, "Could not load events.");
       setError(message);
     } finally {
       if (!signal?.aborted) setLoading(false);

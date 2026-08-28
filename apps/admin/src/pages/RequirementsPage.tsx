@@ -40,9 +40,9 @@ function redirectToLogin(): void {
 /** Operator-facing message for a failed requirements load (401 is handled separately by redirect). */
 function loadErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
-    return err.status === 403 ? "You do not have access to this event." : "Failed to load requirements.";
+    return err.status === 403 ? "You do not have access to this event." : "Could not load requirements.";
   }
-  return "Failed to load requirements.";
+  return "Could not load requirements.";
 }
 
 function EventItemsTableBody({

@@ -212,7 +212,7 @@ describe("AddAttendeeModal", () => {
       <AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />,
     );
 
-    const alert = await screen.findByText("Failed to load ticket types.");
+    const alert = await screen.findByText("Could not load ticket types.");
     expect(alert.getAttribute("role")).toBe("alert");
 
     // AddAttendeeModal has no Retry button (same as the attribute-fields sibling error) - closing
@@ -225,7 +225,7 @@ describe("AddAttendeeModal", () => {
     );
 
     await waitFor(() => {
-      expect(screen.queryByText("Failed to load ticket types.")).toBeNull();
+      expect(screen.queryByText("Could not load ticket types.")).toBeNull();
     });
   });
 
@@ -233,7 +233,7 @@ describe("AddAttendeeModal", () => {
     vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
     render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
 
-    await screen.findByText("Failed to load ticket types.");
+    await screen.findByText("Could not load ticket types.");
 
     fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan" } });
     fireEvent.change(screen.getByLabelText("Last name *"), { target: { value: "Kowalski" } });

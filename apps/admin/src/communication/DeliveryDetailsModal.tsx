@@ -189,7 +189,7 @@ export function DeliveryDetailsModal({
       .then((data) => setDetail(data))
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
-        setError(operatorApiErrorMessage(err, "Failed to load delivery details."));
+        setError(operatorApiErrorMessage(err, "Could not load delivery details."));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);

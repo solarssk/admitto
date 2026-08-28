@@ -313,7 +313,7 @@ export const EventBounceIngestPanel = forwardRef<
         clearTestResult();
       } catch (err) {
         if (signal?.aborted) return;
-        setLoadError(operatorApiErrorMessage(err, "Failed to load bounce detection settings."));
+        setLoadError(operatorApiErrorMessage(err, "Could not load bounce detection settings."));
       } finally {
         if (!signal?.aborted) setLoading(false);
       }

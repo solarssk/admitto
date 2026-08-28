@@ -41,7 +41,7 @@ export function WizardStep1Checks({ onChecksOk }: Readonly<WizardStep1ChecksProp
       } catch (err) {
         if (ac.signal.aborted) return;
         setLoadError(
-          operatorApiErrorMessage(err, "Failed to load system checks."),
+          operatorApiErrorMessage(err, "Could not load system checks."),
         );
         setChecks(null);
       } finally {

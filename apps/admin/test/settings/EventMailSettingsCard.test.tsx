@@ -917,7 +917,7 @@ describe("EventMailSettingsCard — loading and errors", () => {
     renderCard();
 
     expect(await screen.findByText("Could not load mail settings")).toBeTruthy();
-    expect(screen.getByText("Failed to load mail settings.")).toBeTruthy();
+    expect(screen.getByText("Could not load mail settings.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     expect(await screen.findByText(SMTP_SUMMARY_TEXT)).toBeTruthy();
