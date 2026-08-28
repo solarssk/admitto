@@ -40,8 +40,9 @@ export async function createTrustedDevice(
  * trusted_device_days = 0 (feature disabled), the token is unknown/revoked/expired, or it
  * belongs to a different user.
  *
- * Deliberately not bound to the request's IP or User-Agent (both are still recorded on the row
- * for the user's own device-management list, just not read back here). An earlier version
+ * Deliberately not bound to the request's IP or User-Agent (both are still recorded on the row -
+ * there is no per-device listing UI today, only an aggregate count and a bulk "forget all" action,
+ * but the values stay available for future admin/audit use - just not read back here). An earlier version
  * rejected on IP mismatch, which broke this feature for any user whose ISP or mobile carrier
  * rotates their public IP - common enough (daily reconnects are standard practice for many
  * European home ISPs) that it defeated the point of "remember this device" for a large share of
