@@ -1276,6 +1276,12 @@ function buildWalletExportCsvRow(
   const appleActive = pass?.apple_active_registrations ?? 0;
   const googleActive = pass?.google_active_registrations ?? 0;
   const emailSentAt = row.email_deliveries[0]?.sent_at ?? null;
+  // registration_checked_at null means the pass has never completed a sync - the active/inactive
+  // counts and confirmed-platform label below are all derived from that sync, so leave them blank
+  // (unknown) rather than exporting 0/"None", which would misrepresent "never synced" as the
+  // affirmative "confirmed not installed" result and corrupt any downstream recompute from this
+  // archive (bot review).
+  const synced = pass?.registration_checked_at != null;
 
   return [
     row.name,
@@ -1283,11 +1289,11 @@ function buildWalletExportCsvRow(
     resolveTicketTypeLabel(catalog, row.ticket_type),
     pass?.status ?? "No pass",
     pass?.issued_at ? formatAdmittedAtExport(pass.issued_at, timeZone) : "",
-    pass ? String(appleActive) : "",
-    pass ? String(pass.apple_inactive_registrations ?? 0) : "",
-    pass ? String(googleActive) : "",
-    pass ? String(pass.google_inactive_registrations ?? 0) : "",
-    pass ? confirmedPlatformLabel(appleActive, googleActive) : "",
+    synced ? String(appleActive) : "",
+    synced ? String(pass!.apple_inactive_registrations ?? 0) : "",
+    synced ? String(googleActive) : "",
+    synced ? String(pass!.google_inactive_registrations ?? 0) : "",
+    synced ? confirmedPlatformLabel(appleActive, googleActive) : "",
     pass?.voided_at ? formatAdmittedAtExport(pass.voided_at, timeZone) : "",
     pass?.registration_checked_at ? formatAdmittedAtExport(pass.registration_checked_at, timeZone) : "",
     emailSentAt ? formatAdmittedAtExport(emailSentAt, timeZone) : "",
@@ -1445,7 +1451,17 @@ async function exportWalletReportsPdf(
     .map((s) => `<div class="stat"><span>${s.label}</span><strong>${s.value}</strong></div>`)
     .join("");
 
+  // Same warning as WalletsReportsTab's own Notice (apps/admin/src/pages/WalletsReportsTab.tsx) -
+  // the PDF otherwise only carries a "Generated" timestamp, so a partial WALLET_AGGREGATE_MAX
+  // sample would read as a complete report with no indication these specific numbers are
+  // sampled (bot review). .print-hint's existing warning-box styling, without no-print, since
+  // this needs to survive into the saved/printed PDF, not just the on-screen preview.
+  const truncatedWarningHtml = aggregates.passes_truncated
+    ? `<p class="print-hint">This event has more issued wallet passes than a single report can process at once, so platform mix, adoption by ticket type, and time-to-wallet-tap below are based on a partial sample rather than every pass. Cumulative passes issued and admission rate by wallet status are unaffected - both come from a full count, not a sample.</p>`
+    : "";
+
   const sectionsHtml = `
+  ${truncatedWarningHtml}
   <h2>Wallet platform</h2>
   <table>
     <thead><tr><th>Platform</th><th>Passes</th><th>Share of issued</th></tr></thead>

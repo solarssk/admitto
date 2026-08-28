@@ -2101,6 +2101,14 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     expect(bothRow).toContain('"Both"');
     const nopassRow = lines.find((l) => l.includes('"Wallets No Pass"'));
     expect(nopassRow).toContain('"No pass"');
+    // ATT_W_NOT_INSTALLED's wallet_pass has no registration_checked_at (never synced) - the
+    // active/inactive counts and confirmed-platform columns must stay blank, not export the
+    // unknown state as an affirmative 0/"None" (bot review: that would misrepresent "never
+    // synced" as "confirmed not installed" in an archive meant for later recomputation).
+    const notInstalledRow = lines.find((l) => l.includes('"Wallets Not Installed"'));
+    expect(notInstalledRow).toBeDefined();
+    const cells = notInstalledRow!.split(",").map((c) => c.replace(/^"|"$/g, ""));
+    expect(cells.slice(5, 10)).toEqual(["", "", "", "", ""]);
   });
 
   it("returns printable HTML for a wallets pdf export", async () => {
@@ -2121,6 +2129,11 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     // rows should render, not the buckets-always-populated dead-code fallback text.
     expect(html).toContain("1-3 days");
     expect(html).not.toContain("Not enough data yet");
+    // EVENT_WALLETS has 8 seeded passes, nowhere near WALLET_AGGREGATE_MAX - the partial-sample
+    // warning must stay absent (the passes_truncated: true path itself would need 50,001+ seeded
+    // passes to exercise directly, impractical for an integration test; this only guards the
+    // false-path regression).
+    expect(html).not.toContain("partial sample");
   });
 
   it("shows every empty/not-synced state in the wallets pdf for an event with no attendees", async () => {
