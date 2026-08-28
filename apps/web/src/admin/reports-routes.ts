@@ -592,6 +592,21 @@ export function classifyPassPlatform(
   return "none";
 }
 
+/** Display label for classifyPassPlatform's result - used by the wallets CSV export's "Confirmed
+ * platform" column. */
+export function confirmedPlatformLabel(appleActive: number, googleActive: number): string {
+  switch (classifyPassPlatform(appleActive, googleActive)) {
+    case "both":
+      return "Both";
+    case "apple_only":
+      return "Apple";
+    case "google_only":
+      return "Google";
+    default:
+      return "None";
+  }
+}
+
 /** Whole days between the attendee's first ticket-link email and this pass being issued, or null
  * when either timestamp is missing or the pass was somehow issued before that email was sent
  * (skipped rather than counted as negative "time to tap"). */
@@ -875,6 +890,52 @@ export function getPrintableReportSecurityHeaders(): Record<string, string> {
   };
 }
 
+/** Shared by every printable HTML report export (admissions, wallets, ...) - the page chrome
+ * (print hint, title, stats grid, table styling) is identical across report types; only the
+ * event title/meta line, the stat tiles, and the per-report table sections differ. */
+const PRINTABLE_REPORT_STYLE = `
+    body { font-family: system-ui, sans-serif; margin: 2rem; color: #111; }
+    h1 { margin-bottom: 0.25rem; }
+    .meta { color: #555; margin-bottom: 1.5rem; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
+    .stat { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; }
+    .stat strong { display: block; font-size: 1.5rem; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; font-size: 0.875rem; }
+    th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+    th { background: #f5f5f5; }
+    .print-hint { background: #fff8e6; border: 1px solid #f0d78c; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1.5rem; }
+    @media print {
+      .print-hint, .no-print { display: none; }
+      body { margin: 0.5in; }
+    }`;
+
+function renderPrintableReportHtml(opts: {
+  titleSuffix: string;
+  eventTitle: string;
+  metaLine: string;
+  statsHtml: string;
+  sectionsHtml: string;
+}): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(opts.eventTitle)} - ${escapeHtml(opts.titleSuffix)}</title>
+  <style>${PRINTABLE_REPORT_STYLE}
+  </style>
+</head>
+<body>
+  <p class="print-hint no-print">Use your browser&rsquo;s <strong>Print</strong> dialog and choose &ldquo;Save as PDF&rdquo; to export this report.</p>
+  <h1>${escapeHtml(opts.eventTitle)}</h1>
+  <p class="meta">${opts.metaLine}</p>
+  <div class="stats">
+    ${opts.statsHtml}
+  </div>
+  ${opts.sectionsHtml}
+</body>
+</html>`;
+}
+
 /** Format admitted_at for CSV/PDF export in the event timezone (YYYY-MM-DD HH:mm). */
 function formatAdmittedAtExport(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("sv-SE", {
@@ -910,13 +971,14 @@ async function auditReportsExported(
   format: "csv" | "pdf",
   count: number,
   truncated: boolean,
+  report: "admissions" | "wallets" = "admissions",
 ): Promise<void> {
   await db.$transaction(async (tx) => {
     await writeBulkActionLog(tx, {
       event_id: eventId,
       action_type: "reports_exported",
       audit: adminAuditFromContext(c),
-      metadata: { format, count, truncated },
+      metadata: { format, report, count, truncated },
     });
   });
 }
@@ -968,117 +1030,109 @@ export async function handleGetReports(c: Context, db: PrismaClient): Promise<Re
   return c.json(body);
 }
 
-/** GET /api/admin/events/:eventId/reports/export?format=csv|pdf */
-export async function handleExportReports(c: Context, db: PrismaClient): Promise<Response> {
-  const eventIdParam = requireEventId(c);
-  if (eventIdParam instanceof Response) return eventIdParam;
-  const eventId = eventIdParam;
-
-  const formatRaw = c.req.query("format") ?? "csv";
-  if (formatRaw !== "csv" && formatRaw !== "pdf") {
-    return c.json({ error: "format must be csv or pdf" }, 400);
-  }
-
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
-  const event = await db.event.findUnique({
-    where: { id: eventId },
-    select: { id: true, title: true, date: true, slug: true, capacity: true, timezone: true },
-  });
-  if (!event) return c.json({ error: "not_found" }, 404);
-
-  const timeZone = resolvePreviewEventTimeZone(event.timezone);
-
-  const dateStamp = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-
-  if (formatRaw === "csv") {
-    const [totalAdmitted, rows, catalog] = await Promise.all([
-      db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
-      db.attendee.findMany({
-        where: { event_id: eventId, admitted_at: { not: null } },
-        orderBy: { admitted_at: "asc" },
-        take: CSV_EXPORT_MAX,
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          ticket_type: true,
-          admitted_at: true,
-          admitted_by: true,
-        },
-      }),
-      loadEventTicketTypes(db, eventId),
-    ]);
-
-    const truncated = totalAdmitted > CSV_EXPORT_MAX;
-
-    const attendeeIds = rows.map((row) => row.id);
-    const operatorIds = [
-      ...new Set(rows.map((r) => r.admitted_by).filter((id): id is string => id != null)),
-    ];
-    const [deviceByAttendee, itemsByAttendee, operatorDisplayMap] = await Promise.all([
-      loadDeviceIdsByAttendee(db, eventId, attendeeIds),
-      loadIssuedItemLabelsByAttendee(db, eventId, attendeeIds),
-      resolveUserDisplayMap(db, operatorIds),
-    ]);
-
-    const admittedAtHeader = `Admitted at (${timeZone})`;
-    const header = ["Name", "Email", "Ticket type", admittedAtHeader, "Checked in by", "Device", "Items"]
-      .map((col) => quoteCsvCell(col))
-      .join(",");
-    const dataRows = rows.map((row) =>
-      [
-        row.name,
-        row.email,
-        resolveTicketTypeLabel(catalog, row.ticket_type),
-        formatAdmittedAtExport(row.admitted_at!, timeZone),
-        resolveOperatorLabel(resolveOperatorFields(row.admitted_by, operatorDisplayMap)),
-        deviceByAttendee.get(row.id) ?? "",
-        (itemsByAttendee.get(row.id) ?? []).join(", "),
-      ]
-        .map((cell) => quoteCsvCell(sanitizeCsvCell(String(cell))))
-        .join(","),
-    );
-
-    const truncationNotice = truncated
-      ? [
-          quoteCsvCell(
-            sanitizeCsvCell(
-              `Export truncated: first ${CSV_EXPORT_MAX} of ${totalAdmitted} admissions.`,
-            ),
-          ),
-          quoteCsvCell(""),
-          quoteCsvCell(""),
-          quoteCsvCell(""),
-          quoteCsvCell(""),
-          quoteCsvCell(""),
-          quoteCsvCell(""),
-        ].join(",")
-      : null;
-
-    const csvBody = [header, ...(truncationNotice ? [truncationNotice] : []), ...dataRows].join(
-      "\r\n",
-    );
-    const bom = "\uFEFF";
-    const filename = `admissions-${event.slug}-${dateStamp}.csv`;
-
-    await auditReportsExported(db, c, eventId, "csv", rows.length, truncated);
-
-    return new Response(bom + csvBody, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": attachmentContentDisposition(filename),
-        "Cache-Control": "no-store",
-        "Pragma": "no-cache",
-        "X-Content-Type-Options": "nosniff",
-        "X-Admission-Log-Total": String(totalAdmitted),
-        "X-Admission-Log-Truncated": String(truncated),
+/** GET .../reports/export?format=csv&report=admissions — one row per admitted attendee. */
+async function exportAdmissionsReportsCsv(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  event: { slug: string },
+  timeZone: string,
+  dateStamp: string,
+): Promise<Response> {
+  const [totalAdmitted, rows, catalog] = await Promise.all([
+    db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
+    db.attendee.findMany({
+      where: { event_id: eventId, admitted_at: { not: null } },
+      orderBy: { admitted_at: "asc" },
+      take: CSV_EXPORT_MAX,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        ticket_type: true,
+        admitted_at: true,
+        admitted_by: true,
       },
-    });
-  }
+    }),
+    loadEventTicketTypes(db, eventId),
+  ]);
 
+  const truncated = totalAdmitted > CSV_EXPORT_MAX;
+
+  const attendeeIds = rows.map((row) => row.id);
+  const operatorIds = [
+    ...new Set(rows.map((r) => r.admitted_by).filter((id): id is string => id != null)),
+  ];
+  const [deviceByAttendee, itemsByAttendee, operatorDisplayMap] = await Promise.all([
+    loadDeviceIdsByAttendee(db, eventId, attendeeIds),
+    loadIssuedItemLabelsByAttendee(db, eventId, attendeeIds),
+    resolveUserDisplayMap(db, operatorIds),
+  ]);
+
+  const admittedAtHeader = `Admitted at (${timeZone})`;
+  const header = ["Name", "Email", "Ticket type", admittedAtHeader, "Checked in by", "Device", "Items"]
+    .map((col) => quoteCsvCell(col))
+    .join(",");
+  const dataRows = rows.map((row) =>
+    [
+      row.name,
+      row.email,
+      resolveTicketTypeLabel(catalog, row.ticket_type),
+      formatAdmittedAtExport(row.admitted_at!, timeZone),
+      resolveOperatorLabel(resolveOperatorFields(row.admitted_by, operatorDisplayMap)),
+      deviceByAttendee.get(row.id) ?? "",
+      (itemsByAttendee.get(row.id) ?? []).join(", "),
+    ]
+      .map((cell) => quoteCsvCell(sanitizeCsvCell(String(cell))))
+      .join(","),
+  );
+
+  const truncationNotice = truncated
+    ? [
+        quoteCsvCell(
+          sanitizeCsvCell(
+            `Export truncated: first ${CSV_EXPORT_MAX} of ${totalAdmitted} admissions.`,
+          ),
+        ),
+        quoteCsvCell(""),
+        quoteCsvCell(""),
+        quoteCsvCell(""),
+        quoteCsvCell(""),
+        quoteCsvCell(""),
+        quoteCsvCell(""),
+      ].join(",")
+    : null;
+
+  const csvBody = [header, ...(truncationNotice ? [truncationNotice] : []), ...dataRows].join(
+    "\r\n",
+  );
+  const bom = "﻿";
+  const filename = `admissions-${event.slug}-${dateStamp}.csv`;
+
+  await auditReportsExported(db, c, eventId, "csv", rows.length, truncated);
+
+  return new Response(bom + csvBody, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": attachmentContentDisposition(filename),
+      "Cache-Control": "no-store",
+      "Pragma": "no-cache",
+      "X-Content-Type-Options": "nosniff",
+      "X-Admission-Log-Total": String(totalAdmitted),
+      "X-Admission-Log-Truncated": String(truncated),
+    },
+  });
+}
+
+/** GET .../reports/export?format=pdf&report=admissions — printable summary. */
+async function exportAdmissionsReportsPdf(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  event: { title: string; date: Date },
+  timeZone: string,
+): Promise<Response> {
   const aggregates = await loadReportsAggregates(db, eventId, PDF_LOG_MAX, timeZone);
   const eventDate = event.date.toISOString().slice(0, 10);
 
@@ -1096,38 +1150,16 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
     )
     .join("");
 
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>${escapeHtml(event.title)} - Admission report</title>
-  <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem; color: #111; }
-    h1 { margin-bottom: 0.25rem; }
-    .meta { color: #555; margin-bottom: 1.5rem; }
-    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
-    .stat { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; }
-    .stat strong { display: block; font-size: 1.5rem; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; font-size: 0.875rem; }
-    th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
-    th { background: #f5f5f5; }
-    .print-hint { background: #fff8e6; border: 1px solid #f0d78c; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1.5rem; }
-    @media print {
-      .print-hint, .no-print { display: none; }
-      body { margin: 0.5in; }
-    }
-  </style>
-</head>
-<body>
-  <p class="print-hint no-print">Use your browser&rsquo;s <strong>Print</strong> dialog and choose &ldquo;Save as PDF&rdquo; to export this report.</p>
-  <h1>${escapeHtml(event.title)}</h1>
-  <p class="meta">Event date: ${escapeHtml(eventDate)} · Times in ${escapeHtml(timeZone)} · Generated ${escapeHtml(new Date().toISOString())}</p>
-  <div class="stats">
-    <div class="stat"><span>Total attendees</span><strong>${aggregates.totalAttendees}</strong></div>
-    <div class="stat"><span>Admitted</span><strong>${aggregates.admittedCount}</strong></div>
-    <div class="stat"><span>No-shows</span><strong>${aggregates.totalAttendees - aggregates.admittedCount}</strong></div>
-    <div class="stat"><span>Admission rate</span><strong>${oneDecimalPct(aggregates.admittedCount, aggregates.totalAttendees)}%</strong></div>
-  </div>
+  const statsHtml = [
+    { label: "Total attendees", value: String(aggregates.totalAttendees) },
+    { label: "Admitted", value: String(aggregates.admittedCount) },
+    { label: "No-shows", value: String(aggregates.totalAttendees - aggregates.admittedCount) },
+    { label: "Admission rate", value: `${oneDecimalPct(aggregates.admittedCount, aggregates.totalAttendees)}%` },
+  ]
+    .map((s) => `<div class="stat"><span>${s.label}</span><strong>${s.value}</strong></div>`)
+    .join("");
+
+  const sectionsHtml = `
   <h2>By ticket type</h2>
   <table>
     <thead><tr><th>Type</th><th>Admitted</th><th>Total</th><th>Rate</th></tr></thead>
@@ -1137,9 +1169,15 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
   <table>
     <thead><tr><th>Name</th><th>Email</th><th>Ticket type</th><th>Admitted at</th><th>Checked in by</th><th>Items</th></tr></thead>
     <tbody>${logRows || '<tr><td colspan="6">No admissions yet</td></tr>'}</tbody>
-  </table>
-</body>
-</html>`;
+  </table>`;
+
+  const html = renderPrintableReportHtml({
+    titleSuffix: "Admission report",
+    eventTitle: event.title,
+    metaLine: `Event date: ${escapeHtml(eventDate)} · Times in ${escapeHtml(timeZone)} · Generated ${escapeHtml(new Date().toISOString())}`,
+    statsHtml,
+    sectionsHtml,
+  });
 
   await auditReportsExported(
     db,
@@ -1149,6 +1187,322 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
     aggregates.admittedCount,
     aggregates.admittedCount > PDF_LOG_MAX,
   );
+
+  return new Response(html, {
+    status: 200,
+    headers: getPrintableReportSecurityHeaders(),
+  });
+}
+
+/** GET /api/admin/events/:eventId/reports/export?format=csv|pdf&report=admissions|wallets */
+export async function handleExportReports(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdParam = requireEventId(c);
+  if (eventIdParam instanceof Response) return eventIdParam;
+  const eventId = eventIdParam;
+
+  const formatRaw = c.req.query("format") ?? "csv";
+  if (formatRaw !== "csv" && formatRaw !== "pdf") {
+    return c.json({ error: "format must be csv or pdf" }, 400);
+  }
+  const reportRaw = c.req.query("report") ?? "admissions";
+  if (reportRaw !== "admissions" && reportRaw !== "wallets") {
+    return c.json({ error: "report must be admissions or wallets" }, 400);
+  }
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const event = await db.event.findUnique({
+    where: { id: eventId },
+    select: { id: true, title: true, date: true, slug: true, capacity: true, timezone: true },
+  });
+  if (!event) return c.json({ error: "not_found" }, 404);
+
+  const timeZone = resolvePreviewEventTimeZone(event.timezone);
+  const dateStamp = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+
+  if (reportRaw === "wallets") {
+    return formatRaw === "csv"
+      ? exportWalletReportsCsv(db, c, eventId, event, timeZone, dateStamp)
+      : exportWalletReportsPdf(db, c, eventId, event, timeZone);
+  }
+
+  return formatRaw === "csv"
+    ? exportAdmissionsReportsCsv(db, c, eventId, event, timeZone, dateStamp)
+    : exportAdmissionsReportsPdf(db, c, eventId, event, timeZone);
+}
+
+const WALLET_EXPORT_ATTENDEE_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  ticket_type: true,
+  admitted_at: true,
+  admitted_by: true,
+  wallet_pass: {
+    select: {
+      status: true,
+      issued_at: true,
+      voided_at: true,
+      apple_active_registrations: true,
+      apple_inactive_registrations: true,
+      google_active_registrations: true,
+      google_inactive_registrations: true,
+      registration_checked_at: true,
+    },
+  },
+  // See the identical comment on WALLET_PASS_AGGREGATE_SELECT above - earliest non-bounced send
+  // across initial and resend attempts, not just "initial".
+  email_deliveries: {
+    where: { sent_at: { not: null }, status: { not: "bounced" } },
+    orderBy: { sent_at: "asc" },
+    take: 1,
+    select: { sent_at: true },
+  },
+} as const;
+
+type WalletExportAttendeeRow = Prisma.AttendeeGetPayload<{ select: typeof WALLET_EXPORT_ATTENDEE_SELECT }>;
+
+/** One CSV row for exportWalletReportsCsv below - pulled out of the row-mapping callback since
+ * its own branching (a wallet-pass-present/absent check per column, plus the confirmed-platform
+ * lookup) pushed that callback's own cognitive complexity over the limit. */
+function buildWalletExportCsvRow(
+  row: WalletExportAttendeeRow,
+  catalog: TicketTypeInfo[],
+  timeZone: string,
+  operatorDisplayMap: Record<string, UserDisplayRow>,
+): string {
+  const pass = row.wallet_pass;
+  const appleActive = pass?.apple_active_registrations ?? 0;
+  const googleActive = pass?.google_active_registrations ?? 0;
+  const emailSentAt = row.email_deliveries[0]?.sent_at ?? null;
+  // registration_checked_at null means the pass has never completed a sync - the active/inactive
+  // counts and confirmed-platform label below are all derived from that sync, so leave them blank
+  // (unknown) rather than exporting 0/"None", which would misrepresent "never synced" as the
+  // affirmative "confirmed not installed" result and corrupt any downstream recompute from this
+  // archive (bot review).
+  const synced = pass?.registration_checked_at != null;
+
+  return [
+    row.name,
+    row.email,
+    resolveTicketTypeLabel(catalog, row.ticket_type),
+    pass?.status ?? "No pass",
+    pass?.issued_at ? formatAdmittedAtExport(pass.issued_at, timeZone) : "",
+    synced ? String(appleActive) : "",
+    synced ? String(pass!.apple_inactive_registrations ?? 0) : "",
+    synced ? String(googleActive) : "",
+    synced ? String(pass!.google_inactive_registrations ?? 0) : "",
+    synced ? confirmedPlatformLabel(appleActive, googleActive) : "",
+    pass?.voided_at ? formatAdmittedAtExport(pass.voided_at, timeZone) : "",
+    pass?.registration_checked_at ? formatAdmittedAtExport(pass.registration_checked_at, timeZone) : "",
+    emailSentAt ? formatAdmittedAtExport(emailSentAt, timeZone) : "",
+    row.admitted_at ? "Yes" : "No",
+    row.admitted_at ? formatAdmittedAtExport(row.admitted_at, timeZone) : "",
+    resolveOperatorLabel(resolveOperatorFields(row.admitted_by, operatorDisplayMap)),
+  ]
+    .map((cell) => quoteCsvCell(sanitizeCsvCell(String(cell))))
+    .join(",");
+}
+
+/** GET .../reports/export?format=csv&report=wallets - one row per attendee, not the Wallets
+ * tab's own aggregate cards: archiving this data (or feeding it to another tool) needs the full
+ * underlying population to recompute any of those aggregates later, which a pre-aggregated
+ * summary throws away. Mirrors ATTENDEE_DETAIL_SELECT's wallet_pass join (attendees-api-routes.ts)
+ * plus the same "first ticket email sent" join loadWalletReportsAggregates above already uses for
+ * time-to-tap. Scoped to every attendee (not just those with a pass, unlike the admissions export
+ * above which is admitted-only) - "no pass" and "not admitted" are both meaningful rows here, not
+ * gaps to filter out. */
+async function exportWalletReportsCsv(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  event: { title: string; slug: string },
+  timeZone: string,
+  dateStamp: string,
+): Promise<Response> {
+  const [totalAttendees, rows, catalog] = await Promise.all([
+    db.attendee.count({ where: { event_id: eventId } }),
+    db.attendee.findMany({
+      where: { event_id: eventId },
+      orderBy: { name: "asc" },
+      take: CSV_EXPORT_MAX,
+      select: WALLET_EXPORT_ATTENDEE_SELECT,
+    }),
+    loadEventTicketTypes(db, eventId),
+  ]);
+
+  const truncated = totalAttendees > CSV_EXPORT_MAX;
+
+  const operatorIds = [
+    ...new Set(rows.map((row) => row.admitted_by).filter((id): id is string => id != null)),
+  ];
+  const operatorDisplayMap = await resolveUserDisplayMap(db, operatorIds);
+
+  const columns = [
+    "Name",
+    "Email",
+    "Ticket type",
+    "Wallet pass status",
+    `Pass issued at (${timeZone})`,
+    "Apple Wallet active registrations",
+    "Apple Wallet inactive registrations",
+    "Google Wallet active registrations",
+    "Google Wallet inactive registrations",
+    "Confirmed platform",
+    `Pass voided at (${timeZone})`,
+    `Registration last checked at (${timeZone})`,
+    `Ticket email first sent at (${timeZone})`,
+    "Admitted",
+    `Admitted at (${timeZone})`,
+    "Checked in by",
+  ];
+  const header = columns.map((col) => quoteCsvCell(col)).join(",");
+
+  const dataRows = rows.map((row) => buildWalletExportCsvRow(row, catalog, timeZone, operatorDisplayMap));
+
+  const truncationNotice = truncated
+    ? [
+        quoteCsvCell(sanitizeCsvCell(`Export truncated: first ${CSV_EXPORT_MAX} of ${totalAttendees} attendees.`)),
+        ...new Array(columns.length - 1).fill(quoteCsvCell("")),
+      ].join(",")
+    : null;
+
+  const csvBody = [header, ...(truncationNotice ? [truncationNotice] : []), ...dataRows].join("\r\n");
+  const bom = "﻿";
+  const filename = `wallets-${event.slug}-${dateStamp}.csv`;
+
+  await auditReportsExported(db, c, eventId, "csv", rows.length, truncated, "wallets");
+
+  return new Response(bom + csvBody, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": attachmentContentDisposition(filename),
+      "Cache-Control": "no-store",
+      "Pragma": "no-cache",
+      "X-Content-Type-Options": "nosniff",
+      "X-Wallets-Export-Total": String(totalAttendees),
+      "X-Wallets-Export-Truncated": String(truncated),
+    },
+  });
+}
+
+/** GET .../reports/export?format=pdf&report=wallets - printable summary mirroring the Wallets
+ * tab's own cards (adoption, platform, by-ticket-type, time-to-tap, admission-by-wallet-status),
+ * not a per-attendee table like the admissions PDF above - "Formatted summary for sharing" is
+ * the export menu's own description of what PDF is for (EXPORT_FORMATS, ReportsPage.tsx); the
+ * CSV export above is where the full per-attendee raw data lives. */
+async function exportWalletReportsPdf(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  event: { title: string; date: Date },
+  timeZone: string,
+): Promise<Response> {
+  const aggregates = await loadWalletReportsAggregates(db, eventId, timeZone, event.date);
+  const eventDate = event.date.toISOString().slice(0, 10);
+
+  // Same buckets-always-populated issue as tapRows below: these 4 rows exist even with zero
+  // passes issued (every count would just read 0), so the "No passes issued" fallback a few
+  // lines down was unreachable dead code - branch on adoption.got_pass instead, matching the
+  // Wallets tab's own whole-page EmptyState condition.
+  const platformRows =
+    aggregates.adoption.got_pass === 0
+      ? ""
+      : [
+          { label: "Apple Wallet only", count: aggregates.platform.apple_only },
+          { label: "Google Wallet only", count: aggregates.platform.google_only },
+          { label: "More than one wallet", count: aggregates.platform.both },
+          { label: "No wallet installed", count: aggregates.platform.not_installed },
+        ]
+          .map(
+            (row) =>
+              `<tr><td>${escapeHtml(row.label)}</td><td>${row.count}</td><td>${oneDecimalPct(row.count, aggregates.adoption.got_pass)}%</td></tr>`,
+          )
+          .join("");
+
+  const typeRows = aggregates.by_ticket_type
+    .map((t) => `<tr><td>${escapeHtml(t.type)}</td><td>${t.got_pass}</td><td>${t.total}</td><td>${t.pct}%</td></tr>`)
+    .join("");
+
+  const tapBucketLabels: Record<string, string> = {
+    same_day: "Same day",
+    "1_3": "1-3 days",
+    "4_7": "4-7 days",
+    "8_plus": "8+ days",
+  };
+  // buckets is always 4 zero-filled entries even with no data at all, so mapping it always
+  // produces a non-empty string - branch on average_days (null only when nothing to average)
+  // instead, matching the Wallets tab's own "Not enough data yet." condition.
+  const tapRows =
+    aggregates.time_to_wallet_tap.average_days === null
+      ? ""
+      : aggregates.time_to_wallet_tap.buckets
+          .map((b) => `<tr><td>${escapeHtml(tapBucketLabels[b.key] ?? b.key)}</td><td>${b.count}</td><td>${b.pct}%</td></tr>`)
+          .join("");
+
+  const statsHtml = [
+    { label: "Total attendees", value: String(aggregates.total_attendees) },
+    { label: "Issued", value: `${aggregates.adoption.got_pass} (${aggregates.adoption.got_pass_pct}%)` },
+    { label: "Installed", value: `${aggregates.adoption.confirmed} (${aggregates.adoption.confirmed_pct}% of issued)` },
+    { label: "Voided", value: String(aggregates.adoption.cancelled) },
+  ]
+    .map((s) => `<div class="stat"><span>${s.label}</span><strong>${s.value}</strong></div>`)
+    .join("");
+
+  // Same warning as WalletsReportsTab's own Notice (apps/admin/src/pages/WalletsReportsTab.tsx) -
+  // the PDF otherwise only carries a "Generated" timestamp, so a partial WALLET_AGGREGATE_MAX
+  // sample would read as a complete report with no indication these specific numbers are
+  // sampled (bot review). .print-hint's existing warning-box styling, without no-print, since
+  // this needs to survive into the saved/printed PDF, not just the on-screen preview.
+  const truncatedWarningHtml = aggregates.passes_truncated
+    ? `<p class="print-hint">This event has more issued wallet passes than a single report can process at once, so platform mix, adoption by ticket type, and time-to-wallet-tap below are based on a partial sample rather than every pass. Cumulative passes issued and admission rate by wallet status are unaffected - both come from a full count, not a sample.</p>`
+    : "";
+
+  const sectionsHtml = `
+  ${truncatedWarningHtml}
+  <h2>Wallet platform</h2>
+  <table>
+    <thead><tr><th>Platform</th><th>Passes</th><th>Share of issued</th></tr></thead>
+    <tbody>${platformRows || '<tr><td colspan="3">No passes issued</td></tr>'}</tbody>
+  </table>
+  <h2>Adoption by ticket type</h2>
+  <table>
+    <thead><tr><th>Type</th><th>Got pass</th><th>Total</th><th>Rate</th></tr></thead>
+    <tbody>${typeRows || '<tr><td colspan="4">No attendees</td></tr>'}</tbody>
+  </table>
+  <h2>Time to wallet tap</h2>
+  <table>
+    <thead><tr><th>Days after ticket email</th><th>Passes</th><th>Share</th></tr></thead>
+    <tbody>${tapRows || '<tr><td colspan="3">Not enough data yet</td></tr>'}</tbody>
+  </table>
+  <h2>Admission rate by wallet status</h2>
+  <table>
+    <thead><tr><th>Group</th><th>Admitted</th><th>Total</th><th>Rate</th></tr></thead>
+    <tbody>
+      <tr><td>Has a wallet pass</td><td>${aggregates.admission_by_wallet.with_wallet.admitted}</td><td>${aggregates.admission_by_wallet.with_wallet.total}</td><td>${aggregates.admission_by_wallet.with_wallet.pct}%</td></tr>
+      <tr><td>No wallet pass</td><td>${aggregates.admission_by_wallet.without_wallet.admitted}</td><td>${aggregates.admission_by_wallet.without_wallet.total}</td><td>${aggregates.admission_by_wallet.without_wallet.pct}%</td></tr>
+    </tbody>
+  </table>`;
+
+  // The on-screen Wallets tab surfaces synced_at (via syncedHint in WalletsReportsTab.tsx) so a
+  // stale/never-synced platform-adoption number isn't read as current - the PDF needs the same
+  // caveat, since it only otherwise carries a "Generated" timestamp for when the export ran, not
+  // when the underlying wallet-pass registration data was last refreshed from PassCreator.
+  const syncedLine = aggregates.synced_at
+    ? `Synced ${escapeHtml(formatAdmittedAtExport(new Date(aggregates.synced_at), timeZone))}`
+    : "Not synced yet";
+
+  const html = renderPrintableReportHtml({
+    titleSuffix: "Wallet report",
+    eventTitle: event.title,
+    metaLine: `Event date: ${escapeHtml(eventDate)} · Times in ${escapeHtml(timeZone)} · ${syncedLine} · Generated ${escapeHtml(new Date().toISOString())}`,
+    statsHtml,
+    sectionsHtml,
+  });
+
+  await auditReportsExported(db, c, eventId, "pdf", aggregates.adoption.got_pass, aggregates.passes_truncated, "wallets");
 
   return new Response(html, {
     status: 200,
