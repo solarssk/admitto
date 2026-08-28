@@ -57,8 +57,21 @@ plain-English description of the role, not the product's name for it.
    "Identity provider sign-in failed. The discovery endpoint returned 404 (`discovery_failed`)."
    Never a bare code with no sentence around it.
 6. **Don't invent a message the API can't back up.** If the backend genuinely has no more detail
-   than "something failed," say that plainly rather than fabricating a specific-sounding cause. A
+   than "something failed", say that plainly rather than fabricating a specific-sounding cause. A
    wrong specific message is worse than an honest generic one.
+7. **The same event gets the same wording everywhere it appears, including within one component.**
+   An `EmptyState`'s `title` and `description` describe the same failure - a box titled "Could not
+   load audit log" whose text underneath says "Failed to load audit log" reads as two different
+   problems to the reader, not one, even though only the verb differs. This also applies across
+   screens: the fixed phrase for an initial-load failure is **"Could not load X"**, ending with a
+   period as a complete sentence - not "Failed to load X" and not "X failed to load" - pick one verb
+   for this class of message and use it everywhere, the same way `GENERIC_SEND_FAILED_MESSAGE`
+   (`packages/mail-delivery/src/sanitizeError.ts`) is a single shared constant specifically so two call
+   sites can't drift apart on the same fallback text. When adding a new load-error `EmptyState`, write
+   the `title` and the `description`/fallback string together and read them back side by side before
+   committing - CI cannot check this consistency the way `CODE_MESSAGES` coverage is checked
+   ([AGENTS.md § Compounding rules](../../AGENTS.md#compounding-rules)), so it depends on the author
+   actually re-reading both strings.
 
 ## What this doesn't cover
 

@@ -95,6 +95,17 @@ Staff UI uses `useToast()` from `@admitto/ui` (`ToastProvider` in the admin shel
 
 Toasts dedupe identical `message + variant`, cap at five, and sit below the check-in overlay (`--z-toast` &lt; `--z-overlay`). Prefer `renderWithToast()` in admin tests when asserting toast behavior.
 
+**Never use the native `window.confirm()` / `window.alert()`** for a confirmation - always the app's
+`ConfirmDialog` (`apps/admin/src/components/ConfirmDialog.tsx`). Its `confirmVariant` defaults to
+`"primary"`; reserve `"danger"`/`"warning"` for actions that are genuinely irreversible or destroy
+something (delete, permanently revoke, archive). A prompt over form state that only exists
+in-memory and nothing has actually been lost yet - "Discard unsaved changes?" is the canonical
+example - stays default severity even though the wording sounds alarming, since the same amber/red
+treatment used for a real delete would misrepresent the risk. See
+`apps/admin/src/identity/DiscardUnsavedChangesDialogs.tsx` for the shared two-dialog pattern (one
+for the Cancel button, one for the router's dirty-guard blocker) most editors with unsaved-changes
+protection should reuse rather than re-implementing per screen.
+
 **Check-in camera exception:** the desktop inline camera (`CkInlineCamera`) is scan-only — unlike the mobile fullscreen overlay, it never doubles as the operator's check-in/item-issuing surface, so no result ever renders on top of it. A no-match scan there reports via **toast**, the same as manual lookup's no-match, and the camera keeps scanning. This is the opposite of the in-context-inline row above, which still governs the mobile overlay (where a toast would render below `--z-overlay`, invisible).
 
 ### Admin API errors in the UI
@@ -213,6 +224,32 @@ avoiding `@admitto/auth`'s root entry for password helpers (`./constants`, `./pa
 Type-only re-exports from the root remain OK when they stay `import type` / `export type`. A local
 build's Vite output (`npm run build -w @admitto/admin`) surfaces new leaks as "Module ... has been
 externalized for browser compatibility" warnings during the `vite build` step: do not ignore them.
+
+**A CSS custom-property fallback (`var(--token, #hex)`) must match the token's real value in
+`packages/ui/src/styles/tokens/colors.css` exactly.** The fallback only renders when the variable
+is genuinely undefined (a stylesheet load race, or a standalone page that never imports
+`colors.css`), so a drifted fallback is invisible in normal use and easy to introduce with a
+hand-typed hex that's merely close to the real color. `apps/admin/test/styles/token-fallback-coverage.test.ts`
+parses `colors.css` at test time (not a hardcoded copy) and fails the build on any mismatch across
+`apps/admin/src`, `apps/web/src`, and `packages/ui/src` - if you add a new token or a new
+`var(--x, #hex)` usage, run this test rather than eyeballing the hex. This is one instance of a
+reusable technique: when a set of things must each map to exactly one fixed value (an API error
+code to its UI message - `apps/admin/test/api/operator-api-error.coverage.test.ts` for
+`CODE_MESSAGES` - a design token to its fallback, a status enum to its label), write a test that
+scans real usages and fails on drift, rather than trusting the mapping stays complete by review
+alone; neither `tsc` nor a normal Vitest assertion catches this class of gap.
+
+**A `ConfirmDialog` (or any child modal) opened from inside a parent modal must suspend the
+parent's own `useModalFocusTrap` while it's open**, e.g.
+`useModalFocusTrap(panelRef, open && !anyConfirmDialogOpen, handleClose)` - see
+`apps/admin/src/pages/users/UserEditModal.tsx` and `apps/admin/src/identity/useUnsavedChangesGuard.ts`.
+Both traps register a capture-phase `keydown` listener on `document`; if the parent's stays active,
+its listener (registered first, since it mounts before the child dialog opens) fires ahead of the
+child's on every Escape press, which can reopen a second copy of the same dialog instead of letting
+the topmost one close. This surfaces specifically on Escape (Tab-trapping still works, since focus
+itself is already inside the child), so a click-only manual test of a nested dialog can look correct
+while this bug is present - test Escape explicitly whenever a `ConfirmDialog` can appear on top of
+an already-open modal.
 
 **Do not create new top-level `.md` documentation files in this repo.** This repo's doc set is
 fixed: `README.md`, `CHANGELOG.md`, `SECURITY.md`, `VERSIONING.md`, `DATA-PROTECTION.md`,
