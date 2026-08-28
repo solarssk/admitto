@@ -3,7 +3,6 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from "react-router";
 import { ReportsPage } from "../../src/pages/ReportsPage.js";
-import { ApiError } from "../../src/api/client.js";
 import type { EventReportsResponse } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
@@ -14,6 +13,20 @@ const fetchEventWalletReports = vi.fn();
 const exportEventReportsCsv = vi.fn();
 const exportEventWalletReportsCsv = vi.fn();
 const reportApiError = vi.fn();
+
+// vi.mock factories are hoisted above this file's own top-level bindings, so the class referenced
+// inside the factory below must go through vi.hoisted() - a plain top-level `class MockApiError`
+// would throw "Cannot access 'MockApiError' before initialization" when the factory runs.
+const { MockApiError } = vi.hoisted(() => {
+  class MockApiError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.status = status;
+    }
+  }
+  return { MockApiError };
+});
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
 
@@ -36,13 +49,7 @@ vi.mock("react-apexcharts", () => ({
 }));
 
 vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
+  ApiError: MockApiError,
   fetchEventReports: (...args: unknown[]) => fetchEventReports(...args),
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
   exportEventReportsCsv: (...args: unknown[]) => exportEventReportsCsv(...args),
@@ -600,7 +607,7 @@ describe("ReportsPage — Wallets tab", () => {
     fetchEventWalletReports.mockResolvedValue(walletFixture());
     // mockReset, not mockRejectedValueOnce alone - see the identical comment on the CSV-export
     // test above.
-    exportEventWalletReportsCsv.mockReset().mockRejectedValueOnce(new ApiError(500, "boom"));
+    exportEventWalletReportsCsv.mockReset().mockRejectedValueOnce(new MockApiError(500, "boom"));
     renderPage();
 
     await clickWalletsTab();
@@ -608,12 +615,18 @@ describe("ReportsPage — Wallets tab", () => {
     fireEvent.click(screen.getByRole("button", { name: /Export/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
 
+    // reportApiError is only called inside the `err instanceof ApiError` branch of
+    // handleExportCsv's catch block, before either the toast or the 401 redirect - checking it
+    // first gives a direct signal on whether that branch was even entered, rather than only
+    // seeing the toast's own (possibly generic-branch) text.
+    await waitFor(() => {
+      expect(reportApiError).toHaveBeenCalledWith(500);
+    });
     // See the identical comment on the non-ApiError test above for why this matches
     // AdminPages.errors.test.tsx's own proven-reliable toast-assertion shape.
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed\./);
     });
-    expect(reportApiError).toHaveBeenCalledWith(500);
   });
 
   it("opens the wallets PDF print URL, not the admissions one, while the Wallets tab is active", async () => {
