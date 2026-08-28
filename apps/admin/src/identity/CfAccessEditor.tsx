@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useBlocker, useLocation, useNavigate, type BlockerFunction } from "react-router";
+import { useNavigate } from "react-router";
 import { Badge, Button, Card, Input, Notice, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import { ApiError, fetchCfAccessSummary, testCfAccess, updateCfAccess } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -17,9 +17,10 @@ import {
   type CfAccessDraft,
   type CfAccessFieldErrors,
 } from "./cfAccessValidation.js";
-import { DiscardUnsavedChangesDialogs, useEditorFocusTrap } from "./DiscardUnsavedChangesDialogs.js";
+import { DiscardUnsavedChangesDialogs } from "./DiscardUnsavedChangesDialogs.js";
 import { IdentityModalHeader } from "./IdentityModalHeader.js";
 import { IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
+import { useUnsavedChangesGuard } from "./useUnsavedChangesGuard.js";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -104,52 +105,12 @@ export function CfAccessEditor() {
       ? "The selected direct identity provider is unavailable. Select an enabled provider before enabling Cloudflare Access."
       : undefined);
 
-  // Router-level dirty guard — same shape as IdentityProviderEditor. The Identity
-  // tabs / Settings sidebar / SPA back button are in-app navigations that
-  // `beforeunload` doesn't catch. `skipBlockRef` is a one-shot bypass for the
-  // programmatic exits (Cancel after confirm / Save); the location effect re-arms
-  // it after each completed navigation so the next dirty edit is still guarded.
-  const skipBlockRef = useRef(false);
-  const location = useLocation();
-  useEffect(() => {
-    skipBlockRef.current = false;
-  }, [location.pathname]);
-  const blocker = useBlocker(
-    useCallback<BlockerFunction>(
-      ({ currentLocation, nextLocation }) => {
-        if (skipBlockRef.current) return false;
-        if (!dirty) return false;
-        return nextLocation.pathname !== currentLocation.pathname;
-      },
-      [dirty],
-    ),
-  );
-  useEffect(() => {
-    if (!dirty) return;
-    const handler = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [dirty]);
-
-  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
-
-  const handleCancel = useCallback(() => {
-    if (saving || testing) return;
-    if (dirty) {
-      setDiscardConfirmOpen(true);
-      return;
-    }
-    skipBlockRef.current = true;
-    navigate(IDENTITY_PROVIDERS_ROUTE);
-  }, [dirty, navigate, saving, testing]);
-
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   // Always starts in loadState "loading" - the real form fields don't exist in the DOM
   // until the fetch resolves, so initial focus must be re-attempted once loadState changes.
-  useEditorFocusTrap(panelRef, discardConfirmOpen, blocker.state === "blocked", handleCancel, loadState);
+  const { skipBlockRef, blocker, discardConfirmOpen, setDiscardConfirmOpen, handleCancel } =
+    useUnsavedChangesGuard(panelRef, dirty, saving || testing, navigate, loadState);
   const scrollRef = useRef<HTMLDivElement>(null);
   useOverscrollBounceGuard(scrollRef);
   // A fetch that resolves near-instantly (localhost, a warm cache) would
@@ -189,7 +150,7 @@ export function CfAccessEditor() {
         setSaving(false);
       }
     },
-    [draft, locks, addToast, navigate],
+    [draft, locks, addToast, navigate, skipBlockRef],
   );
 
   // Test probes the team domain's JWKS endpoint. Send the draft team domain when

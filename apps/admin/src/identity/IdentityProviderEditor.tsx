@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useBlocker, useLocation, useNavigate, useParams, type BlockerFunction } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { Button, Card, Input, Notice, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -15,7 +15,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { ProviderDetailDto, ProviderRequestBody, ProviderTestDraftBody } from "../api/types.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
-import { DiscardUnsavedChangesDialogs, useEditorFocusTrap } from "./DiscardUnsavedChangesDialogs.js";
+import { DiscardUnsavedChangesDialogs } from "./DiscardUnsavedChangesDialogs.js";
 import { IdentityMappingRepeater } from "./IdentityMappingRepeater.js";
 import { IdentityModalHeader } from "./IdentityModalHeader.js";
 import {
@@ -33,6 +33,7 @@ import {
   type ProviderDraft,
 } from "./identityProviderValidation.js";
 import { IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
+import { useUnsavedChangesGuard } from "./useUnsavedChangesGuard.js";
 
 interface IdentityProviderEditorProps {
   mode: EditorMode;
@@ -459,66 +460,25 @@ export function IdentityProviderEditor({
     handleMappingsChange([...mappings, emptyMappingRow()]);
   }, [mappings, handleMappingsChange]);
 
-  // Router-level dirty guard. The Identity tabs / Settings sidebar / SPA back
-  // button are all in-app navigations, which `beforeunload` does not catch — so
-  // a superadmin could leave the editor with unsaved changes and no prompt.
-  // `useBlocker` intercepts those; programmatic exits (Cancel after confirm,
-  // Save) set `skipBlockRef` first so they don't re-trigger the prompt, and the
-  // blocked-state effect sets it before `proceed()` so the retried navigation
-  // isn't re-blocked (which would loop).
-  const skipBlockRef = useRef(false);
-  const location = useLocation();
-  // Re-arm the dirty guard after any completed navigation. skipBlock is a one-shot
-  // bypass for programmatic exits (Cancel/Save/proceed); without this reset it
-  // would stay `true` and suppress the prompt for the next dirty edit too — most
-  // visibly when the editor instance persists across an A→B provider navigation.
-  useEffect(() => {
-    skipBlockRef.current = false;
-  }, [location.pathname]);
-  const blocker = useBlocker(
-    useCallback<BlockerFunction>(
-      ({ currentLocation, nextLocation }) => {
-        if (skipBlockRef.current) return false;
-        if (!dirty) return false;
-        return nextLocation.pathname !== currentLocation.pathname;
-      },
-      [dirty],
-    ),
-  );
-  // Browser reload/close is not an in-app navigation; the router blocker doesn't
-  // cover it, so keep the native beforeunload prompt as well.
-  useEffect(() => {
-    if (!dirty) return;
-    const handler = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [dirty]);
-
-  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
-
-  const handleCancel = useCallback(() => {
-    // A pending save has no abort/cancellation path (create/updateIdentityProvider are plain
-    // awaited fetches) - dismissing the modal mid-save would only hide it, not stop it, silently
-    // creating/updating the provider after the operator thought they'd discarded. Blocking every
-    // dismissal path (button, backdrop, close icon, Escape all funnel through this one function)
-    // while busy is simpler and safer than trying to cancel/ignore the in-flight mutation.
-    if (isActionBusy(saving, testing, discovering)) return;
-    if (dirty) {
-      setDiscardConfirmOpen(true);
-      return;
-    }
-    skipBlockRef.current = true;
-    navigate(IDENTITY_PROVIDERS_ROUTE);
-  }, [saving, testing, discovering, dirty, navigate]);
-
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   // Edit mode starts in loadState "loading" - its real form fields don't exist in the DOM
   // until the fetch resolves, so initial focus must be re-attempted once loadState changes
   // (create mode is already "ready" at mount, so this is a no-op there).
-  useEditorFocusTrap(panelRef, discardConfirmOpen, blocker.state === "blocked", handleCancel, loadState);
+  // A pending save has no abort/cancellation path (create/updateIdentityProvider are plain
+  // awaited fetches) - dismissing the modal mid-save would only hide it, not stop it, silently
+  // creating/updating the provider after the operator thought they'd discarded. isBusy blocks
+  // every dismissal path (button, backdrop, close icon, Escape all funnel through the guard's
+  // handleCancel) while true, simpler and safer than trying to cancel/ignore the in-flight
+  // mutation.
+  const { skipBlockRef, blocker, discardConfirmOpen, setDiscardConfirmOpen, handleCancel } =
+    useUnsavedChangesGuard(
+      panelRef,
+      dirty,
+      isActionBusy(saving, testing, discovering),
+      navigate,
+      loadState,
+    );
   const scrollRef = useRef<HTMLDivElement>(null);
   useOverscrollBounceGuard(scrollRef);
 
@@ -560,7 +520,7 @@ export function IdentityProviderEditor({
         setSaving(false);
       }
     },
-    [draft, mode, mappings, resolvedProviderId, addToast, navigate],
+    [draft, mode, mappings, resolvedProviderId, addToast, navigate, skipBlockRef],
   );
 
   // Discover autofills endpoints from the issuer's .well-known config. Split
