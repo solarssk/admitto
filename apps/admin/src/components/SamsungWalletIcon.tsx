@@ -46,16 +46,21 @@ export function SamsungWalletIcon(): React.JSX.Element {
  * Source is a rounded-square app-icon tile (white background + a fixed-blue mark) - only the mark
  * itself is kept here (no background, no fixed color) so it behaves like a monochrome glyph, not
  * a two-tone icon that can't be tinted muted/active/dark-mode the way its Apple/Google neighbors
- * are. viewBox cropped to the mark's own true bounds - measured via getBBox() in a real browser,
- * not eyeballed, the same way as SamsungWalletIcon's own crop above - plus a little breathing
- * room, since the source's full 512x512 viewBox is mostly empty margin around the mark. */
+ * are. Unlike SamsungWalletIcon's own wordmark above, the source's full 512x512 viewBox is kept
+ * as-is (not cropped to the mark's bounds) - an app-icon tile is already centered with sensible
+ * built-in padding, and a first attempt at tightly cropping it (matching the wordmark's own fix)
+ * measurably overcorrected: rendered at the same 1em box, the tight crop filled ~40% of the box
+ * with ink versus Tabler's own ti-brand-apple glyph's ~26% (measured via canvas pixel sampling in
+ * a real browser, not eyeballed) - it read visibly bolder/larger than its Apple/Google neighbors
+ * (PO screenshot, 2026-08-28). The uncropped 512x512 box measures ~26% too, matching Apple's own
+ * glyph almost exactly. */
 export function SamsungGlyphIcon({
   className,
   "aria-label": ariaLabel,
 }: Readonly<{ className?: string; "aria-label": string }>): React.JSX.Element {
   return (
     <svg
-      viewBox="112 50 288 412"
+      viewBox="0 0 512 512"
       width="1em"
       height="1em"
       xmlns="http://www.w3.org/2000/svg"
