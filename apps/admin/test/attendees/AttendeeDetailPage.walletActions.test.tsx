@@ -785,4 +785,36 @@ describe("AttendeeDetailPage — Wallet card gated by the event's platform toggl
     expect(screen.getByText("Wallet", { selector: ".at-card__title" })).toBeTruthy();
     expect(screen.queryByText("Samsung Wallet")).toBeNull();
   });
+
+  it("shows only Google's row (not Apple's) when Apple Wallet is the disabled one", async () => {
+    mockWalletAppleEnabled = false;
+    mockLoad(
+      baseDetail({
+        wallet_pass: walletPass({ apple_active_registrations: 1, google_active_registrations: 1 }),
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.getByText("Wallet", { selector: ".at-card__title" })).toBeTruthy();
+    expect(screen.getByText("Google Wallet")).toBeTruthy();
+    expect(screen.queryByText("Apple Wallet")).toBeNull();
+  });
+
+  it("omits Copy Apple Wallet link from the wallet links menu when Apple Wallet is disabled, even with a stored apple link", async () => {
+    mockWalletAppleEnabled = false;
+    mockLoad(
+      baseDetail({
+        wallet_pass: walletPass(),
+        wallet_apple_link: "https://example.com/apple",
+        wallet_google_link: "https://example.com/android",
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Wallet pass links" }));
+    expect(screen.queryByRole("menuitem", { name: /Copy Apple Wallet link/ })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: /Copy Google Wallet link/ })).toBeTruthy();
+  });
 });
