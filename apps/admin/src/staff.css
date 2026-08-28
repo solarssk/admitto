@@ -6343,7 +6343,7 @@ output.mail-field-hint {
 }
 
 .archiving-error {
-  color: var(--status-danger-text, var(--danger-700, #b91c1c));
+  color: var(--status-error-fg, #b42318);
   margin: var(--space-2) 0 0;
 }
 

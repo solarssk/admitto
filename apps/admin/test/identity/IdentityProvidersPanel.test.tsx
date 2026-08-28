@@ -166,7 +166,7 @@ describe("IdentityProvidersPanel", () => {
     renderPanel();
 
     await waitFor(() => {
-      expect(screen.getByText("Couldn't load providers")).toBeTruthy();
+      expect(screen.getByText("Could not load providers")).toBeTruthy();
     });
     expect(
       screen.getByText(
@@ -344,10 +344,10 @@ describe("IdentityProvidersPanel", () => {
     renderPanel();
 
     await waitFor(() => {
-      expect(screen.getByText("Couldn't load Cloudflare Access")).toBeTruthy();
+      expect(screen.getByText("Could not load Cloudflare Access")).toBeTruthy();
     });
     expect(
-      screen.getByText("Couldn't load the Cloudflare Access configuration."),
+      screen.getByText("Could not load the Cloudflare Access configuration."),
     ).toBeTruthy();
     mockCf.mockResolvedValueOnce({
       enabled: false,

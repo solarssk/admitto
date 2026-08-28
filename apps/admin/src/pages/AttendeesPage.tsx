@@ -791,7 +791,7 @@ function reportLoadListError(err: unknown, ctx: LoadListErrorContext): void {
   setItems([]);
   setTotal(0);
   if (!(err instanceof ApiError)) {
-    setLoadError("Failed to load attendees.");
+    setLoadError("Could not load attendees.");
     return;
   }
   reportApiError(err.status);
@@ -800,7 +800,7 @@ function reportLoadListError(err: unknown, ctx: LoadListErrorContext): void {
     window.location.assign(`/login?next=${next}`);
     return;
   }
-  setLoadError(err.status === 403 ? "You do not have access to this event." : "Failed to load attendees.");
+  setLoadError(err.status === 403 ? "You do not have access to this event." : "Could not load attendees.");
 }
 
 export function AttendeesPage() {

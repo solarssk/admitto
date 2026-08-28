@@ -666,7 +666,7 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByText("Failed to load report.")).toBeTruthy();
+      expect(screen.getByText("Could not load report data.")).toBeTruthy();
     });
     expect(screen.queryByText("internal transport detail")).toBeNull();
   });
@@ -682,6 +682,21 @@ describe("ReportsPage operator errors", () => {
     );
     await waitFor(() => {
       expect(screen.getByText(/do not have access/)).toBeTruthy();
+    });
+    expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
+  it("shows the generic load error for an API failure that isn't forbidden", async () => {
+    vi.mocked(fetchEventReports).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Could not load report data.")).toBeTruthy();
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
@@ -702,7 +717,7 @@ describe("ReportsPage operator errors", () => {
     fireEvent.click(screen.getByRole("button", { name: "Export report" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed/);
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
@@ -803,7 +818,7 @@ describe("ReportsPage operator errors", () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByText("Failed to load report.")).toBeTruthy();
+      expect(screen.getByText("Could not load report data.")).toBeTruthy();
     });
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => {
