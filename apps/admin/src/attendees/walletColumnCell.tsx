@@ -1,6 +1,7 @@
 import { Tooltip } from "@admitto/ui";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
 import type { AttendeeRowDto } from "../api/types.js";
+import { SamsungGlyphIcon } from "../components/SamsungWalletIcon.js";
 import "./attendees.css";
 import { walletRegistrationLabel } from "./walletRegistrationLabel.js";
 
@@ -27,18 +28,34 @@ function PlatformIcon({
   );
 }
 
-/** Which wallet(s) (Apple/Google) an attendee has actually registered their pass to, shown
- * compactly in the Attendees list - one icon per enabled platform, present for every row so the
- * column stays a consistent set of icons to scan down; highlighted when
- * apple/google_active_registrations is nonzero, muted otherwise. No WalletPass row at all
- * (wallet not configured for the event, or the attendee hasn't added it) renders the same muted
- * pair as a row with a pass nobody registered - "Not added" either way (PO review, 2026-08-14:
- * was a bare dash, less scannable than icons that are just always there). Shares its label
- * vocabulary with the attendee detail page's own wallet section (walletRegistrationLabel) so
- * both surfaces describe the exact same state the same way. `enabledPlatforms` (Event Settings ->
- * Wallet) drops whichever icon(s) the event doesn't offer, and the whole cell renders nothing
- * when neither platform is enabled - the caller is expected to skip the column entirely (header
- * and cell) in that case, not render an empty one. */
+/** Samsung has no Tabler font glyph (see SamsungGlyphIcon's own doc comment), so this passes the
+ * exact same active/muted classes PlatformIcon builds for its `<i>` glyphs onto an inline SVG
+ * instead - visually identical treatment, just a different element under the hood. Always muted:
+ * WalletPassActionDto has no samsung_active_registrations field (no PassCreator API support yet),
+ * so there is no real per-attendee Samsung status to show - this is a reserved placeholder, same
+ * idea as the always-0 Samsung slice in Reports' platform breakdown. */
+function SamsungPlatformIcon({ label }: Readonly<{ label: string }>) {
+  return (
+    <Tooltip content={label}>
+      <SamsungGlyphIcon className="attendees-table-v2__wallet-icon" aria-label={label} />
+    </Tooltip>
+  );
+}
+
+/** Which wallet(s) (Apple/Google, and Samsung once PassCreator supports it - see
+ * SamsungPlatformIcon) an attendee has actually registered their pass to, shown compactly in the
+ * Attendees list - one icon per enabled platform, present for every row so the column stays a
+ * consistent set of icons to scan down; highlighted when apple/google_active_registrations is
+ * nonzero, muted otherwise. No WalletPass row at all (wallet not configured for the event, or the
+ * attendee hasn't added it) renders the same muted pair as a row with a pass nobody registered -
+ * "Not added" either way (PO review, 2026-08-14: was a bare dash, less scannable than icons that
+ * are just always there). Shares its label vocabulary with the attendee detail page's own wallet
+ * section (walletRegistrationLabel) so both surfaces describe the exact same state the same way.
+ * `enabledPlatforms` (Event Settings -> Wallet) drops whichever icon(s) the event doesn't offer,
+ * and the whole cell renders nothing when neither Apple nor Google is enabled (Samsung alone is
+ * never enough - see EnabledWalletPlatforms.any's own doc comment, it has no real data of its own
+ * to justify showing the column by itself) - the caller is expected to skip the column entirely
+ * (header and cell) in that case, not render an empty one. */
 export function WalletColumnCell({
   status,
   enabledPlatforms,
@@ -62,6 +79,9 @@ export function WalletColumnCell({
       )}
       {enabledPlatforms.google && (
         <PlatformIcon iconClass="ti-brand-google" active={googleActive} label={`Google Wallet: ${googleLabel}`} />
+      )}
+      {enabledPlatforms.samsung && (
+        <SamsungPlatformIcon label="Samsung Wallet: Not supported yet" />
       )}
     </span>
   );

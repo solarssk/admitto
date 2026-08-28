@@ -149,6 +149,7 @@ export interface EventSummary {
   wallet_enabled: boolean;
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
+  wallet_samsung_enabled: boolean;
 }
 
 const eventSelect = {
@@ -172,6 +173,7 @@ const eventSelect = {
   wallet_enabled: true,
   wallet_apple_enabled: true,
   wallet_google_enabled: true,
+  wallet_samsung_enabled: true,
 } as const;
 
 /** Maps the raw `eventSelect` row (which has `location_details.venue_name`, a relation) to the
