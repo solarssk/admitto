@@ -5,6 +5,7 @@ import { Badge, Button, Card, Input, Notice, Spinner, Switch, Tooltip, useToast 
 import { ApiError, fetchCfAccessSummary, testCfAccess, updateCfAccess } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto } from "../api/types.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -125,16 +126,6 @@ export function CfAccessEditor() {
     ),
   );
   useEffect(() => {
-    if (blocker.state !== "blocked") return;
-    if (window.confirm("Discard unsaved changes?")) {
-      skipBlockRef.current = true;
-      blocker.proceed();
-    } else {
-      blocker.reset();
-    }
-  }, [blocker]);
-
-  useEffect(() => {
     if (!dirty) return;
     const handler = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -143,9 +134,14 @@ export function CfAccessEditor() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
 
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+
   const handleCancel = useCallback(() => {
     if (saving || testing) return;
-    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    if (dirty) {
+      setDiscardConfirmOpen(true);
+      return;
+    }
     skipBlockRef.current = true;
     navigate(IDENTITY_PROVIDERS_ROUTE);
   }, [dirty, navigate, saving, testing]);
@@ -379,42 +375,69 @@ export function CfAccessEditor() {
   }
 
   return createPortal(
-    <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
-      <div className="identity-modal__backdrop" aria-hidden="true" />
-      <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
-        <div ref={scrollRef} className="identity-modal__scroll at-scroll">
-          <IdentityModalHeader
-            titleId={titleId}
-            title="Cloudflare Access"
-            icon={<i className="ti ti-brand-cloudflare" />}
-            badge={
-              loadState === "ready" && (
-                <>
-                  {draft.enabled ? (
-                    <Badge variant="ok">Active</Badge>
-                  ) : (
-                    <Badge variant="neutral">Inactive</Badge>
-                  )}
-                  {locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
-                </>
-              )
-            }
-            subtitle={
-              loadState === "ready" && (
-                <>
-                  Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure
-                  your team URL, application audience tag, direct identity provider, and protected
-                  prefixes.
-                </>
-              )
-            }
-            onClose={handleCancel}
-            closeDisabled={saving || testing}
-          />
-          {content}
+    <>
+      <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
+        <div className="identity-modal__backdrop" aria-hidden="true" />
+        <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
+          <div ref={scrollRef} className="identity-modal__scroll at-scroll">
+            <IdentityModalHeader
+              titleId={titleId}
+              title="Cloudflare Access"
+              icon={<i className="ti ti-brand-cloudflare" />}
+              badge={
+                loadState === "ready" && (
+                  <>
+                    {draft.enabled ? (
+                      <Badge variant="ok">Active</Badge>
+                    ) : (
+                      <Badge variant="neutral">Inactive</Badge>
+                    )}
+                    {locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
+                  </>
+                )
+              }
+              subtitle={
+                loadState === "ready" && (
+                  <>
+                    Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure
+                    your team URL, application audience tag, direct identity provider, and protected
+                    prefixes.
+                  </>
+                )
+              }
+              onClose={handleCancel}
+              closeDisabled={saving || testing}
+            />
+            {content}
+          </div>
         </div>
-      </div>
-    </dialog>,
+      </dialog>
+      <ConfirmDialog
+        open={discardConfirmOpen}
+        title="Discard unsaved changes?"
+        message="You have unsaved Cloudflare Access changes. They will be lost if you leave this page."
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        onConfirm={() => {
+          setDiscardConfirmOpen(false);
+          skipBlockRef.current = true;
+          navigate(IDENTITY_PROVIDERS_ROUTE);
+        }}
+        onCancel={() => setDiscardConfirmOpen(false)}
+      />
+      <ConfirmDialog
+        open={blocker.state === "blocked"}
+        title="Discard unsaved changes?"
+        message="You have unsaved Cloudflare Access changes. They will be lost if you leave this page."
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        onConfirm={() => {
+          skipBlockRef.current = true;
+          blocker.proceed?.();
+        }}
+        onCancel={() => blocker.reset?.()}
+      />
+    </>,
     document.body,
   );
 }

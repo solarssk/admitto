@@ -13,6 +13,7 @@ import {
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { ProviderDetailDto, ProviderRequestBody, ProviderTestDraftBody } from "../api/types.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
@@ -485,16 +486,6 @@ export function IdentityProviderEditor({
       [dirty],
     ),
   );
-  useEffect(() => {
-    if (blocker.state !== "blocked") return;
-    if (window.confirm("Discard unsaved changes?")) {
-      skipBlockRef.current = true;
-      blocker.proceed();
-    } else {
-      blocker.reset();
-    }
-  }, [blocker]);
-
   // Browser reload/close is not an in-app navigation; the router blocker doesn't
   // cover it, so keep the native beforeunload prompt as well.
   useEffect(() => {
@@ -506,6 +497,8 @@ export function IdentityProviderEditor({
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
 
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+
   const handleCancel = useCallback(() => {
     // A pending save has no abort/cancellation path (create/updateIdentityProvider are plain
     // awaited fetches) - dismissing the modal mid-save would only hide it, not stop it, silently
@@ -513,7 +506,10 @@ export function IdentityProviderEditor({
     // dismissal path (button, backdrop, close icon, Escape all funnel through this one function)
     // while busy is simpler and safer than trying to cancel/ignore the in-flight mutation.
     if (isActionBusy(saving, testing, discovering)) return;
-    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    if (dirty) {
+      setDiscardConfirmOpen(true);
+      return;
+    }
     skipBlockRef.current = true;
     navigate(IDENTITY_PROVIDERS_ROUTE);
   }, [saving, testing, discovering, dirty, navigate]);
@@ -1012,25 +1008,52 @@ export function IdentityProviderEditor({
   // "loading" — show it only once the fetch has genuinely taken a moment.
   const showLoadingSpinner = useDelayedLoading(view === "loading");
   return createPortal(
-    <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
-      <div className="identity-modal__backdrop" aria-hidden="true" />
-      <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide identity-modal__panel--identity-editor">
-        <div ref={scrollRef} className="identity-modal__scroll at-scroll">
-          <IdentityModalHeader
-            titleId={titleId}
-            title={title}
-            icon={<i className="ti ti-shield-lock" />}
-            subtitle={view === "form" ? editorSubtitle(mode) : undefined}
-            onClose={handleCancel}
-            closeDisabled={isActionBusy(saving, testing, discovering)}
-          />
-          {view === "loading" && showLoadingSpinner && loadingContent}
-          {view === "error" && errorContent}
-          {view === "not_found" && notFoundContent}
-          {view === "form" && formContent}
+    <>
+      <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
+        <div className="identity-modal__backdrop" aria-hidden="true" />
+        <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide identity-modal__panel--identity-editor">
+          <div ref={scrollRef} className="identity-modal__scroll at-scroll">
+            <IdentityModalHeader
+              titleId={titleId}
+              title={title}
+              icon={<i className="ti ti-shield-lock" />}
+              subtitle={view === "form" ? editorSubtitle(mode) : undefined}
+              onClose={handleCancel}
+              closeDisabled={isActionBusy(saving, testing, discovering)}
+            />
+            {view === "loading" && showLoadingSpinner && loadingContent}
+            {view === "error" && errorContent}
+            {view === "not_found" && notFoundContent}
+            {view === "form" && formContent}
+          </div>
         </div>
-      </div>
-    </dialog>,
+      </dialog>
+      <ConfirmDialog
+        open={discardConfirmOpen}
+        title="Discard unsaved changes?"
+        message="You have unsaved changes to this identity provider. They will be lost if you leave this page."
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        onConfirm={() => {
+          setDiscardConfirmOpen(false);
+          skipBlockRef.current = true;
+          navigate(IDENTITY_PROVIDERS_ROUTE);
+        }}
+        onCancel={() => setDiscardConfirmOpen(false)}
+      />
+      <ConfirmDialog
+        open={blocker.state === "blocked"}
+        title="Discard unsaved changes?"
+        message="You have unsaved changes to this identity provider. They will be lost if you leave this page."
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        onConfirm={() => {
+          skipBlockRef.current = true;
+          blocker.proceed?.();
+        }}
+        onCancel={() => blocker.reset?.()}
+      />
+    </>,
     document.body,
   );
 }
