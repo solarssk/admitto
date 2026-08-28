@@ -408,6 +408,37 @@ function BulkSendTicketsMenuItem({
  * matching the design mockup's More actions panel and the same danger-item treatment already
  * used on the attendee detail page's own More actions menu. Room to grow: the mockup also
  * shows reminders and wallet-pass actions in this same menu — not built yet, out of scope. */
+/** Bulk items/pass/wallet action props - identical between BulkMoreActionsMenu and its BulkBar
+ * wrapper (which does nothing but forward these straight down), kept as one shared type instead
+ * of two inline copies so they can't drift out of sync (Sonar duplication). */
+interface BulkItemPassWalletActions {
+  itemCount: number;
+  revokableItemsCount: number;
+  /** At least one selected attendee has something issued and an active pass - there's something
+   * to revoke (CodeRabbit/PO review: was only gated on the event's catalog size, not the
+   * selection). */
+  canRevokeItems: boolean;
+  itemsError?: string | null;
+  onRetryItems?: () => void;
+  onBulkRevokeItems: () => void;
+  bulkRevokeItemsBusy: boolean;
+  onBulkRevokePass: () => void;
+  bulkRevokePassBusy: boolean;
+  canRevokePass: boolean;
+  revokablePassCount: number;
+  onBulkVoidWallet: () => void;
+  bulkVoidWalletBusy: boolean;
+  onBulkReissueWallet: () => void;
+  bulkReissueWalletBusy: boolean;
+  onBulkDeleteWallet: () => void;
+  bulkDeleteWalletBusy: boolean;
+  /** At least one selected attendee has a WalletPass row - there's something for Void/Reissue to
+   * act on (may still include an already-voided pass for Void, resolved server-side). */
+  canBulkWallet: boolean;
+  walletPassCount: number;
+  walletPlatforms: EnabledWalletPlatforms;
+}
+
 function BulkMoreActionsMenu({
   selectedCount,
   archived,
@@ -471,33 +502,8 @@ function BulkMoreActionsMenu({
   onRetryTicketTypes?: () => void;
   onChangeTicketType: () => void;
   onChangeRsvpStatus: () => void;
-  itemCount: number;
-  revokableItemsCount: number;
-  /** At least one selected attendee has something issued and an active pass - there's something
-   * to revoke (CodeRabbit/PO review: was only gated on the event's catalog size, not the
-   * selection). */
-  canRevokeItems: boolean;
-  itemsError?: string | null;
-  onRetryItems?: () => void;
-  onBulkRevokeItems: () => void;
-  bulkRevokeItemsBusy: boolean;
-  onBulkRevokePass: () => void;
-  bulkRevokePassBusy: boolean;
-  canRevokePass: boolean;
-  revokablePassCount: number;
-  onBulkVoidWallet: () => void;
-  bulkVoidWalletBusy: boolean;
-  onBulkReissueWallet: () => void;
-  bulkReissueWalletBusy: boolean;
-  onBulkDeleteWallet: () => void;
-  bulkDeleteWalletBusy: boolean;
-  /** At least one selected attendee has a WalletPass row - there's something for Void/Reissue to
-   * act on (may still include an already-voided pass for Void, resolved server-side). */
-  canBulkWallet: boolean;
-  walletPassCount: number;
-  walletPlatforms: EnabledWalletPlatforms;
   onDelete: () => void;
-}>) {
+} & BulkItemPassWalletActions>) {
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
   });
@@ -809,28 +815,8 @@ function BulkBar({
   onRetryTicketTypes?: () => void;
   onBulkChangeTicketType: () => void;
   onBulkChangeRsvpStatus: () => void;
-  itemCount: number;
-  revokableItemsCount: number;
-  canRevokeItems: boolean;
-  itemsError?: string | null;
-  onRetryItems?: () => void;
-  onBulkRevokeItems: () => void;
-  bulkRevokeItemsBusy: boolean;
-  onBulkRevokePass: () => void;
-  bulkRevokePassBusy: boolean;
-  canRevokePass: boolean;
-  revokablePassCount: number;
-  onBulkVoidWallet: () => void;
-  bulkVoidWalletBusy: boolean;
-  onBulkReissueWallet: () => void;
-  bulkReissueWalletBusy: boolean;
-  onBulkDeleteWallet: () => void;
-  bulkDeleteWalletBusy: boolean;
-  canBulkWallet: boolean;
-  walletPassCount: number;
-  walletPlatforms: EnabledWalletPlatforms;
   onBulkDelete: () => void;
-}>) {
+} & BulkItemPassWalletActions>) {
   const archived = event.archived_at != null;
   const isDesktop = useIsDesktop();
   return (
