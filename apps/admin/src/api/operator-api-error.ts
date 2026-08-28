@@ -1,4 +1,4 @@
-import { ApiError, type ZodFlattenedDetails } from "./client.js";
+import { ApiError } from "./client.js";
 
 const MACHINE_CODE = /^[a-z][a-z0-9_]*$/;
 
@@ -206,13 +206,22 @@ function statusFallback(err: ApiError, fallback: string): string {
 /** A Zod `.flatten()` field message is already written to be operator-safe (the schema's own
  * `.min()`/`.refine()` text), and names the actual field - shown ahead of the generic
  * `validation_failed` mapping whenever the server computed something more specific than
- * "Check the form and try again." */
-function zodDetailMessage(details: ZodFlattenedDetails | undefined): string | undefined {
-  if (!details?.fieldErrors) return undefined;
-  const messages = Object.values(details.fieldErrors)
+ * "Check the form and try again." `details` is parsed off any error body regardless of status or
+ * code (client.ts's parseJson), so a response that isn't actually the server's Zod-validation
+ * shape must not get a free pass around the same checks every other server detail goes through -
+ * restricted to exactly the 400/validation_failed shape the server sends this on, and the joined
+ * message still has to pass isOperatorSafeDetail (per-field text is safe by construction, but
+ * several joined together could still exceed the length cap). */
+function zodDetailMessage(err: ApiError): string | undefined {
+  if (err.status !== 400 || normalizedCode(err) !== "validation_failed") return undefined;
+  const fieldErrors = err.details?.fieldErrors;
+  if (!fieldErrors) return undefined;
+  const messages = Object.values(fieldErrors)
     .flatMap((value) => (Array.isArray(value) ? value : []))
     .filter((message): message is string => typeof message === "string" && message.trim().length > 0);
-  return messages.length > 0 ? messages.join(" ") : undefined;
+  if (messages.length === 0) return undefined;
+  const joined = messages.join(" ");
+  return isOperatorSafeDetail(joined) ? joined : undefined;
 }
 
 /**
@@ -222,7 +231,7 @@ function zodDetailMessage(details: ZodFlattenedDetails | undefined): string | un
 export function operatorApiErrorMessage(err: unknown, fallback: string): string {
   if (!(err instanceof ApiError)) return fallback;
 
-  const fieldDetail = zodDetailMessage(err.details);
+  const fieldDetail = zodDetailMessage(err);
   if (fieldDetail) return fieldDetail;
 
   const mapped = messageForKnownCode(err);
