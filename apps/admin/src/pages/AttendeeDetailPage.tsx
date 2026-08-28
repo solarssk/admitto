@@ -921,6 +921,16 @@ function AttendeeOverviewTab({
                     </span>
                   </div>
                 )}
+                {/* No samsung_active_registrations field exists (no PassCreator API support yet -
+                    see EnabledWalletPlatforms.samsung's own doc comment), so unlike the Apple/Google
+                    rows above this can never show a real per-attendee status - a reserved row,
+                    same idea as the always-0 Samsung slice in Reports' platform breakdown. */}
+                {walletPlatforms.samsung && (
+                  <div className="attendee-detail-row">
+                    <span>Samsung Wallet</span>
+                    <span>Not supported yet</span>
+                  </div>
+                )}
                 {/* None of these timestamps has a captured actor/device timezone (issued_at is the
                     attendee's own device; voided_at/last_synced_at/registration_checked_at are
                     admin/worker actions with no persisted zone; first_downloaded_at is PassCreator's
