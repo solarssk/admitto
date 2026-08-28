@@ -474,12 +474,10 @@ function SignInSecuritySection({
           />
           {requiresActorStepUp && (
             <div className="mail-field-row">
-              <label className="mail-field-label" htmlFor="reset-password-actor-code">
-                Your authenticator or backup code
-              </label>
               <Input
                 id="reset-password-actor-code"
                 name="reset-password-actor-code"
+                label="Your authenticator or backup code"
                 type="text"
                 autoCapitalize="off"
                 spellCheck={false}
@@ -1388,12 +1386,10 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       >
         {requiresActorStepUp && (
           <div className="mail-field-row">
-            <label className="mail-field-label" htmlFor="reset-mfa-actor-code">
-              Your authenticator or backup code
-            </label>
             <Input
               id="reset-mfa-actor-code"
               name="reset-mfa-actor-code"
+              label="Your authenticator or backup code"
               type="text"
               autoCapitalize="off"
               spellCheck={false}
@@ -1434,12 +1430,10 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       >
         {requiresActorStepUp && (
           <div className="mail-field-row">
-            <label className="mail-field-label" htmlFor="revoke-sessions-actor-code">
-              Your authenticator or backup code
-            </label>
             <Input
               id="revoke-sessions-actor-code"
               name="revoke-sessions-actor-code"
+              label="Your authenticator or backup code"
               type="text"
               autoCapitalize="off"
               spellCheck={false}
