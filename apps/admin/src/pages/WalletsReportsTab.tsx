@@ -202,6 +202,15 @@ function platformBreakdownRows(platform: EventWalletReportsResponse["platform"],
   }));
 }
 
+/** Rounds a normalized step (roughStep / magnitude, so always in [1, 10)) up to the nearest of the
+ * classic "nice number" progression 1-2-5-10. */
+function niceStepMultiplier(normalized: number): number {
+  if (normalized <= 1) return 1;
+  if (normalized <= 2) return 2;
+  if (normalized <= 5) return 5;
+  return 10;
+}
+
 /** Picks a "nice" whole-number step/max for a count axis (classic d3-style nice-number scaling) -
  * ApexCharts' own default divides min..max into a fixed number of equal ticks regardless of the
  * data's actual units, which for a small pass count (e.g. max 1) produced fractional labels
@@ -213,7 +222,7 @@ function niceCountAxis(max: number): { axisMax: number; tickAmount: number } {
   const normalized = roughStep / magnitude;
   // Counts are always whole numbers - clamp to at least 1 so a small max (e.g. 2 or 3) can't pick
   // a fractional step like 0.5 the way the raw "nice number" progression otherwise would.
-  const step = Math.max(1, (normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10) * magnitude);
+  const step = Math.max(1, niceStepMultiplier(normalized) * magnitude);
   const tickAmount = Math.ceil(max / step);
   return { axisMax: tickAmount * step, tickAmount };
 }

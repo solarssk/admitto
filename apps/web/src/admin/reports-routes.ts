@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import type { EventWalletReportsResponse } from "@admitto/shared";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
@@ -553,6 +554,176 @@ function addDaysToIsoDate(isoDate: string, days: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
+const WALLET_PASS_AGGREGATE_SELECT = {
+  issued_at: true,
+  status: true,
+  apple_active_registrations: true,
+  google_active_registrations: true,
+  registration_checked_at: true,
+  attendee: {
+    select: {
+      ticket_type: true,
+      email_deliveries: {
+        where: { purpose: "initial", sent_at: { not: null } },
+        orderBy: { sent_at: "asc" },
+        take: 1,
+        select: { sent_at: true },
+      },
+    },
+  },
+} as const;
+
+type WalletPassAggregateRow = Prisma.WalletPassGetPayload<{ select: typeof WALLET_PASS_AGGREGATE_SELECT }>;
+
+/** Which wallet platform(s) a pass is actively registered on - "none" covers issued-but-never-
+ * installed passes, kept distinct from "both" (registered on two devices) for the platform mix
+ * breakdown below. */
+function classifyPassPlatform(
+  appleActive: number,
+  googleActive: number,
+): "apple_only" | "google_only" | "both" | "none" {
+  if (appleActive > 0 && googleActive > 0) return "both";
+  if (appleActive > 0) return "apple_only";
+  if (googleActive > 0) return "google_only";
+  return "none";
+}
+
+/** Whole days between the attendee's first ticket-link email and this pass being issued, or null
+ * when either timestamp is missing or the pass was somehow issued before that email was sent
+ * (skipped rather than counted as negative "time to tap"). */
+function computeTapDays(sentAt: Date | null | undefined, issuedAt: Date | null): number | null {
+  if (!sentAt || !issuedAt) return null;
+  const diffDays = (issuedAt.getTime() - sentAt.getTime()) / 86_400_000;
+  return diffDays >= 0 ? diffDays : null;
+}
+
+interface WalletPassAggregates {
+  confirmed: number;
+  cancelled: number;
+  appleOnly: number;
+  googleOnly: number;
+  both: number;
+  mostRecentSync: Date | null;
+  gotPassByType: Map<string | null, number>;
+  bucketCounts: Record<TimeToTapBucketKey, number>;
+  tapDaySum: number;
+  tapDayCount: number;
+}
+
+/** Single pass over the (possibly sampled - see WALLET_AGGREGATE_MAX) pass rows, building every
+ * per-pass-derived number the response needs in one place rather than several separate loops. */
+function aggregateWalletPasses(passes: WalletPassAggregateRow[]): WalletPassAggregates {
+  let confirmed = 0;
+  let cancelled = 0;
+  let appleOnly = 0;
+  let googleOnly = 0;
+  let both = 0;
+  let mostRecentSync: Date | null = null;
+  const gotPassByType = new Map<string | null, number>();
+  const bucketCounts: Record<TimeToTapBucketKey, number> = { same_day: 0, "1_3": 0, "4_7": 0, "8_plus": 0 };
+  let tapDaySum = 0;
+  let tapDayCount = 0;
+
+  for (const pass of passes) {
+    const platform = classifyPassPlatform(pass.apple_active_registrations ?? 0, pass.google_active_registrations ?? 0);
+    if (platform === "both") both++;
+    else if (platform === "apple_only") appleOnly++;
+    else if (platform === "google_only") googleOnly++;
+    if (platform !== "none") confirmed++;
+    if (pass.status === "voided") cancelled++;
+    if (pass.registration_checked_at && (!mostRecentSync || pass.registration_checked_at > mostRecentSync)) {
+      mostRecentSync = pass.registration_checked_at;
+    }
+
+    const typeKey = pass.attendee.ticket_type;
+    gotPassByType.set(typeKey, (gotPassByType.get(typeKey) ?? 0) + 1);
+
+    const tapDays = computeTapDays(pass.attendee.email_deliveries[0]?.sent_at, pass.issued_at);
+    if (tapDays !== null) {
+      tapDaySum += tapDays;
+      tapDayCount++;
+      bucketCounts[bucketForDays(tapDays)]++;
+    }
+  }
+
+  return { confirmed, cancelled, appleOnly, googleOnly, both, mostRecentSync, gotPassByType, bucketCounts, tapDaySum, tapDayCount };
+}
+
+/** Ticket-type breakdown for the Wallets tab - same catalog-order-plus-fallbacks shape as the
+ * admissions report's own by_ticket_type (see EventReportsResponse's doc comment above): a
+ * "(none)" bucket for attendees with no type set, and a "(not in catalog)" bucket for stored
+ * ticket_type values whose catalog row no longer exists. */
+function buildWalletTicketTypeBreakdown(
+  catalog: TicketTypeInfo[],
+  totalByType: Map<string | null, number>,
+  gotPassByType: Map<string | null, number>,
+): EventWalletReportsResponse["by_ticket_type"] {
+  const by_ticket_type: EventWalletReportsResponse["by_ticket_type"] = catalog.map((t) => {
+    const total = totalByType.get(t.key) ?? 0;
+    const typeGotPass = gotPassByType.get(t.key) ?? 0;
+    return { key: t.key, type: t.label, color: t.color, total, got_pass: typeGotPass, pct: oneDecimalPct(typeGotPass, total) };
+  });
+
+  const noneTotal = (totalByType.get(null) ?? 0) + (totalByType.get("") ?? 0);
+  if (noneTotal > 0) {
+    const noneGotPass = (gotPassByType.get(null) ?? 0) + (gotPassByType.get("") ?? 0);
+    by_ticket_type.push({
+      key: null,
+      type: "(none)",
+      color: "gray",
+      total: noneTotal,
+      got_pass: noneGotPass,
+      pct: oneDecimalPct(noneGotPass, noneTotal),
+    });
+  }
+
+  const catalogKeys = new Set(catalog.map((t) => t.key));
+  for (const [key, total] of totalByType) {
+    if (key === null || key === "" || catalogKeys.has(key)) continue;
+    const typeGotPass = gotPassByType.get(key) ?? 0;
+    by_ticket_type.push({
+      key,
+      type: "(not in catalog)",
+      color: "gray",
+      total,
+      got_pass: typeGotPass,
+      pct: oneDecimalPct(typeGotPass, total),
+    });
+  }
+
+  return by_ticket_type;
+}
+
+/** Per-day counts in the event's own timezone, ascending, with a running total, zero-filled
+ * through today (or the event date, whichever is earlier) so the chart reads as "flat since the
+ * last real day" instead of just stopping there - capped at the event date so a long-past event
+ * doesn't grow a trailing flat line for every day since. */
+function buildIssuedByDay(
+  issuedByDayRaw: Array<{ day: string; count: bigint }>,
+  timeZone: string,
+  eventDate: Date,
+): EventWalletReportsResponse["issued_by_day"] {
+  let cumulative = 0;
+  const issued_by_day = issuedByDayRaw.map((row) => {
+    cumulative += Number(row.count);
+    return { date: row.day, count: Number(row.count), cumulative };
+  });
+
+  if (issued_by_day.length > 0) {
+    const lastRealDay = issued_by_day.at(-1)!.date;
+    const todayIso = isoDateInZone(new Date(), timeZone);
+    const eventDateIso = isoDateInZone(eventDate, timeZone);
+    const capIso = eventDateIso < todayIso ? eventDateIso : todayIso;
+    let cursor = lastRealDay;
+    while (cursor < capIso) {
+      cursor = addDaysToIsoDate(cursor, 1);
+      issued_by_day.push({ date: cursor, count: 0, cumulative });
+    }
+  }
+
+  return issued_by_day;
+}
+
 async function loadWalletReportsAggregates(
   db: PrismaClient,
   eventId: string,
@@ -588,24 +759,7 @@ async function loadWalletReportsAggregates(
     db.walletPass.findMany({
       where: { attendee: { event_id: eventId }, issued_at: { not: null } },
       take: WALLET_AGGREGATE_MAX,
-      select: {
-        issued_at: true,
-        status: true,
-        apple_active_registrations: true,
-        google_active_registrations: true,
-        registration_checked_at: true,
-        attendee: {
-          select: {
-            ticket_type: true,
-            email_deliveries: {
-              where: { purpose: "initial", sent_at: { not: null } },
-              orderBy: { sent_at: "asc" },
-              take: 1,
-              select: { sent_at: true },
-            },
-          },
-        },
-      },
+      select: WALLET_PASS_AGGREGATE_SELECT,
     }),
     db.attendee.groupBy({
       by: ["ticket_type"],
@@ -633,103 +787,13 @@ async function loadWalletReportsAggregates(
     }),
   ]);
 
-  let confirmed = 0;
-  let cancelled = 0;
-  let appleOnly = 0;
-  let googleOnly = 0;
-  let both = 0;
-  let mostRecentSync: Date | null = null;
-  const gotPassByType = new Map<string | null, number>();
-  const bucketCounts: Record<TimeToTapBucketKey, number> = { same_day: 0, "1_3": 0, "4_7": 0, "8_plus": 0 };
-  let tapDaySum = 0;
-  let tapDayCount = 0;
-
-  for (const pass of passes) {
-    const appleActive = pass.apple_active_registrations ?? 0;
-    const googleActive = pass.google_active_registrations ?? 0;
-    if (appleActive > 0 && googleActive > 0) both++;
-    else if (appleActive > 0) appleOnly++;
-    else if (googleActive > 0) googleOnly++;
-    if (appleActive > 0 || googleActive > 0) confirmed++;
-    if (pass.status === "voided") cancelled++;
-    if (pass.registration_checked_at && (!mostRecentSync || pass.registration_checked_at > mostRecentSync)) {
-      mostRecentSync = pass.registration_checked_at;
-    }
-
-    const typeKey = pass.attendee.ticket_type;
-    gotPassByType.set(typeKey, (gotPassByType.get(typeKey) ?? 0) + 1);
-
-    const sentAt = pass.attendee.email_deliveries[0]?.sent_at;
-    if (sentAt && pass.issued_at) {
-      const diffDays = (pass.issued_at.getTime() - sentAt.getTime()) / 86_400_000;
-      if (diffDays >= 0) {
-        tapDaySum += diffDays;
-        tapDayCount++;
-        bucketCounts[bucketForDays(diffDays)]++;
-      }
-    }
-  }
+  const { confirmed, cancelled, appleOnly, googleOnly, both, mostRecentSync, gotPassByType, bucketCounts, tapDaySum, tapDayCount } =
+    aggregateWalletPasses(passes);
 
   const gotPass = passes.length;
   const totalByType = mergeTicketTypeCounts(byTypeTotalRaw);
-  const by_ticket_type: EventWalletReportsResponse["by_ticket_type"] = catalog.map((t) => {
-    const total = totalByType.get(t.key) ?? 0;
-    const typeGotPass = gotPassByType.get(t.key) ?? 0;
-    return { key: t.key, type: t.label, color: t.color, total, got_pass: typeGotPass, pct: oneDecimalPct(typeGotPass, total) };
-  });
-  const noneTotal = (totalByType.get(null) ?? 0) + (totalByType.get("") ?? 0);
-  if (noneTotal > 0) {
-    const noneGotPass = (gotPassByType.get(null) ?? 0) + (gotPassByType.get("") ?? 0);
-    by_ticket_type.push({
-      key: null,
-      type: "(none)",
-      color: "gray",
-      total: noneTotal,
-      got_pass: noneGotPass,
-      pct: oneDecimalPct(noneGotPass, noneTotal),
-    });
-  }
-  // A stored ticket_type can still reference no live catalog row - the type was deleted after
-  // being assigned (same case AttendeeDetailPage.tsx already surfaces as "(not in catalog)"), or
-  // an event's data was seeded/restored outside the write paths that enforce catalog membership
-  // (same reasoning as the admissions by_ticket_type breakdown above, batch 04 / #387) - those
-  // attendees still count in total_attendees and adoption.got_pass, so leaving them out here
-  // would make this list's own totals not add up to either.
-  const catalogKeys = new Set(catalog.map((t) => t.key));
-  for (const [key, total] of totalByType) {
-    if (key === null || key === "" || catalogKeys.has(key)) continue;
-    const typeGotPass = gotPassByType.get(key) ?? 0;
-    by_ticket_type.push({
-      key,
-      type: "(not in catalog)",
-      color: "gray",
-      total,
-      got_pass: typeGotPass,
-      pct: oneDecimalPct(typeGotPass, total),
-    });
-  }
-
-  let cumulative = 0;
-  const issued_by_day = issuedByDayRaw.map((row) => {
-    cumulative += Number(row.count);
-    return { date: row.day, count: Number(row.count), cumulative };
-  });
-
-  // Extend through today (or the event date, whichever is earlier) so the chart reads as "flat
-  // since the last real day" instead of just stopping there - a chart viewed well after the last
-  // pass was issued would otherwise look like it broke days ago. Capped at the event date so a
-  // long-past event doesn't grow a trailing flat line for every day since.
-  if (issued_by_day.length > 0) {
-    const lastRealDay = issued_by_day.at(-1)!.date;
-    const todayIso = isoDateInZone(new Date(), timeZone);
-    const eventDateIso = isoDateInZone(eventDate, timeZone);
-    const capIso = eventDateIso < todayIso ? eventDateIso : todayIso;
-    let cursor = lastRealDay;
-    while (cursor < capIso) {
-      cursor = addDaysToIsoDate(cursor, 1);
-      issued_by_day.push({ date: cursor, count: 0, cumulative });
-    }
-  }
+  const by_ticket_type = buildWalletTicketTypeBreakdown(catalog, totalByType, gotPassByType);
+  const issued_by_day = buildIssuedByDay(issuedByDayRaw, timeZone, eventDate);
 
   const bucketOrder: TimeToTapBucketKey[] = ["same_day", "1_3", "4_7", "8_plus"];
   const buckets = bucketOrder.map((key) => ({
