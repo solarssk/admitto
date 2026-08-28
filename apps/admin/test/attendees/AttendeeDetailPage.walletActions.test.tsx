@@ -692,8 +692,11 @@ describe("AttendeeDetailPage — Wallet card gated by the event's platform toggl
     expect(screen.queryByText("Wallet", { selector: ".at-card__title" })).toBeNull();
   });
 
-  it("shows only the enabled platform's row when just one platform toggle is on", async () => {
-    mockWalletGoogleEnabled = false;
+  it.each([
+    [() => { mockWalletGoogleEnabled = false; }, "Apple Wallet", "Google Wallet"],
+    [() => { mockWalletAppleEnabled = false; }, "Google Wallet", "Apple Wallet"],
+  ] as const)("shows only the enabled platform's row when just one toggle is on", async (disableOne, shownLabel, hiddenLabel) => {
+    disableOne();
     mockLoad(
       baseDetail({
         wallet_pass: walletPass({ apple_active_registrations: 1, google_active_registrations: 1 }),
@@ -703,23 +706,8 @@ describe("AttendeeDetailPage — Wallet card gated by the event's platform toggl
     await screen.findByRole("heading", { name: "Anna" });
 
     expect(screen.getByText("Wallet", { selector: ".at-card__title" })).toBeTruthy();
-    expect(screen.getByText("Apple Wallet")).toBeTruthy();
-    expect(screen.queryByText("Google Wallet")).toBeNull();
-  });
-
-  it("shows only Google's row (not Apple's) when Apple Wallet is the disabled one", async () => {
-    mockWalletAppleEnabled = false;
-    mockLoad(
-      baseDetail({
-        wallet_pass: walletPass({ apple_active_registrations: 1, google_active_registrations: 1 }),
-      }),
-    );
-    renderPage();
-    await screen.findByRole("heading", { name: "Anna" });
-
-    expect(screen.getByText("Wallet", { selector: ".at-card__title" })).toBeTruthy();
-    expect(screen.getByText("Google Wallet")).toBeTruthy();
-    expect(screen.queryByText("Apple Wallet")).toBeNull();
+    expect(screen.getByText(shownLabel)).toBeTruthy();
+    expect(screen.queryByText(hiddenLabel)).toBeNull();
   });
 
   it("omits Copy Apple Wallet link from the wallet links menu when Apple Wallet is disabled, even with a stored apple link", async () => {
