@@ -2568,7 +2568,6 @@ export function CommunicationPage() {
         title="Discard unsaved changes?"
         message="You have unsaved template changes. Continuing will discard them."
         confirmLabel="Discard"
-        confirmVariant="danger"
         cancelLabel="Keep editing"
         onConfirm={() => {
           setDirtyConfirmOpen(false);
@@ -2636,7 +2635,6 @@ export function CommunicationPage() {
         title="Discard unsaved changes?"
         message="You have unsaved template changes. They will be lost if you leave this page."
         confirmLabel="Discard"
-        confirmVariant="danger"
         cancelLabel="Keep editing"
         onConfirm={() => blocker.proceed?.()}
         onCancel={() => blocker.reset?.()}

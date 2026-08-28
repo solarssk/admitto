@@ -66,24 +66,35 @@ export function sanitizeDeliveryError(message: string | undefined): string | und
   return s.slice(0, MAX_STORED_ERROR_LENGTH);
 }
 
+/** Generic client-facing fallback shared by every `clientSafeDeliveryError` return path that
+ * can't produce a more specific, sanitized message - also the exact value `transportTestErrorForAdmin`
+ * compares against below to detect "no specific detail available", so keep the two in sync. */
+export const GENERIC_SEND_FAILED_MESSAGE = "Send failed.";
+
 /** Admin API-safe send error text — no provider internals or long opaque messages. */
 export function clientSafeDeliveryError(message: string | undefined): string {
-  if (!message || message.length > 120) return "send failed";
+  if (!message || message.length > 120) return GENERIC_SEND_FAILED_MESSAGE;
   const sanitized = sanitizeDeliveryError(message);
-  if (!sanitized) return "send failed";
+  // Unreachable in practice - sanitizeDeliveryError only returns undefined/empty for a falsy or
+  // fully-consumed-then-emptied input, and `message` here is already guaranteed non-empty and
+  // <=120 chars by the guard above; every redaction step substitutes non-empty text, never
+  // deletes. Kept as defense-in-depth against sanitizeDeliveryError's own `string | undefined`
+  // signature, in case that invariant ever changes.
+  /* v8 ignore if */
+  if (!sanitized) return GENERIC_SEND_FAILED_MESSAGE;
   if (
     /AADSTS|client_id|client_secret|smtp:|graph\.microsoft|oauth|bearer\s|authorization\s+failed|exportSink|createMailer/i.test(
       sanitized,
     )
   ) {
-    return "send failed";
+    return GENERIC_SEND_FAILED_MESSAGE;
   }
   if (
     /https?:\/\//i.test(sanitized) ||
     /[a-z0-9.-]+:\d{2,5}\b/i.test(sanitized) || // NOSONAR — sanitized is derived from message, already capped at 120 chars by the guard above; worst case is a few hundred backtrack steps, not unbounded
     /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/i.test(sanitized)
   ) {
-    return "send failed";
+    return GENERIC_SEND_FAILED_MESSAGE;
   }
   return sanitized;
 }
@@ -195,7 +206,7 @@ export function transportTestErrorForAdmin(message: string | undefined): string 
   }
 
   const generic = clientSafeDeliveryError(message);
-  if (generic !== "send failed") return generic;
+  if (generic !== GENERIC_SEND_FAILED_MESSAGE) return generic;
 
   return "Send failed. Check transport settings or ask your administrator to review server logs.";
 }

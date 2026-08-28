@@ -202,7 +202,25 @@ export class GraphAdapter implements MailerAdapter {
           },
         };
       }
-      return { ok: false, result: { ...base, error: e instanceof Error ? e.message : String(e) } };
+      // Not a TokenError - getAccessToken() only throws that for a request failure or a non-2xx
+      // response, both already mapped above, so this is the "200 OK but the body is missing
+      // access_token" case (or some other unclassifiable throw). Same policy as mapSmtpError's
+      // own unclassified branch: MAX_MAIL_DRAIN_ATTEMPTS already bounds the retry count, so
+      // defaulting to retryable is safer than permanently failing the send after one odd response.
+      const mapped = mapNetworkError();
+      return {
+        ok: false,
+        result: {
+          ...base,
+          retryable: mapped.retryable,
+          // getAccessToken() has exactly three throw sites, all Error/TokenError instances (the
+          // fetch-failure and non-2xx branches are already caught above as TokenError; this is
+          // only ever the plain Error thrown for a missing access_token) - the non-Error side is
+          // defense-in-depth against a future throw site that doesn't uphold that invariant.
+          /* v8 ignore next */
+          error: e instanceof Error ? e.message : String(e),
+        },
+      };
     }
   }
 

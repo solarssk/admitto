@@ -156,6 +156,7 @@ describe("AuditLogPanel operator errors", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     });
+    expect(screen.getByText("Could not load audit log")).toBeTruthy();
     expect(screen.getByText("Could not load audit log.")).toBeTruthy();
     expect(screen.queryByText("secret_internal")).toBeNull();
   });

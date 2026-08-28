@@ -17,6 +17,7 @@ export {
   type PreferredTimeFormat,
 } from "./preferredTimeFormat.js";
 export { zonedWallClockToUtcIso } from "./zonedWallClock.js";
+export { MAIL_PROVIDER_LABELS, type MailProviderId } from "./mailProviderLabels.js";
 export {
   celsiusToFahrenheit,
   formatTempChip,

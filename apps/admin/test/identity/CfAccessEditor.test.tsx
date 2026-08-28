@@ -341,35 +341,32 @@ describe("CfAccessEditor (slice 4)", () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockFetch.mockRejectedValueOnce(new ApiError(500, "server_error"));
     renderEditorAt();
-    await screen.findByText("Couldn't load the Cloudflare Access configuration.");
+    await screen.findByText("Could not load the Cloudflare Access configuration.");
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 
   it("discards edits and navigates back on Cancel after confirm", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
     const { router } = renderEditorAt();
     const teamInput = await screen.findByDisplayValue("https://t");
     fireEvent.change(teamInput, { target: { value: "https://edited" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?"));
+    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/admin/settings/identity/providers"));
   });
 
   it("keeps the editor when Cancel is dismissed", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
     const { router } = renderEditorAt();
     const teamInput = await screen.findByDisplayValue("https://t");
     fireEvent.change(teamInput, { target: { value: "https://edited" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(confirmSpy).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole("button", { name: "Keep editing" }));
     expect(router.state.location.pathname).toBe("/admin/settings/identity/cloudflare");
     expect(screen.getByDisplayValue("https://edited")).toBeTruthy();
   });
 
   it("prompts on in-app navigation while dirty and proceeds after confirm", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
     const { router } = renderEditorAt();
     const teamInput = await screen.findByDisplayValue("https://t");
@@ -377,12 +374,11 @@ describe("CfAccessEditor (slice 4)", () => {
     act(() => {
       router.navigate("/admin/settings/identity/providers");
     });
-    await waitFor(() => expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?"));
+    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/admin/settings/identity/providers"));
   });
 
   it("resets the in-app navigation when the dirty prompt is dismissed", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
     const { router } = renderEditorAt();
     const teamInput = await screen.findByDisplayValue("https://t");
@@ -390,7 +386,23 @@ describe("CfAccessEditor (slice 4)", () => {
     act(() => {
       router.navigate("/admin/settings/identity/providers");
     });
-    await waitFor(() => expect(confirmSpy).toHaveBeenCalled());
+    fireEvent.click(await screen.findByRole("button", { name: "Keep editing" }));
+    expect(router.state.location.pathname).toBe("/admin/settings/identity/cloudflare");
+  });
+
+  it("closes the blocked-navigation dialog on a single Escape press instead of reopening a second one (bot review finding)", async () => {
+    mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
+    const { router } = renderEditorAt();
+    const teamInput = await screen.findByDisplayValue("https://t");
+    fireEvent.change(teamInput, { target: { value: "https://edited" } });
+    act(() => {
+      router.navigate("/admin/settings/identity/providers");
+    });
+    await screen.findByRole("button", { name: "Discard" });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Discard" })).toBeNull());
     expect(router.state.location.pathname).toBe("/admin/settings/identity/cloudflare");
   });
 
@@ -554,13 +566,12 @@ describe("CfAccessEditor (slice 4)", () => {
   });
 
   it("navigates back on Cancel without prompting when there are no edits", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm");
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
     const { router } = renderEditorAt();
     await screen.findByDisplayValue("https://t");
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/admin/settings/identity/providers"));
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Discard" })).toBeNull();
   });
 
   it("renders a Locked-by-env badge on every env-locked field and disables the inputs", async () => {

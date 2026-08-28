@@ -39,8 +39,9 @@ describe("AuthProvider", () => {
       </AuthProvider>,
     );
     await waitFor(() => {
-      expect(screen.getAllByText("Could not load session")).toHaveLength(2);
+      expect(screen.getByText("Could not load session")).toBeTruthy();
     });
+    expect(screen.getByText("Could not load session.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(screen.queryByTestId("child")).toBeNull();
   });
@@ -71,7 +72,7 @@ describe("AuthProvider", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getAllByText("Could not load session")).toHaveLength(2);
+      expect(screen.getByText("Could not load session")).toBeTruthy();
     });
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 

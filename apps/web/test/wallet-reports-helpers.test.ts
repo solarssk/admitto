@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { bucketForDays, classifyPassPlatform, computeTapDays } from "../src/admin/reports-routes.js";
+import {
+  bucketForDays,
+  classifyPassPlatform,
+  confirmedPlatformLabel,
+  computeTapDays,
+} from "../src/admin/reports-routes.js";
 
 describe("classifyPassPlatform", () => {
   it("classifies an apple-only registration", () => {
@@ -21,6 +26,15 @@ describe("classifyPassPlatform", () => {
   it("treats any positive count as active, not just 1", () => {
     expect(classifyPassPlatform(3, 0)).toBe("apple_only");
     expect(classifyPassPlatform(0, 5)).toBe("google_only");
+  });
+});
+
+describe("confirmedPlatformLabel", () => {
+  it("mirrors classifyPassPlatform's four cases with their display labels", () => {
+    expect(confirmedPlatformLabel(1, 0)).toBe("Apple");
+    expect(confirmedPlatformLabel(0, 1)).toBe("Google");
+    expect(confirmedPlatformLabel(1, 1)).toBe("Both");
+    expect(confirmedPlatformLabel(0, 0)).toBe("None");
   });
 });
 

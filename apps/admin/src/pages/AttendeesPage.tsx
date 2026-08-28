@@ -56,6 +56,7 @@ import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
+import { handleExportRequestError } from "./handleExportRequestError.js";
 import "../attendees/add-attendee-modal.css";
 import "../attendees/attendees.css";
 
@@ -1052,18 +1053,7 @@ export function AttendeesPage() {
           ac.signal,
         );
       } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        if (err instanceof ApiError) {
-          reportApiError(err.status);
-          if (err.status === 401) {
-            const next = encodeURIComponent(window.location.pathname);
-            window.location.assign(`/login?next=${next}`);
-            return;
-          }
-          addToast(operatorApiErrorMessage(err, "Request failed."), "error");
-        } else {
-          addToast("Export failed.", "error");
-        }
+        handleExportRequestError(err, "Export failed.", addToast, reportApiError);
       } finally {
         if (!ac.signal.aborted) setExportingFormat(null);
       }

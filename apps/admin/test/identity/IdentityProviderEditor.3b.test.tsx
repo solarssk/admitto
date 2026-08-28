@@ -710,7 +710,6 @@ describe("IdentityProviderEditor — legacy invalid mapping scope_type (Codex P2
       mappings: [{ group: "execs", role: "superadmin", scope_type: "organization", scope_id: "org-777" }],
     };
     mockFetch.mockResolvedValueOnce(legacyDetail);
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const { router } = renderEditorAt("/admin/settings/identity/providers/p1");
 
     await screen.findByDisplayValue("execs");
@@ -723,12 +722,11 @@ describe("IdentityProviderEditor — legacy invalid mapping scope_type (Codex P2
       await router.navigate("/admin/settings/identity/providers");
     });
 
-    // waitFor, not a direct assertion: the confirm() call happens from a useEffect reacting to
+    // findByRole, not a direct assertion: the ConfirmDialog opens from a useEffect reacting to
     // the blocker's own state transition (see IdentityProviderEditor.tsx), one render tick after
-    // navigate() itself resolves - the same reason every other confirmSpy assertion in this file
-    // and IdentityProviderEditor.test.tsx already retries here instead of asserting immediately.
-    await waitFor(() => expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?"));
-    confirmSpy.mockRestore();
+    // navigate() itself resolves - the same reason every other discard-prompt assertion in this
+    // file and IdentityProviderEditor.test.tsx already retries here instead of asserting immediately.
+    await screen.findByRole("button", { name: "Discard" });
   });
 });
 
@@ -778,7 +776,6 @@ describe("IdentityProviderEditor — discover baseline refresh (Codex P2)", () =
       },
       provider: discoveredProvider,
     });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
     await screen.findByRole("button", { name: "Discover" });
@@ -791,9 +788,8 @@ describe("IdentityProviderEditor — discover baseline refresh (Codex P2)", () =
     // Endpoints were persisted by Discover, so the form must not be dirty —
     // Cancel navigates away WITHOUT a discard prompt.
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Discard" })).toBeNull();
     await screen.findByText("providers-list");
-    confirmSpy.mockRestore();
   });
 
   it("falls back to a targeted baseline patch when Discover returns no provider echo", async () => {
@@ -809,7 +805,6 @@ describe("IdentityProviderEditor — discover baseline refresh (Codex P2)", () =
       },
       provider: null,
     });
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
     await screen.findByRole("button", { name: "Discover" });
@@ -818,9 +813,8 @@ describe("IdentityProviderEditor — discover baseline refresh (Codex P2)", () =
     // Fallback path patches baseline with the discovered fields, so the form
     // is not dirty and Cancel navigates without a prompt.
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Discard" })).toBeNull();
     await screen.findByText("providers-list");
-    confirmSpy.mockRestore();
   });
 });
 

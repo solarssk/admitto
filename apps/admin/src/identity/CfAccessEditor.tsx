@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useBlocker, useLocation, useNavigate, type BlockerFunction } from "react-router";
+import { useNavigate } from "react-router";
 import { Badge, Button, Card, Input, Notice, Spinner, Switch, Tooltip, useToast } from "@admitto/ui";
 import { ApiError, fetchCfAccessSummary, testCfAccess, updateCfAccess } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto } from "../api/types.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
-import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import {
@@ -18,8 +17,10 @@ import {
   type CfAccessDraft,
   type CfAccessFieldErrors,
 } from "./cfAccessValidation.js";
+import { DiscardUnsavedChangesDialogs } from "./DiscardUnsavedChangesDialogs.js";
 import { IdentityModalHeader } from "./IdentityModalHeader.js";
 import { IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
+import { useUnsavedChangesGuard } from "./useUnsavedChangesGuard.js";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -104,57 +105,12 @@ export function CfAccessEditor() {
       ? "The selected direct identity provider is unavailable. Select an enabled provider before enabling Cloudflare Access."
       : undefined);
 
-  // Router-level dirty guard — same shape as IdentityProviderEditor. The Identity
-  // tabs / Settings sidebar / SPA back button are in-app navigations that
-  // `beforeunload` doesn't catch. `skipBlockRef` is a one-shot bypass for the
-  // programmatic exits (Cancel after confirm / Save); the location effect re-arms
-  // it after each completed navigation so the next dirty edit is still guarded.
-  const skipBlockRef = useRef(false);
-  const location = useLocation();
-  useEffect(() => {
-    skipBlockRef.current = false;
-  }, [location.pathname]);
-  const blocker = useBlocker(
-    useCallback<BlockerFunction>(
-      ({ currentLocation, nextLocation }) => {
-        if (skipBlockRef.current) return false;
-        if (!dirty) return false;
-        return nextLocation.pathname !== currentLocation.pathname;
-      },
-      [dirty],
-    ),
-  );
-  useEffect(() => {
-    if (blocker.state !== "blocked") return;
-    if (window.confirm("Discard unsaved changes?")) {
-      skipBlockRef.current = true;
-      blocker.proceed();
-    } else {
-      blocker.reset();
-    }
-  }, [blocker]);
-
-  useEffect(() => {
-    if (!dirty) return;
-    const handler = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [dirty]);
-
-  const handleCancel = useCallback(() => {
-    if (saving || testing) return;
-    if (dirty && !window.confirm("Discard unsaved changes?")) return;
-    skipBlockRef.current = true;
-    navigate(IDENTITY_PROVIDERS_ROUTE);
-  }, [dirty, navigate, saving, testing]);
-
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   // Always starts in loadState "loading" - the real form fields don't exist in the DOM
   // until the fetch resolves, so initial focus must be re-attempted once loadState changes.
-  useModalFocusTrap(panelRef, true, handleCancel, loadState);
+  const { skipBlockRef, blocker, discardConfirmOpen, setDiscardConfirmOpen, handleCancel } =
+    useUnsavedChangesGuard(panelRef, dirty, saving || testing, navigate, loadState);
   const scrollRef = useRef<HTMLDivElement>(null);
   useOverscrollBounceGuard(scrollRef);
   // A fetch that resolves near-instantly (localhost, a warm cache) would
@@ -194,7 +150,7 @@ export function CfAccessEditor() {
         setSaving(false);
       }
     },
-    [draft, locks, addToast, navigate],
+    [draft, locks, addToast, navigate, skipBlockRef],
   );
 
   // Test probes the team domain's JWKS endpoint. Send the draft team domain when
@@ -259,7 +215,7 @@ export function CfAccessEditor() {
   } else if (loadState === "error") {
     content = (
       <div className="identity-editor__error">
-        <p>Couldn't load the Cloudflare Access configuration.</p>
+        <p>Could not load the Cloudflare Access configuration.</p>
         <Button variant="secondary" onClick={retryLoad}>
           Retry
         </Button>
@@ -379,42 +335,60 @@ export function CfAccessEditor() {
   }
 
   return createPortal(
-    <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
-      <div className="identity-modal__backdrop" aria-hidden="true" />
-      <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
-        <div ref={scrollRef} className="identity-modal__scroll at-scroll">
-          <IdentityModalHeader
-            titleId={titleId}
-            title="Cloudflare Access"
-            icon={<i className="ti ti-brand-cloudflare" />}
-            badge={
-              loadState === "ready" && (
-                <>
-                  {draft.enabled ? (
-                    <Badge variant="ok">Active</Badge>
-                  ) : (
-                    <Badge variant="neutral">Inactive</Badge>
-                  )}
-                  {locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
-                </>
-              )
-            }
-            subtitle={
-              loadState === "ready" && (
-                <>
-                  Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure
-                  your team URL, application audience tag, direct identity provider, and protected
-                  prefixes.
-                </>
-              )
-            }
-            onClose={handleCancel}
-            closeDisabled={saving || testing}
-          />
-          {content}
+    <>
+      <dialog open className="identity-modal" aria-modal="true" aria-labelledby={titleId}>
+        <div className="identity-modal__backdrop" aria-hidden="true" />
+        <div ref={panelRef} className="identity-modal__panel identity-modal__panel--wide">
+          <div ref={scrollRef} className="identity-modal__scroll at-scroll">
+            <IdentityModalHeader
+              titleId={titleId}
+              title="Cloudflare Access"
+              icon={<i className="ti ti-brand-cloudflare" />}
+              badge={
+                loadState === "ready" && (
+                  <>
+                    {draft.enabled ? (
+                      <Badge variant="ok">Active</Badge>
+                    ) : (
+                      <Badge variant="neutral">Inactive</Badge>
+                    )}
+                    {locks.enabled && <Badge variant="warn">Managed by environment</Badge>}
+                  </>
+                )
+              }
+              subtitle={
+                loadState === "ready" && (
+                  <>
+                    Require a Cloudflare Zero Trust Access JWT for protected admin paths. Configure
+                    your team URL, application audience tag, direct identity provider, and protected
+                    prefixes.
+                  </>
+                )
+              }
+              onClose={handleCancel}
+              closeDisabled={saving || testing}
+            />
+            {content}
+          </div>
         </div>
-      </div>
-    </dialog>,
+      </dialog>
+      <DiscardUnsavedChangesDialogs
+        message="You have unsaved Cloudflare Access changes. They will be lost if you leave this page."
+        cancelDialogOpen={discardConfirmOpen}
+        onCancelDialogConfirm={() => {
+          setDiscardConfirmOpen(false);
+          skipBlockRef.current = true;
+          navigate(IDENTITY_PROVIDERS_ROUTE);
+        }}
+        onCancelDialogDismiss={() => setDiscardConfirmOpen(false)}
+        blockerDialogOpen={blocker.state === "blocked"}
+        onBlockerDialogConfirm={() => {
+          skipBlockRef.current = true;
+          blocker.proceed?.();
+        }}
+        onBlockerDialogDismiss={() => blocker.reset?.()}
+      />
+    </>,
     document.body,
   );
 }

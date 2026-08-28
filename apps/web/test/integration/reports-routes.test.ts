@@ -435,12 +435,12 @@ async function seed(client: PrismaClient) {
   });
 
   // A hard-bounced initial send followed by a successful resend - regression coverage for
-  // WALLET_PASS_AGGREGATE_SELECT only counting the earliest non-bounced delivery across both
-  // purposes, not just "initial" (bot review on PR #1125: applyBounceResult retains sent_at on a
-  // hard bounce, so a "purpose: initial" filter alone would still pick the bounced send's
-  // timestamp). The bounced initial is 10 whole days before walletIssuedAt (would land in the
-  // "8_plus" bucket if wrongly used); the resend is 5 whole days before (lands in "4_7") - a
-  // wrong pick here changes both the bucket and the average.
+  // WALLET_PASS_AGGREGATE_SELECT/WALLET_EXPORT_ATTENDEE_SELECT only counting the earliest
+  // non-bounced delivery across both purposes, not just "initial" (bot review on PR #1125:
+  // applyBounceResult retains sent_at on a hard bounce, so a "purpose: initial" filter alone
+  // would still pick the bounced send's timestamp). The bounced initial is 10 whole days before
+  // walletIssuedAt (would land in the "8_plus" bucket if wrongly used); the resend is 5 whole
+  // days before (lands in "4_7") - a wrong pick here changes both the bucket and the average.
   await client.emailDelivery.createMany({
     data: [
       {
@@ -1819,6 +1819,28 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(body.error).toBe("format must be csv or pdf");
   });
 
+  it("defaults to csv when format is omitted", async () => {
+    // adminWalletsCookie, not adminCookie - see the identical comment on the "invalid report"
+    // test below (separate admin:export rate-limit bucket).
+    const res = await app.request(`/api/admin/events/${EVENT_REP}/reports/export`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/csv");
+  });
+
+  it("returns 400 for invalid report", async () => {
+    // adminWalletsCookie, not adminCookie - a distinct rate-limit bucket so this doesn't compete
+    // with the admin:export budget the tests below already use up (see adminWalletsCookie's own
+    // doc comment above).
+    const res = await app.request(`/api/admin/events/${EVENT_REP}/reports/export?format=csv&report=bogus`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("report must be admissions or wallets");
+  });
+
   it("returns 403 for operator on CSV export", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_REP}/reports/export?format=csv`, {
       headers: { Cookie: opCookie },
@@ -2048,5 +2070,109 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.admission_by_wallet.with_wallet).toEqual({ total: 5, admitted: 3, pct: 60 });
     expect(body.admission_by_wallet.without_wallet.total).toBe(3);
     expect(body.admission_by_wallet.without_wallet.admitted).toBe(2);
+  });
+});
+
+describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
+  it("returns 403 for admin without event org access", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/export?format=csv&report=wallets`, {
+      headers: { Cookie: adminBCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns a wallets CSV with one row per attendee, including those with no pass", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/export?format=csv&report=wallets`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/csv");
+    expect(res.headers.get("Content-Disposition")).toContain('filename="wallets-reports-wallets-');
+    expect(res.headers.get("X-Wallets-Export-Total")).toBe("8");
+    expect(res.headers.get("X-Wallets-Export-Truncated")).toBe("false");
+
+    const text = await res.text();
+    const lines = text.replace(/^﻿/, "").split("\r\n");
+    expect(lines[0]).toContain('"Confirmed platform"');
+    // rows are ordered by name asc: "Wallets Apple" sorts first among the 8 seeded names.
+    const appleRow = lines.find((l) => l.includes('"Wallets Apple"'));
+    expect(appleRow).toContain('"Apple"');
+    const bothRow = lines.find((l) => l.includes('"Wallets Both"'));
+    expect(bothRow).toContain('"Both"');
+    const nopassRow = lines.find((l) => l.includes('"Wallets No Pass"'));
+    expect(nopassRow).toContain('"No pass"');
+    // ATT_W_NOT_INSTALLED's wallet_pass has no registration_checked_at (never synced) - the
+    // active/inactive counts and confirmed-platform columns must stay blank, not export the
+    // unknown state as an affirmative 0/"None" (bot review: that would misrepresent "never
+    // synced" as "confirmed not installed" in an archive meant for later recomputation).
+    const notInstalledRow = lines.find((l) => l.includes('"Wallets Not Installed"'));
+    expect(notInstalledRow).toBeDefined();
+    const cells = notInstalledRow!.split(",").map((c) => c.replace(/^"|"$/g, ""));
+    expect(cells.slice(5, 10)).toEqual(["", "", "", "", ""]);
+  });
+
+  it("returns printable HTML for a wallets pdf export", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/export?format=pdf&report=wallets`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/html");
+    const html = await res.text();
+    expect(html).toContain("Wallets Reports Event");
+    // synced_at is set (ATT_W_BOTH's registration_checked_at, the most recent) - the meta line
+    // should surface it, not silently omit sync freshness the way a bare "Generated" timestamp
+    // would (bot review: a shared PDF can otherwise misleadingly look current).
+    expect(html).toContain("Synced ");
+    expect(html).not.toContain("Not synced yet");
+    // ATT_W_APPLE and ATT_W_NOT_INSTALLED both contribute a tap-day sample (see the GET aggregate
+    // test's time_to_wallet_tap assertions above), so average_days isn't null here - the bucket
+    // rows should render, not the buckets-always-populated dead-code fallback text.
+    expect(html).toContain("1-3 days");
+    expect(html).not.toContain("Not enough data yet");
+    // EVENT_WALLETS has 8 seeded passes, nowhere near WALLET_AGGREGATE_MAX - the partial-sample
+    // warning must stay absent (the passes_truncated: true path itself would need 50,001+ seeded
+    // passes to exercise directly, impractical for an integration test; this only guards the
+    // false-path regression).
+    expect(html).not.toContain("partial sample");
+  });
+
+  it("shows every empty/not-synced state in the wallets pdf for an event with no attendees", async () => {
+    // adminWalletsCookie, not adminCookie - see the identical comment on the "invalid report"
+    // test above (separate admin:export rate-limit bucket; adminCookie's is exhausted by the
+    // many other /reports/export calls throughout this describe block).
+    const res = await app.request(`/api/admin/events/${EVENT_EMPTY}/reports/export?format=pdf&report=wallets`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // EVENT_EMPTY has zero attendees, so got_pass, by_ticket_type, and average_days are all at
+    // their empty/null defaults - exercises the fallback branch of every one of these three
+    // buckets-or-list-always-populated ternaries at once, plus the never-synced meta line.
+    expect(html).toContain("Not synced yet");
+    expect(html).not.toContain("Synced ");
+    expect(html).toContain("No passes issued");
+    expect(html).toContain("No attendees");
+    expect(html).toContain("Not enough data yet");
+  });
+
+  it("audit: reports_exported records report=wallets, not the admissions default", async () => {
+    await prisma.attendeeActionLog.deleteMany({
+      where: { event_id: EVENT_WALLETS, action_type: "reports_exported" },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/export?format=csv&report=wallets`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_WALLETS, action_type: "reports_exported" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    const meta = log!.metadata as Record<string, unknown>;
+    expect(meta.report).toBe("wallets");
+    expect(meta.format).toBe("csv");
+    expect(meta.count).toBe(8);
   });
 });

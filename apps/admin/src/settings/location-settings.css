@@ -172,7 +172,7 @@
 
 /* Distinct primary action: wrong deep link, not another copy utility. */
 .location-map-footer__link--fix {
-  color: var(--text-link, var(--color-primary, #206bc4));
+  color: var(--text-link, var(--color-primary, #066fd1));
 }
 
 .location-map-footer__link--fix:not(:disabled):hover {
