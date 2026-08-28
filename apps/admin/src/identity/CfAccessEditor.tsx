@@ -5,7 +5,6 @@ import { Badge, Button, Card, Input, Notice, Spinner, Switch, Tooltip, useToast 
 import { ApiError, fetchCfAccessSummary, testCfAccess, updateCfAccess } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { CfAccessSummaryDto } from "../api/types.js";
-import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -19,6 +18,7 @@ import {
   type CfAccessDraft,
   type CfAccessFieldErrors,
 } from "./cfAccessValidation.js";
+import { DiscardUnsavedChangesDialogs } from "./DiscardUnsavedChangesDialogs.js";
 import { IdentityModalHeader } from "./IdentityModalHeader.js";
 import { IDENTITY_PROVIDERS_ROUTE } from "./routes.js";
 
@@ -150,7 +150,16 @@ export function CfAccessEditor() {
   const panelRef = useRef<HTMLDivElement>(null);
   // Always starts in loadState "loading" - the real form fields don't exist in the DOM
   // until the fetch resolves, so initial focus must be re-attempted once loadState changes.
-  useModalFocusTrap(panelRef, true, handleCancel, loadState);
+  // Suspended while either discard dialog is open - otherwise this trap's own Escape/keydown
+  // listener (registered first, since it mounts before either dialog opens) fires first and
+  // reopens a second, visually identical discard dialog instead of leaving the topmost one to
+  // handle Escape alone (bot review finding; same pattern as UserEditModal's `anyConfirmDialogOpen`).
+  useModalFocusTrap(
+    panelRef,
+    !discardConfirmOpen && blocker.state !== "blocked",
+    handleCancel,
+    loadState,
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   useOverscrollBounceGuard(scrollRef);
   // A fetch that resolves near-instantly (localhost, a warm cache) would
@@ -412,30 +421,21 @@ export function CfAccessEditor() {
           </div>
         </div>
       </dialog>
-      <ConfirmDialog
-        open={discardConfirmOpen}
-        title="Discard unsaved changes?"
+      <DiscardUnsavedChangesDialogs
         message="You have unsaved Cloudflare Access changes. They will be lost if you leave this page."
-        confirmLabel="Discard"
-        cancelLabel="Keep editing"
-        onConfirm={() => {
+        cancelDialogOpen={discardConfirmOpen}
+        onCancelDialogConfirm={() => {
           setDiscardConfirmOpen(false);
           skipBlockRef.current = true;
           navigate(IDENTITY_PROVIDERS_ROUTE);
         }}
-        onCancel={() => setDiscardConfirmOpen(false)}
-      />
-      <ConfirmDialog
-        open={blocker.state === "blocked"}
-        title="Discard unsaved changes?"
-        message="You have unsaved Cloudflare Access changes. They will be lost if you leave this page."
-        confirmLabel="Discard"
-        cancelLabel="Keep editing"
-        onConfirm={() => {
+        onCancelDialogDismiss={() => setDiscardConfirmOpen(false)}
+        blockerDialogOpen={blocker.state === "blocked"}
+        onBlockerDialogConfirm={() => {
           skipBlockRef.current = true;
           blocker.proceed?.();
         }}
-        onCancel={() => blocker.reset?.()}
+        onBlockerDialogDismiss={() => blocker.reset?.()}
       />
     </>,
     document.body,

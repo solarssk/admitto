@@ -13,10 +13,10 @@ import {
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { ProviderDetailDto, ProviderRequestBody, ProviderTestDraftBody } from "../api/types.js";
-import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
+import { DiscardUnsavedChangesDialogs } from "./DiscardUnsavedChangesDialogs.js";
 import { IdentityMappingRepeater } from "./IdentityMappingRepeater.js";
 import { IdentityModalHeader } from "./IdentityModalHeader.js";
 import {
@@ -519,7 +519,16 @@ export function IdentityProviderEditor({
   // Edit mode starts in loadState "loading" - its real form fields don't exist in the DOM
   // until the fetch resolves, so initial focus must be re-attempted once loadState changes
   // (create mode is already "ready" at mount, so this is a no-op there).
-  useModalFocusTrap(panelRef, true, handleCancel, loadState);
+  // Suspended while either discard dialog is open - otherwise this trap's own Escape/keydown
+  // listener (registered first, since it mounts before either dialog opens) fires first and
+  // reopens a second, visually identical discard dialog instead of leaving the topmost one to
+  // handle Escape alone (bot review finding; same pattern as UserEditModal's `anyConfirmDialogOpen`).
+  useModalFocusTrap(
+    panelRef,
+    !discardConfirmOpen && blocker.state !== "blocked",
+    handleCancel,
+    loadState,
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   useOverscrollBounceGuard(scrollRef);
 
@@ -1028,30 +1037,21 @@ export function IdentityProviderEditor({
           </div>
         </div>
       </dialog>
-      <ConfirmDialog
-        open={discardConfirmOpen}
-        title="Discard unsaved changes?"
+      <DiscardUnsavedChangesDialogs
         message="You have unsaved changes to this identity provider. They will be lost if you leave this page."
-        confirmLabel="Discard"
-        cancelLabel="Keep editing"
-        onConfirm={() => {
+        cancelDialogOpen={discardConfirmOpen}
+        onCancelDialogConfirm={() => {
           setDiscardConfirmOpen(false);
           skipBlockRef.current = true;
           navigate(IDENTITY_PROVIDERS_ROUTE);
         }}
-        onCancel={() => setDiscardConfirmOpen(false)}
-      />
-      <ConfirmDialog
-        open={blocker.state === "blocked"}
-        title="Discard unsaved changes?"
-        message="You have unsaved changes to this identity provider. They will be lost if you leave this page."
-        confirmLabel="Discard"
-        cancelLabel="Keep editing"
-        onConfirm={() => {
+        onCancelDialogDismiss={() => setDiscardConfirmOpen(false)}
+        blockerDialogOpen={blocker.state === "blocked"}
+        onBlockerDialogConfirm={() => {
           skipBlockRef.current = true;
           blocker.proceed?.();
         }}
-        onCancel={() => blocker.reset?.()}
+        onBlockerDialogDismiss={() => blocker.reset?.()}
       />
     </>,
     document.body,

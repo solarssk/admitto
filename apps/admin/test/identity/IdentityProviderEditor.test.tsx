@@ -372,6 +372,20 @@ describe("IdentityProviderEditor — dirty guard", () => {
     expect(screen.queryByText("providers-list")).toBeNull();
   });
 
+  it("closes the blocked-navigation dialog on a single Escape press instead of reopening a second one (bot review finding)", async () => {
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google" } });
+    fireEvent.click(screen.getByRole("link", { name: "Providers" }));
+    await screen.findByRole("button", { name: "Discard" });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Discard" })).toBeNull());
+    expect(screen.getByDisplayValue("Google")).toBeTruthy();
+    expect(screen.queryByText("providers-list")).toBeNull();
+  });
+
   it("does not prompt when navigating away from a clean draft", async () => {
     renderEditorAt("/admin/settings/identity/providers/new");
 
@@ -516,6 +530,19 @@ describe("IdentityProviderEditor — coverage", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
     await screen.findByText("providers-list");
+  });
+
+  it("keeps the editor when the Cancel dialog is dismissed", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await screen.findByDisplayValue("Google");
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google X" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Keep editing" }));
+    expect(screen.queryByText("providers-list")).toBeNull();
+    expect(screen.getByDisplayValue("Google X")).toBeTruthy();
   });
 
   it("install a beforeunload handler while dirty (reload/close guard)", async () => {

@@ -390,6 +390,22 @@ describe("CfAccessEditor (slice 4)", () => {
     expect(router.state.location.pathname).toBe("/admin/settings/identity/cloudflare");
   });
 
+  it("closes the blocked-navigation dialog on a single Escape press instead of reopening a second one (bot review finding)", async () => {
+    mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
+    const { router } = renderEditorAt();
+    const teamInput = await screen.findByDisplayValue("https://t");
+    fireEvent.change(teamInput, { target: { value: "https://edited" } });
+    act(() => {
+      router.navigate("/admin/settings/identity/providers");
+    });
+    await screen.findByRole("button", { name: "Discard" });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Discard" })).toBeNull());
+    expect(router.state.location.pathname).toBe("/admin/settings/identity/cloudflare");
+  });
+
   it("arms a beforeunload prompt while dirty", async () => {
     mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
     renderEditorAt();
