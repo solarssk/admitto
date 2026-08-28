@@ -105,10 +105,7 @@ export async function login(
       next = LOGIN_NEXT.ENROLLMENT_REQUIRED;
     } else if (
       input.trustedDeviceToken &&
-      (await validateTrustedDevice(prisma, user.id, input.trustedDeviceToken, {
-        ip: input.ip,
-        userAgent: input.userAgent,
-      }))
+      (await validateTrustedDevice(prisma, user.id, input.trustedDeviceToken))
     ) {
       stage = SESSION_STAGE.FULL;
       next = LOGIN_NEXT.COMPLETE;
