@@ -116,3 +116,19 @@ describe("AttendeesTable wallet bulk-action busy labels", () => {
     expect(menu.getByRole("menuitem", { name: /^Deleting wallet passes…/ })).toBeTruthy();
   });
 });
+
+describe("AttendeesTable wallet bulk actions gated by the event's platform toggles", () => {
+  it("hides Void/Push updates/Delete wallet pass even when the selection has wallet_status rows, once the event's Wallet feature is disabled", () => {
+    render(<AttendeesTable {...tableProps} items={[walletRow]} walletPlatforms={{ apple: false, google: false, any: false }} />);
+    const menu = openMoreActionsMenu();
+    expect(menu.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
+    expect(menu.queryByRole("menuitem", { name: /Push updates/ })).toBeNull();
+    expect(menu.queryByRole("menuitem", { name: /Delete wallet pass/ })).toBeNull();
+  });
+
+  it("shows the wallet bulk actions once at least one platform is enabled", () => {
+    render(<AttendeesTable {...tableProps} items={[walletRow]} walletPlatforms={{ apple: true, google: false, any: true }} />);
+    const menu = openMoreActionsMenu();
+    expect(menu.getByRole("menuitem", { name: /Void wallet pass/ })).toBeTruthy();
+  });
+});
