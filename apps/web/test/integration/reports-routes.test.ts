@@ -43,6 +43,7 @@ const ATT_W_NOPASS = "att-reports-w-nopass";
 const ATT_W_NOTYPE = "att-reports-w-notype";
 const ATT_W_LEGACY_TYPE = "att-reports-w-legacy-type";
 const ATT_W_APPLE_ONLY_EVENT = "att-reports-w-apple-only-event";
+const ATT_W_GOOGLE_ONLY_EVENT = "att-reports-w-google-only-event";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -186,6 +187,30 @@ async function seed(client: PrismaClient) {
       status: "active",
       issued_at: new Date("2027-06-15T00:00:00.000Z"),
       apple_active_registrations: 1,
+      google_active_registrations: 1,
+    },
+  });
+  // A pass registered only on the platform this event has since disabled - the reclassification
+  // check above already covers a both-platform pass staying "confirmed" via its still-enabled
+  // Apple registration alone; this one has no Apple registration at all, so it only demonstrates
+  // the bug if admission_by_wallet's own DB filter (confirmedWalletFilter) is built from
+  // enabledPlatforms too, not just aggregateWalletPasses (CodeRabbit review).
+  await createUnvalidatedAttendees(client, [
+    {
+      id: ATT_W_GOOGLE_ONLY_EVENT,
+      event_id: EVENT_WALLETS_APPLE_ONLY,
+      name: "Google-Only Event Attendee",
+      email: "google-only-event@example.com",
+      ticket_type: "General",
+      ...mkAttendeeToken(),
+    },
+  ]);
+  await client.walletPass.create({
+    data: {
+      attendee_id: ATT_W_GOOGLE_ONLY_EVENT,
+      status: "active",
+      issued_at: new Date("2027-06-15T00:00:00.000Z"),
+      apple_active_registrations: 0,
       google_active_registrations: 1,
     },
   });
@@ -2025,7 +2050,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
   // End-to-end wiring check (event.wallet_apple_enabled/wallet_google_enabled -> route handler ->
   // enabledWalletPlatforms -> aggregateWalletPasses) on top of aggregateWalletPasses' own unit
   // coverage for the filtering logic itself (wallet-reports-helpers.test.ts).
-  it("reclassifies a both-platform pass as apple-only when the event has Google Wallet disabled", async () => {
+  it("reclassifies a both-platform pass as apple-only when the event has Google Wallet disabled, and excludes a google-only pass from admission_by_wallet entirely", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_WALLETS_APPLE_ONLY}/reports/wallets`, {
       headers: { Cookie: adminCookie },
     });
@@ -2033,10 +2058,20 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     const body = (await res.json()) as {
       adoption: { got_pass: number; confirmed: number };
       platform: { apple_only: number; google_only: number; both: number; not_installed: number };
+      admission_by_wallet: {
+        with_wallet: { total: number; admitted: number; pct: number };
+        without_wallet: { total: number; admitted: number; pct: number };
+      };
     };
-    expect(body.adoption.got_pass).toBe(1);
+    expect(body.adoption.got_pass).toBe(2);
     expect(body.adoption.confirmed).toBe(1);
-    expect(body.platform).toEqual({ apple_only: 1, google_only: 0, both: 0, not_installed: 0 });
+    expect(body.platform).toEqual({ apple_only: 1, google_only: 0, both: 0, not_installed: 1 });
+    // ATT_W_GOOGLE_ONLY_EVENT's registration is only on the now-disabled Google platform - without
+    // enabledPlatforms gating confirmedWalletFilter too (not just aggregateWalletPasses above),
+    // this would still count it as "with wallet" here despite `platform.not_installed` already
+    // reporting it as not installed (CodeRabbit review).
+    expect(body.admission_by_wallet.with_wallet.total).toBe(1);
+    expect(body.admission_by_wallet.without_wallet.total).toBe(1);
   });
 
   it("aggregates adoption, platform mix, ticket-type breakdown, time-to-tap, and admission-by-wallet-status", async () => {

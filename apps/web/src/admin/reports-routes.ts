@@ -629,52 +629,65 @@ interface WalletPassAggregates {
   tapDayCount: number;
 }
 
+/** Folds one pass's contribution into the running aggregates - split out of aggregateWalletPasses'
+ * loop body below so that function's own cognitive complexity stays under Sonar's limit (every
+ * branch here loses a nesting level once it's no longer inside a for loop). `enabledPlatforms`
+ * zeroes a disabled platform's active-registration count before classification, so a pass
+ * registered only on a platform the event owner has since turned off reads as "not installed"
+ * here (and in adoption.confirmed, which not_installed is derived from below) rather than as a
+ * still-live confirmation of a platform the Wallets tab no longer offers. */
+function applyWalletPassToAggregates(
+  pass: WalletPassAggregateRow,
+  enabledPlatforms: { apple: boolean; google: boolean },
+  acc: WalletPassAggregates,
+): void {
+  const appleActive = enabledPlatforms.apple ? (pass.apple_active_registrations ?? 0) : 0;
+  const googleActive = enabledPlatforms.google ? (pass.google_active_registrations ?? 0) : 0;
+  const platform = classifyPassPlatform(appleActive, googleActive);
+  if (platform === "both") acc.both++;
+  else if (platform === "apple_only") acc.appleOnly++;
+  else if (platform === "google_only") acc.googleOnly++;
+  if (platform !== "none") acc.confirmed++;
+  if (pass.status === "voided") acc.cancelled++;
+  if (pass.registration_checked_at && (!acc.mostRecentSync || pass.registration_checked_at > acc.mostRecentSync)) {
+    acc.mostRecentSync = pass.registration_checked_at;
+  }
+
+  const typeKey = pass.attendee.ticket_type;
+  acc.gotPassByType.set(typeKey, (acc.gotPassByType.get(typeKey) ?? 0) + 1);
+
+  const tapDays = computeTapDays(pass.attendee.email_deliveries[0]?.sent_at, pass.issued_at);
+  if (tapDays !== null) {
+    acc.tapDaySum += tapDays;
+    acc.tapDayCount++;
+    acc.bucketCounts[bucketForDays(tapDays)]++;
+  }
+}
+
 /** Single pass over the (possibly sampled - see WALLET_AGGREGATE_MAX) pass rows, building every
- * per-pass-derived number the response needs in one place rather than several separate loops.
- * `enabledPlatforms` zeroes a disabled platform's active-registration count before classification,
- * so a pass registered only on a platform the event owner has since turned off reads as "not
- * installed" here (and in adoption.confirmed, which not_installed is derived from below) rather
- * than as a still-live confirmation of a platform the Wallets tab no longer offers. */
+ * per-pass-derived number the response needs in one place rather than several separate loops. */
 export function aggregateWalletPasses(
   passes: WalletPassAggregateRow[],
   enabledPlatforms: { apple: boolean; google: boolean },
 ): WalletPassAggregates {
-  let confirmed = 0;
-  let cancelled = 0;
-  let appleOnly = 0;
-  let googleOnly = 0;
-  let both = 0;
-  let mostRecentSync: Date | null = null;
-  const gotPassByType = new Map<string | null, number>();
-  const bucketCounts: Record<TimeToTapBucketKey, number> = { same_day: 0, "1_3": 0, "4_7": 0, "8_plus": 0 };
-  let tapDaySum = 0;
-  let tapDayCount = 0;
+  const acc: WalletPassAggregates = {
+    confirmed: 0,
+    cancelled: 0,
+    appleOnly: 0,
+    googleOnly: 0,
+    both: 0,
+    mostRecentSync: null,
+    gotPassByType: new Map<string | null, number>(),
+    bucketCounts: { same_day: 0, "1_3": 0, "4_7": 0, "8_plus": 0 },
+    tapDaySum: 0,
+    tapDayCount: 0,
+  };
 
   for (const pass of passes) {
-    const appleActive = enabledPlatforms.apple ? (pass.apple_active_registrations ?? 0) : 0;
-    const googleActive = enabledPlatforms.google ? (pass.google_active_registrations ?? 0) : 0;
-    const platform = classifyPassPlatform(appleActive, googleActive);
-    if (platform === "both") both++;
-    else if (platform === "apple_only") appleOnly++;
-    else if (platform === "google_only") googleOnly++;
-    if (platform !== "none") confirmed++;
-    if (pass.status === "voided") cancelled++;
-    if (pass.registration_checked_at && (!mostRecentSync || pass.registration_checked_at > mostRecentSync)) {
-      mostRecentSync = pass.registration_checked_at;
-    }
-
-    const typeKey = pass.attendee.ticket_type;
-    gotPassByType.set(typeKey, (gotPassByType.get(typeKey) ?? 0) + 1);
-
-    const tapDays = computeTapDays(pass.attendee.email_deliveries[0]?.sent_at, pass.issued_at);
-    if (tapDays !== null) {
-      tapDaySum += tapDays;
-      tapDayCount++;
-      bucketCounts[bucketForDays(tapDays)]++;
-    }
+    applyWalletPassToAggregates(pass, enabledPlatforms, acc);
   }
 
-  return { confirmed, cancelled, appleOnly, googleOnly, both, mostRecentSync, gotPassByType, bucketCounts, tapDaySum, tapDayCount };
+  return acc;
 }
 
 /** Ticket-type breakdown for the Wallets tab - same catalog-order-plus-fallbacks shape as the
@@ -759,15 +772,21 @@ async function loadWalletReportsAggregates(
   eventDate: Date,
   enabledPlatforms: { apple: boolean; google: boolean },
 ): Promise<EventWalletReportsResponse> {
-  // "Confirmed" (active on at least one platform), not merely issued - see
+  // "Confirmed" (active on at least one platform the event still offers), not merely issued - see
   // EventWalletReportsResponse.admission_by_wallet's own doc comment for why. Built once and
   // spread/negated below so the with/without-wallet split can't drift out of sync with itself.
-  const confirmedWalletFilter = {
-    OR: [
-      { wallet_pass: { apple_active_registrations: { gt: 0 } } },
-      { wallet_pass: { google_active_registrations: { gt: 0 } } },
-    ],
-  };
+  // Only checks a platform's registrations when the event still offers it, matching
+  // aggregateWalletPasses above - a stale registration on a platform since disabled would
+  // otherwise still count toward "with wallet" here while reading as not installed everywhere
+  // else on this page (CodeRabbit review). `id: { in: [] }` (rather than a bare `OR: []`, whose
+  // match-everything-or-nothing behavior isn't something to rely on) is the "matches nothing"
+  // fallback for the case where neither platform is enabled.
+  const confirmedWalletConditions = [
+    ...(enabledPlatforms.apple ? [{ wallet_pass: { apple_active_registrations: { gt: 0 } } }] : []),
+    ...(enabledPlatforms.google ? [{ wallet_pass: { google_active_registrations: { gt: 0 } } }] : []),
+  ];
+  const confirmedWalletFilter =
+    confirmedWalletConditions.length > 0 ? { OR: confirmedWalletConditions } : { id: { in: [] as string[] } };
 
   const [
     totalAttendees,
@@ -1322,12 +1341,9 @@ export function buildWalletExportCsvRow(
   // PDF are gated by (WalletsReportsTab.tsx, exportWalletReportsPdf below).
   const appleColumnsBlank = !synced || !enabledPlatforms.apple;
   const googleColumnsBlank = !synced || !enabledPlatforms.google;
-  const confirmedPlatform = synced
-    ? confirmedPlatformLabel(
-        enabledPlatforms.apple ? appleActive : 0,
-        enabledPlatforms.google ? googleActive : 0,
-      )
-    : "";
+  const confirmedAppleActive = enabledPlatforms.apple ? appleActive : 0;
+  const confirmedGoogleActive = enabledPlatforms.google ? googleActive : 0;
+  const confirmedPlatform = synced ? confirmedPlatformLabel(confirmedAppleActive, confirmedGoogleActive) : "";
 
   return [
     row.name,
