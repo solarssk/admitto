@@ -295,7 +295,9 @@ describe("GraphAdapter", () => {
     });
   });
 
-  it("returns a terminal failure when a successful token response omits access_token", async () => {
+  it("returns a retryable failure when a successful token response omits access_token", async () => {
+    // Same policy as mapSmtpError's own unclassified branch: an HTTP 200 with a malformed body
+    // is unusual enough to not assume permanent, and MAX_MAIL_DRAIN_ATTEMPTS already bounds retries.
     const fetchFn = vi.fn(async () => ({
       ok: true,
       status: 200,
@@ -308,9 +310,9 @@ describe("GraphAdapter", () => {
 
     expect(res).toMatchObject({
       status: "failed",
+      retryable: true,
       error: "Graph token error: missing access_token in response",
     });
-    expect(res.retryable).toBeUndefined();
   });
 
   it("maps a non-JSON Graph error body without losing its HTTP semantics", async () => {

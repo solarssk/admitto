@@ -43,7 +43,12 @@ export const URL_PLACEHOLDERS = new Set([
 /** Required ticket URLs — empty/missing values fail render (not silently stripped). */
 export const REQUIRED_URL_PLACEHOLDERS = new Set(["ticket_url", "qr_image_url"]);
 
-/** Wallet placeholders render as empty string until v0.5. */
+/** Wallet-related placeholders (`apple_wallet_url`/`google_wallet_url` resolve to a real
+ * per-attendee link once wallet delivery is configured; `download_page_url` is the shared
+ * ticket-download-page fallback). Not currently imported anywhere - apps/admin's own template
+ * editor (CommunicationPage.tsx) keeps a narrower, UI-purpose-specific copy (icon treatment for
+ * apple/google wallet buttons only, deliberately excluding download_page_url, which its own UI
+ * categorizes as a "ticket" placeholder, not a "wallet" one) rather than this broader set. */
 export const WALLET_PLACEHOLDERS = new Set([
   "apple_wallet_url",
   "google_wallet_url",

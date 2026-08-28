@@ -23,7 +23,7 @@ import {
   type MailProbeResult,
   type SendResult,
 } from "@admitto/mailer";
-import { transportTestErrorForAdmin } from "@admitto/mail-delivery";
+import { GENERIC_SEND_FAILED_MESSAGE, transportTestErrorForAdmin } from "@admitto/mail-delivery";
 import { emitSystemLog } from "@admitto/shared/system-log";
 
 /** Injectable probe for org/event POST /mail-settings/probe (tests). */
@@ -376,7 +376,7 @@ export function transportTestResponse(c: Context, outcome: TransportTestOutcome)
 
   return c.json({
     status: "failed",
-    error: errorMessage ?? "send failed",
+    error: errorMessage ?? GENERIC_SEND_FAILED_MESSAGE,
     ...(resultProvider ? { provider: resultProvider } : {}),
     ...(resultRetryable !== undefined ? { retryable: resultRetryable } : {}),
     ...(bounceProbe ? { bounceProbe } : {}),
