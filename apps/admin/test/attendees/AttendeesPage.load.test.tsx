@@ -115,6 +115,19 @@ describe("AttendeesPage load errors", () => {
     expect(reportApiError).not.toHaveBeenCalled();
   });
 
+  it("shows the generic load error for an API failure that isn't a 401 or 403", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventAttendees.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Could not load attendees")).toBeTruthy();
+      expect(screen.getByText("Could not load attendees.")).toBeTruthy();
+    });
+    expect(reportApiError).toHaveBeenCalledWith(500);
+  });
+
   it("redirects to login instead of displaying an inline error after a 401 list response", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     const assignSpy = vi.fn();

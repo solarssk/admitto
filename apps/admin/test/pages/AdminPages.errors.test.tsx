@@ -686,6 +686,21 @@ describe("ReportsPage operator errors", () => {
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
 
+  it("shows the generic load error for an API failure that isn't forbidden", async () => {
+    vi.mocked(fetchEventReports).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToast(
+      <MemoryRouter initialEntries={["/admin/events/evt-1/reports"]}>
+        <Routes>
+          <Route path="/admin/events/:eventId/reports" element={<ReportsPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Could not load report data.")).toBeTruthy();
+    });
+    expect(screen.queryByText("secret_internal")).toBeNull();
+  });
+
   it("toasts export failure without leaking internals", async () => {
     vi.mocked(fetchEventReports).mockResolvedValueOnce(emptyReport);
     vi.mocked(exportEventReportsCsv).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
