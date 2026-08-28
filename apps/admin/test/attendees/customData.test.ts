@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { CustomDataFieldDef } from "../../src/attendees/customData.js";
 
 const mockFetchEventCustomFields = vi.fn();
 vi.mock("../../src/api/client.js", () => ({
@@ -202,6 +203,24 @@ describe("customDataApiErrorMessage", () => {
     expect(customDataApiErrorMessage([notesField], { code: "validation_failed", field: "notes" })).toBe(
       "Notes has an invalid value.",
     );
+  });
+
+  it("returns null when the error carries no field slug", () => {
+    expect(customDataApiErrorMessage([sizeField], { code: "validation_failed" })).toBeNull();
+  });
+
+  it("treats a field with no configured type as text", () => {
+    const untypedField = { ...notesField, type: undefined } as unknown as CustomDataFieldDef;
+    expect(
+      customDataApiErrorMessage([untypedField], { code: "validation_failed", field: "notes" }),
+    ).toBe("Notes has an invalid value.");
+  });
+
+  it("lists no options when a select field has none configured", () => {
+    const emptyOptionsField = { ...sizeField, options: null };
+    expect(
+      customDataApiErrorMessage([emptyOptionsField], { code: "validation_failed", field: "size" }),
+    ).toBe("Size must be one of: .");
   });
 });
 

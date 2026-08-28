@@ -127,6 +127,9 @@ describe("AddAttendeeModal", () => {
     ["unknown_custom_data_field", undefined, "One of the attribute fields was removed from this event. Refresh and try again."],
     ["required_custom_data_field_missing", "dietary", "Dietary is required."],
     ["validation_failed", "dietary", "Dietary has an invalid value."],
+    // The slug no longer matches any current field (not just a since-changed one) - there's no
+    // per-field message to build, so this falls back to the generic retry copy.
+    ["validation_failed", "ghost_field", "Check the attribute fields and try again."],
   ])("explains the %s custom-data validation response inline for the specific field", async (code, field, message) => {
     // Re-fetched after the error too (the submit handler re-derives the message from current
     // field defs, not the form's stale load) - same list both times here since this case is

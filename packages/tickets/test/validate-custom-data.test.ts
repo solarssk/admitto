@@ -65,6 +65,12 @@ describe("buildCustomDataFromInput", () => {
     expect(buildCustomDataFromInput([lunchField], { lunch: "yes" })).toEqual({ lunch: "true" });
   });
 
+  it("rejects a non-string custom_data value", () => {
+    expect(() => buildCustomDataFromInput([noteField], { note: 123 })).toThrow(
+      "validation_failed:note",
+    );
+  });
+
   it("returns undefined when no custom_data values are provided", () => {
     expect(buildCustomDataFromInput([noteField], {})).toBeUndefined();
   });

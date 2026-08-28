@@ -172,4 +172,92 @@ describe("handleExportSelectedAttendees artifact failures", () => {
     expect(JSON.stringify(body)).not.toContain("db.internal");
     expect(JSON.stringify(body)).not.toContain("5432");
   });
+
+  it("returns a bare code with no field when the artifact error carries no slug at all", async () => {
+    // Legacy error shape (no `:<field_slug>` suffix) - still a known code, just without a field
+    // to attach.
+    buildAttendeesExportArtifact.mockRejectedValue(new Error("unknown_custom_data_field"));
+
+    const c = {
+      req: {
+        json: async () => ({ attendee_ids: ["att-1"], format: "csv" }),
+      },
+      json: (body: unknown, status?: number) =>
+        new Response(JSON.stringify(body), { status: status ?? 200 }),
+      get: () => undefined,
+    };
+
+    const db = {
+      event: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "evt-export-artifact",
+          title: "Export Artifact",
+          date: new Date("2026-09-01T09:00:00Z"),
+          timezone: "UTC",
+          organization_id: "org-1",
+        }),
+      },
+      attendee: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            name: "Guest",
+            email: "guest@example.com",
+            company: null,
+            department: null,
+            custom_data: null,
+            ticket_type: null,
+            admitted_at: null,
+          },
+        ]),
+      },
+      attendeeActionLog: { create: vi.fn() },
+    };
+
+    const res = await handleExportSelectedAttendees(c as never, db as never);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "unknown_custom_data_field" });
+  });
+
+  it("drops a trailing empty field slug rather than attaching a blank field", async () => {
+    buildAttendeesExportArtifact.mockRejectedValue(new Error("validation_failed:"));
+
+    const c = {
+      req: {
+        json: async () => ({ attendee_ids: ["att-1"], format: "csv" }),
+      },
+      json: (body: unknown, status?: number) =>
+        new Response(JSON.stringify(body), { status: status ?? 200 }),
+      get: () => undefined,
+    };
+
+    const db = {
+      event: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "evt-export-artifact",
+          title: "Export Artifact",
+          date: new Date("2026-09-01T09:00:00Z"),
+          timezone: "UTC",
+          organization_id: "org-1",
+        }),
+      },
+      attendee: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            name: "Guest",
+            email: "guest@example.com",
+            company: null,
+            department: null,
+            custom_data: null,
+            ticket_type: null,
+            admitted_at: null,
+          },
+        ]),
+      },
+      attendeeActionLog: { create: vi.fn() },
+    };
+
+    const res = await handleExportSelectedAttendees(c as never, db as never);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "validation_failed" });
+  });
 });
