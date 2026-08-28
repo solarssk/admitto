@@ -551,7 +551,17 @@ describe("ReportsPage — Wallets tab", () => {
     renderPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
-    await waitFor(() => expect(fetchEventWalletReports).toHaveBeenCalledTimes(1));
+    // Waits on the fetch call *and* the tab's own visible aria-selected state, not just the fetch
+    // call alone - a mock call count can be satisfied by a stale count from residual state without
+    // React having actually committed the activeTab flip yet, letting a subsequent Export click
+    // race ahead and hit the wrong (admissions) branch. Confirmed as the real cause of a CI-only
+    // failure (passed locally every time, failed twice on GitHub's own runner) - the DOM snapshot
+    // on failure showed the Wallets tab already active by the time of the *error*, but the export
+    // click had already gone out under the previous (event day) tab.
+    await waitFor(() => {
+      expect(fetchEventWalletReports).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("tab", { name: "Wallets", selected: true })).toBeTruthy();
+    });
 
     fireEvent.click(screen.getByRole("button", { name: /Export/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
@@ -578,7 +588,17 @@ describe("ReportsPage — Wallets tab", () => {
     renderPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
-    await waitFor(() => expect(fetchEventWalletReports).toHaveBeenCalledTimes(1));
+    // Waits on the fetch call *and* the tab's own visible aria-selected state, not just the fetch
+    // call alone - a mock call count can be satisfied by a stale count from residual state without
+    // React having actually committed the activeTab flip yet, letting a subsequent Export click
+    // race ahead and hit the wrong (admissions) branch. Confirmed as the real cause of a CI-only
+    // failure (passed locally every time, failed twice on GitHub's own runner) - the DOM snapshot
+    // on failure showed the Wallets tab already active by the time of the *error*, but the export
+    // click had already gone out under the previous (event day) tab.
+    await waitFor(() => {
+      expect(fetchEventWalletReports).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("tab", { name: "Wallets", selected: true })).toBeTruthy();
+    });
 
     fireEvent.click(screen.getByRole("button", { name: /Export/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
@@ -593,7 +613,17 @@ describe("ReportsPage — Wallets tab", () => {
     renderPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
-    await waitFor(() => expect(fetchEventWalletReports).toHaveBeenCalledTimes(1));
+    // Waits on the fetch call *and* the tab's own visible aria-selected state, not just the fetch
+    // call alone - a mock call count can be satisfied by a stale count from residual state without
+    // React having actually committed the activeTab flip yet, letting a subsequent Export click
+    // race ahead and hit the wrong (admissions) branch. Confirmed as the real cause of a CI-only
+    // failure (passed locally every time, failed twice on GitHub's own runner) - the DOM snapshot
+    // on failure showed the Wallets tab already active by the time of the *error*, but the export
+    // click had already gone out under the previous (event day) tab.
+    await waitFor(() => {
+      expect(fetchEventWalletReports).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("tab", { name: "Wallets", selected: true })).toBeTruthy();
+    });
 
     fireEvent.click(screen.getByRole("button", { name: /Export/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
@@ -609,7 +639,17 @@ describe("ReportsPage — Wallets tab", () => {
     renderPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
-    await waitFor(() => expect(fetchEventWalletReports).toHaveBeenCalledTimes(1));
+    // Waits on the fetch call *and* the tab's own visible aria-selected state, not just the fetch
+    // call alone - a mock call count can be satisfied by a stale count from residual state without
+    // React having actually committed the activeTab flip yet, letting a subsequent Export click
+    // race ahead and hit the wrong (admissions) branch. Confirmed as the real cause of a CI-only
+    // failure (passed locally every time, failed twice on GitHub's own runner) - the DOM snapshot
+    // on failure showed the Wallets tab already active by the time of the *error*, but the export
+    // click had already gone out under the previous (event day) tab.
+    await waitFor(() => {
+      expect(fetchEventWalletReports).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("tab", { name: "Wallets", selected: true })).toBeTruthy();
+    });
 
     fireEvent.click(screen.getByRole("button", { name: /Export/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /PDF/ }));
