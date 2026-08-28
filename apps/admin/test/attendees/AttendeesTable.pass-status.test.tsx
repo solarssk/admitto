@@ -264,6 +264,28 @@ describe("AttendeesTable loading states (#271)", () => {
     expect(container.querySelector("table[aria-hidden='true']")).toBeNull();
     expect(screen.getByText("No matches")).toBeTruthy();
   });
+
+  it("omits the Wallet column from the shimmer skeleton too when no wallet platform is enabled", () => {
+    vi.useFakeTimers();
+    const { container } = render(
+      <AttendeesTable
+        {...tableProps}
+        walletPlatforms={{ apple: false, google: false, any: false }}
+        hasLoadedOnce={false}
+        loading
+        items={[]}
+        total={0}
+      />,
+    );
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    const table = container.querySelector("table[aria-hidden='true']") as HTMLElement;
+    expect(table).toBeTruthy();
+    expect(within(table).queryByText("Wallet")).toBeNull();
+    expect(table.querySelector("td[colspan='8']")).toBeTruthy();
+    expect(table.querySelector("td[colspan='9']")).toBeNull();
+  });
 });
 
 describe("AttendeesTable empty states", () => {

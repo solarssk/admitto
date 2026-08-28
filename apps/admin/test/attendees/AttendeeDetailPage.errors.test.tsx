@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ApiError } from "../../src/api/client.js";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { baseAttendeeDetailEvent, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 
@@ -25,19 +25,7 @@ vi.mock("react-router", async (importOriginal) => {
   return {
     ...actual,
     useOutletContext: () => ({
-      event: {
-        id: "evt-1",
-        title: "Demo",
-        slug: "demo",
-        date: "2026-06-01",
-        timezone: "Europe/Warsaw",
-        location: null,
-        attendee_count: 1,
-        wallet_enabled: true,
-        wallet_apple_enabled: true,
-        wallet_google_enabled: true,
-        archived_at: null,
-      },
+      event: baseAttendeeDetailEvent,
     }),
   };
 });
