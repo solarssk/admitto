@@ -34,6 +34,28 @@ export function makeTicketType(key: string, label: string): TicketTypeDto {
   };
 }
 
+/** Minimal event fixture for AttendeeDetailPage tests that mock `useOutletContext` directly (not
+ * via a shared helper) and don't exercise wallet-platform gating themselves - every wallet toggle
+ * on, so the Wallet card/chip render unconditionally and the test can focus on its own concern.
+ * Spread and override per file (e.g. `{ ...baseAttendeeDetailEvent, archived_at: "..." }`) rather
+ * than hand-writing the same event object in each file - Sonar flagged the identical literal
+ * repeated across 10 test files as new-code duplication. Tests that DO need to flip a wallet
+ * toggle mid-test (e.g. AttendeeDetailPage.walletActions.test.tsx) use their own mutable-getter
+ * mock instead, since this static object can't do that. */
+export const baseAttendeeDetailEvent = {
+  id: "evt-1",
+  title: "Demo",
+  slug: "demo",
+  date: "2026-06-01",
+  timezone: "Europe/Warsaw",
+  location: null,
+  attendee_count: 1,
+  wallet_enabled: true,
+  wallet_apple_enabled: true,
+  wallet_google_enabled: true,
+  archived_at: null as string | null,
+};
+
 /** A disabled control's reason now shows via the shared <Tooltip> (packages/ui) - a
  * hover-triggered, portal-rendered bubble (role="tooltip"), not a static title= attribute.
  * Mouse hover, not focus: a `disabled` element is never focusable in a real browser (jsdom's

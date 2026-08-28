@@ -89,6 +89,9 @@ type EventJsonRow = {
   created_by_timezone: string | null;
   archived_by_user_id: string | null;
   archived_by_timezone: string | null;
+  wallet_enabled: boolean;
+  wallet_apple_enabled: boolean;
+  wallet_google_enabled: boolean;
 };
 
 /** List-card `/m/` path when maps are enabled and the event has a complete pin; otherwise null. */
@@ -146,6 +149,9 @@ export function serializeEventDto(
     archived_by_display_name: archivedBy?.display_name ?? null,
     archived_by_email: archivedBy?.email ?? null,
     archived_by_timezone: normalizeNullableTimeZone(event.archived_by_timezone),
+    wallet_enabled: event.wallet_enabled,
+    wallet_apple_enabled: event.wallet_apple_enabled,
+    wallet_google_enabled: event.wallet_google_enabled,
     ...(count !== undefined ? { attendee_count: count } : {}),
   };
 }

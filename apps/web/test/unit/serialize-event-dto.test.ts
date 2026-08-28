@@ -22,6 +22,9 @@ const baseRow = {
   created_by_timezone: null,
   archived_by_user_id: null,
   archived_by_timezone: null,
+  wallet_enabled: true,
+  wallet_apple_enabled: true,
+  wallet_google_enabled: true,
 };
 
 function setMaps(tiles: Partial<ReturnType<typeof defaultMapTileConfig>> = {}) {
@@ -70,6 +73,18 @@ describe("serializeEventDto — has_coordinates / map_preview_path", () => {
     const dto = serializeEventDto(baseRow);
     expect(dto.has_coordinates).toBe(false);
     expect(dto.map_preview_path).toBeNull();
+  });
+
+  it("passes through the wallet platform toggles", () => {
+    const dto = serializeEventDto({
+      ...baseRow,
+      wallet_enabled: true,
+      wallet_apple_enabled: false,
+      wallet_google_enabled: true,
+    });
+    expect(dto.wallet_enabled).toBe(true);
+    expect(dto.wallet_apple_enabled).toBe(false);
+    expect(dto.wallet_google_enabled).toBe(true);
   });
 
   it("builds a cache-busting list preview path when maps are enabled and a pin exists", () => {

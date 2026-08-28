@@ -100,6 +100,9 @@ export interface EventDto {
   archived_by_display_name?: string | null;
   archived_by_email?: string | null;
   archived_by_timezone?: string | null;
+  wallet_enabled: boolean;
+  wallet_apple_enabled: boolean;
+  wallet_google_enabled: boolean;
 }
 
 export interface CreateEventBody {

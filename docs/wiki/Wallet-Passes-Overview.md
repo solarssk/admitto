@@ -62,7 +62,11 @@ works; Admitto never signs or hosts pass files itself.
   fallback (can take a while to reach any one attendee) - shown on Attendee Detail and the
   Attendees list's Wallet column. Attendee Detail's wallet **Refresh status** action pulls that
   one attendee's current status immediately instead of waiting for the periodic poll - useful when
-  PassCreator's own dashboard already shows a pass as added but Admitto hasn't caught up yet.
+  PassCreator's own dashboard already shows a pass as added but Admitto hasn't caught up yet. Both
+  surfaces only show the platform(s) Event Settings → Wallet actually offers for that event -
+  turning the whole feature off hides the Wallet column and the Attendee Detail Wallet card
+  entirely, and turning off just Apple or just Google Wallet drops that platform's icon/row
+  everywhere, without affecting the other one.
 - **Wallet lifecycle actions.** Void, push updates, and permanently delete a wallet pass at the
   provider - available both from Attendee Detail (single attendee) and the Attendees list (bulk,
   for a selection). Restore and Refresh status are Attendee Detail only, there is no bulk version
