@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
+import { enabledWalletPlatforms } from "@admitto/shared";
 import {
   Avatar,
   Badge,
@@ -799,6 +800,7 @@ function AttendeeOverviewTab({
   const [sentMessageRow, setSentMessageRow] = useState<DeliveryDto | null>(null);
   const [detailsRow, setDetailsRow] = useState<DeliveryDto | null>(null);
   const deliveryCounts = countDeliveryOutcomes(detail.deliveries);
+  const walletPlatforms = enabledWalletPlatforms(event);
 
   // React Router reuses this same AttendeeDetailPage/AttendeeOverviewTab instance across
   // :attendeeId param changes - without this, a delivery modal left open while navigating to a
@@ -879,96 +881,102 @@ function AttendeeOverviewTab({
           )}
         </Card>
 
-        <Card
-          title="Wallet"
-          actions={
-            <WalletLinksMenu
-              appleUrl={detail.wallet_apple_link}
-              androidUrl={detail.wallet_google_link}
-            />
-          }
-        >
-          {detail.wallet_pass ? (
-            <div className="attendee-detail-readonly">
-              <div className="attendee-detail-row">
-                <span>Apple Wallet</span>
-                <span>
-                  {walletRegistrationLabel(
-                    detail.wallet_pass.apple_active_registrations,
-                    detail.wallet_pass.apple_inactive_registrations,
-                  )}
-                </span>
+        {walletPlatforms.any && (
+          <Card
+            title="Wallet"
+            actions={
+              <WalletLinksMenu
+                appleUrl={walletPlatforms.apple ? detail.wallet_apple_link : null}
+                androidUrl={walletPlatforms.google ? detail.wallet_google_link : null}
+              />
+            }
+          >
+            {detail.wallet_pass ? (
+              <div className="attendee-detail-readonly">
+                {walletPlatforms.apple && (
+                  <div className="attendee-detail-row">
+                    <span>Apple Wallet</span>
+                    <span>
+                      {walletRegistrationLabel(
+                        detail.wallet_pass.apple_active_registrations,
+                        detail.wallet_pass.apple_inactive_registrations,
+                      )}
+                    </span>
+                  </div>
+                )}
+                {walletPlatforms.google && (
+                  <div className="attendee-detail-row">
+                    <span>Google Wallet</span>
+                    <span>
+                      {walletRegistrationLabel(
+                        detail.wallet_pass.google_active_registrations,
+                        detail.wallet_pass.google_inactive_registrations,
+                      )}
+                    </span>
+                  </div>
+                )}
+                {/* None of these timestamps has a captured actor/device timezone (issued_at is the
+                    attendee's own device; voided_at/last_synced_at/registration_checked_at are
+                    admin/worker actions with no persisted zone; first_downloaded_at is PassCreator's
+                    own UTC value, see formatFirstDownloadedAt) - viewer's own browser zone, matching
+                    viewerLocalTime's "no known actor zone" convention, not the event's timezone
+                    (which has no real relationship to any of these - PO review). */}
+                {detail.wallet_pass.first_downloaded_at && (
+                  <div className="attendee-detail-row">
+                    <span>First downloaded</span>
+                    <span className="mono">
+                      {formatFirstDownloadedAt(detail.wallet_pass.first_downloaded_at)}
+                    </span>
+                  </div>
+                )}
+                {detail.wallet_pass.issued_at && (
+                  <div className="attendee-detail-row">
+                    <span>Pass created</span>
+                    <span className="mono">
+                      {formatEventDateTime(detail.wallet_pass.issued_at, getBrowserTimeZone())}
+                    </span>
+                  </div>
+                )}
+                {detail.wallet_pass.voided_at && (
+                  <div className="attendee-detail-row">
+                    <span>Voided</span>
+                    <span className="mono">
+                      {formatEventDateTime(detail.wallet_pass.voided_at, getBrowserTimeZone())}
+                    </span>
+                  </div>
+                )}
+                {detail.wallet_pass.last_synced_at && (
+                  <div className="attendee-detail-row">
+                    <span>Last updated</span>
+                    <span className="mono">
+                      {formatEventDateTime(detail.wallet_pass.last_synced_at, getBrowserTimeZone())}
+                    </span>
+                  </div>
+                )}
+                {detail.wallet_pass.registration_checked_at && (
+                  <div className="attendee-detail-row">
+                    <span>Last system status update</span>
+                    <span className="mono">
+                      {formatEventDateTime(detail.wallet_pass.registration_checked_at, getBrowserTimeZone())}
+                    </span>
+                  </div>
+                )}
+                {detail.wallet_pass.last_error_code && (
+                  <div className="attendee-detail-row">
+                    <span>Last error</span>
+                    <span className="mono">{detail.wallet_pass.last_error_code}</span>
+                  </div>
+                )}
               </div>
-              <div className="attendee-detail-row">
-                <span>Google Wallet</span>
-                <span>
-                  {walletRegistrationLabel(
-                    detail.wallet_pass.google_active_registrations,
-                    detail.wallet_pass.google_inactive_registrations,
-                  )}
-                </span>
-              </div>
-              {/* None of these timestamps has a captured actor/device timezone (issued_at is the
-                  attendee's own device; voided_at/last_synced_at/registration_checked_at are
-                  admin/worker actions with no persisted zone; first_downloaded_at is PassCreator's
-                  own UTC value, see formatFirstDownloadedAt) - viewer's own browser zone, matching
-                  viewerLocalTime's "no known actor zone" convention, not the event's timezone
-                  (which has no real relationship to any of these - PO review). */}
-              {detail.wallet_pass.first_downloaded_at && (
-                <div className="attendee-detail-row">
-                  <span>First downloaded</span>
-                  <span className="mono">
-                    {formatFirstDownloadedAt(detail.wallet_pass.first_downloaded_at)}
-                  </span>
-                </div>
-              )}
-              {detail.wallet_pass.issued_at && (
-                <div className="attendee-detail-row">
-                  <span>Pass created</span>
-                  <span className="mono">
-                    {formatEventDateTime(detail.wallet_pass.issued_at, getBrowserTimeZone())}
-                  </span>
-                </div>
-              )}
-              {detail.wallet_pass.voided_at && (
-                <div className="attendee-detail-row">
-                  <span>Voided</span>
-                  <span className="mono">
-                    {formatEventDateTime(detail.wallet_pass.voided_at, getBrowserTimeZone())}
-                  </span>
-                </div>
-              )}
-              {detail.wallet_pass.last_synced_at && (
-                <div className="attendee-detail-row">
-                  <span>Last updated</span>
-                  <span className="mono">
-                    {formatEventDateTime(detail.wallet_pass.last_synced_at, getBrowserTimeZone())}
-                  </span>
-                </div>
-              )}
-              {detail.wallet_pass.registration_checked_at && (
-                <div className="attendee-detail-row">
-                  <span>Last system status update</span>
-                  <span className="mono">
-                    {formatEventDateTime(detail.wallet_pass.registration_checked_at, getBrowserTimeZone())}
-                  </span>
-                </div>
-              )}
-              {detail.wallet_pass.last_error_code && (
-                <div className="attendee-detail-row">
-                  <span>Last error</span>
-                  <span className="mono">{detail.wallet_pass.last_error_code}</span>
-                </div>
-              )}
-            </div>
-          ) : (
-            <EmptyState
-              icon={<i className="ti ti-wallet" aria-hidden="true" />}
-              title="Not added to a wallet"
-              description="This attendee hasn't added their ticket to a wallet yet."
-            />
-          )}
-        </Card>
+            ) : (
+              <EmptyState
+                icon={<i className="ti ti-wallet" aria-hidden="true" />}
+                title="Not added to a wallet"
+                description="This attendee hasn't added their ticket to a wallet yet."
+              />
+            )}
+          </Card>
+        )}
       </div>
 
       <div className="attendee-detail-side">

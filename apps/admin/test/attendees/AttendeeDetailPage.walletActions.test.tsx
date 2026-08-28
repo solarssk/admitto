@@ -26,6 +26,9 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
 }));
 
 let mockArchivedAt: string | null = null;
+let mockWalletEnabled = true;
+let mockWalletAppleEnabled = true;
+let mockWalletGoogleEnabled = true;
 
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
@@ -40,6 +43,15 @@ vi.mock("react-router", async (importOriginal) => {
         timezone: "Europe/Warsaw",
         location: null,
         attendee_count: 1,
+        get wallet_enabled() {
+          return mockWalletEnabled;
+        },
+        get wallet_apple_enabled() {
+          return mockWalletAppleEnabled;
+        },
+        get wallet_google_enabled() {
+          return mockWalletGoogleEnabled;
+        },
         get archived_at() {
           return mockArchivedAt;
         },
@@ -150,6 +162,9 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   mockArchivedAt = null;
+  mockWalletEnabled = true;
+  mockWalletAppleEnabled = true;
+  mockWalletGoogleEnabled = true;
   vi.unstubAllGlobals();
 });
 
@@ -630,5 +645,44 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       // Only the Apple link menu item renders once wallet_google_link is null.
       expect(screen.queryByRole("menuitem", { name: /Copy Google Wallet link/ })).toBeNull();
     });
+  });
+});
+
+describe("AttendeeDetailPage — Wallet card gated by the event's platform toggles", () => {
+  it("hides the Wallet card entirely when the event's master wallet switch is off", async () => {
+    mockWalletEnabled = false;
+    mockLoad(baseDetail({ wallet_pass: walletPass() }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    // Selector disambiguates from the Wallet status chip elsewhere on the page (see the identical
+    // comment on "Wallet status chip tone" above) - a plain getByText("Wallet") matches both.
+    expect(screen.queryByText("Wallet", { selector: ".at-card__title" })).toBeNull();
+    expect(screen.queryByLabelText("Apple Wallet: Registered")).toBeNull();
+  });
+
+  it("hides the Wallet card when the master switch is on but both individual platforms are off", async () => {
+    mockWalletAppleEnabled = false;
+    mockWalletGoogleEnabled = false;
+    mockLoad(baseDetail({ wallet_pass: walletPass() }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.queryByText("Wallet", { selector: ".at-card__title" })).toBeNull();
+  });
+
+  it("shows only the enabled platform's row when just one platform toggle is on", async () => {
+    mockWalletGoogleEnabled = false;
+    mockLoad(
+      baseDetail({
+        wallet_pass: walletPass({ apple_active_registrations: 1, google_active_registrations: 1 }),
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.getByText("Wallet", { selector: ".at-card__title" })).toBeTruthy();
+    expect(screen.getByText("Apple Wallet")).toBeTruthy();
+    expect(screen.queryByText("Google Wallet")).toBeNull();
   });
 });

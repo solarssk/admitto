@@ -3,6 +3,11 @@ export { redactEmail } from "./redact.js";
 export { NO_COMPRESSION_HEADERS } from "./noCompressionHeaders.js";
 export type { DeliveryDetailDto, DeliveryDto } from "./deliveryDto.js";
 export type { EventWalletReportsResponse } from "./eventWalletReportsDto.js";
+export {
+  enabledWalletPlatforms,
+  type EnabledWalletPlatforms,
+  type EventWalletToggles,
+} from "./walletPlatforms.js";
 export type { HealthOverallStatus, HealthRowStatus } from "./healthStatus.js";
 export {
   SUPPORTED_LOCALE_TAGS,

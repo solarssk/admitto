@@ -1,4 +1,5 @@
 import { Tooltip } from "@admitto/ui";
+import type { EnabledWalletPlatforms } from "@admitto/shared";
 import type { AttendeeRowDto } from "../api/types.js";
 import "./attendees.css";
 import { walletRegistrationLabel } from "./walletRegistrationLabel.js";
@@ -27,17 +28,22 @@ function PlatformIcon({
 }
 
 /** Which wallet(s) (Apple/Google) an attendee has actually registered their pass to, shown
- * compactly in the Attendees list - one icon per platform, always present so the column stays a
- * consistent pair of icons to scan down every row; highlighted when
+ * compactly in the Attendees list - one icon per enabled platform, present for every row so the
+ * column stays a consistent set of icons to scan down; highlighted when
  * apple/google_active_registrations is nonzero, muted otherwise. No WalletPass row at all
  * (wallet not configured for the event, or the attendee hasn't added it) renders the same muted
  * pair as a row with a pass nobody registered - "Not added" either way (PO review, 2026-08-14:
  * was a bare dash, less scannable than icons that are just always there). Shares its label
  * vocabulary with the attendee detail page's own wallet section (walletRegistrationLabel) so
- * both surfaces describe the exact same state the same way. */
+ * both surfaces describe the exact same state the same way. `enabledPlatforms` (Event Settings ->
+ * Wallet) drops whichever icon(s) the event doesn't offer, and the whole cell renders nothing
+ * when neither platform is enabled - the caller is expected to skip the column entirely (header
+ * and cell) in that case, not render an empty one. */
 export function WalletColumnCell({
   status,
-}: Readonly<{ status: AttendeeRowDto["wallet_status"] }>) {
+  enabledPlatforms,
+}: Readonly<{ status: AttendeeRowDto["wallet_status"]; enabledPlatforms: EnabledWalletPlatforms }>) {
+  if (!enabledPlatforms.any) return null;
   const appleActive = (status?.apple_active_registrations ?? 0) > 0;
   const googleActive = (status?.google_active_registrations ?? 0) > 0;
   // No WalletPass row at all reads as "Not added", not "Status unknown" - the latter is reserved
@@ -51,8 +57,12 @@ export function WalletColumnCell({
     : "Not added";
   return (
     <span className="attendees-table-v2__wallet">
-      <PlatformIcon iconClass="ti-brand-apple" active={appleActive} label={`Apple Wallet: ${appleLabel}`} />
-      <PlatformIcon iconClass="ti-brand-google" active={googleActive} label={`Google Wallet: ${googleLabel}`} />
+      {enabledPlatforms.apple && (
+        <PlatformIcon iconClass="ti-brand-apple" active={appleActive} label={`Apple Wallet: ${appleLabel}`} />
+      )}
+      {enabledPlatforms.google && (
+        <PlatformIcon iconClass="ti-brand-google" active={googleActive} label={`Google Wallet: ${googleLabel}`} />
+      )}
     </span>
   );
 }

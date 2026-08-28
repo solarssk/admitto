@@ -1,5 +1,6 @@
 import { useRef, type ReactNode } from "react";
 import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton } from "@admitto/ui";
+import type { EnabledWalletPlatforms } from "@admitto/shared";
 import type {
   AttendeeMailStatusFilter,
   AttendeeRowDto,
@@ -28,7 +29,7 @@ import { formatAdmissionDisplayParts } from "../utils/event-dates.js";
 import "./attendees.css";
 
 /** First-load placeholder for the desktop table — same column layout, no data yet. */
-function AttendeesTableSkeleton() {
+function AttendeesTableSkeleton({ walletColumnVisible }: Readonly<{ walletColumnVisible: boolean }>) {
   return (
     <div className="attendees-table-wrap attendees-list-table-wrap" aria-busy="true">
       <span className="sr-only">Loading attendees…</span>
@@ -43,13 +44,13 @@ function AttendeesTableSkeleton() {
             <th>Attendance</th>
             <th>Mail</th>
             <th>Check-in</th>
-            <th>Wallet</th>
+            {walletColumnVisible && <th>Wallet</th>}
           </tr>
         </thead>
         <tbody>
           {Array.from({ length: 6 }, (_, i) => (
             <tr key={i}>
-              <td colSpan={9}>
+              <td colSpan={walletColumnVisible ? 9 : 8}>
                 <Skeleton variant="rect" height={44} />
               </td>
             </tr>
@@ -251,6 +252,7 @@ export interface AttendeesTableProps {
   onBulkDelete: () => void;
   eventTimezone: string;
   event: ArchivedGuardEvent;
+  walletPlatforms: EnabledWalletPlatforms;
 }
 
 interface AttendeeCardProps {
@@ -260,6 +262,7 @@ interface AttendeeCardProps {
   onView: () => void;
   ticketTypes: TicketTypeDto[];
   eventTimezone: string;
+  walletPlatforms: EnabledWalletPlatforms;
 }
 
 /** One attendee as a card — the < 768px equivalent of a table row: same data, same actions. */
@@ -270,6 +273,7 @@ function AttendeeCard({
   onView,
   ticketTypes,
   eventTimezone,
+  walletPlatforms,
 }: Readonly<AttendeeCardProps>) {
   return (
     <div className={`attendees-card${selected ? " attendees-card--selected" : ""}`}>
@@ -309,7 +313,7 @@ function AttendeeCard({
         ) : (
           <span className="attendee-readonly">Not checked in</span>
         )}
-        <WalletColumnCell status={row.wallet_status} />
+        <WalletColumnCell status={row.wallet_status} enabledPlatforms={walletPlatforms} />
       </div>
     </div>
   );
@@ -1104,6 +1108,7 @@ function AttendeesListContent({
   onSortChange,
   ticketTypes,
   eventTimezone,
+  walletPlatforms,
 }: Readonly<{
   loading: boolean;
   hasLoadedOnce: boolean;
@@ -1119,6 +1124,7 @@ function AttendeesListContent({
   onSortChange: (column: AttendeeSortBy) => void;
   ticketTypes: TicketTypeDto[];
   eventTimezone: string;
+  walletPlatforms: EnabledWalletPlatforms;
 }>): ReactNode {
   // Only the very first load ever (never-loaded, items always [] at that point) gets the
   // shimmer skeleton. A later filter/search that also lands on zero matches reuses the same
@@ -1128,7 +1134,14 @@ function AttendeesListContent({
   // has genuinely taken a moment.
   const showLoadingSkeleton = useDelayedLoading(loading && !hasLoadedOnce);
   if (loading && !hasLoadedOnce) {
-    return whenShown(showLoadingSkeleton, isDesktop ? <AttendeesTableSkeleton /> : <AttendeesCardsSkeleton />);
+    return whenShown(
+      showLoadingSkeleton,
+      isDesktop ? (
+        <AttendeesTableSkeleton walletColumnVisible={walletPlatforms.any} />
+      ) : (
+        <AttendeesCardsSkeleton />
+      ),
+    );
   }
 
   if (items.length === 0) {
@@ -1170,6 +1183,7 @@ function AttendeesListContent({
             onView={() => onViewAttendee(row.id)}
             ticketTypes={ticketTypes}
             eventTimezone={eventTimezone}
+            walletPlatforms={walletPlatforms}
           />
         ))}
       </div>
@@ -1205,7 +1219,7 @@ function AttendeesListContent({
               sortDir={sortDir}
               onSortChange={onSortChange}
             />
-            <th>Wallet</th>
+            {walletPlatforms.any && <th>Wallet</th>}
           </tr>
         </thead>
         <tbody>
@@ -1256,9 +1270,11 @@ function AttendeesListContent({
               <td>
                 <CheckInCell admittedAt={row.admitted_at} eventTimezone={eventTimezone} />
               </td>
-              <td>
-                <WalletColumnCell status={row.wallet_status} />
-              </td>
+              {walletPlatforms.any && (
+                <td>
+                  <WalletColumnCell status={row.wallet_status} enabledPlatforms={walletPlatforms} />
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -1340,6 +1356,7 @@ export function AttendeesTable({
   onBulkDelete,
   eventTimezone,
   event,
+  walletPlatforms,
 }: Readonly<AttendeesTableProps>) {
   // Wider than the shared 768px breakpoint (used elsewhere in this file for button-label
   // fit, unaffected): the table itself needs ~950-975px min-width for its 7 columns, which
@@ -1488,6 +1505,7 @@ export function AttendeesTable({
         onSortChange={onSortChange}
         ticketTypes={ticketTypes}
         eventTimezone={eventTimezone}
+        walletPlatforms={walletPlatforms}
       />
       <div className="attendees-table-foot">
         <div className="attendees-table-foot__summary">

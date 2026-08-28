@@ -80,6 +80,7 @@ const tableProps: AttendeesTableProps = {
   onBulkDelete: vi.fn(),
   eventTimezone: "UTC",
   event: { archived_at: null as string | null },
+  walletPlatforms: { apple: true, google: true, any: true },
 };
 
 function openMoreActionsMenu() {

@@ -53,6 +53,7 @@ const tableProps = {
   canBulkSend: true,
   eventTimezone: "UTC",
   event: { archived_at: null as string | null },
+  walletPlatforms: { apple: true, google: true, any: true },
 };
 
 beforeEach(() => {
@@ -119,6 +120,36 @@ describe("AttendeesTable Wallet column", () => {
     expect(screen.queryByRole("button", { name: "View attendee" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Revoke pass" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Restore pass" })).toBeNull();
+  });
+
+  it("omits the whole Wallet column (header and cells) when no wallet platform is enabled", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        walletPlatforms={{ apple: false, google: false, any: false }}
+      />,
+    );
+
+    const table = within(screen.getByRole("table"));
+    expect(table.queryByText("Wallet")).toBeNull();
+    expect(screen.queryByLabelText(/Apple Wallet:/)).toBeNull();
+    expect(screen.queryByLabelText(/Google Wallet:/)).toBeNull();
+  });
+
+  it("shows only the enabled platform's icon when just one wallet platform is on", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[baseRow]}
+        walletPlatforms={{ apple: true, google: false, any: true }}
+      />,
+    );
+
+    const table = within(screen.getByRole("table"));
+    expect(table.getByText("Wallet")).toBeTruthy();
+    expect(screen.getByLabelText("Apple Wallet: Not added")).toBeTruthy();
+    expect(screen.queryByLabelText(/Google Wallet:/)).toBeNull();
   });
 });
 
