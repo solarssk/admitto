@@ -14,6 +14,7 @@ import {
   logMfaRecoveryConsumed,
   logMfaSuccess,
   logTrustedDeviceCreated,
+  logTrustedDeviceUsed,
   type LoginAuditContext,
   type MfaAuditContext,
   type MfaMethod,
@@ -105,13 +106,19 @@ export async function login(
       next = LOGIN_NEXT.ENROLLMENT_REQUIRED;
     } else if (
       input.trustedDeviceToken &&
-      (await validateTrustedDevice(prisma, user.id, input.trustedDeviceToken, {
-        ip: input.ip,
-        userAgent: input.userAgent,
-      }))
+      (await validateTrustedDevice(prisma, user.id, input.trustedDeviceToken))
     ) {
       stage = SESSION_STAGE.FULL;
       next = LOGIN_NEXT.COMPLETE;
+      // Not itself a factor - MFA was already satisfied by this cookie's earlier creation - but
+      // the one remaining trace that this login skipped MFA at all, now that validateTrustedDevice
+      // no longer rejects on a mismatched IP (see its own doc comment).
+      await logTrustedDeviceUsed(prisma, {
+        userId: user.id,
+        ip: input.ip,
+        userAgent: input.userAgent,
+        timezone: input.timezone,
+      });
     } else {
       stage = SESSION_STAGE.MFA_PENDING;
       next = LOGIN_NEXT.MFA_REQUIRED;

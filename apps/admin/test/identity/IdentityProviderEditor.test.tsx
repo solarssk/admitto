@@ -337,7 +337,7 @@ describe("IdentityProviderEditor — edit", () => {
     mockFetch.mockResolvedValueOnce(validDetail);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
-    await screen.findByText("Couldn't load this provider.");
+    await screen.findByText("Could not load this provider.");
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByDisplayValue("Google")).toBeTruthy();
   });

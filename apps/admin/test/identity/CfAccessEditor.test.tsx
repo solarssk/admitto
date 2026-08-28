@@ -341,7 +341,7 @@ describe("CfAccessEditor (slice 4)", () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockFetch.mockRejectedValueOnce(new ApiError(500, "server_error"));
     renderEditorAt();
-    await screen.findByText("Couldn't load the Cloudflare Access configuration.");
+    await screen.findByText("Could not load the Cloudflare Access configuration.");
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 

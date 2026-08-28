@@ -189,7 +189,7 @@
 .account-totp-qr__error {
   margin: 0;
   font-size: var(--fs-sm);
-  color: var(--status-error, #dc2626);
+  color: var(--status-error, #d63939);
 }
 
 .account-uri-details {
@@ -448,7 +448,7 @@
 }
 
 .account-otp-digit:disabled {
-  background: var(--at-gray-50, #f8f9fa);
+  background: var(--at-gray-50, #f8fafc);
   color: var(--text-muted);
 }
 

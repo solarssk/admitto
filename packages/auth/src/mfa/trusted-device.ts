@@ -9,12 +9,6 @@ export interface CreateTrustedDeviceInput {
   label?: string;
 }
 
-/** Current request's IP/User-Agent, checked against what was recorded when the device was trusted. */
-export interface ValidateTrustedDeviceContext {
-  ip?: string;
-  userAgent?: string;
-}
-
 /** Create trusted-device row; returns raw token for cookie (once). */
 export async function createTrustedDevice(
   prisma: PrismaClient | Prisma.TransactionClient,
@@ -42,44 +36,30 @@ export async function createTrustedDevice(
 }
 
 /**
- * A trusted-device cookie must still look like the same browser it was minted for, otherwise it's
- * a fully portable bearer token for its whole validity window if exfiltrated (infostealer, stolen
- * laptop, leaked browser-profile backup) - see security finding on this function.
- *
- * A row with no recorded IP (created before this check shipped) has no baseline to compare
- * against, so it stays valid. Otherwise the request's IP must match. An earlier version also
- * accepted a bare User-Agent match as sufficient on its own - but this cookie is checked only
- * after the attacker already has both the account password AND the raw cookie value
- * (validateTrustedDevice is only consulted post-password in login.ts), so it is the LAST factor
- * standing between that attacker and a full MFA bypass. User-Agent is a client-supplied header
- * with no network-level verification at all - trivially copied, and low-entropy enough to guess
- * outright (a handful of common browser/OS strings cover most real traffic) - so accepting it
- * alone made this check defeatable by an attacker on any network who simply sends a common
- * User-Agent string. IP is a materially harder signal to fake for a real, stateful HTTP request
- * (it takes actual network presence, not just a header value), so it's the one signal this check
- * actually gates on now. This does mean a device's remembered trust no longer survives an IP
- * change (mobile network roaming, VPN) - re-verifying MFA in that case is the accepted, deliberate
- * trade-off for closing the guessable-header bypass; User-Agent is still recorded on the row for
- * context, just no longer part of the accept/reject decision.
- */
-function deviceContextMatches(
-  row: Pick<TrustedDevice, "ip">,
-  context: ValidateTrustedDeviceContext,
-): boolean {
-  if (row.ip === null) return true;
-  return row.ip === context.ip;
-}
-
-/**
  * Validate trusted-device cookie token for a user. Returns false immediately when
- * trusted_device_days = 0 (feature disabled), or when `context`'s IP no longer matches the one
- * recorded at creation time (see `deviceContextMatches`).
+ * trusted_device_days = 0 (feature disabled), the token is unknown/revoked/expired, or it
+ * belongs to a different user.
+ *
+ * Deliberately not bound to the request's IP or User-Agent (both are still recorded on the row -
+ * there is no per-device listing UI today, only an aggregate count and a bulk "forget all" action,
+ * but the values stay available for future admin/audit use - just not read back here). An earlier version
+ * rejected on IP mismatch, which broke this feature for any user whose ISP or mobile carrier
+ * rotates their public IP - common enough (daily reconnects are standard practice for many
+ * European home ISPs) that it defeated the point of "remember this device" for a large share of
+ * users. OWASP's Session Management Cheat Sheet explicitly warns against using client IP as an
+ * authentication control for this reason (NAT/CGNAT and roaming mean it identifies a network
+ * path, not a device or a person). No mainstream MFA implementation (Google, Microsoft Entra,
+ * GitHub) binds this cookie to IP either - the token itself is the trust boundary: cryptographically
+ * random, stored only as a hash (see `hashToken`), delivered as an httpOnly/secure/SameSite=Lax
+ * cookie so it can't be read via XSS or replayed cross-site, and only ever consulted post-password
+ * (validateTrustedDevice is not itself a factor - it just skips a redundant one). Revoking a
+ * specific device or all devices (`revokeTrustedDeviceByToken`, `revokeAllTrustedDevicesForUser`)
+ * remains the mechanism for cutting off a stolen cookie.
  */
 export async function validateTrustedDevice(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
   rawToken: string,
-  context: ValidateTrustedDeviceContext = {},
 ): Promise<boolean> {
   const days = await getTrustedDeviceDays(prisma);
   if (days === 0) return false;
@@ -92,7 +72,6 @@ export async function validateTrustedDevice(
   if (row?.user_id !== userId) return false;
   if (row.revoked_at) return false;
   if (row.expires_at.getTime() <= Date.now()) return false;
-  if (!deviceContextMatches(row, context)) return false;
 
   await prisma.trustedDevice.update({
     where: { id: row.id },

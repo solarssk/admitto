@@ -126,7 +126,7 @@ describe("RequirementsPage load failure", () => {
     renderPage();
 
     await screen.findByText("Could not load requirements");
-    expect(screen.getByText("Failed to load requirements.")).toBeTruthy();
+    expect(screen.getByText("Could not load requirements.")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 

@@ -264,7 +264,7 @@ export function CfAccessEditor() {
   } else if (loadState === "error") {
     content = (
       <div className="identity-editor__error">
-        <p>Couldn't load the Cloudflare Access configuration.</p>
+        <p>Could not load the Cloudflare Access configuration.</p>
         <Button variant="secondary" onClick={retryLoad}>
           Retry
         </Button>

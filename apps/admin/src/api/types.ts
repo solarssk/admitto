@@ -1,4 +1,9 @@
-import type { DeliveryDto, HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
+import type {
+  DeliveryDto,
+  EventWalletReportsResponse as EventWalletReportsDto,
+  HealthOverallStatus,
+  HealthRowStatus,
+} from "@admitto/shared";
 import type { EventLocationInput } from "@admitto/location";
 import type { LogoCropMeta, LogoPersistenceDto } from "@admitto/mail-templates";
 import type {
@@ -1874,6 +1879,13 @@ export interface EventReportsResponse {
     operator_email: string | null;
     count: number;
   }>;
+}
+
+/** Mirrors `@admitto/shared`'s `EventWalletReportsResponse` except `by_ticket_type[].color` is
+ * narrowed to `TicketTypeColor` for the frontend's own swatch lookup (the backend only knows it
+ * as a plain string). Derived so the two can't drift. */
+export interface EventWalletReportsResponse extends Omit<EventWalletReportsDto, "by_ticket_type"> {
+  by_ticket_type: Array<Omit<EventWalletReportsDto["by_ticket_type"][number], "color"> & { color: TicketTypeColor }>;
 }
 
 // --- Identity providers & Cloudflare Access (SPA Settings → Identity, #266) ---

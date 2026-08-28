@@ -734,7 +734,7 @@ export function IdentityProviderEditor({
 
   const errorContent = (
     <div className="identity-editor__error">
-      <p>Couldn't load this provider.</p>
+      <p>Could not load this provider.</p>
       <Button variant="secondary" onClick={retryLoad}>
         Retry
       </Button>
