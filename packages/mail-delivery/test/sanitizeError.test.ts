@@ -7,7 +7,7 @@ describe("clientSafeDeliveryError", () => {
       clientSafeDeliveryError(
         "invalid_client: AADSTS70011 client_id=abc123 graph.microsoft.com",
       ),
-    ).toBe("send failed");
+    ).toBe("Send failed.");
   });
 
   it("allows short generic transport errors", () => {
@@ -21,17 +21,17 @@ describe("clientSafeDeliveryError", () => {
   });
 
   it("returns generic message for long errors", () => {
-    expect(clientSafeDeliveryError("x".repeat(121))).toBe("send failed");
+    expect(clientSafeDeliveryError("x".repeat(121))).toBe("Send failed.");
   });
 
   it("returns generic message for empty input", () => {
-    expect(clientSafeDeliveryError("")).toBe("send failed");
-    expect(clientSafeDeliveryError(undefined)).toBe("send failed");
+    expect(clientSafeDeliveryError("")).toBe("Send failed.");
+    expect(clientSafeDeliveryError(undefined)).toBe("Send failed.");
   });
 
   it("returns generic message for bearer token errors", () => {
-    expect(clientSafeDeliveryError("Bearer token expired")).toBe("send failed");
-    expect(clientSafeDeliveryError("client_secret mismatch")).toBe("send failed");
+    expect(clientSafeDeliveryError("Bearer token expired")).toBe("Send failed.");
+    expect(clientSafeDeliveryError("client_secret mismatch")).toBe("Send failed.");
   });
 
   it("redacts internal URLs", () => {
@@ -41,14 +41,14 @@ describe("clientSafeDeliveryError", () => {
   });
 
   it("redacts host:port patterns", () => {
-    expect(clientSafeDeliveryError("Connection refused smtp.corp.local:25")).toBe("send failed");
-    expect(clientSafeDeliveryError("TLS handshake failed: 10.0.1.15:587")).toBe("send failed");
+    expect(clientSafeDeliveryError("Connection refused smtp.corp.local:25")).toBe("Send failed.");
+    expect(clientSafeDeliveryError("TLS handshake failed: 10.0.1.15:587")).toBe("Send failed.");
   });
 
   it("redacts internal mailer implementation errors", () => {
     expect(
       clientSafeDeliveryError("export_only provider requires exportSink in createMailer deps"),
-    ).toBe("send failed");
+    ).toBe("Send failed.");
   });
 
   it("allows plain send error without internals", () => {

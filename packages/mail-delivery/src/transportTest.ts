@@ -8,6 +8,7 @@ import {
 } from "@admitto/mail-templates";
 import { closeMailer, createMailer, type MailerConfig, type MailerProvider, type SendResult } from "@admitto/mailer";
 import { resolveMailConfig, resolveMailConfigForOrg } from "@admitto/mailer-config";
+import { MAIL_PROVIDER_LABELS } from "@admitto/shared";
 import { randomBytes } from "node:crypto";
 import type { MailDeliveryDeps } from "./send.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
@@ -15,13 +16,6 @@ import { sanitizeDeliveryError } from "./sanitizeError.js";
 const TRANSPORT_TEST_SUBJECT_PREFIX = "Admitto mail transport test";
 /** Public product wordmark served by apps/web (same allowlist as the ticket mark). */
 const ADMITTO_LOGO_PATH = "/assets/admitto-logo.svg";
-
-const PROVIDER_LABELS: Record<MailerProvider, string> = {
-  smtp: "SMTP",
-  graph: "Microsoft Graph",
-  powerautomate: "Power Automate",
-  export_only: "Export only",
-};
 
 export type TransportTestLogoKind = "branding" | "admitto";
 
@@ -189,7 +183,7 @@ function buildTransportTestDiagRows(
   stamp: string,
   ctx: TransportTestMessageContext,
 ): DiagRow[] {
-  const providerLabel = ctx.provider ? (PROVIDER_LABELS[ctx.provider] ?? ctx.provider) : null;
+  const providerLabel = ctx.provider ? (MAIL_PROVIDER_LABELS[ctx.provider] ?? ctx.provider) : null;
   const scopeLabel = ctx.scope === "event" ? eventScopeLabel(ctx) : organizationScopeLabel(ctx);
 
   const rows: DiagRow[] = [
