@@ -507,7 +507,15 @@ describe("ReportsPage — Wallets tab", () => {
     expect(fetchEventWalletReports).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
 
-    await waitFor(() => expect(fetchEventWalletReports).toHaveBeenCalledTimes(1));
+    // Waits on the fetch call *and* the tab's own visible aria-selected state, not just the fetch
+    // call alone - a mock call count can be satisfied by a stale count from residual state without
+    // React having actually committed the activeTab flip yet (root-caused via a CI-only failure on
+    // the stacked export PR, where a subsequent Export click raced ahead of the tab switch and hit
+    // the wrong export branch).
+    await waitFor(() => {
+      expect(fetchEventWalletReports).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("tab", { name: "Wallets", selected: true })).toBeTruthy();
+    });
   });
 
   it("does not refetch wallet data when switching tabs away and back (display:contents keeps it mounted)", async () => {
@@ -516,7 +524,10 @@ describe("ReportsPage — Wallets tab", () => {
     renderPage();
 
     fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
-    await waitFor(() => expect(fetchEventWalletReports).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(fetchEventWalletReports).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("tab", { name: "Wallets", selected: true })).toBeTruthy();
+    });
 
     fireEvent.click(screen.getByRole("tab", { name: "Event day" }));
     fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
