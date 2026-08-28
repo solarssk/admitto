@@ -261,7 +261,7 @@ describe("LocationSettingsPanel — loading", () => {
     first.reject(new Error("stale request failed"));
 
     expect(await screen.findByDisplayValue("Springfield Hall")).toBeTruthy();
-    expect(screen.queryByText("Failed to load location settings.")).toBeNull();
+    expect(screen.queryByText("Could not load location settings.")).toBeNull();
   });
 
   it("does not apply a successful location response after its load is aborted", async () => {

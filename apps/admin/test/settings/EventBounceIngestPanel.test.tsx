@@ -94,7 +94,7 @@ describe("EventBounceIngestPanel", () => {
 
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toMatch(
-      /Failed to load bounce detection settings/,
+      /Could not load bounce detection settings/,
     );
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByLabelText("IMAP host")).toBeTruthy();

@@ -220,7 +220,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
       })
       .catch((err) => {
         if (ac.signal.aborted) return;
-        setError(operatorApiErrorMessage(err, "Failed to load system logs."));
+        setError(operatorApiErrorMessage(err, "Could not load system logs."));
       })
       .finally(() => {
         if (!ac.signal.aborted) setLoading(false);

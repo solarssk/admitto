@@ -288,7 +288,7 @@ export const EventMailSettingsCard = forwardRef<
       applyResponse(data);
     } catch {
       if (ac.signal.aborted) return;
-      setLoadError("Failed to load mail settings.");
+      setLoadError("Could not load mail settings.");
       setApiData(null);
     } finally {
       if (!ac.signal.aborted) setLoading(false);

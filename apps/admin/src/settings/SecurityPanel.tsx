@@ -159,7 +159,7 @@ export function SecurityPanel() {
       setSettings(data);
       setDraft(draftFromSettings(data));
     } catch (err) {
-      const message = operatorApiErrorMessage(err, "Failed to load security settings.");
+      const message = operatorApiErrorMessage(err, "Could not load security settings.");
       setError(message);
       addToast(message, "error");
     } finally {

@@ -457,7 +457,7 @@ describe("CommunicationSendPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("alert").textContent).toBe("Failed to load send status.");
+      expect(screen.getByRole("alert").textContent).toBe("Could not load send status.");
     });
     // A failed status check must not show a stale "Send complete" card from the last known
     // batchStatus - the error notice above is the only outcome shown.
@@ -722,13 +722,13 @@ describe("CommunicationSendPanel", () => {
     render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
     fireEvent.click(screen.getByRole("radio", { name: "By ticket type" }));
 
-    expect(await screen.findByText("Failed to load ticket types.")).toBeTruthy();
+    expect(await screen.findByText("Could not load ticket types.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     await waitFor(() => {
       expect(fetchTicketTypes).toHaveBeenCalledTimes(2);
     });
-    expect(screen.queryByText("Failed to load ticket types.")).toBeNull();
+    expect(screen.queryByText("Could not load ticket types.")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /^Ticket type,/ }));
     expect(await screen.findByRole("button", { name: "VIP" })).toBeTruthy();
   });
@@ -1013,7 +1013,7 @@ describe("CommunicationSendPanel", () => {
       await Promise.resolve();
     });
     // Cancelled path must not resurrect error UI after unmount.
-    expect(screen.queryByText("Failed to load ticket types.")).toBeNull();
+    expect(screen.queryByText("Could not load ticket types.")).toBeNull();
   });
 
   it("ignores poll results and poll failures after the panel unmounts mid-send", async () => {

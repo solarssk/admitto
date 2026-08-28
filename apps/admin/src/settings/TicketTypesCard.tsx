@@ -382,7 +382,7 @@ export function TicketTypesCard({ eventId, event, onDirtyChange, onSavingChange,
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
-        setLoadError(operatorApiErrorMessage(err, "Failed to load ticket types."));
+        setLoadError(operatorApiErrorMessage(err, "Could not load ticket types."));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);

@@ -65,7 +65,7 @@ describe("TicketTypesCard", () => {
 
   it("renders an inline error with Retry when the catalog fails to load, and Retry re-fetches", async () => {
     renderCard([], { fetchError: new Error("network down") });
-    expect(await screen.findByText("Failed to load ticket types.")).toBeTruthy();
+    expect(await screen.findByText("Could not load ticket types.")).toBeTruthy();
 
     vi.mocked(fetchTicketTypes).mockResolvedValueOnce([vipType]);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));

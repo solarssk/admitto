@@ -202,7 +202,7 @@ export function RoleAssignmentsTab({ onAssignmentsChanged, onCountChange }: Read
       onCountChange?.(data.total);
     } catch (err) {
       if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
-      setError(operatorApiErrorMessage(err, "Failed to load role assignments."));
+      setError(operatorApiErrorMessage(err, "Could not load role assignments."));
     } finally {
       if (!signal?.aborted) setLoading(false);
     }

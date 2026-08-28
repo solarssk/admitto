@@ -237,7 +237,7 @@ describe("BrandingSettingsPanel - loading and errors", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByRole("button", { name: "Retry" });
     expect(screen.getByText("Could not load branding settings")).toBeTruthy();
-    expect(screen.getByText(/Failed to load branding settings/)).toBeTruthy();
+    expect(screen.getByText("Could not load branding settings. Use Retry to reload.")).toBeTruthy();
     expect(screen.queryByText("secret_internal")).toBeNull();
     expect(screen.queryByTestId("at-toast")).toBeNull();
   });

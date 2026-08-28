@@ -53,7 +53,7 @@ export const WizardStep3Branding = forwardRef<WizardStep3BrandingHandle, WizardS
         } catch (err) {
           if (ac.signal.aborted) return;
           addToast(
-            operatorApiErrorMessage(err, "Failed to load branding."),
+            operatorApiErrorMessage(err, "Could not load branding."),
             "error",
           );
         } finally {

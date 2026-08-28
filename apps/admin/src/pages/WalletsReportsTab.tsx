@@ -438,7 +438,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({ eventId }: Re
             : operatorApiErrorMessage(err, "Request failed."),
         );
       } else {
-        setError("Failed to load wallet report.");
+        setError("Could not load wallet report.");
       }
     } finally {
       if (!ac.signal.aborted) setLoading(false);
@@ -460,7 +460,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({ eventId }: Re
     return (
       <EmptyState
         icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
-        title="Failed to load wallet report"
+        title="Could not load wallet report"
         description={error}
         action={
           <Button variant="secondary" onClick={() => void loadData()}>

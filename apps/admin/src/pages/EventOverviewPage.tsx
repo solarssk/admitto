@@ -1677,7 +1677,7 @@ export function EventOverviewPage() {
           if (err instanceof DOMException && err.name === "AbortError") return;
           if (err instanceof ApiError) reportApiError(err.status);
           if (!statsErrorToastedRef.current) {
-            addToast("Failed to load event stats.", "error");
+            addToast("Could not load event stats.", "error");
             statsErrorToastedRef.current = true;
           }
         })

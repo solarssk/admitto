@@ -992,7 +992,7 @@ describe("AccountPage toasts", () => {
       .mockResolvedValueOnce({ sessions: [] });
 
     renderWithToast(<AccountPage />);
-    expect(await screen.findByText("Failed to load sessions.")).toBeTruthy();
+    expect(await screen.findByText("Could not load sessions.")).toBeTruthy();
     expect(screen.queryByText("internal session transport detail")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -1406,7 +1406,7 @@ describe("AccountPage toasts", () => {
     mockFetchSessions.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<AccountPage />);
     await waitFor(() => {
-      expect(screen.getByText(/Failed to load sessions/)).toBeTruthy();
+      expect(screen.getByText(/Could not load sessions/)).toBeTruthy();
     });
   });
 

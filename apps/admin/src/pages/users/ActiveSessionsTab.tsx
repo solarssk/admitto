@@ -67,7 +67,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
       setSessions(data.sessions);
       onCountChange?.(data.sessions.length);
     } catch (err) {
-      const message = operatorApiErrorMessage(err, "Failed to load sessions.");
+      const message = operatorApiErrorMessage(err, "Could not load sessions.");
       setError(message);
       addToast(message, "error");
     } finally {

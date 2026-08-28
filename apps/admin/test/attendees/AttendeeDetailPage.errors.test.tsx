@@ -110,7 +110,7 @@ describe("AttendeeDetailPage operator errors", () => {
     loadAttendeeDetailData.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderPage();
     await waitFor(() => {
-      expect(screen.getByText(/Failed to load attendee/)).toBeTruthy();
+      expect(screen.getByText(/Could not load attendee/)).toBeTruthy();
     });
   });
 
@@ -121,14 +121,14 @@ describe("AttendeeDetailPage operator errors", () => {
 
     await screen.findByRole("heading", { name: "Anna" });
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    expect(await screen.findByText("Failed to load ticket types.")).toBeTruthy();
+    expect(await screen.findByText("Could not load ticket types.")).toBeTruthy();
 
     vi.mocked(fetchTicketTypes).mockResolvedValueOnce([
       { id: "tt-1", key: "vip", label: "VIP", color: "purple", sort_order: 0, attendee_count: 1, created_at: "2026-01-01T00:00:00.000Z" },
     ]);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
-    await waitFor(() => expect(screen.queryByText("Failed to load ticket types.")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Could not load ticket types.")).toBeNull());
   });
 
   it("shows the items-load-warning Notice when custom attribute fields fail to load", async () => {

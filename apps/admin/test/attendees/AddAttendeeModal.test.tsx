@@ -206,17 +206,16 @@ describe("AddAttendeeModal", () => {
     );
   });
 
-  it("shows an inline alert when the ticket-type catalog fails to load, and clears it on reopen", async () => {
-    vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
+  // AddAttendeeModal has no Retry button for either load - closing and reopening the dialog
+  // re-runs the load effect, which is this component's retry path for both.
+  async function expectDismissableLoadErrorAlert(message: string) {
     const { rerender } = render(
       <AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />,
     );
 
-    const alert = await screen.findByText("Failed to load ticket types.");
+    const alert = await screen.findByText(message);
     expect(alert.getAttribute("role")).toBe("alert");
 
-    // AddAttendeeModal has no Retry button (same as the attribute-fields sibling error) - closing
-    // and reopening the dialog re-runs the load effect, which is this component's retry path.
     rerender(
       <AddAttendeeModal eventId="evt-1" open={false} onClose={() => {}} onCreated={() => {}} />,
     );
@@ -225,15 +224,25 @@ describe("AddAttendeeModal", () => {
     );
 
     await waitFor(() => {
-      expect(screen.queryByText("Failed to load ticket types.")).toBeNull();
+      expect(screen.queryByText(message)).toBeNull();
     });
+  }
+
+  it("shows an inline alert when the attribute-field registry fails to load, and clears it on reopen", async () => {
+    mockFetchEventCustomFields.mockRejectedValueOnce(new Error("network down"));
+    await expectDismissableLoadErrorAlert("Could not load attribute fields. Try reopening the dialog.");
+  });
+
+  it("shows an inline alert when the ticket-type catalog fails to load, and clears it on reopen", async () => {
+    vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
+    await expectDismissableLoadErrorAlert("Could not load ticket types.");
   });
 
   it("still allows submitting a typeless attendee while the ticket-type catalog failed to load (PO follow-up)", async () => {
     vi.mocked(fetchTicketTypes).mockRejectedValueOnce(new Error("network down"));
     render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
 
-    await screen.findByText("Failed to load ticket types.");
+    await screen.findByText("Could not load ticket types.");
 
     fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan" } });
     fireEvent.change(screen.getByLabelText("Last name *"), { target: { value: "Kowalski" } });

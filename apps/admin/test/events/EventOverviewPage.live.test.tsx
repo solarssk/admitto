@@ -458,7 +458,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     fetchEventOverview.mockRejectedValueOnce(new Error("network unavailable"));
     renderPage();
 
-    await screen.findByText("Failed to load event stats.");
+    await screen.findByText("Could not load event stats.");
     expect(within(statsRow()).getAllByText("-")).toHaveLength(3);
   });
 

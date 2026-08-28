@@ -531,7 +531,7 @@ export function AccountPage() {
     } catch (err) {
       if (signal?.aborted) return;
       if (redirectToLoginIfUnauthorized(err)) return;
-      setSessionsError(operatorApiErrorMessage(err, "Failed to load sessions."));
+      setSessionsError(operatorApiErrorMessage(err, "Could not load sessions."));
     } finally {
       if (!signal?.aborted) setSessionsLoading(false);
     }

@@ -157,7 +157,7 @@ describe("WalletsReportsTab", () => {
 
     renderWithToast(<WalletsReportsTab eventId="evt-1" />);
 
-    await screen.findByText("Failed to load wallet report");
+    await screen.findByText("Could not load wallet report");
     expect(screen.getByText("Internal server problem")).toBeTruthy();
     expect(reportApiError).toHaveBeenCalledWith(500);
 
@@ -167,7 +167,7 @@ describe("WalletsReportsTab", () => {
       expect(fetchEventWalletReports).toHaveBeenCalledTimes(2);
     });
     expect(await screen.findByText("Wallet adoption")).toBeTruthy();
-    expect(screen.queryByText("Failed to load wallet report")).toBeNull();
+    expect(screen.queryByText("Could not load wallet report")).toBeNull();
   });
 
   it("shows a generic message for a non-ApiError failure (e.g. a network error)", async () => {
@@ -175,8 +175,8 @@ describe("WalletsReportsTab", () => {
 
     renderWithToast(<WalletsReportsTab eventId="evt-1" />);
 
-    await screen.findByText("Failed to load wallet report");
-    expect(screen.getByText("Failed to load wallet report.")).toBeTruthy();
+    await screen.findByText("Could not load wallet report");
+    expect(screen.getByText("Could not load wallet report.")).toBeTruthy();
     expect(reportApiError).not.toHaveBeenCalled();
   });
 
@@ -188,7 +188,7 @@ describe("WalletsReportsTab", () => {
 
     renderWithToast(<WalletsReportsTab eventId="evt-1" />);
 
-    await screen.findByText("Failed to load wallet report");
+    await screen.findByText("Could not load wallet report");
     expect(screen.getByText("You do not have access to this event.")).toBeTruthy();
     expect(reportApiError).toHaveBeenCalledWith(403);
   });

@@ -173,7 +173,7 @@ export function UsersPage() {
       setStats(statsData);
     } catch (err) {
       if (signal?.aborted || (err instanceof DOMException && err.name === "AbortError")) return;
-      setError(operatorApiErrorMessage(err, "Failed to load users."));
+      setError(operatorApiErrorMessage(err, "Could not load users."));
     } finally {
       if (!signal?.aborted) setLoading(false);
     }

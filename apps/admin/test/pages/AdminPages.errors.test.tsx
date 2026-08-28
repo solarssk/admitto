@@ -297,7 +297,7 @@ describe("EventSettingsPage operator errors", () => {
     vi.mocked(fetchEventSettings).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderSettings();
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to load event settings/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not load event settings/);
     });
   });
 
@@ -429,7 +429,7 @@ describe("UsersPage operator errors", () => {
     vi.mocked(fetchAdminUsers).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToastAndRouter(<UsersPage />);
     await waitFor(() => {
-      expect(screen.getByText(/Failed to load users/)).toBeTruthy();
+      expect(screen.getByText(/Could not load users/)).toBeTruthy();
     });
   });
 
@@ -474,7 +474,7 @@ describe("RoleAssignmentsTab operator errors", () => {
     vi.mocked(fetchRoleAssignments).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderWithToast(<RoleAssignmentsTab />);
     await waitFor(() => {
-      expect(screen.getByText(/Failed to load role assignments/)).toBeTruthy();
+      expect(screen.getByText(/Could not load role assignments/)).toBeTruthy();
     });
   });
 });

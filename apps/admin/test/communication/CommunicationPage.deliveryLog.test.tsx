@@ -635,7 +635,7 @@ describe("CommunicationPage delivery log - sent message preview modal", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "View sent message" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Sent message preview" });
-    expect(await within(dialog).findByText("Failed to load the sent message.")).toBeTruthy();
+    expect(await within(dialog).findByText("Could not load the sent message.")).toBeTruthy();
   });
 
   it("shows a not-available message once the retention window has cleared the stored snapshot", async () => {
@@ -846,7 +846,7 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
-    expect(await within(dialog).findByText("Failed to load delivery details.")).toBeTruthy();
+    expect(await within(dialog).findByText("Could not load delivery details.")).toBeTruthy();
   });
 
   it("the View sent message footer button swaps to the sent-message modal", async () => {

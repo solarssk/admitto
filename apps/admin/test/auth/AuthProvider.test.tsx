@@ -71,7 +71,9 @@ describe("AuthProvider", () => {
       </AuthProvider>,
     );
 
-    await screen.findByText("Could not load session");
+    await waitFor(() => {
+      expect(screen.getByText("Could not load session")).toBeTruthy();
+    });
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     await waitFor(() => {

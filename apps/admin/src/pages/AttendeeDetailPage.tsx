@@ -1603,7 +1603,7 @@ export function AttendeeDetailPage() {
       if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
         setNotFound(true);
       } else {
-        setError(operatorApiErrorMessage(err, "Failed to load attendee."));
+        setError(operatorApiErrorMessage(err, "Could not load attendee."));
       }
     } finally {
       if (isCurrentRequest()) setLoading(false);
@@ -1630,7 +1630,7 @@ export function AttendeeDetailPage() {
       })
       .catch((err: unknown) => {
         if (!isStillSelected(target)) return;
-        setTicketTypesError(operatorApiErrorMessage(err, "Failed to load ticket types."));
+        setTicketTypesError(operatorApiErrorMessage(err, "Could not load ticket types."));
       });
   }, [eventId, attendeeId]);
 

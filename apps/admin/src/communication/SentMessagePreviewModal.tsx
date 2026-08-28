@@ -37,7 +37,7 @@ export function SentMessagePreviewModal({ eventId, row, onClose }: Readonly<Sent
       .then((data) => setRendered(data))
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
-        setError(operatorApiErrorMessage(err, "Failed to load the sent message."));
+        setError(operatorApiErrorMessage(err, "Could not load the sent message."));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);

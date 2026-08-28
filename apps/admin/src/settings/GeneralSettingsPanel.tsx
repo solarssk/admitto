@@ -109,7 +109,7 @@ export function GeneralSettingsPanel() {
       supportContactSavedRef.current = supportContact;
       setEmailError(null);
     } catch (err) {
-      const message = operatorApiErrorMessage(err, "Failed to load organisation settings.");
+      const message = operatorApiErrorMessage(err, "Could not load organisation settings.");
       setLoadError(message);
     } finally {
       setLoading(false);
