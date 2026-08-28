@@ -506,8 +506,8 @@ describe("ReportsPage — Wallets tab", () => {
   /** Clicks the Wallets tab and waits for the switch to genuinely settle - the initial
    * admissions-tab fetch (fired on mount, independent of anything below) has resolved, the wallet
    * fetch has fired, and the tab's own aria-selected state reflects the switch. Root-caused via a
-   * CI-only failure on the stacked export PR (passed locally every time, failed repeatedly on
-   * GitHub's own runner): clicking Wallets immediately after renderPage() left the still-in-flight
+   * CI-only failure (passed locally every time, failed repeatedly on GitHub's own runner): every
+   * test below used to click Wallets immediately after renderPage(), leaving the still-in-flight
    * admissions fetch's own pending state update racing the tab switch under CI's heavier
    * scheduling contention - a race this project's local dev machine never reproduced. Settling the
    * first fetch before triggering the second state transition removes that overlap entirely. */
@@ -550,18 +550,7 @@ describe("ReportsPage — Wallets tab", () => {
     exportEventWalletReportsCsv.mockResolvedValue(undefined);
     renderPage();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
-    // Waits on the fetch call *and* the tab's own visible aria-selected state, not just the fetch
-    // call alone - a mock call count can be satisfied by a stale count from residual state without
-    // React having actually committed the activeTab flip yet, letting a subsequent Export click
-    // race ahead and hit the wrong (admissions) branch. Confirmed as the real cause of a CI-only
-    // failure (passed locally every time, failed twice on GitHub's own runner) - the DOM snapshot
-    // on failure showed the Wallets tab already active by the time of the *error*, but the export
-    // click had already gone out under the previous (event day) tab.
-    await waitFor(() => {
-      expect(fetchEventWalletReports).toHaveBeenCalledTimes(1);
-      expect(screen.getByRole("tab", { name: "Wallets", selected: true })).toBeTruthy();
-    });
+    await clickWalletsTab();
 
     fireEvent.click(screen.getByRole("button", { name: /Export/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
@@ -587,23 +576,17 @@ describe("ReportsPage — Wallets tab", () => {
     exportEventWalletReportsCsv.mockRejectedValueOnce(new TypeError("network down"));
     renderPage();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
-    // Waits on the fetch call *and* the tab's own visible aria-selected state, not just the fetch
-    // call alone - a mock call count can be satisfied by a stale count from residual state without
-    // React having actually committed the activeTab flip yet, letting a subsequent Export click
-    // race ahead and hit the wrong (admissions) branch. Confirmed as the real cause of a CI-only
-    // failure (passed locally every time, failed twice on GitHub's own runner) - the DOM snapshot
-    // on failure showed the Wallets tab already active by the time of the *error*, but the export
-    // click had already gone out under the previous (event day) tab.
-    await waitFor(() => {
-      expect(fetchEventWalletReports).toHaveBeenCalledTimes(1);
-      expect(screen.getByRole("tab", { name: "Wallets", selected: true })).toBeTruthy();
-    });
+    await clickWalletsTab();
 
     fireEvent.click(screen.getByRole("button", { name: /Export/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
 
-    expect(await screen.findByText("Export failed", {}, { timeout: 3000 })).toBeTruthy();
+    // Matches AdminPages.errors.test.tsx's own proven-reliable pattern for this exact scenario
+    // (toasts a generic export failure for a non-API error) - getByTestId + textContent + toMatch
+    // inside waitFor, not findByText.
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed/);
+    });
   });
 
   it("shows the resolved API error message when the wallets CSV export fails with an ApiError", async () => {
@@ -612,23 +595,16 @@ describe("ReportsPage — Wallets tab", () => {
     exportEventWalletReportsCsv.mockRejectedValueOnce(new ApiError(500, "boom"));
     renderPage();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
-    // Waits on the fetch call *and* the tab's own visible aria-selected state, not just the fetch
-    // call alone - a mock call count can be satisfied by a stale count from residual state without
-    // React having actually committed the activeTab flip yet, letting a subsequent Export click
-    // race ahead and hit the wrong (admissions) branch. Confirmed as the real cause of a CI-only
-    // failure (passed locally every time, failed twice on GitHub's own runner) - the DOM snapshot
-    // on failure showed the Wallets tab already active by the time of the *error*, but the export
-    // click had already gone out under the previous (event day) tab.
-    await waitFor(() => {
-      expect(fetchEventWalletReports).toHaveBeenCalledTimes(1);
-      expect(screen.getByRole("tab", { name: "Wallets", selected: true })).toBeTruthy();
-    });
+    await clickWalletsTab();
 
     fireEvent.click(screen.getByRole("button", { name: /Export/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
 
-    expect(await screen.findByText("Request failed.", {}, { timeout: 3000 })).toBeTruthy();
+    // See the identical comment on the non-ApiError test above for why this matches
+    // AdminPages.errors.test.tsx's own proven-reliable toast-assertion shape.
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed\./);
+    });
     expect(reportApiError).toHaveBeenCalledWith(500);
   });
 
@@ -638,18 +614,7 @@ describe("ReportsPage — Wallets tab", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     renderPage();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
-    // Waits on the fetch call *and* the tab's own visible aria-selected state, not just the fetch
-    // call alone - a mock call count can be satisfied by a stale count from residual state without
-    // React having actually committed the activeTab flip yet, letting a subsequent Export click
-    // race ahead and hit the wrong (admissions) branch. Confirmed as the real cause of a CI-only
-    // failure (passed locally every time, failed twice on GitHub's own runner) - the DOM snapshot
-    // on failure showed the Wallets tab already active by the time of the *error*, but the export
-    // click had already gone out under the previous (event day) tab.
-    await waitFor(() => {
-      expect(fetchEventWalletReports).toHaveBeenCalledTimes(1);
-      expect(screen.getByRole("tab", { name: "Wallets", selected: true })).toBeTruthy();
-    });
+    await clickWalletsTab();
 
     fireEvent.click(screen.getByRole("button", { name: /Export/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /PDF/ }));
