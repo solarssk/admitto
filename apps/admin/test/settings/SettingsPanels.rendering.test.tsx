@@ -174,7 +174,7 @@ describe("AuditLogPanel rendering", () => {
     renderAuditPanel();
 
     expect(await screen.findByText("Could not load audit log")).toBeTruthy();
-    expect(screen.getByText(/Failed to load audit log/)).toBeTruthy();
+    expect(screen.getByText("Could not load audit log.")).toBeTruthy();
     expect(screen.queryByText("secret_internal")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -1352,7 +1352,7 @@ describe("AuditLogPanel Security view rendering", () => {
     renderSecurityPanel();
 
     expect(await screen.findByText("Could not load security audit log")).toBeTruthy();
-    expect(screen.getByText(/Failed to load security audit log/)).toBeTruthy();
+    expect(screen.getByText("Could not load security audit log.")).toBeTruthy();
     expect(screen.queryByText("secret_internal")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));

@@ -1682,7 +1682,7 @@ export function AuditLogPanel() {
     hasActiveFilters: hasActiveAuditFilters,
     fetchPage: fetchAuditLogPage,
     exportRows: exportAuditLogRows,
-    loadErrorMessage: "Failed to load audit log.",
+    loadErrorMessage: "Could not load audit log.",
     exportErrorMessage: "Failed to export audit log.",
     isVisible: view === "audit",
   });
@@ -1691,7 +1691,7 @@ export function AuditLogPanel() {
     hasActiveFilters: hasActiveSecurityFilters,
     fetchPage: fetchSecurityLogPage,
     exportRows: exportSecurityLogRows,
-    loadErrorMessage: "Failed to load security audit log.",
+    loadErrorMessage: "Could not load security audit log.",
     exportErrorMessage: "Failed to export security audit log.",
     isVisible: view === "security",
   });

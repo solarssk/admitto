@@ -254,6 +254,34 @@ describe("Admin pages delayed loading", () => {
   });
 });
 
+function renderEventsPicker() {
+  return renderWithToast(
+    <MemoryRouter initialEntries={["/admin"]}>
+      <Routes>
+        <Route path="/admin" element={<EventsPickerPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+describe("EventsPickerPage operator errors", () => {
+  it("explains a forbidden events load without exposing the API error", async () => {
+    vi.mocked(fetchAdminEvents).mockRejectedValueOnce(new ApiError(403, "internal_permission_detail"));
+    renderEventsPicker();
+
+    expect(await screen.findByText("You do not have access to the admin panel.")).toBeTruthy();
+    expect(screen.queryByText("internal_permission_detail")).toBeNull();
+  });
+
+  it("uses the generic safe copy when events loading fails outside the API layer", async () => {
+    vi.mocked(fetchAdminEvents).mockRejectedValueOnce(new Error("network transport detail"));
+    renderEventsPicker();
+
+    expect(await screen.findByText("Could not load events.")).toBeTruthy();
+    expect(screen.queryByText("network transport detail")).toBeNull();
+  });
+});
+
 describe("EventSettingsPage operator errors", () => {
   function renderSettings() {
     renderWithToast(
@@ -480,7 +508,7 @@ describe("RequirementsPage operator errors", () => {
     vi.mocked(fetchEventItems).mockRejectedValueOnce(new Error("network transport detail"));
     renderRequirements();
 
-    expect(await screen.findByText("Failed to load requirements.")).toBeTruthy();
+    expect(await screen.findByText("Could not load requirements.")).toBeTruthy();
     expect(screen.queryByText("network transport detail")).toBeNull();
   });
 

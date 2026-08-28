@@ -250,7 +250,7 @@ describe("CommunicationPage delivery log - table", () => {
     renderPage();
     await goToDeliveryLogTab();
 
-    expect(await screen.findByText("Failed to load deliveries.")).toBeTruthy();
+    expect(await screen.findByText("Could not load deliveries.")).toBeTruthy();
   });
 
   it("shows a dash for a missing recipient email, distinct from the default-template label", async () => {
@@ -1183,7 +1183,7 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
         expect(assignSpy).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fevents%2Fevt-1%2Fcommunication"),
       );
       expect(connectionState.reportApiError).toHaveBeenCalledWith(401);
-      expect(screen.queryByText("Failed to load deliveries.")).toBeNull();
+      expect(screen.queryByText("Could not load deliveries.")).toBeNull();
     } finally {
       if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
     }
@@ -1196,7 +1196,7 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
     renderPage();
     await goToDeliveryLogTab();
 
-    expect(await screen.findByText("Failed to load deliveries.")).toBeTruthy();
+    expect(await screen.findByText("Could not load deliveries.")).toBeTruthy();
     expect(connectionState.reportApiError).toHaveBeenCalledWith(500);
   });
 
@@ -1210,7 +1210,7 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
     await goToDeliveryLogTab();
 
     await screen.findByText("Could not load deliveries");
-    expect(screen.getByText("Failed to load deliveries.")).toBeTruthy();
+    expect(screen.getByText("Could not load deliveries.")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
@@ -1243,7 +1243,7 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
     fireEvent.click(screen.getByRole("button", { name: "Sent" }));
 
     await screen.findByText("Guest One");
-    expect(screen.queryByText("Failed to load deliveries.")).toBeNull();
+    expect(screen.queryByText("Could not load deliveries.")).toBeNull();
     expect(callCount).toBeGreaterThanOrEqual(2);
   });
 
@@ -1350,7 +1350,7 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
     // The row that was already on screen stays - a silently-failed poll is normal noise, not
     // worth surfacing as an error over data that's already there.
     expect(screen.getByText("Guest One")).toBeTruthy();
-    expect(screen.queryByText("Failed to load deliveries.")).toBeNull();
+    expect(screen.queryByText("Could not load deliveries.")).toBeNull();
   });
 
   it("clamps back to the last valid page once a silent poll's shrunken total makes it invalid", async () => {

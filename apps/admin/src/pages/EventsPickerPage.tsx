@@ -38,10 +38,10 @@ export function EventsPickerPage() {
       if (err instanceof ApiError) {
         reportApiError(err.status);
         const message =
-          err.status === 403 ? "You do not have access to the admin panel." : "Failed to load events.";
+          err.status === 403 ? "You do not have access to the admin panel." : "Could not load events.";
         setError(message);
       } else {
-        setError("Failed to load events.");
+        setError("Could not load events.");
       }
     } finally {
       if (!signal?.aborted) setLoading(false);

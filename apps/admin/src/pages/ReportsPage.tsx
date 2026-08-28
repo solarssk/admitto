@@ -26,6 +26,7 @@ import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { calendarDateInZone, formatEventDateTime, formatEventTime } from "../utils/event-dates.js";
+import { handleExportRequestError } from "./handleExportRequestError.js";
 import "./reports-page.css";
 
 const LOG_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
@@ -913,19 +914,7 @@ export function ReportsPage() {
         await exportEventReportsCsv(eventId, ac.signal);
       }
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      const fallback = "Export failed.";
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-          return;
-        }
-        addToast(operatorApiErrorMessage(err, fallback), "error");
-      } else {
-        addToast(fallback, "error");
-      }
+      handleExportRequestError(err, "Export failed.", addToast, reportApiError);
     } finally {
       if (!ac.signal.aborted) setExportingCsv(false);
     }
