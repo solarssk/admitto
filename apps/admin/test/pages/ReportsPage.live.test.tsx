@@ -498,24 +498,30 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
 });
 
 describe("ReportsPage — Wallets tab", () => {
-  it("mounts WalletsReportsTab and fetches wallet data once the Wallets tab is clicked", async () => {
-    fetchEventReports.mockResolvedValue(reportFixture(5));
-    fetchEventWalletReports.mockResolvedValue(walletFixture());
-    renderPage();
-    await screen.findByText("VIP One").catch(() => {});
-
-    expect(fetchEventWalletReports).not.toHaveBeenCalled();
+  /** Clicks the Wallets tab and waits for the switch to genuinely settle - the initial
+   * admissions-tab fetch (fired on mount, independent of anything below) has resolved, the wallet
+   * fetch has fired, and the tab's own aria-selected state reflects the switch. Root-caused via a
+   * CI-only failure on the stacked export PR (passed locally every time, failed repeatedly on
+   * GitHub's own runner): clicking Wallets immediately after renderPage() left the still-in-flight
+   * admissions fetch's own pending state update racing the tab switch under CI's heavier
+   * scheduling contention - a race this project's local dev machine never reproduced. Settling the
+   * first fetch before triggering the second state transition removes that overlap entirely. */
+  async function clickWalletsTab() {
+    await waitFor(() => expect(fetchEventReports).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
-
-    // Waits on the fetch call *and* the tab's own visible aria-selected state, not just the fetch
-    // call alone - a mock call count can be satisfied by a stale count from residual state without
-    // React having actually committed the activeTab flip yet (root-caused via a CI-only failure on
-    // the stacked export PR, where a subsequent Export click raced ahead of the tab switch and hit
-    // the wrong export branch).
     await waitFor(() => {
       expect(fetchEventWalletReports).toHaveBeenCalledTimes(1);
       expect(screen.getByRole("tab", { name: "Wallets", selected: true })).toBeTruthy();
     });
+  }
+
+  it("mounts WalletsReportsTab and fetches wallet data once the Wallets tab is clicked", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    fetchEventWalletReports.mockResolvedValue(walletFixture());
+    renderPage();
+
+    expect(fetchEventWalletReports).not.toHaveBeenCalled();
+    await clickWalletsTab();
   });
 
   it("does not refetch wallet data when switching tabs away and back (display:contents keeps it mounted)", async () => {
@@ -523,11 +529,7 @@ describe("ReportsPage — Wallets tab", () => {
     fetchEventWalletReports.mockResolvedValue(walletFixture());
     renderPage();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
-    await waitFor(() => {
-      expect(fetchEventWalletReports).toHaveBeenCalledTimes(1);
-      expect(screen.getByRole("tab", { name: "Wallets", selected: true })).toBeTruthy();
-    });
+    await clickWalletsTab();
 
     fireEvent.click(screen.getByRole("tab", { name: "Event day" }));
     fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
