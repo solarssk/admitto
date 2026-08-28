@@ -139,7 +139,9 @@ export const CODE_MESSAGES: Record<string, string> = {
   "assetId required": "Image asset ID is missing from the request.",
   "attendeeId required": "Attendee ID is missing from the request.",
   attendee_not_issued: "This attendee hasn't been issued a ticket yet.",
-  audit_failed: "Could not save this change. Try again.",
+  // Shared by save actions (event settings, branding) and destructive ones (archive, unarchive,
+  // delete) alike - "save" framing would mislead on the latter, so this stays action-neutral.
+  audit_failed: "This action could not be completed. Try again.",
   badge_item_inactive: 'Enable the badge item (or turn on "Issue on check-in") before badging at entry.',
   "body required": "Enter a note before saving.",
   bounce_probe_unavailable:
@@ -217,7 +219,12 @@ export const CODE_MESSAGES: Record<string, string> = {
   wallet_pass_changed: "This wallet pass changed while updating. Reload and try again.",
   wallet_pass_not_refreshable:
     "This wallet pass was never registered with the provider, so its status can't be refreshed.",
+  wallet_provider_duplicate: "The wallet provider already has a matching pass. Refresh and try again.",
+  wallet_provider_not_found: "The wallet provider couldn't find this pass. It may have been removed there.",
+  wallet_provider_rate_limited: "The wallet provider is rate-limiting requests. Wait a moment and try again.",
   wallet_provider_rejected: "The wallet provider rejected this request. Try again, or check the wallet configuration.",
+  wallet_provider_timeout: "The wallet provider didn't respond in time. Try again.",
+  wallet_provider_unauthorized: "The wallet provider rejected the configured API key. Check the wallet configuration.",
   wallet_status_check_inconclusive: "Could not confirm the wallet pass status. Try again shortly.",
   already_archived: "This event is already archived.",
   cf_access_jwt_invalid: "Cloudflare Access could not verify this request.",
