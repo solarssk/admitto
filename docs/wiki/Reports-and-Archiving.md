@@ -22,6 +22,7 @@ Open the correct event and confirm its time zone. Before archiving, finish check
 6. Check displayed times against the event time zone.
 7. Use the available export control only for an approved event purpose.
 8. Switch to the **Wallets** tab for wallet-adoption analytics: pass adoption and platform mix (Apple/Google), adoption by ticket type, cumulative passes issued over time, how long attendees take to add their pass after the ticket email, and check-in rate compared between attendees with and without a wallet pass.
+9. **Export report** follows whichever tab is open: on the Wallets tab it exports one CSV row per attendee's wallet status (issued/installed/voided, per-platform registration, check-in), or a printable PDF summary.
 
 ### Archive the event
 
