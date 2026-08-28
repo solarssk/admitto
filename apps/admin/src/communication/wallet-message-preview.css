@@ -33,7 +33,7 @@
   bottom: 0;
   left: 0;
   height: 100%;
-  border-radius: var(--radius-lg, 20px);
+  border-radius: var(--radius-lg, 8px);
 }
 
 .wallet-message-preview__stack::before {
@@ -59,7 +59,7 @@
   align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-4);
-  border-radius: var(--radius-lg, 20px);
+  border-radius: var(--radius-lg, 8px);
   background: #f2f2f4;
   box-shadow: var(--shadow-md);
 }

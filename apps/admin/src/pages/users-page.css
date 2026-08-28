@@ -353,7 +353,7 @@
 
 .users-page__user-email {
   font-size: var(--fs-sm);
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace);
   color: var(--text-secondary);
 }
 
@@ -820,7 +820,7 @@
 }
 
 .users-modal__login-ip {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace);
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
