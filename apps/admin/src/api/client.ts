@@ -2812,35 +2812,15 @@ export async function fetchEventReports(
   return parseJson<EventReportsResponse>(res);
 }
 
-/** Fetch a CSV/PDF export URL and trigger a browser save - shared by exportEventReportsCsv and
- * exportEventWalletReportsCsv, which otherwise only differ in the request URL and fallback
- * filename (SonarCloud flagged the near-identical bodies as new-code duplication on PR #1126). */
+/** Fetch a CSV/PDF export URL, then hand the response to downloadExportResponse (the same
+ * validate-then-save helper delivery-log/attendees/audit-log exports already use) - shared by
+ * exportEventReportsCsv and exportEventWalletReportsCsv, which otherwise only differ in the
+ * request URL and fallback filename (SonarCloud flagged the near-identical bodies as new-code
+ * duplication on PR #1126; an earlier fix for that re-duplicated downloadExportResponse's own
+ * body instead of reusing it). */
 async function downloadExportBlob(url: string, fallbackFilename: string, signal?: AbortSignal): Promise<void> {
   const res = await fetch(url, { credentials: "same-origin", signal });
-  if (!res.ok) {
-    let message = `HTTP ${res.status}`;
-    try {
-      const body = (await res.json()) as ApiErrorBody;
-      message = messageFromApiErrorBody(body) ?? message;
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(res.status, message);
-  }
-
-  const blob = await res.blob();
-  const disposition = res.headers.get("Content-Disposition") ?? "";
-  const match = /filename="([^"]+)"/.exec(disposition);
-  const filename = match?.[1] ?? fallbackFilename;
-
-  const objectUrl = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = objectUrl;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  await downloadExportResponse(res, fallbackFilename);
 }
 
 /** Download admission log CSV export and trigger browser save. */
