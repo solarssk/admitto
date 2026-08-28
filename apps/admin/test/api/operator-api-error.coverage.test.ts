@@ -8,11 +8,11 @@ const ADMIN_SRC = join(dirname(fileURLToPath(import.meta.url)), "../../src");
 const WEB_SRC = join(dirname(fileURLToPath(import.meta.url)), "../../../web/src");
 const PACKAGES_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../../packages");
 
-/** Only the strict snake_case form ("a" then any of a-z0-9_) — this is exactly the set that
+/** Only the strict snake_case form ("a" then any of a-z0-9_) - this is exactly the set that
  * `MACHINE_CODE` in operator-api-error.ts treats as a machine code, so an unmapped one can never
  * fall back to showing the raw server detail (that fallback is reserved for human-readable
  * strings). A space/camelCase code (e.g. "eventId required") still displays as-is via that
- * passthrough even with no map entry, so this guard doesn't chase those — only the codes that
+ * passthrough even with no map entry, so this guard doesn't chase those - only the codes that
  * would otherwise go fully silent. */
 const CODE_LITERAL = /\b(?:error|code)\s*:\s*"([a-z][a-z0-9_]*)"/g;
 
@@ -126,7 +126,7 @@ function emittedCodes(): Map<string, string[]> {
 }
 
 /** Codes given their own bespoke `hasApiErrorCode(err, "...")` branch somewhere in the admin
- * SPA don't need a `CODE_MESSAGES` entry too — the branch already renders specific copy without
+ * SPA don't need a `CODE_MESSAGES` entry too - the branch already renders specific copy without
  * ever consulting the shared map. A code handled only this way still gets an entry when it's
  * useful as a shared fallback for other callers; this set exists so the guard doesn't demand one
  * for narrow cases where every call site already branches explicitly. */
