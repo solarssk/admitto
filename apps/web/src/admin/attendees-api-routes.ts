@@ -965,7 +965,7 @@ async function buildExportFileResponse(
   try {
     artifact = await buildAttendeesExportArtifact(db, eventId, rows, format, event);
   } catch (err) {
-    return c.json({ error: customDataErrorCode(err) }, 400);
+    return c.json(customDataErrorPayload(err), 400);
   }
 
   await auditAttendeesExported(db, c, eventId, format, artifact.rowCount, auditFilters);
@@ -1319,13 +1319,33 @@ function computeRsvpChange(
   };
 }
 
-function customDataErrorCode(err: unknown): string {
+/** Turns a thrown `<code>:<field_slug>` from packages/tickets custom-data validation into a JSON
+ * error payload, keeping the field slug so the client can render a per-field message instead of a
+ * blob (docs/dev/error-and-notice-copy.md rule 2). `invalid_custom_data_value` keeps the existing
+ * `validation_failed` wire code for compatibility, only the field slug is new. */
+/** The only error messages packages/tickets/src/validate-custom-data.ts actually throws, all in
+ * `<code>:<field_slug>` form. Anything else caught here (a DB error from loadEventCustomDataFields,
+ * an export failure, ...) must never be parsed for a field - its message can contain a colon for
+ * unrelated reasons (a host:port, a stack frame) and isn't safe to echo into the response body. */
+const CUSTOM_DATA_ERROR_CODES = new Set([
+  "unknown_custom_data_field",
+  "required_custom_data_field_missing",
+  "invalid_custom_data_value",
+  "validation_failed",
+]);
+
+function customDataErrorPayload(err: unknown): { error: string; field?: string } {
   const message = err instanceof Error ? err.message : "";
-  if (message.startsWith("unknown_custom_data_field:")) return "unknown_custom_data_field";
-  if (message.startsWith("required_custom_data_field_missing:")) {
-    return "required_custom_data_field_missing";
+  const separator = message.indexOf(":");
+  const code = separator === -1 ? message : message.slice(0, separator);
+  if (!CUSTOM_DATA_ERROR_CODES.has(code)) {
+    return { error: "validation_failed" };
   }
-  return "validation_failed";
+  const field = separator === -1 ? undefined : message.slice(separator + 1) || undefined;
+  if (code === "unknown_custom_data_field" || code === "required_custom_data_field_missing") {
+    return field ? { error: code, field } : { error: code };
+  }
+  return field ? { error: "validation_failed", field } : { error: "validation_failed" };
 }
 
 /** Validates ticket_type against the event's live catalog (batch 04 / #351) - shared by create
@@ -1380,7 +1400,7 @@ async function validateAndNormalizeProfilePatch(
   existing: { custom_data: unknown; first_name: string | null; last_name: string | null },
   profilePatch: Omit<PatchInput, "rsvp_status" | "status">,
   loadAllowedFieldsOnce: () => Promise<EventItemContent[]>,
-): Promise<{ error: string } | null> {
+): Promise<{ error: string; field?: string } | null> {
   // A legacy attendee (both split fields still null, pre-dating this migration) only has its
   // full name in `name`. Patching just one of first_name/last_name would derive the other half
   // from null and silently drop the rest of the name from `name` (Codex review, PR790) - require
@@ -1402,7 +1422,7 @@ async function validateAndNormalizeProfilePatch(
         profilePatch.custom_data_fields,
       );
     } catch (err) {
-      return { error: customDataErrorCode(err) };
+      return customDataErrorPayload(err);
     }
   }
 
@@ -1422,14 +1442,14 @@ async function assertPatchCustomDataRequirements(
   profileChanges: ReturnType<typeof computePatchChanges>,
   rsvpChange: ReturnType<typeof computeRsvpChange>,
   loadAllowedFieldsOnce: () => Promise<EventItemContent[]>,
-): Promise<{ error: string } | null> {
+): Promise<{ error: string; field?: string } | null> {
   if (!profileChanges && !rsvpChange) return null;
 
   let fields: EventItemContent[];
   try {
     fields = await loadAllowedFieldsOnce();
   } catch (err) {
-    return { error: customDataErrorCode(err) };
+    return customDataErrorPayload(err);
   }
   if (fields.length === 0) return null;
 
@@ -1441,7 +1461,7 @@ async function assertPatchCustomDataRequirements(
     assertCustomDataMeetsRequirements(fields, nextCustomData);
     return null;
   } catch (err) {
-    return { error: customDataErrorCode(err) };
+    return customDataErrorPayload(err);
   }
 }
 
@@ -3142,14 +3162,14 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
   try {
     allowedFields = await loadEventCustomDataFields(db, eventId);
   } catch (err) {
-    return c.json({ error: customDataErrorCode(err) }, 400);
+    return c.json(customDataErrorPayload(err), 400);
   }
   let customData: Prisma.InputJsonValue | undefined;
   try {
     const built = buildCustomDataFromInput(allowedFields, custom_data);
     customData = built as Prisma.InputJsonValue | undefined;
   } catch (err) {
-    return c.json({ error: customDataErrorCode(err) }, 400);
+    return c.json(customDataErrorPayload(err), 400);
   }
 
   try {

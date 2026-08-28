@@ -426,7 +426,7 @@ export function AttendeeCard({
           title="Revoke check-in?"
           message={`This un-admits ${card.name}. They'll show as not checked in and will need to be scanned or admitted again to re-enter. This works regardless of when or how they were originally checked in.`}
           confirmLabel={revokeBusy ? "Revoking…" : "Revoke"}
-          confirmVariant="danger"
+          confirmVariant="warning"
           loading={revokeBusy}
           errorMessage={revokeError}
           onConfirm={() => void handleRevokeConfirm()}

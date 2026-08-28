@@ -1,4 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// Only `extractCustomDataFromRow`'s "unrecognized error" fallback test below needs this mock (a
+// field slug that makes the real normalizer throw a message the extractor can't classify); every
+// other test in this file runs through the real @admitto/tickets normalizer untouched.
+vi.mock("@admitto/tickets", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@admitto/tickets")>();
+  return {
+    ...actual,
+    normalizeCustomDataFieldValue: (
+      field: Parameters<typeof actual.normalizeCustomDataFieldValue>[0],
+      raw: Parameters<typeof actual.normalizeCustomDataFieldValue>[1],
+    ) => {
+      if (field.source_field === "boom") {
+        throw new Error("unexpected_internal_error");
+      }
+      return actual.normalizeCustomDataFieldValue(field, raw);
+    },
+  };
+});
+
 import {
   buildAttributeHeaderKeys,
   extractCustomDataFromRow,
@@ -119,6 +139,16 @@ describe("extractCustomDataFromRow", () => {
     );
 
     expect(result).toEqual({ ok: true, custom_data: { dietary_preference: "vegan" } });
+  });
+
+  it("falls back to a safe message for an error it doesn't recognize", () => {
+    const result = extractCustomDataFromRow(
+      { boom: "value" },
+      [{ label: "Boom", source_field: "boom", type: "text" }],
+      new Set<string>(),
+    );
+
+    expect(result).toEqual({ ok: false, reason: "Invalid custom attribute data" });
   });
 
   it("ignores a custom field that collides with a fixed import column", () => {
