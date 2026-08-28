@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { eventListMapPreviewPath, serializeEventDto } from "../../src/admin/admin-api-routes.js";
+import {
+  eventListMapPreviewPath,
+  omitWalletSettings,
+  serializeEventDto,
+} from "../../src/admin/admin-api-routes.js";
 import {
   defaultGeocodingConfig,
   defaultMapTileConfig,
@@ -150,6 +154,20 @@ describe("serializeEventDto — has_coordinates / map_preview_path", () => {
     });
     expect(dto.map_preview_path).toBeTruthy();
     expect(dto.map_attribution).toBeNull();
+  });
+});
+
+describe("omitWalletSettings", () => {
+  it("strips the wallet platform toggles and keeps every other field untouched", () => {
+    const dto = serializeEventDto(baseRow, 3);
+    const stripped = omitWalletSettings(dto);
+
+    expect(Object.hasOwn(stripped, "wallet_enabled")).toBe(false);
+    expect(Object.hasOwn(stripped, "wallet_apple_enabled")).toBe(false);
+    expect(Object.hasOwn(stripped, "wallet_google_enabled")).toBe(false);
+    expect(Object.hasOwn(stripped, "wallet_samsung_enabled")).toBe(false);
+    expect(stripped.id).toBe(dto.id);
+    expect(stripped.attendee_count).toBe(3);
   });
 });
 

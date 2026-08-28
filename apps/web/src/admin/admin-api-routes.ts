@@ -162,6 +162,25 @@ export type EventDtoJson = ReturnType<typeof serializeEventDto> & {
   weather?: WeatherSummaryDto | null;
 };
 
+/** Strips the wallet platform toggles from an already-serialized event DTO - used only for the
+ * operator-facing check-in event picker (checkin-api-routes.ts), which has no legitimate need to
+ * know which wallet platforms an admin has enabled for an event, unlike the admin picker's own use
+ * of serializeEventDto. Applied after attachWeatherToEventDtos, not before, so that helper's own
+ * EventDtoJson[] typing doesn't need to special-case a narrower shape. */
+export function omitWalletSettings<
+  T extends {
+    wallet_enabled: boolean;
+    wallet_apple_enabled: boolean;
+    wallet_google_enabled: boolean;
+    wallet_samsung_enabled: boolean;
+  },
+>(
+  dto: T,
+): Omit<T, "wallet_enabled" | "wallet_apple_enabled" | "wallet_google_enabled" | "wallet_samsung_enabled"> {
+  const { wallet_enabled, wallet_apple_enabled, wallet_google_enabled, wallet_samsung_enabled, ...rest } = dto;
+  return rest;
+}
+
 /** Attach Open-Meteo day summaries (null omitted when weather disabled / no pin). */
 export async function attachWeatherToEventDtos(
   db: PrismaClient,
