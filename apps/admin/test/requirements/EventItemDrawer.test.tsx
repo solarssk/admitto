@@ -191,7 +191,7 @@ describe("EventItemDrawer", () => {
   });
 
   it("fires toast for generic delete failure", async () => {
-    vi.mocked(deleteEventItem).mockRejectedValueOnce(new ApiError(409, "key_conflict", "key_conflict"));
+    vi.mocked(deleteEventItem).mockRejectedValueOnce(new ApiError(409, "secret_internal", "secret_internal"));
     renderDrawer(giftbagItem);
     fireEvent.click(screen.getByRole("button", { name: "Delete item" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));

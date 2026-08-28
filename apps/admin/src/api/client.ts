@@ -162,13 +162,25 @@ export type EventFullMeta = {
   projected?: number;
 };
 
-/** Thrown when an admin API request fails; may include structured `event_full` metadata on 409. */
+/** A Zod `.flatten()` payload the server attaches to some 400 `validation_failed` responses. */
+export type ZodFlattenedDetails = {
+  formErrors?: unknown;
+  fieldErrors?: Record<string, unknown>;
+};
+
+/** Thrown when an admin API request fails; may include structured `event_full` metadata on 409,
+ * a `field` slug on 400s where the server identified which field caused the error (see
+ * docs/dev/error-and-notice-copy.md rule 2), or `details` (a Zod `.flatten()` payload) on some
+ * 400s carrying per-field validation reasons that would otherwise be computed server-side and
+ * then discarded. */
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
     public readonly code?: string,
     public readonly eventFull?: EventFullMeta,
+    public readonly field?: string,
+    public readonly details?: ZodFlattenedDetails,
   ) {
     super(message);
     this.name = "ApiError";
@@ -179,6 +191,8 @@ type ApiErrorBody = {
   error?: unknown;
   detail?: unknown;
   code?: unknown;
+  field?: unknown;
+  details?: ZodFlattenedDetails;
   capacity?: number;
   current?: number;
   incoming?: number;
@@ -220,15 +234,19 @@ async function parseJson<T>(res: Response): Promise<T> {
     let message = res.statusText || `HTTP ${res.status}`;
     let code: string | undefined;
     let eventFull: EventFullMeta | undefined;
+    let field: string | undefined;
+    let details: ZodFlattenedDetails | undefined;
     try {
       const body = (await res.json()) as ApiErrorBody;
       message = messageFromApiErrorBody(body) ?? message;
       code = apiErrorCodeFromBody(body);
       eventFull = eventFullFromBody(body);
+      field = stringField(body.field);
+      details = body.details && typeof body.details === "object" ? body.details : undefined;
     } catch {
       /* ignore */
     }
-    throw new ApiError(res.status, message, code, eventFull);
+    throw new ApiError(res.status, message, code, eventFull, field, details);
   }
   return (await res.json()) as T;
 }

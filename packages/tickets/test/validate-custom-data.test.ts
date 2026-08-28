@@ -41,6 +41,12 @@ describe("normalizeCustomDataFieldValue", () => {
     expect(normalizeCustomDataFieldValue(lunchField, "No")).toBe("false");
   });
 
+  it("rejects a boolean value that isn't a recognized alias", () => {
+    expect(() => normalizeCustomDataFieldValue(lunchField, "maybe")).toThrow(
+      "invalid_custom_data_value:lunch",
+    );
+  });
+
   it("truncates text values to 100 characters", () => {
     const long = "a".repeat(150);
     expect(normalizeCustomDataFieldValue(noteField, long)).toHaveLength(100);
@@ -57,6 +63,12 @@ describe("buildCustomDataFromInput", () => {
 
   it("stores normalized boolean strings on create", () => {
     expect(buildCustomDataFromInput([lunchField], { lunch: "yes" })).toEqual({ lunch: "true" });
+  });
+
+  it("rejects a non-string custom_data value", () => {
+    expect(() => buildCustomDataFromInput([noteField], { note: 123 })).toThrow(
+      "validation_failed:note",
+    );
   });
 
   it("returns undefined when no custom_data values are provided", () => {
