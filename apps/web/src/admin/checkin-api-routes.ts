@@ -35,7 +35,7 @@ import {
  *  `attendee_count` costs an extra aggregate query, so it is opt-in via
  *  `?includeAttendeeCount=true` and omitted from the DTO otherwise — only the
  *  operator event picker displays it. Wallet platform toggles are stripped from the response
- *  (omitWalletSettings) — an operator has no legitimate need to see them, unlike the admin
+ *  (omitWalletSettings): an operator has no legitimate need to see them, unlike the admin
  *  event picker sharing this same serializeEventDto. */
 export async function handleGetCheckinEvents(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");

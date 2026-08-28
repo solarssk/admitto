@@ -1515,8 +1515,19 @@ export function AttendeeDetailPage() {
   // function component, not memoized, so this doesn't currently gate a re-render skip either way -
   // kept stable anyway so a future memo() on that component, or on WalletsReportsTab.tsx's own
   // consumer of the same helper, doesn't silently stop working because of an unmemoized prop here).
+  // Built from the individual toggle fields rather than passing `event` itself - `event`'s own
+  // object reference is unstable across re-renders that don't change any wallet toggle, which
+  // would defeat the memoization above; the callback below only reads the four fields already in
+  // the dependency array, satisfying react-hooks/exhaustive-deps without reintroducing that (bot
+  // review).
   const walletPlatforms = useMemo(
-    () => enabledWalletPlatforms(event),
+    () =>
+      enabledWalletPlatforms({
+        wallet_enabled: event.wallet_enabled,
+        wallet_apple_enabled: event.wallet_apple_enabled,
+        wallet_google_enabled: event.wallet_google_enabled,
+        wallet_samsung_enabled: event.wallet_samsung_enabled,
+      }),
     [
       event.wallet_enabled,
       event.wallet_apple_enabled,
