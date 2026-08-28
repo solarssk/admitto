@@ -602,7 +602,7 @@ describe("ReportsPage — Wallets tab", () => {
     });
   });
 
-  it("shows the resolved API error message when the wallets CSV export fails with an ApiError", async () => {
+  it("reports the API error status and toasts the export-failed message when the wallets CSV export fails with an ApiError", async () => {
     fetchEventReports.mockResolvedValue(reportFixture(5));
     fetchEventWalletReports.mockResolvedValue(walletFixture());
     // mockReset, not mockRejectedValueOnce alone - see the identical comment on the CSV-export
@@ -622,34 +622,14 @@ describe("ReportsPage — Wallets tab", () => {
     await waitFor(() => {
       expect(reportApiError).toHaveBeenCalledWith(500);
     });
-    // See the identical comment on the non-ApiError test above for why this matches
-    // AdminPages.errors.test.tsx's own proven-reliable toast-assertion shape.
-    try {
-      await waitFor(() => {
-        expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed\./);
-      });
-    } catch (assertionError) {
-      // Temporary CI-only diagnostics for a flake that has never reproduced locally - dumps the
-      // mock's actual call/result history and every current toast so the next CI failure (if any)
-      // shows ground truth instead of forcing another guess-and-push cycle. Remove once resolved.
-      console.error(
-        "[diag] exportEventWalletReportsCsv.mock.calls:",
-        JSON.stringify(exportEventWalletReportsCsv.mock.calls),
-      );
-      console.error(
-        "[diag] exportEventWalletReportsCsv.mock.results:",
-        exportEventWalletReportsCsv.mock.results.map((r) => ({
-          type: r.type,
-          value: r.value instanceof Error ? { name: r.value.name, message: r.value.message, status: (r.value as { status?: number }).status } : r.value,
-        })),
-      );
-      console.error(
-        "[diag] all at-toast elements:",
-        screen.queryAllByTestId("at-toast").map((el) => el.textContent),
-      );
-      console.error("[diag] reportApiError.mock.calls:", JSON.stringify(reportApiError.mock.calls));
-      throw assertionError;
-    }
+    // Status 500 with no known code falls through operatorApiErrorMessage's own safety checks to
+    // its fallback argument, which handleExportCsv now shares with the non-ApiError branch below
+    // (fix(admin) 2fcf00c0 deduped the two so an API error and a generic failure read identically) -
+    // this and the non-ApiError test above intentionally converge on the same toast text; what
+    // differs is that reportApiError fires only for the ApiError case, asserted above.
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Export failed\./);
+    });
   });
 
   it("opens the wallets PDF print URL, not the admissions one, while the Wallets tab is active", async () => {
