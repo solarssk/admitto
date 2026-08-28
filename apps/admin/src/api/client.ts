@@ -2812,15 +2812,11 @@ export async function fetchEventReports(
   return parseJson<EventReportsResponse>(res);
 }
 
-/** Download admission log CSV export and trigger browser save. */
-export async function exportEventReportsCsv(
-  eventId: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  const res = await fetch(
-    `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=csv`,
-    { credentials: "same-origin", signal },
-  );
+/** Fetch a CSV/PDF export URL and trigger a browser save - shared by exportEventReportsCsv and
+ * exportEventWalletReportsCsv, which otherwise only differ in the request URL and fallback
+ * filename (SonarCloud flagged the near-identical bodies as new-code duplication on PR #1126). */
+async function downloadExportBlob(url: string, fallbackFilename: string, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(url, { credentials: "same-origin", signal });
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
     try {
@@ -2835,16 +2831,25 @@ export async function exportEventReportsCsv(
   const blob = await res.blob();
   const disposition = res.headers.get("Content-Disposition") ?? "";
   const match = /filename="([^"]+)"/.exec(disposition);
-  const filename = match?.[1] ?? "admissions.csv";
+  const filename = match?.[1] ?? fallbackFilename;
 
-  const url = URL.createObjectURL(blob);
+  const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url;
+  a.href = objectUrl;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+}
+
+/** Download admission log CSV export and trigger browser save. */
+export async function exportEventReportsCsv(eventId: string, signal?: AbortSignal): Promise<void> {
+  return downloadExportBlob(
+    `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=csv`,
+    "admissions.csv",
+    signal,
+  );
 }
 
 /** Same-origin URL for printable HTML report (open in new tab for Save as PDF). */
@@ -2866,38 +2871,12 @@ export async function fetchEventWalletReports(
 /** Download the wallets CSV export (one row per attendee) and trigger browser save - same
  * fetch-blob-then-anchor-click pattern as exportEventReportsCsv above, `report=wallets` is the
  * only difference in the request itself. */
-export async function exportEventWalletReportsCsv(
-  eventId: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  const res = await fetch(
+export async function exportEventWalletReportsCsv(eventId: string, signal?: AbortSignal): Promise<void> {
+  return downloadExportBlob(
     `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=csv&report=wallets`,
-    { credentials: "same-origin", signal },
+    "wallets.csv",
+    signal,
   );
-  if (!res.ok) {
-    let message = `HTTP ${res.status}`;
-    try {
-      const body = (await res.json()) as ApiErrorBody;
-      message = messageFromApiErrorBody(body) ?? message;
-    } catch {
-      /* ignore */
-    }
-    throw new ApiError(res.status, message);
-  }
-
-  const blob = await res.blob();
-  const disposition = res.headers.get("Content-Disposition") ?? "";
-  const match = /filename="([^"]+)"/.exec(disposition);
-  const filename = match?.[1] ?? "wallets.csv";
-
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 /** Same-origin URL for the wallets printable HTML report (open in new tab for Save as PDF). */
