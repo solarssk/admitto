@@ -1879,6 +1879,7 @@ export interface EventReportsResponse {
 export interface EventWalletReportsResponse {
   total_attendees: number;
   synced_at: string | null;
+  passes_truncated: boolean;
   adoption: {
     got_pass: number;
     got_pass_pct: number;

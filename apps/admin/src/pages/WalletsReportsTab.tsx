@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { ApexOptions } from "apexcharts";
 import Chart from "react-apexcharts";
-import { Button, Card, EmptyState, HintLabel, ticketTypeChartColor } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, Notice, ticketTypeChartColor } from "@admitto/ui";
 import { ApiError, fetchEventWalletReports } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventWalletReportsResponse } from "../api/types.js";
@@ -9,6 +9,11 @@ import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { viewerLocalTime } from "../utils/event-dates.js";
 import { BreakdownRows, pctOf, type BreakdownRow } from "./ReportsPage.js";
+// This component's own .wallets-* rules live in reports-page.css alongside ReportsPage's own
+// styles (one card-grid family, not a separate stylesheet) - importing it here too, not just
+// relying on ReportsPage.tsx already having it loaded, matches this app's own convention that
+// every consumer of a shared CSS file imports it directly (AGENTS.md's lazy-chunk gotcha).
+import "./reports-page.css";
 
 // Literal hex, not var(--token): ApexCharts does color math (hover shades, gradients) on these
 // strings in JS, which a CSS custom-property reference can't feed - kept in sync with
@@ -469,6 +474,14 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({ eventId }: Re
 
   return (
     <>
+      {data.passes_truncated && (
+        <Notice variant="warning" className="wallets-truncated-notice">
+          This event has more issued wallet passes than a single report can process at once, so
+          platform mix, adoption by ticket type, and time-to-wallet-tap below are based on a
+          partial sample rather than every pass. Cumulative passes issued and admission rate by
+          wallet status are unaffected - both come from a full count, not a sample.
+        </Notice>
+      )}
       <div className="wallets-panels">
         <Card title={<HintLabel hint={syncedHint(data.synced_at)}>Wallet adoption</HintLabel>}>
           <p className="wallets-description">

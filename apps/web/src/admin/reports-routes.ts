@@ -16,12 +16,15 @@ const HOUR_LABELS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2
 const CSV_EXPORT_MAX = 10_000;
 const PDF_LOG_MAX = 100;
 export const ADMISSION_LOG_LIMIT = 500;
-// Not a display truncation like ADMISSION_LOG_LIMIT above (this query's whole result feeds
-// aggregate math - platform mix, time-to-tap buckets - so silently dropping rows past a small
-// cap would make those percentages wrong for a large event, not just show fewer of them). This
-// is a pure backstop against unbounded memory growth, set at the same ceiling the CSV/XLSX
-// importer already enforces on attendee count (xlsx-to-csv.ts's MAX_IMPORT_ROWS) - since a
-// WalletPass is 1:1 with an Attendee, no real event can exceed this many passes anyway.
+// A backstop against unbounded memory growth on the one query below that pulls whole rows into
+// Node to aggregate in JS (platform mix, time-to-tap buckets), set at the same ceiling the
+// CSV/XLSX importer already enforces on attendee count (xlsx-to-csv.ts's MAX_IMPORT_ROWS) - since
+// a WalletPass is 1:1 with an Attendee, no real event can exceed this many passes anyway. Unlike
+// ADMISSION_LOG_LIMIT above (a genuine display truncation - "here are the first N rows"), this
+// cap being hit makes the platform/ticket-type/time-to-tap numbers a same-truncated-set-derived
+// sample rather than an exact count - not silently, though: EventWalletReportsResponse carries a
+// `passes_truncated` flag (computed against an unbounded COUNT of the same rows) so the frontend
+// can say so, rather than presenting a sample as if it were the full picture.
 const WALLET_AGGREGATE_MAX = 50_000;
 
 export interface EventReportsResponse {
@@ -530,6 +533,13 @@ export interface EventWalletReportsResponse {
   /** Most recent WalletPass.registration_checked_at across the event's passes - null if none has
    * ever synced. Platform/adoption numbers below reflect PassCreator state as of this sync. */
   synced_at: string | null;
+  /** True once the event has more issued passes than WALLET_AGGREGATE_MAX - platform, ticket-type
+   * adoption, and time-to-wallet-tap are all derived from a WALLET_AGGREGATE_MAX-row sample in
+   * that case (oldest-issued-first, since the underlying query has no explicit ordering, so this
+   * doesn't claim any particular bias), while issued_by_day and admission_by_wallet stay exact
+   * (SQL-aggregated over every row, not sample-dependent) regardless. The frontend surfaces this
+   * so a genuinely huge event doesn't show confidently-wrong percentages with no indication. */
+  passes_truncated: boolean;
   adoption: {
     got_pass: number;
     got_pass_pct: number;
@@ -565,6 +575,11 @@ export interface EventWalletReportsResponse {
     average_days: number | null;
     buckets: Array<{ key: "same_day" | "1_3" | "4_7" | "8_plus"; count: number; pct: number }>;
   };
+  /** "with_wallet" means the pass is actively registered on a device (an Apple/Google active
+   * registration count > 0) - not merely issued. An attendee who got the ticket-link email but
+   * never actually added the pass to a wallet app behaves like the without-wallet group for this
+   * comparison's own purpose (does *having* a working pass correlate with showing up), so they're
+   * counted there, matching the card's own description ("... who installed a wallet pass"). */
   admission_by_wallet: {
     with_wallet: { total: number; admitted: number; pct: number };
     without_wallet: { total: number; admitted: number; pct: number };
@@ -601,8 +616,19 @@ async function loadWalletReportsAggregates(
   timeZone: string,
   eventDate: Date,
 ): Promise<EventWalletReportsResponse> {
+  // "Confirmed" (active on at least one platform), not merely issued - see
+  // EventWalletReportsResponse.admission_by_wallet's own doc comment for why. Built once and
+  // spread/negated below so the with/without-wallet split can't drift out of sync with itself.
+  const confirmedWalletFilter = {
+    OR: [
+      { wallet_pass: { apple_active_registrations: { gt: 0 } } },
+      { wallet_pass: { google_active_registrations: { gt: 0 } } },
+    ],
+  };
+
   const [
     totalAttendees,
+    totalPassCount,
     passes,
     byTypeTotalRaw,
     catalog,
@@ -613,6 +639,9 @@ async function loadWalletReportsAggregates(
     withoutWalletAdmitted,
   ] = await Promise.all([
     db.attendee.count({ where: { event_id: eventId } }),
+    // Unbounded, unlike the findMany below - a plain COUNT never has to hold rows in memory, so
+    // it stays cheap and accurate at any scale and doubles as truncation detection for `passes`.
+    db.walletPass.count({ where: { attendee: { event_id: eventId }, issued_at: { not: null } } }),
     db.walletPass.findMany({
       where: { attendee: { event_id: eventId }, issued_at: { not: null } },
       take: WALLET_AGGREGATE_MAX,
@@ -651,22 +680,13 @@ async function loadWalletReportsAggregates(
       GROUP BY 1
       ORDER BY 1
     `,
-    db.attendee.count({ where: { event_id: eventId, wallet_pass: { issued_at: { not: null } } } }),
+    db.attendee.count({ where: { event_id: eventId, ...confirmedWalletFilter } }),
     db.attendee.count({
-      where: { event_id: eventId, wallet_pass: { issued_at: { not: null } }, admitted_at: { not: null } },
+      where: { event_id: eventId, admitted_at: { not: null }, ...confirmedWalletFilter },
     }),
+    db.attendee.count({ where: { event_id: eventId, NOT: confirmedWalletFilter } }),
     db.attendee.count({
-      where: {
-        event_id: eventId,
-        OR: [{ wallet_pass: null }, { wallet_pass: { issued_at: null } }],
-      },
-    }),
-    db.attendee.count({
-      where: {
-        event_id: eventId,
-        OR: [{ wallet_pass: null }, { wallet_pass: { issued_at: null } }],
-        admitted_at: { not: null },
-      },
+      where: { event_id: eventId, admitted_at: { not: null }, NOT: confirmedWalletFilter },
     }),
   ]);
 
@@ -726,6 +746,25 @@ async function loadWalletReportsAggregates(
       pct: oneDecimalPct(noneGotPass, noneTotal),
     });
   }
+  // A stored ticket_type can still reference no live catalog row - the type was deleted after
+  // being assigned (same case AttendeeDetailPage.tsx already surfaces as "(not in catalog)"), or
+  // an event's data was seeded/restored outside the write paths that enforce catalog membership
+  // (same reasoning as the admissions by_ticket_type breakdown above, batch 04 / #387) - those
+  // attendees still count in total_attendees and adoption.got_pass, so leaving them out here
+  // would make this list's own totals not add up to either.
+  const catalogKeys = new Set(catalog.map((t) => t.key));
+  for (const [key, total] of totalByType) {
+    if (key === null || key === "" || catalogKeys.has(key)) continue;
+    const typeGotPass = gotPassByType.get(key) ?? 0;
+    by_ticket_type.push({
+      key,
+      type: "(not in catalog)",
+      color: "gray",
+      total,
+      got_pass: typeGotPass,
+      pct: oneDecimalPct(typeGotPass, total),
+    });
+  }
 
   let cumulative = 0;
   const issued_by_day = issuedByDayRaw.map((row) => {
@@ -759,6 +798,7 @@ async function loadWalletReportsAggregates(
   return {
     total_attendees: totalAttendees,
     synced_at: mostRecentSync ? mostRecentSync.toISOString() : null,
+    passes_truncated: totalPassCount > passes.length,
     adoption: {
       got_pass: gotPass,
       got_pass_pct: oneDecimalPct(gotPass, totalAttendees),

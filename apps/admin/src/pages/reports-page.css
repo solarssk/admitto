@@ -752,6 +752,7 @@
      entirely since it's plain value computation, not a conditional style rule. */
   --ring-size: clamp(48px, min(calc(-66px + 54.5cqi), calc(-6px + 36.5cqi)), 180px);
   --ring-scale: calc(var(--ring-size) / 180px);
+
   display: flex;
   align-items: center;
   justify-content: center;
