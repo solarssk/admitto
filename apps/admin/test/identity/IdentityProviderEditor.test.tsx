@@ -345,7 +345,6 @@ describe("IdentityProviderEditor — edit", () => {
 
 describe("IdentityProviderEditor — dirty guard", () => {
   it("prompts on in-app navigation away from a dirty draft and discards on confirm", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderEditorAt("/admin/settings/identity/providers/new");
 
     // Make the draft dirty.
@@ -354,34 +353,40 @@ describe("IdentityProviderEditor — dirty guard", () => {
     // In-app navigation via the sidebar "Providers" link (not the Cancel button).
     fireEvent.click(screen.getByRole("link", { name: "Providers" }));
 
-    await waitFor(() => {
-      expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?");
-    });
+    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
     // On confirm, the blocker proceeds and the providers list renders.
     await waitFor(() => {
       expect(screen.getByText("providers-list")).toBeTruthy();
     });
-    confirmSpy.mockRestore();
   });
 
   it("keeps the dirty draft when the prompt is cancelled", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderEditorAt("/admin/settings/identity/providers/new");
 
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google" } });
     fireEvent.click(screen.getByRole("link", { name: "Providers" }));
 
-    await waitFor(() => {
-      expect(confirmSpy).toHaveBeenCalled();
-    });
+    fireEvent.click(await screen.findByRole("button", { name: "Keep editing" }));
     // Cancelled → editor stays, the typed value is preserved, list does not render.
     expect(screen.getByDisplayValue("Google")).toBeTruthy();
     expect(screen.queryByText("providers-list")).toBeNull();
-    confirmSpy.mockRestore();
+  });
+
+  it("closes the blocked-navigation dialog on a single Escape press instead of reopening a second one (bot review finding)", async () => {
+    renderEditorAt("/admin/settings/identity/providers/new");
+
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google" } });
+    fireEvent.click(screen.getByRole("link", { name: "Providers" }));
+    await screen.findByRole("button", { name: "Discard" });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Discard" })).toBeNull());
+    expect(screen.getByDisplayValue("Google")).toBeTruthy();
+    expect(screen.queryByText("providers-list")).toBeNull();
   });
 
   it("does not prompt when navigating away from a clean draft", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderEditorAt("/admin/settings/identity/providers/new");
 
     fireEvent.click(screen.getByRole("link", { name: "Providers" }));
@@ -389,15 +394,13 @@ describe("IdentityProviderEditor — dirty guard", () => {
     await waitFor(() => {
       expect(screen.getByText("providers-list")).toBeTruthy();
     });
-    expect(confirmSpy).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
+    expect(screen.queryByRole("button", { name: "Discard" })).toBeNull();
   });
 
   it("re-arms the dirty guard after a confirmed discard navigation (A→B)", async () => {
     mockFetch.mockResolvedValueOnce(validDetail); // p1
     const p2Detail = { ...validDetail, id: "p2", display_name: "Okta", issuer: "https://okta.example.com" };
     mockFetch.mockResolvedValueOnce(p2Detail); // p2
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const { router } = renderEditorAt("/admin/settings/identity/providers/p1");
 
     await screen.findByDisplayValue("Google");
@@ -405,21 +408,19 @@ describe("IdentityProviderEditor — dirty guard", () => {
     // Dirty p1, then in-app nav to p2 → prompt → confirm → discard → p2 loads.
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google X" } });
     router.navigate("/admin/settings/identity/providers/p2");
+    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
     await screen.findByDisplayValue("Okta");
 
     // The bypass must be one-shot: dirty p2 + another navigation must prompt again.
-    confirmSpy.mockClear();
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Okta Y" } });
     router.navigate("/admin/settings/identity/providers");
-    await waitFor(() => expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?"));
-    confirmSpy.mockRestore();
+    expect(await screen.findByRole("button", { name: "Discard" })).toBeTruthy();
   });
 
   it("clears stale field errors when navigating to another provider (A→B)", async () => {
     mockFetch.mockResolvedValueOnce(validDetail); // p1
     const p2Detail = { ...validDetail, id: "p2", display_name: "Okta", issuer: "https://okta.example.com" };
     mockFetch.mockResolvedValueOnce(p2Detail); // p2
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const { router } = renderEditorAt("/admin/settings/identity/providers/p1");
 
     await screen.findByDisplayValue("Google");
@@ -431,14 +432,13 @@ describe("IdentityProviderEditor — dirty guard", () => {
 
     // Dirty (cleared field) → confirm discard → nav to p2 loads clean, no stale error.
     router.navigate("/admin/settings/identity/providers/p2");
+    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
     await screen.findByDisplayValue("Okta");
     expect(screen.queryByText("Display name is required.")).toBeNull();
-    confirmSpy.mockRestore();
   });
 
   it("does not mark the draft dirty when the secret is touched then cleared (keep stored)", async () => {
     mockFetch.mockResolvedValueOnce(validDetail);
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
     await screen.findByDisplayValue("Google");
@@ -450,8 +450,7 @@ describe("IdentityProviderEditor — dirty guard", () => {
     fireEvent.click(screen.getByRole("link", { name: "Providers" }));
 
     await screen.findByText("providers-list");
-    expect(confirmSpy).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
+    expect(screen.queryByRole("button", { name: "Discard" })).toBeNull();
   });
 });
 
@@ -523,16 +522,27 @@ describe("IdentityProviderEditor — coverage", () => {
 
   it("Cancel with a dirty draft confirms discard then navigates to the list", async () => {
     mockFetch.mockResolvedValueOnce(validDetail);
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderEditorAt("/admin/settings/identity/providers/p1");
 
     await screen.findByDisplayValue("Google");
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google X" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-    await screen.findByText("providers-list");
-    expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?");
-    confirmSpy.mockRestore();
+    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    expect(await screen.findByText("providers-list")).toBeTruthy();
+  });
+
+  it("keeps the editor when the Cancel dialog is dismissed", async () => {
+    mockFetch.mockResolvedValueOnce(validDetail);
+    renderEditorAt("/admin/settings/identity/providers/p1");
+
+    await screen.findByDisplayValue("Google");
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google X" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Keep editing" }));
+    expect(screen.queryByText("providers-list")).toBeNull();
+    expect(screen.getByDisplayValue("Google X")).toBeTruthy();
   });
 
   it("install a beforeunload handler while dirty (reload/close guard)", async () => {
