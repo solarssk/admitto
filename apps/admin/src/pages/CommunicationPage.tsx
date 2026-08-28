@@ -1737,11 +1737,12 @@ export function CommunicationPage() {
         applyLoadedTemplateSelection(key, result);
       } catch (err) {
         if (seq !== templateSelectionSeqRef.current) return;
+        const fallback = "Failed to load template.";
         if (err instanceof ApiError) {
           reportApiError(err.status);
-          addToast(operatorApiErrorMessage(err, "Request failed."), "error");
+          addToast(operatorApiErrorMessage(err, fallback), "error");
         } else {
-          addToast("Failed to load template.", "error");
+          addToast(fallback, "error");
         }
       } finally {
         if (seq === templateSelectionSeqRef.current) {
@@ -1769,11 +1770,12 @@ export function CommunicationPage() {
       setCreateDialogOpen(false);
     } catch (err) {
       if (seq !== createTemplateSeqRef.current) return;
+      const fallback = "Create failed.";
       if (err instanceof ApiError) {
         reportApiError(err.status);
-        addToast(operatorApiErrorMessage(err, "Request failed."), "error");
+        addToast(operatorApiErrorMessage(err, fallback), "error");
       } else {
-        addToast("Create failed.", "error");
+        addToast(fallback, "error");
       }
     } finally {
       createInFlightRef.current = false;
@@ -1893,11 +1895,12 @@ export function CommunicationPage() {
         addToast("Template updated.", "success");
       } catch (err) {
         if (isDeleteStale(seq, scopeEventId, metadataSaveSeqRef.current, currentEventIdRef.current)) return;
+        const fallback = "Update failed.";
         if (err instanceof ApiError) {
           reportApiError(err.status);
-          addToast(operatorApiErrorMessage(err, "Request failed."), "error");
+          addToast(operatorApiErrorMessage(err, fallback), "error");
         } else {
-          addToast("Update failed.", "error");
+          addToast(fallback, "error");
         }
       } finally {
         if (seq === metadataSaveSeqRef.current) {
@@ -2202,11 +2205,14 @@ export function CommunicationPage() {
       // never disappear - the validation error below the editor is the right place for this).
       if (err instanceof TemplateValidationError) {
         setValidationErrors(err.errors);
-      } else if (err instanceof ApiError) {
-        reportApiError(err.status);
-        addToast(operatorApiErrorMessage(err, "Request failed."), "error");
       } else {
-        addToast("Preview failed.", "error");
+        const fallback = "Preview failed.";
+        if (err instanceof ApiError) {
+          reportApiError(err.status);
+          addToast(operatorApiErrorMessage(err, fallback), "error");
+        } else {
+          addToast(fallback, "error");
+        }
       }
     } finally {
       if (seq === previewSeqRef.current) setPreviewLoading(false);
@@ -2268,11 +2274,14 @@ export function CommunicationPage() {
     } catch (err) {
       if (err instanceof TemplateValidationError) {
         setValidationErrors(err.errors);
-      } else if (err instanceof ApiError) {
-        reportApiError(err.status);
-        addToast(operatorApiErrorMessage(err, "Request failed."), "error");
       } else {
-        addToast("Save failed.", "error");
+        const fallback = "Save failed.";
+        if (err instanceof ApiError) {
+          reportApiError(err.status);
+          addToast(operatorApiErrorMessage(err, fallback), "error");
+        } else {
+          addToast(fallback, "error");
+        }
       }
     } finally {
       setSaving(false);
