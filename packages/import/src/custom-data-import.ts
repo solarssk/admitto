@@ -85,9 +85,6 @@ export function importCustomDataSkipReason(
     const field = fields.find((row) => row.source_field === slug);
     return `Missing required attribute: ${field?.label ?? slug}`;
   }
-  if (message === "invalid_custom_data_value") {
-    return "Invalid custom attribute data";
-  }
   return "Invalid custom attribute data";
 }
 
@@ -133,7 +130,7 @@ function customDataExtractionFailure(
   if (message.startsWith("unknown_custom_data_field:")) {
     return { ok: false, reason: "Invalid custom attribute data" };
   }
-  if (message === "invalid_custom_data_value") {
+  if (message.startsWith("invalid_custom_data_value:")) {
     const invalidField = findInvalidCustomDataField(raw, fields, duplicateLabels);
     if (invalidField) {
       return {

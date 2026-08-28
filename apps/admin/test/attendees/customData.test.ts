@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { CustomDataFieldDef } from "../../src/attendees/customData.js";
 
 const mockFetchEventCustomFields = vi.fn();
 vi.mock("../../src/api/client.js", () => ({
@@ -7,6 +8,7 @@ vi.mock("../../src/api/client.js", () => ({
 
 const {
   allCustomDataEntries,
+  customDataApiErrorMessage,
   customDataFieldLabel,
   fetchAttendeeCustomFields,
   initialCustomFieldValues,
@@ -149,6 +151,76 @@ describe("validateCustomFieldsForm", () => {
         { size: "M" },
       ),
     ).toMatch(/must be one of/i);
+  });
+});
+
+describe("customDataApiErrorMessage", () => {
+  const sizeField = {
+    label: "Size",
+    source_field: "size",
+    type: "select" as const,
+    required: true,
+    options: ["S", "M", "L"],
+  };
+  const lunchField = { label: "Lunch", source_field: "lunch", type: "boolean" as const, required: false };
+  const notesField = { label: "Notes", source_field: "notes", type: "text" as const, required: false };
+
+  it("returns null for a code that isn't a custom-data error", () => {
+    expect(customDataApiErrorMessage([sizeField], { code: "email_conflict" })).toBeNull();
+  });
+
+  it("names a removed field without needing a match in the current field list", () => {
+    expect(
+      customDataApiErrorMessage([sizeField], { code: "unknown_custom_data_field", field: "old_field" }),
+    ).toMatch(/removed from this event/);
+  });
+
+  it("returns null when the field slug doesn't match any current field", () => {
+    expect(
+      customDataApiErrorMessage([sizeField], { code: "required_custom_data_field_missing", field: "missing" }),
+    ).toBeNull();
+  });
+
+  it("names the required field", () => {
+    expect(
+      customDataApiErrorMessage([sizeField], { code: "required_custom_data_field_missing", field: "size" }),
+    ).toBe("Size is required.");
+  });
+
+  it("lists the valid options for a select field", () => {
+    expect(customDataApiErrorMessage([sizeField], { code: "validation_failed", field: "size" })).toBe(
+      "Size must be one of: S, M, L.",
+    );
+  });
+
+  it("explains a boolean field", () => {
+    expect(customDataApiErrorMessage([lunchField], { code: "validation_failed", field: "lunch" })).toBe(
+      "Lunch must be Yes or No.",
+    );
+  });
+
+  it("falls back to a generic invalid-value message for a text field", () => {
+    expect(customDataApiErrorMessage([notesField], { code: "validation_failed", field: "notes" })).toBe(
+      "Notes has an invalid value.",
+    );
+  });
+
+  it("returns null when the error carries no field slug", () => {
+    expect(customDataApiErrorMessage([sizeField], { code: "validation_failed" })).toBeNull();
+  });
+
+  it("treats a field with no configured type as text", () => {
+    const untypedField = { ...notesField, type: undefined } as unknown as CustomDataFieldDef;
+    expect(
+      customDataApiErrorMessage([untypedField], { code: "validation_failed", field: "notes" }),
+    ).toBe("Notes has an invalid value.");
+  });
+
+  it("lists no options when a select field has none configured", () => {
+    const emptyOptionsField = { ...sizeField, options: null };
+    expect(
+      customDataApiErrorMessage([emptyOptionsField], { code: "validation_failed", field: "size" }),
+    ).toBe("Size must be one of: .");
   });
 });
 
