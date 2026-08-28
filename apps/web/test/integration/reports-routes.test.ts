@@ -435,12 +435,12 @@ async function seed(client: PrismaClient) {
   });
 
   // A hard-bounced initial send followed by a successful resend - regression coverage for
-  // WALLET_PASS_AGGREGATE_SELECT only counting the earliest non-bounced delivery across both
-  // purposes, not just "initial" (bot review on PR #1125: applyBounceResult retains sent_at on a
-  // hard bounce, so a "purpose: initial" filter alone would still pick the bounced send's
-  // timestamp). The bounced initial is 10 whole days before walletIssuedAt (would land in the
-  // "8_plus" bucket if wrongly used); the resend is 5 whole days before (lands in "4_7") - a
-  // wrong pick here changes both the bucket and the average.
+  // WALLET_PASS_AGGREGATE_SELECT/WALLET_EXPORT_ATTENDEE_SELECT only counting the earliest
+  // non-bounced delivery across both purposes, not just "initial" (bot review on PR #1125:
+  // applyBounceResult retains sent_at on a hard bounce, so a "purpose: initial" filter alone
+  // would still pick the bounced send's timestamp). The bounced initial is 10 whole days before
+  // walletIssuedAt (would land in the "8_plus" bucket if wrongly used); the resend is 5 whole
+  // days before (lands in "4_7") - a wrong pick here changes both the bucket and the average.
   await client.emailDelivery.createMany({
     data: [
       {

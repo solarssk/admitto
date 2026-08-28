@@ -1251,8 +1251,10 @@ const WALLET_EXPORT_ATTENDEE_SELECT = {
       registration_checked_at: true,
     },
   },
+  // See the identical comment on WALLET_PASS_AGGREGATE_SELECT above - earliest non-bounced send
+  // across initial and resend attempts, not just "initial".
   email_deliveries: {
-    where: { purpose: "initial", sent_at: { not: null } },
+    where: { sent_at: { not: null }, status: { not: "bounced" } },
     orderBy: { sent_at: "asc" },
     take: 1,
     select: { sent_at: true },
