@@ -1299,7 +1299,7 @@ function buildWalletExportCsvRow(
     .join(",");
 }
 
-/** GET .../reports/export?format=csv&report=wallets — one row per attendee, not the Wallets
+/** GET .../reports/export?format=csv&report=wallets - one row per attendee, not the Wallets
  * tab's own aggregate cards: archiving this data (or feeding it to another tool) needs the full
  * underlying population to recompute any of those aggregates later, which a pre-aggregated
  * summary throws away. Mirrors ATTENDEE_DETAIL_SELECT's wallet_pass join (attendees-api-routes.ts)
@@ -1382,7 +1382,7 @@ async function exportWalletReportsCsv(
   });
 }
 
-/** GET .../reports/export?format=pdf&report=wallets — printable summary mirroring the Wallets
+/** GET .../reports/export?format=pdf&report=wallets - printable summary mirroring the Wallets
  * tab's own cards (adoption, platform, by-ticket-type, time-to-tap, admission-by-wallet-status),
  * not a per-attendee table like the admissions PDF above - "Formatted summary for sharing" is
  * the export menu's own description of what PDF is for (EXPORT_FORMATS, ReportsPage.tsx); the
@@ -1419,9 +1419,15 @@ async function exportWalletReportsPdf(
     "4_7": "4-7 days",
     "8_plus": "8+ days",
   };
-  const tapRows = aggregates.time_to_wallet_tap.buckets
-    .map((b) => `<tr><td>${escapeHtml(tapBucketLabels[b.key] ?? b.key)}</td><td>${b.count}</td><td>${b.pct}%</td></tr>`)
-    .join("");
+  // buckets is always 4 zero-filled entries even with no data at all, so mapping it always
+  // produces a non-empty string - branch on average_days (null only when nothing to average)
+  // instead, matching the Wallets tab's own "Not enough data yet." condition.
+  const tapRows =
+    aggregates.time_to_wallet_tap.average_days === null
+      ? ""
+      : aggregates.time_to_wallet_tap.buckets
+          .map((b) => `<tr><td>${escapeHtml(tapBucketLabels[b.key] ?? b.key)}</td><td>${b.count}</td><td>${b.pct}%</td></tr>`)
+          .join("");
 
   const statsHtml = [
     { label: "Total attendees", value: String(aggregates.total_attendees) },
@@ -1457,15 +1463,23 @@ async function exportWalletReportsPdf(
     </tbody>
   </table>`;
 
+  // The on-screen Wallets tab surfaces synced_at (via syncedHint in WalletsReportsTab.tsx) so a
+  // stale/never-synced platform-adoption number isn't read as current - the PDF needs the same
+  // caveat, since it only otherwise carries a "Generated" timestamp for when the export ran, not
+  // when the underlying wallet-pass registration data was last refreshed from PassCreator.
+  const syncedLine = aggregates.synced_at
+    ? `Synced ${escapeHtml(formatAdmittedAtExport(new Date(aggregates.synced_at), timeZone))}`
+    : "Not synced yet";
+
   const html = renderPrintableReportHtml({
     titleSuffix: "Wallet report",
     eventTitle: event.title,
-    metaLine: `Event date: ${escapeHtml(eventDate)} · Times in ${escapeHtml(timeZone)} · Generated ${escapeHtml(new Date().toISOString())}`,
+    metaLine: `Event date: ${escapeHtml(eventDate)} · Times in ${escapeHtml(timeZone)} · ${syncedLine} · Generated ${escapeHtml(new Date().toISOString())}`,
     statsHtml,
     sectionsHtml,
   });
 
-  await auditReportsExported(db, c, eventId, "pdf", aggregates.adoption.got_pass, false, "wallets");
+  await auditReportsExported(db, c, eventId, "pdf", aggregates.adoption.got_pass, aggregates.passes_truncated, "wallets");
 
   return new Response(html, {
     status: 200,

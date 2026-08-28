@@ -2101,6 +2101,16 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     expect(res.headers.get("Content-Type")).toContain("text/html");
     const html = await res.text();
     expect(html).toContain("Wallets Reports Event");
+    // synced_at is set (ATT_W_BOTH's registration_checked_at, the most recent) - the meta line
+    // should surface it, not silently omit sync freshness the way a bare "Generated" timestamp
+    // would (bot review: a shared PDF can otherwise misleadingly look current).
+    expect(html).toContain("Synced ");
+    expect(html).not.toContain("Not synced yet");
+    // ATT_W_APPLE and ATT_W_NOT_INSTALLED both contribute a tap-day sample (see the GET aggregate
+    // test's time_to_wallet_tap assertions above), so average_days isn't null here - the bucket
+    // rows should render, not the buckets-always-populated dead-code fallback text.
+    expect(html).toContain("1-3 days");
+    expect(html).not.toContain("Not enough data yet");
   });
 
   it("audit: reports_exported records report=wallets, not the admissions default", async () => {
