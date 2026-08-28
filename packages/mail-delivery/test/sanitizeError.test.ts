@@ -169,6 +169,10 @@ describe("transportTestErrorForAdmin", () => {
     );
   });
 
+  it("passes through a plain, unmatched send error instead of the generic fallback", () => {
+    expect(transportTestErrorForAdmin("Mailbox does not exist")).toBe("Mailbox does not exist");
+  });
+
   it("handles empty input", () => {
     expect(transportTestErrorForAdmin(undefined)).toBe(
       "Send failed. Check transport settings and try again.",

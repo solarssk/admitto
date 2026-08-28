@@ -1,9 +1,8 @@
-import { MAIL_PROVIDER_LABELS } from "@admitto/shared";
 import type { MailProvider } from "../api/types.js";
 
 export type MailProviderOption = { value: MailProvider; label: string };
 
-export { MAIL_PROVIDER_LABELS };
+export { MAIL_PROVIDER_LABELS } from "@admitto/shared";
 
 /** Provider select options — wizard uses mockup order/labels; settings keeps legacy order. */
 export function buildMailProviderOptions(

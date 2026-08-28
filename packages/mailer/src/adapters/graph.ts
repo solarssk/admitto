@@ -213,6 +213,11 @@ export class GraphAdapter implements MailerAdapter {
         result: {
           ...base,
           retryable: mapped.retryable,
+          // getAccessToken() has exactly three throw sites, all Error/TokenError instances (the
+          // fetch-failure and non-2xx branches are already caught above as TokenError; this is
+          // only ever the plain Error thrown for a missing access_token) - the non-Error side is
+          // defense-in-depth against a future throw site that doesn't uphold that invariant.
+          /* v8 ignore next */
           error: e instanceof Error ? e.message : String(e),
         },
       };

@@ -75,6 +75,12 @@ export const GENERIC_SEND_FAILED_MESSAGE = "Send failed.";
 export function clientSafeDeliveryError(message: string | undefined): string {
   if (!message || message.length > 120) return GENERIC_SEND_FAILED_MESSAGE;
   const sanitized = sanitizeDeliveryError(message);
+  // Unreachable in practice - sanitizeDeliveryError only returns undefined/empty for a falsy or
+  // fully-consumed-then-emptied input, and `message` here is already guaranteed non-empty and
+  // <=120 chars by the guard above; every redaction step substitutes non-empty text, never
+  // deletes. Kept as defense-in-depth against sanitizeDeliveryError's own `string | undefined`
+  // signature, in case that invariant ever changes.
+  /* v8 ignore if */
   if (!sanitized) return GENERIC_SEND_FAILED_MESSAGE;
   if (
     /AADSTS|client_id|client_secret|smtp:|graph\.microsoft|oauth|bearer\s|authorization\s+failed|exportSink|createMailer/i.test(

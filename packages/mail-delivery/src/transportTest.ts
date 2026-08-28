@@ -183,7 +183,7 @@ function buildTransportTestDiagRows(
   stamp: string,
   ctx: TransportTestMessageContext,
 ): DiagRow[] {
-  const providerLabel = ctx.provider ? (MAIL_PROVIDER_LABELS[ctx.provider] ?? ctx.provider) : null;
+  const providerLabel = ctx.provider ? MAIL_PROVIDER_LABELS[ctx.provider] : null;
   const scopeLabel = ctx.scope === "event" ? eventScopeLabel(ctx) : organizationScopeLabel(ctx);
 
   const rows: DiagRow[] = [
