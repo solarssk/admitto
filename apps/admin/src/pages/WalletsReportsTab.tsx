@@ -3,7 +3,7 @@ import type { ApexOptions } from "apexcharts";
 import Chart from "react-apexcharts";
 import { Button, Card, EmptyState, HintLabel, Notice, ticketTypeChartColor } from "@admitto/ui";
 import { ApiError, fetchEventWalletReports } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventWalletReportsResponse } from "../api/types.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -432,7 +432,11 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({ eventId }: Re
       setData(null);
       if (err instanceof ApiError) {
         reportApiError(err.status);
-        setError(err.status === 403 ? "You do not have access to this event." : operatorApiErrorMessage(err, "Request failed."));
+        setError(
+          hasApiErrorCode(err, "forbidden")
+            ? "You do not have access to this event."
+            : operatorApiErrorMessage(err, "Request failed."),
+        );
       } else {
         setError("Failed to load wallet report.");
       }

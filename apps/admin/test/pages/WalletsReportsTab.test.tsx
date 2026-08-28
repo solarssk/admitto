@@ -181,7 +181,10 @@ describe("WalletsReportsTab", () => {
   });
 
   it("shows the 403-specific access message instead of the server's own error text", async () => {
-    fetchEventWalletReports.mockRejectedValueOnce(new ApiError(403, "forbidden"));
+    // Real 403 body is { error: "forbidden" }, which client.ts's parseJson maps to both message
+    // and code (see apiErrorCodeFromBody's fallback to body.error) - passed explicitly here since
+    // the source now branches on the normalized code, not the raw status.
+    fetchEventWalletReports.mockRejectedValueOnce(new ApiError(403, "forbidden", "forbidden"));
 
     renderWithToast(<WalletsReportsTab eventId="evt-1" />);
 

@@ -10,8 +10,8 @@ export interface EventWalletReportsResponse {
   synced_at: string | null;
   /** True once the event has more issued passes than WALLET_AGGREGATE_MAX - platform, ticket-type
    * adoption, and time-to-wallet-tap are all derived from a WALLET_AGGREGATE_MAX-row sample in
-   * that case (oldest-issued-first, since the underlying query has no explicit ordering, so this
-   * doesn't claim any particular bias), while issued_by_day and admission_by_wallet stay exact
+   * that case (an arbitrary sample - the underlying query has no explicit ordering, so no
+   * particular bias is claimed), while issued_by_day and admission_by_wallet stay exact
    * (SQL-aggregated over every row, not sample-dependent) regardless. The frontend surfaces this
    * so a genuinely huge event doesn't show confidently-wrong percentages with no indication. */
   passes_truncated: boolean;

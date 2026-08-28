@@ -420,8 +420,8 @@ async function seed(client: PrismaClient) {
   });
 
   // 3 whole days before walletIssuedAt - exercises time_to_wallet_tap's "1_3" bucket. No other
-  // wallet attendee gets an EmailDelivery row, so they're excluded from the average/bucket
-  // entirely (computeTapDays returns null with no sent_at), keeping this the only contributor.
+  // wallet attendee besides ATT_W_NOT_INSTALLED (below) gets an EmailDelivery row, so they're
+  // excluded from the average/bucket entirely (computeTapDays returns null with no sent_at).
   await client.emailDelivery.create({
     data: {
       organization_id: ORG_REP,
@@ -432,6 +432,37 @@ async function seed(client: PrismaClient) {
       status: "sent",
       sent_at: new Date("2026-01-12T10:00:00.000Z"),
     },
+  });
+
+  // A hard-bounced initial send followed by a successful resend - regression coverage for
+  // WALLET_PASS_AGGREGATE_SELECT only counting the earliest non-bounced delivery across both
+  // purposes, not just "initial" (bot review on PR #1125: applyBounceResult retains sent_at on a
+  // hard bounce, so a "purpose: initial" filter alone would still pick the bounced send's
+  // timestamp). The bounced initial is 10 whole days before walletIssuedAt (would land in the
+  // "8_plus" bucket if wrongly used); the resend is 5 whole days before (lands in "4_7") - a
+  // wrong pick here changes both the bucket and the average.
+  await client.emailDelivery.createMany({
+    data: [
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_WALLETS,
+        attendee_id: ATT_W_NOT_INSTALLED,
+        purpose: "initial",
+        provider: "export_only",
+        status: "bounced",
+        sent_at: new Date("2026-01-05T10:00:00.000Z"),
+        failed_at: new Date("2026-01-05T11:00:00.000Z"),
+      },
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_WALLETS,
+        attendee_id: ATT_W_NOT_INSTALLED,
+        purpose: "resend",
+        provider: "export_only",
+        status: "sent",
+        sent_at: new Date("2026-01-10T10:00:00.000Z"),
+      },
+    ],
   });
 }
 
@@ -1997,14 +2028,20 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.issued_by_day[0]!.cumulative).toBe(7);
     expect(body.issued_by_day.at(-1)!.cumulative).toBe(7);
 
-    // Only ATT_W_APPLE has an EmailDelivery row (sent 3 whole days before its pass was issued) -
-    // every other wallet attendee has no ticket-email send, so computeTapDays returns null for
-    // them and they're excluded from both the average and every bucket.
-    expect(body.time_to_wallet_tap.average_days).toBe(3);
+    // ATT_W_APPLE (sent 3 whole days before its pass was issued) and ATT_W_NOT_INSTALLED (bounced
+    // initial 10 days before, successful resend 5 days before - the resend must win) are the only
+    // two contributors; every other wallet attendee has no successful ticket-email send, so
+    // computeTapDays returns null for them and they're excluded from both the average and every
+    // bucket. A wrong "purpose: initial"-only pick would use ATT_W_NOT_INSTALLED's bounced 10-day
+    // gap instead, landing it in "8_plus" and shifting the average to 6.5.
+    expect(body.time_to_wallet_tap.average_days).toBe(4);
     const bucket13 = body.time_to_wallet_tap.buckets.find((b) => b.key === "1_3");
     expect(bucket13!.count).toBe(1);
-    expect(bucket13!.pct).toBe(100);
-    for (const key of ["same_day", "4_7", "8_plus"]) {
+    expect(bucket13!.pct).toBe(50);
+    const bucket47 = body.time_to_wallet_tap.buckets.find((b) => b.key === "4_7");
+    expect(bucket47!.count).toBe(1);
+    expect(bucket47!.pct).toBe(50);
+    for (const key of ["same_day", "8_plus"]) {
       expect(body.time_to_wallet_tap.buckets.find((b) => b.key === key)!.count).toBe(0);
     }
 

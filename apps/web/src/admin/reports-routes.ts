@@ -563,8 +563,12 @@ const WALLET_PASS_AGGREGATE_SELECT = {
   attendee: {
     select: {
       ticket_type: true,
+      // Earliest non-bounced send across initial and resend attempts - a "purpose: initial" filter
+      // would keep pointing at an initial that later hard-bounced (applyBounceResult retains its
+      // sent_at, only status flips to "bounced"), overstating tap time against a since-successful
+      // resend, or dropping the attendee entirely if the initial send never got a sent_at at all.
       email_deliveries: {
-        where: { purpose: "initial", sent_at: { not: null } },
+        where: { sent_at: { not: null }, status: { not: "bounced" } },
         orderBy: { sent_at: "asc" },
         take: 1,
         select: { sent_at: true },
