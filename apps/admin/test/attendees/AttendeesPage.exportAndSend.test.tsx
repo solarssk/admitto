@@ -241,7 +241,7 @@ describe("AttendeesPage export and header Send tickets", () => {
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^XLSX/ }));
     await waitFor(() => {
-      expect(exportAttendees.mock.calls.length).toBe(callsBefore + 1);
+      expect(exportAttendees.mock.calls).toHaveLength(callsBefore + 1);
     });
     expect(addToast).not.toHaveBeenCalled();
   });
