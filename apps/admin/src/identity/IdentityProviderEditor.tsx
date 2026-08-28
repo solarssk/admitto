@@ -13,10 +13,9 @@ import {
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { ProviderDetailDto, ProviderRequestBody, ProviderTestDraftBody } from "../api/types.js";
-import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
-import { DiscardUnsavedChangesDialogs } from "./DiscardUnsavedChangesDialogs.js";
+import { DiscardUnsavedChangesDialogs, useEditorFocusTrap } from "./DiscardUnsavedChangesDialogs.js";
 import { IdentityMappingRepeater } from "./IdentityMappingRepeater.js";
 import { IdentityModalHeader } from "./IdentityModalHeader.js";
 import {
@@ -519,16 +518,7 @@ export function IdentityProviderEditor({
   // Edit mode starts in loadState "loading" - its real form fields don't exist in the DOM
   // until the fetch resolves, so initial focus must be re-attempted once loadState changes
   // (create mode is already "ready" at mount, so this is a no-op there).
-  // Suspended while either discard dialog is open - otherwise this trap's own Escape/keydown
-  // listener (registered first, since it mounts before either dialog opens) fires first and
-  // reopens a second, visually identical discard dialog instead of leaving the topmost one to
-  // handle Escape alone (bot review finding; same pattern as UserEditModal's `anyConfirmDialogOpen`).
-  useModalFocusTrap(
-    panelRef,
-    !discardConfirmOpen && blocker.state !== "blocked",
-    handleCancel,
-    loadState,
-  );
+  useEditorFocusTrap(panelRef, discardConfirmOpen, blocker.state === "blocked", handleCancel, loadState);
   const scrollRef = useRef<HTMLDivElement>(null);
   useOverscrollBounceGuard(scrollRef);
 

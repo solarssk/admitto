@@ -414,7 +414,7 @@ describe("IdentityProviderEditor — dirty guard", () => {
     // The bypass must be one-shot: dirty p2 + another navigation must prompt again.
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Okta Y" } });
     router.navigate("/admin/settings/identity/providers");
-    await screen.findByRole("button", { name: "Discard" });
+    expect(await screen.findByRole("button", { name: "Discard" })).toBeTruthy();
   });
 
   it("clears stale field errors when navigating to another provider (A→B)", async () => {
@@ -529,7 +529,7 @@ describe("IdentityProviderEditor — coverage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
-    await screen.findByText("providers-list");
+    expect(await screen.findByText("providers-list")).toBeTruthy();
   });
 
   it("keeps the editor when the Cancel dialog is dismissed", async () => {
