@@ -245,7 +245,7 @@
 
 .setup-wizard__check-item--error {
   border-color: var(--status-error);
-  background: var(--status-error-tint, #fef2f2);
+  background: var(--status-error-tint, #fbeaea);
   align-items: flex-start;
 }
 
@@ -483,10 +483,10 @@
   gap: 0.35rem;
   max-width: 100%;
   padding: 0.35rem 0.7rem;
-  border: 1px solid var(--at-blue-100, #dbeafe);
+  border: 1px solid var(--at-blue-100, #cfe2f7);
   border-radius: 999px;
-  background: var(--primary-tint, #eff6ff);
-  color: var(--primary-active, #0559b0);
+  background: var(--primary-tint, #e9f2fc);
+  color: var(--primary-active, #04519c);
   font-size: 0.75rem;
   font-weight: 500;
   line-height: 1.3;

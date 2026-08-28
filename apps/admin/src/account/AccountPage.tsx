@@ -516,7 +516,7 @@ export function AccountPage() {
     } catch (err) {
       if (signal?.aborted) return;
       if (redirectToLoginIfUnauthorized(err)) return;
-      setError(operatorApiErrorMessage(err, "Failed to load account."));
+      setError(operatorApiErrorMessage(err, "Could not load account."));
     } finally {
       if (!signal?.aborted) setLoading(false);
     }

@@ -831,78 +831,17 @@ describe("trusted device", () => {
     expect(await validateTrustedDevice(prisma, USER_ADMIN, second.rawToken)).toBe(true);
   });
 
-  it("rejects when a later request's IP and User-Agent both differ from creation", async () => {
+  it("accepts a token even when the recorded IP and User-Agent both differ from the current request - not bound to network/browser (see validateTrustedDevice doc comment: NAT/ISP IP rotation makes IP an unreliable signal for this, per OWASP Session Management guidance)", async () => {
     const { rawToken } = await createTrustedDevice(prisma, {
       userId: USER_ADMIN,
       ip: "203.0.113.10",
       userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
     });
 
-    expect(
-      await validateTrustedDevice(prisma, USER_ADMIN, rawToken, {
-        ip: "198.51.100.20",
-        userAgent: "Mozilla/5.0 DifferentBrowser/9.9",
-      }),
-    ).toBe(false);
+    expect(await validateTrustedDevice(prisma, USER_ADMIN, rawToken)).toBe(true);
   });
 
-  it("accepts a same-device follow-up request with matching IP and User-Agent", async () => {
-    const { rawToken } = await createTrustedDevice(prisma, {
-      userId: USER_ADMIN,
-      ip: "203.0.113.10",
-      userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
-    });
-
-    expect(
-      await validateTrustedDevice(prisma, USER_ADMIN, rawToken, {
-        ip: "203.0.113.10",
-        userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
-      }),
-    ).toBe(true);
-  });
-
-  it("rejects when the IP rotates even though the User-Agent still matches - a bare User-Agent match is not proof of device (guessable, client-controlled header)", async () => {
-    const { rawToken } = await createTrustedDevice(prisma, {
-      userId: USER_ADMIN,
-      ip: "203.0.113.10",
-      userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
-    });
-
-    expect(
-      await validateTrustedDevice(prisma, USER_ADMIN, rawToken, {
-        ip: "198.51.100.99",
-        userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
-      }),
-    ).toBe(false);
-  });
-
-  it("accepts when the User-Agent changes but the IP still matches (browser update) - User-Agent is recorded but never gates the decision", async () => {
-    const { rawToken } = await createTrustedDevice(prisma, {
-      userId: USER_ADMIN,
-      ip: "203.0.113.10",
-      userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
-    });
-
-    expect(
-      await validateTrustedDevice(prisma, USER_ADMIN, rawToken, {
-        ip: "203.0.113.10",
-        userAgent: "Mozilla/5.0 TrustedBrowser/2.0",
-      }),
-    ).toBe(true);
-  });
-
-  it("treats a trusted device with no recorded IP/User-Agent as still valid (pre-fix rows)", async () => {
-    const { rawToken } = await createTrustedDevice(prisma, { userId: USER_ADMIN });
-
-    expect(
-      await validateTrustedDevice(prisma, USER_ADMIN, rawToken, {
-        ip: "203.0.113.10",
-        userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
-      }),
-    ).toBe(true);
-  });
-
-  it("login() falls through to requiring MFA when the trusted-device token's IP/User-Agent no longer match", async () => {
+  it("login() skips MFA for a trusted-device token even when the request's IP/User-Agent no longer match what was recorded at creation", async () => {
     await resetUserMfa(prisma, USER_ADMIN);
     const secret = generateTotpSecret();
     await prisma.userMfaMethod.create({
@@ -929,41 +868,16 @@ describe("trusted device", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.next).toBe(LOGIN_NEXT.MFA_REQUIRED);
-  });
+    expect(result.next).toBe(LOGIN_NEXT.COMPLETE);
 
-  it("login() still requires MFA for a stolen password + stolen cookie replayed from a different network with a guessed User-Agent", async () => {
-    // The exact attack a bare User-Agent match used to permit: attacker has the account
-    // password (phishing/breach) and a copied trusted-device cookie value (infostealer, leaked
-    // browser-profile backup) but is not on the victim's network - they send a common,
-    // easily-guessed User-Agent string hoping it alone vouches for the device.
-    await resetUserMfa(prisma, USER_ADMIN);
-    const secret = generateTotpSecret();
-    await prisma.userMfaMethod.create({
-      data: {
-        user_id: USER_ADMIN,
-        type: "totp",
-        secret_enc: encryptTotpSecret(secret),
-        confirmed_at: new Date(),
-      },
+    // Not bound to IP for accept/reject, but still leaves a trace of the skip - the login-time
+    // IP, distinct from the creation-time one - so a stolen-cookie MFA skip from a different
+    // network is at least queryable after the fact (see logTrustedDeviceUsed's doc comment).
+    const auditRow = await prisma.securityAuditLog.findFirst({
+      where: { user_id: USER_ADMIN, event_type: "auth.trusted_device.used" },
+      orderBy: { created_at: "desc" },
     });
-
-    const { rawToken } = await createTrustedDevice(prisma, {
-      userId: USER_ADMIN,
-      ip: "203.0.113.10",
-      userAgent: "Mozilla/5.0 TrustedBrowser/1.0",
-    });
-
-    const result = await login(prisma, {
-      email: "mfa-admin@example.com",
-      password: PASSWORD,
-      trustedDeviceToken: rawToken,
-      ip: "198.51.100.20",
-      userAgent: "Mozilla/5.0 TrustedBrowser/1.0", // guessed/copied exactly - IP is the only signal that differs
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.next).toBe(LOGIN_NEXT.MFA_REQUIRED);
+    expect(auditRow?.ip).toBe("198.51.100.20");
   });
 });
 
