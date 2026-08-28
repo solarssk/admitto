@@ -106,6 +106,10 @@ Do **not** pass `ApiError.message` straight into toasts or inline error strings.
 - Known codes are mapped to fixed UI strings; short human `detail` text is shown only when it passes the helper's safety checks; everything else logs in dev and returns `fallback`.
 - `TemplateValidationError` and client-side validation stay separate — they never go through `operatorApiErrorMessage`.
 
+The table above governs which surface to use; it doesn't govern what the text inside it says. For
+which register (Superadmin/Administrator/Operator/Public attendee) gets how much technical detail,
+and the content rules behind it, see [docs/dev/error-and-notice-copy.md](docs/dev/error-and-notice-copy.md).
+
 ## Compounding rules
 
 When an agent repeats a mistake, add a precise rule here (or in a scoped `.cursor/rules/*.mdc` file). One line per gotcha; cut rules that no longer prevent real errors.
