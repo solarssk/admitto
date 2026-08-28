@@ -9,6 +9,7 @@ import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const fetchEventReports = vi.fn();
 const fetchTicketTypes = vi.fn();
+const fetchEventWalletReports = vi.fn();
 const reportApiError = vi.fn();
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
@@ -24,6 +25,13 @@ vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => ({ state: "connected", reportApiError }),
 }));
 
+// react-apexcharts has no jsdom/ResizeObserver setup in this project (apps/admin/vitest.config.ts
+// has no polyfill) - stub it so mounting WalletsReportsTab (rendered once the Wallets tab is
+// clicked below) doesn't depend on a third-party charting library actually working in jsdom.
+vi.mock("react-apexcharts", () => ({
+  default: () => null,
+}));
+
 vi.mock("../../src/api/client.js", () => ({
   ApiError: class ApiError extends Error {
     status: number;
@@ -36,6 +44,7 @@ vi.mock("../../src/api/client.js", () => ({
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
   exportEventReportsCsv: vi.fn(),
   eventReportsPrintUrl: (eventId: string) => `/api/admin/events/${eventId}/reports/export?format=pdf`,
+  fetchEventWalletReports: (...args: unknown[]) => fetchEventWalletReports(...args),
 }));
 
 function reportFixture(
@@ -62,6 +71,23 @@ function reportFixture(
     by_checkin_method: [],
     by_operator: [],
     ...overrides,
+  };
+}
+
+function walletFixture(): import("../../src/api/types.js").EventWalletReportsResponse {
+  return {
+    total_attendees: 4,
+    synced_at: null,
+    passes_truncated: false,
+    adoption: { got_pass: 2, got_pass_pct: 50, confirmed: 1, confirmed_pct: 50, cancelled: 0 },
+    platform: { apple_only: 1, google_only: 0, both: 0, not_installed: 1 },
+    by_ticket_type: [],
+    issued_by_day: [],
+    time_to_wallet_tap: { average_days: null, buckets: [] },
+    admission_by_wallet: {
+      with_wallet: { total: 1, admitted: 1, pct: 100 },
+      without_wallet: { total: 3, admitted: 0, pct: 0 },
+    },
   };
 }
 
@@ -468,5 +494,35 @@ describe("ReportsPage — live SSE updates (ADR 0014)", () => {
 
     expect(await screen.findByText("No matches")).toBeTruthy();
     expect(screen.queryByText("Vip Guest")).toBeNull();
+  });
+});
+
+describe("ReportsPage — Wallets tab", () => {
+  it("mounts WalletsReportsTab and fetches wallet data once the Wallets tab is clicked", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    fetchEventWalletReports.mockResolvedValue(walletFixture());
+    renderPage();
+    await screen.findByText("VIP One").catch(() => {});
+
+    expect(fetchEventWalletReports).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
+
+    await waitFor(() => expect(fetchEventWalletReports).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not refetch wallet data when switching tabs away and back (display:contents keeps it mounted)", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    fetchEventWalletReports.mockResolvedValue(walletFixture());
+    renderPage();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
+    await waitFor(() => expect(fetchEventWalletReports).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Event day" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
+
+    // A brief tick for any accidental re-fetch to have fired.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetchEventWalletReports).toHaveBeenCalledTimes(1);
   });
 });

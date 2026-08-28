@@ -532,7 +532,7 @@ async function loadReportsAggregates(
 
 type TimeToTapBucketKey = "same_day" | "1_3" | "4_7" | "8_plus";
 
-function bucketForDays(days: number): TimeToTapBucketKey {
+export function bucketForDays(days: number): TimeToTapBucketKey {
   if (days < 1) return "same_day";
   if (days <= 3) return "1_3";
   if (days <= 7) return "4_7";
@@ -578,7 +578,7 @@ type WalletPassAggregateRow = Prisma.WalletPassGetPayload<{ select: typeof WALLE
 /** Which wallet platform(s) a pass is actively registered on - "none" covers issued-but-never-
  * installed passes, kept distinct from "both" (registered on two devices) for the platform mix
  * breakdown below. */
-function classifyPassPlatform(
+export function classifyPassPlatform(
   appleActive: number,
   googleActive: number,
 ): "apple_only" | "google_only" | "both" | "none" {
@@ -591,7 +591,7 @@ function classifyPassPlatform(
 /** Whole days between the attendee's first ticket-link email and this pass being issued, or null
  * when either timestamp is missing or the pass was somehow issued before that email was sent
  * (skipped rather than counted as negative "time to tap"). */
-function computeTapDays(sentAt: Date | null | undefined, issuedAt: Date | null): number | null {
+export function computeTapDays(sentAt: Date | null | undefined, issuedAt: Date | null): number | null {
   if (!sentAt || !issuedAt) return null;
   const diffDays = (issuedAt.getTime() - sentAt.getTime()) / 86_400_000;
   return diffDays >= 0 ? diffDays : null;

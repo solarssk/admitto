@@ -18,9 +18,11 @@ const EVENT_REP = "evt-reports-test";
 const EVENT_REP_B = "evt-reports-test-b";
 const EVENT_EMPTY = "evt-reports-empty";
 const EVENT_MISSING = "evt-reports-missing";
+const EVENT_WALLETS = "evt-reports-wallets";
 
 const EMAIL_ADMIN = "reports-admin@example.com";
 const EMAIL_ADMIN_B = "reports-admin-b@example.com";
+const EMAIL_ADMIN_WALLETS = "reports-admin-wallets@example.com";
 const EMAIL_OP = "reports-op@example.com";
 const PASSWORD = "reports-test-pass-123";
 
@@ -31,14 +33,29 @@ const ATT_STD_2 = "att-reports-std-2";
 const ATT_STD_3 = "att-reports-std-3";
 const ATT_NO_SHOW = "att-reports-no-show";
 
+const ATT_W_APPLE = "att-reports-w-apple";
+const ATT_W_BOTH = "att-reports-w-both";
+const ATT_W_GOOGLE = "att-reports-w-google";
+const ATT_W_NOT_INSTALLED = "att-reports-w-not-installed";
+const ATT_W_VOIDED = "att-reports-w-voided";
+const ATT_W_NOPASS = "att-reports-w-nopass";
+const ATT_W_NOTYPE = "att-reports-w-notype";
+const ATT_W_LEGACY_TYPE = "att-reports-w-legacy-type";
+
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
 let adminId: string;
 let adminBId: string;
+let adminWalletsId: string;
 let opId: string;
 let adminCookie = "";
 let adminBCookie = "";
 let opCookie = "";
+// A dedicated admin session for the wallets export tests (rather than reusing adminCookie) -
+// admin:export rate-limits per user+route (hono/route's routePath, not the eventId param), so
+// reusing adminCookie here would share a single 10-per-hour budget with every admissions export
+// test above and trip the limiter (Codecov coverage follow-up, PR #1125).
+let adminWalletsCookie = "";
 
 function mkAttendeeToken() {
   const token = generateToken();
@@ -65,21 +82,25 @@ async function createUnvalidatedAttendees(
 }
 
 async function seed(client: PrismaClient) {
-  const eventIds = [EVENT_REP, EVENT_REP_B, EVENT_EMPTY];
+  const eventIds = [EVENT_REP, EVENT_REP_B, EVENT_EMPTY, EVENT_WALLETS];
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
+  await client.emailDelivery.deleteMany({ where: { event_id: { in: eventIds } } });
+  await client.walletPass.deleteMany({ where: { attendee: { event_id: { in: eventIds } } } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.ticketType.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.roleAssignment.deleteMany({
     where: { OR: [{ scope_id: { in: [ORG_REP, ORG_REP_B, ...eventIds] } }] },
   });
   await client.session.deleteMany({
-    where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_OP] } } },
+    where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS, EMAIL_OP] } } },
   });
   await client.userMfaMethod.deleteMany({
-    where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B] } } },
+    where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS] } } },
   });
-  await client.user.deleteMany({ where: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_OP] } } });
+  await client.user.deleteMany({
+    where: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS, EMAIL_OP] } },
+  });
   await client.event.deleteMany({ where: { id: { in: eventIds } } });
   await client.organization.deleteMany({ where: { id: { in: [ORG_REP, ORG_REP_B] } } });
 
@@ -116,6 +137,13 @@ async function seed(client: PrismaClient) {
         date: new Date("2026-12-01T12:00:00.000Z"),
         organization_id: ORG_REP,
       },
+      {
+        id: EVENT_WALLETS,
+        title: "Wallets Reports Event",
+        slug: "reports-wallets",
+        date: new Date("2027-06-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
     ],
   });
 
@@ -123,25 +151,29 @@ async function seed(client: PrismaClient) {
     data: [
       { event_id: EVENT_REP, key: "Standard", label: "Standard", sort_order: 0 },
       { event_id: EVENT_REP, key: "VIP", label: "VIP", color: "purple", sort_order: 1 },
+      { event_id: EVENT_WALLETS, key: "General", label: "General", sort_order: 0 },
     ],
   });
 
   const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
   const adminBUser = await client.user.create({ data: { email: EMAIL_ADMIN_B, password_hash } });
+  const adminWalletsUser = await client.user.create({ data: { email: EMAIL_ADMIN_WALLETS, password_hash } });
   const opUser = await client.user.create({ data: { email: EMAIL_OP, password_hash } });
   adminId = adminUser.id;
   adminBId = adminBUser.id;
+  adminWalletsId = adminWalletsUser.id;
   opId = opUser.id;
 
   await client.roleAssignment.createMany({
     data: [
       { user_id: adminId, role: "admin", scope_type: "organization", scope_id: ORG_REP },
       { user_id: adminBId, role: "admin", scope_type: "organization", scope_id: ORG_REP_B },
+      { user_id: adminWalletsId, role: "admin", scope_type: "organization", scope_id: ORG_REP },
       { user_id: opId, role: "operator", scope_type: "event", scope_id: EVENT_REP },
     ],
   });
 
-  for (const userId of [adminId, adminBId]) {
+  for (const userId of [adminId, adminBId, adminWalletsId]) {
     await client.userMfaMethod.create({
       data: {
         user_id: userId,
@@ -245,6 +277,162 @@ async function seed(client: PrismaClient) {
       },
     ],
   });
+
+  const walletIssuedAt = new Date("2026-01-15T10:00:00.000Z");
+  const walletAdmittedAt = new Date("2026-01-16T09:00:00.000Z");
+
+  await client.attendee.createMany({
+    data: [
+      {
+        id: ATT_W_APPLE,
+        event_id: EVENT_WALLETS,
+        email: "w-apple@example.com",
+        name: "Wallets Apple",
+        ticket_type: "General",
+        admitted_at: walletAdmittedAt,
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_W_BOTH,
+        event_id: EVENT_WALLETS,
+        email: "w-both@example.com",
+        name: "Wallets Both",
+        ticket_type: "General",
+        admitted_at: walletAdmittedAt,
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_W_GOOGLE,
+        event_id: EVENT_WALLETS,
+        email: "w-google@example.com",
+        name: "Wallets Google",
+        ticket_type: "General",
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_W_NOT_INSTALLED,
+        event_id: EVENT_WALLETS,
+        email: "w-not-installed@example.com",
+        name: "Wallets Not Installed",
+        ticket_type: "General",
+        admitted_at: walletAdmittedAt,
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_W_VOIDED,
+        event_id: EVENT_WALLETS,
+        email: "w-voided@example.com",
+        name: "Wallets Voided",
+        ticket_type: "General",
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_W_NOPASS,
+        event_id: EVENT_WALLETS,
+        email: "w-nopass@example.com",
+        name: "Wallets No Pass",
+        ticket_type: "General",
+        admitted_at: walletAdmittedAt,
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_W_NOTYPE,
+        event_id: EVENT_WALLETS,
+        email: "w-notype@example.com",
+        name: "Wallets No Type",
+        ticket_type: null,
+        admitted_at: walletAdmittedAt,
+        ...mkAttendeeToken(),
+      },
+    ],
+  });
+
+  // ticket_type "Retired" has no TicketType catalog row for EVENT_WALLETS - the FK added in
+  // migration 20260714210009_add_attendee_ticket_type_fk requires bypassing normal inserts, same
+  // as createUnvalidatedAttendees' own doc comment explains.
+  await createUnvalidatedAttendees(client, [
+    {
+      id: ATT_W_LEGACY_TYPE,
+      event_id: EVENT_WALLETS,
+      email: "w-legacy-type@example.com",
+      name: "Wallets Legacy Type",
+      ticket_type: "Retired",
+      ...mkAttendeeToken(),
+    },
+  ]);
+
+  await client.walletPass.createMany({
+    data: [
+      {
+        attendee_id: ATT_W_APPLE,
+        status: "active",
+        issued_at: walletIssuedAt,
+        apple_active_registrations: 1,
+        google_active_registrations: 0,
+        registration_checked_at: new Date("2026-01-16T00:00:00.000Z"),
+      },
+      {
+        attendee_id: ATT_W_BOTH,
+        status: "active",
+        issued_at: walletIssuedAt,
+        apple_active_registrations: 2,
+        google_active_registrations: 1,
+        registration_checked_at: new Date("2026-01-20T00:00:00.000Z"),
+      },
+      {
+        attendee_id: ATT_W_GOOGLE,
+        status: "active",
+        issued_at: walletIssuedAt,
+        apple_active_registrations: 0,
+        google_active_registrations: 3,
+        registration_checked_at: new Date("2026-01-10T00:00:00.000Z"),
+      },
+      {
+        attendee_id: ATT_W_NOT_INSTALLED,
+        status: "active",
+        issued_at: walletIssuedAt,
+        apple_active_registrations: 0,
+        google_active_registrations: 0,
+      },
+      {
+        attendee_id: ATT_W_VOIDED,
+        status: "voided",
+        issued_at: walletIssuedAt,
+        voided_at: new Date("2026-01-18T00:00:00.000Z"),
+        apple_active_registrations: 0,
+        google_active_registrations: 0,
+      },
+      {
+        attendee_id: ATT_W_NOTYPE,
+        status: "active",
+        issued_at: walletIssuedAt,
+        apple_active_registrations: 1,
+        google_active_registrations: 0,
+      },
+      {
+        attendee_id: ATT_W_LEGACY_TYPE,
+        status: "active",
+        issued_at: walletIssuedAt,
+        apple_active_registrations: 1,
+        google_active_registrations: 0,
+      },
+    ],
+  });
+
+  // 3 whole days before walletIssuedAt - exercises time_to_wallet_tap's "1_3" bucket. No other
+  // wallet attendee gets an EmailDelivery row, so they're excluded from the average/bucket
+  // entirely (computeTapDays returns null with no sent_at), keeping this the only contributor.
+  await client.emailDelivery.create({
+    data: {
+      organization_id: ORG_REP,
+      event_id: EVENT_WALLETS,
+      attendee_id: ATT_W_APPLE,
+      purpose: "initial",
+      provider: "export_only",
+      status: "sent",
+      sent_at: new Date("2026-01-12T10:00:00.000Z"),
+    },
+  });
 }
 
 beforeAll(async () => {
@@ -259,9 +447,11 @@ beforeAll(async () => {
 
   const adminSession = await createSession(prisma, { userId: adminId, stage: SESSION_STAGE.FULL });
   const adminBSession = await createSession(prisma, { userId: adminBId, stage: SESSION_STAGE.FULL });
+  const adminWalletsSession = await createSession(prisma, { userId: adminWalletsId, stage: SESSION_STAGE.FULL });
   const opSession = await createSession(prisma, { userId: opId, stage: SESSION_STAGE.FULL });
   adminCookie = `admitto_session=${adminSession.rawToken}`;
   adminBCookie = `admitto_session=${adminBSession.rawToken}`;
+  adminWalletsCookie = `admitto_session=${adminWalletsSession.rawToken}`;
   opCookie = `admitto_session=${opSession.rawToken}`;
 });
 
@@ -1700,5 +1890,126 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(meta.format).toBe("csv");
     expect(meta.count).toBe(5);
     expect(meta.truncated).toBe(false);
+  });
+});
+
+describe("GET /api/admin/events/:eventId/reports/wallets", () => {
+  it("returns 401 without auth", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/wallets`);
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 for operator (staff admin gate)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_REP}/reports/wallets`, {
+      headers: { Cookie: opCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for admin without event org access", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/wallets`, {
+      headers: { Cookie: adminBCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns zero-adoption summary for an event with no attendees", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EMPTY}/reports/wallets`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      total_attendees: number;
+      synced_at: string | null;
+      passes_truncated: boolean;
+      adoption: { got_pass: number; confirmed: number; cancelled: number };
+      issued_by_day: unknown[];
+    };
+    expect(body.total_attendees).toBe(0);
+    expect(body.synced_at).toBeNull();
+    expect(body.passes_truncated).toBe(false);
+    expect(body.adoption.got_pass).toBe(0);
+    expect(body.adoption.confirmed).toBe(0);
+    expect(body.adoption.cancelled).toBe(0);
+    expect(body.issued_by_day).toEqual([]);
+  });
+
+  it("aggregates adoption, platform mix, ticket-type breakdown, time-to-tap, and admission-by-wallet-status", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/wallets`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      total_attendees: number;
+      synced_at: string | null;
+      passes_truncated: boolean;
+      adoption: { got_pass: number; got_pass_pct: number; confirmed: number; confirmed_pct: number; cancelled: number };
+      platform: { apple_only: number; google_only: number; both: number; not_installed: number };
+      by_ticket_type: Array<{ key: string | null; type: string; total: number; got_pass: number; pct: number }>;
+      issued_by_day: Array<{ count: number; cumulative: number }>;
+      time_to_wallet_tap: {
+        average_days: number | null;
+        buckets: Array<{ key: string; count: number; pct: number }>;
+      };
+      admission_by_wallet: {
+        with_wallet: { total: number; admitted: number; pct: number };
+        without_wallet: { total: number; admitted: number; pct: number };
+      };
+    };
+
+    expect(body.total_attendees).toBe(8);
+    // The most recently registration_checked_at pass (ATT_W_BOTH, 2026-01-20) wins, not the
+    // most recently issued or the seed's insertion order.
+    expect(body.synced_at).toBe(new Date("2026-01-20T00:00:00.000Z").toISOString());
+    expect(body.passes_truncated).toBe(false);
+
+    expect(body.adoption.got_pass).toBe(7); // every wallet attendee except ATT_W_NOPASS
+    expect(body.adoption.got_pass_pct).toBeCloseTo(87.5);
+    expect(body.adoption.confirmed).toBe(5); // apple/google/both/notype/legacy - not_installed and voided excluded
+    expect(body.adoption.confirmed_pct).toBeCloseTo(71.4);
+    expect(body.adoption.cancelled).toBe(1); // ATT_W_VOIDED
+
+    expect(body.platform).toEqual({ apple_only: 3, google_only: 1, both: 1, not_installed: 2 });
+
+    const general = body.by_ticket_type.find((t) => t.key === "General");
+    expect(general).toBeDefined();
+    expect(general!.total).toBe(6);
+    expect(general!.got_pass).toBe(5);
+    expect(general!.pct).toBeCloseTo(83.3);
+
+    const none = body.by_ticket_type.find((t) => t.key === null);
+    expect(none).toBeDefined();
+    expect(none!.type).toBe("(none)");
+    expect(none!.total).toBe(1);
+    expect(none!.got_pass).toBe(1);
+
+    const notInCatalog = body.by_ticket_type.find((t) => t.key === "Retired");
+    expect(notInCatalog).toBeDefined();
+    expect(notInCatalog!.type).toBe("(not in catalog)");
+    expect(notInCatalog!.total).toBe(1);
+    expect(notInCatalog!.got_pass).toBe(1);
+
+    // Every pass was issued on the same seeded day - assert on the first real entry and the
+    // final cumulative rather than array length, since the zero-fill-through-today extension
+    // (EventWalletReportsResponse.issued_by_day's own doc comment) makes the array length
+    // depend on the real calendar date the suite happens to run on.
+    expect(body.issued_by_day[0]!.count).toBe(7);
+    expect(body.issued_by_day[0]!.cumulative).toBe(7);
+    expect(body.issued_by_day.at(-1)!.cumulative).toBe(7);
+
+    // Only ATT_W_APPLE has an EmailDelivery row (sent 3 whole days before its pass was issued) -
+    // every other wallet attendee has no ticket-email send, so computeTapDays returns null for
+    // them and they're excluded from both the average and every bucket.
+    expect(body.time_to_wallet_tap.average_days).toBe(3);
+    const bucket13 = body.time_to_wallet_tap.buckets.find((b) => b.key === "1_3");
+    expect(bucket13!.count).toBe(1);
+    expect(bucket13!.pct).toBe(100);
+    for (const key of ["same_day", "4_7", "8_plus"]) {
+      expect(body.time_to_wallet_tap.buckets.find((b) => b.key === key)!.count).toBe(0);
+    }
+
+    expect(body.admission_by_wallet.with_wallet).toEqual({ total: 5, admitted: 3, pct: 60 });
+    expect(body.admission_by_wallet.without_wallet.total).toBe(3);
+    expect(body.admission_by_wallet.without_wallet.admitted).toBe(2);
   });
 });
