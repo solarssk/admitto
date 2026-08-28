@@ -213,8 +213,37 @@ describe("AttendeesPage export and header Send tickets", () => {
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^XLSX/ }));
     await waitFor(() => {
-      expect(addToast).toHaveBeenCalledWith("Request failed.", "error");
+      expect(addToast).toHaveBeenCalledWith("Export failed.", "error");
     });
+  });
+
+  it("toasts the generic export failure when the request fails outside the API layer", async () => {
+    exportAttendees.mockRejectedValueOnce(new Error("network transport detail"));
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^XLSX/ }));
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Export failed.", "error");
+    });
+    expect(screen.queryByText("network transport detail")).toBeNull();
+  });
+
+  it("silently ignores an aborted export instead of toasting an error", async () => {
+    const callsBefore = exportAttendees.mock.calls.length;
+    exportAttendees.mockRejectedValueOnce(new DOMException("The operation was aborted.", "AbortError"));
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^XLSX/ }));
+    await waitFor(() => {
+      expect(exportAttendees.mock.calls).toHaveLength(callsBefore + 1);
+    });
+    expect(addToast).not.toHaveBeenCalled();
   });
 
   it("polls bulk-send status after header Send tickets queues work", async () => {

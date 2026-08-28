@@ -19,6 +19,7 @@ import {
   logRepeatedFailedMfaAttempts,
   logSuperadminBootstrapCli,
   logTrustedDeviceCreated,
+  logTrustedDeviceUsed,
   redactEmail,
 } from "../src/audit.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -680,6 +681,42 @@ describe("audit", () => {
     it("records into the System logs buffer at info level (routine MFA outcome, not a warning)", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       await logTrustedDeviceCreated(fakeDb(), { userId: "user-1" });
+      const entries = querySystemLogs({ source: "security" });
+      expect(entries[0]?.level).toBe("info");
+    });
+  });
+
+  describe("logTrustedDeviceUsed", () => {
+    it("fingerprints user and session ids in the stdout emit", async () => {
+      const spy = vi.spyOn(console, "info").mockImplementation(() => {});
+      const userId = "550e8400-e29b-41d4-a716-446655440000";
+      await logTrustedDeviceUsed(fakeDb(), { userId, sessionId: "sess-1", ip: "1.2.3.4" });
+      const payload = JSON.parse(String(spy.mock.calls[0]?.[0]));
+      expect(payload.event).toBe("auth.trusted_device.used");
+      expect(payload.user_fingerprint).toBe(fingerprint(userId));
+      expect(JSON.stringify(payload)).not.toContain(userId);
+    });
+
+    it("persists the raw user id and session id in metadata", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      await logTrustedDeviceUsed(fakeDb(create), { userId: "user-1", sessionId: "sess-1", ip: "1.2.3.4" });
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          event_type: "auth.trusted_device.used",
+          user_id: "user-1",
+          user_email: STAFF_SNAPSHOT.email,
+          user_display_name: STAFF_SNAPSHOT.display_name,
+          ip: "1.2.3.4",
+          actor_timezone: null,
+          metadata: { sessionId: "sess-1", userAgent: null },
+        },
+      });
+    });
+
+    it("records into the System logs buffer at info level (routine MFA outcome, not a warning)", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      await logTrustedDeviceUsed(fakeDb(), { userId: "user-1" });
       const entries = querySystemLogs({ source: "security" });
       expect(entries[0]?.level).toBe("info");
     });

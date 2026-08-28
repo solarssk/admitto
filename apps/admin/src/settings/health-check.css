@@ -99,7 +99,7 @@
   align-items: center;
   justify-content: center;
   font-size: 17px;
-  background: var(--surface-sunken, var(--tblr-bg-surface-secondary, #f1f5f9));
+  background: var(--surface-sunken, var(--tblr-bg-surface-secondary, #f8fafc));
   color: var(--text-secondary, var(--tblr-secondary));
   border: 1px solid var(--border, var(--tblr-border-color));
 }
@@ -146,7 +146,7 @@
 
 .health-check__row:hover,
 .health-check__row--expanded {
-  background: var(--surface-sunken, #f1f5f9);
+  background: var(--surface-sunken, #f8fafc);
 }
 
 .health-check__row--warn {

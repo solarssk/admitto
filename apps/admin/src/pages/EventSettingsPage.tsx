@@ -1224,7 +1224,7 @@ export function EventSettingsPage() {
       })
       .catch((err) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
-        setWalletPushHistoryError("Couldn't load wallet push history.");
+        setWalletPushHistoryError("Could not load wallet push history.");
       })
       .finally(() => {
         if (!controller.signal.aborted) setWalletPushHistoryLoading(false);
