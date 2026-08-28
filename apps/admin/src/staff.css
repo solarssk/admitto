@@ -71,14 +71,14 @@
 }
 
 .event-card--archived {
-  border-left-color: var(--at-gray-400, #9ca3af);
+  border-left-color: var(--at-gray-400, #94a3b8);
 }
 
 .event-card__map {
   position: relative;
   height: 140px;
   flex-shrink: 0;
-  background: var(--surface-muted, var(--at-gray-100, #f1f3f5));
+  background: var(--surface-muted, var(--at-gray-100, #f1f5f9));
   border-bottom: 1px solid var(--border);
   overflow: hidden;
 }
@@ -202,7 +202,7 @@
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm, 6px);
-  background: var(--surface-muted, var(--at-gray-50, #f8f9fa));
+  background: var(--surface-muted, var(--at-gray-50, #f8fafc));
   line-height: 1.1;
 }
 
@@ -720,7 +720,7 @@
 }
 
 .text-error {
-  color: var(--status-error-fg, #b42318);
+  color: var(--status-error-fg, #b32525);
 }
 
 .checkin-placeholder {
@@ -2810,7 +2810,7 @@
 
 .checkin-surface__transport-error {
   margin: 0;
-  color: var(--status-error-fg, #b42318);
+  color: var(--status-error-fg, #b32525);
 }
 
 .checkin-surface__result-header {
@@ -4730,7 +4730,7 @@ output.mail-field-hint {
      packages/ui/src/styles/tokens/colors.css). Newly activated by SecurityPanel's P0-4
      inline warnings below; this class had zero call sites before that, so the typo was
      silently masked by this same fallback value until now. */
-  color: var(--status-warn-fg, #b54708);
+  color: var(--status-warn-fg, #9a6400);
 }
 
 /* Send-test-email result — simulates the received test message (ok) or a
@@ -5430,7 +5430,7 @@ output.mail-field-hint {
 }
 
 .sessions-error {
-  color: var(--status-error-fg, #b42318);
+  color: var(--status-error-fg, #b32525);
 }
 
 .sessions-success {
@@ -6343,7 +6343,7 @@ output.mail-field-hint {
 }
 
 .archiving-error {
-  color: var(--status-error-fg, #b42318);
+  color: var(--status-error-fg, #b32525);
   margin: var(--space-2) 0 0;
 }
 
@@ -7516,7 +7516,7 @@ output.mail-field-hint {
 }
 
 .timezone-select__trigger:hover:not(:disabled) {
-  border-color: var(--at-gray-400, #9ca3af);
+  border-color: var(--at-gray-400, #94a3b8);
 }
 
 .timezone-select__trigger:focus-visible {
@@ -7526,7 +7526,7 @@ output.mail-field-hint {
 }
 
 .timezone-select__trigger:disabled {
-  background: var(--at-gray-100, #f3f4f6);
+  background: var(--at-gray-100, #f1f5f9);
   color: var(--text-disabled);
   cursor: not-allowed;
 }
@@ -7637,7 +7637,7 @@ output.mail-field-hint {
 .timezone-select__list-shell {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm, 0.375rem);
-  background: var(--surface-page, #f8fafc);
+  background: var(--surface-page, #f1f5f9);
   /* Scrolling lives on .timezone-select__list. overflow:auto on this rounded box
      would draw the native scrollbar as a hard rectangle across the corner (same
      fix as .identity-modal__panel -> .identity-modal__scroll). */
@@ -7669,7 +7669,7 @@ output.mail-field-hint {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
-  background: var(--surface-page, #f8fafc);
+  background: var(--surface-page, #f1f5f9);
   border-bottom: 1px solid var(--border);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7734,7 +7734,7 @@ output.mail-field-hint {
 
 .timezone-select__option:hover,
 .timezone-select__option--highlighted {
-  background: var(--at-gray-100, #f3f4f6);
+  background: var(--at-gray-100, #f1f5f9);
 }
 
 .timezone-select__option--selected {
@@ -7793,14 +7793,14 @@ output.mail-field-hint {
   width: var(--control-h);
   border: none;
   border-right: 1px solid var(--border);
-  background: var(--surface-page, #f8fafc);
+  background: var(--surface-page, #f1f5f9);
   color: var(--text-muted);
   cursor: pointer;
 }
 
 .date-picker__calendar-btn:hover:not(:disabled) {
   color: var(--text-primary);
-  background: var(--surface-hover, #f1f5f9);
+  background: var(--surface-hover, #f8fafc);
 }
 
 .date-picker__calendar-btn:focus-visible {
@@ -7828,7 +7828,7 @@ output.mail-field-hint {
 }
 
 .date-picker__input:disabled {
-  background: var(--at-gray-100, #f3f4f6);
+  background: var(--at-gray-100, #f1f5f9);
   color: var(--text-disabled);
   cursor: not-allowed;
 }
@@ -7880,7 +7880,7 @@ output.mail-field-hint {
   justify-content: center;
   flex: none;
   width: var(--control-h);
-  background: var(--surface-page, #f8fafc);
+  background: var(--surface-page, #f1f5f9);
   color: var(--text-muted);
   border: 0;
   border-right: 1px solid var(--border);
@@ -7914,7 +7914,7 @@ output.mail-field-hint {
 }
 
 .time-input__input:disabled {
-  background: var(--at-gray-100, #f3f4f6);
+  background: var(--at-gray-100, #f1f5f9);
   color: var(--text-disabled);
   cursor: not-allowed;
 }
@@ -7971,7 +7971,7 @@ output.mail-field-hint {
   scroll-snap-type: y mandatory;
   scrollbar-width: none;
   border-radius: var(--radius-sm, 0.375rem);
-  background: linear-gradient(to bottom, var(--surface-page, #f8fafc), transparent 16%, transparent 84%, var(--surface-page, #f8fafc));
+  background: linear-gradient(to bottom, var(--surface-page, #f1f5f9), transparent 16%, transparent 84%, var(--surface-page, #f1f5f9));
 }
 
 .time-input__picker-scroll::-webkit-scrollbar {
@@ -8000,7 +8000,7 @@ output.mail-field-hint {
 .time-input__picker-option:hover,
 .time-input__picker-option:focus-visible {
   outline: none;
-  background: var(--surface-page, #f8fafc);
+  background: var(--surface-page, #f1f5f9);
 }
 
 .time-input__picker-option:focus-visible {
@@ -8008,8 +8008,8 @@ output.mail-field-hint {
 }
 
 .time-input__picker-option--selected {
-  background: var(--at-blue-100, #dbeafe);
-  color: var(--at-blue-700, #1d4ed8);
+  background: var(--at-blue-100, #cfe2f7);
+  color: var(--at-blue-700, #04519c);
   font-weight: var(--fw-medium, 500);
 }
 
@@ -8094,13 +8094,13 @@ output.mail-field-hint {
   height: 2rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm, 0.375rem);
-  background: var(--surface-page, #f8fafc);
+  background: var(--surface-page, #f1f5f9);
   color: var(--text-secondary);
   cursor: pointer;
 }
 
 .date-picker__nav:hover {
-  border-color: var(--at-gray-400, #9ca3af);
+  border-color: var(--at-gray-400, #94a3b8);
   color: var(--text-primary);
 }
 
@@ -8141,7 +8141,7 @@ output.mail-field-hint {
 }
 
 .date-picker__day:hover:not(.date-picker__day--empty) {
-  background: var(--at-gray-100, #f3f4f6);
+  background: var(--at-gray-100, #f1f5f9);
 }
 
 .date-picker__day--empty {

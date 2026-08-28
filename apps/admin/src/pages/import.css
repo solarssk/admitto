@@ -75,7 +75,7 @@ fieldset:disabled .import-dropzone {
   align-items: center;
   gap: var(--space-3);
   min-height: 110px;
-  border: 1px solid var(--status-ok, #16a34a);
+  border: 1px solid var(--status-ok, #2fb344);
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
   background: var(--status-ok-tint, var(--surface-hover));
@@ -83,7 +83,7 @@ fieldset:disabled .import-dropzone {
 
 .import-file-chip > i {
   font-size: 24px;
-  color: var(--status-ok, #16a34a);
+  color: var(--status-ok, #2fb344);
 }
 
 .import-file-chip__info {
@@ -124,11 +124,11 @@ fieldset:disabled .import-dropzone {
 }
 
 .import-stat--ok .import-stat__value {
-  color: var(--status-ok, #16a34a);
+  color: var(--status-ok, #2fb344);
 }
 
 .import-stat--warn .import-stat__value {
-  color: var(--status-warn, #f59e0b);
+  color: var(--status-warn, #f59f00);
 }
 
 .import-stat--muted .import-stat__value {
@@ -154,7 +154,7 @@ fieldset:disabled .import-dropzone {
   align-items: center;
   justify-content: center;
   font-size: 28px;
-  color: var(--status-ok, #16a34a);
+  color: var(--status-ok, #2fb344);
 }
 
 .import-done__title {
@@ -202,12 +202,12 @@ fieldset:disabled .import-dropzone {
 }
 
 .import-history__num--ok {
-  color: var(--status-ok, #16a34a);
+  color: var(--status-ok, #2fb344);
   font-weight: 600;
 }
 
 .import-history__num--warn {
-  color: var(--status-warn, #f59e0b);
+  color: var(--status-warn, #f59f00);
   font-weight: 600;
 }
 

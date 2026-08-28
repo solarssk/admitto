@@ -28,7 +28,7 @@ body.ticket-page { margin: 0; box-sizing: border-box; width: 100%; overflow-x: c
 .ticket__location svg { display: inline-block; width: 14px; height: 14px; vertical-align: -0.15em; margin-right: 5px; color: var(--text-muted, #64748b); }
 .ticket__attendee { margin: 16px 0 18px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .ticket__attendee-name { font-size: 1.125rem; font-weight: 600; margin: 0 0 8px; }
-.ticket__type { display: inline-flex; align-items: center; padding: 0.2em 0.55em; border-radius: 6px; background: var(--surface-sunken, #f1f5f9); color: var(--text-secondary, #475569); font-size: 0.75rem; font-weight: 600; }
+.ticket__type { display: inline-flex; align-items: center; padding: 0.2em 0.55em; border-radius: 6px; background: var(--surface-sunken, #f8fafc); color: var(--text-secondary, #475569); font-size: 0.75rem; font-weight: 600; }
 /* Public HTML 404/500: large status code + icon, no inner bordered box. */
 .ticket__body--public-error { padding: 28px 24px 32px; }
 .at-public-error { margin: 0; display: flex; flex-direction: column; align-items: center; text-align: center; }

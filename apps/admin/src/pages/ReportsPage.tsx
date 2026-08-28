@@ -1,16 +1,19 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router";
-import { Badge, Button, Card, EmptyState, HintLabel, PageHeader, Skeleton, ticketTypeChartColor, useToast } from "@admitto/ui";
+import { Link, useParams, useSearchParams } from "react-router";
+import { Badge, Button, Card, EmptyState, HintLabel, PageHeader, Skeleton, Tabs, ticketTypeChartColor, useToast } from "@admitto/ui";
 import {
   ApiError,
   eventReportsPrintUrl,
+  eventWalletReportsPrintUrl,
   exportEventReportsCsv,
+  exportEventWalletReportsCsv,
   fetchEventReports,
   fetchTicketTypes,
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventReportsResponse, RsvpStatus, TicketTypeDto } from "../api/types.js";
+import { WalletsReportsTab } from "./WalletsReportsTab.js";
 import { RSVP_LABELS, RSVP_VARIANTS } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { isAdmitDedupHit, registerAdmitDedup } from "../checkin/admitDedup.js";
@@ -29,6 +32,13 @@ import "./reports-page.css";
 const LOG_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 const LOG_PAGE_SIZE_DEFAULT = 50;
 const REPORT_SUBTITLE = "Admission statistics and event-day analytics";
+
+type ReportsTab = "eventday" | "wallets";
+
+/** Resolve the active tab from `?tab=`, same convention as usersTabFromSearch/inPageTabFromSearch. */
+function reportsTabFromSearch(params: URLSearchParams): ReportsTab {
+  return params.get("tab") === "wallets" ? "wallets" : "eventday";
+}
 const ATTENDANCE_CONFIRMATION_HINT =
   "Shows RSVP status only for attendees who have already checked in, not everyone registered for the event.";
 
@@ -148,7 +158,7 @@ function useMountAnimation(): boolean {
 /** 1-decimal-place percentage, matching the KPI tiles' own precision (liveRatePct/
  * liveNoShowRatePct) - the three breakdown-row builders below used to round to a whole percent
  * instead, showing e.g. "83%" next to a KPI tile reading "83.3%" for a comparable ratio. */
-function pctOf(count: number, total: number): number {
+export function pctOf(count: number, total: number): number {
   return total > 0 ? Math.round((count / total) * 1000) / 10 : 0;
 }
 
@@ -291,7 +301,7 @@ function encodeOperatorFilterValue(operatorUserId: string | null): string {
   return operatorUserId === null ? NONE_OPERATOR_KEY : `operator:${operatorUserId}`;
 }
 
-interface BreakdownRow {
+export interface BreakdownRow {
   readonly id: string;
   readonly label: string;
   readonly meta: string;
@@ -303,7 +313,7 @@ interface BreakdownRow {
  * confirmation, and check-in method breakdown cards. `meta` is caller-formatted display text
  * (a "3/4 (75%)" fraction for ticket type, a "18 · 4%" count for the other two) rather than a
  * fixed shape, since each card's real-world meaning of the number differs. */
-function BreakdownRows({ rows }: Readonly<{ rows: BreakdownRow[] }>) {
+export function BreakdownRows({ rows }: Readonly<{ rows: BreakdownRow[] }>) {
   const mounted = useMountAnimation();
 
   if (rows.length === 0) {
@@ -311,7 +321,7 @@ function BreakdownRows({ rows }: Readonly<{ rows: BreakdownRow[] }>) {
   }
 
   return (
-    <div className="reports-breakdown-list">
+    <div className="reports-breakdown-list at-scroll">
       {rows.map((row, index) => (
         <div key={row.id} className="reports-breakdown-row">
           <div className="reports-breakdown-row__head">
@@ -734,6 +744,24 @@ export function ReportsPage() {
   const abortRef = useRef<AbortController | null>(null);
   const exportAbortRef = useRef<AbortController | null>(null);
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<ReportsTab>(() => reportsTabFromSearch(searchParams));
+  // Sticky, not reset on tab switch - WalletsReportsTab is kept mounted (see the render below)
+  // once the operator has visited it once, rather than unmounted/remounted on every switch back
+  // to Event day. Its own fetch runs in a plain useEffect with no caller-side cache, so an
+  // unmount-driven remount was re-issuing its full aggregate query (loadWalletReportsAggregates -
+  // several joined queries plus an in-process aggregation pass) from scratch on every switch,
+  // even seconds apart with no underlying data change.
+  const [walletsTabVisited, setWalletsTabVisited] = useState(() => reportsTabFromSearch(searchParams) === "wallets");
+
+  // The URL is the source of truth for the active tab, so a reload or a shared link lands back
+  // on the same one instead of always resetting to Event day - same pattern as UsersPage/SettingsPage.
+  useEffect(() => {
+    const target = reportsTabFromSearch(searchParams);
+    if (target !== activeTab) setActiveTab(target);
+    if (target === "wallets") setWalletsTabVisited(true);
+  }, [searchParams, activeTab]);
+
   const [data, setData] = useState<EventReportsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -877,18 +905,26 @@ export function ReportsPage() {
 
     setExportingCsv(true);
     try {
-      await exportEventReportsCsv(eventId, ac.signal);
+      // Exports whatever tab is active, not always the admission log - a Wallets-tab CSV shares
+      // nothing with Event day's per-admission rows (see WalletsReportsTab.tsx), so this branches
+      // to a wholly separate request rather than a shared "export the current tab" helper.
+      if (activeTab === "wallets") {
+        await exportEventWalletReportsCsv(eventId, ac.signal);
+      } else {
+        await exportEventReportsCsv(eventId, ac.signal);
+      }
     } catch (err) {
       handleExportRequestError(err, "Export failed.", addToast, reportApiError);
     } finally {
       if (!ac.signal.aborted) setExportingCsv(false);
     }
-  }, [eventId, exportingCsv, addToast, reportApiError]);
+  }, [eventId, exportingCsv, activeTab, addToast, reportApiError]);
 
   const handleExportPdf = useCallback(() => {
     if (!eventId) return;
-    window.open(eventReportsPrintUrl(eventId), "_blank", "noopener,noreferrer");
-  }, [eventId]);
+    const url = activeTab === "wallets" ? eventWalletReportsPrintUrl(eventId) : eventReportsPrintUrl(eventId);
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, [eventId, activeTab]);
 
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // the skeleton on and off faster than it can register as loading — show it only once
@@ -926,14 +962,41 @@ export function ReportsPage() {
         actions={
           <ReportsExportMenu
             exportingCsv={exportingCsv}
-            disabled={loading || !!error}
+            // Only Event day's own loading/error gates the button - the Wallets tab loads and
+            // exports independently (WalletsReportsTab owns its own fetch, ReportsPage never
+            // sees its loading state), so gating on Event day's state while Wallets is active
+            // would disable the button for a fetch that has nothing to do with what it's about
+            // to export.
+            disabled={activeTab === "eventday" && (loading || !!error)}
             isDesktop={isDesktop}
             onExport={handleExport}
           />
         }
       />
 
-      {loading && showLoadingSkeleton && (
+      <Tabs
+        tabs={[
+          { id: "eventday", label: "Event day" },
+          { id: "wallets", label: "Wallets" },
+        ]}
+        value={activeTab}
+        onChange={(id) => setSearchParams({ tab: id }, { replace: true })}
+      />
+
+      {walletsTabVisited && (
+        // display:contents when visible, not the no-style default - a plain wrapper div is its
+        // own flex item, which took WalletsReportsTab's rows out of .screen's own `gap: 18px`
+        // (shell.css) and left them touching with zero space between (PO report) - contents
+        // removes this element from box generation while it's the active tab, so its children
+        // (the wallets-panels rows) become .screen's direct flex children again for gap purposes,
+        // exactly as they were before this wrapper existed. display:none when hidden still works
+        // the normal way (contents has no "hidden" state of its own to toggle).
+        <div style={{ display: activeTab === "wallets" ? "contents" : "none" }}>
+          <WalletsReportsTab eventId={eventId} />
+        </div>
+      )}
+
+      {activeTab === "eventday" && loading && showLoadingSkeleton && (
         <div className="reports-loading">
           <div className="reports-stats-grid">
             {[1, 2, 3, 4].map((key) => (
@@ -944,7 +1007,7 @@ export function ReportsPage() {
         </div>
       )}
 
-      {!loading && error && (
+      {activeTab === "eventday" && !loading && error && (
         <EmptyState
           icon={<i className="ti ti-alert-triangle" aria-hidden="true" />}
           title="Could not load report"
@@ -957,7 +1020,7 @@ export function ReportsPage() {
         />
       )}
 
-      {!loading && !error && liveAdmitted === 0 && (
+      {activeTab === "eventday" && !loading && !error && liveAdmitted === 0 && (
         <EmptyState
           icon={<i className="ti ti-chart-bar-off" aria-hidden="true" />}
           title="No check-ins yet"
@@ -965,7 +1028,7 @@ export function ReportsPage() {
         />
       )}
 
-      {!loading && !error && data && liveAdmitted > 0 && (
+      {activeTab === "eventday" && !loading && !error && data && liveAdmitted > 0 && (
         <>
           <div className="reports-stats-grid">
             <Card>
