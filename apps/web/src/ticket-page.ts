@@ -462,6 +462,9 @@ export function renderPublicErrorPage(options: {
 }): string {
   const styles = buildTicketPageStyles(options.theme);
   const icon = PUBLIC_ERROR_ICONS[options.statusCode];
+  // 404 just means the resource isn't there - not alarming enough to warrant error color. 403
+  // (blocked) and 500 (something actually broke) get the danger treatment.
+  const dangerClass = options.statusCode === 404 ? "" : " at-public-error--danger";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -479,7 +482,7 @@ export function renderPublicErrorPage(options: {
       </div>
     </header>
     <div class="ticket__body ticket__body--public-error">
-      <div class="at-public-error" role="status">
+      <div class="at-public-error${dangerClass}" role="status">
         <span class="at-public-error__icon">${icon}</span>
         <p class="at-public-error__code">${options.statusCode}</p>
         <h1 class="at-public-error__heading">${esc(options.heading)}</h1>
@@ -531,7 +534,7 @@ export function renderRevoked(
     "This ticket is no longer valid for entry. If you believe this is a mistake, please contact the organisers.";
   const styles = buildTicketPageStyles(theme);
   const articleInner = `${renderTicketCardShellOpen(resolved)}
-      <div class="ticket__status-notice" role="status">
+      <div class="ticket__status-notice" role="alert">
         <h2>${heading}</h2>
         <p>${esc(notice)}</p>
       </div>
