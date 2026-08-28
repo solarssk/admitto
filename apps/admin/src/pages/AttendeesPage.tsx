@@ -1053,6 +1053,7 @@ export function AttendeesPage() {
         );
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
+        const fallback = "Export failed.";
         if (err instanceof ApiError) {
           reportApiError(err.status);
           if (err.status === 401) {
@@ -1060,9 +1061,9 @@ export function AttendeesPage() {
             window.location.assign(`/login?next=${next}`);
             return;
           }
-          addToast(operatorApiErrorMessage(err, "Request failed."), "error");
+          addToast(operatorApiErrorMessage(err, fallback), "error");
         } else {
-          addToast("Export failed.", "error");
+          addToast(fallback, "error");
         }
       } finally {
         if (!ac.signal.aborted) setExportingFormat(null);

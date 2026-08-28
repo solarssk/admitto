@@ -213,7 +213,7 @@ describe("AttendeesPage export and header Send tickets", () => {
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^XLSX/ }));
     await waitFor(() => {
-      expect(addToast).toHaveBeenCalledWith("Request failed.", "error");
+      expect(addToast).toHaveBeenCalledWith("Export failed.", "error");
     });
   });
 

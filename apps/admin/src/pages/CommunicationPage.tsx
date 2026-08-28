@@ -463,7 +463,7 @@ function handleDeliveriesLoadError(
       return;
     }
   }
-  setDeliveriesError("Failed to load deliveries.");
+  setDeliveriesError("Could not load deliveries.");
 }
 
 /** Retries loading the "ticket" template detail after a delete (the template that just got deleted

@@ -480,7 +480,7 @@ describe("RequirementsPage operator errors", () => {
     vi.mocked(fetchEventItems).mockRejectedValueOnce(new Error("network transport detail"));
     renderRequirements();
 
-    expect(await screen.findByText("Failed to load requirements.")).toBeTruthy();
+    expect(await screen.findByText("Could not load requirements.")).toBeTruthy();
     expect(screen.queryByText("network transport detail")).toBeNull();
   });
 
