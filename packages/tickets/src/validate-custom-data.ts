@@ -26,12 +26,12 @@ export function normalizeCustomDataFieldValue(
     const lower = trimmed.toLowerCase();
     if (BOOLEAN_TRUE.has(lower)) return "true";
     if (BOOLEAN_FALSE.has(lower)) return "false";
-    throw new Error("invalid_custom_data_value");
+    throw new Error(`invalid_custom_data_value:${field.source_field}`);
   }
   if (type === "select") {
     const options = field.options ?? [];
     const match = options.find((option) => option === trimmed);
-    if (!match) throw new Error("invalid_custom_data_value");
+    if (!match) throw new Error(`invalid_custom_data_value:${field.source_field}`);
     return match;
   }
   return trimmed.slice(0, 100);
@@ -73,7 +73,7 @@ function assignCustomDataEntry(
   const field = fieldByKey.get(key);
   if (!field) throw new Error(`unknown_custom_data_field:${key}`);
   if (value === null || value === undefined || value === "") return;
-  if (typeof value !== "string") throw new Error("validation_failed");
+  if (typeof value !== "string") throw new Error(`validation_failed:${key}`);
   const normalized = normalizeCustomDataFieldValue(field, value);
   if (normalized) setOwnCustomDataValue(out, key, normalized);
 }

@@ -129,6 +129,10 @@ export function IdentityProvidersPanel() {
   const [cf, setCf] = useState<CfAccessSummaryDto | null>(null);
   const [providersState, setProvidersState] = useState<LoadState>("loading");
   const [cfState, setCfState] = useState<LoadState>("loading");
+  // operatorApiErrorMessage always returns a real message (never empty), so these only ever hold
+  // their initial value before the first load error sets a real one - not "no message yet".
+  const [providersError, setProvidersError] = useState("Couldn't load identity providers.");
+  const [cfError, setCfError] = useState("Couldn't load the Cloudflare Access configuration.");
   // Ids with an in-flight toggle, so toggling two different providers
   // back-to-back doesn't re-enable the first row's Switch while its request
   // is still pending.
@@ -152,6 +156,7 @@ export function IdentityProvidersPanel() {
         redirectToLogin();
         return;
       }
+      setProvidersError(operatorApiErrorMessage(err, "Couldn't load identity providers."));
       setProvidersState("error");
     }
   }, []);
@@ -167,6 +172,7 @@ export function IdentityProvidersPanel() {
         redirectToLogin();
         return;
       }
+      setCfError(operatorApiErrorMessage(err, "Couldn't load the Cloudflare Access configuration."));
       setCfState("error");
     }
   }, []);
@@ -251,7 +257,7 @@ export function IdentityProvidersPanel() {
         {providersState === "error" && (
           <EmptyState
             title="Couldn't load providers"
-            description="Something went wrong while fetching identity providers."
+            description={providersError}
             action={<Button variant="secondary" onClick={retryProviders}>Retry</Button>}
           />
         )}
@@ -284,7 +290,7 @@ export function IdentityProvidersPanel() {
         {cfState === "error" && (
           <EmptyState
             title="Couldn't load Cloudflare Access"
-            description="Something went wrong while fetching the Cloudflare Access configuration."
+            description={cfError}
             action={<Button variant="secondary" onClick={retryCf}>Retry</Button>}
           />
         )}

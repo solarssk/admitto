@@ -551,7 +551,7 @@ describe("CommunicationPage templates", () => {
     fireEvent.click(within(editDialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Request failed.")).toBeTruthy();
+      expect(screen.getByText("Update failed.")).toBeTruthy();
       expect(screen.getByRole("dialog", { name: "Edit template" })).toBeTruthy();
     });
   });
@@ -948,7 +948,25 @@ describe("CommunicationPage templates", () => {
     });
     fireEvent.click(within(createDialog).getByRole("button", { name: "Create" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Create failed/);
+    });
+  });
+
+  it("toasts a generic message when create template fails outside the API layer", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    createEventTemplate.mockRejectedValueOnce(new Error("network unavailable"));
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "New template" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "New template" }));
+    const createDialog = await screen.findByRole("dialog", { name: "New template" });
+    fireEvent.change(within(createDialog).getByLabelText("Template label"), {
+      target: { value: "Announcement" },
+    });
+    fireEvent.click(within(createDialog).getByRole("button", { name: "Create" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Create failed/);
     });
   });
 
@@ -986,7 +1004,7 @@ describe("CommunicationPage templates", () => {
 
     await waitFor(
       () => {
-        expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+        expect(screen.getByTestId("at-toast").textContent).toMatch(/Preview failed/);
       },
       { timeout: 2000 },
     );
@@ -1110,7 +1128,21 @@ describe("CommunicationPage templates", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Reminder" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to load template/);
+    });
+  });
+
+  it("toasts a generic message when template switch fails outside the API layer", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    fetchEventTemplateById.mockRejectedValueOnce(new Error("network unavailable"));
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reminder" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to load template/);
     });
   });
 
@@ -1125,7 +1157,21 @@ describe("CommunicationPage templates", () => {
     saveEventTemplateById.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     fireEvent.click(screen.getByRole("button", { name: "Save *" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Request failed/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Save failed/);
+    });
+  });
+
+  it("toasts a generic message when save fails outside the API layer", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Updated ticket subject" } });
+    saveEventTemplateById.mockRejectedValueOnce(new Error("network unavailable"));
+    fireEvent.click(screen.getByRole("button", { name: "Save *" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Save failed/);
     });
   });
 
@@ -1690,7 +1736,6 @@ describe("CommunicationPage templates", () => {
     });
 
     expect(screen.queryByText("Update failed.")).toBeNull();
-    expect(screen.queryByText("Request failed.")).toBeNull();
   });
 
   it("disables content Save while a metadata save is in flight", async () => {

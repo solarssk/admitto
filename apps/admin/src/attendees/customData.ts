@@ -73,6 +73,44 @@ export function validateCustomFieldsForm(
   return null;
 }
 
+/** Custom-data validation error codes the server can send on a 400, all of which carry the field
+ * slug that caused them (docs/dev/error-and-notice-copy.md rule 2). */
+const CUSTOM_DATA_ERROR_CODES = new Set([
+  "required_custom_data_field_missing",
+  "unknown_custom_data_field",
+  "validation_failed",
+]);
+
+/** Turns a server custom-data validation error into the same per-field message
+ * `validateCustomFieldsForm` already knows how to produce, using the field slug the server sent
+ * back. The server's copy of field config can differ from what the client validated against (e.g.
+ * another admin changed required/options between load and submit), so this always re-derives from
+ * the live `fields` rather than trusting the form's own pre-submit check. Returns null when `code`
+ * isn't a custom-data error, or the slug doesn't match a known field, so the caller can fall back
+ * to a generic message. */
+export function customDataApiErrorMessage(
+  fields: CustomDataFieldDef[],
+  err: { code?: string; field?: string },
+): string | null {
+  if (!err.code || !CUSTOM_DATA_ERROR_CODES.has(err.code)) return null;
+  if (err.code === "unknown_custom_data_field") {
+    return "One of the attribute fields was removed from this event. Refresh and try again.";
+  }
+  const field = err.field ? fields.find((f) => f.source_field === err.field) : undefined;
+  if (!field) return null;
+  if (err.code === "required_custom_data_field_missing") {
+    return `${field.label} is required.`;
+  }
+  const type = field.type ?? "text";
+  if (type === "select") {
+    return `${field.label} must be one of: ${(field.options ?? []).join(", ")}.`;
+  }
+  if (type === "boolean") {
+    return `${field.label} must be Yes or No.`;
+  }
+  return `${field.label} has an invalid value.`;
+}
+
 const TRUTHY_BOOLEAN_ALIASES = new Set(["true", "yes", "1"]);
 const FALSY_BOOLEAN_ALIASES = new Set(["false", "no", "0"]);
 

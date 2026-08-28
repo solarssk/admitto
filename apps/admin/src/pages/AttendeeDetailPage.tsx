@@ -67,6 +67,8 @@ import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { CustomDataFieldInput } from "../attendees/CustomDataFieldInput.js";
 import {
   allCustomDataEntries,
+  customDataApiErrorMessage,
+  fetchAttendeeCustomFields,
   readCustomDataField,
   validateCustomFieldsForm,
 } from "../attendees/customData.js";
@@ -1415,8 +1417,19 @@ type SaveErrorOutcome =
   | { kind: "message"; message: string };
 
 /** Classifies a failed profile save into the UI action it should trigger — extracted out of
- * handleSave (SonarCloud S3776). */
-function classifySaveError(err: unknown): SaveErrorOutcome {
+ * handleSave (SonarCloud S3776). Shares its custom-data-error copy with AddAttendeeModal via
+ * `customDataApiErrorMessage` (docs/dev/error-and-notice-copy.md rule 1: one message per cause,
+ * not the same generic string reimplemented at every call site). Async: on a custom-data error it
+ * re-fetches the field defs before describing the failure, since another admin may have changed
+ * options/type between this page's load and this save, and the server just validated against
+ * whatever is current now - describing the failure from stale local state can quote a value as a
+ * valid option in the same sentence that rejects it. */
+async function classifySaveError(
+  err: unknown,
+  eventId: string,
+  attributeFields: CustomDataFieldDef[],
+  setAttributeFields: (fields: CustomDataFieldDef[]) => void,
+): Promise<SaveErrorOutcome> {
   if (err instanceof ApiError && err.status === 409) {
     if (hasApiErrorCode(err, "email_conflict")) return { kind: "email_conflict" };
     if (hasApiErrorCode(err, "stale_write")) return { kind: "stale_write" };
@@ -1429,11 +1442,13 @@ function classifySaveError(err: unknown): SaveErrorOutcome {
       hasApiErrorCode(err, "required_custom_data_field_missing") ||
       hasApiErrorCode(err, "validation_failed"))
   ) {
+    const freshFields = await fetchAttendeeCustomFields(eventId).catch(() => attributeFields);
+    setAttributeFields(freshFields);
     return {
       kind: "message",
-      message: hasApiErrorCode(err, "unknown_custom_data_field")
-        ? "Event configuration changed. Reload this page to edit attributes."
-        : "Could not save attribute fields. Check required values and options.",
+      message:
+        customDataApiErrorMessage(freshFields, err) ??
+        "Check the attribute fields and try again.",
     };
   }
   return { kind: "message", message: operatorApiErrorMessage(err, "Failed to save changes.") };
@@ -1731,7 +1746,7 @@ export function AttendeeDetailPage() {
       addToast("Profile saved", "success");
     } catch (err) {
       if (!isStillSelected(target)) return;
-      const outcome = classifySaveError(err);
+      const outcome = await classifySaveError(err, eventId, attributeFields, setAttributeFields);
       if (outcome.kind === "email_conflict") {
         setEmailConflict(true);
       } else if (outcome.kind === "stale_write") {
@@ -2626,7 +2641,7 @@ export function AttendeeDetailPage() {
         title="Revoke check-in?"
         message={`This un-admits ${detail.name}. They'll show as not checked in and will need to be scanned or admitted again to re-enter. This works regardless of when or how they were originally checked in.`}
         confirmLabel="Revoke"
-        confirmVariant="danger"
+        confirmVariant="warning"
         loading={revokeBusy}
         errorMessage={revokeError ?? undefined}
         onConfirm={() => void handleRevokeCheckIn()}
