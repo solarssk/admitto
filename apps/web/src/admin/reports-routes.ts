@@ -1,5 +1,7 @@
 import type { Context } from "hono";
+import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
+import type { EventWalletReportsResponse } from "@admitto/shared";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { loadEventTicketTypes, writeBulkActionLog, type TicketTypeInfo } from "@admitto/tickets";
 import {
@@ -16,6 +18,16 @@ const HOUR_LABELS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2
 const CSV_EXPORT_MAX = 10_000;
 const PDF_LOG_MAX = 100;
 export const ADMISSION_LOG_LIMIT = 500;
+// A backstop against unbounded memory growth on the one query below that pulls whole rows into
+// Node to aggregate in JS (platform mix, time-to-tap buckets), set at the same ceiling the
+// CSV/XLSX importer already enforces on attendee count (xlsx-to-csv.ts's MAX_IMPORT_ROWS) - since
+// a WalletPass is 1:1 with an Attendee, no real event can exceed this many passes anyway. Unlike
+// ADMISSION_LOG_LIMIT above (a genuine display truncation - "here are the first N rows"), this
+// cap being hit makes the platform/ticket-type/time-to-tap numbers a same-truncated-set-derived
+// sample rather than an exact count - not silently, though: EventWalletReportsResponse carries a
+// `passes_truncated` flag (computed against an unbounded COUNT of the same rows) so the frontend
+// can say so, rather than presenting a sample as if it were the full picture.
+const WALLET_AGGREGATE_MAX = 50_000;
 
 export interface EventReportsResponse {
   timezone: string;
@@ -516,6 +528,339 @@ async function loadReportsAggregates(
     by_checkin_method,
     by_operator,
   };
+}
+
+type TimeToTapBucketKey = "same_day" | "1_3" | "4_7" | "8_plus";
+
+export function bucketForDays(days: number): TimeToTapBucketKey {
+  if (days < 1) return "same_day";
+  if (days <= 3) return "1_3";
+  if (days <= 7) return "4_7";
+  return "8_plus";
+}
+
+/** A Date as a YYYY-MM-DD string in the given IANA timezone - sv-SE locale is a well-known trick
+ * for getting ISO-ordered digits straight out of Intl.DateTimeFormat (same approach as
+ * formatAdmittedAtExport below), without pulling in a date library for one format call. */
+function isoDateInZone(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(
+    date,
+  );
+}
+
+function addDaysToIsoDate(isoDate: string, days: number): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const dt = new Date(Date.UTC(y!, m! - 1, d! + days));
+  return dt.toISOString().slice(0, 10);
+}
+
+const WALLET_PASS_AGGREGATE_SELECT = {
+  issued_at: true,
+  status: true,
+  apple_active_registrations: true,
+  google_active_registrations: true,
+  registration_checked_at: true,
+  attendee: {
+    select: {
+      ticket_type: true,
+      // Earliest non-bounced send across initial and resend attempts - a "purpose: initial" filter
+      // would keep pointing at an initial that later hard-bounced (applyBounceResult retains its
+      // sent_at, only status flips to "bounced"), overstating tap time against a since-successful
+      // resend, or dropping the attendee entirely if the initial send never got a sent_at at all.
+      email_deliveries: {
+        where: { sent_at: { not: null }, status: { not: "bounced" } },
+        orderBy: { sent_at: "asc" },
+        take: 1,
+        select: { sent_at: true },
+      },
+    },
+  },
+} as const;
+
+type WalletPassAggregateRow = Prisma.WalletPassGetPayload<{ select: typeof WALLET_PASS_AGGREGATE_SELECT }>;
+
+/** Which wallet platform(s) a pass is actively registered on - "none" covers issued-but-never-
+ * installed passes, kept distinct from "both" (registered on two devices) for the platform mix
+ * breakdown below. */
+export function classifyPassPlatform(
+  appleActive: number,
+  googleActive: number,
+): "apple_only" | "google_only" | "both" | "none" {
+  if (appleActive > 0 && googleActive > 0) return "both";
+  if (appleActive > 0) return "apple_only";
+  if (googleActive > 0) return "google_only";
+  return "none";
+}
+
+/** Whole days between the attendee's first ticket-link email and this pass being issued, or null
+ * when either timestamp is missing or the pass was somehow issued before that email was sent
+ * (skipped rather than counted as negative "time to tap"). */
+export function computeTapDays(sentAt: Date | null | undefined, issuedAt: Date | null): number | null {
+  if (!sentAt || !issuedAt) return null;
+  const diffDays = (issuedAt.getTime() - sentAt.getTime()) / 86_400_000;
+  return diffDays >= 0 ? diffDays : null;
+}
+
+interface WalletPassAggregates {
+  confirmed: number;
+  cancelled: number;
+  appleOnly: number;
+  googleOnly: number;
+  both: number;
+  mostRecentSync: Date | null;
+  gotPassByType: Map<string | null, number>;
+  bucketCounts: Record<TimeToTapBucketKey, number>;
+  tapDaySum: number;
+  tapDayCount: number;
+}
+
+/** Single pass over the (possibly sampled - see WALLET_AGGREGATE_MAX) pass rows, building every
+ * per-pass-derived number the response needs in one place rather than several separate loops. */
+function aggregateWalletPasses(passes: WalletPassAggregateRow[]): WalletPassAggregates {
+  let confirmed = 0;
+  let cancelled = 0;
+  let appleOnly = 0;
+  let googleOnly = 0;
+  let both = 0;
+  let mostRecentSync: Date | null = null;
+  const gotPassByType = new Map<string | null, number>();
+  const bucketCounts: Record<TimeToTapBucketKey, number> = { same_day: 0, "1_3": 0, "4_7": 0, "8_plus": 0 };
+  let tapDaySum = 0;
+  let tapDayCount = 0;
+
+  for (const pass of passes) {
+    const platform = classifyPassPlatform(pass.apple_active_registrations ?? 0, pass.google_active_registrations ?? 0);
+    if (platform === "both") both++;
+    else if (platform === "apple_only") appleOnly++;
+    else if (platform === "google_only") googleOnly++;
+    if (platform !== "none") confirmed++;
+    if (pass.status === "voided") cancelled++;
+    if (pass.registration_checked_at && (!mostRecentSync || pass.registration_checked_at > mostRecentSync)) {
+      mostRecentSync = pass.registration_checked_at;
+    }
+
+    const typeKey = pass.attendee.ticket_type;
+    gotPassByType.set(typeKey, (gotPassByType.get(typeKey) ?? 0) + 1);
+
+    const tapDays = computeTapDays(pass.attendee.email_deliveries[0]?.sent_at, pass.issued_at);
+    if (tapDays !== null) {
+      tapDaySum += tapDays;
+      tapDayCount++;
+      bucketCounts[bucketForDays(tapDays)]++;
+    }
+  }
+
+  return { confirmed, cancelled, appleOnly, googleOnly, both, mostRecentSync, gotPassByType, bucketCounts, tapDaySum, tapDayCount };
+}
+
+/** Ticket-type breakdown for the Wallets tab - same catalog-order-plus-fallbacks shape as the
+ * admissions report's own by_ticket_type (see EventReportsResponse's doc comment above): a
+ * "(none)" bucket for attendees with no type set, and a "(not in catalog)" bucket for stored
+ * ticket_type values whose catalog row no longer exists. */
+function buildWalletTicketTypeBreakdown(
+  catalog: TicketTypeInfo[],
+  totalByType: Map<string | null, number>,
+  gotPassByType: Map<string | null, number>,
+): EventWalletReportsResponse["by_ticket_type"] {
+  const by_ticket_type: EventWalletReportsResponse["by_ticket_type"] = catalog.map((t) => {
+    const total = totalByType.get(t.key) ?? 0;
+    const typeGotPass = gotPassByType.get(t.key) ?? 0;
+    return { key: t.key, type: t.label, color: t.color, total, got_pass: typeGotPass, pct: oneDecimalPct(typeGotPass, total) };
+  });
+
+  const noneTotal = (totalByType.get(null) ?? 0) + (totalByType.get("") ?? 0);
+  if (noneTotal > 0) {
+    const noneGotPass = (gotPassByType.get(null) ?? 0) + (gotPassByType.get("") ?? 0);
+    by_ticket_type.push({
+      key: null,
+      type: "(none)",
+      color: "gray",
+      total: noneTotal,
+      got_pass: noneGotPass,
+      pct: oneDecimalPct(noneGotPass, noneTotal),
+    });
+  }
+
+  const catalogKeys = new Set(catalog.map((t) => t.key));
+  for (const [key, total] of totalByType) {
+    if (key === null || key === "" || catalogKeys.has(key)) continue;
+    const typeGotPass = gotPassByType.get(key) ?? 0;
+    by_ticket_type.push({
+      key,
+      type: "(not in catalog)",
+      color: "gray",
+      total,
+      got_pass: typeGotPass,
+      pct: oneDecimalPct(typeGotPass, total),
+    });
+  }
+
+  return by_ticket_type;
+}
+
+/** Per-day counts in the event's own timezone, ascending, with a running total, zero-filled
+ * through today (or the event date, whichever is earlier) so the chart reads as "flat since the
+ * last real day" instead of just stopping there - capped at the event date so a long-past event
+ * doesn't grow a trailing flat line for every day since. */
+function buildIssuedByDay(
+  issuedByDayRaw: Array<{ day: string; count: bigint }>,
+  timeZone: string,
+  eventDate: Date,
+): EventWalletReportsResponse["issued_by_day"] {
+  let cumulative = 0;
+  const issued_by_day = issuedByDayRaw.map((row) => {
+    cumulative += Number(row.count);
+    return { date: row.day, count: Number(row.count), cumulative };
+  });
+
+  if (issued_by_day.length > 0) {
+    const lastRealDay = issued_by_day.at(-1)!.date;
+    const todayIso = isoDateInZone(new Date(), timeZone);
+    const eventDateIso = isoDateInZone(eventDate, timeZone);
+    const capIso = eventDateIso < todayIso ? eventDateIso : todayIso;
+    let cursor = lastRealDay;
+    while (cursor < capIso) {
+      cursor = addDaysToIsoDate(cursor, 1);
+      issued_by_day.push({ date: cursor, count: 0, cumulative });
+    }
+  }
+
+  return issued_by_day;
+}
+
+async function loadWalletReportsAggregates(
+  db: PrismaClient,
+  eventId: string,
+  timeZone: string,
+  eventDate: Date,
+): Promise<EventWalletReportsResponse> {
+  // "Confirmed" (active on at least one platform), not merely issued - see
+  // EventWalletReportsResponse.admission_by_wallet's own doc comment for why. Built once and
+  // spread/negated below so the with/without-wallet split can't drift out of sync with itself.
+  const confirmedWalletFilter = {
+    OR: [
+      { wallet_pass: { apple_active_registrations: { gt: 0 } } },
+      { wallet_pass: { google_active_registrations: { gt: 0 } } },
+    ],
+  };
+
+  const [
+    totalAttendees,
+    totalPassCount,
+    passes,
+    byTypeTotalRaw,
+    catalog,
+    issuedByDayRaw,
+    withWalletTotal,
+    withWalletAdmitted,
+    withoutWalletTotal,
+    withoutWalletAdmitted,
+  ] = await Promise.all([
+    db.attendee.count({ where: { event_id: eventId } }),
+    // Unbounded, unlike the findMany below - a plain COUNT never has to hold rows in memory, so
+    // it stays cheap and accurate at any scale and doubles as truncation detection for `passes`.
+    db.walletPass.count({ where: { attendee: { event_id: eventId }, issued_at: { not: null } } }),
+    db.walletPass.findMany({
+      where: { attendee: { event_id: eventId }, issued_at: { not: null } },
+      take: WALLET_AGGREGATE_MAX,
+      select: WALLET_PASS_AGGREGATE_SELECT,
+    }),
+    db.attendee.groupBy({
+      by: ["ticket_type"],
+      where: { event_id: eventId },
+      _count: { _all: true },
+    }),
+    loadEventTicketTypes(db, eventId),
+    db.$queryRaw<Array<{ day: string; count: bigint }>>`
+      SELECT
+        TO_CHAR(DATE_TRUNC('day', (wp.issued_at AT TIME ZONE 'UTC') AT TIME ZONE ${timeZone}), 'YYYY-MM-DD') AS day,
+        COUNT(*)::bigint AS count
+      FROM "WalletPass" wp
+      JOIN "Attendee" a ON a.id = wp.attendee_id
+      WHERE a.event_id = ${eventId} AND wp.issued_at IS NOT NULL
+      GROUP BY 1
+      ORDER BY 1
+    `,
+    db.attendee.count({ where: { event_id: eventId, ...confirmedWalletFilter } }),
+    db.attendee.count({
+      where: { event_id: eventId, admitted_at: { not: null }, ...confirmedWalletFilter },
+    }),
+    db.attendee.count({ where: { event_id: eventId, NOT: confirmedWalletFilter } }),
+    db.attendee.count({
+      where: { event_id: eventId, admitted_at: { not: null }, NOT: confirmedWalletFilter },
+    }),
+  ]);
+
+  const { confirmed, cancelled, appleOnly, googleOnly, both, mostRecentSync, gotPassByType, bucketCounts, tapDaySum, tapDayCount } =
+    aggregateWalletPasses(passes);
+
+  const gotPass = passes.length;
+  const totalByType = mergeTicketTypeCounts(byTypeTotalRaw);
+  const by_ticket_type = buildWalletTicketTypeBreakdown(catalog, totalByType, gotPassByType);
+  const issued_by_day = buildIssuedByDay(issuedByDayRaw, timeZone, eventDate);
+
+  const bucketOrder: TimeToTapBucketKey[] = ["same_day", "1_3", "4_7", "8_plus"];
+  const buckets = bucketOrder.map((key) => ({
+    key,
+    count: bucketCounts[key],
+    pct: oneDecimalPct(bucketCounts[key], tapDayCount),
+  }));
+
+  return {
+    total_attendees: totalAttendees,
+    synced_at: mostRecentSync ? mostRecentSync.toISOString() : null,
+    passes_truncated: totalPassCount > passes.length,
+    adoption: {
+      got_pass: gotPass,
+      got_pass_pct: oneDecimalPct(gotPass, totalAttendees),
+      confirmed,
+      confirmed_pct: oneDecimalPct(confirmed, gotPass),
+      cancelled,
+    },
+    platform: {
+      apple_only: appleOnly,
+      google_only: googleOnly,
+      both,
+      not_installed: Math.max(0, gotPass - confirmed),
+    },
+    by_ticket_type,
+    issued_by_day,
+    time_to_wallet_tap: {
+      average_days: tapDayCount > 0 ? Math.round((tapDaySum / tapDayCount) * 10) / 10 : null,
+      buckets,
+    },
+    admission_by_wallet: {
+      with_wallet: {
+        total: withWalletTotal,
+        admitted: withWalletAdmitted,
+        pct: oneDecimalPct(withWalletAdmitted, withWalletTotal),
+      },
+      without_wallet: {
+        total: withoutWalletTotal,
+        admitted: withoutWalletAdmitted,
+        pct: oneDecimalPct(withoutWalletAdmitted, withoutWalletTotal),
+      },
+    },
+  };
+}
+
+/** GET /api/admin/events/:eventId/reports/wallets — wallet adoption/platform/timing analytics,
+ * computed entirely from data already collected (WalletPass, EmailDelivery, Attendee); no new
+ * PassCreator API calls. Read-only, no audit, same access gate as the main reports endpoint. */
+export async function handleGetWalletReports(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdParam = requireEventId(c);
+  if (eventIdParam instanceof Response) return eventIdParam;
+  const eventId = eventIdParam;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const event = await db.event.findUnique({ where: { id: eventId }, select: { timezone: true, date: true } });
+  if (!event) return c.json({ error: "not_found" }, 404);
+
+  const timeZone = resolvePreviewEventTimeZone(event.timezone);
+  const body = await loadWalletReportsAggregates(db, eventId, timeZone, event.date);
+  return c.json(body);
 }
 
 /** Security headers for printable HTML report export (inline styles only; no scripts). */

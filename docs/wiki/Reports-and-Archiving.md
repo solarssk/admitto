@@ -1,6 +1,6 @@
 # Reports and Archiving
 
-**Audience:** Event Managers and Superadmins · **Required role:** Administrator for reports; Superadmin for archiving · **Feature status:** ✅ Available · **Last verified:** Admitto 0.4.13
+**Audience:** Event Managers and Superadmins · **Required role:** Administrator for reports; Superadmin for archiving · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.3
 
 ## What this page helps you do
 
@@ -21,6 +21,7 @@ Open the correct event and confirm its time zone. Before archiving, finish check
 5. Apply filters when you need a narrower result.
 6. Check displayed times against the event time zone.
 7. Use the available export control only for an approved event purpose.
+8. Switch to the **Wallets** tab for wallet-adoption analytics: pass adoption and platform mix (Apple/Google), adoption by ticket type, cumulative passes issued over time, how long attendees take to add their pass after the ticket email, and check-in rate compared between attendees with and without a wallet pass.
 
 ### Archive the event
 
