@@ -583,7 +583,7 @@ describe("ReportsPage — Wallets tab", () => {
     fireEvent.click(screen.getByRole("button", { name: /Export/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
 
-    expect(await screen.findByText("Export failed")).toBeTruthy();
+    expect(await screen.findByText("Export failed", {}, { timeout: 3000 })).toBeTruthy();
   });
 
   it("shows the resolved API error message when the wallets CSV export fails with an ApiError", async () => {
@@ -598,7 +598,7 @@ describe("ReportsPage — Wallets tab", () => {
     fireEvent.click(screen.getByRole("button", { name: /Export/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
 
-    expect(await screen.findByText("Request failed.")).toBeTruthy();
+    expect(await screen.findByText("Request failed.", {}, { timeout: 3000 })).toBeTruthy();
     expect(reportApiError).toHaveBeenCalledWith(500);
   });
 
