@@ -188,7 +188,7 @@ describe("TicketTypesCard", () => {
 
     fireEvent.click(swatchButton);
     expect(screen.getByRole("menu")).toBeTruthy();
-    fireEvent.mouseDown(document.body);
+    fireEvent.pointerDown(document.body);
     expect(screen.queryByRole("menu")).toBeNull();
 
     fireEvent.click(swatchButton);
