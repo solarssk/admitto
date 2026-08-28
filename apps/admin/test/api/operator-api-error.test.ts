@@ -13,7 +13,7 @@ describe("operatorApiErrorMessage", () => {
   });
 
   it("prefers a Zod field-error detail over the generic validation_failed mapping", () => {
-    const err = new ApiError(400, "validation_failed", "validation_failed", undefined, {
+    const err = new ApiError(400, "validation_failed", "validation_failed", undefined, undefined, {
       fieldErrors: { api_key: ["API key is required."], base_url: ["Enter a valid public http(s) URL."] },
     });
     expect(operatorApiErrorMessage(err, "Failed.")).toBe(
@@ -22,7 +22,7 @@ describe("operatorApiErrorMessage", () => {
   });
 
   it("falls back to the generic validation_failed mapping when details has no field messages", () => {
-    const err = new ApiError(400, "validation_failed", "validation_failed", undefined, {
+    const err = new ApiError(400, "validation_failed", "validation_failed", undefined, undefined, {
       fieldErrors: {},
     });
     expect(operatorApiErrorMessage(err, "Failed.")).toBe("Check the form and try again.");
@@ -32,14 +32,14 @@ describe("operatorApiErrorMessage", () => {
     // The client parses `details` off any error body regardless of status/code - a response
     // shaped like this one (secret_internal on a 500) must never get a free pass around the
     // known-code mapping just because it happens to carry a fieldErrors-shaped payload.
-    const err = new ApiError(500, "secret_internal", "secret_internal", undefined, {
+    const err = new ApiError(500, "secret_internal", "secret_internal", undefined, undefined, {
       fieldErrors: { internal: ["stack trace leaked here"] },
     });
     expect(operatorApiErrorMessage(err, "Failed.")).toBe("Failed.");
   });
 
   it("falls back to the generic mapping when the joined field detail fails the safety check", () => {
-    const err = new ApiError(400, "validation_failed", "validation_failed", undefined, {
+    const err = new ApiError(400, "validation_failed", "validation_failed", undefined, undefined, {
       fieldErrors: { note: ["x".repeat(201)] },
     });
     expect(operatorApiErrorMessage(err, "Failed.")).toBe("Check the form and try again.");
