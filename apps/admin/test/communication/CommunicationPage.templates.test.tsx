@@ -952,6 +952,24 @@ describe("CommunicationPage templates", () => {
     });
   });
 
+  it("toasts a generic message when create template fails outside the API layer", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    createEventTemplate.mockRejectedValueOnce(new Error("network unavailable"));
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "New template" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "New template" }));
+    const createDialog = await screen.findByRole("dialog", { name: "New template" });
+    fireEvent.change(within(createDialog).getByLabelText("Template label"), {
+      target: { value: "Announcement" },
+    });
+    fireEvent.click(within(createDialog).getByRole("button", { name: "Create" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Create failed/);
+    });
+  });
+
   it("updates the preview automatically as the draft changes - no Preview button needed", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow]);
     previewEventTemplateById
@@ -1114,6 +1132,20 @@ describe("CommunicationPage templates", () => {
     });
   });
 
+  it("toasts a generic message when template switch fails outside the API layer", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+    });
+    fetchEventTemplateById.mockRejectedValueOnce(new Error("network unavailable"));
+    fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reminder" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to load template/);
+    });
+  });
+
   it("toasts operator-safe save failure", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventTemplates.mockResolvedValue([ticketRow]);
@@ -1123,6 +1155,20 @@ describe("CommunicationPage templates", () => {
     });
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Updated ticket subject" } });
     saveEventTemplateById.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    fireEvent.click(screen.getByRole("button", { name: "Save *" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Save failed/);
+    });
+  });
+
+  it("toasts a generic message when save fails outside the API layer", async () => {
+    fetchEventTemplates.mockResolvedValue([ticketRow]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByLabelText("Subject")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Updated ticket subject" } });
+    saveEventTemplateById.mockRejectedValueOnce(new Error("network unavailable"));
     fireEvent.click(screen.getByRole("button", { name: "Save *" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Save failed/);
