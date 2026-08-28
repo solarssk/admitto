@@ -1819,6 +1819,16 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(body.error).toBe("format must be csv or pdf");
   });
 
+  it("defaults to csv when format is omitted", async () => {
+    // adminWalletsCookie, not adminCookie - see the identical comment on the "invalid report"
+    // test below (separate admin:export rate-limit bucket).
+    const res = await app.request(`/api/admin/events/${EVENT_REP}/reports/export`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/csv");
+  });
+
   it("returns 400 for invalid report", async () => {
     // adminWalletsCookie, not adminCookie - a distinct rate-limit bucket so this doesn't compete
     // with the admin:export budget the tests below already use up (see adminWalletsCookie's own
@@ -2111,6 +2121,25 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     // rows should render, not the buckets-always-populated dead-code fallback text.
     expect(html).toContain("1-3 days");
     expect(html).not.toContain("Not enough data yet");
+  });
+
+  it("shows every empty/not-synced state in the wallets pdf for an event with no attendees", async () => {
+    // adminWalletsCookie, not adminCookie - see the identical comment on the "invalid report"
+    // test above (separate admin:export rate-limit bucket; adminCookie's is exhausted by the
+    // many other /reports/export calls throughout this describe block).
+    const res = await app.request(`/api/admin/events/${EVENT_EMPTY}/reports/export?format=pdf&report=wallets`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // EVENT_EMPTY has zero attendees, so got_pass, by_ticket_type, and average_days are all at
+    // their empty/null defaults - exercises the fallback branch of every one of these three
+    // buckets-or-list-always-populated ternaries at once, plus the never-synced meta line.
+    expect(html).toContain("Not synced yet");
+    expect(html).not.toContain("Synced ");
+    expect(html).toContain("No passes issued");
+    expect(html).toContain("No attendees");
+    expect(html).toContain("Not enough data yet");
   });
 
   it("audit: reports_exported records report=wallets, not the admissions default", async () => {

@@ -1397,17 +1397,24 @@ async function exportWalletReportsPdf(
   const aggregates = await loadWalletReportsAggregates(db, eventId, timeZone, event.date);
   const eventDate = event.date.toISOString().slice(0, 10);
 
-  const platformRows = [
-    { label: "Apple Wallet only", count: aggregates.platform.apple_only },
-    { label: "Google Wallet only", count: aggregates.platform.google_only },
-    { label: "More than one wallet", count: aggregates.platform.both },
-    { label: "No wallet installed", count: aggregates.platform.not_installed },
-  ]
-    .map(
-      (row) =>
-        `<tr><td>${escapeHtml(row.label)}</td><td>${row.count}</td><td>${oneDecimalPct(row.count, aggregates.adoption.got_pass)}%</td></tr>`,
-    )
-    .join("");
+  // Same buckets-always-populated issue as tapRows below: these 4 rows exist even with zero
+  // passes issued (every count would just read 0), so the "No passes issued" fallback a few
+  // lines down was unreachable dead code - branch on adoption.got_pass instead, matching the
+  // Wallets tab's own whole-page EmptyState condition.
+  const platformRows =
+    aggregates.adoption.got_pass === 0
+      ? ""
+      : [
+          { label: "Apple Wallet only", count: aggregates.platform.apple_only },
+          { label: "Google Wallet only", count: aggregates.platform.google_only },
+          { label: "More than one wallet", count: aggregates.platform.both },
+          { label: "No wallet installed", count: aggregates.platform.not_installed },
+        ]
+          .map(
+            (row) =>
+              `<tr><td>${escapeHtml(row.label)}</td><td>${row.count}</td><td>${oneDecimalPct(row.count, aggregates.adoption.got_pass)}%</td></tr>`,
+          )
+          .join("");
 
   const typeRows = aggregates.by_ticket_type
     .map((t) => `<tr><td>${escapeHtml(t.type)}</td><td>${t.got_pass}</td><td>${t.total}</td><td>${t.pct}%</td></tr>`)
