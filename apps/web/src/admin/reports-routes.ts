@@ -594,7 +594,7 @@ export function classifyPassPlatform(
 
 /** Display label for classifyPassPlatform's result - used by the wallets CSV export's "Confirmed
  * platform" column. */
-function confirmedPlatformLabel(appleActive: number, googleActive: number): string {
+export function confirmedPlatformLabel(appleActive: number, googleActive: number): string {
   switch (classifyPassPlatform(appleActive, googleActive)) {
     case "both":
       return "Both";

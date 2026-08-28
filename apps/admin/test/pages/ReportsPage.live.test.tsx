@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from "react-router";
 import { ReportsPage } from "../../src/pages/ReportsPage.js";
+import { ApiError } from "../../src/api/client.js";
 import type { EventReportsResponse } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
@@ -10,6 +11,8 @@ import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 const fetchEventReports = vi.fn();
 const fetchTicketTypes = vi.fn();
 const fetchEventWalletReports = vi.fn();
+const exportEventReportsCsv = vi.fn();
+const exportEventWalletReportsCsv = vi.fn();
 const reportApiError = vi.fn();
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
@@ -42,9 +45,11 @@ vi.mock("../../src/api/client.js", () => ({
   },
   fetchEventReports: (...args: unknown[]) => fetchEventReports(...args),
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
-  exportEventReportsCsv: vi.fn(),
+  exportEventReportsCsv: (...args: unknown[]) => exportEventReportsCsv(...args),
   eventReportsPrintUrl: (eventId: string) => `/api/admin/events/${eventId}/reports/export?format=pdf`,
   fetchEventWalletReports: (...args: unknown[]) => fetchEventWalletReports(...args),
+  exportEventWalletReportsCsv: (...args: unknown[]) => exportEventWalletReportsCsv(...args),
+  eventWalletReportsPrintUrl: (eventId: string) => `/api/admin/events/${eventId}/reports/export?format=pdf&report=wallets`,
 }));
 
 function reportFixture(
@@ -537,5 +542,82 @@ describe("ReportsPage — Wallets tab", () => {
     // A brief tick for any accidental re-fetch to have fired.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(fetchEventWalletReports).toHaveBeenCalledTimes(1);
+  });
+
+  it("exports the wallets CSV, not the admissions CSV, while the Wallets tab is active", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    fetchEventWalletReports.mockResolvedValue(walletFixture());
+    exportEventWalletReportsCsv.mockResolvedValue(undefined);
+    renderPage();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
+    await waitFor(() => expect(fetchEventWalletReports).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /Export/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
+
+    await waitFor(() => expect(exportEventWalletReportsCsv).toHaveBeenCalledTimes(1));
+  });
+
+  it("exports the admissions CSV on the default Event day tab, not the wallets one", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    renderPage();
+    await waitFor(() => expect(fetchEventReports).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /Export/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
+
+    await waitFor(() => expect(exportEventReportsCsv).toHaveBeenCalledTimes(1));
+    expect(fetchEventWalletReports).not.toHaveBeenCalled();
+  });
+
+  it("shows a generic toast when the wallets CSV export throws a non-ApiError", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    fetchEventWalletReports.mockResolvedValue(walletFixture());
+    exportEventWalletReportsCsv.mockRejectedValueOnce(new TypeError("network down"));
+    renderPage();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
+    await waitFor(() => expect(fetchEventWalletReports).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /Export/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
+
+    expect(await screen.findByText("Export failed")).toBeTruthy();
+  });
+
+  it("shows the resolved API error message when the wallets CSV export fails with an ApiError", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    fetchEventWalletReports.mockResolvedValue(walletFixture());
+    exportEventWalletReportsCsv.mockRejectedValueOnce(new ApiError(500, "boom"));
+    renderPage();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
+    await waitFor(() => expect(fetchEventWalletReports).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /Export/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /CSV/ }));
+
+    expect(await screen.findByText("Request failed.")).toBeTruthy();
+    expect(reportApiError).toHaveBeenCalledWith(500);
+  });
+
+  it("opens the wallets PDF print URL, not the admissions one, while the Wallets tab is active", async () => {
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    fetchEventWalletReports.mockResolvedValue(walletFixture());
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    renderPage();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Wallets" }));
+    await waitFor(() => expect(fetchEventWalletReports).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /Export/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /PDF/ }));
+
+    expect(openSpy).toHaveBeenCalledWith(
+      expect.stringContaining("report=wallets"),
+      "_blank",
+      "noopener,noreferrer",
+    );
   });
 });

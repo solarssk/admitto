@@ -1819,6 +1819,18 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(body.error).toBe("format must be csv or pdf");
   });
 
+  it("returns 400 for invalid report", async () => {
+    // adminWalletsCookie, not adminCookie - a distinct rate-limit bucket so this doesn't compete
+    // with the admin:export budget the tests below already use up (see adminWalletsCookie's own
+    // doc comment above).
+    const res = await app.request(`/api/admin/events/${EVENT_REP}/reports/export?format=csv&report=bogus`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("report must be admissions or wallets");
+  });
+
   it("returns 403 for operator on CSV export", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_REP}/reports/export?format=csv`, {
       headers: { Cookie: opCookie },
@@ -2048,5 +2060,67 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.admission_by_wallet.with_wallet).toEqual({ total: 5, admitted: 3, pct: 60 });
     expect(body.admission_by_wallet.without_wallet.total).toBe(3);
     expect(body.admission_by_wallet.without_wallet.admitted).toBe(2);
+  });
+});
+
+describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
+  it("returns 403 for admin without event org access", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/export?format=csv&report=wallets`, {
+      headers: { Cookie: adminBCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns a wallets CSV with one row per attendee, including those with no pass", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/export?format=csv&report=wallets`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/csv");
+    expect(res.headers.get("Content-Disposition")).toContain('filename="wallets-reports-wallets-');
+    expect(res.headers.get("X-Wallets-Export-Total")).toBe("8");
+    expect(res.headers.get("X-Wallets-Export-Truncated")).toBe("false");
+
+    const text = await res.text();
+    const lines = text.replace(/^﻿/, "").split("\r\n");
+    expect(lines[0]).toContain('"Confirmed platform"');
+    // rows are ordered by name asc: "Wallets Apple" sorts first among the 8 seeded names.
+    const appleRow = lines.find((l) => l.includes('"Wallets Apple"'));
+    expect(appleRow).toContain('"Apple"');
+    const bothRow = lines.find((l) => l.includes('"Wallets Both"'));
+    expect(bothRow).toContain('"Both"');
+    const nopassRow = lines.find((l) => l.includes('"Wallets No Pass"'));
+    expect(nopassRow).toContain('"No pass"');
+  });
+
+  it("returns printable HTML for a wallets pdf export", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/export?format=pdf&report=wallets`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/html");
+    const html = await res.text();
+    expect(html).toContain("Wallets Reports Event");
+  });
+
+  it("audit: reports_exported records report=wallets, not the admissions default", async () => {
+    await prisma.attendeeActionLog.deleteMany({
+      where: { event_id: EVENT_WALLETS, action_type: "reports_exported" },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/export?format=csv&report=wallets`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_WALLETS, action_type: "reports_exported" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    const meta = log!.metadata as Record<string, unknown>;
+    expect(meta.report).toBe("wallets");
+    expect(meta.format).toBe("csv");
+    expect(meta.count).toBe(8);
   });
 });
