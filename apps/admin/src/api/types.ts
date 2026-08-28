@@ -1,4 +1,9 @@
-import type { DeliveryDto, HealthOverallStatus, HealthRowStatus } from "@admitto/shared";
+import type {
+  DeliveryDto,
+  EventWalletReportsResponse as EventWalletReportsDto,
+  HealthOverallStatus,
+  HealthRowStatus,
+} from "@admitto/shared";
 import type { EventLocationInput } from "@admitto/location";
 import type { LogoCropMeta, LogoPersistenceDto } from "@admitto/mail-templates";
 import type {
@@ -1876,40 +1881,11 @@ export interface EventReportsResponse {
   }>;
 }
 
-export interface EventWalletReportsResponse {
-  total_attendees: number;
-  synced_at: string | null;
-  passes_truncated: boolean;
-  adoption: {
-    got_pass: number;
-    got_pass_pct: number;
-    confirmed: number;
-    confirmed_pct: number;
-    cancelled: number;
-  };
-  platform: {
-    apple_only: number;
-    google_only: number;
-    both: number;
-    not_installed: number;
-  };
-  by_ticket_type: Array<{
-    key: string | null;
-    type: string;
-    color: TicketTypeColor;
-    total: number;
-    got_pass: number;
-    pct: number;
-  }>;
-  issued_by_day: Array<{ date: string; count: number; cumulative: number }>;
-  time_to_wallet_tap: {
-    average_days: number | null;
-    buckets: Array<{ key: "same_day" | "1_3" | "4_7" | "8_plus"; count: number; pct: number }>;
-  };
-  admission_by_wallet: {
-    with_wallet: { total: number; admitted: number; pct: number };
-    without_wallet: { total: number; admitted: number; pct: number };
-  };
+/** Mirrors `@admitto/shared`'s `EventWalletReportsResponse` except `by_ticket_type[].color` is
+ * narrowed to `TicketTypeColor` for the frontend's own swatch lookup (the backend only knows it
+ * as a plain string). Derived so the two can't drift. */
+export interface EventWalletReportsResponse extends Omit<EventWalletReportsDto, "by_ticket_type"> {
+  by_ticket_type: Array<Omit<EventWalletReportsDto["by_ticket_type"][number], "color"> & { color: TicketTypeColor }>;
 }
 
 // --- Identity providers & Cloudflare Access (SPA Settings → Identity, #266) ---

@@ -979,7 +979,14 @@ export function ReportsPage() {
       />
 
       {walletsTabVisited && (
-        <div style={activeTab === "wallets" ? undefined : { display: "none" }}>
+        // display:contents when visible, not the no-style default - a plain wrapper div is its
+        // own flex item, which took WalletsReportsTab's rows out of .screen's own `gap: 18px`
+        // (shell.css) and left them touching with zero space between (PO report) - contents
+        // removes this element from box generation while it's the active tab, so its children
+        // (the wallets-panels rows) become .screen's direct flex children again for gap purposes,
+        // exactly as they were before this wrapper existed. display:none when hidden still works
+        // the normal way (contents has no "hidden" state of its own to toggle).
+        <div style={{ display: activeTab === "wallets" ? "contents" : "none" }}>
           <WalletsReportsTab eventId={eventId} />
         </div>
       )}
