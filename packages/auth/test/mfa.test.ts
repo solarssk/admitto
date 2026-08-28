@@ -869,6 +869,15 @@ describe("trusted device", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.next).toBe(LOGIN_NEXT.COMPLETE);
+
+    // Not bound to IP for accept/reject, but still leaves a trace of the skip - the login-time
+    // IP, distinct from the creation-time one - so a stolen-cookie MFA skip from a different
+    // network is at least queryable after the fact (see logTrustedDeviceUsed's doc comment).
+    const auditRow = await prisma.securityAuditLog.findFirst({
+      where: { user_id: USER_ADMIN, event_type: "auth.trusted_device.used" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(auditRow?.ip).toBe("198.51.100.20");
   });
 });
 

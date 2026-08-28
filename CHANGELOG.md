@@ -42,6 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adding an attendee or editing one's attribute fields now shows which specific field is wrong and why (for example "Dietary is required." or "Shirt size must be one of: S, M, L.") when the server rejects the save, instead of one generic "check required attribute fields and option values" message that gave no hint what to actually fix.
 - "Remember this device" no longer stops working whenever your network's IP address changes. It previously required an exact match to the IP address recorded when you checked the box, so anything that changes it - switching Wi-Fi, using a VPN, or an ISP/mobile carrier that reassigns a new address on reconnect (routine for many home internet providers) - silently fell back to asking for your two-factor code again, well before the actual trust period (30 days by default) ran out. Trust now follows the device's cookie alone, matching how "remember this device" works on most other sites; the IP and browser recorded when you checked the box are no longer read back to decide whether the cookie is accepted.
 
+### Security
+
+- Superadmins can now see in Logs & Audit when a "remember this device" cookie skipped the two-factor step at login, not just when a device was first remembered. Every prior MFA outcome already left an audit trail except this one - added as the compensating control for the "remember this device" fix above, so a stolen password combined with a stolen trusted-device cookie still leaves a queryable trace even though it's no longer blocked by an IP mismatch.
+
 ## [0.6.3] - 2026-08-26
 
 ### Added

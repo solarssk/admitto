@@ -158,6 +158,7 @@ const SECURITY_EVENT_LABELS: Record<string, string> = {
   "auth.oidc.superadmin_revoke_blocked": "OIDC superadmin revoke blocked",
   "auth.access.denied": "Access denied",
   "auth.trusted_device.created": "Trusted device remembered",
+  "auth.trusted_device.used": "2FA skipped (trusted device)",
 };
 
 function securityEventLabel(type: string): string {
