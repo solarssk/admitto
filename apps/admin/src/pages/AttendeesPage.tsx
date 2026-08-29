@@ -58,14 +58,11 @@ import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { useOverscrollBounceGuard } from "../hooks/useOverscrollBounceGuard.js";
 import { handleExportRequestError } from "./handleExportRequestError.js";
+import { pluralize } from "../utils/pluralize.js";
 import "../attendees/add-attendee-modal.css";
 import "../attendees/attendees.css";
 
 const DEBOUNCE_MS = 300;
-
-function pluralize(count: number, singular: string): string {
-  return count === 1 ? singular : `${singular}s`;
-}
 
 /** Standard "N queued / M failed / K skipped" toast for a bulk-send queue result — shared by
  * the header "Send tickets" dialog and the bulk-bar's send-to-selection action. */
