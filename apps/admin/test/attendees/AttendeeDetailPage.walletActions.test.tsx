@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // This import must come first, before every other import in the file - see
 // attendeeDetailPageMocks.ts's own doc comment for why.
-import { mockAttendeeDetailForm, mockAuthProvider, mockModule, mockOutletEvent } from "./attendeeDetailPageMocks.js";
+import { mockModule, mockOutletEvent } from "./attendeeDetailPageMocks.js";
 import {
   baseAttendeeDetail,
   baseAttendeeDetailEvent,
@@ -14,20 +14,17 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useNavigate } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
+import { loadAttendeeDetailData } from "../../src/attendees/attendeeDetailForm.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 
-const loadAttendeeDetailData = vi.fn();
 const voidWalletPass = vi.fn();
 const restoreWalletPass = vi.fn();
 const reissueWalletPass = vi.fn();
 const refreshWalletPassStatus = vi.fn();
 const deleteWalletPass = vi.fn();
 
-vi.mock("../../src/attendees/attendeeDetailForm.js", (importOriginal) =>
-  mockAttendeeDetailForm(importOriginal, () => loadAttendeeDetailData),
-);
-
-vi.mock("../../src/auth/AuthProvider.js", () => mockAuthProvider());
+vi.mock("../../src/attendees/attendeeDetailForm.js");
+vi.mock("../../src/auth/AuthProvider.js");
 
 let mockArchivedAt: string | null = null;
 let mockWalletEnabled = true;

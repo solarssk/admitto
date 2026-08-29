@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // This import must come first, before every other import in the file - see
 // attendeeDetailPageMocks.ts's own doc comment for why.
-import { mockAttendeeDetailForm, mockAuthProvider, mockModule, mockOutletEvent } from "./attendeeDetailPageMocks.js";
+import { mockAuthProvider, mockModule, mockOutletEvent } from "./attendeeDetailPageMocks.js";
 import {
   baseAttendeeDetail,
   mockAttendeeDetailLoad,
@@ -14,8 +14,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import type { RoleAssignment } from "../../src/api/types.js";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
+import { loadAttendeeDetailData } from "../../src/attendees/attendeeDetailForm.js";
 
-const loadAttendeeDetailData = vi.fn();
 const addAttendeeNote = vi.fn();
 const updateAttendeeNote = vi.fn();
 const deleteAttendeeNote = vi.fn();
@@ -39,9 +39,7 @@ let outletEvent = {
   organization_id: "org-1",
 };
 
-vi.mock("../../src/attendees/attendeeDetailForm.js", (importOriginal) =>
-  mockAttendeeDetailForm(importOriginal, () => loadAttendeeDetailData),
-);
+vi.mock("../../src/attendees/attendeeDetailForm.js");
 
 // `assignments`/`currentUser` are read fresh on every call (not captured once at mock setup),
 // so individual tests can reassign them before rendering to exercise admin/superadmin RBAC.

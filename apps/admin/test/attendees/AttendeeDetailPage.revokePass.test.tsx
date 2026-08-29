@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // This import must come first, before every other import in the file - see
 // attendeeDetailPageMocks.ts's own doc comment for why.
-import { mockAttendeeDetailForm, mockAuthProvider, mockModule, mockOutletEvent } from "./attendeeDetailPageMocks.js";
+import { mockAuthProvider, mockModule, mockOutletEvent } from "./attendeeDetailPageMocks.js";
 import {
   baseAttendeeDetail,
   baseAttendeeDetailEvent,
@@ -12,13 +12,11 @@ import {
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
+import { loadAttendeeDetailData } from "../../src/attendees/attendeeDetailForm.js";
 
-const loadAttendeeDetailData = vi.fn();
 const updateAttendee = vi.fn();
 
-vi.mock("../../src/attendees/attendeeDetailForm.js", (importOriginal) =>
-  mockAttendeeDetailForm(importOriginal, () => loadAttendeeDetailData),
-);
+vi.mock("../../src/attendees/attendeeDetailForm.js");
 
 let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [
   { role: "admin", scope_type: "organization", scope_id: "org-1" },
