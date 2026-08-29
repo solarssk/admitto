@@ -20,9 +20,7 @@ const submitCheckInAdmit = vi.fn();
 const submitCheckInScan = vi.fn();
 const addToast = vi.fn();
 
-vi.mock("../../src/hooks/useEventStream.js", () => ({
-  useEventStream: () => ({ connected: true, status: "connected" }),
-}));
+vi.mock("../../src/hooks/useEventStream.js");
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ deviceLabel: "desk-1", assignments: [] }),

@@ -35,9 +35,7 @@ const fetchCheckInStats = vi.fn();
 const fetchCheckInOpsConfig = vi.fn();
 const fetchCheckInEvents = vi.fn();
 
-vi.mock("../../src/hooks/useEventStream.js", () => ({
-  useEventStream: () => ({ connected: true, status: "connected" }),
-}));
+vi.mock("../../src/hooks/useEventStream.js");
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ deviceLabel: "desk-1", assignments: [] }),

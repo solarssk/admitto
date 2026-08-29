@@ -19,9 +19,7 @@ const lookupCheckInAttendees = vi.fn();
 const revokeAttendeeCheckIn = vi.fn();
 const revokeItemState = vi.fn();
 
-vi.mock("../../src/hooks/useEventStream.js", () => ({
-  useEventStream: () => ({ connected: true, status: "connected" }),
-}));
+vi.mock("../../src/hooks/useEventStream.js");
 
 // Admin (org-scoped), not superadmin and not operator — matches isAdmin()'s
 // broader check, distinct from operator-only assignments used elsewhere.

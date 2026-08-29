@@ -24,9 +24,7 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
 
 // ReportsPage's live SSE wiring (ADR 0014) isn't under test in this shared error-handling file -
 // jsdom has no real EventSource, so every ReportsPage render here needs this stubbed out.
-vi.mock("../../src/hooks/useEventStream.js", () => ({
-  useEventStream: () => ({ connected: true, status: "connected" }),
-}));
+vi.mock("../../src/hooks/useEventStream.js");
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => {
   // Stable across renders, matching the real provider's own useMemo/useCallback (a fresh object
