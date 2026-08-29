@@ -80,6 +80,9 @@ jobs:
       - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
       - run: npm run db:generate -w @admitto/db
       - run: npm audit --audit-level=high
+      - name: License compliance check (report-only - see scripts/check-licenses.mjs)
+        continue-on-error: true
+        run: node scripts/check-licenses.mjs
       - run: npm run build
       - name: Release doc version markers match package.json
         run: python3 scripts/sync-release-docs.py --check
