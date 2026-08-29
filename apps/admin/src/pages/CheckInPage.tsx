@@ -1370,7 +1370,7 @@ export function CheckInPage({
       // wrapper — do not clear it again here, or a newer query the
       // operator started typing while this lookup was pending would be
       // wiped out too.
-      await openLookupResultImpl(results[0].id);
+      await openLookupResultImpl(results[0]!.id);
       return true;
     }
     if (results.length === 0) {

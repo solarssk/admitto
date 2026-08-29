@@ -10,16 +10,18 @@ function eventCalendarDay(iso: string): string {
   return new Date(iso).toISOString().slice(0, 10);
 }
 
+// dayStr/from/to below are always "YYYY-MM-DD" (produced by eventCalendarDay/calendarDayInTz
+// above), so all three split parts are always present.
 function addCalendarDays(dayStr: string, days: number): string {
   const [y, m, d] = dayStr.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+  return new Date(Date.UTC(y!, m! - 1, d! + days)).toISOString().slice(0, 10);
 }
 
 function calendarDaysBetween(from: string, to: string): number {
   const [fy, fm, fd] = from.split("-").map(Number);
   const [ty, tm, td] = to.split("-").map(Number);
-  const fromUtc = Date.UTC(fy, fm - 1, fd);
-  const toUtc = Date.UTC(ty, tm - 1, td);
+  const fromUtc = Date.UTC(fy!, fm! - 1, fd!);
+  const toUtc = Date.UTC(ty!, tm! - 1, td!);
   return Math.round((toUtc - fromUtc) / 86_400_000);
 }
 

@@ -117,8 +117,8 @@ export function validateCfDraft(draft: CfAccessDraft): CfAccessFieldErrors {
     // Any explicit scheme must be https://; a schemeless host is accepted (the
     // server normalizer prepends https://). http:// and other schemes are
     // rejected inline so the operator doesn't save a URL sign-in will reject.
-    const schemeMatch = /^([a-z][a-z0-9+.-]*):\/\//i.exec(teamDomain);
-    if (schemeMatch && schemeMatch[1].toLowerCase() !== "https") {
+    const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(teamDomain)?.[1];
+    if (scheme && scheme.toLowerCase() !== "https") {
       errors.teamDomain = "Team URL must use https://";
     }
   }

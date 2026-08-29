@@ -62,8 +62,8 @@ export const WizardStep4Event = forwardRef<WizardStep4EventHandle, WizardStep4Ev
           setExistingEvents(list);
           onHasExistingEventsChange(list.length > 0);
           if (list.length === 1) {
-            setSelectedEventId(list[0].id);
-            setSummary({ eventTitle: list[0].title });
+            setSelectedEventId(list[0]!.id);
+            setSummary({ eventTitle: list[0]!.title });
           }
         } catch {
           if (!ac.signal.aborted) onHasExistingEventsChange(false);

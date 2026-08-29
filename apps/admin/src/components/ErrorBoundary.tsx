@@ -12,20 +12,20 @@ type ErrorBoundaryState = {
 
 /** Catches render errors in the admin SPA and shows a recoverable fallback. */
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { hasError: false };
+  override state: ErrorBoundaryState = { hasError: false };
 
   static getDerivedStateFromError(): ErrorBoundaryState {
     return { hasError: true };
   }
 
-  componentDidCatch(error: Error, info: ErrorInfo): void {
+  override componentDidCatch(error: Error, info: ErrorInfo): void {
     reportClientError(error, {
       source: "admin-error-boundary",
       componentStack: info.componentStack ?? undefined,
     });
   }
 
-  render(): ReactNode {
+  override render(): ReactNode {
     if (this.state.hasError) {
       return (
         <div className="error-boundary">
