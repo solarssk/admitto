@@ -20,6 +20,9 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ assignments: [makeOrgAdminAssignment()] }),
 }));
 
+// Archived-lockdown coverage needs the event itself archived, unlike every sibling
+// AttendeeDetailPage.*.test.tsx file - not a candidate for attendeeDetailPageSetup.ts's shared
+// (non-archived) event mock.
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
   return {

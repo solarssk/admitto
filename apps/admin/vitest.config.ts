@@ -12,7 +12,41 @@ export default defineConfig({
   test: {
     coverage: vitestCoverage,
     environment: "node",
-    include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
+    // AttendeeDetailPage.*.test.tsx's plain org-admin, non-archived-event variant files
+    // (statusTones, resend, profileEdit, mailGate, deleteAttendee, revokeCheckIn,
+    // copyTicketLink) share one project so they can load attendeeDetailPageSetup.ts via
+    // `setupFiles` - the three vi.mock() calls it contains are 100% identical across these 7
+    // files (verified: a plain side-effect `import "./attendeeDetailPageSetup.js"` from inside
+    // the test file does NOT work, since vi.mock hoisting is a per-file static-analysis
+    // transform that only sees mock calls written directly in that file's own source -
+    // `setupFiles` is Vitest's actual supported mechanism for sharing mock registration across
+    // files, confirmed working here). The other AttendeeDetailPage test files genuinely differ
+    // in this setup and correctly keep their own local mocks, not included here: errors/notes/
+    // revokePass need a superadmin (or per-test-mutable) assignment, walletActions needs extra
+    // wallet-specific outlet-context fields, and archived needs archived_at set on the event -
+    // each a real behavioral difference, not incidental duplication.
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "attendee-detail-page-shared-setup",
+          include: [
+            "test/attendees/AttendeeDetailPage.{statusTones,resend,profileEdit,mailGate,deleteAttendee,revokeCheckIn,copyTicketLink}.test.tsx",
+          ],
+          setupFiles: ["./test/attendees/attendeeDetailPageSetup.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "default",
+          include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
+          exclude: [
+            "test/attendees/AttendeeDetailPage.{statusTones,resend,profileEdit,mailGate,deleteAttendee,revokeCheckIn,copyTicketLink}.test.tsx",
+          ],
+        },
+      },
+    ],
     // Vitest's default thread count is `os.availableParallelism() - 1`. With 264 files each
     // spinning up its own jsdom environment plus React rendering, running that many concurrent
     // worker threads saturates the machine and starves individual tests of CPU time - `waitFor`/

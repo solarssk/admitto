@@ -4,30 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { baseAttendeeDetailEvent, makeOrgAdminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
-
-const loadAttendeeDetailData = vi.fn();
-
-vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/attendees/attendeeDetailForm.js")>();
-  return {
-    ...actual,
-    loadAttendeeDetailData: (...args: unknown[]) => loadAttendeeDetailData(...args),
-  };
-});
-
-vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ assignments: [makeOrgAdminAssignment()] }),
-}));
-
-vi.mock("react-router", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router")>();
-  return {
-    ...actual,
-    useOutletContext: () => ({
-      event: baseAttendeeDetailEvent,
-    }),
-  };
-});
+import { loadAttendeeDetailData } from "./attendeeDetailPageSetup.js";
 
 const updateAttendee = vi.fn();
 const resendTicket = vi.fn();
