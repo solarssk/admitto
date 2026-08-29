@@ -5,6 +5,7 @@ import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage, recoverLegacyAfterDelete, resolveTestSendTemplateLabel } from "../../src/pages/CommunicationPage.js";
 import { makeEmailPreviewInert } from "../../src/communication/inertEmailPreview.js";
 import { clickKeepEditing, getTooltipText, renderWithToast } from "../test-utils.js";
+import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
 
 const fetchEventTemplates = vi.fn();
 const fetchEventTemplate = vi.fn();
@@ -24,11 +25,8 @@ const updateEventTemplateMetadata = vi.fn();
 const fetchTicketTypes = vi.fn();
 const fetchEventMailSettings = vi.fn();
 
-const reportApiError = vi.fn();
 
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError }),
-}));
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),

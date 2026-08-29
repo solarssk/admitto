@@ -5,13 +5,13 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
 import { mockMatchMedia } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
+import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
 
 const fetchEventAttendees = vi.fn();
 const exportAttendees = vi.fn();
 const bulkResendTickets = vi.fn();
 const fetchBulkSendStatus = vi.fn();
 const addToast = vi.fn();
-const reportApiError = vi.fn();
 
 const sampleRow: AttendeeRowDto = {
   id: "att-1",
@@ -75,9 +75,7 @@ function mockFetchEventAttendees() {
   });
 }
 
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError }),
-}));
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 vi.mock("@admitto/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@admitto/ui")>();

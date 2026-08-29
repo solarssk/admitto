@@ -8,7 +8,6 @@ import type { AttendeeRowDto } from "../../src/api/types.js";
 
 const fetchEventAttendees = vi.fn();
 const fetchEventMailSettings = vi.fn();
-const reportApiError = vi.fn();
 
 function makeRow(id: string, name: string): AttendeeRowDto {
   return {
@@ -37,9 +36,7 @@ function mailSettings(provider: string | null) {
   };
 }
 
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError }),
-}));
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),

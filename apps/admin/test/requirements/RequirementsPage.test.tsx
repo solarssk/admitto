@@ -24,10 +24,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   updateOpsConfig: (...args: unknown[]) => updateOpsConfig(...args),
 }));
 
-const reportApiError = vi.fn();
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError }),
-}));
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();

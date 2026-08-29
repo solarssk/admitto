@@ -8,7 +8,6 @@ import type { AttendeeRowDto } from "../../src/api/types.js";
 
 const fetchEventAttendees = vi.fn();
 const exportAttendees = vi.fn();
-const reportApiError = vi.fn();
 
 const sampleRow: AttendeeRowDto = {
   id: "att-1",
@@ -25,9 +24,7 @@ const sampleRow: AttendeeRowDto = {
   rsvp_status: "confirmed",
 };
 
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError }),
-}));
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),

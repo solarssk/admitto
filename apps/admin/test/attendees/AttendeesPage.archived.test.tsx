@@ -8,7 +8,6 @@ import { getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.j
 import type { AttendeeRowDto } from "../../src/api/types.js";
 
 const fetchEventAttendees = vi.fn();
-const reportApiError = vi.fn();
 
 const registeredRow: AttendeeRowDto = {
   id: "att-1",
@@ -43,9 +42,7 @@ const admittedRow: AttendeeRowDto = {
   check_in_status: "admitted",
 };
 
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError }),
-}));
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),

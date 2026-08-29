@@ -12,11 +12,8 @@ const fetchEventTemplateById = vi.fn();
 const fetchEventOverview = vi.fn();
 const fetchEventDeliveries = vi.fn();
 
-const reportApiError = vi.fn();
 
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError }),
-}));
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),
