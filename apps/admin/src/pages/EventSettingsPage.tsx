@@ -68,6 +68,7 @@ import {
   SUPERADMIN_ONLY_TABS,
   type EventSettingsTab,
 } from "../settings/eventSettingsTabs.js";
+import { pluralSuffix } from "../utils/pluralize.js";
 import "./event-settings-page.css";
 
 /** Created/Archived stamp in the acting admin's timezone when known; UTC fallback for legacy rows. */
@@ -157,10 +158,6 @@ const BULK_REVOKE_CONFIRM_DELAY_SECONDS = 10;
 const UNSAVED_CHANGES_WARNING = " You also have unsaved changes elsewhere on this page. They'll be lost when this finishes.";
 
 /** English plural suffix for a count — used by the Danger Zone's toasts and row descriptions. */
-function pluralSuffix(count: number): string {
-  return count === 1 ? "" : "s";
-}
-
 /** Label + icon per placeholder, one entry each - the icon groups the Value dropdown's options by
  * category so the list is easier to scan (matches WALLET_MAPPING_PLACEHOLDERS' existing grouping
  * order: attendee, event, notes, maps, address, ticket) instead of relying on option order alone. */
