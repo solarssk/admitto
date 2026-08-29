@@ -28,7 +28,7 @@ import {
 } from "../../src/admin/communication-api-routes.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
-import { seedOrgAndEvent } from "../helpers/seed-org-and-event.js";
+import { seedOrgAndEvent, createAdminAndOp } from "../helpers/seed-org-and-event.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
@@ -117,18 +117,7 @@ async function seed(client: PrismaClient) {
     },
   });
 
-  const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
-  const opUser = await client.user.create({ data: { email: EMAIL_OP, password_hash } });
-  adminId = adminUser.id;
-  opId = opUser.id;
-
-  await client.roleAssignment.createMany({
-    data: [
-      { user_id: adminId, role: "admin", scope_type: "organization", scope_id: ORG_A },
-      { user_id: opId, role: "operator", scope_type: "event", scope_id: EVENT_A },
-    ],
-  });
-
+  ({ adminId, opId } = await createAdminAndOp(client, { adminEmail: EMAIL_ADMIN, opEmail: EMAIL_OP, passwordHash: password_hash, orgId: ORG_A, eventId: EVENT_A }));
   await enrollConfirmedTotp(client, adminId);
 
   await setMailSettings(

@@ -26,7 +26,7 @@ import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-lim
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
-import { seedOrgAndEvent } from "../helpers/seed-org-and-event.js";
+import { seedOrgAndEvent, createAdminAndOp } from "../helpers/seed-org-and-event.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
@@ -119,18 +119,7 @@ async function seed(client: PrismaClient) {
   await seedOrgAndEvent(client, { id: ORG_A, name: "Org A", slug: "admin-att-a" }, { id: EVENT_A, title: "Event A", slug: "event-admin-att-a", date: "2026-10-01", organizationId: ORG_A });
   await seedOrgAndEvent(client, { id: ORG_B, name: "Org B", slug: "admin-att-b" }, { id: EVENT_B, title: "Event B", slug: "event-admin-att-b", date: "2026-11-01", organizationId: ORG_B });
 
-  const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
-  const opUser = await client.user.create({ data: { email: EMAIL_OP, password_hash } });
-  adminId = adminUser.id;
-  opId = opUser.id;
-
-  await client.roleAssignment.createMany({
-    data: [
-      { user_id: adminId, role: "admin", scope_type: "organization", scope_id: ORG_A },
-      { user_id: opId, role: "operator", scope_type: "event", scope_id: EVENT_A },
-    ],
-  });
-
+  ({ adminId, opId } = await createAdminAndOp(client, { adminEmail: EMAIL_ADMIN, opEmail: EMAIL_OP, passwordHash: password_hash, orgId: ORG_A, eventId: EVENT_A }));
   await enrollConfirmedTotp(client, adminId);
 
   await setMailSettings(
