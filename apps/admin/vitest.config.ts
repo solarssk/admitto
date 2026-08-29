@@ -27,6 +27,12 @@ export default defineConfig({
     // and correctly keep all their own local mocks, not included here: errors/notes/revokePass
     // need a superadmin (or per-test-mutable) assignment, walletActions needs extra
     // wallet-specific outlet-context fields on top of a different assignment too.
+    // AttendeesPage.{sort,mailStatusFilter,pageSize,search}.test.tsx are byte-for-byte
+    // identical (bar one file's extra `act` import) from the top of the file through
+    // renderPage() - same shared-setup treatment as the AttendeeDetailPage project above.
+    // AttendeesPage's other 6 *.test.tsx files (archived, bulkSelection, exportAndSend,
+    // exportMenu, load, mailGate) each genuinely diverge somewhere in that span and correctly
+    // keep their own local setup, not included here.
     projects: [
       {
         extends: true,
@@ -41,10 +47,19 @@ export default defineConfig({
       {
         extends: true,
         test: {
+          name: "attendees-page-shared-setup",
+          include: ["test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search}.test.tsx"],
+          setupFiles: ["./test/attendees/attendeesPageSetup.tsx"],
+        },
+      },
+      {
+        extends: true,
+        test: {
           name: "default",
           include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
           exclude: [
             "test/attendees/AttendeeDetailPage.{statusTones,resend,profileEdit,mailGate,deleteAttendee,revokeCheckIn,copyTicketLink,archived}.test.tsx",
+            "test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search}.test.tsx",
           ],
         },
       },
