@@ -172,7 +172,7 @@ Useful answers when enterprise checklists ask for features not in scope:
 | Container SBOM | `.github/workflows/publish-container.yml` — CycloneDX SBOM generated via `aquasecurity/trivy-action`, attached to release assets |
 | Container vulnerability scan | `.github/workflows/publish-container.yml` — Trivy on built image |
 | Static analysis SARIF (CodeQL) | `.github/workflows/codeql.yml` — `security-extended` on every PR |
-| Static analysis SARIF (Semgrep) | `.github/workflows/semgrep.yml` — `--error` on every merge to `main` + weekly; intentionally not on PRs (CodeQL is the PR SAST gate; see [SECURITY.md](../../SECURITY.md)) |
+| Static analysis SARIF (Semgrep) | `.github/workflows/semgrep.yml` — `--error` on every PR, every merge to `main`, and weekly; complements CodeQL's `security-extended` PR gate (see [SECURITY.md](../../SECURITY.md)) |
 | Code quality analysis (SonarCloud) | Automatic analysis on every PR and `main` push via GitHub App integration (`sonarcloud.io`), not a workflow file in this repo — see [SECURITY.md](../../SECURITY.md) |
 | Migration safety checks | `.github/workflows/ci.yml` job `migration-safety` — `scripts/check-migrations-destructive.sh` on PRs |
 
