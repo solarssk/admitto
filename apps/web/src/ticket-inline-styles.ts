@@ -3,8 +3,8 @@ import { resolveThemeVars, sanitizeBrandingFontFamilyName, themeVarsToStyleBlock
 import { builtInFontFaceCss } from "./vendor-assets.js";
 
 const TICKET_LAYOUT_CSS = `
-body.ticket-page { margin: 0; box-sizing: border-box; width: 100%; overflow-x: clip; background: var(--surface-page, #f1f5f9); min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; font-family: var(--font-sans, Inter, system-ui, sans-serif); color: var(--text-primary, #1d273b); }
-.ticket { width: min(400px, 100%); box-sizing: border-box; min-width: 0; background: var(--surface-card, #ffffff); border: 1px solid var(--border, #e6e7e9); border-radius: var(--radius-lg, 12px); box-shadow: var(--shadow-md, 0 4px 12px rgba(15,23,42,.08)); overflow: hidden; border-top: 3px solid var(--primary, #066fd1); }
+body.ticket-page { margin: 0; box-sizing: border-box; width: 100%; overflow-x: clip; background: var(--surface-page, #f1f5f9); min-height: 100vh; display: grid; place-items: center; padding: 32px 16px; font-family: var(--font-sans, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif); color: var(--text-primary, #1d273b); }
+.ticket { width: min(400px, 100%); box-sizing: border-box; min-width: 0; background: var(--surface-card, #ffffff); border: 1px solid var(--border, #e6e7e9); border-radius: var(--radius-lg, 8px); box-shadow: var(--shadow-md, 0 4px 12px -2px rgba(15, 23, 42, 0.10)); overflow: hidden; border-top: 3px solid var(--primary, #066fd1); }
 .ticket__top { padding: 16px 22px; border-bottom: 1px solid var(--border, #e6e7e9); display: flex; align-items: center; gap: 10px; min-height: 60px; }
 .ticket__top small { margin-left: auto; color: var(--text-muted, #64748b); font-size: 12px; white-space: nowrap; }
 .ticket__brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; letter-spacing: -0.02em; }

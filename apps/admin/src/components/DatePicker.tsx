@@ -257,12 +257,9 @@ export function DatePicker({
     setHighlightDay(next.d);
   };
 
+  // Escape isn't handled here: useModalFocusTrap below already intercepts it on document's
+  // capture phase and calls closePanel(), so this bubble-phase handler never sees it.
   const onPanelKeyDown = (event: KeyboardEvent<HTMLDialogElement>) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closePanel();
-      return;
-    }
     if (event.key === "ArrowLeft") {
       event.preventDefault();
       moveHighlight(-1);

@@ -6,8 +6,10 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { EventSettingsDto, TicketTypeDto, UpdateTicketTypePatch } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { useClickOutside } from "../components/useClickOutside.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { SettingsFooter } from "./mailTransportFormParts.js";
+import { pluralSuffix } from "../utils/pluralize.js";
 import "./ticket-types-card.css";
 
 export interface TicketTypesCardProps {
@@ -25,10 +27,6 @@ type DraftTicketType = TicketTypeDto & { pending?: boolean };
 const COLOR_ENTRIES = Object.entries(TICKET_TYPE_COLORS) as Array<
   [TicketTypeColor, (typeof TICKET_TYPE_COLORS)[TicketTypeColor]]
 >;
-
-function pluralSuffix(count: number): string {
-  return count === 1 ? "" : "s";
-}
 
 const TICKET_TYPES_HINT =
   "Types used across attendees, check-in, and reports.";
@@ -108,20 +106,15 @@ function ColorSwatchPicker({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  useClickOutside(ref, open, () => setOpen(false));
+
   useEffect(() => {
     if (!open) return;
-    function onDoc(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
     }
-    document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
+    return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
   const current = TICKET_TYPE_COLORS[color] ?? TICKET_TYPE_COLORS.gray;
