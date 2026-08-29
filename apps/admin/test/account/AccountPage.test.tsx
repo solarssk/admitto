@@ -180,6 +180,30 @@ function fillPasswordForm() {
   });
 }
 
+/** Renders the page and fills the password-change form, without submitting it. Caller must mock
+ * `mockFetchAccount`/`mockFetchSessions` beforehand. */
+async function renderAndFillPasswordForm(): Promise<void> {
+  renderWithToast(<AccountPage />);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Current password")).toBeTruthy();
+  });
+  fillPasswordForm();
+}
+
+/** Same as `renderAndFillPasswordForm`, but also submits it. Caller must configure
+ * `mockPatchPassword` beforehand. */
+async function submitPasswordChangeForm(): Promise<void> {
+  await renderAndFillPasswordForm();
+  fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+}
+
+/** Same as `submitPasswordChangeForm`, but for the totp_required case: returns the step-up
+ * dialog it opens. */
+async function openPasswordStepUpDialog(): Promise<HTMLElement> {
+  await submitPasswordChangeForm();
+  return screen.findByRole("dialog");
+}
+
 function makeAccountSession(overrides: Partial<SessionListDto> = {}): SessionListDto {
   return {
     id: "sess-1",
@@ -216,6 +240,23 @@ function makeCurrentAndOtherSessions(otherOverrides: Partial<SessionListDto> = {
 function mockLoadedAccount(account: AccountDto = baseAccount) {
   mockFetchAccount.mockResolvedValue(account);
   mockFetchSessions.mockResolvedValue({ sessions: [] });
+}
+
+/** Renders the account page and starts TOTP enrollment, resolving `enrollMfaTotp` with
+ * `otpauthUri`. Caller may set up other mocks (e.g. `mockCancelMfaEnroll`) beforehand. */
+async function startTotpSetup(otpauthUri: string): Promise<void> {
+  mockLoadedAccount();
+  mockEnrollMfaTotp.mockResolvedValueOnce({
+    otpauthUri,
+    backupCodes: [],
+    backupCodesAlreadyShown: true,
+  });
+
+  renderWithToast(<AccountPage />);
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Set up" }));
 }
 
 /** The TOTP row's own action button is just "Manage" (matching passkey/security-key rows), so
@@ -487,13 +528,7 @@ describe("AccountPage toasts", () => {
     mockLoadedAccount();
     mockPatchPassword.mockResolvedValueOnce({ sessions_revoked: 2 });
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(screen.getByLabelText("Current password")).toBeTruthy();
-    });
-
-    fillPasswordForm();
-    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    await submitPasswordChangeForm();
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(
@@ -506,13 +541,7 @@ describe("AccountPage toasts", () => {
     mockLoadedAccount();
     mockPatchPassword.mockResolvedValueOnce({ sessions_revoked: 0 });
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(screen.getByLabelText("Current password")).toBeTruthy();
-    });
-
-    fillPasswordForm();
-    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    await submitPasswordChangeForm();
 
     await waitFor(() => {
       expect(screen.getByText("Password changed.")).toBeTruthy();
@@ -524,13 +553,7 @@ describe("AccountPage toasts", () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockPatchPassword.mockRejectedValueOnce(new ApiError(401, "wrong_password", "wrong_password"));
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(screen.getByLabelText("Current password")).toBeTruthy();
-    });
-
-    fillPasswordForm();
-    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    await submitPasswordChangeForm();
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Current password is incorrect/);
@@ -543,12 +566,7 @@ describe("AccountPage toasts", () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockPatchPassword.mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"));
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(screen.getByLabelText("Current password")).toBeTruthy();
-    });
-
-    fillPasswordForm();
+    await renderAndFillPasswordForm();
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Change password" }));
 
@@ -567,14 +585,7 @@ describe("AccountPage toasts", () => {
       .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
       .mockRejectedValueOnce(new ApiError(401, "invalid_totp", "invalid_totp"));
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(screen.getByLabelText("Current password")).toBeTruthy();
-    });
-
-    fillPasswordForm();
-    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await openPasswordStepUpDialog();
 
     fireEvent.change(within(dialog).getByLabelText("Authenticator or backup code"), {
       target: { value: "000000" },
@@ -596,14 +607,7 @@ describe("AccountPage toasts", () => {
       .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
       .mockResolvedValueOnce({ sessions_revoked: 1 });
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(screen.getByLabelText("Current password")).toBeTruthy();
-    });
-
-    fillPasswordForm();
-    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await openPasswordStepUpDialog();
 
     fireEvent.change(within(dialog).getByLabelText("Authenticator or backup code"), {
       target: { value: "123456" },
@@ -631,14 +635,7 @@ describe("AccountPage toasts", () => {
       .mockRejectedValueOnce(new ApiError(429, "too many requests"))
       .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"));
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(screen.getByLabelText("Current password")).toBeTruthy();
-    });
-
-    fillPasswordForm();
-    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
-    let dialog = await screen.findByRole("dialog");
+    let dialog = await openPasswordStepUpDialog();
 
     fireEvent.change(within(dialog).getByLabelText("Authenticator or backup code"), {
       target: { value: "123456" },
@@ -664,14 +661,7 @@ describe("AccountPage toasts", () => {
       .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
       .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"));
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(screen.getByLabelText("Current password")).toBeTruthy();
-    });
-
-    fillPasswordForm();
-    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
-    let dialog = await screen.findByRole("dialog");
+    let dialog = await openPasswordStepUpDialog();
 
     fireEvent.change(within(dialog).getByLabelText("Authenticator or backup code"), {
       target: { value: "123456" },
@@ -1146,18 +1136,7 @@ describe("AccountPage toasts", () => {
     Object.assign(navigator, { clipboard: { writeText } });
 
     try {
-      mockLoadedAccount();
-      mockEnrollMfaTotp.mockResolvedValueOnce({
-        otpauthUri: "otpauth://totp/Admitto?secret=ABC",
-        backupCodes: [],
-        backupCodesAlreadyShown: true,
-      });
-
-      renderWithToast(<AccountPage />);
-      await waitFor(() => {
-        expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
-      });
-      fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+      await startTotpSetup("otpauth://totp/Admitto?secret=ABC");
 
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Copy URI" })).toBeTruthy();
@@ -1180,18 +1159,7 @@ describe("AccountPage toasts", () => {
   });
 
   it("shows the otpauth URI when QR rendering fails", async () => {
-    mockLoadedAccount();
-    mockEnrollMfaTotp.mockResolvedValueOnce({
-      otpauthUri: "otpauth://totp/Admitto?secret=QRFAIL",
-      backupCodes: [],
-      backupCodesAlreadyShown: true,
-    });
-
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+    await startTotpSetup("otpauth://totp/Admitto?secret=QRFAIL");
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Simulate QR fail" })).toBeTruthy();
     });
@@ -1203,18 +1171,7 @@ describe("AccountPage toasts", () => {
   });
 
   it("hides the QR fallback URI when a later render succeeds", async () => {
-    mockLoadedAccount();
-    mockEnrollMfaTotp.mockResolvedValueOnce({
-      otpauthUri: "otpauth://totp/Admitto?secret=QRRECOVER",
-      backupCodes: [],
-      backupCodesAlreadyShown: true,
-    });
-
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+    await startTotpSetup("otpauth://totp/Admitto?secret=QRRECOVER");
     await screen.findByRole("button", { name: "Simulate QR fail" });
     fireEvent.click(screen.getByRole("button", { name: "Simulate QR fail" }));
     expect(await screen.findByText("otpauth://totp/Admitto?secret=QRRECOVER")).toBeTruthy();
@@ -1231,18 +1188,7 @@ describe("AccountPage toasts", () => {
     Object.assign(navigator, { clipboard: { writeText } });
 
     try {
-      mockLoadedAccount();
-      mockEnrollMfaTotp.mockResolvedValueOnce({
-        otpauthUri: "otpauth://totp/Admitto?secret=QRCLIP",
-        backupCodes: [],
-        backupCodesAlreadyShown: true,
-      });
-
-      renderWithToast(<AccountPage />);
-      await waitFor(() => {
-        expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
-      });
-      fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+      await startTotpSetup("otpauth://totp/Admitto?secret=QRCLIP");
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Simulate QR fail" })).toBeTruthy();
       });
@@ -1266,18 +1212,7 @@ describe("AccountPage toasts", () => {
     document.execCommand = execCommand as typeof document.execCommand;
 
     try {
-      mockLoadedAccount();
-      mockEnrollMfaTotp.mockResolvedValueOnce({
-        otpauthUri: "otpauth://totp/Admitto?secret=EXEC",
-        backupCodes: [],
-        backupCodesAlreadyShown: true,
-      });
-
-      renderWithToast(<AccountPage />);
-      await waitFor(() => {
-        expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
-      });
-      fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+      await startTotpSetup("otpauth://totp/Admitto?secret=EXEC");
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Copy URI" })).toBeTruthy();
       });
@@ -1294,19 +1229,8 @@ describe("AccountPage toasts", () => {
   });
 
   it("continues MFA setup when canceling a missing pending enrollment fails", async () => {
-    mockLoadedAccount();
     mockCancelMfaEnroll.mockRejectedValueOnce(new Error("no pending enrollment"));
-    mockEnrollMfaTotp.mockResolvedValueOnce({
-      otpauthUri: "otpauth://totp/Admitto?secret=ABC",
-      backupCodes: [],
-      backupCodesAlreadyShown: true,
-    });
-
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+    await startTotpSetup("otpauth://totp/Admitto?secret=ABC");
 
     await waitFor(() => {
       expect(mockCancelMfaEnroll).toHaveBeenCalled();
@@ -1320,18 +1244,7 @@ describe("AccountPage toasts", () => {
     Object.assign(navigator, { clipboard: undefined });
 
     try {
-      mockLoadedAccount();
-      mockEnrollMfaTotp.mockResolvedValueOnce({
-        otpauthUri: "otpauth://totp/Admitto?secret=NOCLIP",
-        backupCodes: [],
-        backupCodesAlreadyShown: true,
-      });
-
-      renderWithToast(<AccountPage />);
-      await waitFor(() => {
-        expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
-      });
-      fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+      await startTotpSetup("otpauth://totp/Admitto?secret=NOCLIP");
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Copy URI" })).toBeTruthy();
       });
@@ -1798,6 +1711,31 @@ function clickIdentityMenuItem(namePattern: RegExp | string) {
   fireEvent.click(screen.getByRole("menuitem", { name: namePattern }));
 }
 
+/** Opens the "Unlink SSO" confirm dialog and submits it with a valid new password. Caller must
+ * mock `mockFetchAccount`/`mockFetchSessions` and configure `mockUnlinkExternalIdentity`
+ * beforehand. Returns the dialog element, for callers that assert on it staying open. */
+async function submitUnlinkSsoDialog(): Promise<HTMLElement> {
+  renderWithToast(<AccountPage />);
+
+  await screen.findByRole("button", { name: "SSO" });
+  clickIdentityMenuItem(/Unlink SSO/);
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+  return dialog;
+}
+
+/** Same as `submitUnlinkSsoDialog`, but for the totp_required case: waits for the rejected first
+ * attempt and returns the step-up dialog it opens. */
+async function openUnlinkStepUpDialog(): Promise<HTMLElement> {
+  await submitUnlinkSsoDialog();
+
+  await waitFor(() => {
+    expect(mockUnlinkExternalIdentity).toHaveBeenCalledTimes(1);
+  });
+  return screen.findByRole("dialog");
+}
+
 describe("AccountPage profile: identity provider actions menu", () => {
   it("hides the menu trigger when nothing is linked and no providers are available", async () => {
     mockLoadedAccount();
@@ -1939,13 +1877,7 @@ describe("AccountPage profile: SSO unlink", () => {
     mockFetchAccount.mockResolvedValueOnce(LINKED_ACCOUNT).mockResolvedValue(baseAccount);
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockUnlinkExternalIdentity.mockResolvedValueOnce({ ok: true });
-    renderWithToast(<AccountPage />);
-
-    await screen.findByRole("button", { name: "SSO" });
-    clickIdentityMenuItem(/Unlink SSO/);
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+    await submitUnlinkSsoDialog();
 
     await waitFor(() => {
       expect(screen.getByText("SSO unlinked. Sign in with your new password next time.")).toBeTruthy();
@@ -1965,13 +1897,7 @@ describe("AccountPage profile: SSO unlink", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     const { ApiError } = await import("../../src/api/client.js");
     mockUnlinkExternalIdentity.mockRejectedValueOnce(new ApiError(400, "invalid_request", "invalid_request"));
-    renderWithToast(<AccountPage />);
-
-    await screen.findByRole("button", { name: "SSO" });
-    clickIdentityMenuItem(/Unlink SSO/);
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+    const dialog = await submitUnlinkSsoDialog();
 
     await waitFor(() => {
       expect(within(dialog).getByText("Password must be at least 12 characters.")).toBeTruthy();
@@ -1984,18 +1910,7 @@ describe("AccountPage profile: SSO unlink", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     const { ApiError } = await import("../../src/api/client.js");
     mockUnlinkExternalIdentity.mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"));
-    renderWithToast(<AccountPage />);
-
-    await screen.findByRole("button", { name: "SSO" });
-    clickIdentityMenuItem(/Unlink SSO/);
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
-
-    await waitFor(() => {
-      expect(mockUnlinkExternalIdentity).toHaveBeenCalledTimes(1);
-    });
-    const stepUpDialog = await screen.findByRole("dialog");
+    const stepUpDialog = await openUnlinkStepUpDialog();
     expect(within(stepUpDialog).getByLabelText("Authenticator or backup code")).toBeTruthy();
   });
 
@@ -2004,18 +1919,7 @@ describe("AccountPage profile: SSO unlink", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     const { ApiError } = await import("../../src/api/client.js");
     mockUnlinkExternalIdentity.mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"));
-    renderWithToast(<AccountPage />);
-
-    await screen.findByRole("button", { name: "SSO" });
-    clickIdentityMenuItem(/Unlink SSO/);
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
-
-    await waitFor(() => {
-      expect(mockUnlinkExternalIdentity).toHaveBeenCalledTimes(1);
-    });
-    const stepUpDialog = await screen.findByRole("dialog");
+    const stepUpDialog = await openUnlinkStepUpDialog();
     expect(within(stepUpDialog).getByLabelText("Authenticator or backup code")).toBeTruthy();
     fireEvent.click(within(stepUpDialog).getByRole("button", { name: "Cancel" }));
 
@@ -2029,17 +1933,7 @@ describe("AccountPage profile: SSO unlink", () => {
     mockUnlinkExternalIdentity
       .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
       .mockRejectedValueOnce(new ApiError(401, "invalid_totp", "invalid_totp"));
-    renderWithToast(<AccountPage />);
-
-    await screen.findByRole("button", { name: "SSO" });
-    clickIdentityMenuItem(/Unlink SSO/);
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
-    await waitFor(() => {
-      expect(mockUnlinkExternalIdentity).toHaveBeenCalledTimes(1);
-    });
-    const stepUpDialog = await screen.findByRole("dialog");
+    const stepUpDialog = await openUnlinkStepUpDialog();
 
     fireEvent.change(within(stepUpDialog).getByLabelText("Authenticator or backup code"), { target: { value: "000000" } });
     fireEvent.click(within(stepUpDialog).getByRole("button", { name: "Unlink" }));
@@ -2057,17 +1951,7 @@ describe("AccountPage profile: SSO unlink", () => {
     mockUnlinkExternalIdentity
       .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
       .mockResolvedValueOnce({ ok: true });
-    renderWithToast(<AccountPage />);
-
-    await screen.findByRole("button", { name: "SSO" });
-    clickIdentityMenuItem(/Unlink SSO/);
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
-    await waitFor(() => {
-      expect(mockUnlinkExternalIdentity).toHaveBeenCalledTimes(1);
-    });
-    const stepUpDialog = await screen.findByRole("dialog");
+    const stepUpDialog = await openUnlinkStepUpDialog();
 
     fireEvent.change(within(stepUpDialog).getByLabelText("Authenticator or backup code"), { target: { value: "123456" } });
     fireEvent.click(within(stepUpDialog).getByRole("button", { name: "Unlink" }));
@@ -2089,17 +1973,7 @@ describe("AccountPage profile: SSO unlink", () => {
     mockUnlinkExternalIdentity
       .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
       .mockRejectedValueOnce(new ApiError(429, "too many requests"));
-    renderWithToast(<AccountPage />);
-
-    await screen.findByRole("button", { name: "SSO" });
-    clickIdentityMenuItem(/Unlink SSO/);
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
-    await waitFor(() => {
-      expect(mockUnlinkExternalIdentity).toHaveBeenCalledTimes(1);
-    });
-    const stepUpDialog = await screen.findByRole("dialog");
+    const stepUpDialog = await openUnlinkStepUpDialog();
 
     fireEvent.change(within(stepUpDialog).getByLabelText("Authenticator or backup code"), { target: { value: "123456" } });
     fireEvent.click(within(stepUpDialog).getByRole("button", { name: "Unlink" }));
@@ -2175,13 +2049,7 @@ describe("AccountPage profile: SSO unlink", () => {
     mockUnlinkExternalIdentity.mockRejectedValueOnce(
       new ApiError(409, "provider_managed_roles_exist", "provider_managed_roles_exist"),
     );
-    renderWithToast(<AccountPage />);
-
-    await screen.findByRole("button", { name: "SSO" });
-    clickIdentityMenuItem(/Unlink SSO/);
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+    await submitUnlinkSsoDialog();
 
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
@@ -2205,13 +2073,7 @@ describe("AccountPage profile: SSO unlink", () => {
     mockUnlinkExternalIdentity.mockRejectedValueOnce(
       new ApiError(400, "insufficient_verification", "insufficient_verification"),
     );
-    renderWithToast(<AccountPage />);
-
-    await screen.findByRole("button", { name: "SSO" });
-    clickIdentityMenuItem(/Unlink SSO/);
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+    await submitUnlinkSsoDialog();
 
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
@@ -2427,12 +2289,39 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     return screen.getByText("Security key (YubiKey)").closest(".account-mfa-method") as HTMLElement;
   }
 
+  /** Renders the page and opens the "Add passkey" dialog. */
+  async function openAddPasskeyDialog(): Promise<HTMLElement> {
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
+    });
+    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Add" }));
+    return screen.findByRole("dialog", { name: "Add passkey" });
+  }
+
+  /** Renders the page and opens the "Add security key" dialog. */
+  async function openAddSecurityKeyDialog(): Promise<HTMLElement> {
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(securityKeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
+    });
+    fireEvent.click(within(securityKeyRow()).getByRole("button", { name: "Add" }));
+    return screen.findByRole("dialog", { name: "Add security key" });
+  }
+
   /** Opens the "Add passkey" dialog, fills the required name, and submits it - shared setup
    * for the add-passkey error-code tests below, which only differ in what the mocked API/
    * ceremony call rejects with. */
   async function openAddPasskeyDialogAndSubmit(label = "MacBook Touch ID") {
-    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Add" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add passkey" });
+    const dialog = await openAddPasskeyDialog();
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: label } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    return dialog;
+  }
+
+  /** Security-key mirror of `openAddPasskeyDialogAndSubmit`. */
+  async function openAddSecurityKeyDialogAndSubmit(label = "YubiKey 5C") {
+    const dialog = await openAddSecurityKeyDialog();
     fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: label } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
     return dialog;
@@ -2447,13 +2336,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     mockStartRegistration.mockResolvedValueOnce(FAKE_REGISTRATION_RESPONSE);
     mockFinishWebauthnRegistration.mockResolvedValueOnce({ ok: true, id: "cred-1", backupCodes: [] });
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
-
-    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Add" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add passkey" });
+    const dialog = await openAddPasskeyDialog();
     expect(within(dialog).getByRole("button", { name: "Add" }).hasAttribute("disabled")).toBe(true);
 
     fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "  MacBook Touch ID  " } });
@@ -2487,14 +2370,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     const codes = Array.from({ length: BACKUP_RECOVERY_CODE_COUNT }, (_, i) => `NEW-CODE-${i}`);
     mockFinishWebauthnRegistration.mockResolvedValueOnce({ ok: true, id: "cred-1", backupCodes: codes });
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
-    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Add" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add passkey" });
-    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "MacBook Touch ID" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    const dialog = await openAddPasskeyDialogAndSubmit();
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Passkey added\./);
@@ -2537,13 +2413,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     mockStartRegistration.mockResolvedValueOnce(FAKE_REGISTRATION_RESPONSE);
     mockFinishWebauthnRegistration.mockResolvedValueOnce({ ok: true, id: "cred-2", backupCodes: [] });
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(securityKeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
-
-    fireEvent.click(within(securityKeyRow()).getByRole("button", { name: "Add" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add security key" });
+    const dialog = await openAddSecurityKeyDialog();
     expect(within(dialog).getByLabelText("Name").getAttribute("placeholder")).toBe("e.g. YubiKey 5C");
     fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "YubiKey 5C" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
@@ -2573,14 +2443,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     const codes = Array.from({ length: BACKUP_RECOVERY_CODE_COUNT }, (_, i) => `NEW-CODE-${i}`);
     mockFinishWebauthnRegistration.mockResolvedValueOnce({ ok: true, id: "cred-2", backupCodes: codes });
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(securityKeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
-    fireEvent.click(within(securityKeyRow()).getByRole("button", { name: "Add" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add security key" });
-    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "YubiKey 5C" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    const dialog = await openAddSecurityKeyDialogAndSubmit();
 
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Security key added\./);
@@ -2601,14 +2464,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockBeginWebauthnRegistration.mockRejectedValueOnce(new ApiError(403, "webauthn_disabled", "webauthn_disabled"));
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(securityKeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
-    fireEvent.click(within(securityKeyRow()).getByRole("button", { name: "Add" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add security key" });
-    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "YubiKey 5C" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    const dialog = await openAddSecurityKeyDialogAndSubmit();
 
     await waitFor(() => {
       expect(
@@ -2627,14 +2483,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     });
     mockStartRegistration.mockRejectedValueOnce(cancelled);
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(securityKeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
-    fireEvent.click(within(securityKeyRow()).getByRole("button", { name: "Add" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add security key" });
-    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "YubiKey 5C" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    const dialog = await openAddSecurityKeyDialogAndSubmit();
 
     await waitFor(() => {
       expect(within(dialog).getByText("Setup was cancelled.")).toBeTruthy();
@@ -2645,12 +2494,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
   it("Cancel dismisses the Add passkey dialog without registering", async () => {
     mockLoadedAccount({ ...baseAccount, webauthn_enabled: true });
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
-    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Add" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add passkey" });
+    const dialog = await openAddPasskeyDialog();
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -2660,12 +2504,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
   it("Cancel dismisses the Add security key dialog without registering", async () => {
     mockLoadedAccount({ ...baseAccount, webauthn_enabled: true });
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(securityKeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
-    fireEvent.click(within(securityKeyRow()).getByRole("button", { name: "Add" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add security key" });
+    const dialog = await openAddSecurityKeyDialog();
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -2676,14 +2515,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     mockLoadedAccount({ ...baseAccount, webauthn_enabled: true });
     mockBeginWebauthnRegistration.mockImplementationOnce(() => new Promise(() => {}));
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
-    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Add" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add passkey" });
-    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "MacBook Touch ID" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    const dialog = await openAddPasskeyDialogAndSubmit();
     await waitFor(() => {
       expect(within(dialog).getByRole("button", { name: "Cancel" }).hasAttribute("disabled")).toBe(true);
     });
@@ -2697,14 +2529,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     mockLoadedAccount({ ...baseAccount, webauthn_enabled: true });
     mockBeginWebauthnRegistration.mockImplementationOnce(() => new Promise(() => {}));
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(securityKeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
-    fireEvent.click(within(securityKeyRow()).getByRole("button", { name: "Add" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add security key" });
-    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "YubiKey 5C" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    const dialog = await openAddSecurityKeyDialogAndSubmit();
     await waitFor(() => {
       expect(within(dialog).getByRole("button", { name: "Cancel" }).hasAttribute("disabled")).toBe(true);
     });
@@ -2719,10 +2544,6 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockBeginWebauthnRegistration.mockRejectedValueOnce(new ApiError(403, "webauthn_disabled", "webauthn_disabled"));
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
     const dialog = await openAddPasskeyDialogAndSubmit();
 
     await waitFor(() => {
@@ -2740,10 +2561,6 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockBeginWebauthnRegistration.mockRejectedValueOnce(new ApiError(400, "no_local_password", "no_local_password"));
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
     const dialog = await openAddPasskeyDialogAndSubmit();
 
     await waitFor(() => {
@@ -2758,10 +2575,6 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     mockStartRegistration.mockResolvedValueOnce(FAKE_REGISTRATION_RESPONSE);
     mockFinishWebauthnRegistration.mockRejectedValueOnce(new ApiError(400, "challenge_expired", "challenge_expired"));
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
     const dialog = await openAddPasskeyDialogAndSubmit();
 
     await waitFor(() => {
@@ -2776,10 +2589,6 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     mockStartRegistration.mockResolvedValueOnce(FAKE_REGISTRATION_RESPONSE);
     mockFinishWebauthnRegistration.mockRejectedValueOnce(new ApiError(400, "verification_failed", "verification_failed"));
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
     const dialog = await openAddPasskeyDialogAndSubmit();
 
     await waitFor(() => {
@@ -2798,10 +2607,6 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     });
     mockStartRegistration.mockRejectedValueOnce(cancelled);
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
     const dialog = await openAddPasskeyDialogAndSubmit();
 
     await waitFor(() => {
@@ -2815,10 +2620,6 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     mockBeginWebauthnRegistration.mockResolvedValueOnce({ options: FAKE_REGISTRATION_OPTIONS });
     mockStartRegistration.mockRejectedValueOnce(new Error("authenticator not supported"));
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
     const dialog = await openAddPasskeyDialogAndSubmit();
 
     await waitFor(() => {
@@ -2834,10 +2635,6 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     // branch, same fallback text as any other non-Error rejection.
     mockStartRegistration.mockRejectedValueOnce(new DOMException("aborted"));
 
-    renderWithToast(<AccountPage />);
-    await waitFor(() => {
-      expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
-    });
     const dialog = await openAddPasskeyDialogAndSubmit();
 
     await waitFor(() => {
