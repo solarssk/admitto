@@ -58,17 +58,22 @@ function rejectInvalidJwt(c: Context, reason: string): Response {
   return htmlForbidden(c, INVALID_CF_ACCESS_MESSAGE);
 }
 
+type CfAccessJwtIdentity = {
+  config: CfAccessConfig;
+  provider: IdentityProvider;
+  subject: string;
+  payload: JWTPayload;
+  claims: ExternalIdentityClaims;
+};
+
 /** Resolve the local user only through the configured direct OIDC identity binding. */
 async function resolveCfAccessPrincipal(
   c: Context,
   prisma: PrismaClient,
-  config: CfAccessConfig,
-  provider: IdentityProvider,
-  subject: string,
-  payload: JWTPayload,
-  claims: ExternalIdentityClaims,
+  identity: CfAccessJwtIdentity,
   path: string,
 ): Promise<{ userId: string } | { response: Response }> {
+  const { config, provider, subject, payload, claims } = identity;
   try {
     const resolved = await resolveCfAccessIdentityFromValidatedJwt(prisma, {
       config,
@@ -116,11 +121,7 @@ async function handleCfAccessToken(
     const resolution = await resolveCfAccessPrincipal(
       c,
       prisma,
-      config,
-      provider,
-      subject,
-      payload,
-      claims,
+      { config, provider, subject, payload, claims },
       path,
     );
     if ("response" in resolution) {

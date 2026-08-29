@@ -117,7 +117,7 @@ describe("TimeInput", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
-    expect(screen.getByRole("dialog", { name: "Choose time" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Choose time" })).toBeTruthy();
 
     fireEvent.click(within(screen.getByLabelText("Hour")).getByRole("button", { name: "06" }));
     fireEvent.click(within(screen.getByLabelText("Minute")).getByRole("button", { name: "30" }));
@@ -154,7 +154,7 @@ describe("TimeInput", () => {
   it("keeps the picker closed while the operator focuses the field to type manually", () => {
     render(<TimeInput label="Event hours start" value="" onChange={vi.fn()} />);
     fireEvent.focus(screen.getByLabelText("Event hours start"));
-    expect(screen.queryByRole("dialog", { name: "Choose time" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Choose time" })).toBeNull();
   });
 
   it("flags unparseable or out-of-range text without replacing the saved value", () => {
@@ -175,12 +175,12 @@ describe("TimeInput", () => {
     fireEvent.change(input, { target: { value: "1845" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onChange).toHaveBeenLastCalledWith("18:45");
-    expect(screen.queryByRole("dialog", { name: "Choose time" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Choose time" })).toBeNull();
 
     fireEvent.keyDown(input, { key: "ArrowDown" });
-    expect(screen.getByRole("dialog", { name: "Choose time" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Choose time" })).toBeTruthy();
     fireEvent.keyDown(input, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "Choose time" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Choose time" })).toBeNull();
   });
 
   it("prefers an explicit error over its normal hint", () => {
@@ -222,7 +222,7 @@ describe("TimeInput", () => {
     render(<><TimeInput label="Event hours start" value="" onChange={vi.fn()} /><button type="button">Elsewhere</button></>);
     fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
     fireEvent.pointerDown(screen.getByRole("button", { name: "Elsewhere" }));
-    expect(screen.queryByRole("dialog", { name: "Choose time" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Choose time" })).toBeNull();
   });
 
   it("does not reopen when the click that follows an outside pointerdown lands on the icon", () => {
@@ -239,10 +239,10 @@ describe("TimeInput", () => {
       fireEvent.pointerDown(screen.getByRole("button", { name: "Elsewhere" }));
       fireEvent.click(pickerButton);
 
-      expect(screen.queryByRole("dialog", { name: "Choose time" })).toBeNull();
+      expect(screen.queryByRole("group", { name: "Choose time" })).toBeNull();
       act(() => vi.runAllTimers());
       fireEvent.click(pickerButton);
-      expect(screen.getByRole("dialog", { name: "Choose time" })).toBeTruthy();
+      expect(screen.getByRole("group", { name: "Choose time" })).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }
@@ -264,7 +264,7 @@ describe("TimeInput", () => {
     render(<TimeInput ariaLabel="Start time" value="" onChange={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
 
-    const dialog = screen.getByRole("dialog", { name: "Choose time" });
+    const dialog = screen.getByRole("group", { name: "Choose time" });
     expect(dialog.className).not.toContain("time-input__picker--above");
     expect(dialog.style.position).toBe("fixed");
     expect(dialog.style.left).toBe("50px");
@@ -281,7 +281,7 @@ describe("TimeInput", () => {
     render(<TimeInput ariaLabel="Start time" value="" onChange={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
 
-    const dialog = screen.getByRole("dialog", { name: "Choose time" });
+    const dialog = screen.getByRole("group", { name: "Choose time" });
     expect(dialog.className).toContain("time-input__picker--above");
   });
 
@@ -296,7 +296,7 @@ describe("TimeInput", () => {
     render(<TimeInput ariaLabel="Start time" value="" onChange={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
 
-    const dialog = screen.getByRole("dialog", { name: "Choose time" });
+    const dialog = screen.getByRole("group", { name: "Choose time" });
     // Would overflow past 1024 (900 + 200 = 1100) if left-anchored at the field's own left edge -
     // clamped to stay within the viewport instead of opening off to the right of it.
     expect(Number.parseFloat(dialog.style.left)).toBeLessThanOrEqual(1024 - 8 - 200);
@@ -313,7 +313,7 @@ describe("TimeInput", () => {
     render(<TimeInput ariaLabel="Start time" value="" onChange={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Open time picker" }));
 
-    const dialog = screen.getByRole("dialog", { name: "Choose time" });
+    const dialog = screen.getByRole("group", { name: "Choose time" });
     expect(dialog.style.maxHeight).toBe("96px");
     expect(dialog.style.overflowY).toBe("auto");
   });

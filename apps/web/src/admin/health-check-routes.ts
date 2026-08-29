@@ -117,7 +117,7 @@ export function resolveHealthCommit(
   opts: ResolveHealthCommitOpts = {},
 ): string {
   const meta = readAdminBuildMeta(opts.adminDistRoot);
-  if (meta && meta.commit !== "unknown") return meta.commit;
+  if (meta?.commit && meta.commit !== "unknown") return meta.commit;
 
   const raw = env.GIT_COMMIT?.trim();
   if (raw) return raw.slice(0, 7);
