@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
-import { Button, Notice, useToast } from "@admitto/ui";
+import { Button, Input, Notice, useToast } from "@admitto/ui";
 import { fetchSystemLogs } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { SystemLogEntryDto } from "../api/types.js";
@@ -396,16 +396,15 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
     <div className="system-log-panel">
       <div className="system-log-panel__toolbar">
         <div className="system-log-panel__field system-log-panel__field--search">
-          <input
+          <Input
             ref={searchInputRef}
             id="system-log-search"
             name="system-log-search"
-            type="text"
-            className="at-input"
             aria-label="Search message text"
             placeholder="Search message text…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
+            icon={<i className="ti ti-search" aria-hidden="true" />}
           />
           {searchInput.length > 0 && (
             <button

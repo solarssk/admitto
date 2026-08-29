@@ -2,25 +2,9 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useDropdownMenu } from "../../src/components/useDropdownMenu.js";
+import { mockVisualViewport } from "./panelPlacementMocks.js";
 
 afterEach(cleanup);
-
-function mockVisualViewport(
-  width: number,
-  getHeight: () => number,
-  getOffsetTop: () => number = () => 0,
-  getOffsetLeft: () => number = () => 0,
-): VisualViewport {
-  const viewport = new EventTarget();
-  Object.defineProperties(viewport, {
-    width: { value: width },
-    height: { get: getHeight },
-    offsetTop: { get: getOffsetTop },
-    offsetLeft: { get: getOffsetLeft },
-  });
-  vi.stubGlobal("visualViewport", viewport);
-  return viewport as VisualViewport;
-}
 
 // jsdom doesn't implement ResizeObserver - same mock shape as MapPicker.test.tsx's own, letting
 // a test fire the callback manually via .trigger() to simulate the panel's content shrinking.
