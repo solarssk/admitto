@@ -138,9 +138,11 @@ this is not "tests go unanalyzed", it's Sonar's own documented, intentional scop
 **`.sonarcloud.properties` under Automatic Analysis (the GitHub App mode, no CI scanner step) does
 not support wildcard patterns** — `sonar.test.inclusions=**/*.test.ts` or `sonar.tests=packages/*/test`
 are silently ignored, not an error. List every workspace's `test/` directory as a literal,
-comma-separated path instead (this repo keeps 100% of test files under a dedicated `test/`
-directory per workspace, never co-located next to source, so `sonar.tests` alone covers everything
-with no `sonar.test.inclusions` glob needed). Verify empirically after any change here — push, wait
+comma-separated path instead (every `*.test.ts(x)` file lives under a dedicated `test/` directory
+per workspace, never co-located next to source, so `sonar.tests` alone covers those with no
+`sonar.test.inclusions` glob needed) — plus the shell test harnesses `ci.yml` runs outside any
+workspace (`scripts/*.test.sh`, `scripts/fixtures/`), which are easy to forget since they don't
+follow the per-workspace `test/` convention. Verify empirically after any change here — push, wait
 for the SonarCloud re-scan, then re-query the `UTS` qualifier via the API — don't trust the docs'
 description of the property over what the dashboard actually shows for this project.
 
