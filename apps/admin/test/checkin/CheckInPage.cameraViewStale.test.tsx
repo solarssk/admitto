@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
+import { mockCheckInBootstrap } from "./checkInApiMock.js";
 
 // Captures the real onScan callback CameraOverlay wires into CameraScanner
 // (the same one a real camera decode would invoke) so a scan can be
@@ -42,10 +43,6 @@ vi.mock("../../src/hooks/useIsDesktop.js", () => ({
   isDesktopViewport: () => desktopMatch,
 }));
 
-const fetchCheckInHistory = vi.fn();
-const fetchCheckInStats = vi.fn();
-const fetchCheckInOpsConfig = vi.fn();
-const fetchCheckInEvents = vi.fn();
 const submitCheckInScan = vi.fn();
 const lookupCheckInAttendees = vi.fn();
 
@@ -57,33 +54,19 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
 
 vi.mock("../../src/connection/ConnectionStateProvider.js");
 
-vi.mock("../../src/api/client.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
-  fetchTicketTypes: vi.fn().mockResolvedValue([]),
-  fetchCheckInHistory: (...args: unknown[]) => fetchCheckInHistory(...args),
-  fetchCheckInStats: (...args: unknown[]) => fetchCheckInStats(...args),
-  fetchCheckInOpsConfig: (...args: unknown[]) => fetchCheckInOpsConfig(...args),
-  fetchCheckInEvents: (...args: unknown[]) => fetchCheckInEvents(...args),
-  fetchAttendeeCard: vi.fn(),
-  lookupCheckInAttendees: (...args: unknown[]) => lookupCheckInAttendees(...args),
-  submitAttendeeNote: vi.fn(),
-  submitCheckInAdmit: vi.fn(),
-  submitCheckInScan: (...args: unknown[]) => submitCheckInScan(...args),
-  submitItemAction: vi.fn(),
-  undoLastCheckIn: vi.fn(),
-}));
-
-function mockPageBootstrap() {
-  fetchCheckInOpsConfig.mockResolvedValue({
-    require_confirm_on_scan: false,
-    badge_at_entry: true,
-    allow_manual_lookup: true,
-    auto_advance_on_valid: true,
-  });
-  fetchCheckInEvents.mockResolvedValue([{ id: "evt-live", timezone: "UTC" }]);
-  fetchCheckInHistory.mockResolvedValue([]);
-  fetchCheckInStats.mockResolvedValue({ admitted_count: 0, total_count: 1 });
-}
+vi.mock("../../src/api/client.js", async (importOriginal) => {
+  const { buildCheckInApiMock } = await import("./checkInApiMock.js");
+  return {
+    ...buildCheckInApiMock(await importOriginal<typeof import("../../src/api/client.js")>()),
+    fetchAttendeeCard: vi.fn(),
+    lookupCheckInAttendees: (...args: unknown[]) => lookupCheckInAttendees(...args),
+    submitAttendeeNote: vi.fn(),
+    submitCheckInAdmit: vi.fn(),
+    submitCheckInScan: (...args: unknown[]) => submitCheckInScan(...args),
+    submitItemAction: vi.fn(),
+    undoLastCheckIn: vi.fn(),
+  };
+});
 
 function renderPage() {
   return render(
@@ -123,7 +106,7 @@ describe("check-in card/scanResult — mobile camera view no longer inherits sta
   // CheckInPage.tsx), so every test here closes it first to reach the
   // scan-bar view before exercising the open/close transition itself.
   it("opening the mobile camera clears an attendee card left showing from before it was turned on", async () => {
-    mockPageBootstrap();
+    mockCheckInBootstrap();
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Exit camera mode" }));
 
@@ -150,7 +133,7 @@ describe("check-in card/scanResult — mobile camera view no longer inherits sta
   });
 
   it("closing the mobile camera after a scan clears the card, so the scan-bar view doesn't inherit it", async () => {
-    mockPageBootstrap();
+    mockCheckInBootstrap();
     renderPage();
     await screen.findByLabelText("Camera check-in");
     await waitFor(() => expect(capturedOnScan).toBeTypeOf("function"));
@@ -178,7 +161,7 @@ describe("check-in card/scanResult — mobile camera view no longer inherits sta
   });
 
   it("a desktop↔mobile breakpoint crossing while the camera stays on clears the surface it swapped away from (code review)", async () => {
-    mockPageBootstrap();
+    mockCheckInBootstrap();
     renderPage();
     // Starts on the mobile overlay (camera defaults on on mobile).
     await screen.findByLabelText("Camera check-in");

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
+import { mockCheckInBootstrap } from "./checkInApiMock.js";
 
 // Captures the real onTrackChange callback CameraOverlay/CkInlineCamera wire
 // into CameraScanner, so a torch-capable (or torch-less) track can be
@@ -30,11 +31,6 @@ function mockTrack(torch: boolean) {
   } as unknown as MediaStreamTrack;
 }
 
-const fetchCheckInHistory = vi.fn();
-const fetchCheckInStats = vi.fn();
-const fetchCheckInOpsConfig = vi.fn();
-const fetchCheckInEvents = vi.fn();
-
 vi.mock("../../src/hooks/useEventStream.js");
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
@@ -43,33 +39,19 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
 
 vi.mock("../../src/connection/ConnectionStateProvider.js");
 
-vi.mock("../../src/api/client.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
-  fetchTicketTypes: vi.fn().mockResolvedValue([]),
-  fetchCheckInHistory: (...args: unknown[]) => fetchCheckInHistory(...args),
-  fetchCheckInStats: (...args: unknown[]) => fetchCheckInStats(...args),
-  fetchCheckInOpsConfig: (...args: unknown[]) => fetchCheckInOpsConfig(...args),
-  fetchCheckInEvents: (...args: unknown[]) => fetchCheckInEvents(...args),
-  fetchAttendeeCard: vi.fn(),
-  lookupCheckInAttendees: vi.fn(),
-  submitAttendeeNote: vi.fn(),
-  submitCheckInAdmit: vi.fn(),
-  submitCheckInScan: vi.fn(),
-  submitItemAction: vi.fn(),
-  undoLastCheckIn: vi.fn(),
-}));
-
-function mockPageBootstrap() {
-  fetchCheckInOpsConfig.mockResolvedValue({
-    require_confirm_on_scan: false,
-    badge_at_entry: true,
-    allow_manual_lookup: true,
-    auto_advance_on_valid: true,
-  });
-  fetchCheckInEvents.mockResolvedValue([{ id: "evt-live", timezone: "UTC" }]);
-  fetchCheckInHistory.mockResolvedValue([]);
-  fetchCheckInStats.mockResolvedValue({ admitted_count: 0, total_count: 1 });
-}
+vi.mock("../../src/api/client.js", async (importOriginal) => {
+  const { buildCheckInApiMock } = await import("./checkInApiMock.js");
+  return {
+    ...buildCheckInApiMock(await importOriginal<typeof import("../../src/api/client.js")>()),
+    fetchAttendeeCard: vi.fn(),
+    lookupCheckInAttendees: vi.fn(),
+    submitAttendeeNote: vi.fn(),
+    submitCheckInAdmit: vi.fn(),
+    submitCheckInScan: vi.fn(),
+    submitItemAction: vi.fn(),
+    undoLastCheckIn: vi.fn(),
+  };
+});
 
 function renderPage() {
   return render(
@@ -92,7 +74,7 @@ afterEach(() => {
 
 describe("check-in camera torch toggle — mobile overlay", () => {
   it("stays hidden until the active track reports the torch capability, then toggles it", async () => {
-    mockPageBootstrap();
+    mockCheckInBootstrap();
     renderPage();
     await screen.findByLabelText("Camera check-in");
 
@@ -111,7 +93,7 @@ describe("check-in camera torch toggle — mobile overlay", () => {
   });
 
   it("does not render the torch button for a track that doesn't support it (most phones/laptops)", async () => {
-    mockPageBootstrap();
+    mockCheckInBootstrap();
     renderPage();
     await screen.findByLabelText("Camera check-in");
 
@@ -126,7 +108,7 @@ describe("check-in camera torch toggle — mobile overlay", () => {
 describe("check-in camera torch toggle — desktop operator action bar", () => {
   it("appears next to the mute toggle only once the camera is on and reports torch support", async () => {
     desktopMatch = true;
-    mockPageBootstrap();
+    mockCheckInBootstrap();
     renderPage();
 
     // Desktop starts with the camera off (operatorCamera inits to

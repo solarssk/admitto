@@ -30,9 +30,17 @@ export default defineConfig({
     // AttendeesPage.{sort,mailStatusFilter,pageSize,search}.test.tsx are byte-for-byte
     // identical (bar one file's extra `act` import) from the top of the file through
     // renderPage() - same shared-setup treatment as the AttendeeDetailPage project above.
-    // AttendeesPage's other 6 *.test.tsx files (archived, bulkSelection, exportAndSend,
-    // exportMenu, load, mailGate) each genuinely diverge somewhere in that span and correctly
-    // keep their own local setup, not included here.
+    // mailGate and exportMenu each only needed one extra api/client.js function (respectively
+    // fetchEventMailSettings, exportAttendees) made controllable on top of the shared shape -
+    // attendeesPageSetup.tsx now exports both as configurable vi.fn() handles, so these two
+    // files no longer need their own local vi.mock() at all and join this project too. This
+    // also sidesteps a real failure mode found earlier: registering the SAME module path both
+    // in setupFiles and again locally (even to layer in one extra override) broke
+    // importOriginal() in the local factory - a single registration with configurable handles
+    // has no such layering to get wrong. AttendeesPage's remaining 4 files (archived,
+    // bulkSelection, exportAndSend, load) each genuinely diverge somewhere else in the shared
+    // span (archived_at handling, a `sendEventBulk`/`bulkResendTickets` assertion, distinct
+    // fixture rows) and correctly keep their own local setup.
     projects: [
       {
         extends: true,
@@ -48,7 +56,9 @@ export default defineConfig({
         extends: true,
         test: {
           name: "attendees-page-shared-setup",
-          include: ["test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search}.test.tsx"],
+          include: [
+            "test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search,mailGate,exportMenu}.test.tsx",
+          ],
           setupFiles: ["./test/attendees/attendeesPageSetup.tsx"],
         },
       },
@@ -59,7 +69,7 @@ export default defineConfig({
           include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
           exclude: [
             "test/attendees/AttendeeDetailPage.{statusTones,resend,profileEdit,mailGate,deleteAttendee,revokeCheckIn,copyTicketLink,archived}.test.tsx",
-            "test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search}.test.tsx",
+            "test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search,mailGate,exportMenu}.test.tsx",
           ],
         },
       },

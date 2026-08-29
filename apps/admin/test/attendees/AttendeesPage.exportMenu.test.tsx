@@ -1,92 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
-import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
-import type { AttendeeRowDto } from "../../src/api/types.js";
-
-const fetchEventAttendees = vi.fn();
-const exportAttendees = vi.fn();
-
-const sampleRow: AttendeeRowDto = {
-  id: "att-1",
-  name: "Jane Doe",
-  email: "jane@example.com",
-  company: "Acme",
-  department: null,
-  ticket_type: "VIP",
-  status: "registered",
-  check_in_status: "not_admitted",
-  admitted_at: null,
-  updated_at: "2026-06-01T10:00:00.000Z",
-  last_mail_status: "sent",
-  rsvp_status: "confirmed",
-};
-
-vi.mock("../../src/connection/ConnectionStateProvider.js");
-
-vi.mock("../../src/api/client.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
-  fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
-  fetchTicketTypes: vi.fn().mockResolvedValue([]),
-  fetchEventItems: vi.fn().mockResolvedValue([]),
-  fetchEventTemplates: vi.fn().mockResolvedValue([]),
-  fetchEventMailSettings: vi.fn().mockResolvedValue({
-    eventId: "evt-1",
-    organizationId: "org-1",
-    isProduction: false,
-    hasEventOverride: false,
-    fields: { provider: { value: "smtp", source: "organization", locked: false } },
-  }),
-  exportAttendees: (...args: unknown[]) => exportAttendees(...args),
-  bulkResendTickets: vi.fn(),
-  sendEventBulk: vi.fn(),
-  updateAttendee: vi.fn(),
-}));
-
-vi.mock("react-router", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router")>();
-  return {
-    ...actual,
-    useOutletContext: () => ({
-      event: {
-        id: "evt-1",
-        title: "Demo",
-        timezone: "UTC",
-        date: "2026-07-01",
-        location: null,
-        attendee_count: 1,
-        archived_at: null,
-      },
-    }),
-  };
-});
-
-function renderPage() {
-  return renderWithToast(
-    <MemoryRouter initialEntries={["/admin/events/evt-1/attendees"]}>
-      <Routes>
-        <Route path="/admin/events/:eventId/attendees" element={<AttendeesPage />} />
-      </Routes>
-    </MemoryRouter>,
-  );
-}
-
-beforeEach(() => {
-  mockMatchMedia(true);
-});
-
-afterEach(() => {
-  cleanup();
-  vi.clearAllMocks();
-  vi.unstubAllGlobals();
-});
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { exportAttendees, fetchEventAttendees, makeRow, renderPage } from "./attendeesPageSetup.js";
 
 describe("AttendeesPage export menu (#354)", () => {
   it("opens the Export menu with 3 items; clicking one exports the matching format and closes the menu", async () => {
-    fetchEventAttendees.mockResolvedValue({ items: [sampleRow], total: 1, page: 1, pageSize: 25 });
-    exportAttendees.mockResolvedValue(undefined);
+    fetchEventAttendees.mockResolvedValue({ items: [makeRow("att-1", "Jane Doe")], total: 1, page: 1, pageSize: 25 });
 
     renderPage();
 
@@ -110,7 +29,7 @@ describe("AttendeesPage export menu (#354)", () => {
   });
 
   it("closes the menu on outside click and on Escape", async () => {
-    fetchEventAttendees.mockResolvedValue({ items: [sampleRow], total: 1, page: 1, pageSize: 25 });
+    fetchEventAttendees.mockResolvedValue({ items: [makeRow("att-1", "Jane Doe")], total: 1, page: 1, pageSize: 25 });
 
     renderPage();
 
@@ -132,7 +51,7 @@ describe("AttendeesPage export menu (#354)", () => {
   });
 
   it("moves focus between menu items with ArrowDown/ArrowUp/Home/End (WAI-ARIA menu pattern)", async () => {
-    fetchEventAttendees.mockResolvedValue({ items: [sampleRow], total: 1, page: 1, pageSize: 25 });
+    fetchEventAttendees.mockResolvedValue({ items: [makeRow("att-1", "Jane Doe")], total: 1, page: 1, pageSize: 25 });
 
     renderPage();
 

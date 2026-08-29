@@ -6,6 +6,8 @@ import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 
 export const fetchEventAttendees = vi.fn();
+export const fetchEventMailSettings = vi.fn();
+export const exportAttendees = vi.fn();
 export const reportApiError = vi.fn();
 
 export function makeRow(id: string, name: string): AttendeeRowDto {
@@ -25,6 +27,24 @@ export function makeRow(id: string, name: string): AttendeeRowDto {
   };
 }
 
+/** Shape returned by fetchEventMailSettings - `provider: null` means neither the event nor its
+ * org has a transport configured. */
+export function mailSettings(provider: string | null): {
+  eventId: string;
+  organizationId: string;
+  isProduction: boolean;
+  hasEventOverride: boolean;
+  fields: { provider: { value: string | null; source: string; locked: boolean } };
+} {
+  return {
+    eventId: "evt-1",
+    organizationId: "org-1",
+    isProduction: false,
+    hasEventOverride: false,
+    fields: { provider: { value: provider, source: "organization", locked: false } },
+  };
+}
+
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => ({ reportApiError }),
 }));
@@ -35,14 +55,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   fetchTicketTypes: vi.fn().mockResolvedValue([]),
   fetchEventItems: vi.fn().mockResolvedValue([]),
   fetchEventTemplates: vi.fn().mockResolvedValue([]),
-  fetchEventMailSettings: vi.fn().mockResolvedValue({
-    eventId: "evt-1",
-    organizationId: "org-1",
-    isProduction: false,
-    hasEventOverride: false,
-    fields: { provider: { value: "smtp", source: "organization", locked: false } },
-  }),
-  exportAttendees: vi.fn(),
+  fetchEventMailSettings: (...args: unknown[]) => fetchEventMailSettings(...args),
+  exportAttendees: (...args: unknown[]) => exportAttendees(...args),
   bulkResendTickets: vi.fn(),
   sendEventBulk: vi.fn(),
   updateAttendee: vi.fn(),
@@ -78,6 +92,8 @@ export function renderPage() {
 
 beforeEach(() => {
   mockMatchMedia(true);
+  fetchEventMailSettings.mockResolvedValue(mailSettings("smtp"));
+  exportAttendees.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
