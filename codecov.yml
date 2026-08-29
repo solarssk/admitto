@@ -1,0 +1,29 @@
+# Formalizes coverage status checks that Codecov already computes today with undocumented
+# defaults (a `codecov/patch` commit status already appears on every PR - see the LCOV upload
+# steps in .github/workflows/ci.yml's test-web/test-admin/test-rest jobs, which already use the
+# existing CODECOV_TOKEN secret; no new secret needed for this file). Adds an explicit
+# `codecov/project` status and a PR comment, and makes the thresholds visible and intentional
+# instead of implicit. See docs/dev/sonarcloud-ci-coverage-migration.md "Alternative / complement"
+# for why this exists alongside (not instead of) the SonarCloud CI-based analysis migration plan.
+#
+# Neither status below is in `main`'s required branch-protection checks yet, so nothing here blocks
+# a merge on its own - these are real pass/fail signals on the PR and commit, not yet an enforced
+# gate. Turning this into an actual merge gate is a deliberate follow-up (Settings > Branches, add
+# `codecov/project` and/or `codecov/patch` to required status checks), left to whoever owns that
+# decision rather than defaulted here.
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false
