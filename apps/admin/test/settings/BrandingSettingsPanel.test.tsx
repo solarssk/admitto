@@ -146,6 +146,13 @@ function adminFontPicker(): HTMLElement {
   return document.querySelector('[aria-labelledby="branding-font-label"]') as HTMLElement;
 }
 
+/** Clicks a font family's Remove button in the library grid, then confirms the removal in the
+ * follow-up dialog. */
+function removeFamily(name: string): void {
+  fireEvent.click(within(adminFontPicker()).getByRole("button", { name: `Remove ${name}` }));
+  fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
+}
+
 /** Uploads and saves a new custom font family via the mocked FontFamilyModal's default
  * "Acme Sans" result, waiting for it to land in the library tile-grid - shared setup for the
  * provisional-upload cleanup tests below. */
@@ -828,8 +835,7 @@ describe("BrandingSettingsPanel - font picker", () => {
   it("deleting the active custom family falls back to the default built-in font", async () => {
     await renderWithTheme(ACME_SANS_THEME);
 
-    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Acme Sans" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
+    removeFamily("Acme Sans");
 
     expect(screen.queryByText("Acme Sans")).toBeNull();
     expect(adminFontValue()).toBe("Admitto Sans");
@@ -848,8 +854,7 @@ describe("BrandingSettingsPanel - font picker", () => {
 
     // "Acme Sans" is still listed (with its own Remove button) in the shared library grid, even
     // though it's Ticket page's override, not Admin panel's active pick.
-    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Acme Sans" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
+    removeFamily("Acme Sans");
 
     // ticket_font_family_name clears back to undefined ("Same as Admin panel"), not some
     // hardcoded default.
@@ -866,8 +871,7 @@ describe("BrandingSettingsPanel - font picker", () => {
       ],
     });
 
-    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Other Family" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
+    removeFamily("Other Family");
 
     expect(screen.queryByText("Other Family")).toBeNull();
     expect(adminFontValue()).toBe("Active Family");
@@ -914,8 +918,7 @@ describe("BrandingSettingsPanel - font picker", () => {
       ],
     });
 
-    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Acme Sans" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
+    removeFamily("Acme Sans");
 
     expect(screen.queryByText("Acme Sans")).toBeNull();
     expect(adminFontValue()).toBe("Manrope");
@@ -1182,8 +1185,7 @@ describe("BrandingSettingsPanel - save and reset", () => {
 
     await uploadAcmeSansFamily();
 
-    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Acme Sans" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
+    removeFamily("Acme Sans");
 
     await waitFor(() => {
       expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/abc123.woff2");
@@ -1253,8 +1255,7 @@ describe("BrandingSettingsPanel - save and reset", () => {
     await waitFor(() => expect(within(adminFontPicker()).getByText("Https Only")).toBeTruthy());
 
     mockDeleteUploadedFile.mockClear();
-    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Acme Sans" }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
+    removeFamily("Acme Sans");
 
     await waitFor(() => {
       expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/abc123.woff2");
