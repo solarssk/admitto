@@ -942,22 +942,12 @@ describe("POST /api/account/mfa/reset — step-up for MFA-required roles", () =>
   it("returns 401 invalid_webauthn for an assertion signed by the wrong authenticator, and audits the failed attempt", async () => {
     await registerConfirmedWebauthnCredential(prisma, WEBAUTHN_RP, adminUserId);
     const wrongAuthenticator = createVirtualAuthenticator();
-    const beginRes = await app.request("/api/account/mfa/webauthn/assert/begin", {
-      method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: "{}",
-    });
-    const { options } = (await beginRes.json()) as { options: { challenge: string } };
-    const response = wrongAuthenticator.authenticate({
-      challenge: options.challenge,
-      rpID: WEBAUTHN_RP.rpID,
-      origin: WEBAUTHN_RP.origin,
-    });
+    const stepUpProof = await webauthnStepUpProof(adminCookie, wrongAuthenticator);
 
     const res = await app.request("/api/account/mfa/reset", {
       method: "POST",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ password: ADMIN_PASSWORD, webauthn: { response } }),
+      body: JSON.stringify({ password: ADMIN_PASSWORD, ...stepUpProof }),
     });
     expect(res.status).toBe(401);
     expect(((await res.json()) as { code: string }).code).toBe("invalid_webauthn");
@@ -1410,22 +1400,12 @@ describe("DELETE /api/account/mfa/totp — step-up for MFA-required roles", () =
     });
     await registerConfirmedWebauthnCredential(prisma, WEBAUTHN_RP, adminUserId);
     const wrongAuthenticator = createVirtualAuthenticator();
-    const beginRes = await app.request("/api/account/mfa/webauthn/assert/begin", {
-      method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: "{}",
-    });
-    const { options } = (await beginRes.json()) as { options: { challenge: string } };
-    const response = wrongAuthenticator.authenticate({
-      challenge: options.challenge,
-      rpID: WEBAUTHN_RP.rpID,
-      origin: WEBAUTHN_RP.origin,
-    });
+    const stepUpProof = await webauthnStepUpProof(adminCookie, wrongAuthenticator);
 
     const res = await app.request("/api/account/mfa/totp", {
       method: "DELETE",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ webauthn: { response } }),
+      body: JSON.stringify(stepUpProof),
     });
     expect(res.status).toBe(401);
     expect(((await res.json()) as { code: string }).code).toBe("invalid_webauthn");
@@ -2179,22 +2159,12 @@ describe("DELETE /api/account/external-identity — step-up for MFA-required rol
       data: { provider_id: PROVIDER_ID, subject: "self-unlink-stepup-webauthn-wrong-subject", user_id: adminUserId },
     });
     const wrongAuthenticator = createVirtualAuthenticator();
-    const beginRes = await app.request("/api/account/mfa/webauthn/assert/begin", {
-      method: "POST",
-      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: "{}",
-    });
-    const { options } = (await beginRes.json()) as { options: { challenge: string } };
-    const response = wrongAuthenticator.authenticate({
-      challenge: options.challenge,
-      rpID: WEBAUTHN_RP.rpID,
-      origin: WEBAUTHN_RP.origin,
-    });
+    const stepUpProof = await webauthnStepUpProof(adminCookie, wrongAuthenticator);
 
     const res = await app.request("/api/account/external-identity", {
       method: "DELETE",
       headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
-      body: JSON.stringify({ new_password: NEW_PASSWORD, webauthn: { response } }),
+      body: JSON.stringify({ new_password: NEW_PASSWORD, ...stepUpProof }),
     });
     expect(res.status).toBe(401);
     expect(((await res.json()) as { code: string }).code).toBe("invalid_webauthn");

@@ -5,9 +5,8 @@ import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword, SETTING_BRANDING_THEME } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
-import { createApp } from "../../src/app.js";
-import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
+import { buildTestApp } from "../helpers/build-test-app.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -24,7 +23,7 @@ const EMAIL_OP = "staff-foundation-op@example.com";
 const PASSWORD = "staff-pass-123";
 
 let prisma: PrismaClient;
-let app: ReturnType<typeof createApp>;
+let app: ReturnType<typeof buildTestApp>;
 let superId: string;
 let adminId: string;
 let opId: string;
@@ -102,20 +101,20 @@ async function seed(client: PrismaClient) {
 beforeAll(async () => {
   prisma = createTestPrismaClient();
   await seed(prisma);
-  app = createApp({
-    prisma,
-    checkinToken: CHECKIN_TOKEN,
-    allowCheckinBearer: true,
-    baseUrl: "https://tickets.example.com",
-    rateLimitStore: createRateLimitStore(),
-    skipCheckinBootValidation: true,
-    adminDistRoot,
-  });
+  app = buildTestApp({ prisma, checkinToken: CHECKIN_TOKEN, adminDistRoot });
 });
 
 afterAll(async () => {
   await prisma?.$disconnect();
 });
+
+/** Re-fetches the saved admin theme as superId - shared setup for the "PUT then re-GET" tests
+ * below, which only differ in what they assert about the persisted response. */
+async function getAdminTheme(): Promise<Response> {
+  return app.request("/api/admin/theme", {
+    headers: { Cookie: await sessionCookieFor(prisma, superId) },
+  });
+}
 
 describe("GET /api/admin/me", () => {
   it("returns profile for org admin session", async () => {
@@ -415,9 +414,7 @@ describe("PUT /api/admin/theme", () => {
     expect(body.theme.primary).toBe("#aabbcc");
     expect(body.vars["--primary"]).toBe("#aabbcc");
 
-    const getRes = await app.request("/api/admin/theme", {
-      headers: { Cookie: await sessionCookieFor(prisma, superId) },
-    });
+    const getRes = await getAdminTheme();
     const persisted = (await getRes.json()) as { theme: { primary?: string } };
     expect(persisted.theme.primary).toBe("#aabbcc");
   });
@@ -641,9 +638,7 @@ describe("PUT /api/admin/theme", () => {
     expect(body.vars["--primary"]).toBe("#066fd1");
     expect(body.vars["--font-sans"]).toBe('"Evil", Inter, system-ui, sans-serif');
 
-    const getRes = await app.request("/api/admin/theme", {
-      headers: { Cookie: await sessionCookieFor(prisma, superId) },
-    });
+    const getRes = await getAdminTheme();
     const persisted = (await getRes.json()) as {
       theme: { primary?: string; font_family_name?: string; custom_font_families?: unknown[] };
     };
@@ -667,9 +662,7 @@ describe("PUT /api/admin/theme", () => {
     expect(body.theme.font_family_name).toBe("Admin Sans");
     expect(body.theme.ticket_font_family_name).toBe("Ticket Sans");
 
-    const getRes = await app.request("/api/admin/theme", {
-      headers: { Cookie: await sessionCookieFor(prisma, superId) },
-    });
+    const getRes = await getAdminTheme();
     const persisted = (await getRes.json()) as {
       theme: { font_family_name?: string; ticket_font_family_name?: string };
     };
@@ -712,9 +705,7 @@ describe("PUT /api/admin/theme", () => {
     expect(body.theme.font_family_name).toBe("Brand Sans");
     expect(body.vars["--font-sans"]).toBe('"Brand Sans", Inter, system-ui, sans-serif');
 
-    const getRes = await app.request("/api/admin/theme", {
-      headers: { Cookie: await sessionCookieFor(prisma, superId) },
-    });
+    const getRes = await getAdminTheme();
     const persisted = (await getRes.json()) as {
       theme: { font_family_name?: string; custom_font_families?: Array<{ name: string; variants: unknown[] }> };
     };

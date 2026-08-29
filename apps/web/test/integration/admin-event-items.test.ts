@@ -5,9 +5,8 @@ import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
-import { createApp } from "../../src/app.js";
-import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
+import { buildTestApp } from "../helpers/build-test-app.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -27,7 +26,7 @@ const ITEM_RACE_B = "ei_race_b_a";
 const ATT_EI = "att-admin-ei-1";
 
 let prisma: PrismaClient;
-let app: ReturnType<typeof createApp>;
+let app: ReturnType<typeof buildTestApp>;
 let adminId: string;
 let opId: string;
 let adminCookie = "";
@@ -178,15 +177,7 @@ async function getBadgeItemId(eventId: string): Promise<string> {
 beforeAll(async () => {
   prisma = createTestPrismaClient();
   await seed(prisma);
-  app = createApp({
-    prisma,
-    checkinToken: "admin-event-items-checkin-token-32!",
-    allowCheckinBearer: true,
-    baseUrl: "https://tickets.example.com",
-    rateLimitStore: createRateLimitStore(),
-    skipCheckinBootValidation: true,
-    adminDistRoot,
-  });
+  app = buildTestApp({ prisma, checkinToken: "admin-event-items-checkin-token-32!", adminDistRoot });
   adminCookie = await sessionCookieFor(prisma, adminId);
   opCookie = await sessionCookieFor(prisma, opId);
 });
