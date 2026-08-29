@@ -44,6 +44,13 @@ export default defineConfig({
     // bulkSelection, exportAndSend) each genuinely diverge somewhere else in the shared span
     // (archived_at handling, a `sendEventBulk`/`bulkResendTickets` assertion, distinct fixture
     // rows) and correctly keep their own local setup.
+    // CheckInPage.{manualEntryTiming,cameraViewStale}.test.tsx are the only two CheckInPage
+    // files that both need the full checkInApiMock.js shape AND lookupCheckInAttendees/
+    // submitCheckInScan controllable on top of it - genuinely the same test environment (same
+    // page, same four mocked modules, same controllable functions), unlike CheckInPage's other
+    // files which each mock a different subset. torch.test.tsx does NOT join this project - it
+    // doesn't need either of those two functions controllable, so its own vi.mock() body is
+    // shorter and would only diverge from this shared one, not match it.
     projects: [
       {
         extends: true,
@@ -68,11 +75,20 @@ export default defineConfig({
       {
         extends: true,
         test: {
+          name: "checkin-page-scan-shared-setup",
+          include: ["test/checkin/CheckInPage.{manualEntryTiming,cameraViewStale}.test.tsx"],
+          setupFiles: ["./test/checkin/checkInScanApiSetup.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
           name: "default",
           include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
           exclude: [
             "test/attendees/AttendeeDetailPage.{statusTones,resend,profileEdit,mailGate,deleteAttendee,revokeCheckIn,copyTicketLink,archived}.test.tsx",
             "test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search,mailGate,exportMenu,load}.test.tsx",
+            "test/checkin/CheckInPage.{manualEntryTiming,cameraViewStale}.test.tsx",
           ],
         },
       },

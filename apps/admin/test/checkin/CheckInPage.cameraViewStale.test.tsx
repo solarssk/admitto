@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
 import { mockCheckInBootstrap } from "./checkInApiMock.js";
+import { submitCheckInScan } from "./checkInScanApiSetup.js";
 
 // Captures the real onScan callback CameraOverlay wires into CameraScanner
 // (the same one a real camera decode would invoke) so a scan can be
@@ -42,31 +43,6 @@ vi.mock("../../src/hooks/useIsDesktop.js", () => ({
     ),
   isDesktopViewport: () => desktopMatch,
 }));
-
-const submitCheckInScan = vi.fn();
-const lookupCheckInAttendees = vi.fn();
-
-vi.mock("../../src/hooks/useEventStream.js");
-
-vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ deviceLabel: "desk-1", assignments: [] }),
-}));
-
-vi.mock("../../src/connection/ConnectionStateProvider.js");
-
-vi.mock("../../src/api/client.js", async (importOriginal) => {
-  const { buildCheckInApiMock } = await import("./checkInApiMock.js");
-  return {
-    ...buildCheckInApiMock(await importOriginal<typeof import("../../src/api/client.js")>()),
-    fetchAttendeeCard: vi.fn(),
-    lookupCheckInAttendees: (...args: unknown[]) => lookupCheckInAttendees(...args),
-    submitAttendeeNote: vi.fn(),
-    submitCheckInAdmit: vi.fn(),
-    submitCheckInScan: (...args: unknown[]) => submitCheckInScan(...args),
-    submitItemAction: vi.fn(),
-    undoLastCheckIn: vi.fn(),
-  };
-});
 
 function renderPage() {
   return render(
