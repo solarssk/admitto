@@ -11,20 +11,16 @@ on:
         required: true
         default: refs/heads/main
 
-permissions:
-  # contents: write — release upload/create only; job-wide is standard for publish workflows.
-  contents: write
-  packages: write
-  security-events: write
-  id-token: write
-  attestations: write
-
 jobs:
   # Resolves the release tag/publish decision and the final image tags/labels once, so both
   # matrix legs below and the merge job agree on exactly the same values instead of each
   # recomputing (and risking drift between) the same logic.
+  # Permissions are granted per job below (SonarCloud githubactions:S8233), not at the workflow
+  # level - each job below gets only what it actually uses, not the union of every job's needs.
   prepare:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       publish: ${{ steps.release.outputs.publish }}
       tag: ${{ steps.release.outputs.tag }}
@@ -98,6 +94,10 @@ jobs:
             runner: ubuntu-24.04-arm
             suffix: arm64
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write # docker login + push-by-digest to ghcr.io
+      security-events: write # SARIF upload to the Security tab
     env:
       SCAN_IMAGE: ghcr.io/${{ github.repository }}:ci-scan-${{ matrix.suffix }}
     steps:
@@ -217,6 +217,11 @@ jobs:
     needs: [prepare, build-and-scan]
     if: needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create/update the GitHub Release and upload SBOM assets to it
+      packages: write # docker login + push the merged multi-arch manifest to ghcr.io
+      id-token: write # OIDC token for signing the provenance attestation
+      attestations: write # write the provenance attestation
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -253,6 +258,10 @@ jobs:
         id: manifest
         working-directory: /tmp/digests
         run: |
+          # shellcheck disable=SC2046 # word-splitting is intentional here: each of these two
+          # substitutions must expand into several separate "-t <tag>" / "<image>@sha256:<hash>"
+          # arguments, not one combined string - quoting them would break the command by passing
+          # everything as a single argument instead of the several imagetools create actually needs.
           docker buildx imagetools create \
             --metadata-file /tmp/manifest-metadata.json \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
