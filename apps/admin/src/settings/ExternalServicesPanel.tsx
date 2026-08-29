@@ -554,13 +554,9 @@ export function ExternalServicesPanel() {
               variant="warning"
               role="alert"
               action={
-                <button
-                  type="button"
-                  className="link-btn"
-                  onClick={() => navigate("/admin/settings?tab=general")}
-                >
+                <Button type="button" variant="secondary" onClick={() => navigate("/admin/settings?tab=general")}>
                   Open Support contact
-                </button>
+                </Button>
               }
             >
               {WEATHER_METNO_CONTACT_MSG}

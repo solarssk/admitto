@@ -1777,3 +1777,15 @@ describe("DeviceLabelStep operator errors", () => {
     });
   });
 });
+
+describe("DeviceLabelStep detected-device hint", () => {
+  it("prefills the field and shows a hint when the browser's user agent yields a device name", () => {
+    vi.stubGlobal("navigator", {
+      userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+      maxTouchPoints: 0,
+    });
+    renderWithToast(<DeviceLabelStep onSaved={vi.fn()} onSkip={vi.fn()} />);
+    expect((screen.getByLabelText("Device label") as HTMLInputElement).value).toBe("iPhone (iOS 17.0)");
+    expect(screen.getByText("Detected from your browser. Edit if needed.")).toBeTruthy();
+  });
+});
