@@ -7,6 +7,7 @@ import { setMailSettings } from "@admitto/mailer-config";
 import type { ExportPayload } from "@admitto/mailer";
 import { hashToken, generateToken } from "@admitto/tickets";
 import { resetDb } from "./resetDb.js";
+import { seedOrgAndEvent } from "./seedOrgAndEvent.js";
 import {
   resendTicketEmail,
   retryDelivery,
@@ -23,24 +24,14 @@ const TEST_DEPS = { exportSink: (p: ExportPayload) => exported.push(p) };
 
 beforeAll(async () => {
   await resetDb();
-  await prisma.organization.create({
-    data: { id: "org-mail", name: "Mail Org", slug: "mail-org" },
+  await seedOrgAndEvent(prisma, {
+    orgId: "org-mail",
+    orgName: "Mail Org",
+    orgSlug: "mail-org",
+    eventId: EVENT_ID,
+    eventTitle: "Mail Event",
+    eventSlug: "mail-event",
   });
-  await prisma.event.create({
-    data: {
-      id: EVENT_ID,
-      organization_id: "org-mail",
-      title: "Mail Event",
-      slug: "mail-event",
-      date: new Date("2026-09-01"),
-    },
-  });
-
-  await setMailSettings(
-    { scopeType: "organization", scopeId: "org-mail" },
-    { provider: "export_only", fromAddress: "events@example.com" },
-    prisma,
-  );
 
   await prisma.attendee.create({
     data: {

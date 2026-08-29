@@ -4,12 +4,13 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { MailConfigError, resolveMailConfig, setMailSettings } from "@admitto/mailer-config";
+import { MailConfigError, resolveMailConfig } from "@admitto/mailer-config";
 import { generateToken } from "@admitto/tickets";
 import { createMailer, sendBatch } from "@admitto/mailer";
 import { resolveAttendeeMailLinks } from "../src/links.js";
 import { cancelBulkSendBatch, claimInitialDelivery, drainPendingDeliveries, sendTicketEmails } from "../src/index.js";
 import { resetDb } from "./resetDb.js";
+import { seedOrgAndEvent } from "./seedOrgAndEvent.js";
 
 vi.mock("@admitto/mailer", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@admitto/mailer")>();
@@ -45,23 +46,14 @@ const DRAIN_OPTIONS = { eventId: EVENT_ID, baseUrl: "https://tickets.example.com
 
 beforeAll(async () => {
   await resetDb();
-  await prisma.organization.create({
-    data: { id: "org-drain-b", name: "Drain Branches Org", slug: "drain-branches-org" },
+  await seedOrgAndEvent(prisma, {
+    orgId: "org-drain-b",
+    orgName: "Drain Branches Org",
+    orgSlug: "drain-branches-org",
+    eventId: EVENT_ID,
+    eventTitle: "Drain Branches",
+    eventSlug: "drain-branches",
   });
-  await prisma.event.create({
-    data: {
-      id: EVENT_ID,
-      organization_id: "org-drain-b",
-      title: "Drain Branches",
-      slug: "drain-branches",
-      date: new Date("2026-09-01"),
-    },
-  });
-  await setMailSettings(
-    { scopeType: "organization", scopeId: "org-drain-b" },
-    { provider: "export_only", fromAddress: "events@example.com" },
-    prisma,
-  );
   await prisma.attendee.create({
     data: {
       id: "att-drain-branch",
