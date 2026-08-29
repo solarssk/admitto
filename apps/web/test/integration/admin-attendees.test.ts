@@ -5,7 +5,6 @@ import { Hono } from "hono";
 import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
-import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { setMailSettings } from "@admitto/mailer-config";
 import { generateToken, getAttendeeCard, hashToken } from "@admitto/tickets";
@@ -26,6 +25,9 @@ import { WALLET_MESSAGE_SEND_BODY_MAX_BYTES } from "../../src/admin/wallet-messa
 import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { sessionCookieFor } from "../helpers/session-cookie.js";
+import { seedOrgAndEvent, createAdminAndOp } from "../helpers/seed-org-and-event.js";
+import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -114,52 +116,10 @@ async function seed(client: PrismaClient) {
 
   const password_hash = await hashPassword(PASSWORD);
 
-  await client.organization.createMany({
-    data: [
-      { id: ORG_A, name: "Org A", slug: "admin-att-a" },
-      { id: ORG_B, name: "Org B", slug: "admin-att-b" },
-    ],
-  });
+  await Promise.all([seedOrgAndEvent(client, { id: ORG_A, name: "Org A", slug: "admin-att-a" }, { id: EVENT_A, title: "Event A", slug: "event-admin-att-a", date: "2026-10-01", organizationId: ORG_A }), seedOrgAndEvent(client, { id: ORG_B, name: "Org B", slug: "admin-att-b" }, { id: EVENT_B, title: "Event B", slug: "event-admin-att-b", date: "2026-11-01", organizationId: ORG_B })]);
 
-  await client.event.createMany({
-    data: [
-      {
-        id: EVENT_A,
-        title: "Event A",
-        slug: "event-admin-att-a",
-        date: new Date("2026-10-01"),
-        organization_id: ORG_A,
-      },
-      {
-        id: EVENT_B,
-        title: "Event B",
-        slug: "event-admin-att-b",
-        date: new Date("2026-11-01"),
-        organization_id: ORG_B,
-      },
-    ],
-  });
-
-  const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
-  const opUser = await client.user.create({ data: { email: EMAIL_OP, password_hash } });
-  adminId = adminUser.id;
-  opId = opUser.id;
-
-  await client.roleAssignment.createMany({
-    data: [
-      { user_id: adminId, role: "admin", scope_type: "organization", scope_id: ORG_A },
-      { user_id: opId, role: "operator", scope_type: "event", scope_id: EVENT_A },
-    ],
-  });
-
-  await client.userMfaMethod.create({
-    data: {
-      user_id: adminId,
-      type: "totp",
-      secret_enc: encryptTotpSecret(generateTotpSecret()),
-      confirmed_at: new Date(),
-    },
-  });
+  ({ adminId, opId } = await createAdminAndOp(client, { adminEmail: EMAIL_ADMIN, opEmail: EMAIL_OP, passwordHash: password_hash, orgId: ORG_A, eventId: EVENT_A }));
+  await enrollConfirmedTotp(client, adminId);
 
   await setMailSettings(
     { scopeType: "organization", scopeId: ORG_A },
@@ -245,11 +205,6 @@ async function seed(client: PrismaClient) {
   });
 }
 
-async function sessionCookieFor(userId: string): Promise<string> {
-  const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
-  return `admitto_session=${rawToken}`;
-}
-
 /** Runs `fn` with a session cookie for a temporary superadmin, reassigning the sole existing
  * superadmin role row to it for the duration (RoleAssignment_single_superadmin_key allows only
  * one superadmin instance-wide) and restoring the prior assignment afterwards - same pattern as
@@ -270,14 +225,7 @@ async function withSuperadminCookie(fn: (cookie: string) => Promise<void>): Prom
   });
   const superUser = await prisma.user.create({ data: { email: superEmail, password_hash } });
   try {
-    await prisma.userMfaMethod.create({
-      data: {
-        user_id: superUser.id,
-        type: "totp",
-        secret_enc: encryptTotpSecret(generateTotpSecret()),
-        confirmed_at: new Date(),
-      },
-    });
+    await enrollConfirmedTotp(prisma, superUser.id);
     if (priorSuper) {
       await prisma.roleAssignment.update({
         where: { id: priorSuper.id },
@@ -288,7 +236,7 @@ async function withSuperadminCookie(fn: (cookie: string) => Promise<void>): Prom
         data: { user_id: superUser.id, role: "superadmin", scope_type: "instance", scope_id: null },
       });
     }
-    await fn(await sessionCookieFor(superUser.id));
+    await fn(await sessionCookieFor(prisma, superUser.id));
   } finally {
     if (priorSuper) {
       await prisma.roleAssignment.update({
@@ -337,8 +285,8 @@ beforeAll(async () => {
     adminDistRoot,
     mailDeliveryDeps: { exportSink: (p) => { exported.push(p); } },
   });
-  adminCookie = await sessionCookieFor(adminId);
-  opCookie = await sessionCookieFor(opId);
+  adminCookie = await sessionCookieFor(prisma, adminId);
+  opCookie = await sessionCookieFor(prisma, opId);
 });
 
 afterAll(async () => {
@@ -6741,14 +6689,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
           data: { user_id: superUser.id, role: "superadmin", scope_type: "instance", scope_id: null },
         });
       }
-      await prisma.userMfaMethod.create({
-        data: {
-          user_id: superUser.id,
-          type: "totp",
-          secret_enc: encryptTotpSecret(generateTotpSecret()),
-          confirmed_at: new Date(),
-        },
-      });
+      await enrollConfirmedTotp(prisma, superUser.id);
       const superSession = await createSession(prisma, {
         userId: superUser.id,
         stage: SESSION_STAGE.FULL,

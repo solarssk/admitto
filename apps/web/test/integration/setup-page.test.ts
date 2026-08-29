@@ -6,6 +6,7 @@ import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword, PASSWORD_MIN_LENGTH, SETTING_SETUP_COMPLETE } from "@admitto/auth";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { sessionCookie } from "../helpers/session-cookie.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const FIXTURE_EMAIL = "setup-gate@example.com";
@@ -59,12 +60,6 @@ afterAll(async () => {
 });
 
 const sameOrigin = { Origin: "http://localhost" };
-
-function sessionCookie(res: Response): string | undefined {
-  const setCookie = res.headers.getSetCookie?.() ?? [];
-  const line = setCookie.find((c) => c.startsWith("admitto_session="));
-  return line?.split(";")[0];
-}
 
 describe("GET /setup", () => {
   beforeEach(async () => {
