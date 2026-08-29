@@ -295,6 +295,19 @@ describe("LogoUploadZone", () => {
     expect(screen.queryByAltText("Organisation logo preview")).toBeNull();
   });
 
+  it("starts the web-link field empty, not the uploads path, when an uploaded file is the current value", () => {
+    renderWithToast(
+      <LogoUploadZone
+        value="/uploads/default/a1b2c3d4-e5f6-7890-abcd-ef1234567890.png"
+        onChange={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Use a web link instead" }));
+    expect(
+      (screen.getByLabelText("Web link to your logo (must start with https://)") as HTMLInputElement).value,
+    ).toBe("");
+  });
+
   it("shows external URL toggle as a button", () => {
     renderWithToast(<LogoUploadZone value="" onChange={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "Use a web link instead" }));

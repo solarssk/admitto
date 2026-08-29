@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { PercentCrop } from "react-image-crop";
-import { Button, Notice, useToast } from "@admitto/ui";
+import { Button, Input, Notice, useToast } from "@admitto/ui";
 import type { LogoCropMeta } from "../api/types.js";
 import { uploadFile, deleteUploadedFile } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -612,26 +612,21 @@ export function LogoUploadZone({
         </Button>
       </div>
       {showUrlInput && (
-        <div className="at-field">
-          <label className="at-label" htmlFor={urlInputId}>
-            Web link to your logo (must start with https://)
-          </label>
-          <input
-            id={urlInputId}
-            className="at-input"
-            type="url"
-            value={isUploadedFile ? "" : value}
-            disabled={disabled}
-            onChange={(e) => {
-              lastUploadedUrlRef.current = null;
-              setSourceOriginal(null);
-              onChange(e.target.value);
-              onSourceChange?.({ originalUrl: null, crop: null });
-              onDirty?.();
-            }}
-            placeholder="https://cdn.example.com/logo.png"
-          />
-        </div>
+        <Input
+          id={urlInputId}
+          label="Web link to your logo (must start with https://)"
+          type="url"
+          value={isUploadedFile ? "" : value}
+          disabled={disabled}
+          onChange={(e) => {
+            lastUploadedUrlRef.current = null;
+            setSourceOriginal(null);
+            onChange(e.target.value);
+            onSourceChange?.({ originalUrl: null, crop: null });
+            onDirty?.();
+          }}
+          placeholder="https://cdn.example.com/logo.png"
+        />
       )}
       {cropSession ? (
         <CropImageModal

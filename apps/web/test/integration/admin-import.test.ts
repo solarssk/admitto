@@ -5,14 +5,16 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient, Prisma } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
-import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
+import { hashPassword } from "@admitto/auth";
 import { drainImportJobs } from "@admitto/import";
 import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
 import { buildXlsxBuffer } from "../../src/admin/xlsx-to-csv.js";
 import { createApp } from "../../src/app.js";
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
+import { sessionCookieFor } from "../helpers/session-cookie.js";
+import { seedOrgAndEvent, createAdminAndOp } from "../helpers/seed-org-and-event.js";
+import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -151,51 +153,10 @@ async function seed(client: PrismaClient) {
 
   const password_hash = await hashPassword(PASSWORD);
 
-  await client.organization.createMany({
-    data: [
-      { id: ORG_A, name: "Org Import A", slug: "admin-import-a" },
-      { id: ORG_B, name: "Org Import B", slug: "admin-import-b" },
-    ],
-  });
+  await Promise.all([seedOrgAndEvent(client, { id: ORG_A, name: "Org Import A", slug: "admin-import-a" }, { id: EVENT_A, title: "Import Event A", slug: "event-admin-import-a", date: "2026-10-01", organizationId: ORG_A }), seedOrgAndEvent(client, { id: ORG_B, name: "Org Import B", slug: "admin-import-b" }, { id: EVENT_B, title: "Import Event B", slug: "event-admin-import-b", date: "2026-11-01", organizationId: ORG_B })]);
 
-  await client.event.createMany({
-    data: [
-      {
-        id: EVENT_A,
-        title: "Import Event A",
-        slug: "event-admin-import-a",
-        date: new Date("2026-10-01"),
-        organization_id: ORG_A,
-      },
-      {
-        id: EVENT_B,
-        title: "Import Event B",
-        slug: "event-admin-import-b",
-        date: new Date("2026-11-01"),
-        organization_id: ORG_B,
-      },
-    ],
-  });
-
-  const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
-  const opUser = await client.user.create({ data: { email: EMAIL_OP, password_hash } });
-  adminId = adminUser.id;
-
-  await client.roleAssignment.createMany({
-    data: [
-      { user_id: adminId, role: "admin", scope_type: "organization", scope_id: ORG_A },
-      { user_id: opUser.id, role: "operator", scope_type: "event", scope_id: EVENT_A },
-    ],
-  });
-
-  await client.userMfaMethod.create({
-    data: {
-      user_id: adminId,
-      type: "totp",
-      secret_enc: encryptTotpSecret(generateTotpSecret()),
-      confirmed_at: new Date(),
-    },
-  });
+  ({ adminId } = await createAdminAndOp(client, { adminEmail: EMAIL_ADMIN, opEmail: EMAIL_OP, passwordHash: password_hash, orgId: ORG_A, eventId: EVENT_A }));
+  await enrollConfirmedTotp(client, adminId);
 
   await client.attendee.create({
     data: {
@@ -231,10 +192,6 @@ async function seed(client: PrismaClient) {
 }
 
 /** Create a full-session cookie string for the given user id. */
-async function sessionCookieFor(userId: string): Promise<string> {
-  const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
-  return `admitto_session=${rawToken}`;
-}
 
 beforeAll(async () => {
   uploadDir = await mkdtemp(join(tmpdir(), "admitto-import-"));
@@ -254,9 +211,9 @@ beforeAll(async () => {
     skipCheckinBootValidation: true,
     adminDistRoot,
   });
-  adminCookie = await sessionCookieFor(adminId);
+  adminCookie = await sessionCookieFor(prisma, adminId);
   const opUser = await prisma.user.findUniqueOrThrow({ where: { email: EMAIL_OP } });
-  opCookie = await sessionCookieFor(opUser.id);
+  opCookie = await sessionCookieFor(prisma, opUser.id);
 });
 
 beforeEach(async () => {
@@ -1192,15 +1149,8 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
           },
         });
       }
-      await prisma.userMfaMethod.create({
-        data: {
-          user_id: superUser.id,
-          type: "totp",
-          secret_enc: encryptTotpSecret(generateTotpSecret()),
-          confirmed_at: new Date(),
-        },
-      });
-      const superCookie = await sessionCookieFor(superUser.id);
+      await enrollConfirmedTotp(prisma, superUser.id);
+      const superCookie = await sessionCookieFor(prisma, superUser.id);
       const current = await prisma.attendee.count({
         where: { event_id: EVENT_A, status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },
       });

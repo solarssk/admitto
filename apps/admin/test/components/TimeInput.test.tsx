@@ -3,30 +3,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { TimeInput } from "../../src/components/TimeInput.js";
 import { setPreferredTimeFormat } from "../../src/utils/locale-store.js";
+import { mockPlacementLayout } from "./panelPlacementMocks.js";
 
 afterEach(() => {
   setPreferredTimeFormat(undefined);
   cleanup();
   vi.restoreAllMocks();
 });
-
-/** Stubs the layout reads TimeInput's placement effect uses - jsdom has no real layout engine,
- * so getBoundingClientRect/scrollHeight/offsetWidth/innerWidth/innerHeight all default to 0.
- * Same technique as DatePicker.test.tsx's own helper - both pickers share the fixed-position,
- * viewport-flip placement pattern. */
-function mockPlacementLayout(opts: {
-  rect: { top: number; bottom: number; left: number };
-  panelHeight: number;
-  panelWidth: number;
-  innerWidth: number;
-  innerHeight: number;
-}) {
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(opts.rect as DOMRect);
-  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(opts.panelHeight);
-  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(opts.panelWidth);
-  vi.spyOn(window, "innerWidth", "get").mockReturnValue(opts.innerWidth);
-  vi.spyOn(window, "innerHeight", "get").mockReturnValue(opts.innerHeight);
-}
 
 describe("TimeInput", () => {
   it("stores 24-hour typed input as canonical HH:MM on blur", () => {

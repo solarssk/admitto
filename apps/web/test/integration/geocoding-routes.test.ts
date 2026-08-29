@@ -3,12 +3,13 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { hashPassword } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import type { GeocodingProvider, GeocodingResult } from "@admitto/location";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 import { GeocodingProviderError } from "../../src/maps/nominatim-provider.js";
+import { sessionCookieFor } from "../helpers/session-cookie.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -87,11 +88,6 @@ async function seed(client: PrismaClient) {
   return { adminId: adminUser.id, opId: opUser.id };
 }
 
-async function sessionCookieFor(userId: string): Promise<string> {
-  const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
-  return `admitto_session=${rawToken}`;
-}
-
 beforeAll(async () => {
   // isGeocodingContactConfigured() resolves the *instance* organization (INSTANCE_ORG_ID env,
   // else org_default, else first by id) — not "whichever org the caller belongs to". Pin it to
@@ -114,8 +110,8 @@ beforeAll(async () => {
     geocodingProvider: fakeProvider,
   });
 
-  adminCookie = await sessionCookieFor(adminId);
-  opCookie = await sessionCookieFor(opId);
+  adminCookie = await sessionCookieFor(prisma, adminId);
+  opCookie = await sessionCookieFor(prisma, opId);
 });
 
 afterAll(async () => {
