@@ -2,7 +2,7 @@
 // This import must come first, before every other import in the file - see
 // attendeeDetailPageMocks.ts's own doc comment for why.
 import { mockAttendeeDetailForm, mockAuthProvider, mockModule, mockOutletEvent } from "./attendeeDetailPageMocks.js";
-import { baseAttendeeDetailEvent, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { baseAttendeeDetail, baseAttendeeDetailEvent, mockMatchMedia, renderWithToast } from "../test-utils.js";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -38,25 +38,10 @@ vi.mock("../../src/api/client.js", (importOriginal) =>
 
 function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
   return {
-    id: "att-1",
-    name: "Anna",
-    email: "anna@example.com",
+    ...baseAttendeeDetail,
     company: "Acme",
     department: "Eng",
-    ticket_type: "vip",
-    custom_data: {},
-    status: "registered" as const,
-    admitted_at: null,
     created_at: "2026-01-01T00:00:00.000Z",
-    updated_at: "2026-01-01T00:00:00.000Z",
-    check_in_status: "not_admitted" as const,
-    last_mail_status: null,
-    rsvp_status: "confirmed" as const,
-    rsvp_updated_at: null,
-    rsvp_source: null,
-    deliveries: [],
-    action_log: [],
-    event_items: [],
     ...overrides,
   };
 }

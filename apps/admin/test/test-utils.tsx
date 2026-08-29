@@ -56,6 +56,37 @@ export const baseAttendeeDetailEvent = {
   archived_at: null as string | null,
 };
 
+/** The subset of an attendee-detail response's fields that stayed byte-for-byte identical across
+ * every AttendeeDetailPage.*.test.tsx file's own local `baseDetail(overrides)` helper - a plain,
+ * unremarkable registered attendee. Spread into each file's own `baseDetail()` (e.g.
+ * `{ ...baseAttendeeDetail, company: "Acme", department: "Eng", ...overrides }`) rather than
+ * retyping these 12 fields; each file keeps its own `baseDetail()` wrapper for the fields that
+ * genuinely differ (name, company, admitted_at, check_in_status, ...) and for its own
+ * `overrides` parameter. Same motivation as `baseAttendeeDetailEvent` above - see that fixture's
+ * own doc comment and `attendeeDetailPageMocks.ts`'s "why this shape" note (point 5) for the
+ * measured reason a shared *value*, not just shared *wiring*, is what keeps SonarCloud's
+ * new-code duplication gate passing here. */
+export const baseAttendeeDetail = {
+  id: "att-1",
+  name: "Anna",
+  email: "anna@example.com",
+  company: null as string | null,
+  department: null as string | null,
+  ticket_type: "vip",
+  custom_data: {} as Record<string, unknown>,
+  status: "registered" as const,
+  admitted_at: null as string | null,
+  updated_at: "2026-01-01T00:00:00.000Z",
+  check_in_status: "not_admitted" as const,
+  last_mail_status: null,
+  rsvp_status: "confirmed" as const,
+  rsvp_updated_at: null,
+  rsvp_source: null,
+  deliveries: [] as unknown[],
+  action_log: [] as unknown[],
+  event_items: [] as unknown[],
+};
+
 /** A disabled control's reason now shows via the shared <Tooltip> (packages/ui) - a
  * hover-triggered, portal-rendered bubble (role="tooltip"), not a static title= attribute.
  * Mouse hover, not focus: a `disabled` element is never focusable in a real browser (jsdom's
