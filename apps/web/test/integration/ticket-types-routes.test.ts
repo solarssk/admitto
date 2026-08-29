@@ -3,10 +3,11 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
-import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
-import { createApp } from "../../src/app.js";
-import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { hashPassword } from "@admitto/auth";
+import { buildTestApp } from "../helpers/build-test-app.js";
+import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
+import { createAdminAndOp } from "../helpers/seed-org-and-event.js";
+import { bootSingleOrgFixture } from "../helpers/boot-single-org-fixture.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -20,7 +21,7 @@ const EMAIL_OP = "ticket-types-op@example.com";
 const PASSWORD = "ticket-types-pass-123";
 
 let prisma: PrismaClient;
-let app: ReturnType<typeof createApp>;
+let app: ReturnType<typeof buildTestApp>;
 let adminId: string;
 let opId: string;
 let adminCookie = "";
@@ -63,47 +64,15 @@ async function seed(client: PrismaClient) {
     ],
   });
 
-  const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
-  const opUser = await client.user.create({ data: { email: EMAIL_OP, password_hash } });
-  adminId = adminUser.id;
-  opId = opUser.id;
+  ({ adminId, opId } = await createAdminAndOp(client, { adminEmail: EMAIL_ADMIN, opEmail: EMAIL_OP, passwordHash: password_hash, orgId: ORG_TT, eventId: EVENT_TT }));
 
-  await client.roleAssignment.createMany({
-    data: [
-      { user_id: adminId, role: "admin", scope_type: "organization", scope_id: ORG_TT },
-      { user_id: opId, role: "operator", scope_type: "event", scope_id: EVENT_TT },
-    ],
-  });
-
-  await client.userMfaMethod.create({
-    data: {
-      user_id: adminId,
-      type: "totp",
-      secret_enc: encryptTotpSecret(generateTotpSecret()),
-      confirmed_at: new Date(),
-    },
-  });
-}
-
-async function sessionCookieFor(userId: string): Promise<string> {
-  const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
-  return `admitto_session=${rawToken}`;
+  await enrollConfirmedTotp(client, adminId);
 }
 
 beforeAll(async () => {
   prisma = createTestPrismaClient();
   await seed(prisma);
-  app = createApp({
-    prisma,
-    checkinToken: "ticket-types-checkin-token-32-chr!!",
-    allowCheckinBearer: true,
-    baseUrl: "https://tickets.example.com",
-    rateLimitStore: createRateLimitStore(),
-    skipCheckinBootValidation: true,
-    adminDistRoot,
-  });
-  adminCookie = await sessionCookieFor(adminId);
-  opCookie = await sessionCookieFor(opId);
+  ({ app, adminCookie, opCookie } = await bootSingleOrgFixture({ prisma, adminId, opId, checkinToken: "ticket-types-checkin-token-32-chr!!", adminDistRoot }));
 });
 
 afterAll(async () => {
