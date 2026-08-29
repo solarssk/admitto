@@ -146,6 +146,17 @@ function adminFontPicker(): HTMLElement {
   return document.querySelector('[aria-labelledby="branding-font-label"]') as HTMLElement;
 }
 
+/** Uploads and saves a new custom font family via the mocked FontFamilyModal's default
+ * "Acme Sans" result, waiting for it to land in the library tile-grid - shared setup for the
+ * provisional-upload cleanup tests below. */
+async function uploadAcmeSansFamily(): Promise<void> {
+  fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
+  fireEvent.click(screen.getByText("mock-save-family"));
+  await waitFor(() => {
+    expect(within(adminFontPicker()).getByText("Acme Sans")).toBeTruthy();
+  });
+}
+
 /** The "Font by surface" row controls are SearchableSelects, not tile-grids. Admin panel's is a
  * second control over the same font_family_name field the tile-grid above already drives (so the
  * two always agree); Ticket page's current value is unset ("Same as Admin panel") whenever
@@ -1156,11 +1167,7 @@ describe("BrandingSettingsPanel - save and reset", () => {
   it("replacing a provisional family's variant URL deletes the orphaned upload", async () => {
     await renderWithTheme();
 
-    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
-    fireEvent.click(screen.getByText("mock-save-family"));
-    await waitFor(() => {
-      expect(within(adminFontPicker()).getByText("Acme Sans")).toBeTruthy();
-    });
+    await uploadAcmeSansFamily();
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Edit Acme Sans" }));
     fireEvent.click(screen.getByText("mock-save-family-replaced-url"));
@@ -1173,11 +1180,7 @@ describe("BrandingSettingsPanel - save and reset", () => {
   it("removing a provisional custom family deletes its uploaded font files", async () => {
     await renderWithTheme();
 
-    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
-    fireEvent.click(screen.getByText("mock-save-family"));
-    await waitFor(() => {
-      expect(within(adminFontPicker()).getByText("Acme Sans")).toBeTruthy();
-    });
+    await uploadAcmeSansFamily();
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Acme Sans" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
@@ -1191,11 +1194,7 @@ describe("BrandingSettingsPanel - save and reset", () => {
   it("Reset to saved deletes provisional font uploads that left the draft", async () => {
     await renderWithTheme();
 
-    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
-    fireEvent.click(screen.getByText("mock-save-family"));
-    await waitFor(() => {
-      expect(within(adminFontPicker()).getByText("Acme Sans")).toBeTruthy();
-    });
+    await uploadAcmeSansFamily();
     mockDeleteUploadedFile.mockClear();
 
     fireEvent.click(screen.getByRole("button", { name: "Reset to saved" }));
@@ -1232,11 +1231,7 @@ describe("BrandingSettingsPanel - save and reset", () => {
       expect(within(adminFontPicker()).getByText("Cdn Sans")).toBeTruthy();
     });
 
-    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
-    fireEvent.click(screen.getByText("mock-save-family"));
-    await waitFor(() => {
-      expect(within(adminFontPicker()).getByText("Acme Sans")).toBeTruthy();
-    });
+    await uploadAcmeSansFamily();
     mockDeleteUploadedFile.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Reset to saved" }));
     await waitFor(() => {
@@ -1273,11 +1268,7 @@ describe("BrandingSettingsPanel - save and reset", () => {
     const { unmount } = renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
-    fireEvent.click(screen.getByText("mock-save-family"));
-    await waitFor(() => {
-      expect(within(adminFontPicker()).getByText("Acme Sans")).toBeTruthy();
-    });
+    await uploadAcmeSansFamily();
     mockDeleteUploadedFile.mockClear();
     unmount();
     expect(mockDeleteUploadedFile).toHaveBeenCalledWith("/uploads/default/theme/abc123.woff2");
