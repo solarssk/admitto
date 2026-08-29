@@ -423,6 +423,7 @@ export function TimezoneSelect({
         aria-expanded={open}
         aria-controls={listboxId}
         aria-describedby={hintId}
+        aria-required={required || undefined}
         onClick={() => {
           // `disabled` is enforced by the button attribute — no click handler when disabled.
           if (suppressNextTriggerClickRef.current) {

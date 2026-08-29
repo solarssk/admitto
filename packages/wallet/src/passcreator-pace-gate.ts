@@ -94,7 +94,7 @@ async function ensureConnected(c: PaceRedisClient): Promise<void> {
 
 function warnFailOpen(now: number): void {
   if (now - lastFailOpenWarnAt >= FAIL_OPEN_LOG_INTERVAL_MS) {
-    emitSystemLog("wallet", "warn", "passcreator_pace_gate_redis_unavailable", {});
+    emitSystemLog("wallet", "warn", "passcreator_pace_gate_redis_unavailable", { detail: FAIL_OPEN_WARN });
     lastFailOpenWarnAt = now;
   }
 }

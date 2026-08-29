@@ -121,12 +121,6 @@ export function emptySecretEdits(): SecretEdits {
   };
 }
 
-function optionalEmail(value: string): string | undefined {
-  const t = value.trim();
-  if (!t) return undefined;
-  return t;
-}
-
 function optionalInt(value: string): number | undefined {
   const t = value.trim();
   if (!t) return undefined;
