@@ -1,0 +1,87 @@
+name: E2E check-in smoke
+
+# Not run on push/pull_request on purpose (AGENTS.md "checklist" gate stays untouched) — this is
+# the repo's first browser-level test (apps/admin/e2e, Playwright), and needs a few real runs in
+# actual CI timing/environment before it's trusted as a blocking check. Manual dispatch plus a
+# low-frequency schedule let it prove itself; promote it into ci.yml's build-test once it has been
+# stable for a while.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: read
+
+env:
+  # Same fixed, no-password local convention as ci.yml's other DB-backed jobs — this Postgres
+  # service container is ephemeral and network-unreachable outside this job's own steps.
+  DATABASE_URL: postgresql://admitto@localhost:5432/admitto
+  REDIS_URL: redis://localhost:6379
+  ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  # apps/admin/e2e/seed.ts's own deliberate opt-in, required before it writes anything - this
+  # job's Postgres above is genuinely ephemeral/isolated, so it's safe to set unconditionally here.
+  E2E_SEED_ALLOW_WRITE: "true"
+
+jobs:
+  checkin-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: admitto
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: admitto
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: "24.17.0"
+          cache: "npm"
+      # See ci.yml's lint-and-typecheck job for why these two extra steps exist (supply-chain
+      # hardening: --ignore-scripts, then only the specific scripts this workflow needs).
+      - run: npm ci --ignore-scripts
+      - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
+      - run: npm run db:generate -w @admitto/db
+      - run: npm run build
+      - name: Migrate database
+        run: npm run db:migrate -w @admitto/db
+      # Calls the locally pinned binary directly (apps/admin's own @playwright/test devDependency,
+      # already resolved by npm ci above via package-lock.json) instead of a bare `npx playwright`
+      # - SonarCloud githubactions:S6505/S8543: npx can install an on-demand, unpinned package and
+      # run its lifecycle scripts if one isn't already present locally. This path is always
+      # present after npm ci, so this never triggers any install at all, on-demand or otherwise.
+      - name: Install Playwright browser (chromium)
+        run: node_modules/.bin/playwright install --with-deps chromium
+      - name: Run check-in E2E smoke test
+        run: npm run e2e -w @admitto/admin
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: playwright-report
+          path: |
+            apps/admin/playwright-report/
+            apps/admin/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
