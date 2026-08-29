@@ -43,6 +43,7 @@ Active automated checks in this repository:
 | Semgrep | SAST (JavaScript/TypeScript) | Every PR + merge to `main` + weekly | `.github/workflows/semgrep.yml` |
 | gitleaks | Secret scan (full history) | Every PR | `.github/workflows/ci.yml` (`secret-scan`) |
 | npm audit | Dependency SCA (`--audit-level=high`) | Every PR | `.github/workflows/ci.yml` (`lint-and-typecheck`) |
+| License compliance | Every third-party package's license against an allowlist of standard permissive terms (`scripts/check-licenses.mjs`); report-only for now (`continue-on-error: true`) — one flagged package (`buffers`, no discoverable license text) still needs a decision, see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | Every PR | `.github/workflows/ci.yml` (`lint-and-typecheck`) |
 | Dependabot | npm + GitHub Actions updates | Scheduled | `.github/dependabot.yml` |
 | Docker build smoke | Production `Dockerfile` builds | Every merge to `main` | `.github/workflows/ci.yml` (`docker-build`) |
 | Trivy (report-only) | Container image scan (OS + libraries), SARIF to Security tab | Every merge to `main` | `.github/workflows/ci.yml` (`docker-build`) |
@@ -61,7 +62,7 @@ output) and do not block any pipeline.
 
 **Codecov data:** CI uploads LCOV coverage reports (file paths and hit counts). No secrets, attendee PII, or production credentials are sent. Treat Codecov as development tooling; customer production data stays in customer PostgreSQL.
 
-**PR pipeline:** application build, lint, typecheck, tests with coverage, dependency audit, secret scan, PII guard, migration safety, CodeQL, and Semgrep. Container image build smoke and a report-only Trivy scan run on every merge to `main`; release tags add the blocking Trivy CRITICAL gate, SBOM, and provenance.
+**PR pipeline:** application build, lint, typecheck, tests with coverage, dependency audit, license compliance, secret scan, PII guard, migration safety, CodeQL, and Semgrep. Container image build smoke and a report-only Trivy scan run on every merge to `main`; release tags add the blocking Trivy CRITICAL gate, SBOM, and provenance.
 
 **SAST on PRs vs `main` — decision (2026-07-06), revised (2026-08-29):** Semgrep was kept off PRs (Option B) purely on a CI-speed/marginal-value tradeoff: ~2–3 min added per PR against overlap with CodeQL's `security-extended` rules. That calculus didn't weigh external perception — an enterprise security review of this repo checks whether *every* PR gets dual SAST coverage, not just what lands on `main`. Semgrep (`p/javascript`, `p/typescript`) now also runs on every PR (Option A); CodeQL `security-extended` remains the primary gate, Semgrep the complementary second engine, on PRs and `main` alike.
 
