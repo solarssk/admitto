@@ -15,8 +15,8 @@
   min-width: 0;
   background: var(--surface-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg, 0.75rem);
-  box-shadow: var(--shadow-md, 0 4px 16px rgb(15 23 42 / 8%));
+  border-radius: var(--radius-lg, 8px);
+  box-shadow: var(--shadow-md, 0 4px 12px -2px rgba(15, 23, 42, 0.10));
   overflow: visible;
 }
 
@@ -173,7 +173,7 @@
   max-width: 33.75rem;
   background: var(--surface-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg, 0.75rem);
+  border-radius: var(--radius-lg, 8px);
   padding: 2rem 2.5rem;
   box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
 }
@@ -209,7 +209,7 @@
 }
 
 .setup-wizard__footer--done {
-  border-radius: 0 0 var(--radius-lg, 0.75rem);
+  border-radius: 0 0 var(--radius-lg, 8px);
 }
 
 .setup-wizard__footer-spacer {
@@ -238,7 +238,7 @@
   gap: 0.75rem;
   padding: 0.625rem 0.875rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius, 0.5rem);
+  border-radius: var(--radius, 4px);
   font-size: 0.875rem;
   background: var(--surface-sunken, var(--surface-page));
 }
@@ -316,7 +316,7 @@
   margin: 0.1875rem 0 0;
   font-size: 0.75rem;
   color: var(--text-muted, var(--text-secondary));
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace);
   line-height: 1.45;
   white-space: pre-wrap;
 }
@@ -394,7 +394,7 @@
   margin-top: 1.25rem;
   padding: 1rem;
   border: 1px dashed var(--border);
-  border-radius: var(--radius-md, 0.5rem);
+  border-radius: var(--radius-md, 6px);
   background: var(--surface-page);
 }
 
@@ -525,7 +525,7 @@
   height: var(--control-h, 2.25rem);
   padding: 0 2rem 0 0.75rem;
   border: 1px solid var(--border-strong, var(--border));
-  border-radius: var(--radius, 0.5rem);
+  border-radius: var(--radius, 4px);
   background-color: var(--surface-card, #fff);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
@@ -543,7 +543,7 @@
 .setup-wizard__mail-form .at-select:focus {
   outline: none;
   border-color: var(--border-focus, var(--primary));
-  box-shadow: var(--ring, 0 0 0 3px rgb(6 111 209 / 15%));
+  box-shadow: var(--ring, 0 0 0 0.25rem rgb(6 111 209 / 15%));
 }
 
 .setup-wizard__secret-row {
@@ -560,7 +560,7 @@
   min-height: var(--control-h, 2.25rem);
   padding: 0 0.25rem 0 0.75rem;
   border: 1px solid var(--border-strong, var(--border));
-  border-radius: var(--radius, 0.5rem);
+  border-radius: var(--radius, 4px);
   background: var(--surface-sunken, var(--surface-page));
 }
 

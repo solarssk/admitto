@@ -84,8 +84,10 @@ works; Admitto never signs or hosts pass files itself.
   documentation states poster-style tickets are incompatible with QR/barcode-only entry. Admitto's
   check-in is QR/barcode-based, so this isn't a "not yet" - it's architecturally excluded unless
   the check-in model itself changes.
-- **Samsung Wallet.** Shown as a disabled row in Event Settings → Wallet for layout consistency
-  with Apple/Google. PassCreator has no API support for it today.
+- **Samsung Wallet.** Event Settings → Wallet has a real, saveable Samsung Wallet switch alongside
+  Apple/Google, and Reports' Wallet platform breakdown shows or hides a Samsung slice to match -
+  but PassCreator has no API support for it yet, so no attendee ever actually gets a Samsung pass
+  either way. The switch exists so this is ready to go once that support lands.
 
 ## Related pages
 

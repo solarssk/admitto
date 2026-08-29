@@ -125,7 +125,9 @@ describe("WalletsReportsTab", () => {
       }),
     );
     try {
-      renderWithToast(<WalletsReportsTab eventId="evt-1" />);
+      renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
 
       // useDelayedLoading only flips on after 200ms of continuous loading - before that the
       // component renders nothing (data is still null), so this also proves the delay is real
@@ -149,7 +151,9 @@ describe("WalletsReportsTab", () => {
     fetchEventWalletReports.mockRejectedValueOnce(new ApiError(500, "Internal server problem"));
     fetchEventWalletReports.mockResolvedValueOnce(fixture());
 
-    renderWithToast(<WalletsReportsTab eventId="evt-1" />);
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
 
     await screen.findByText("Could not load wallet report");
     expect(screen.getByText("Internal server problem")).toBeTruthy();
@@ -167,7 +171,9 @@ describe("WalletsReportsTab", () => {
   it("shows a generic message for a non-ApiError failure (e.g. a network error)", async () => {
     fetchEventWalletReports.mockRejectedValueOnce(new TypeError("Failed to fetch"));
 
-    renderWithToast(<WalletsReportsTab eventId="evt-1" />);
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
 
     await screen.findByText("Could not load wallet report");
     expect(screen.getByText("Could not load wallet report.")).toBeTruthy();
@@ -180,7 +186,9 @@ describe("WalletsReportsTab", () => {
     // the source now branches on the normalized code, not the raw status.
     fetchEventWalletReports.mockRejectedValueOnce(new ApiError(403, "forbidden", "forbidden"));
 
-    renderWithToast(<WalletsReportsTab eventId="evt-1" />);
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
 
     await screen.findByText("Could not load wallet report");
     expect(screen.getByText("You do not have access to this event.")).toBeTruthy();
@@ -191,7 +199,9 @@ describe("WalletsReportsTab", () => {
     const data = fixture();
     fetchEventWalletReports.mockResolvedValue(data);
 
-    renderWithToast(<WalletsReportsTab eventId="evt-1" />);
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
     await screen.findByText("Wallet adoption");
 
     // Adoption gauge: [issuedPct, installedPct, voidedPct] - voidedPct (20) is computed by the
@@ -264,7 +274,9 @@ describe("WalletsReportsTab", () => {
       }),
     );
 
-    renderWithToast(<WalletsReportsTab eventId="evt-1" />);
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
     await screen.findByText("Wallet adoption");
 
     const compareCard = cardByTitle("Admission rate by wallet status");
@@ -274,7 +286,9 @@ describe("WalletsReportsTab", () => {
   it("renders the truncation notice when passes_truncated is true, and omits it otherwise", async () => {
     fetchEventWalletReports.mockResolvedValue(fixture({ passes_truncated: true }));
 
-    renderWithToast(<WalletsReportsTab eventId="evt-1" />);
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
     await screen.findByText("Wallet adoption");
 
     const notice = document.querySelector(".wallets-truncated-notice");
@@ -287,7 +301,9 @@ describe("WalletsReportsTab", () => {
   it("shows the CumulativeChart's own empty copy when no passes have been issued yet", async () => {
     fetchEventWalletReports.mockResolvedValue(fixture({ issued_by_day: [] }));
 
-    renderWithToast(<WalletsReportsTab eventId="evt-1" />);
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
     await screen.findByText("Wallet adoption");
 
     const cumulativeCard = cardByTitle("Cumulative passes issued");
@@ -300,7 +316,9 @@ describe("WalletsReportsTab", () => {
       fixture({ time_to_wallet_tap: { average_days: null, buckets: [] } }),
     );
 
-    renderWithToast(<WalletsReportsTab eventId="evt-1" />);
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
     await screen.findByText("Wallet adoption");
 
     const tapCard = cardByTitle("Time to wallet tap");
@@ -310,7 +328,9 @@ describe("WalletsReportsTab", () => {
 
   it("formats chart tooltip/label text with correct singular/plural and rounding", async () => {
     fetchEventWalletReports.mockResolvedValue(fixture());
-    renderWithToast(<WalletsReportsTab eventId="evt-1" />);
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
     await screen.findByText("Wallet adoption");
 
     const [donutOptions] = optionsByType("donut");
@@ -339,6 +359,96 @@ describe("WalletsReportsTab", () => {
     expect(admissionGaugeOptions!.plotOptions.radialBar.dataLabels.value.formatter(75)).toBe("75%");
   });
 
+  it("excludes the Google slice and 'More than one wallet' from the donut and breakdown when Google Wallet is disabled for the event", async () => {
+    fetchEventWalletReports.mockResolvedValue(fixture());
+
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: false, samsung: true, any: true }} />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    const platformCard = cardByTitle("Wallet platform");
+    expect(chartSeries(within(platformCard).getByTestId("apex-chart"))).toEqual([6, 0, 5]);
+    expect(breakdownRows(platformCard)).toEqual([
+      { name: "Apple Wallet", meta: "6 · 40%" },
+      { name: "Samsung Wallet", meta: "0 · 0%" },
+      { name: "No wallet installed", meta: "5 · 33.3%" },
+    ]);
+    expect(within(platformCard).getByText(/picked it up\.$/)).toBeTruthy();
+    expect(within(platformCard).queryByText(/more than one at once/)).toBeNull();
+  });
+
+  it("excludes the Apple slice from the donut and breakdown when Apple Wallet is disabled for the event", async () => {
+    fetchEventWalletReports.mockResolvedValue(fixture());
+
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: false, google: true, samsung: true, any: true }} />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    const platformCard = cardByTitle("Wallet platform");
+    expect(chartSeries(within(platformCard).getByTestId("apex-chart"))).toEqual([3, 0, 5]);
+    expect(breakdownRows(platformCard)).toEqual([
+      { name: "Google Wallet", meta: "3 · 20%" },
+      { name: "Samsung Wallet", meta: "0 · 0%" },
+      { name: "No wallet installed", meta: "5 · 33.3%" },
+    ]);
+  });
+
+  it("keeps the 'More than one wallet' slice and the 'more than one at once' description only when both platforms are enabled", async () => {
+    fetchEventWalletReports.mockResolvedValue(fixture());
+
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    const platformCard = cardByTitle("Wallet platform");
+    expect(within(platformCard).getByText(/more than one at once\.$/)).toBeTruthy();
+    expect(breakdownRows(platformCard).map((r) => r.name)).toContain("More than one wallet");
+  });
+
+  it("excludes the Samsung Wallet slice from the donut and breakdown when Samsung Wallet is disabled for the event", async () => {
+    fetchEventWalletReports.mockResolvedValue(fixture());
+
+    renderWithToast(
+      <WalletsReportsTab
+        eventId="evt-1"
+        walletPlatforms={{ apple: true, google: true, samsung: false, any: true }}
+      />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    const platformCard = cardByTitle("Wallet platform");
+    // Apple, Google, More than one wallet, No wallet installed - no Samsung slice.
+    expect(chartSeries(within(platformCard).getByTestId("apex-chart"))).toEqual([6, 3, 1, 5]);
+    expect(breakdownRows(platformCard).map((r) => r.name)).toEqual([
+      "Apple Wallet",
+      "Google Wallet",
+      "More than one wallet",
+      "No wallet installed",
+    ]);
+  });
+
+  it("does not count Samsung toward 'More than one wallet', which stays Apple+Google only", async () => {
+    fetchEventWalletReports.mockResolvedValue(fixture());
+
+    renderWithToast(
+      <WalletsReportsTab
+        eventId="evt-1"
+        walletPlatforms={{ apple: true, google: false, samsung: true, any: true }}
+      />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    const platformCard = cardByTitle("Wallet platform");
+    expect(breakdownRows(platformCard).map((r) => r.name)).toEqual([
+      "Apple Wallet",
+      "Samsung Wallet",
+      "No wallet installed",
+    ]);
+  });
+
   it("shows the 'No wallet passes yet' EmptyState when nothing has been issued at all", async () => {
     fetchEventWalletReports.mockResolvedValue(
       fixture({
@@ -346,7 +456,9 @@ describe("WalletsReportsTab", () => {
       }),
     );
 
-    renderWithToast(<WalletsReportsTab eventId="evt-1" />);
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
 
     expect(await screen.findByText("No wallet passes yet")).toBeTruthy();
     expect(

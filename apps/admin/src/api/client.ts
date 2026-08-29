@@ -10,6 +10,7 @@ import type {
   CheckInStatsResponse,
   CreateEventBody,
   DeliveryDto,
+  CheckInEventDto,
   EventDto,
   EventSettingsDto,
   EventType,
@@ -539,6 +540,7 @@ export async function patchEvent(
     wallet_api_key: string | null;
     wallet_apple_enabled: boolean;
     wallet_google_enabled: boolean;
+    wallet_samsung_enabled: boolean;
     wallet_field_mapping: Record<string, string> | null;
     location: string | null;
     capacity: number | null;
@@ -716,13 +718,13 @@ export async function exportEventPii(eventId: string, signal?: AbortSignal): Pro
  *  (an extra aggregate query server-side — the sidebar and scan page do not need it). */
 export async function fetchCheckInEvents(
   opts?: { includeAttendeeCount?: boolean; signal?: AbortSignal },
-): Promise<EventDto[]> {
+): Promise<CheckInEventDto[]> {
   const params = opts?.includeAttendeeCount ? "?includeAttendeeCount=true" : "";
   const res = await fetch(`/api/checkin/events${params}`, {
     credentials: "same-origin",
     signal: opts?.signal,
   });
-  const data = await parseJson<{ events: EventDto[] }>(res);
+  const data = await parseJson<{ events: CheckInEventDto[] }>(res);
   return data.events;
 }
 

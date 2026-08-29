@@ -6,6 +6,7 @@ import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-er
 import type { EventSettingsDto, TicketTypeDto, UpdateTicketTypePatch } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { useClickOutside } from "../components/useClickOutside.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { SettingsFooter } from "./mailTransportFormParts.js";
 import "./ticket-types-card.css";
@@ -108,20 +109,15 @@ function ColorSwatchPicker({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  useClickOutside(ref, open, () => setOpen(false));
+
   useEffect(() => {
     if (!open) return;
-    function onDoc(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
     }
-    document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
+    return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
   const current = TICKET_TYPE_COLORS[color] ?? TICKET_TYPE_COLORS.gray;
