@@ -1,6 +1,22 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import type { ApexOptions } from "apexcharts";
-import Chart from "react-apexcharts";
+import type { MouseEvent as ReactMouseEvent } from "react";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  PolarAngleAxis,
+  RadialBar,
+  RadialBarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Button, Card, EmptyState, HintLabel, Notice, ticketTypeChartColor } from "@admitto/ui";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
 import { ApiError, fetchEventWalletReports } from "../api/client.js";
@@ -16,9 +32,12 @@ import { BreakdownRows, pctOf, type BreakdownRow } from "./ReportsPage.js";
 // every consumer of a shared CSS file imports it directly (AGENTS.md's lazy-chunk gotcha).
 import "./reports-page.css";
 
-// Literal hex, not var(--token): ApexCharts does color math (hover shades, gradients) on these
-// strings in JS, which a CSS custom-property reference can't feed - kept in sync with
-// packages/ui/src/styles/tokens/colors.css by name in each comment below.
+// Literal hex, not var(--token): these strings are passed straight through as SVG fill/stroke
+// values (Recharts renders as plain SVG), and a CSS custom property referenced from an SVG
+// presentation attribute (as opposed to a `style` prop) doesn't resolve consistently across
+// browsers - kept in sync with packages/ui/src/styles/tokens/colors.css by name in each comment
+// below. The plain HTML overlay labels further down (not SVG) use var(--token) instead, same as
+// the rest of this app.
 const PRIMARY = "#066fd1"; // --primary / --at-blue
 const STATUS_OK = "#2fb344"; // --status-ok / --at-green
 const STATUS_ERROR = "#d63939"; // --status-error / --at-red
@@ -55,6 +74,20 @@ const BUCKET_COLORS: Record<EventWalletReportsResponse["time_to_wallet_tap"]["bu
   "8_plus": GRAY_400,
 };
 
+/** Recharts gives every chart's root <svg> tabindex="0" and role="application" by default (its
+ * own built-in keyboard-accessibility layer), which a plain mouse click also focuses. A
+ * `.recharts-surface:focus { outline: none }` rule (reports-page.css) suppresses the resulting
+ * outline in most browsers, but :focus-visible's mouse-vs-keyboard heuristic isn't guaranteed
+ * consistent for a non-standard interactive element like this across every browser - confirmed
+ * still showing a raw focus ring on click in one real-world test despite that CSS rule matching
+ * correctly in automated testing. Preventing the mousedown's default action stops the browser
+ * from moving focus there at all on a click, at the event level rather than relying on any CSS
+ * pseudo-class - a real Tab keypress still focuses and shows the CSS rule's ring normally, since
+ * keyboard navigation doesn't fire mousedown. */
+function preventFocusRing(event: ReactMouseEvent) {
+  event.preventDefault();
+}
+
 /** HintLabel next to the card title, not a bare icon in the header's actions slot - the app's
  * own established convention for a card-title info icon (ReportsPage.tsx's "Attendance
  * confirmation" card, EventSettingsPage.tsx, AccountPage.tsx, ...) puts it inline with the title
@@ -80,33 +113,43 @@ function AdoptionGauge({
   voidedPct,
   installedCount,
 }: Readonly<{ issuedPct: number; installedPct: number; voidedPct: number; installedCount: number }>) {
-  // ApexCharts' own plotOptions.radialBar.dataLabels.total center label silently doesn't render
-  // for a multi-series radialBar (confirmed empirically - the single-series gauges below render
-  // their dataLabels fine, only this multi-series "total" path came back with zero <text> nodes in
-  // the rendered SVG). An absolutely-positioned HTML overlay draws the center text instead, so it
-  // doesn't depend on that library quirk.
-  const options: ApexOptions = {
-    // sparkline is safe here specifically (unlike AdmissionGauge below) because this chart has no
-    // ApexCharts-native label to lose - name/value are already hidden and the HTML overlay draws
-    // the center text instead. Without it, ApexCharts reserves a fixed margin around the rings
-    // (room for a title it never gets) that made them visibly float inside their own box instead
-    // of filling it - sparkline strips that reserved space so the rings actually use the size the
-    // container was widened to.
-    chart: { type: "radialBar", toolbar: { show: false }, fontFamily: FONT_FAMILY, sparkline: { enabled: true } },
-    labels: ["Issued", "Installed", "Voided"],
-    colors: [PRIMARY, STATUS_OK, STATUS_ERROR],
-    stroke: { lineCap: "round" },
-    plotOptions: {
-      radialBar: {
-        hollow: { size: "32%" },
-        track: { background: GRAY_100 },
-        dataLabels: { name: { show: false }, value: { show: false } },
-      },
-    },
-  };
+  // Recharts has no built-in "total" center label for a multi-ring RadialBarChart (its label
+  // support is per-ring, not an aggregate across rings) - an absolutely-positioned HTML overlay
+  // draws the center text instead, same as PlatformDonut and AdmissionGauge below for the same
+  // reason.
+  //
+  // isAnimationActive={false} on every ring/slice/bar in this file (not just this one): traced a
+  // "chart renders correctly once, then goes blank/frozen" report to Recharts' entrance animation
+  // getting stuck at its zero-size starting frame indefinitely - see TimeToTapChart's BarShape
+  // comment below for how this was diagnosed. None of these five charts benefit from animating in
+  // on every load anyway (same reasoning CumulativeChart's Area already had this for).
+  const rings = [
+    { name: "Issued", value: issuedPct, fill: PRIMARY },
+    { name: "Installed", value: installedPct, fill: STATUS_OK },
+    { name: "Voided", value: voidedPct, fill: STATUS_ERROR },
+  ];
   return (
-    <div className="wallets-gauge-overlay">
-      <Chart type="radialBar" series={[issuedPct, installedPct, voidedPct]} options={options} height={256} />
+    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+      className="wallets-gauge-overlay"
+      role="presentation"
+      onMouseDown={preventFocusRing}
+    >
+      <ResponsiveContainer width="100%" height={256}>
+        <RadialBarChart
+          data={rings}
+          innerRadius="32%"
+          outerRadius="90%"
+          startAngle={90}
+          endAngle={-270}
+          style={{ fontFamily: FONT_FAMILY }}
+        >
+          {/* Hidden numeric angle axis - each ring's own value is already a 0-100 percentage, so
+             the axis domain must be fixed at [0, 100] rather than the implicit per-render scale
+             (largest value among the three rings) RadialBarChart falls back to without one. */}
+          <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
+          <RadialBar dataKey="value" background={{ fill: GRAY_100 }} cornerRadius="50%" isAnimationActive={false} />
+        </RadialBarChart>
+      </ResponsiveContainer>
       <div className="wallets-gauge-overlay__center">
         <span className="wallets-gauge-overlay__value">{installedCount}</span>
         <span className="wallets-gauge-overlay__label">installed</span>
@@ -161,12 +204,12 @@ function platformSlices(
 }
 
 /** Own legend replaced by the same fixed-circle-plus-BreakdownRows shape as AdoptionGauge, not
- * ApexCharts' built-in one - a donut's built-in legend claims its own slice of the chart's width,
- * so at the same container width this circle rendered visibly smaller than AdoptionGauge's ring
- * beside it (a different chart type with a different internal layout wasn't a coincidence, it was
- * the actual cause). Both cards now build the same "fixed circle | flexible list" row, so the two
- * circles size and center identically at every breakpoint instead of two unrelated layouts
- * happening to look similar at one specific width. */
+ * the chart library's built-in one - a donut's built-in legend claims its own slice of the
+ * chart's width, so at the same container width this circle rendered visibly smaller than
+ * AdoptionGauge's ring beside it (a different chart type with a different internal layout wasn't
+ * a coincidence, it was the actual cause). Both cards now build the same "fixed circle | flexible
+ * list" row, so the two circles size and center identically at every breakpoint instead of two
+ * unrelated layouts happening to look similar at one specific width. */
 function PlatformDonut({
   platform,
   issued,
@@ -177,43 +220,47 @@ function PlatformDonut({
   enabledPlatforms: EnabledWalletPlatforms;
 }>) {
   const slices = platformSlices(platform, enabledPlatforms);
-  const series = slices.map((s) => s.count);
-  const options: ApexOptions = {
-    chart: { type: "donut", fontFamily: FONT_FAMILY },
-    labels: slices.map((s) => s.label),
-    colors: slices.map((s) => s.color),
-    stroke: { width: 2, colors: ["#ffffff"] },
-    // Both native ApexCharts label paths off - see AdoptionGauge above for why this same HTML
-    // overlay exists at all: its center text is a standardized fs-h1/fs-xs pair shared by both
-    // gauge cards, not each chart's own native labels at their own ad hoc sizes. Here that
-    // mattered doubly - donut.labels' center text and the per-slice dataLabels were BOTH also
-    // getting shrunk again by customScale below (already reducing the whole chart to 80% of its
-    // canvas to match AdoptionGauge's ring size), compounding into the "Issued"/"1"/"100.0%"
-    // text reading as too small to use. The per-slice percentage is redundant with the
-    // breakdown list's own "<count> · <pct>%" column anyway.
-    dataLabels: { enabled: false },
-    legend: { show: false },
-    plotOptions: {
-      pie: {
-        // A donut fills its own canvas far more fully than a radialBar does by default (measured
-        // via a horizontal scan of which element renders at each pixel, not any single element's
-        // bounding box - those were misleading here, e.g. the pie's own hole circle looks like an
-        // "outer edge" measurement until you check what shrinks when you change donut.size - at
-        // ~93% vs. AdoptionGauge's ~74% of the same 256px canvas). customScale shrinks the whole
-        // donut uniformly from its own center, tuned against that ratio so both circles land on
-        // the same outer diameter.
-        customScale: 0.8,
-        donut: {
-          size: "58%",
-          labels: { show: false },
-        },
-      },
-    },
-    tooltip: { y: { formatter: (val: number) => `${val} pass${val === 1 ? "" : "es"}` } },
-  };
   return (
-    <div className="wallets-gauge-overlay">
-      <Chart type="donut" series={series} options={options} height={256} />
+    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+      className="wallets-gauge-overlay"
+      role="presentation"
+      onMouseDown={preventFocusRing}
+    >
+      <ResponsiveContainer width="100%" height={256}>
+        <PieChart style={{ fontFamily: FONT_FAMILY }}>
+          <Pie
+            data={slices}
+            dataKey="count"
+            nameKey="label"
+            // Same 90% outer radius as AdoptionGauge's own ring above, both within the same 256px
+            // canvas - both charts are the same library now, so matching their own radius
+            // percentages directly keeps the two circles the same outer diameter, without the
+            // cross-chart-type "customScale" fudge factor the old ApexCharts version needed (a
+            // donut and a radialBar filled their own canvases by very different amounts there).
+            innerRadius="58%"
+            outerRadius="90%"
+            stroke="#ffffff"
+            strokeWidth={2}
+            // Both native label paths off - see AdoptionGauge above for why the HTML overlay
+            // exists at all: its center text is a standardized fs-h1/fs-xs pair shared by both
+            // gauge cards, not each chart's own native label at its own ad hoc size. The
+            // per-slice percentage is redundant with the breakdown list's own "<count> · <pct>%"
+            // column anyway.
+            label={false}
+            labelLine={false}
+            isAnimationActive={false}
+          >
+            {slices.map((slice) => (
+              <Cell key={slice.label} fill={slice.color} />
+            ))}
+          </Pie>
+          {/* Recharts' default tooltip position for a Pie tracks the cursor, which for a donut
+             this size lands inside the empty center hole - directly on top of the HTML center
+             label overlay above. Pinned to just below the 256px chart instead (x still follows
+             the hovered slice) so it never competes with that overlay. */}
+          <Tooltip formatter={(value) => `${value} pass${value === 1 ? "" : "es"}`} position={{ y: 256 }} />
+        </PieChart>
+      </ResponsiveContainer>
       <div className="wallets-gauge-overlay__center">
         <span className="wallets-gauge-overlay__value">{issued}</span>
         <span className="wallets-gauge-overlay__label">issued</span>
@@ -246,9 +293,10 @@ function niceStepMultiplier(normalized: number): number {
 }
 
 /** Picks a "nice" whole-number step/max for a count axis (classic d3-style nice-number scaling) -
- * ApexCharts' own default divides min..max into a fixed number of equal ticks regardless of the
- * data's actual units, which for a small pass count (e.g. max 1) produced fractional labels
- * (0, 0.2, 0.4, 0.6, 0.8, 1) that can never really occur since passes only come in whole units. */
+ * a charting library's own default tick generation typically divides min..max into a fixed number
+ * of equal ticks regardless of the data's actual units, which for a small pass count (e.g. max 1)
+ * can produce fractional labels (0, 0.2, 0.4, 0.6, 0.8, 1) that can never really occur since
+ * passes only come in whole units. */
 function niceCountAxis(max: number): { axisMax: number; tickAmount: number } {
   if (max <= 1) return { axisMax: 1, tickAmount: 1 };
   const roughStep = max / 5;
@@ -261,51 +309,84 @@ function niceCountAxis(max: number): { axisMax: number; tickAmount: number } {
   return { axisMax: tickAmount * step, tickAmount };
 }
 
-/** Area chart via ApexCharts, not hand-drawn SVG - the previous version had two real bugs from
- * rolling this by hand (a CSS specificity conflict on the last axis label, and axis text
- * distorted by the non-uniform viewBox scaling a hand-built responsive chart needs). A real
- * charting library's datetime axis avoids both classes of bug entirely. */
+/** Area chart via Recharts, not hand-drawn SVG - an earlier hand-rolled version had two real bugs
+ * (a CSS specificity conflict on the last axis label, and axis text distorted by the non-uniform
+ * viewBox scaling a hand-built responsive chart needs). A real charting library's datetime axis
+ * avoids both classes of bug entirely. */
 function CumulativeChart({ data }: Readonly<{ data: EventWalletReportsResponse["issued_by_day"] }>) {
   if (data.length === 0) {
     return <p className="wallets-description">No passes issued yet.</p>;
   }
 
   // Noon UTC, not midnight - a date-only value pinned to midnight can render as the previous
-  // calendar day once ApexCharts formats it in the viewer's own local timezone.
-  const points: [number, number][] = data.map((d) => [Date.parse(`${d.date}T12:00:00Z`), d.cumulative]);
+  // calendar day once the chart formats it in the viewer's own local timezone.
+  const points = data.map((d) => ({ date: Date.parse(`${d.date}T12:00:00Z`), value: d.cumulative }));
   // The first real day's cumulative is never 0 (it's already counting that day's own passes), so
   // without this the line starts flat at that count instead of visibly rising from 0.
-  points.unshift([points[0]![0] - 24 * 60 * 60 * 1000, 0]);
-  const series = [{ name: "Passes issued", data: points }];
+  points.unshift({ date: points[0]!.date - 24 * 60 * 60 * 1000, value: 0 });
+  // "Nice" whole-number axis, not Recharts' own default tick generation - a small pass count
+  // (e.g. max 1) can otherwise produce fractional labels (0, 0.2, 0.4, 0.6, 0.8, 1) that can never
+  // really occur since passes only come in whole units.
   const { axisMax, tickAmount } = niceCountAxis(data.at(-1)!.cumulative);
-  const options: ApexOptions = {
-    // Animations off - the entrance animation redraws the line growing left-to-right, and until
-    // it settles the x-axis ticks it lands on can visibly shift, reading as the dates "jumping"
-    // on every load. Nothing about this chart benefits from animating in.
-    chart: { type: "area", toolbar: { show: false }, zoom: { enabled: false }, animations: { enabled: false }, fontFamily: FONT_FAMILY },
-    dataLabels: { enabled: false },
-    stroke: { curve: "smooth", width: 2.5 },
-    colors: [PRIMARY],
-    fill: { type: "gradient", gradient: { shadeIntensity: 1, opacityFrom: 0.3, opacityTo: 0, stops: [0, 90, 100] } },
-    xaxis: {
-      type: "datetime",
-      // Explicit day-only format - data is per calendar day, so ApexCharts' own auto-format
-      // (which shows a time-of-day component on a short date range) added a meaningless "12:00".
-      labels: { style: { fontSize: "11px", colors: TEXT_MUTED }, format: "dd MMM" },
-      axisBorder: { color: BORDER },
-      axisTicks: { color: BORDER },
-    },
-    yaxis: {
-      min: 0,
-      max: axisMax,
-      tickAmount,
-      labels: { style: { fontSize: "11px", colors: TEXT_MUTED }, formatter: (v: number) => Math.round(v).toString() },
-    },
-    grid: { borderColor: BORDER, strokeDashArray: 3 },
-    tooltip: { x: { format: "dd MMM yyyy" } },
-    markers: { size: 0 },
-  };
-  return <Chart type="area" series={series} options={options} height={220} />;
+  const yTicks = Array.from({ length: tickAmount + 1 }, (_, i) => (i * axisMax) / tickAmount);
+  const dayFormatter = (ts: number) => new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short" }).format(ts);
+  return (
+    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+      role="presentation"
+      onMouseDown={preventFocusRing}
+    >
+      <ResponsiveContainer width="100%" height={220}>
+        <AreaChart data={points} style={{ fontFamily: FONT_FAMILY }}>
+        <defs>
+          <linearGradient id="wallets-cumulative-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={PRIMARY} stopOpacity={0.3} />
+            <stop offset="100%" stopColor={PRIMARY} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid stroke={BORDER} strokeDasharray="3 3" />
+        <XAxis
+          dataKey="date"
+          type="number"
+          domain={["dataMin", "dataMax"]}
+          // Explicit day-only format - the data is per calendar day, so a default auto-format
+          // (which shows a time-of-day component on a short date range) would add a meaningless
+          // "12:00".
+          tickFormatter={dayFormatter}
+          tick={{ fontSize: 11, fill: TEXT_MUTED }}
+          axisLine={{ stroke: BORDER }}
+          tickLine={{ stroke: BORDER }}
+        />
+        <YAxis
+          domain={[0, axisMax]}
+          ticks={yTicks}
+          tickFormatter={(v) => Math.round(Number(v)).toString()}
+          tick={{ fontSize: 11, fill: TEXT_MUTED }}
+        />
+        <Tooltip
+          labelFormatter={(label) =>
+            new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(
+              Number(label),
+            )
+          }
+        />
+        <Area
+          type="monotone"
+          dataKey="value"
+          name="Passes issued"
+          stroke={PRIMARY}
+          strokeWidth={2.5}
+          fill="url(#wallets-cumulative-fill)"
+          dot={false}
+          // Animations off - the entrance animation redraws the line growing left-to-right for no
+          // benefit: the axis ticks here are already fixed by niceCountAxis and the explicit day
+          // format above rather than recomputed as the animation settles, so nothing about this
+          // chart needs the motion.
+          isAnimationActive={false}
+        />
+      </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
 }
 
 function ticketTypeAdoptionRows(rows: EventWalletReportsResponse["by_ticket_type"]): BreakdownRow[] {
@@ -324,46 +405,111 @@ function ticketTypeAdoptionRows(rows: EventWalletReportsResponse["by_ticket_type
     }));
 }
 
+// Diagnosed by logging the raw geometry Recharts computed per bar: with the default Cell-per-bar
+// rendering TimeToTapChart never painted anything - `isAnimating: true`, `animationElapsedTime: 0`
+// forever, every bar frozen at its zero-size entrance-animation starting frame (Recharts' default
+// Rectangle skips rendering entirely at 0x0, so this showed as nothing at all, not a
+// visible-but-tiny bar). `isAnimationActive={false}` on the <Bar> below fixes the height/y side of
+// that. Separately, and regardless of animation, the computed `width` for every bar was *also* 0
+// (so was Recharts' own `background` reference rect) - the chart's category-bandwidth calculation
+// itself doesn't produce a usable width here, so `barSize={40}` sets it explicitly instead of
+// trusting that computation. This `shape` render prop (drawing the rect + label directly) replaces
+// Cell-based per-bar coloring so the chart always renders regardless of whichever of those two
+// Recharts computations is fed into it.
+//
+// A tall bar's own count label lands inside its colored fill, not above it (there's no "outside
+// the bar" room left once a bar is anywhere near 100% of the 0-100 axis) - dark navy text there
+// read as nearly illegible against the bar's own color. White reads fine on every bucket's color;
+// only a near-empty bar would put it on the white card background instead, where white would
+// vanish, hence the threshold.
+//
+// Module scope, not defined inside TimeToTapChart (Sonar S6478 - a component defined inside
+// another component's render body gets a new identity every render): reads the row straight off
+// Recharts' own `payload` (the exact data item for that bar, always populated - see Bar.js's
+// computeBarRectangles) instead of an index into a rows array TimeToTapChart would otherwise have
+// to close over. Recharts' own BarRectangleItem type (Bar.d.ts) redeclares x/y/width/height as
+// plain required `number`s, narrowing Rectangle's own optional `number | undefined` props -
+// there's no real "missing geometry" case to fall back for here, only `payload` stays optional
+// (Recharts' ActiveShape type leaves it `any`-typed upstream, covering every chart type's own
+// shape props) - the ! below reflects that computeBarRectangles always spreads the real data item
+// onto every shape invocation, never omits it, same as the other !-after-invariant sites in this
+// codebase (e.g. event-dates.ts's previousIsoDate).
+function BarShape({
+  x,
+  y,
+  width,
+  height,
+  payload,
+}: Readonly<{
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  payload?: { pct: number; count: number; fill: string };
+}>) {
+  const row = payload!;
+  const insideBar = row.pct >= 15;
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={height} rx={4} ry={4} fill={row.fill} />
+      <text
+        x={x + width / 2}
+        y={insideBar ? y + 16 : y - 8}
+        textAnchor="middle"
+        fontSize={12}
+        fontWeight={700}
+        fill={insideBar ? "#ffffff" : TEXT_PRIMARY}
+      >
+        {row.count}
+      </text>
+    </g>
+  );
+}
+
 /** Bar chart, not a breakdown list - four short rows of text left this card noticeably shorter
  * than "Admission rate by wallet status" beside it (both stretch to match the taller one), and a
  * distribution across "how many days" reads more naturally as bar heights to compare at a glance
- * than as percentage text anyway. Each bar distributed to its own bucket color (same mapping the
- * list used) via plotOptions.bar.distributed, not a single series color. */
+ * than as percentage text anyway. Each bar gets its own bucket color (same mapping the list used)
+ * via a <Cell> per bar, not a single series color. */
 function TimeToTapChart({ buckets }: Readonly<{ buckets: EventWalletReportsResponse["time_to_wallet_tap"]["buckets"] }>) {
-  const options: ApexOptions = {
-    chart: { type: "bar", toolbar: { show: false }, fontFamily: FONT_FAMILY },
-    plotOptions: { bar: { distributed: true, borderRadius: 4, columnWidth: "50%" } },
-    colors: buckets.map((b) => BUCKET_COLORS[b.key]),
-    legend: { show: false },
-    dataLabels: {
-      enabled: true,
-      offsetY: -20,
-      // A tall bar's own count label lands inside its colored fill, not above it (there's no
-      // "outside the bar" position left once a bar is anywhere near 100% of the 0-100 axis) -
-      // dark navy text there read as nearly illegible against the bar's own color. White reads
-      // fine on every bucket's color; only a near-empty bar would put it on the white card
-      // background instead, where white would vanish, hence the threshold.
-      style: { fontSize: "12px", fontWeight: 700, colors: buckets.map((b) => (b.pct >= 15 ? "#ffffff" : TEXT_PRIMARY)) },
-      formatter: (_val: number, opts) => String(buckets[opts?.dataPointIndex ?? 0]!.count),
-    },
-    xaxis: {
-      categories: buckets.map((b) => BUCKET_LABELS[b.key]),
-      labels: { style: { fontSize: "11px", colors: TEXT_MUTED } },
-      axisBorder: { color: BORDER },
-      axisTicks: { color: BORDER },
-    },
-    yaxis: { max: 100, labels: { formatter: (v: number) => `${Math.round(v)}%`, style: { fontSize: "11px", colors: TEXT_MUTED } } },
-    grid: { borderColor: BORDER, strokeDashArray: 3 },
-    tooltip: {
-      y: {
-        formatter: (val: number, opts) => {
-          const count = buckets[opts?.dataPointIndex ?? 0]!.count;
-          return `${count} attendee${count === 1 ? "" : "s"} (${val}%)`;
-        },
-      },
-    },
-  };
-  return <Chart type="bar" series={[{ name: "Attendees", data: buckets.map((b) => b.pct) }]} options={options} height={230} />;
+  const rows = buckets.map((b) => ({
+    key: b.key,
+    label: BUCKET_LABELS[b.key],
+    pct: b.pct,
+    count: b.count,
+    fill: BUCKET_COLORS[b.key],
+  }));
+
+  return (
+    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+      role="presentation"
+      onMouseDown={preventFocusRing}
+    >
+      <ResponsiveContainer width="100%" height={230}>
+        <BarChart data={rows} barCategoryGap="50%" style={{ fontFamily: FONT_FAMILY }}>
+        <CartesianGrid stroke={BORDER} strokeDasharray="3 3" />
+        <XAxis
+          dataKey="label"
+          tick={{ fontSize: 11, fill: TEXT_MUTED }}
+          axisLine={{ stroke: BORDER }}
+          tickLine={{ stroke: BORDER }}
+        />
+        <YAxis
+          domain={[0, 100]}
+          tickFormatter={(v) => `${Math.round(Number(v))}%`}
+          tick={{ fontSize: 11, fill: TEXT_MUTED }}
+        />
+        <Tooltip
+          formatter={(value, _name, props) => {
+            const count = (props.payload as (typeof rows)[number]).count;
+            return [`${count} attendee${count === 1 ? "" : "s"} (${value}%)`, undefined];
+          }}
+        />
+        <Bar dataKey="pct" shape={BarShape} isAnimationActive={false} barSize={40} />
+      </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
 }
 
 /** Two independent radialBar gauges, not a stacked/concentric pair - "has a wallet" and "no
@@ -372,34 +518,37 @@ function TimeToTapChart({ buckets }: Readonly<{ buckets: EventWalletReportsRespo
  * itself uses for a single rate (its "Active users" card). Always rendered at a fixed 180x180
  * canvas - .wallets-compare-ring (reports-page.css) is the box that actually varies with the
  * container's width, via CSS clamp()/container-query units, and scales this fixed render down to
- * match with transform:scale. Re-rendering ApexCharts itself at a different pixel size on every
+ * match with transform:scale. Re-rendering the chart itself at a different pixel size on every
  * resize would need a ResizeObserver driving React state for no visual benefit: the chart is SVG,
  * so scaling it in CSS is already lossless. */
 function AdmissionGauge({ pct, color }: Readonly<{ pct: number; color: string }>) {
-  const options: ApexOptions = {
-    // sparkline mode would strip the center dataLabels entirely (it's designed for tiny
-    // decoration-free inline charts) - toolbar/animations disabled explicitly instead, so the
-    // "Installed"/"admitted" center label this gauge exists for still renders.
-    chart: { type: "radialBar", toolbar: { show: false }, fontFamily: FONT_FAMILY },
-    colors: [color],
-    stroke: { lineCap: "round" },
-    plotOptions: {
-      radialBar: {
-        hollow: { size: "55%" },
-        track: { background: GRAY_100 },
-        dataLabels: {
-          name: { show: false },
-          // ApexCharts' own vertical centering for a single large value label sits a consistent
-          // ~8px below the ring's true center (confirmed by measuring both bounding boxes) -
-          // offsetY compensates for it.
-          value: { fontSize: "24px", fontWeight: 700, color: TEXT_PRIMARY, offsetY: 9, formatter: (v) => `${v}%` },
-        },
-      },
-    },
-  };
   return (
     <div className="wallets-compare-ring">
-      <Chart type="radialBar" series={[pct]} options={options} width={180} height={180} />
+      <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+        className="wallets-admission-gauge"
+        role="presentation"
+        onMouseDown={preventFocusRing}
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <RadialBarChart
+            data={[{ name: "pct", value: pct, fill: color }]}
+            innerRadius="55%"
+            outerRadius="90%"
+            startAngle={90}
+            endAngle={-270}
+            style={{ fontFamily: FONT_FAMILY }}
+          >
+            <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
+            <RadialBar dataKey="value" background={{ fill: GRAY_100 }} cornerRadius="50%" isAnimationActive={false} />
+          </RadialBarChart>
+        </ResponsiveContainer>
+        {/* Same reasoning as AdoptionGauge's own overlay above: Recharts has no native centered
+           value label for a RadialBarChart, so an HTML overlay draws it instead. It lives inside
+           the same transform:scale()'d wrapper as the ring itself (.wallets-compare-ring > div in
+           reports-page.css), so it shrinks in step with the ring rather than needing its own
+           separate scale calculation. */}
+        <div className="wallets-admission-gauge__value">{pct}%</div>
+      </div>
     </div>
   );
 }
@@ -441,8 +590,8 @@ function AdmissionCompare({ data }: Readonly<{ data: EventWalletReportsResponse[
 
 // Memoized: ReportsPage re-renders on every live check-in (Event Day's SSE feed), and this tab
 // stays mounted underneath even while Event Day is the visible one - without memo, each of those
-// unrelated re-renders reconstructed fresh ApexCharts options/series objects here and made every
-// chart replay its entrance animation for no reason (a periodic "jump" with no data actually
+// unrelated re-renders reconstructed fresh chart data/config objects here and made every chart
+// replay its entrance animation for no reason (a periodic "jump" with no data actually
 // changing). eventId is stable for the component's whole mounted lifetime; walletPlatforms must
 // stay reference-stable across those same unrelated re-renders too (ReportsPage.tsx memoizes it),
 // or every SSE-driven re-render would defeat this memo() exactly the way an unmemoized eventId
