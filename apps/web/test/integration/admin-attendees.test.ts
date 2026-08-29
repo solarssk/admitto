@@ -5,7 +5,6 @@ import { Hono } from "hono";
 import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
-import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { setMailSettings } from "@admitto/mailer-config";
 import { generateToken, getAttendeeCard, hashToken } from "@admitto/tickets";
@@ -27,6 +26,8 @@ import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-lim
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
+import { seedOrgAndEvent } from "../helpers/seed-org-and-event.js";
+import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -115,31 +116,16 @@ async function seed(client: PrismaClient) {
 
   const password_hash = await hashPassword(PASSWORD);
 
-  await client.organization.createMany({
-    data: [
-      { id: ORG_A, name: "Org A", slug: "admin-att-a" },
-      { id: ORG_B, name: "Org B", slug: "admin-att-b" },
-    ],
-  });
-
-  await client.event.createMany({
-    data: [
-      {
-        id: EVENT_A,
-        title: "Event A",
-        slug: "event-admin-att-a",
-        date: new Date("2026-10-01"),
-        organization_id: ORG_A,
-      },
-      {
-        id: EVENT_B,
-        title: "Event B",
-        slug: "event-admin-att-b",
-        date: new Date("2026-11-01"),
-        organization_id: ORG_B,
-      },
-    ],
-  });
+  await seedOrgAndEvent(
+    client,
+    { id: ORG_A, name: "Org A", slug: "admin-att-a" },
+    { id: EVENT_A, title: "Event A", slug: "event-admin-att-a", date: "2026-10-01", organizationId: ORG_A },
+  );
+  await seedOrgAndEvent(
+    client,
+    { id: ORG_B, name: "Org B", slug: "admin-att-b" },
+    { id: EVENT_B, title: "Event B", slug: "event-admin-att-b", date: "2026-11-01", organizationId: ORG_B },
+  );
 
   const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
   const opUser = await client.user.create({ data: { email: EMAIL_OP, password_hash } });
@@ -153,14 +139,7 @@ async function seed(client: PrismaClient) {
     ],
   });
 
-  await client.userMfaMethod.create({
-    data: {
-      user_id: adminId,
-      type: "totp",
-      secret_enc: encryptTotpSecret(generateTotpSecret()),
-      confirmed_at: new Date(),
-    },
-  });
+  await enrollConfirmedTotp(client, adminId);
 
   await setMailSettings(
     { scopeType: "organization", scopeId: ORG_A },
@@ -266,14 +245,7 @@ async function withSuperadminCookie(fn: (cookie: string) => Promise<void>): Prom
   });
   const superUser = await prisma.user.create({ data: { email: superEmail, password_hash } });
   try {
-    await prisma.userMfaMethod.create({
-      data: {
-        user_id: superUser.id,
-        type: "totp",
-        secret_enc: encryptTotpSecret(generateTotpSecret()),
-        confirmed_at: new Date(),
-      },
-    });
+    await enrollConfirmedTotp(prisma, superUser.id);
     if (priorSuper) {
       await prisma.roleAssignment.update({
         where: { id: priorSuper.id },
@@ -6737,14 +6709,7 @@ describe("Attendees v2 — RSVP and manual create", () => {
           data: { user_id: superUser.id, role: "superadmin", scope_type: "instance", scope_id: null },
         });
       }
-      await prisma.userMfaMethod.create({
-        data: {
-          user_id: superUser.id,
-          type: "totp",
-          secret_enc: encryptTotpSecret(generateTotpSecret()),
-          confirmed_at: new Date(),
-        },
-      });
+      await enrollConfirmedTotp(prisma, superUser.id);
       const superSession = await createSession(prisma, {
         userId: superUser.id,
         stage: SESSION_STAGE.FULL,

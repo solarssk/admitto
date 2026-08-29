@@ -6,7 +6,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { PrismaClient, Prisma } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
-import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { drainImportJobs } from "@admitto/import";
 import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
 import { buildXlsxBuffer } from "../../src/admin/xlsx-to-csv.js";
@@ -14,6 +13,8 @@ import { createApp } from "../../src/app.js";
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
+import { seedOrgAndEvent } from "../helpers/seed-org-and-event.js";
+import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -152,31 +153,16 @@ async function seed(client: PrismaClient) {
 
   const password_hash = await hashPassword(PASSWORD);
 
-  await client.organization.createMany({
-    data: [
-      { id: ORG_A, name: "Org Import A", slug: "admin-import-a" },
-      { id: ORG_B, name: "Org Import B", slug: "admin-import-b" },
-    ],
-  });
-
-  await client.event.createMany({
-    data: [
-      {
-        id: EVENT_A,
-        title: "Import Event A",
-        slug: "event-admin-import-a",
-        date: new Date("2026-10-01"),
-        organization_id: ORG_A,
-      },
-      {
-        id: EVENT_B,
-        title: "Import Event B",
-        slug: "event-admin-import-b",
-        date: new Date("2026-11-01"),
-        organization_id: ORG_B,
-      },
-    ],
-  });
+  await seedOrgAndEvent(
+    client,
+    { id: ORG_A, name: "Org Import A", slug: "admin-import-a" },
+    { id: EVENT_A, title: "Import Event A", slug: "event-admin-import-a", date: "2026-10-01", organizationId: ORG_A },
+  );
+  await seedOrgAndEvent(
+    client,
+    { id: ORG_B, name: "Org Import B", slug: "admin-import-b" },
+    { id: EVENT_B, title: "Import Event B", slug: "event-admin-import-b", date: "2026-11-01", organizationId: ORG_B },
+  );
 
   const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
   const opUser = await client.user.create({ data: { email: EMAIL_OP, password_hash } });
@@ -189,14 +175,7 @@ async function seed(client: PrismaClient) {
     ],
   });
 
-  await client.userMfaMethod.create({
-    data: {
-      user_id: adminId,
-      type: "totp",
-      secret_enc: encryptTotpSecret(generateTotpSecret()),
-      confirmed_at: new Date(),
-    },
-  });
+  await enrollConfirmedTotp(client, adminId);
 
   await client.attendee.create({
     data: {
@@ -1189,14 +1168,7 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
           },
         });
       }
-      await prisma.userMfaMethod.create({
-        data: {
-          user_id: superUser.id,
-          type: "totp",
-          secret_enc: encryptTotpSecret(generateTotpSecret()),
-          confirmed_at: new Date(),
-        },
-      });
+      await enrollConfirmedTotp(prisma, superUser.id);
       const superCookie = await sessionCookieFor(prisma, superUser.id);
       const current = await prisma.attendee.count({
         where: { event_id: EVENT_A, status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },

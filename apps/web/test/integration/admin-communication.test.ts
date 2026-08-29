@@ -5,7 +5,6 @@ import { Hono } from "hono";
 import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword, setSetting, SETTING_INSTANCE_URL } from "@admitto/auth";
-import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { setMailSettings } from "@admitto/mailer-config";
 import {
   DEFAULT_BODY_MJML,
@@ -29,6 +28,8 @@ import {
 } from "../../src/admin/communication-api-routes.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
+import { seedOrgAndEvent } from "../helpers/seed-org-and-event.js";
+import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -104,37 +105,24 @@ async function seed(client: PrismaClient) {
 
   const password_hash = await hashPassword(PASSWORD);
 
-  await client.organization.createMany({
-    data: [
-      { id: ORG_A, name: "Org A", slug: "admin-comm-a" },
-      { id: ORG_B, name: "Org B", slug: "admin-comm-b" },
-    ],
-  });
-
-  await client.event.createMany({
-    data: [
-      {
-        id: EVENT_A,
-        title: "Event A",
-        slug: "event-admin-comm-a",
-        date: new Date("2026-10-01"),
-        organization_id: ORG_A,
-      },
-      {
-        id: EVENT_B,
-        title: "Event B",
-        slug: "event-admin-comm-b",
-        date: new Date("2026-11-01"),
-        organization_id: ORG_B,
-      },
-      {
-        id: EVENT_C,
-        title: "Event C",
-        slug: "event-admin-comm-c",
-        date: new Date("2026-12-01"),
-        organization_id: ORG_A,
-      },
-    ],
+  await seedOrgAndEvent(
+    client,
+    { id: ORG_A, name: "Org A", slug: "admin-comm-a" },
+    { id: EVENT_A, title: "Event A", slug: "event-admin-comm-a", date: "2026-10-01", organizationId: ORG_A },
+  );
+  await seedOrgAndEvent(
+    client,
+    { id: ORG_B, name: "Org B", slug: "admin-comm-b" },
+    { id: EVENT_B, title: "Event B", slug: "event-admin-comm-b", date: "2026-11-01", organizationId: ORG_B },
+  );
+  await client.event.create({
+    data: {
+      id: EVENT_C,
+      title: "Event C",
+      slug: "event-admin-comm-c",
+      date: new Date("2026-12-01"),
+      organization_id: ORG_A,
+    },
   });
 
   const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
@@ -149,14 +137,7 @@ async function seed(client: PrismaClient) {
     ],
   });
 
-  await client.userMfaMethod.create({
-    data: {
-      user_id: adminId,
-      type: "totp",
-      secret_enc: encryptTotpSecret(generateTotpSecret()),
-      confirmed_at: new Date(),
-    },
-  });
+  await enrollConfirmedTotp(client, adminId);
 
   await setMailSettings(
     { scopeType: "organization", scopeId: ORG_A },

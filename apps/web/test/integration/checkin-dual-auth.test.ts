@@ -3,7 +3,6 @@ import { Hono } from "hono";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
-import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import {
   createCheckinPreAuth,
   createCheckinSessionCsrfGuard,
@@ -17,6 +16,8 @@ import { handleCheckinTicketTypes } from "../../src/admin/ticket-types-routes.js
 import { rateLimit } from "../../src/rate-limit/policies.js";
 import { InMemoryRateLimitStore, type RateLimitStore } from "../../src/rate-limit/index.js";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
+import { seedOrgAndEvent } from "../helpers/seed-org-and-event.js";
+import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 
 const TOKEN = "test-operator-token-abc123";
 const ORG_A = "org-dual-a";
@@ -52,30 +53,16 @@ async function seedDualAuthFixture(client: PrismaClient): Promise<void> {
 
   const password_hash = await hashPassword("x");
 
-  await client.organization.createMany({
-    data: [
-      { id: ORG_A, name: "A", slug: "dual-a" },
-      { id: ORG_B, name: "B", slug: "dual-b" },
-    ],
-  });
-  await client.event.createMany({
-    data: [
-      {
-        id: EVENT_A,
-        title: "A",
-        slug: "ev-dual-a",
-        date: new Date("2026-09-01"),
-        organization_id: ORG_A,
-      },
-      {
-        id: EVENT_B,
-        title: "B",
-        slug: "ev-dual-b",
-        date: new Date("2026-09-01"),
-        organization_id: ORG_B,
-      },
-    ],
-  });
+  await seedOrgAndEvent(
+    client,
+    { id: ORG_A, name: "A", slug: "dual-a" },
+    { id: EVENT_A, title: "A", slug: "ev-dual-a", date: "2026-09-01", organizationId: ORG_A },
+  );
+  await seedOrgAndEvent(
+    client,
+    { id: ORG_B, name: "B", slug: "dual-b" },
+    { id: EVENT_B, title: "B", slug: "ev-dual-b", date: "2026-09-01", organizationId: ORG_B },
+  );
   await client.user.createMany({
     data: [
       { id: USER_SUPER, email: "s@example.com", password_hash },
@@ -92,14 +79,7 @@ async function seedDualAuthFixture(client: PrismaClient): Promise<void> {
   });
 
   for (const userId of [USER_SUPER, USER_ADMIN_A]) {
-    await client.userMfaMethod.create({
-      data: {
-        user_id: userId,
-        type: "totp",
-        secret_enc: encryptTotpSecret(generateTotpSecret()),
-        confirmed_at: new Date(),
-      },
-    });
+    await enrollConfirmedTotp(client, userId);
   }
 }
 

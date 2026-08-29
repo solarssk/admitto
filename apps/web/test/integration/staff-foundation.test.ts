@@ -4,9 +4,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword, SETTING_BRANDING_THEME } from "@admitto/auth";
-import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
+import { seedOrgAndEvent } from "../helpers/seed-org-and-event.js";
+import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -45,31 +46,16 @@ async function seed(client: PrismaClient) {
 
   const password_hash = await hashPassword(PASSWORD);
 
-  await client.organization.createMany({
-    data: [
-      { id: ORG_A, name: "Org A", slug: "staff-foundation-a" },
-      { id: ORG_B, name: "Org B", slug: "staff-foundation-b" },
-    ],
-  });
-
-  await client.event.createMany({
-    data: [
-      {
-        id: EVENT_A,
-        title: "Event A",
-        slug: "event-a",
-        date: new Date("2026-10-01"),
-        organization_id: ORG_A,
-      },
-      {
-        id: EVENT_B,
-        title: "Event B",
-        slug: "event-b",
-        date: new Date("2026-11-01"),
-        organization_id: ORG_B,
-      },
-    ],
-  });
+  await seedOrgAndEvent(
+    client,
+    { id: ORG_A, name: "Org A", slug: "staff-foundation-a" },
+    { id: EVENT_A, title: "Event A", slug: "event-a", date: "2026-10-01", organizationId: ORG_A },
+  );
+  await seedOrgAndEvent(
+    client,
+    { id: ORG_B, name: "Org B", slug: "staff-foundation-b" },
+    { id: EVENT_B, title: "Event B", slug: "event-b", date: "2026-11-01", organizationId: ORG_B },
+  );
 
   const superUser = await client.user.create({ data: { email: EMAIL_SUPER, password_hash } });
   const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
@@ -87,14 +73,7 @@ async function seed(client: PrismaClient) {
   });
 
   for (const userId of [superId, adminId]) {
-    await client.userMfaMethod.create({
-      data: {
-        user_id: userId,
-        type: "totp",
-        secret_enc: encryptTotpSecret(generateTotpSecret()),
-        confirmed_at: new Date(),
-      },
-    });
+    await enrollConfirmedTotp(client, userId);
   }
 }
 

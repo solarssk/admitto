@@ -4,9 +4,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
-import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
+import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -78,14 +78,7 @@ async function seed(client: PrismaClient) {
     ],
   });
 
-  await client.userMfaMethod.create({
-    data: {
-      user_id: adminId,
-      type: "totp",
-      secret_enc: encryptTotpSecret(generateTotpSecret()),
-      confirmed_at: new Date(),
-    },
-  });
+  await enrollConfirmedTotp(client, adminId);
 }
 
 beforeAll(async () => {
