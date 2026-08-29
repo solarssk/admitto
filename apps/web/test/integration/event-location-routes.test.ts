@@ -3,14 +3,14 @@ import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { hashPassword } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import type { EventLocationDto } from "@admitto/location";
-import { createApp } from "../../src/app.js";
-import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { sessionCookieFor } from "../helpers/session-cookie.js";
+import { buildTestApp } from "../helpers/build-test-app.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -26,7 +26,7 @@ const EMAIL_SUPER = "location-super@example.com";
 const PASSWORD = "location-test-pass-123";
 
 let prisma: PrismaClient;
-let app: ReturnType<typeof createApp>;
+let app: ReturnType<typeof buildTestApp>;
 let adminId: string;
 let opId: string;
 let adminCookie = "";
@@ -119,26 +119,13 @@ async function seed(client: PrismaClient) {
   return { superId: superUser.id };
 }
 
-async function sessionCookieFor(userId: string): Promise<string> {
-  const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
-  return `admitto_session=${rawToken}`;
-}
-
 beforeAll(async () => {
   prisma = createTestPrismaClient();
   const { superId } = await seed(prisma);
-  app = createApp({
-    prisma,
-    checkinToken: "location-checkin-token-32-characters!",
-    allowCheckinBearer: true,
-    baseUrl: "https://tickets.example.com",
-    rateLimitStore: createRateLimitStore(),
-    skipCheckinBootValidation: true,
-    adminDistRoot,
-  });
-  adminCookie = await sessionCookieFor(adminId);
-  opCookie = await sessionCookieFor(opId);
-  superCookie = await sessionCookieFor(superId);
+  app = buildTestApp({ prisma, checkinToken: "location-checkin-token-32-characters!", adminDistRoot });
+  adminCookie = await sessionCookieFor(prisma, adminId);
+  opCookie = await sessionCookieFor(prisma, opId);
+  superCookie = await sessionCookieFor(prisma, superId);
 });
 
 afterAll(async () => {

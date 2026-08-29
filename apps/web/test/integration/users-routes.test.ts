@@ -5,11 +5,8 @@ import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import {
   AUTH_METHOD,
-  beginWebauthnRegistration,
   createSession,
-  finishWebauthnRegistration,
   hashPassword,
-  markBackupCodesAcknowledged,
   SESSION_STAGE,
   verifyPassword,
 } from "@admitto/auth";
@@ -24,6 +21,7 @@ import {
 } from "../../src/admin/users-lockout-guards.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { registerConfirmedWebauthnCredential } from "../helpers/webauthn-registration.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -1507,20 +1505,6 @@ describe("POST /api/admin/users/:id/reset-password", () => {
   });
 });
 
-/** Register + acknowledge a confirmed WebAuthn credential directly against `prisma` (bypassing
- * the HTTP ceremony), returning the virtual authenticator too so a step-up test can later produce
- * a valid assertion against this same credential (see `webauthnStepUpProof`). */
-async function registerConfirmedWebauthnCredential(uid: string, label = "Seeded key") {
-  const authenticator = createVirtualAuthenticator();
-  const begin = await beginWebauthnRegistration(prisma, uid, "platform", WEBAUTHN_RP);
-  if (!begin) throw new Error("beginWebauthnRegistration failed");
-  const response = authenticator.register({ challenge: begin.challenge, rpID: WEBAUTHN_RP.rpID, origin: WEBAUTHN_RP.origin });
-  const result = await finishWebauthnRegistration(prisma, uid, response, begin.challenge, "platform", label, WEBAUTHN_RP);
-  if (!result) throw new Error("finishWebauthnRegistration failed");
-  await markBackupCodesAcknowledged(prisma, uid);
-  return { ...result, authenticator };
-}
-
 /** Drive `POST /api/account/mfa/webauthn/assert/begin` over the given session, then sign the
  * returned challenge with `authenticator`: the `{ webauthn }` fragment a step-up-gated action
  * accepts alongside (or instead of) a `code`. */
@@ -1774,7 +1758,7 @@ describe("POST /api/admin/users/:id/reset-2fa, reset-password, revoke-sessions â
 
   it("reset-2fa: succeeds when the actor's only confirmed MFA method is WebAuthn (not TOTP-only anymore)", async () => {
     await prisma.userMfaMethod.deleteMany({ where: { user_id: superId } });
-    const actorCredential = await registerConfirmedWebauthnCredential(superId);
+    const actorCredential = await registerConfirmedWebauthnCredential(prisma, WEBAUTHN_RP, superId);
     const proof = await webauthnStepUpProof(superCookie, actorCredential.authenticator);
 
     const res = await app.request(`/api/admin/users/${superTargetId}/reset-2fa`, {

@@ -9,6 +9,7 @@ import {
   IconButton,
   Input,
   Select,
+  Tooltip,
   useToast,
 } from "@admitto/ui";
 import { fetchOrgBranding, fetchStaffTheme, patchOrgBranding, saveStaffTheme, deleteUploadedFile } from "../api/client.js";
@@ -983,21 +984,17 @@ export function BrandingSettingsPanel() {
             <span style={{ fontFamily: adminFont.fontStack, fontWeight: 700 }}>
               Bold Aa
               {!adminFont.hasBoldVariant && (
-                <i
-                  className="ti ti-info-circle theme-preview__faux"
-                  aria-hidden="true"
-                  title="No bold file uploaded. The browser is faking it."
-                />
+                <Tooltip content="No bold file uploaded. The browser is faking it.">
+                  <i className="ti ti-info-circle theme-preview__faux" aria-hidden="true" />
+                </Tooltip>
               )}
             </span>
             <span style={{ fontFamily: adminFont.fontStack, fontStyle: "italic" }}>
               Italic Aa
               {!adminFont.hasItalicVariant && (
-                <i
-                  className="ti ti-info-circle theme-preview__faux"
-                  aria-hidden="true"
-                  title="No italic file uploaded. The browser is faking it."
-                />
+                <Tooltip content="No italic file uploaded. The browser is faking it.">
+                  <i className="ti ti-info-circle theme-preview__faux" aria-hidden="true" />
+                </Tooltip>
               )}
             </span>
           </div>

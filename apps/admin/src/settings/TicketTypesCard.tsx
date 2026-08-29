@@ -9,6 +9,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useClickOutside } from "../components/useClickOutside.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { SettingsFooter } from "./mailTransportFormParts.js";
+import { pluralSuffix } from "../utils/pluralize.js";
 import "./ticket-types-card.css";
 
 export interface TicketTypesCardProps {
@@ -26,10 +27,6 @@ type DraftTicketType = TicketTypeDto & { pending?: boolean };
 const COLOR_ENTRIES = Object.entries(TICKET_TYPE_COLORS) as Array<
   [TicketTypeColor, (typeof TICKET_TYPE_COLORS)[TicketTypeColor]]
 >;
-
-function pluralSuffix(count: number): string {
-  return count === 1 ? "" : "s";
-}
 
 const TICKET_TYPES_HINT =
   "Types used across attendees, check-in, and reports.";

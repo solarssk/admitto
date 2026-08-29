@@ -3,11 +3,11 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient, Prisma } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { hashPassword } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
-import { createApp } from "../../src/app.js";
-import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { sessionCookieFor } from "../helpers/session-cookie.js";
+import { buildTestApp } from "../helpers/build-test-app.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -22,7 +22,7 @@ const EMAIL_OP = "create-event-op@example.com";
 const PASSWORD = "create-event-pass-123";
 
 let prisma: PrismaClient;
-let app: ReturnType<typeof createApp>;
+let app: ReturnType<typeof buildTestApp>;
 let superId: string;
 let adminId: string;
 let opId: string;
@@ -100,18 +100,10 @@ beforeAll(async () => {
 
   prisma = createTestPrismaClient();
   await seed(prisma);
-  app = createApp({
-    prisma,
-    checkinToken: "create-event-checkin-token-32chars!!",
-    allowCheckinBearer: true,
-    baseUrl: "https://tickets.example.com",
-    rateLimitStore: createRateLimitStore(),
-    skipCheckinBootValidation: true,
-    adminDistRoot,
-  });
-  superCookie = await sessionCookieFor(superId);
-  adminCookie = await sessionCookieFor(adminId);
-  opCookie = await sessionCookieFor(opId);
+  app = buildTestApp({ prisma, checkinToken: "create-event-checkin-token-32chars!!", adminDistRoot });
+  superCookie = await sessionCookieFor(prisma, superId);
+  adminCookie = await sessionCookieFor(prisma, adminId);
+  opCookie = await sessionCookieFor(prisma, opId);
 });
 
 afterAll(async () => {
@@ -119,11 +111,6 @@ afterAll(async () => {
   else delete process.env.INSTANCE_ORG_ID;
   await prisma?.$disconnect();
 });
-
-async function sessionCookieFor(userId: string): Promise<string> {
-  const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
-  return `admitto_session=${rawToken}`;
-}
 
 async function postCreateEvent(
   cookie: string,

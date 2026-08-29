@@ -7,6 +7,7 @@ import { setMailSettings } from "@admitto/mailer-config";
 import type { ExportPayload } from "@admitto/mailer";
 import { hashToken, generateToken } from "@admitto/tickets";
 import { resetDb } from "./resetDb.js";
+import { seedOrgAndEvent } from "./seedOrgAndEvent.js";
 import {
   resendTicketEmail,
   retryDelivery,
@@ -18,26 +19,19 @@ const prisma = createTestPrismaClient();
 const EVENT_ID = "evt-mail-send";
 const exported: ExportPayload[] = [];
 
+const TEST_ENV = { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" };
+const TEST_DEPS = { exportSink: (p: ExportPayload) => exported.push(p) };
+
 beforeAll(async () => {
   await resetDb();
-  await prisma.organization.create({
-    data: { id: "org-mail", name: "Mail Org", slug: "mail-org" },
+  await seedOrgAndEvent(prisma, {
+    orgId: "org-mail",
+    orgName: "Mail Org",
+    orgSlug: "mail-org",
+    eventId: EVENT_ID,
+    eventTitle: "Mail Event",
+    eventSlug: "mail-event",
   });
-  await prisma.event.create({
-    data: {
-      id: EVENT_ID,
-      organization_id: "org-mail",
-      title: "Mail Event",
-      slug: "mail-event",
-      date: new Date("2026-09-01"),
-    },
-  });
-
-  await setMailSettings(
-    { scopeType: "organization", scopeId: "org-mail" },
-    { provider: "export_only", fromAddress: "events@example.com" },
-    prisma,
-  );
 
   await prisma.attendee.create({
     data: {
@@ -121,8 +115,8 @@ describe("sendTicketEmails name fields", () => {
       NAME_FIELDS_EVENT_ID,
       { deliverImmediately: true, attendeeIds: ["att-explicit-name-fields"] },
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
     );
 
     const weiExport = exported.find((p) => p.message.to === "wei@example.com");
@@ -149,8 +143,8 @@ describe("sendTicketEmails name fields", () => {
       NAME_FIELDS_EVENT_ID,
       { deliverImmediately: true, attendeeIds: ["att-last-name-only"] },
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
     );
 
     const partialExport = exported.find((p) => p.message.to === "partial@example.com");
@@ -175,8 +169,8 @@ describe("sendTicketEmails name fields", () => {
       NAME_FIELDS_EVENT_ID,
       { deliverImmediately: true, attendeeIds: ["att-first-name-only"] },
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
     );
 
     const onlyFirstExport = exported.find((p) => p.message.to === "onlyfirst@example.com");
@@ -198,8 +192,8 @@ describe("sendTicketEmails name fields", () => {
       NAME_FIELDS_EVENT_ID,
       { deliverImmediately: true, attendeeIds: ["att-null-name-fields"] },
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
     );
 
     const danaExport = exported.find((p) => p.message.to === "dana@example.com");
@@ -214,8 +208,8 @@ describe("sendTicketEmails", () => {
       EVENT_ID,
       { deliverImmediately: true },
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
     );
 
     expect(result.sent).toBe(3);
@@ -276,8 +270,8 @@ describe("sendTicketEmails", () => {
       EVENT_ID,
       { deliverImmediately: true, attendeeIds: ["att-location"], templateId: template.id },
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
     );
 
     expect(result.sent).toBe(1);
@@ -334,12 +328,8 @@ describe("sendTicketEmails", () => {
       EVENT_ID,
       { deliverImmediately: true, attendeeIds: ["att-maps-off"], templateId: template.id },
       prisma,
-      {
-        NODE_ENV: "test",
-        BASE_URL: "https://tickets.example.com",
-        LOCATION_MAPS_ENABLED: "false",
-      },
-      { exportSink: (p) => exported.push(p) },
+      { ...TEST_ENV, LOCATION_MAPS_ENABLED: "false" },
+      TEST_DEPS,
     );
 
     expect(result.sent).toBe(1);
@@ -354,8 +344,8 @@ describe("sendTicketEmails", () => {
       EVENT_ID,
       { deliverImmediately: true, attendeeIds: ["att-mode-a"] },
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
     );
     expect(result.sent).toBe(1);
     expect(result.skipped).toHaveLength(0);
@@ -400,8 +390,8 @@ describe("sendTicketEmails", () => {
       EVENT_ID,
       { deliverImmediately: true, attendeeIds: ["att-in-flight"] },
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
     );
     expect(result.sent).toBe(0);
     expect(result.skipped).toEqual([{ attendeeId: "att-in-flight", reason: "in_flight" }]);
@@ -420,12 +410,10 @@ describe("sendTicketEmails", () => {
     });
 
     exported.length = 0;
-    const env = { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" };
-    const sink = { exportSink: (p: ExportPayload) => exported.push(p) };
 
     await Promise.all([
-      sendTicketEmails(EVENT_ID, { deliverImmediately: true, attendeeIds: ["att-race"] }, prisma, env, sink),
-      sendTicketEmails(EVENT_ID, { deliverImmediately: true, attendeeIds: ["att-race"] }, prisma, env, sink),
+      sendTicketEmails(EVENT_ID, { deliverImmediately: true, attendeeIds: ["att-race"] }, prisma, TEST_ENV, TEST_DEPS),
+      sendTicketEmails(EVENT_ID, { deliverImmediately: true, attendeeIds: ["att-race"] }, prisma, TEST_ENV, TEST_DEPS),
     ]);
 
     const rows = await prisma.emailDelivery.findMany({
@@ -463,8 +451,8 @@ describe("sendTicketEmails", () => {
       EVENT_ID,
       { deliverImmediately: true, attendeeIds: ["att-no-ref", "att-batch-ok"] },
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
     );
 
     expect(result.skipped).toEqual(
@@ -498,8 +486,8 @@ describe("sendTicketEmails", () => {
       EVENT_ID,
       { deliverImmediately: true, attendeeIds: ["att-batch-fail"] },
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
     );
 
     expect(result.sent).toBe(0);
@@ -521,7 +509,7 @@ describe("sendTicketEmails", () => {
         EVENT_ID,
         { deliverImmediately: true, purpose: "resend", attendeeIds: ["att-mode-a", "att-mode-b"], recipientEmail: "x@example.com" },
         prisma,
-        { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
+        TEST_ENV,
       ),
     ).rejects.toThrow("recipientEmail requires exactly one attendeeId");
   });
@@ -561,8 +549,8 @@ describe("sendTicketEmails", () => {
       EVENT_ID,
       { deliverImmediately: true, attendeeIds: ["att-ticket-type"], templateId: template.id },
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
     );
 
     expect(result.sent).toBe(1);
@@ -601,8 +589,8 @@ describe("sendTicketEmails", () => {
       EVENT_ID,
       { deliverImmediately: true, attendeeIds: ["att-no-ticket-type"], templateId: template.id },
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
     );
 
     expect(result.sent).toBe(1);
@@ -620,8 +608,8 @@ describe("resendTicketEmail", () => {
     await resendTicketEmail(
       "att-mode-a",
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
       { deliverImmediately: true },
     );
 
@@ -646,8 +634,8 @@ describe("resendTicketEmail", () => {
     await resendTicketEmail(
       "att-mode-a",
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
       { to: "alt@example.com", deliverImmediately: true },
     );
 
@@ -668,8 +656,8 @@ describe("resendTicketEmail", () => {
     await resendTicketEmail(
       "att-mode-a",
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
       { timezone: "Europe/Warsaw" },
     );
 
@@ -686,8 +674,8 @@ describe("resendTicketEmail", () => {
     await resendTicketEmail(
       "att-mode-a",
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
     );
 
     const resendRow = await prisma.emailDelivery.findFirst({
@@ -703,8 +691,8 @@ describe("resendTicketEmail", () => {
     await resendTicketEmail(
       "att-mode-a",
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
       { actorUserId: "user-resend-actor", sessionId: "session-resend-actor" },
     );
 
@@ -722,8 +710,8 @@ describe("resendTicketEmail", () => {
     await resendTicketEmail(
       "att-mode-a",
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
     );
 
     const resendRow = await prisma.emailDelivery.findFirst({
@@ -752,8 +740,8 @@ describe("resendTicketEmail", () => {
     await resendTicketEmail(
       "att-mode-a",
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
       { deliverImmediately: true, templateId: template.id },
     );
 
@@ -803,8 +791,8 @@ describe("retryDelivery", () => {
     const { ok } = await retryDelivery(
       delivery.id,
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
     );
     expect(ok).toBe(true);
     expect(exported[0]?.message.subject).toBe("Frozen Subject UNIQUE_MARKER");
@@ -858,8 +846,8 @@ describe("retryDelivery", () => {
       const { ok, reason } = await retryDelivery(
         delivery.id,
         prisma,
-        { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-        { exportSink: (p) => exported.push(p) },
+        TEST_ENV,
+        TEST_DEPS,
       );
       expect(ok).toBe(false);
       expect(reason).toBe("no_result");
@@ -905,8 +893,8 @@ describe("retryDelivery", () => {
     const { ok } = await retryDelivery(
       delivery.id,
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: (p) => exported.push(p) },
+      TEST_ENV,
+      TEST_DEPS,
     );
     expect(ok).toBe(true);
     expect(exported[0]?.message.html).toContain(`/t/${token}`);
@@ -930,10 +918,7 @@ describe("retryDelivery", () => {
       },
     });
 
-    const { ok, reason } = await retryDelivery(delivery.id, prisma, {
-      NODE_ENV: "test",
-      BASE_URL: "https://tickets.example.com",
-    });
+    const { ok, reason } = await retryDelivery(delivery.id, prisma, TEST_ENV);
     expect(ok).toBe(false);
     expect(reason).toBe("not_retryable");
   });
@@ -1009,10 +994,7 @@ describe("retryDelivery", () => {
       },
     });
 
-    const { ok, reason } = await retryDelivery(delivery.id, prisma, {
-      NODE_ENV: "test",
-      BASE_URL: "https://tickets.example.com",
-    });
+    const { ok, reason } = await retryDelivery(delivery.id, prisma, TEST_ENV);
     expect(ok).toBe(false);
     expect(reason).toBe("mail_secret_decryption_failed");
 
@@ -1067,7 +1049,7 @@ describe("retryDelivery", () => {
     });
 
     await expect(
-      retryDelivery(delivery.id, prisma, { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" }),
+      retryDelivery(delivery.id, prisma, TEST_ENV),
     ).rejects.toThrow(/Cannot resolve mail provider/);
 
     const untouched = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
