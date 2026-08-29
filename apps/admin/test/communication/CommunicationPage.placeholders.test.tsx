@@ -89,6 +89,18 @@ async function renderAndGetBodyField(labelText: "MJML body" | "HTML body" = "MJM
   return screen.getByLabelText(labelText) as HTMLTextAreaElement;
 }
 
+/** Renders with `templateOverrides` applied on top of `legacyTemplate`, focuses the end of the
+ * body, and clicks the `chipName` chip - the shared "arrange+act" for the placeholder-chip-list
+ * tests below, which each only diverge on which chip they click and what markup they expect it
+ * to insert. */
+async function insertPlaceholderChip(templateOverrides: Record<string, unknown>, chipName: string) {
+  fetchEventTemplate.mockResolvedValue({ ...legacyTemplate, ...templateOverrides });
+  const bodyTextarea = await renderAndGetBodyField();
+  focusAtEnd(bodyTextarea);
+  fireEvent.click(screen.getByRole("button", { name: chipName }));
+  return bodyTextarea;
+}
+
 beforeEach(() => {
   fetchEventOverview.mockResolvedValue({
     email_bounced: 0,
@@ -348,14 +360,10 @@ describe("CommunicationPage placeholder chip list", () => {
   });
 
   it("inserts event_map_url with Event location map alt text", async () => {
-    fetchEventTemplate.mockResolvedValue({
-      ...legacyTemplate,
-      allowed_placeholders: ["first_name", "event_map_url"],
-      image_placeholders: ["event_map_url"],
-    });
-    const bodyTextarea = await renderAndGetBodyField();
-    focusAtEnd(bodyTextarea);
-    fireEvent.click(screen.getByRole("button", { name: "{{event_map_url}}" }));
+    const bodyTextarea = await insertPlaceholderChip(
+      { allowed_placeholders: ["first_name", "event_map_url"], image_placeholders: ["event_map_url"] },
+      "{{event_map_url}}",
+    );
 
     expect(bodyTextarea.value).toContain(
       '<mj-image src="{{event_map_url}}" alt="Event location map" width="200px" />',
@@ -367,13 +375,10 @@ describe("CommunicationPage placeholder chip list", () => {
   // renders as a clickable button on its own, so the chip inserts a ready-made badge instead,
   // same "ready-to-use element" treatment as image placeholders get via imagePlaceholderMarkup.
   it("inserts a ready-to-use Apple Wallet badge button, not a bare token, when clicking {{apple_wallet_url}}", async () => {
-    fetchEventTemplate.mockResolvedValue({
-      ...legacyTemplate,
-      allowed_placeholders: ["first_name", "apple_wallet_url"],
-    });
-    const bodyTextarea = await renderAndGetBodyField();
-    focusAtEnd(bodyTextarea);
-    fireEvent.click(screen.getByRole("button", { name: "{{apple_wallet_url}}" }));
+    const bodyTextarea = await insertPlaceholderChip(
+      { allowed_placeholders: ["first_name", "apple_wallet_url"] },
+      "{{apple_wallet_url}}",
+    );
 
     // The placeholder token is the link (href) - the badge graphic is a real, fixed asset
     // (WALLET_BADGE_ASSET), never something {{apple_wallet_url}} itself resolves to as `src`.
@@ -383,13 +388,10 @@ describe("CommunicationPage placeholder chip list", () => {
   });
 
   it("inserts a ready-to-use Google Wallet badge button, not a bare token, when clicking {{google_wallet_url}}", async () => {
-    fetchEventTemplate.mockResolvedValue({
-      ...legacyTemplate,
-      allowed_placeholders: ["first_name", "google_wallet_url"],
-    });
-    const bodyTextarea = await renderAndGetBodyField();
-    focusAtEnd(bodyTextarea);
-    fireEvent.click(screen.getByRole("button", { name: "{{google_wallet_url}}" }));
+    const bodyTextarea = await insertPlaceholderChip(
+      { allowed_placeholders: ["first_name", "google_wallet_url"] },
+      "{{google_wallet_url}}",
+    );
 
     expect(bodyTextarea.value).toContain(
       '<mj-image href="{{google_wallet_url}}" src="/assets/google-wallet-badge.png" alt="Add to Google Wallet" width="200px" />',

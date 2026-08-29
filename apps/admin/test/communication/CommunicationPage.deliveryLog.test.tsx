@@ -162,6 +162,22 @@ async function goToDeliveryLogTab() {
   fireEvent.click(await screen.findByRole("tab", { name: /Delivery log/i }));
 }
 
+/** Applies the "Failed" status filter via the Filters panel and waits for the fetch to reflect
+ * it - the shared "arrange" both Clear-filters tests below start from, before diverging into
+ * their own clear-path. */
+async function applyFailedStatusFilter() {
+  fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Status,/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Failed" }));
+  await waitFor(() => {
+    expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
+      "evt-1",
+      expect.objectContaining({ status: "failed" }),
+      expect.any(AbortSignal),
+    );
+  });
+}
+
 /** Renders the page, opens the delivery log, and opens `attendeeName`'s row-actions menu - the
  * "arrange" every delivery-log row-action test below starts from, before diverging into its own
  * fetch outcome. */
@@ -219,6 +235,29 @@ function stubDownload() {
       URL.revokeObjectURL = originalRevoke;
     },
   };
+}
+
+/** Clicks Close on `dialogName` while its data fetch is still pending. Closing unmounts the
+ * modal, whose cleanup aborts that in-flight fetch - the resulting rejection must be swallowed
+ * (a `controller.signal.aborted` guard) rather than trying to setError/setLoading on an
+ * unmounted component, so this flushes the aborted promise's reject/catch/finally chain and
+ * asserts React never logged a "state update on an unmounted component" warning - the shared
+ * assertion tail both modals' "closed before it settles" regression test wants. */
+async function expectCleanCloseWhilePending(
+  dialogName: string,
+  consoleError: { mock: { calls: unknown[][] }; mockRestore: () => void },
+) {
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("dialog", { name: dialogName })).toBeNull();
+
+  // Flush the aborted promise's reject -> catch -> finally chain before asserting.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const stateUpdateWarning = consoleError.mock.calls.some((call) =>
+    String(call[0]).includes("Can't perform a React state update"),
+  );
+  expect(stateUpdateWarning).toBe(false);
+
+  consoleError.mockRestore();
 }
 
 /** Reads a downloaded Blob's content back as text, the way a saved .txt file would be read. */
@@ -488,16 +527,7 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
 
     expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", true);
 
-    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    fireEvent.click(screen.getByRole("button", { name: /^Status,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Failed" }));
-    await waitFor(() => {
-      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
-        "evt-1",
-        expect.objectContaining({ status: "failed" }),
-        expect.any(AbortSignal),
-      );
-    });
+    await applyFailedStatusFilter();
     expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", false);
 
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
@@ -529,16 +559,7 @@ describe("CommunicationPage delivery log - filters, search, pagination", () => {
     await goToDeliveryLogTab();
     await screen.findByText("Guest One");
 
-    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    fireEvent.click(screen.getByRole("button", { name: /^Status,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Failed" }));
-    await waitFor(() => {
-      expect(fetchEventDeliveries).toHaveBeenLastCalledWith(
-        "evt-1",
-        expect.objectContaining({ status: "failed" }),
-        expect.any(AbortSignal),
-      );
-    });
+    await applyFailedStatusFilter();
     expect(screen.getByRole("button", { name: "Clear filters" })).toHaveProperty("disabled", false);
 
     fireEvent.click(screen.getByRole("button", { name: /^Status,/ }));
@@ -637,21 +658,7 @@ describe("CommunicationPage delivery log - sent message preview modal", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await openSentMessagePreviewDialog("Guest One");
-
-    // Closing unmounts the modal, whose cleanup aborts the in-flight fetch - the resulting
-    // rejection must be swallowed (controller.signal.aborted guards) rather than trying to
-    // setError/setLoading on an unmounted component.
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(screen.queryByRole("dialog", { name: "Sent message preview" })).toBeNull();
-
-    // Flush the aborted promise's reject -> catch -> finally chain before asserting.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const stateUpdateWarning = consoleError.mock.calls.some((call) =>
-      String(call[0]).includes("Can't perform a React state update"),
-    );
-    expect(stateUpdateWarning).toBe(false);
-
-    consoleError.mockRestore();
+    await expectCleanCloseWhilePending("Sent message preview", consoleError);
   });
 
   it("shows an error state when the fetch fails", async () => {
@@ -797,20 +804,7 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await openDeliveryDetailsDialog("Guest Two");
-
-    // Closing unmounts the modal, whose cleanup aborts the in-flight fetch - the resulting
-    // rejection must be swallowed (controller.signal.aborted guards) rather than trying to
-    // setError/setLoading on an unmounted component.
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(screen.queryByRole("dialog", { name: "Delivery details" })).toBeNull();
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const stateUpdateWarning = consoleError.mock.calls.some((call) =>
-      String(call[0]).includes("Can't perform a React state update"),
-    );
-    expect(stateUpdateWarning).toBe(false);
-
-    consoleError.mockRestore();
+    await expectCleanCloseWhilePending("Delivery details", consoleError);
   });
 
   it("shows an error state when the fetch fails", async () => {

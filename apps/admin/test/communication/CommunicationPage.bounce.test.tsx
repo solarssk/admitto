@@ -103,6 +103,31 @@ function renderPage() {
   return renderPageAt("evt-1");
 }
 
+/** Sets up a single bounced delivery for Guest One, dismisses it via the delivery log's row menu,
+ * and waits for the dismiss call to land - the "arrange" both dismiss-outcome tests below start
+ * from, before diverging into their own assertions. */
+async function dismissGuestOneBounce() {
+  fetchEventTemplate.mockResolvedValue(templatePayload);
+  fetchEventOverview.mockResolvedValue({
+    email_bounced: 1,
+    email_failed: 0,
+    email_sent: 10,
+    email_queued: 0,
+  });
+  fetchEventDeliveries.mockResolvedValue({ items: [makeBouncedDelivery()], total: 1 });
+  dismissBounce.mockResolvedValue({ email_bounce_dismissed_at: "2026-09-01T13:00:00.000Z" });
+
+  renderPage();
+
+  fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
+
+  await waitFor(() => {
+    expect(dismissBounce).toHaveBeenCalledWith("evt-1", "att-1");
+  });
+}
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -268,25 +293,7 @@ describe("CommunicationPage bounce banner", () => {
   });
 
   it("refreshes the bounce count after dismissing a bounce from the delivery log", async () => {
-    fetchEventTemplate.mockResolvedValue(templatePayload);
-    fetchEventOverview.mockResolvedValue({
-      email_bounced: 1,
-      email_failed: 0,
-      email_sent: 10,
-      email_queued: 0,
-    });
-    fetchEventDeliveries.mockResolvedValue({ items: [makeBouncedDelivery()], total: 1 });
-    dismissBounce.mockResolvedValue({ email_bounce_dismissed_at: "2026-09-01T13:00:00.000Z" });
-
-    renderPage();
-
-    fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
-
-    await waitFor(() => {
-      expect(dismissBounce).toHaveBeenCalledWith("evt-1", "att-1");
-    });
+    await dismissGuestOneBounce();
     expect(await screen.findByText("Dismissed the bounce notice for Guest One.")).toBeTruthy();
     // Once on mount, once again after the dismiss succeeds.
     await waitFor(() => {
@@ -451,25 +458,7 @@ describe("CommunicationPage bounce banner", () => {
   });
 
   it("greys out Resend and Dismiss bounce for a row once its dismiss succeeds", async () => {
-    fetchEventTemplate.mockResolvedValue(templatePayload);
-    fetchEventOverview.mockResolvedValue({
-      email_bounced: 1,
-      email_failed: 0,
-      email_sent: 10,
-      email_queued: 0,
-    });
-    fetchEventDeliveries.mockResolvedValue({ items: [makeBouncedDelivery()], total: 1 });
-    dismissBounce.mockResolvedValue({ email_bounce_dismissed_at: "2026-09-01T13:00:00.000Z" });
-
-    renderPage();
-
-    fireEvent.click(await screen.findByRole("button", { name: "View delivery log" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Actions for Guest One's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Dismiss bounce" }));
-
-    await waitFor(() => {
-      expect(dismissBounce).toHaveBeenCalledWith("evt-1", "att-1");
-    });
+    await dismissGuestOneBounce();
 
     fireEvent.click(screen.getByRole("tab", { name: "Email" }));
     fireEvent.click(screen.getByRole("tab", { name: /Delivery log/i }));
