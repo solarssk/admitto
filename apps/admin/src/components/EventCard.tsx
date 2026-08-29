@@ -6,12 +6,15 @@ import {
   tempUnitFromTimeZone,
   type TempUnit,
 } from "@admitto/shared";
-import type { EventDto } from "../api/types.js";
+import type { CheckInEventDto, EventDto } from "../api/types.js";
 import { eventCardDateParts, eventCardStatus } from "../utils/event-card-status.js";
 import { weatherConditionLabel, weatherIconClass } from "../utils/weather-icon.js";
 
 export interface EventCardProps {
-  event: EventDto;
+  // Accepts the narrower operator-facing CheckInEventDto (no wallet toggle fields, see its own
+  // doc comment) as well as the full admin EventDto - this component reads neither, so both the
+  // admin event picker and the operator check-in picker share it unchanged.
+  event: EventDto | CheckInEventDto;
   href: string;
   touch?: boolean;
   showStatusBadge?: boolean;
@@ -65,7 +68,7 @@ function weatherChipTooFar(w: NonNullable<EventDto["weather"]>): WeatherChip {
   };
 }
 
-function weatherChip(event: EventDto, unit: TempUnit): WeatherChip | null {
+function weatherChip(event: EventDto | CheckInEventDto, unit: TempUnit): WeatherChip | null {
   const w = event.weather;
   if (!w) {
     if (event.has_coordinates === true) {

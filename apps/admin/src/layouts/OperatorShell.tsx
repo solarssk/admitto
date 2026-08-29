@@ -6,11 +6,11 @@ import { BrandLink } from "./BrandLink.js";
 import { InstanceSidebarFoot } from "./InstanceSidebarFoot.js";
 import { fetchCheckInEvents } from "../api/client.js";
 import { formatEventCalendarDate } from "../utils/event-dates.js";
-import type { EventDto } from "../api/types.js";
+import type { CheckInEventDto } from "../api/types.js";
 
 function OperatorSidebar() {
   const { eventId } = useParams();
-  const [event, setEvent] = useState<EventDto | null>(null);
+  const [event, setEvent] = useState<CheckInEventDto | null>(null);
 
   useEffect(() => {
     if (!eventId) { setEvent(null); return; }
