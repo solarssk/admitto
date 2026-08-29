@@ -2,14 +2,14 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Card, PageHeader } from "@admitto/ui";
 import { ApiError, fetchCheckInEvents } from "../api/client.js";
-import type { EventDto } from "../api/types.js";
+import type { CheckInEventDto } from "../api/types.js";
 import { EventCard, eventGridClassName } from "../components/EventCard.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 
 export function CheckInEntryPage() {
   const navigate = useNavigate();
-  const [events, setEvents] = useState<EventDto[]>([]);
+  const [events, setEvents] = useState<CheckInEventDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const { reportApiError } = useConnectionState();

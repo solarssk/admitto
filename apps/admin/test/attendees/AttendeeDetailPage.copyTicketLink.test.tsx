@@ -5,7 +5,7 @@ import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { ApiError } from "../../src/api/client.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { baseAttendeeDetailEvent, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 const fetchTicketLink = vi.fn();
@@ -27,16 +27,7 @@ vi.mock("react-router", async (importOriginal) => {
   return {
     ...actual,
     useOutletContext: () => ({
-      event: {
-        id: "evt-1",
-        title: "Demo",
-        slug: "demo",
-        date: "2026-06-01",
-        timezone: "Europe/Warsaw",
-        location: null,
-        attendee_count: 1,
-        archived_at: null,
-      },
+      event: baseAttendeeDetailEvent,
     }),
   };
 });

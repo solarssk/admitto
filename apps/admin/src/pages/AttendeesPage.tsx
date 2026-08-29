@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
 import { Button, EmptyState, ModalBackdrop, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
+import { enabledWalletPlatforms } from "@admitto/shared";
 import {
   ApiError,
   bulkChangeRsvpStatus,
@@ -807,6 +808,7 @@ function reportLoadListError(err: unknown, ctx: LoadListErrorContext): void {
 export function AttendeesPage() {
   const { eventId } = useParams();
   const { event } = useOutletContext<{ event: EventDto }>();
+  const walletPlatforms = enabledWalletPlatforms(event);
   const navigate = useNavigate();
   const { addToast } = useToast();
   const { reportApiError } = useConnectionState();
@@ -1702,6 +1704,7 @@ export function AttendeesPage() {
         }}
         eventTimezone={event.timezone}
         event={event}
+        walletPlatforms={walletPlatforms}
       />
       )}
 

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
+import { enabledWalletPlatforms, type EnabledWalletPlatforms } from "@admitto/shared";
 import {
   Avatar,
   Badge,
@@ -128,6 +129,7 @@ function MoreActionsMenu({
   onRevokeItems,
   onRestorePass,
   onRevokePass,
+  walletPlatforms,
   walletPass,
   walletBusy,
   onVoidWallet,
@@ -157,6 +159,7 @@ function MoreActionsMenu({
   onRevokeItems: () => void;
   onRestorePass: () => void;
   onRevokePass: () => void;
+  walletPlatforms: EnabledWalletPlatforms;
   walletPass: WalletPassActionDto | null;
   walletBusy: boolean;
   onVoidWallet: () => void;
@@ -281,9 +284,12 @@ function MoreActionsMenu({
             }}
           />
           {/* Own divider only when the group itself renders something (walletPass in an
-              active/voided state) - an unconditional one here would leave an empty gap between
-              two adjacent dividers whenever the attendee has no wallet pass yet (bot review). */}
-          {hasWalletLifecycleActions(walletPass) && (
+              active/voided state, and the event still offers at least one wallet platform - an
+              admin who turns Wallet off shouldn't still be able to void/restore/push/delete a
+              pass through this menu even though the Wallet card itself is now hidden, bot
+              review) - an unconditional one here would leave an empty gap between two adjacent
+              dividers whenever the attendee has no wallet pass yet (bot review). */}
+          {walletPlatforms.any && hasWalletLifecycleActions(walletPass) && (
             <>
               <hr className="more-actions-menu__divider" />
               <WalletActionMenuItems
@@ -788,6 +794,7 @@ function AttendeeOverviewTab({
   customDataEntries,
   eventItems,
   event,
+  walletPlatforms,
 }: Readonly<{
   detail: AttendeeDetailDto;
   ticketTypes: TicketTypeDto[];
@@ -795,6 +802,7 @@ function AttendeeOverviewTab({
   customDataEntries: Array<[string, string, string]>;
   eventItems: AttendeeDetailDto["event_items"];
   event: EventDto;
+  walletPlatforms: EnabledWalletPlatforms;
 }>) {
   const [sentMessageRow, setSentMessageRow] = useState<DeliveryDto | null>(null);
   const [detailsRow, setDetailsRow] = useState<DeliveryDto | null>(null);
@@ -879,96 +887,112 @@ function AttendeeOverviewTab({
           )}
         </Card>
 
-        <Card
-          title="Wallet"
-          actions={
-            <WalletLinksMenu
-              appleUrl={detail.wallet_apple_link}
-              androidUrl={detail.wallet_google_link}
-            />
-          }
-        >
-          {detail.wallet_pass ? (
-            <div className="attendee-detail-readonly">
-              <div className="attendee-detail-row">
-                <span>Apple Wallet</span>
-                <span>
-                  {walletRegistrationLabel(
-                    detail.wallet_pass.apple_active_registrations,
-                    detail.wallet_pass.apple_inactive_registrations,
-                  )}
-                </span>
+        {walletPlatforms.any && (
+          <Card
+            title="Wallet"
+            actions={
+              <WalletLinksMenu
+                appleUrl={walletPlatforms.apple ? detail.wallet_apple_link : null}
+                androidUrl={walletPlatforms.google ? detail.wallet_google_link : null}
+              />
+            }
+          >
+            {detail.wallet_pass ? (
+              <div className="attendee-detail-readonly">
+                {walletPlatforms.apple && (
+                  <div className="attendee-detail-row">
+                    <span>Apple Wallet</span>
+                    <span>
+                      {walletRegistrationLabel(
+                        detail.wallet_pass.apple_active_registrations,
+                        detail.wallet_pass.apple_inactive_registrations,
+                      )}
+                    </span>
+                  </div>
+                )}
+                {walletPlatforms.google && (
+                  <div className="attendee-detail-row">
+                    <span>Google Wallet</span>
+                    <span>
+                      {walletRegistrationLabel(
+                        detail.wallet_pass.google_active_registrations,
+                        detail.wallet_pass.google_inactive_registrations,
+                      )}
+                    </span>
+                  </div>
+                )}
+                {/* No samsung_active_registrations field exists (no PassCreator API support yet -
+                    see EnabledWalletPlatforms.samsung's own doc comment), so unlike the Apple/Google
+                    rows above this can never show a real per-attendee status - a reserved row,
+                    same idea as the always-0 Samsung slice in Reports' platform breakdown. */}
+                {walletPlatforms.samsung && (
+                  <div className="attendee-detail-row">
+                    <span>Samsung Wallet</span>
+                    <span>Not supported yet</span>
+                  </div>
+                )}
+                {/* None of these timestamps has a captured actor/device timezone (issued_at is the
+                    attendee's own device; voided_at/last_synced_at/registration_checked_at are
+                    admin/worker actions with no persisted zone; first_downloaded_at is PassCreator's
+                    own UTC value, see formatFirstDownloadedAt) - viewer's own browser zone, matching
+                    viewerLocalTime's "no known actor zone" convention, not the event's timezone
+                    (which has no real relationship to any of these - PO review). */}
+                {detail.wallet_pass.first_downloaded_at && (
+                  <div className="attendee-detail-row">
+                    <span>First downloaded</span>
+                    <span className="mono">
+                      {formatFirstDownloadedAt(detail.wallet_pass.first_downloaded_at)}
+                    </span>
+                  </div>
+                )}
+                {detail.wallet_pass.issued_at && (
+                  <div className="attendee-detail-row">
+                    <span>Pass created</span>
+                    <span className="mono">
+                      {formatEventDateTime(detail.wallet_pass.issued_at, getBrowserTimeZone())}
+                    </span>
+                  </div>
+                )}
+                {detail.wallet_pass.voided_at && (
+                  <div className="attendee-detail-row">
+                    <span>Voided</span>
+                    <span className="mono">
+                      {formatEventDateTime(detail.wallet_pass.voided_at, getBrowserTimeZone())}
+                    </span>
+                  </div>
+                )}
+                {detail.wallet_pass.last_synced_at && (
+                  <div className="attendee-detail-row">
+                    <span>Last updated</span>
+                    <span className="mono">
+                      {formatEventDateTime(detail.wallet_pass.last_synced_at, getBrowserTimeZone())}
+                    </span>
+                  </div>
+                )}
+                {detail.wallet_pass.registration_checked_at && (
+                  <div className="attendee-detail-row">
+                    <span>Last system status update</span>
+                    <span className="mono">
+                      {formatEventDateTime(detail.wallet_pass.registration_checked_at, getBrowserTimeZone())}
+                    </span>
+                  </div>
+                )}
+                {detail.wallet_pass.last_error_code && (
+                  <div className="attendee-detail-row">
+                    <span>Last error</span>
+                    <span className="mono">{detail.wallet_pass.last_error_code}</span>
+                  </div>
+                )}
               </div>
-              <div className="attendee-detail-row">
-                <span>Google Wallet</span>
-                <span>
-                  {walletRegistrationLabel(
-                    detail.wallet_pass.google_active_registrations,
-                    detail.wallet_pass.google_inactive_registrations,
-                  )}
-                </span>
-              </div>
-              {/* None of these timestamps has a captured actor/device timezone (issued_at is the
-                  attendee's own device; voided_at/last_synced_at/registration_checked_at are
-                  admin/worker actions with no persisted zone; first_downloaded_at is PassCreator's
-                  own UTC value, see formatFirstDownloadedAt) - viewer's own browser zone, matching
-                  viewerLocalTime's "no known actor zone" convention, not the event's timezone
-                  (which has no real relationship to any of these - PO review). */}
-              {detail.wallet_pass.first_downloaded_at && (
-                <div className="attendee-detail-row">
-                  <span>First downloaded</span>
-                  <span className="mono">
-                    {formatFirstDownloadedAt(detail.wallet_pass.first_downloaded_at)}
-                  </span>
-                </div>
-              )}
-              {detail.wallet_pass.issued_at && (
-                <div className="attendee-detail-row">
-                  <span>Pass created</span>
-                  <span className="mono">
-                    {formatEventDateTime(detail.wallet_pass.issued_at, getBrowserTimeZone())}
-                  </span>
-                </div>
-              )}
-              {detail.wallet_pass.voided_at && (
-                <div className="attendee-detail-row">
-                  <span>Voided</span>
-                  <span className="mono">
-                    {formatEventDateTime(detail.wallet_pass.voided_at, getBrowserTimeZone())}
-                  </span>
-                </div>
-              )}
-              {detail.wallet_pass.last_synced_at && (
-                <div className="attendee-detail-row">
-                  <span>Last updated</span>
-                  <span className="mono">
-                    {formatEventDateTime(detail.wallet_pass.last_synced_at, getBrowserTimeZone())}
-                  </span>
-                </div>
-              )}
-              {detail.wallet_pass.registration_checked_at && (
-                <div className="attendee-detail-row">
-                  <span>Last system status update</span>
-                  <span className="mono">
-                    {formatEventDateTime(detail.wallet_pass.registration_checked_at, getBrowserTimeZone())}
-                  </span>
-                </div>
-              )}
-              {detail.wallet_pass.last_error_code && (
-                <div className="attendee-detail-row">
-                  <span>Last error</span>
-                  <span className="mono">{detail.wallet_pass.last_error_code}</span>
-                </div>
-              )}
-            </div>
-          ) : (
-            <EmptyState
-              icon={<i className="ti ti-wallet" aria-hidden="true" />}
-              title="Not added to a wallet"
-              description="This attendee hasn't added their ticket to a wallet yet."
-            />
-          )}
-        </Card>
+            ) : (
+              <EmptyState
+                icon={<i className="ti ti-wallet" aria-hidden="true" />}
+                title="Not added to a wallet"
+                description="This attendee hasn't added their ticket to a wallet yet."
+              />
+            )}
+          </Card>
+        )}
       </div>
 
       <div className="attendee-detail-side">
@@ -1486,6 +1510,31 @@ function classifyPassStatusError(err: unknown): PassStatusErrorOutcome {
 export function AttendeeDetailPage() {
   const { eventId, attendeeId } = useParams();
   const { event } = useOutletContext<{ event: EventDto }>();
+  // Stable across re-renders that don't change the event's own wallet toggles - enabledWalletPlatforms
+  // returns a fresh object each call, and this reference flows down to AttendeeOverviewTab (a plain
+  // function component, not memoized, so this doesn't currently gate a re-render skip either way -
+  // kept stable anyway so a future memo() on that component, or on WalletsReportsTab.tsx's own
+  // consumer of the same helper, doesn't silently stop working because of an unmemoized prop here).
+  // Built from the individual toggle fields rather than passing `event` itself - `event`'s own
+  // object reference is unstable across re-renders that don't change any wallet toggle, which
+  // would defeat the memoization above; the callback below only reads the four fields already in
+  // the dependency array, satisfying react-hooks/exhaustive-deps without reintroducing that (bot
+  // review).
+  const walletPlatforms = useMemo(
+    () =>
+      enabledWalletPlatforms({
+        wallet_enabled: event.wallet_enabled,
+        wallet_apple_enabled: event.wallet_apple_enabled,
+        wallet_google_enabled: event.wallet_google_enabled,
+        wallet_samsung_enabled: event.wallet_samsung_enabled,
+      }),
+    [
+      event.wallet_enabled,
+      event.wallet_apple_enabled,
+      event.wallet_google_enabled,
+      event.wallet_samsung_enabled,
+    ],
+  );
   const { assignments, user } = useAuth();
   const superadmin = isSuperadmin(assignments);
   const orgAdmin = isOrgAdmin(assignments, event.organization_id);
@@ -2223,6 +2272,7 @@ export function AttendeeDetailPage() {
                 setRevokeError(null);
                 setActiveRevoke("pass");
               }}
+              walletPlatforms={walletPlatforms}
               walletPass={detail.wallet_pass}
               walletBusy={walletBusy}
               onVoidWallet={() => {
@@ -2303,18 +2353,20 @@ export function AttendeeDetailPage() {
             )}
           </div>
         </div>
-        <div className="attendee-status-chip">
-          <span className={`attendee-status-chip__icon attendee-status-chip__icon--${walletTone(detail.wallet_pass)}`}>
-            <i className="ti ti-wallet" aria-hidden="true" />
-          </span>
-          <div className="attendee-status-chip__body">
-            <strong>Wallet</strong>
-            <WalletStatusBadge
-              status={detail.wallet_pass?.status ?? null}
-              installed={!!detail.wallet_pass && isWalletPassInstalled(detail.wallet_pass)}
-            />
+        {walletPlatforms.any && (
+          <div className="attendee-status-chip">
+            <span className={`attendee-status-chip__icon attendee-status-chip__icon--${walletTone(detail.wallet_pass)}`}>
+              <i className="ti ti-wallet" aria-hidden="true" />
+            </span>
+            <div className="attendee-status-chip__body">
+              <strong>Wallet</strong>
+              <WalletStatusBadge
+                status={detail.wallet_pass?.status ?? null}
+                installed={!!detail.wallet_pass && isWalletPassInstalled(detail.wallet_pass, walletPlatforms)}
+              />
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <Tabs
@@ -2335,6 +2387,7 @@ export function AttendeeDetailPage() {
           customDataEntries={customDataEntries}
           eventItems={eventItems}
           event={event}
+          walletPlatforms={walletPlatforms}
         />
       )}
 

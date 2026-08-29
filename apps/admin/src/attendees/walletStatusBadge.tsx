@@ -34,15 +34,23 @@ export const WALLET_STATUS_VARIANTS: Record<WalletPassStatus, "neutral" | "ok" |
 };
 
 /** True once PassCreator itself has confirmed at least one device actually registered this pass
- * (apple/google_active_registrations > 0) - the only signal that distinguishes a genuinely
- * installed pass from one that was merely created server-side. Null counts (worker hasn't synced
- * yet) or a confirmed zero both read as "not installed" - we only claim "Added" on positive
- * evidence from the API, never by default. */
-export function isWalletPassInstalled(pass: {
-  apple_active_registrations: number | null;
-  google_active_registrations: number | null;
-}): boolean {
-  return (pass.apple_active_registrations ?? 0) > 0 || (pass.google_active_registrations ?? 0) > 0;
+ * on a platform the event currently offers (apple/google_active_registrations > 0) - the only
+ * signal that distinguishes a genuinely installed pass from one that was merely created
+ * server-side. Null counts (worker hasn't synced yet) or a confirmed zero both read as "not
+ * installed" - we only claim "Added" on positive evidence from the API, never by default. A
+ * registration on a platform the admin has since disabled doesn't count - the badge otherwise
+ * claimed "Added" even when the only platform shown (e.g. Google) had no registration at all. */
+export function isWalletPassInstalled(
+  pass: {
+    apple_active_registrations: number | null;
+    google_active_registrations: number | null;
+  },
+  platforms: { apple: boolean; google: boolean },
+): boolean {
+  return (
+    (platforms.apple && (pass.apple_active_registrations ?? 0) > 0) ||
+    (platforms.google && (pass.google_active_registrations ?? 0) > 0)
+  );
 }
 
 /** `status: null` means the attendee has never added this ticket to a wallet - distinct from
