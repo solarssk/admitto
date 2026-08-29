@@ -80,6 +80,9 @@ jobs:
       - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
       - run: npm run db:generate -w @admitto/db
       - run: npm audit --audit-level=high
+      - name: License compliance check (report-only - see scripts/check-licenses.mjs)
+        continue-on-error: true
+        run: node scripts/check-licenses.mjs
       - run: npm run build
       - name: Release doc version markers match package.json
         run: python3 scripts/sync-release-docs.py --check
@@ -367,6 +370,39 @@ jobs:
             exit 1
           fi
           echo "OK: no real email addresses in data files"
+      - name: No phone-number-shaped strings in tracked data files
+        run: |
+          # E.164-leaning: a leading "+" (rare outside phone numbers) followed by 7-21 real
+          # digits, allowing space/dot/paren/dash separators grouped in runs of at most 2 between
+          # digits (covers a US-style grouping - country code, then an area code wrapped in
+          # parens followed by a space, then a dashed local number - without letting separators
+          # pad out the count). Each unit past the first digit is exactly one digit, optionally
+          # preceded by up to 2 separator chars - so {6,20} counts real digits, not characters: a
+          # naive `[0-9 .()-]{5,19}` (the first version of this check) let separator padding
+          # satisfy the length requirement with almost no real digits - a "+" followed by one
+          # digit, five dashes, and one more digit used to match despite having only 2 real
+          # digits (caught by review on PR #1158 before this shipped). The (^|[^0-9]) / ($|[^0-9])
+          # boundary groups require a non-digit (or line start/end) on both sides, so this does
+          # not fire on a "+" that is itself part of a longer digit run - eg. semver build
+          # metadata like "1.0.0+20130313144700", or a big numeric id - the main false-positive
+          # class for naive phone regexes. A "+"-prefixed decimal value can still match if its
+          # digit count alone happens to land in phone-number range - digit count alone can't
+          # distinguish that from a short real phone number, and no separator-shape fix changes
+          # that; unchanged from the original design intent, not a regression. Wider scope than
+          # the email check above (also .yaml/.yml/.sql): measured zero false positives against
+          # this repo's current tracked files in that scope before wiring this in as a blocking
+          # check. NOTE FOR FUTURE EDITS: this step scans .yml files too, including this workflow
+          # file itself - do not put a literal phone-shaped example in a comment near this step,
+          # it will match its own check (this is exactly how the previous comment revision broke
+          # CI; describe examples in prose instead of a quoted literal).
+          HITS=$(git ls-files -z -- '*.csv' '*.tsv' '*.json' '*.yaml' '*.yml' '*.sql' ':!package-lock.json' \
+            | xargs -0 grep -hREo '(^|[^0-9])\+[1-9]([0-9]|[ .()-]{1,2}[0-9]){6,20}($|[^0-9])' -- || true)
+          if [ -n "$HITS" ]; then
+            echo "Suspicious phone numbers found in data files:"
+            echo "$HITS"
+            exit 1
+          fi
+          echo "OK: no phone-number-shaped strings in data files"
 
   migration-safety:
     runs-on: ubuntu-latest
@@ -400,6 +436,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      security-events: write
     needs: [build-test, migration-safety]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -407,3 +444,27 @@ jobs:
           persist-credentials: false
       - name: Build production image
         run: docker build -f Dockerfile -t admitto-app .
+
+      # Report-only: catches base-image CVE drift on every main build instead of waiting for the
+      # next release tag, where publish-container.yml's Trivy step still does the blocking
+      # CRITICAL gate. Same tool/settings, exit-code 0 here since nothing downstream depends on
+      # this build passing or failing on vulnerabilities.
+      - name: Trivy vulnerability scan (SARIF, report-only)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: admitto-app
+          format: sarif
+          output: trivy-results.sarif
+          scanners: vuln
+          vuln-type: os,library
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
+          exit-code: 0
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28  # v4
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-container-main
