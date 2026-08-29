@@ -102,6 +102,12 @@ function AdoptionGauge({
   // support is per-ring, not an aggregate across rings) - an absolutely-positioned HTML overlay
   // draws the center text instead, same as PlatformDonut and AdmissionGauge below for the same
   // reason.
+  //
+  // isAnimationActive={false} on every ring/slice/bar in this file (not just this one): traced a
+  // "chart renders correctly once, then goes blank/frozen" report to Recharts' entrance animation
+  // getting stuck at its zero-size starting frame indefinitely - see TimeToTapChart's BarShape
+  // comment below for how this was diagnosed. None of these five charts benefit from animating in
+  // on every load anyway (same reasoning CumulativeChart's Area already had this for).
   const rings = [
     { name: "Issued", value: issuedPct, fill: PRIMARY },
     { name: "Installed", value: installedPct, fill: STATUS_OK },
@@ -122,7 +128,7 @@ function AdoptionGauge({
              the axis domain must be fixed at [0, 100] rather than the implicit per-render scale
              (largest value among the three rings) RadialBarChart falls back to without one. */}
           <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
-          <RadialBar dataKey="value" background={{ fill: GRAY_100 }} cornerRadius="50%" />
+          <RadialBar dataKey="value" background={{ fill: GRAY_100 }} cornerRadius="50%" isAnimationActive={false} />
         </RadialBarChart>
       </ResponsiveContainer>
       <div className="wallets-gauge-overlay__center">
@@ -219,12 +225,17 @@ function PlatformDonut({
             // column anyway.
             label={false}
             labelLine={false}
+            isAnimationActive={false}
           >
             {slices.map((slice) => (
               <Cell key={slice.label} fill={slice.color} />
             ))}
           </Pie>
-          <Tooltip formatter={(value) => `${value} pass${value === 1 ? "" : "es"}`} />
+          {/* Recharts' default tooltip position for a Pie tracks the cursor, which for a donut
+             this size lands inside the empty center hole - directly on top of the HTML center
+             label overlay above. Pinned to just below the 256px chart instead (x still follows
+             the hovered slice) so it never competes with that overlay. */}
+          <Tooltip formatter={(value) => `${value} pass${value === 1 ? "" : "es"}`} position={{ y: 256 }} />
         </PieChart>
       </ResponsiveContainer>
       <div className="wallets-gauge-overlay__center">
@@ -380,31 +391,54 @@ function TimeToTapChart({ buckets }: Readonly<{ buckets: EventWalletReportsRespo
     fill: BUCKET_COLORS[b.key],
   }));
 
+  // Diagnosed by logging the raw geometry Recharts computed per bar: with the default
+  // Cell-per-bar rendering this chart never painted anything - `isAnimating: true`,
+  // `animationElapsedTime: 0` forever, every bar frozen at its zero-size entrance-animation
+  // starting frame (Recharts' default Rectangle skips rendering entirely at 0x0, so this showed
+  // as nothing at all, not a visible-but-tiny bar). `isAnimationActive={false}` below fixes the
+  // height/y side of that. Separately, and regardless of animation, the computed `width` for
+  // every bar was *also* 0 (so was Recharts' own `background` reference rect) - this chart's
+  // category-bandwidth calculation itself doesn't produce a usable width here, so `barSize={40}`
+  // sets it explicitly instead of trusting that computation. A `shape` render prop (drawing the
+  // rect + label directly) replaces Cell-based per-bar coloring so this always renders regardless
+  // of whichever of those two Recharts computations is fed into it.
+  //
   // A tall bar's own count label lands inside its colored fill, not above it (there's no
   // "outside the bar" room left once a bar is anywhere near 100% of the 0-100 axis) - dark navy
   // text there read as nearly illegible against the bar's own color. White reads fine on every
   // bucket's color; only a near-empty bar would put it on the white card background instead,
   // where white would vanish, hence the threshold.
-  // x/y/width come through as `string | number | undefined` (Recharts' generic label-geometry
-  // type covers every axis type it supports, not just this numeric one) - Number(...) with a
-  // fallback narrows them back to the plain numbers this bar chart's own geometry always uses.
-  function ValueLabel({ x, y, width, index }: Readonly<{ x?: string | number; y?: string | number; width?: string | number; index?: number }>) {
+  // x/y/width/height come through as `string | number | undefined` (Recharts' generic
+  // shape-geometry type covers every axis type it supports, not just this numeric one) -
+  // Number(...) with a fallback narrows them back to the plain numbers this bar chart's own
+  // geometry always uses.
+  function BarShape({
+    x,
+    y,
+    width,
+    height,
+    index,
+  }: Readonly<{ x?: string | number; y?: string | number; width?: string | number; height?: string | number; index?: number }>) {
     const row = rows[index ?? 0]!;
-    const insideBar = row.pct >= 15;
     const left = Number(x ?? 0);
     const top = Number(y ?? 0);
     const barWidth = Number(width ?? 0);
+    const barHeight = Number(height ?? 0);
+    const insideBar = row.pct >= 15;
     return (
-      <text
-        x={left + barWidth / 2}
-        y={insideBar ? top + 16 : top - 8}
-        textAnchor="middle"
-        fontSize={12}
-        fontWeight={700}
-        fill={insideBar ? "#ffffff" : TEXT_PRIMARY}
-      >
-        {row.count}
-      </text>
+      <g>
+        <rect x={left} y={top} width={barWidth} height={barHeight} rx={4} ry={4} fill={row.fill} />
+        <text
+          x={left + barWidth / 2}
+          y={insideBar ? top + 16 : top - 8}
+          textAnchor="middle"
+          fontSize={12}
+          fontWeight={700}
+          fill={insideBar ? "#ffffff" : TEXT_PRIMARY}
+        >
+          {row.count}
+        </text>
+      </g>
     );
   }
 
@@ -429,11 +463,7 @@ function TimeToTapChart({ buckets }: Readonly<{ buckets: EventWalletReportsRespo
             return [`${count} attendee${count === 1 ? "" : "s"} (${value}%)`, undefined];
           }}
         />
-        <Bar dataKey="pct" radius={[4, 4, 0, 0]} label={ValueLabel}>
-          {rows.map((row) => (
-            <Cell key={row.key} fill={row.fill} />
-          ))}
-        </Bar>
+        <Bar dataKey="pct" shape={BarShape} isAnimationActive={false} barSize={40} />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -462,7 +492,7 @@ function AdmissionGauge({ pct, color }: Readonly<{ pct: number; color: string }>
             style={{ fontFamily: FONT_FAMILY }}
           >
             <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
-            <RadialBar dataKey="value" background={{ fill: GRAY_100 }} cornerRadius="50%" />
+            <RadialBar dataKey="value" background={{ fill: GRAY_100 }} cornerRadius="50%" isAnimationActive={false} />
           </RadialBarChart>
         </ResponsiveContainer>
         {/* Same reasoning as AdoptionGauge's own overlay above: Recharts has no native centered

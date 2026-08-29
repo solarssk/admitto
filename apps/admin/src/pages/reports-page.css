@@ -686,6 +686,22 @@
   flex: none;
 }
 
+/* Recharts renders every chart's root <svg> with tabindex="0" and role="application" by
+   default (its own built-in keyboard-accessibility support), which a plain click also focuses -
+   with nothing styling that state, the browser's raw default outline showed instead of this
+   app's own focus-ring convention (attendees.css, communication.css, ...). Covers every chart on
+   this page (Recharts is only used here, in WalletsReportsTab), not just the two inside
+   .wallets-gauge-overlay. Suppressed only for mouse-driven focus, not :focus-visible, so keyboard
+   navigation into a chart keeps a visible indicator. */
+.recharts-surface:focus {
+  outline: none;
+}
+
+.recharts-surface:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
 .wallets-gauge-overlay__center {
   position: absolute;
   inset: 0;

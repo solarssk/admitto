@@ -36,7 +36,7 @@ let capturedTap:
         name: string,
         props: { payload: { count: number } },
       ) => [string, undefined];
-      barLabel?: (props: { x: number; y: number; width: number; index: number }) => ReactElement;
+      barShape?: (props: { x: number; y: number; width: number; height: number; index: number }) => ReactElement;
     }
   | undefined;
 
@@ -110,7 +110,7 @@ vi.mock("recharts", () => {
       rows: data,
       yTickFormatter: yAxis?.tickFormatter,
       tooltipFormatter: tooltip?.formatter,
-      barLabel: bar?.label,
+      barShape: bar?.shape,
     };
     return <div data-testid="rc-bar" data-rows={JSON.stringify(data)} />;
   };
@@ -443,15 +443,19 @@ describe("WalletsReportsTab", () => {
     // buckets fixture: [{count:5},{count:3},{count:1},{count:1}] - index 2 is one of the
     // fixture's two count===1 buckets (pct 10, below the 15% "label fits inside the bar"
     // threshold), exercising the same singular/plural and color-threshold logic the old
-    // ApexCharts dataLabels formatter/color array covered. The bar's own count label is drawn via
-    // the <Bar label> render prop now, not a formatter function - calling it directly with
-    // synthetic geometry is the only way to exercise it without a real Recharts render.
-    const tallBarLabel = capturedTap?.barLabel?.({ x: 0, y: 100, width: 40, index: 0 });
-    expect(tallBarLabel?.props.children).toBe(5);
-    expect(tallBarLabel?.props.fill).toBe("#ffffff");
-    const shortBarLabel = capturedTap?.barLabel?.({ x: 0, y: 100, width: 40, index: 2 });
-    expect(shortBarLabel?.props.children).toBe(1);
-    expect(shortBarLabel?.props.fill).not.toBe("#ffffff");
+    // ApexCharts dataLabels formatter/color array covered. The bar and its count label are both
+    // drawn by the <Bar shape> render prop now (not Recharts' own default rectangle + a separate
+    // label prop - see WalletsReportsTab.tsx's BarShape comment for why) - calling it directly
+    // with synthetic geometry, then reaching into its <text> child, is the only way to exercise
+    // this without a real Recharts render.
+    const tallBarShape = capturedTap?.barShape?.({ x: 0, y: 100, width: 40, height: 130, index: 0 });
+    const tallBarText = (tallBarShape?.props.children as ReactElement[])[1] as ReactElement<{ children: number; fill: string }>;
+    expect(tallBarText.props.children).toBe(5);
+    expect(tallBarText.props.fill).toBe("#ffffff");
+    const shortBarShape = capturedTap?.barShape?.({ x: 0, y: 220, width: 40, height: 10, index: 2 });
+    const shortBarText = (shortBarShape?.props.children as ReactElement[])[1] as ReactElement<{ children: number; fill: string }>;
+    expect(shortBarText.props.children).toBe(1);
+    expect(shortBarText.props.fill).not.toBe("#ffffff");
 
     expect(capturedTap?.tooltipFormatter?.(50, "pct", { payload: { count: 5 } })).toEqual([
       "5 attendees (50%)",
