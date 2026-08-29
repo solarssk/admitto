@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
+import { mockCheckInBootstrap } from "./checkInApiMock.js";
+import { lookupCheckInAttendees, submitCheckInScan } from "./checkInScanApiSetup.js";
 
 vi.mock("../../src/checkin/CameraScanner.js", () => ({
   CameraScanner: () => <div data-testid="camera-scanner" />,
@@ -14,47 +16,6 @@ vi.mock("../../src/hooks/useIsDesktop.js", () => ({
   isDesktopViewport: () => false,
 }));
 
-const fetchCheckInHistory = vi.fn();
-const fetchCheckInStats = vi.fn();
-const fetchCheckInOpsConfig = vi.fn();
-const fetchCheckInEvents = vi.fn();
-const submitCheckInScan = vi.fn();
-const lookupCheckInAttendees = vi.fn();
-
-vi.mock("../../src/hooks/useEventStream.js", () => ({
-  useEventStream: () => ({ connected: true, status: "connected" }),
-}));
-
-vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ deviceLabel: "desk-1", assignments: [] }),
-}));
-
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ state: "connected", reportApiError: vi.fn() }),
-}));
-
-vi.mock("../../src/api/client.js", () => ({
-  fetchTicketTypes: vi.fn().mockResolvedValue([]),
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
-  fetchCheckInHistory: (...args: unknown[]) => fetchCheckInHistory(...args),
-  fetchCheckInStats: (...args: unknown[]) => fetchCheckInStats(...args),
-  fetchCheckInOpsConfig: (...args: unknown[]) => fetchCheckInOpsConfig(...args),
-  fetchCheckInEvents: (...args: unknown[]) => fetchCheckInEvents(...args),
-  fetchAttendeeCard: vi.fn(),
-  lookupCheckInAttendees: (...args: unknown[]) => lookupCheckInAttendees(...args),
-  submitAttendeeNote: vi.fn(),
-  submitCheckInAdmit: vi.fn(),
-  submitCheckInScan: (...args: unknown[]) => submitCheckInScan(...args),
-  submitItemAction: vi.fn(),
-  undoLastCheckIn: vi.fn(),
-}));
-
 /** Lets a test control exactly when a mocked request resolves. */
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -62,18 +23,6 @@ function deferred<T>() {
     resolve = res;
   });
   return { promise, resolve };
-}
-
-function mockPageBootstrap() {
-  fetchCheckInOpsConfig.mockResolvedValue({
-    require_confirm_on_scan: false,
-    badge_at_entry: true,
-    allow_manual_lookup: true,
-    auto_advance_on_valid: true,
-  });
-  fetchCheckInEvents.mockResolvedValue([{ id: "evt-live", timezone: "UTC" }]);
-  fetchCheckInHistory.mockResolvedValue([]);
-  fetchCheckInStats.mockResolvedValue({ admitted_count: 0, total_count: 1 });
 }
 
 function renderPage() {
@@ -95,7 +44,7 @@ afterEach(() => {
 
 describe("mobile manual-entry overlay — closes only once the real outcome is known (bot review, round 7)", () => {
   it("keeps a multiple-match message inside the mobile overlay", async () => {
-    mockPageBootstrap();
+    mockCheckInBootstrap();
     lookupCheckInAttendees.mockResolvedValueOnce([
       {
         id: "att-1",
@@ -136,7 +85,7 @@ describe("mobile manual-entry overlay — closes only once the real outcome is k
     // immediately, before the request even started — so the manual-search
     // screen closed on a still-pending request, and any error or no-match
     // from a lookup fallback landed behind an already-hidden screen.
-    mockPageBootstrap();
+    mockCheckInBootstrap();
     const scan = deferred<{ status: "INVALID"; confirmed: false }>();
     submitCheckInScan.mockReturnValueOnce(scan.promise);
 

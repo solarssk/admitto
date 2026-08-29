@@ -6,6 +6,7 @@ import { createMemoryRouter, Link, Outlet } from "react-router";
 import { render } from "@testing-library/react";
 import { ToastProvider } from "@admitto/ui";
 import { IdentityProviderEditor } from "../../src/identity/IdentityProviderEditor.js";
+import { clickDiscardUnsavedChanges, clickKeepEditing } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -353,7 +354,7 @@ describe("IdentityProviderEditor — dirty guard", () => {
     // In-app navigation via the sidebar "Providers" link (not the Cancel button).
     fireEvent.click(screen.getByRole("link", { name: "Providers" }));
 
-    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    await clickDiscardUnsavedChanges();
     // On confirm, the blocker proceeds and the providers list renders.
     await waitFor(() => {
       expect(screen.getByText("providers-list")).toBeTruthy();
@@ -366,7 +367,7 @@ describe("IdentityProviderEditor — dirty guard", () => {
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google" } });
     fireEvent.click(screen.getByRole("link", { name: "Providers" }));
 
-    fireEvent.click(await screen.findByRole("button", { name: "Keep editing" }));
+    await clickKeepEditing();
     // Cancelled → editor stays, the typed value is preserved, list does not render.
     expect(screen.getByDisplayValue("Google")).toBeTruthy();
     expect(screen.queryByText("providers-list")).toBeNull();
@@ -408,7 +409,7 @@ describe("IdentityProviderEditor — dirty guard", () => {
     // Dirty p1, then in-app nav to p2 → prompt → confirm → discard → p2 loads.
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google X" } });
     router.navigate("/admin/settings/identity/providers/p2");
-    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    await clickDiscardUnsavedChanges();
     await screen.findByDisplayValue("Okta");
 
     // The bypass must be one-shot: dirty p2 + another navigation must prompt again.
@@ -432,7 +433,7 @@ describe("IdentityProviderEditor — dirty guard", () => {
 
     // Dirty (cleared field) → confirm discard → nav to p2 loads clean, no stale error.
     router.navigate("/admin/settings/identity/providers/p2");
-    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    await clickDiscardUnsavedChanges();
     await screen.findByDisplayValue("Okta");
     expect(screen.queryByText("Display name is required.")).toBeNull();
   });
@@ -528,7 +529,7 @@ describe("IdentityProviderEditor — coverage", () => {
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google X" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    await clickDiscardUnsavedChanges();
     expect(await screen.findByText("providers-list")).toBeTruthy();
   });
 
@@ -540,7 +541,7 @@ describe("IdentityProviderEditor — coverage", () => {
     fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Google X" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-    fireEvent.click(await screen.findByRole("button", { name: "Keep editing" }));
+    await clickKeepEditing();
     expect(screen.queryByText("providers-list")).toBeNull();
     expect(screen.getByDisplayValue("Google X")).toBeTruthy();
   });

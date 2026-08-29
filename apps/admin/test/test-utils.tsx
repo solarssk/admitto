@@ -3,7 +3,12 @@ import { fireEvent, render, screen, type RenderOptions } from "@testing-library/
 import { vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import { ToastProvider } from "@admitto/ui";
-import type { TicketTypeDto } from "../src/api/types.js";
+import type { RoleAssignment, TicketTypeDto } from "../src/api/types.js";
+
+/** Shared shape for a mocked `useConnectionState()` return value - see `checkin/connectionStateMock.ts`
+ * for the vi.mock hoisting caveat this is built around. Re-exported here so it's discoverable
+ * outside checkin/, since every screen with a connection banner needs the same mock shape. */
+export { connectionStateValue } from "./checkin/connectionStateMock.js";
 
 /** Renders UI wrapped in `ToastProvider` for components that call `useToast()`. */
 export function renderWithToast(ui: ReactNode, options?: Omit<RenderOptions, "wrapper">) {
@@ -19,6 +24,28 @@ export function renderWithToastAndRouter(ui: ReactNode, options?: Omit<RenderOpt
     </MemoryRouter>,
     options,
   );
+}
+
+/** Org-admin `RoleAssignment` fixture for `useAuth()` mocks. */
+export function makeOrgAdminAssignment(overrides?: Partial<RoleAssignment>): RoleAssignment {
+  return { role: "admin", scope_type: "organization", scope_id: "org-1", ...overrides };
+}
+
+/** Superadmin `RoleAssignment` fixture for `useAuth()` mocks. */
+export function makeSuperadminAssignment(overrides?: Partial<RoleAssignment>): RoleAssignment {
+  return { role: "superadmin", scope_type: "instance", scope_id: null, ...overrides };
+}
+
+/** Clicks the "Discard" button of the shared unsaved-changes ConfirmDialog
+ * (`DiscardUnsavedChangesDialogs.tsx`), waiting for it to appear first. */
+export async function clickDiscardUnsavedChanges(): Promise<void> {
+  fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+}
+
+/** Clicks the "Keep editing" button of the shared unsaved-changes ConfirmDialog
+ * (`DiscardUnsavedChangesDialogs.tsx`), waiting for it to appear first. */
+export async function clickKeepEditing(): Promise<void> {
+  fireEvent.click(await screen.findByRole("button", { name: "Keep editing" }));
 }
 
 /** Minimal TicketTypeDto fixture for tests exercising catalog resolution. */

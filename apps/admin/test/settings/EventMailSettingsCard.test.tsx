@@ -8,7 +8,7 @@ import {
   EventMailSettingsCard,
   type EventMailSettingsCardHandle,
 } from "../../src/settings/EventMailSettingsCard.js";
-import { renderWithToast } from "../test-utils.js";
+import { makeOrgAdminAssignment, makeSuperadminAssignment, renderWithToast } from "../test-utils.js";
 import type {
   EventBounceIngestSettingsResponse,
   EventMailSettingsResponse,
@@ -16,7 +16,7 @@ import type {
 } from "../../src/api/types.js";
 
 let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [
-  { role: "superadmin", scope_type: "instance", scope_id: null },
+  makeSuperadminAssignment(),
 ];
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
@@ -200,7 +200,7 @@ function configuredBounceResponse(
 }
 
 beforeEach(() => {
-  mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
+  mockAssignments = [makeSuperadminAssignment()];
   mockFetch.mockReset();
   mockFetchBounce.mockReset();
   mockSave.mockReset();
@@ -255,7 +255,7 @@ describe("EventMailSettingsCard — inherited (organization) mode", () => {
   });
 
   it("hides the instance settings link for a non-superadmin org admin", async () => {
-    mockAssignments = [{ role: "admin", scope_type: "organization", scope_id: "org-1" }];
+    mockAssignments = [makeOrgAdminAssignment()];
     mockFetch.mockResolvedValue(inheritedResponse());
     renderCard();
 

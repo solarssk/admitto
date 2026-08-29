@@ -1,71 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
-
-const fetchEventAttendees = vi.fn();
-const exportAttendees = vi.fn();
-const reportApiError = vi.fn();
-
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError }),
-}));
-
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    code?: string;
-    constructor(status: number, message: string, code?: string) {
-      super(message);
-      this.status = status;
-      this.code = code;
-    }
-  },
-  fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
-  fetchTicketTypes: vi.fn().mockResolvedValue([]),
-  fetchEventItems: vi.fn().mockResolvedValue([]),
-  fetchEventTemplates: vi.fn().mockResolvedValue([
-    {
-      id: "tpl-ticket",
-      name: "ticket",
-      label: "Ticket",
-      template_format: "html",
-      subject_template: "",
-      updated_at: "2026-01-01T00:00:00.000Z",
-    },
-  ]),
-  fetchEventMailSettings: vi.fn().mockResolvedValue({
-    eventId: "evt-1",
-    organizationId: "org-1",
-    isProduction: false,
-    hasEventOverride: false,
-    fields: { provider: { value: "smtp", source: "organization", locked: false } },
-  }),
-  exportAttendees: (...args: unknown[]) => exportAttendees(...args),
-  bulkResendTickets: vi.fn(),
-  sendEventBulk: vi.fn(),
-  updateAttendee: vi.fn(),
-}));
-
-vi.mock("react-router", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router")>();
-  return {
-    ...actual,
-    useOutletContext: () => ({
-      event: {
-        id: "evt-1",
-        title: "Demo",
-        timezone: "UTC",
-        date: "2026-07-01",
-        location: null,
-        attendee_count: 0,
-        archived_at: null,
-      },
-    }),
-  };
-});
+import { exportAttendees, fetchEventAttendees, reportApiError } from "./attendeesPageSetup.js";
 
 function renderPage() {
   return renderWithToast(
@@ -77,16 +16,6 @@ function renderPage() {
     </MemoryRouter>,
   );
 }
-
-beforeEach(() => {
-  mockMatchMedia(true);
-});
-
-afterEach(() => {
-  cleanup();
-  vi.clearAllMocks();
-  vi.unstubAllGlobals();
-});
 
 describe("AttendeesPage load errors", () => {
   it("shows persistent empty state instead of an empty roster on load failure", async () => {

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
-import { getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { getTooltipText, makeOrgAdminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 const voidWalletPass = vi.fn();
@@ -22,7 +22,7 @@ vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
 });
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ assignments: [{ role: "admin", scope_type: "organization", scope_id: "org-1" }] }),
+  useAuth: () => ({ assignments: [makeOrgAdminAssignment()] }),
 }));
 
 let mockArchivedAt: string | null = null;

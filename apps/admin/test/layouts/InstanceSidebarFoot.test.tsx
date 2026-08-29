@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RoleAssignment } from "../../src/api/types.js";
 import { InstanceSidebarFoot } from "../../src/layouts/InstanceSidebarFoot.js";
+import { makeOrgAdminAssignment, makeSuperadminAssignment } from "../test-utils.js";
 
 let mockAssignments: RoleAssignment[] = [];
 
@@ -18,7 +19,7 @@ afterEach(() => {
 
 describe("InstanceSidebarFoot", () => {
   it("shows administration links for superadmin", () => {
-    mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
+    mockAssignments = [makeSuperadminAssignment()];
     render(
       <MemoryRouter>
         <InstanceSidebarFoot />
@@ -50,7 +51,7 @@ describe("InstanceSidebarFoot", () => {
   });
 
   it("hides Settings for org admin without superadmin", () => {
-    mockAssignments = [{ role: "admin", scope_type: "organization", scope_id: "org-1" }];
+    mockAssignments = [makeOrgAdminAssignment()];
     render(
       <MemoryRouter>
         <InstanceSidebarFoot />
@@ -73,7 +74,7 @@ describe("InstanceSidebarFoot", () => {
   });
 
   it("marks the current route's nav link as active", () => {
-    mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
+    mockAssignments = [makeSuperadminAssignment()];
     render(
       <MemoryRouter initialEntries={["/admin/users"]}>
         <InstanceSidebarFoot />

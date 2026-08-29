@@ -4,13 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage, recoverLegacyAfterDelete, resolveTestSendTemplateLabel } from "../../src/pages/CommunicationPage.js";
 import { makeEmailPreviewInert } from "../../src/communication/inertEmailPreview.js";
-import { getTooltipText, renderWithToast } from "../test-utils.js";
+import { clickKeepEditing, getTooltipText, renderWithToast } from "../test-utils.js";
+import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
+import { communicationApiMocks } from "./communicationApiMock.js";
 
-const fetchEventTemplates = vi.fn();
-const fetchEventTemplate = vi.fn();
-const fetchEventTemplateById = vi.fn();
-const fetchEventOverview = vi.fn();
-const fetchEventDeliveries = vi.fn();
+const {
+  fetchEventTemplates,
+  fetchEventTemplate,
+  fetchEventTemplateById,
+  fetchEventOverview,
+  fetchEventDeliveries,
+} = communicationApiMocks;
 const sendEventBulk = vi.fn();
 const fetchBulkSendStatus = vi.fn();
 const createEventTemplate = vi.fn();
@@ -24,48 +28,34 @@ const updateEventTemplateMetadata = vi.fn();
 const fetchTicketTypes = vi.fn();
 const fetchEventMailSettings = vi.fn();
 
-const reportApiError = vi.fn();
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError }),
-}));
-
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    code?: string;
-    constructor(status: number, message: string, code?: string) {
-      super(message);
-      this.status = status;
-      this.code = code;
-    }
-  },
-  TemplateValidationError: class TemplateValidationError extends Error {
-    errors: string[];
-    constructor(errors: string[] = []) {
-      super("Template validation failed");
-      this.errors = errors;
-    }
-  },
-  fetchEventTemplates: (...args: unknown[]) => fetchEventTemplates(...args),
-  fetchEventTemplate: (...args: unknown[]) => fetchEventTemplate(...args),
-  fetchEventTemplateById: (...args: unknown[]) => fetchEventTemplateById(...args),
-  fetchEventOverview: (...args: unknown[]) => fetchEventOverview(...args),
-  fetchEventDeliveries: (...args: unknown[]) => fetchEventDeliveries(...args),
-  previewEventTemplate: (...args: unknown[]) => previewEventTemplate(...args),
-  previewEventTemplateById: (...args: unknown[]) => previewEventTemplateById(...args),
-  saveEventTemplate: vi.fn(),
-  saveEventTemplateById: (...args: unknown[]) => saveEventTemplateById(...args),
-  createEventTemplate: (...args: unknown[]) => createEventTemplate(...args),
-  deleteEventTemplate: (...args: unknown[]) => deleteEventTemplate(...args),
-  updateEventTemplateMetadata: (...args: unknown[]) => updateEventTemplateMetadata(...args),
-  testSendEventTemplate: (...args: unknown[]) => testSendEventTemplate(...args),
-  testSendEventTemplateById: (...args: unknown[]) => testSendEventTemplateById(...args),
-  sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
-  fetchBulkSendStatus: (...args: unknown[]) => fetchBulkSendStatus(...args),
-  fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
-  fetchEventMailSettings: (...args: unknown[]) => fetchEventMailSettings(...args),
-}));
+// buildCommunicationApiMock is loaded via a dynamic import *inside* the factory (same technique
+// as checkInScanApiSetup.ts) rather than a plain top-level import - vi.mock() calls hoist above
+// regular imports, and this factory calls it in an immediately-evaluated position, which hits a
+// temporal-dead-zone ReferenceError on a plain static import (confirmed by trying it first).
+// This file drives create/delete/preview/send flows in depth, so - unlike its siblings - it
+// overrides nearly every key of the shared base with its own individually-tracked handle; it
+// still benefits from not hand-rolling ApiError/TemplateValidationError (spread from the real
+// module) and from the five commonly-controlled fetch calls above.
+vi.mock("../../src/api/client.js", async (importOriginal) => {
+  const { buildCommunicationApiMock } = await import("./communicationApiMock.js");
+  return {
+    ...buildCommunicationApiMock(await importOriginal<typeof import("../../src/api/client.js")>()),
+    previewEventTemplate: (...args: unknown[]) => previewEventTemplate(...args),
+    previewEventTemplateById: (...args: unknown[]) => previewEventTemplateById(...args),
+    saveEventTemplateById: (...args: unknown[]) => saveEventTemplateById(...args),
+    createEventTemplate: (...args: unknown[]) => createEventTemplate(...args),
+    deleteEventTemplate: (...args: unknown[]) => deleteEventTemplate(...args),
+    updateEventTemplateMetadata: (...args: unknown[]) => updateEventTemplateMetadata(...args),
+    testSendEventTemplate: (...args: unknown[]) => testSendEventTemplate(...args),
+    testSendEventTemplateById: (...args: unknown[]) => testSendEventTemplateById(...args),
+    sendEventBulk: (...args: unknown[]) => sendEventBulk(...args),
+    fetchBulkSendStatus: (...args: unknown[]) => fetchBulkSendStatus(...args),
+    fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
+    fetchEventMailSettings: (...args: unknown[]) => fetchEventMailSettings(...args),
+  };
+});
 
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
@@ -187,6 +177,33 @@ function renderSendPageWithEventSwitch() {
 async function selectTemplate(label: string) {
   fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
   fireEvent.click(await screen.findByRole("button", { name: label }));
+}
+
+/** Renders the Templates tab (Ticket active by default) - the "arrange" the vast majority of
+ * tests below start from, before diverging into their own scenario. */
+async function renderTemplatesTab() {
+  renderPage();
+  await waitFor(() => {
+    expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
+  });
+}
+
+/** Same as `renderTemplatesTab`, but also selects `label` and waits for `expectedSubjectValue`
+ * to confirm the switch landed - what most tests below actually want to start from. */
+async function renderAndSelect(label: string, expectedSubjectValue: string) {
+  await renderTemplatesTab();
+  await selectTemplate(label);
+  await waitFor(() => {
+    expect(screen.getByDisplayValue(expectedSubjectValue)).toBeTruthy();
+  });
+}
+
+/** Same as `renderAndSelect`, but also opens the Edit template modal for the now-active
+ * template and returns it - the "arrange" every edit-modal test below starts from. */
+async function renderSelectAndOpenEditModal(label: string, expectedSubjectValue: string) {
+  await renderAndSelect(label, expectedSubjectValue);
+  fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
+  return screen.findByRole("dialog", { name: "Edit template" });
 }
 
 /** Opens the Edit template modal for whichever template is active, clicks its nested Delete
@@ -438,11 +455,7 @@ describe("CommunicationPage templates", () => {
   it("disables the nested Delete button with an explanatory tooltip for a real ticket-named template", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
+    await renderTemplatesTab();
     fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
     const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
     const deleteBtn = within(editDialog).getByRole("button", { name: "Delete" }) as HTMLButtonElement;
@@ -462,18 +475,7 @@ describe("CommunicationPage templates", () => {
       description: "Sent 1h before doors open.",
     });
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
-    await selectTemplate("Reminder");
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
-    const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    const editDialog = await renderSelectAndOpenEditModal("Reminder", "Reminder subject");
     expect(within(editDialog).getByLabelText("Template label")).toHaveProperty("value", "Reminder");
     expect(within(editDialog).getByLabelText("Description")).toHaveProperty(
       "value",
@@ -506,18 +508,7 @@ describe("CommunicationPage templates", () => {
   it("blocks saving an empty label without calling the API", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
-    await selectTemplate("Reminder");
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
-    const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    const editDialog = await renderSelectAndOpenEditModal("Reminder", "Reminder subject");
     fireEvent.change(within(editDialog).getByLabelText("Template label"), {
       target: { value: "   " },
     });
@@ -532,18 +523,7 @@ describe("CommunicationPage templates", () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
     updateEventTemplateMetadata.mockRejectedValue(new ApiError(500, "server_error"));
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
-    await selectTemplate("Reminder");
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
-    const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    const editDialog = await renderSelectAndOpenEditModal("Reminder", "Reminder subject");
     // Save is disabled on a clean load - dirty the field so it becomes clickable.
     fireEvent.change(within(editDialog).getByLabelText("Template label"), {
       target: { value: "Reminder!" },
@@ -560,18 +540,7 @@ describe("CommunicationPage templates", () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
     updateEventTemplateMetadata.mockRejectedValue(new Error("network down"));
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
-    await selectTemplate("Reminder");
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
-    const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    const editDialog = await renderSelectAndOpenEditModal("Reminder", "Reminder subject");
     // Save is disabled on a clean load - dirty the field so it becomes clickable.
     fireEvent.change(within(editDialog).getByLabelText("Template label"), {
       target: { value: "Reminder!" },
@@ -587,18 +556,7 @@ describe("CommunicationPage templates", () => {
     updateEventTemplateMetadata.mockImplementation(() => new Promise(() => {}));
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
-    await selectTemplate("Reminder");
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
-    const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    const editDialog = await renderSelectAndOpenEditModal("Reminder", "Reminder subject");
     // Save is disabled on a clean load - dirty the field so it becomes clickable.
     fireEvent.change(within(editDialog).getByLabelText("Template label"), {
       target: { value: "Reminder!" },
@@ -618,18 +576,7 @@ describe("CommunicationPage templates", () => {
   it("closes the edit modal when Cancel is clicked while idle", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
-    await selectTemplate("Reminder");
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Edit template" }));
-    const editDialog = await screen.findByRole("dialog", { name: "Edit template" });
+    const editDialog = await renderSelectAndOpenEditModal("Reminder", "Reminder subject");
     fireEvent.click(within(editDialog).getByRole("button", { name: "Cancel" }));
 
     expect(screen.queryByRole("dialog", { name: "Edit template" })).toBeNull();
@@ -641,13 +588,7 @@ describe("CommunicationPage templates", () => {
       .mockResolvedValueOnce([ticketRow, reminderRow])
       .mockResolvedValueOnce([ticketRow]);
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
-    await selectTemplate("Reminder");
-    expect(await screen.findByDisplayValue("Reminder subject")).toBeTruthy();
+    await renderAndSelect("Reminder", "Reminder subject");
 
     await deleteActiveTemplateViaModal();
 
@@ -664,13 +605,7 @@ describe("CommunicationPage templates", () => {
       .mockResolvedValueOnce([ticketRow, reminderRow])
       .mockResolvedValueOnce([ticketRow]);
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
-    await selectTemplate("Reminder");
-    expect(await screen.findByDisplayValue("Reminder subject")).toBeTruthy();
+    await renderAndSelect("Reminder", "Reminder subject");
 
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Unsaved reminder" } });
     await deleteActiveTemplateViaModal();
@@ -717,11 +652,7 @@ describe("CommunicationPage templates", () => {
   it("does not refetch legacy template when switching between persisted templates", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
+    await renderTemplatesTab();
 
     fetchEventTemplate.mockClear();
     await selectTemplate("Reminder");
@@ -786,11 +717,7 @@ describe("CommunicationPage templates", () => {
       };
     });
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
+    await renderTemplatesTab();
 
     await selectTemplate("Reminder");
 
@@ -809,11 +736,7 @@ describe("CommunicationPage templates", () => {
     blockerState.state = "blocked";
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
+    await renderTemplatesTab();
 
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited ticket" } });
     fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
@@ -849,11 +772,7 @@ describe("CommunicationPage templates", () => {
   it("shows discard confirm when switching templates with dirty form", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
+    await renderTemplatesTab();
 
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited ticket" } });
     fireEvent.click(screen.getByRole("button", { name: /^Template,/ }));
@@ -877,11 +796,7 @@ describe("CommunicationPage templates", () => {
   it("shows discard confirm before create while dirty", async () => {
     fetchEventTemplates.mockResolvedValue([ticketRow]);
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
+    await renderTemplatesTab();
 
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Dirty draft" } });
     fireEvent.click(screen.getByRole("button", { name: "New template" }));
@@ -1044,7 +959,7 @@ describe("CommunicationPage templates", () => {
     });
 
     fireEvent.click(screen.getByRole("radio", { name: "MJML" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Keep editing" }));
+    await clickKeepEditing();
     expect(screen.getByLabelText("HTML body")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Switch format" })).toBeNull();
   });
@@ -1334,11 +1249,7 @@ describe("CommunicationPage templates", () => {
       .mockResolvedValueOnce([ticketRow, reminderRow])
       .mockResolvedValueOnce([ticketRow]);
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
+    await renderTemplatesTab();
     await selectTemplate("Reminder");
     expect(await screen.findByDisplayValue("Reminder subject")).toBeTruthy();
 
@@ -1398,11 +1309,7 @@ describe("CommunicationPage templates", () => {
     });
     deleteEventTemplate.mockResolvedValue(undefined);
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
+    await renderTemplatesTab();
 
     await selectTemplate("Reminder");
     await waitFor(() => {
@@ -1472,11 +1379,7 @@ describe("CommunicationPage templates", () => {
       updated_at: "2026-01-03T00:00:00.000Z",
     });
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
+    await renderTemplatesTab();
 
     await selectTemplate("Reminder");
     await waitFor(() => {
@@ -1548,15 +1451,7 @@ describe("CommunicationPage templates", () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow, announcementRow]);
     deleteEventTemplate.mockRejectedValue(new ApiError(422, "template_in_use", "template_in_use"));
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
-    await selectTemplate("Announcement");
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Announcement subject")).toBeTruthy();
-    });
+    await renderAndSelect("Announcement", "Announcement subject");
 
     await deleteActiveTemplateViaModal();
 
@@ -1572,15 +1467,7 @@ describe("CommunicationPage templates", () => {
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow, announcementRow]);
     deleteEventTemplate.mockRejectedValue(new ApiError(422, "some_new_code", "some_new_code"));
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
-    await selectTemplate("Announcement");
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Announcement subject")).toBeTruthy();
-    });
+    await renderAndSelect("Announcement", "Announcement subject");
 
     await deleteActiveTemplateViaModal();
 
@@ -1742,15 +1629,7 @@ describe("CommunicationPage templates", () => {
     updateEventTemplateMetadata.mockImplementation(() => new Promise(() => {}));
     fetchEventTemplates.mockResolvedValue([ticketRow, reminderRow]);
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Ticket")).toBeTruthy();
-    });
-    await selectTemplate("Reminder");
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Reminder subject")).toBeTruthy();
-    });
+    await renderAndSelect("Reminder", "Reminder subject");
 
     fireEvent.change(screen.getByLabelText("Subject"), { target: { value: "Edited reminder" } });
     fireEvent.click(screen.getByRole("button", { name: "Edit template" }));

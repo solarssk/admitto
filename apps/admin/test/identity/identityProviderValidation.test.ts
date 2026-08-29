@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
+import { makeOrgAdminAssignment } from "../test-utils.js";
 import {
   emptyProviderDraft,
   isDraftDirty,
@@ -249,7 +250,7 @@ describe("withScopeForRole", () => {
   });
 
   it("re-derives scope_type and clears scope_id when the role changes to a different scope", () => {
-    const row = rowWith({ role: "admin", scope_type: "organization", scope_id: "org-1" });
+    const row = rowWith(makeOrgAdminAssignment());
     expect(withScopeForRole({ ...row, role: "operator" })).toEqual({
       ...row,
       role: "operator",

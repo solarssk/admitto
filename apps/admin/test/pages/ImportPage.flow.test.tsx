@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
 import { ImportPage } from "../../src/pages/ImportPage.js";
-import { renderWithToast } from "../test-utils.js";
+import { makeOrgAdminAssignment, makeSuperadminAssignment, renderWithToast } from "../test-utils.js";
 
 const fetchEventCustomFields = vi.fn();
 const previewImport = vi.fn();
@@ -29,7 +29,7 @@ const waitForImportJobResultHarness = vi.hoisted(() => {
 });
 
 let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [
-  { role: "admin", scope_type: "organization", scope_id: "org-1" },
+  makeOrgAdminAssignment(),
 ];
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
@@ -159,7 +159,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.useRealTimers();
-  mockAssignments = [{ role: "admin", scope_type: "organization", scope_id: "org-1" }];
+  mockAssignments = [makeOrgAdminAssignment()];
 });
 
 describe("ImportPage upload → preview → commit flow", () => {
@@ -547,7 +547,7 @@ describe("ImportPage upload → preview → commit flow", () => {
   });
 
   it("lets a superadmin override a capacity block and re-commit with force (plural count)", async () => {
-    mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
+    mockAssignments = [makeSuperadminAssignment()];
     fetchEventCustomFields.mockResolvedValue([]);
     previewImport.mockResolvedValueOnce(
       samplePreview({ summary: { toCreate: 2, toUpdate: 0, toSkip: 0, skipped: [] } }),

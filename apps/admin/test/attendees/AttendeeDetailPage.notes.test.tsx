@@ -4,14 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import type { RoleAssignment } from "../../src/api/types.js";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { makeOrgAdminAssignment, makeSuperadminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 const addAttendeeNote = vi.fn();
 const updateAttendeeNote = vi.fn();
 const deleteAttendeeNote = vi.fn();
 
-const ADMIN_ONE: RoleAssignment = { role: "admin", scope_type: "organization", scope_id: "org-1" };
+const ADMIN_ONE: RoleAssignment = makeOrgAdminAssignment();
 let assignments: RoleAssignment[] = [ADMIN_ONE];
 let currentUser: { id: string } | undefined = { id: "user-admin-1" };
 let outletEvent = {
@@ -744,7 +744,7 @@ describe("AttendeeDetailPage — Notes tab", () => {
     });
 
     it("superadmin sees Delete on every note", async () => {
-      assignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
+      assignments = [makeSuperadminAssignment()];
       currentUser = { id: "user-super" };
       mockLoad(
         baseDetail({

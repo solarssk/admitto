@@ -219,6 +219,19 @@ Sonar's own marker only registers when NOSONAR leads it. Confirmed by re-checkin
 list after pushing, not by assumption — the same file's own `role="presentation"` suppression a
 few lines away (NOSONAR leading its own comment) did clear, this trailing form did not.
 
+**A comment explaining *why* two files share a deliberately-unextracted duplicate block can
+itself blow the `new_duplicated_lines_density` gate, even worded differently in each file.**
+SonarCloud's CPD match is computed on code tokens (comments are stripped for the comparison
+itself), but the *reported* duplicate line range for a file still includes any new line sitting
+inside the matched block's span — so a freshly-added comment right above an already-flagged
+`vi.mock()`/`vi.hoisted()` block counts toward that file's "new duplicated lines" regardless of
+whether its text matches the sibling file's comment. Confirmed by pushing a near-identical
+5-line explanation to two files (19.8%→1.4%→3.1%, gate failed), then confirming the fix isn't
+"make the wording different" (still 2.6%, most of the increase persisted) but "make the comment
+short" (down to 2.1% after trimming both to 1-2 lines). Keep any such comment as short as
+possible, and re-check the actual SonarCloud PR analysis after pushing — don't assume a comment
+is free just because it isn't executable code.
+
 **`apps/admin` pages are lazily code-split (`React.lazy`) — a component's CSS import must live in
 that component's own file, not just "somewhere already loaded on this page".** A modal/component
 that reuses another feature's CSS classes (e.g. the shared `add-attendee-modal.css` "standard

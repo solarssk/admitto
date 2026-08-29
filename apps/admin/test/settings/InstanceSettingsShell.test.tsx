@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({
-    assignments: [{ role: "superadmin", scope_type: "instance", scope_id: null }],
+    assignments: [makeSuperadminAssignment()],
   }),
 }));
 
@@ -20,6 +20,7 @@ vi.mock("../../src/layouts/StaffShell.js", () => ({
 }));
 
 import { InstanceSettingsShell } from "../../src/layouts/InstanceSettingsShell.js";
+import { makeSuperadminAssignment } from "../test-utils.js";
 
 afterEach(() => {
   cleanup();
