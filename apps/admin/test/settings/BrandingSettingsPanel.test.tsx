@@ -126,6 +126,7 @@ import {
   saveStaffTheme,
   uploadFile,
 } from "../../src/api/client.js";
+import type { ThemeResponse } from "../../src/api/types.js";
 
 const mockFetchOrg = vi.mocked(fetchOrgBranding);
 const mockPatchOrg = vi.mocked(patchOrgBranding);
@@ -185,6 +186,24 @@ const defaultOrg = {
   logo_crop: null as null,
 };
 const defaultTheme = { theme: {} };
+
+/** Seeds one saved custom family ("Acme Sans", single 400-weight variant), active for
+ * Admin panel - the fixture most font-picker tests below start from. */
+const ACME_SANS_THEME: ThemeResponse["theme"] = {
+  font_family_name: "Acme Sans",
+  custom_font_families: [
+    { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+  ],
+};
+
+/** Mocks a loaded org + theme and renders the panel, waiting for it to settle. Shared setup for
+ * the many tests below that only differ in the theme fields they seed. */
+async function renderWithTheme(theme: ThemeResponse["theme"] = {}): Promise<void> {
+  mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+  mockFetchTheme.mockResolvedValueOnce({ theme });
+  renderWithToast(<BrandingSettingsPanel />);
+  await screen.findByLabelText("Organisation name");
+}
 
 beforeEach(() => {
   // jsdom implements neither the FontFace constructor nor document.fonts (the CSS Font Loading
@@ -320,10 +339,7 @@ describe("BrandingSettingsPanel - organisation fields", () => {
   });
 
   it("blocks save with an empty organisation name, without calling either API", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme();
     fireEvent.change(screen.getByLabelText("Organisation name"), { target: { value: "  " } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
@@ -334,10 +350,7 @@ describe("BrandingSettingsPanel - organisation fields", () => {
   });
 
   it("blocks save with a non-HTTPS logo URL, without calling either API", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme();
     fireEvent.click(screen.getByRole("button", { name: "Use a web link instead" }));
     fireEvent.change(screen.getByLabelText("Web link to your logo (must start with https://)"), {
       target: { value: "http://insecure.example.com/logo.png" },
@@ -415,18 +428,12 @@ describe("BrandingSettingsPanel - organisation fields", () => {
 
 describe("BrandingSettingsPanel - colour palette", () => {
   it("shows the Admitto blue palette swatch active by default", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme();
     expect(screen.getByRole("button", { name: "Admitto blue" }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("selects a different palette colour on click", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme();
 
     fireEvent.click(screen.getByRole("button", { name: "Violet" }));
     expect(screen.getByRole("button", { name: "Violet" }).getAttribute("aria-pressed")).toBe("true");
@@ -435,18 +442,12 @@ describe("BrandingSettingsPanel - colour palette", () => {
   });
 
   it("shows the custom swatch active and its hex when the saved primary isn't in the palette", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({ theme: { primary: "#123456" } });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme({ primary: "#123456" });
     expect(document.querySelector("code")?.textContent).toBe("#123456");
   });
 
   it("switches to custom mode via the native colour picker", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme();
 
     fireEvent.change(screen.getByLabelText("Custom colour picker"), { target: { value: "#abcdef" } });
     expect(document.querySelector("code")?.textContent).toBe("#abcdef");
@@ -486,27 +487,19 @@ describe("BrandingSettingsPanel - colour palette", () => {
 
 describe("BrandingSettingsPanel - font picker", () => {
   it("shows Admitto Sans as the default in both the tile-grid's library and the Font-by-surface selects", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme();
     expect(within(adminFontPicker()).getByText("Admitto Sans")).toBeTruthy();
     expect(adminFontValue()).toBe("Admitto Sans");
     expect(ticketFontValue()).toBe("Same as Admin panel");
   });
 
   it("clicking a built-in tile in the library does nothing - it's a preview, not a picker", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Old Font",
-        custom_font_families: [
-          { name: "Old Font", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/old.woff2" }] },
-        ],
-      },
+    await renderWithTheme({
+      font_family_name: "Old Font",
+      custom_font_families: [
+        { name: "Old Font", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/old.woff2" }] },
+      ],
     });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
 
     // The tile is a plain, non-interactive <div> now - querying by its label text (not role
     // "button") confirms there's nothing clickable to fire on in the first place.
@@ -519,10 +512,7 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("picking a font from the Admin panel's own Font-by-surface select is the only way to change it", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme();
 
     pickAdminFont("Manrope");
 
@@ -531,23 +521,18 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("shows the real uploaded style list on the custom tile for an already-saved family", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Acme Sans",
-        custom_font_families: [
-          {
-            name: "Acme Sans",
-            variants: [
-              { weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" },
-              { weight: 700, style: "normal", url: "/uploads/default/theme/b.woff2" },
-            ],
-          },
-        ],
-      },
+    await renderWithTheme({
+      font_family_name: "Acme Sans",
+      custom_font_families: [
+        {
+          name: "Acme Sans",
+          variants: [
+            { weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" },
+            { weight: 700, style: "normal", url: "/uploads/default/theme/b.woff2" },
+          ],
+        },
+      ],
     });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
 
     const customTile = within(adminFontPicker()).getByText("Acme Sans").closest(".font-option-card");
     expect(customTile).not.toBeNull();
@@ -555,23 +540,18 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("opens the styles popover on click, listing each style label", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Acme Sans",
-        custom_font_families: [
-          {
-            name: "Acme Sans",
-            variants: [
-              { weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" },
-              { weight: 700, style: "normal", url: "/uploads/default/theme/b.woff2" },
-            ],
-          },
-        ],
-      },
+    await renderWithTheme({
+      font_family_name: "Acme Sans",
+      custom_font_families: [
+        {
+          name: "Acme Sans",
+          variants: [
+            { weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" },
+            { weight: 700, style: "normal", url: "/uploads/default/theme/b.woff2" },
+          ],
+        },
+      ],
     });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
 
     const customTile = within(adminFontPicker()).getByText("Acme Sans").closest(".font-option-card") as HTMLElement;
     fireEvent.click(within(customTile).getByRole("button", { name: /2 styles/ }));
@@ -580,17 +560,7 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("closes the styles popover when clicking outside it", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Acme Sans",
-        custom_font_families: [
-          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-        ],
-      },
-    });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme(ACME_SANS_THEME);
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /1 style/ }));
     expect(within(adminFontPicker()).getByText("400")).toBeTruthy();
@@ -600,17 +570,7 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("does not close the styles popover when clicking one of its own listed styles", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Acme Sans",
-        custom_font_families: [
-          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-        ],
-      },
-    });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme(ACME_SANS_THEME);
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /1 style/ }));
     const item = within(adminFontPicker()).getByText("400");
@@ -620,39 +580,26 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("reflects each surface's own saved font in its own Font-by-surface select", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Acme Sans",
-        ticket_font_family_name: "Manrope",
-        custom_font_families: [
-          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-        ],
-      },
+    await renderWithTheme({
+      font_family_name: "Acme Sans",
+      ticket_font_family_name: "Manrope",
+      custom_font_families: [
+        { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+      ],
     });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
 
     expect(adminFontValue()).toBe("Acme Sans");
     expect(ticketFontValue()).toBe("Manrope");
   });
 
   it("assumes a real bold/italic file when the active pick matches neither a built-in nor a saved custom family", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: { font_family_name: "Deleted Family", custom_font_families: [] },
-    });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme({ font_family_name: "Deleted Family", custom_font_families: [] });
 
     expect(screen.queryByTitle(/browser is faking it/)).toBeNull();
   });
 
   it("opens the font family modal when the Custom font tile is clicked", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme();
 
     expect(screen.queryByText("mock-font-family-modal")).toBeNull();
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
@@ -660,18 +607,13 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("replaces the Custom font upload tile with a locked state once 8 families are already saved", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Family 1",
-        custom_font_families: Array.from({ length: 8 }, (_, i) => ({
-          name: `Family ${i + 1}`,
-          variants: [{ weight: 400, style: "normal", url: `/uploads/default/theme/${i}.woff2` }],
-        })),
-      },
+    await renderWithTheme({
+      font_family_name: "Family 1",
+      custom_font_families: Array.from({ length: 8 }, (_, i) => ({
+        name: `Family ${i + 1}`,
+        variants: [{ weight: 400, style: "normal", url: `/uploads/default/theme/${i}.woff2` }],
+      })),
     });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
 
     expect(within(adminFontPicker()).queryByRole("button", { name: /^Custom font/ })).toBeNull();
     expect(within(adminFontPicker()).getByText("Limit reached")).toBeTruthy();
@@ -722,16 +664,11 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("picking a saved custom family from the Ticket page dropdown overrides it independently of Admin panel", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        custom_font_families: [
-          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-        ],
-      },
+    await renderWithTheme({
+      custom_font_families: [
+        { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+      ],
     });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
 
     pickTicketFont("Acme Sans");
 
@@ -741,10 +678,7 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("picking the reserved \"Admitto Sans\" option for Ticket page pins it to the default, decoupled from whatever Admin panel later becomes", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({ theme: { font_family_name: "Manrope" } });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme({ font_family_name: "Manrope" });
 
     pickTicketFont("Admitto Sans");
     expect(ticketFontValue()).toBe("Admitto Sans");
@@ -757,10 +691,7 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("resetting Admin panel's select back to Admitto Sans clears font_family_name", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({ theme: { font_family_name: "Manrope" } });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme({ font_family_name: "Manrope" });
 
     expect(adminFontValue()).toBe("Manrope");
     pickAdminFont("Admitto Sans");
@@ -768,12 +699,7 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("resetting Ticket page's select back to \"Same as Admin panel\" clears its override", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: { font_family_name: "Manrope", ticket_font_family_name: "Space Grotesk" },
-    });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme({ font_family_name: "Manrope", ticket_font_family_name: "Space Grotesk" });
 
     expect(ticketFontValue()).toBe("Space Grotesk");
     pickTicketFont("Same as Admin panel");
@@ -781,18 +707,13 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("clicking a saved custom family's preview tile does nothing - switching between two saved families only happens via the Font-by-surface select, without losing either", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "First Family",
-        custom_font_families: [
-          { name: "First Family", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-          { name: "Second Family", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/b.woff2" }] },
-        ],
-      },
+    await renderWithTheme({
+      font_family_name: "First Family",
+      custom_font_families: [
+        { name: "First Family", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+        { name: "Second Family", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/b.woff2" }] },
+      ],
     });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
 
     expect(adminFontValue()).toBe("First Family");
     const secondTile = within(adminFontPicker()).getByText("Second Family").closest(".font-option-card__select")!;
@@ -809,17 +730,7 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("clicking Edit on a saved custom family opens the modal pre-filled with that family", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Acme Sans",
-        custom_font_families: [
-          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-        ],
-      },
-    });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme(ACME_SANS_THEME);
 
     expect(screen.queryByText("mock-font-family-modal")).toBeNull();
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Edit Acme Sans" }));
@@ -829,17 +740,7 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("saving an edited family under the same name replaces it in place instead of duplicating it, keeping Admin panel's active status", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Acme Sans",
-        custom_font_families: [
-          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-        ],
-      },
-    });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme(ACME_SANS_THEME);
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Edit Acme Sans" }));
     fireEvent.click(screen.getByText("mock-save-family"));
@@ -852,17 +753,7 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("renaming a family while editing it drops the old name and keeps the new one active for Admin panel", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Acme Sans",
-        custom_font_families: [
-          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-        ],
-      },
-    });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme(ACME_SANS_THEME);
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Edit Acme Sans" }));
     fireEvent.click(screen.getByText("mock-save-family-renamed"));
@@ -874,18 +765,13 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("renaming a family that was active only for Ticket page updates its override, keeping Admin panel's own pick untouched", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Manrope",
-        ticket_font_family_name: "Acme Sans",
-        custom_font_families: [
-          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-        ],
-      },
+    await renderWithTheme({
+      font_family_name: "Manrope",
+      ticket_font_family_name: "Acme Sans",
+      custom_font_families: [
+        { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+      ],
     });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
 
     // "Acme Sans" is still a saved family, so it's still listed (with its own Edit button) in the
     // shared library grid even though Admin panel's own active pick is "Manrope".
@@ -898,17 +784,12 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("editing a saved-but-inactive family does not make it active after saving", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Manrope",
-        custom_font_families: [
-          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-        ],
-      },
+    await renderWithTheme({
+      font_family_name: "Manrope",
+      custom_font_families: [
+        { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+      ],
     });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Edit Acme Sans" }));
     fireEvent.click(screen.getByText("mock-save-family"));
@@ -917,17 +798,12 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("a custom family literally named 'same-as-admin' is selectable and never collapses into the sentinel (bot review finding, #761)", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Manrope",
-        custom_font_families: [
-          { name: "same-as-admin", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-        ],
-      },
+    await renderWithTheme({
+      font_family_name: "Manrope",
+      custom_font_families: [
+        { name: "same-as-admin", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+      ],
     });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
 
     expect(ticketFontValue()).toBe("Same as Admin panel");
 
@@ -939,17 +815,7 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("deleting the active custom family falls back to the default built-in font", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Acme Sans",
-        custom_font_families: [
-          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-        ],
-      },
-    });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme(ACME_SANS_THEME);
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Acme Sans" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
@@ -961,18 +827,13 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("deleting a family active only for Ticket page clears its override, leaving Admin panel's own pick untouched", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Manrope",
-        ticket_font_family_name: "Acme Sans",
-        custom_font_families: [
-          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-        ],
-      },
+    await renderWithTheme({
+      font_family_name: "Manrope",
+      ticket_font_family_name: "Acme Sans",
+      custom_font_families: [
+        { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+      ],
     });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
 
     // "Acme Sans" is still listed (with its own Remove button) in the shared library grid, even
     // though it's Ticket page's override, not Admin panel's active pick.
@@ -986,18 +847,13 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("removing a saved-but-inactive family leaves the active pick untouched", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Active Family",
-        custom_font_families: [
-          { name: "Active Family", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-          { name: "Other Family", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/b.woff2" }] },
-        ],
-      },
+    await renderWithTheme({
+      font_family_name: "Active Family",
+      custom_font_families: [
+        { name: "Active Family", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+        { name: "Other Family", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/b.woff2" }] },
+      ],
     });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Other Family" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
@@ -1007,23 +863,18 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("saves the plural 'variants' toast wording for a family with more than one variant", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Acme Sans",
-        custom_font_families: [
-          {
-            name: "Acme Sans",
-            variants: [
-              { weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" },
-              { weight: 700, style: "normal", url: "/uploads/default/theme/b.woff2" },
-            ],
-          },
-        ],
-      },
+    await renderWithTheme({
+      font_family_name: "Acme Sans",
+      custom_font_families: [
+        {
+          name: "Acme Sans",
+          variants: [
+            { weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" },
+            { weight: 700, style: "normal", url: "/uploads/default/theme/b.woff2" },
+          ],
+        },
+      ],
     });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Edit Acme Sans" }));
     fireEvent.click(screen.getByText("mock-save-family"));
@@ -1034,17 +885,7 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("clicking Remove asks for confirmation first - Cancel keeps the family", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Acme Sans",
-        custom_font_families: [
-          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-        ],
-      },
-    });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme(ACME_SANS_THEME);
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Acme Sans" }));
     expect(screen.getByText('Remove "Acme Sans"?')).toBeTruthy();
@@ -1055,17 +896,12 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("deleting a saved-but-inactive custom family leaves an active built-in pick untouched", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Manrope",
-        custom_font_families: [
-          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-        ],
-      },
+    await renderWithTheme({
+      font_family_name: "Manrope",
+      custom_font_families: [
+        { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
+      ],
     });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: "Remove Acme Sans" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
@@ -1075,17 +911,12 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("saving a family under a name that already exists in the library updates that entry in place", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Acme Sans",
-        custom_font_families: [
-          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/old.woff2" }] },
-        ],
-      },
+    await renderWithTheme({
+      font_family_name: "Acme Sans",
+      custom_font_families: [
+        { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/old.woff2" }] },
+      ],
     });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
     fireEvent.click(screen.getByText("mock-save-family"));
@@ -1099,36 +930,20 @@ describe("BrandingSettingsPanel - font picker", () => {
   });
 
   it("shows a faked-style hint in the live preview when the active custom family has no bold/italic variant", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        font_family_name: "Acme Sans",
-        custom_font_families: [
-          { name: "Acme Sans", variants: [{ weight: 400, style: "normal", url: "/uploads/default/theme/a.woff2" }] },
-        ],
-      },
-    });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme(ACME_SANS_THEME);
 
     expect(screen.getAllByTitle("No bold file uploaded. The browser is faking it.")).toHaveLength(1);
     expect(screen.getAllByTitle("No italic file uploaded. The browser is faking it.")).toHaveLength(1);
   });
 
   it("shows no faked-style hint for a web-safe font (a real OS family always has all 4 styles)", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme();
 
     expect(screen.queryByTitle(/browser is faking it/)).toBeNull();
   });
 
   it("shows a disabled Registration form dropdown placeholder, not a functional picker", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme();
 
     const registrationSelect = screen.getByLabelText("Registration form font") as HTMLSelectElement;
     expect(registrationSelect.disabled).toBe(true);
@@ -1339,10 +1154,7 @@ describe("BrandingSettingsPanel - save and reset", () => {
   });
 
   it("replacing a provisional family's variant URL deletes the orphaned upload", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme();
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
     fireEvent.click(screen.getByText("mock-save-family"));
@@ -1359,10 +1171,7 @@ describe("BrandingSettingsPanel - save and reset", () => {
   });
 
   it("removing a provisional custom family deletes its uploaded font files", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme();
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
     fireEvent.click(screen.getByText("mock-save-family"));
@@ -1380,10 +1189,7 @@ describe("BrandingSettingsPanel - save and reset", () => {
   });
 
   it("Reset to saved deletes provisional font uploads that left the draft", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme();
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
     fireEvent.click(screen.getByText("mock-save-family"));
@@ -1400,10 +1206,7 @@ describe("BrandingSettingsPanel - save and reset", () => {
   });
 
   it("saving a family with an external HTTPS font URL does not track it as provisional", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme();
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
     fireEvent.click(screen.getByText("mock-save-family-https"));
@@ -1417,19 +1220,14 @@ describe("BrandingSettingsPanel - save and reset", () => {
   });
 
   it("Reset skips non-upload font URLs when releasing provisional drafts", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce({
-      theme: {
-        custom_font_families: [
-          {
-            name: "Cdn Sans",
-            variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/cdn.woff2" }],
-          },
-        ],
-      },
+    await renderWithTheme({
+      custom_font_families: [
+        {
+          name: "Cdn Sans",
+          variants: [{ weight: 400, style: "normal", url: "https://cdn.example.com/cdn.woff2" }],
+        },
+      ],
     });
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
     await waitFor(() => {
       expect(within(adminFontPicker()).getByText("Cdn Sans")).toBeTruthy();
     });
@@ -1449,10 +1247,7 @@ describe("BrandingSettingsPanel - save and reset", () => {
   });
 
   it("removing one of two provisional families only deletes that family's uploads", async () => {
-    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
-    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
-    renderWithToast(<BrandingSettingsPanel />);
-    await screen.findByLabelText("Organisation name");
+    await renderWithTheme();
 
     fireEvent.click(within(adminFontPicker()).getByRole("button", { name: /^Custom font/ }));
     fireEvent.click(screen.getByText("mock-save-family"));
