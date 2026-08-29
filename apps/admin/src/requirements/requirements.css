@@ -100,7 +100,7 @@
   overflow: hidden;
   font-size: var(--fs-sm);
   color: var(--text-secondary);
-  line-height: var(--lh-normal, 1.4);
+  line-height: var(--lh-normal, 1.5);
 }
 
 .requirements-item-id,
@@ -184,7 +184,7 @@
 }
 
 .requirements-item-key {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace);
   font-size: var(--fs-sm);
   color: var(--text-muted);
 }

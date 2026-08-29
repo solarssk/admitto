@@ -86,7 +86,7 @@
 }
 
 .location-address-grid__empty {
-  font-weight: var(--fw-normal, 400);
+  font-weight: var(--fw-regular, 400);
   color: var(--text-muted, var(--text-secondary));
 }
 

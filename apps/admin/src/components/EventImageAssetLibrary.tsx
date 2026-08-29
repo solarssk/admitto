@@ -26,6 +26,7 @@ import {
   extensionForBrandingImageMime,
   MAX_BRANDING_IMAGE_UPLOAD_BYTES,
 } from "./brandingImageConstraints.js";
+import { pluralSuffix } from "../utils/pluralize.js";
 import "./event-image-asset-library.css";
 
 const MAX_UPLOAD_BYTES = MAX_BRANDING_IMAGE_UPLOAD_BYTES;
@@ -39,10 +40,6 @@ export interface EventImageAssetLibraryProps {
   readonly eventId: string;
   /** Disables uploading and deleting assets (e.g. archived event). Viewing the list stays allowed. */
   readonly disabled?: boolean;
-}
-
-function pluralSuffix(count: number): string {
-  return count === 1 ? "" : "s";
 }
 
 function trimTrailingUnderscores(value: string): string {

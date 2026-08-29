@@ -167,6 +167,7 @@ const activeEvent = {
   wallet_api_key: { configured: false },
   wallet_apple_enabled: false,
   wallet_google_enabled: false,
+  wallet_samsung_enabled: false,
   wallet_field_mapping: null as Record<string, string> | null,
 };
 
@@ -1134,7 +1135,7 @@ describe("EventSettingsPage tabs", () => {
     });
   });
 
-  it("shows the provider selector and Apple/Google toggles on the Wallet tab", async () => {
+  it("shows the provider selector and Apple/Google/Samsung toggles on the Wallet tab", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
     await waitFor(() => {
@@ -1144,7 +1145,10 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByText("PassCreator")).toBeTruthy();
     expect(screen.getByLabelText("Apple Wallet")).toBeTruthy();
     expect(screen.getByLabelText("Google Wallet")).toBeTruthy();
-    expect((screen.getByLabelText("Samsung Wallet") as HTMLInputElement).disabled).toBe(true);
+    // Not "not supported" in the sense of being unusable - the toggle is real and saveable (it
+    // gates Reports' platform breakdown), just not yet backed by any PassCreator Samsung API, which
+    // is what the row's own "Not supported yet." copy refers to.
+    expect((screen.getByLabelText("Samsung Wallet") as HTMLInputElement).disabled).toBe(false);
   });
 
   it("shows a Notice explaining that field mapping alone does not deliver Semantic Tags", async () => {
@@ -1210,6 +1214,27 @@ describe("EventSettingsPage tabs", () => {
         wallet_google_enabled: false,
         wallet_api_key: null,
       });
+    });
+  });
+
+  it("saves the Samsung Wallet toggle through the event patch, same as Apple/Google", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_samsung_enabled: false,
+    });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, wallet_samsung_enabled: true },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText("Samsung Wallet"));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_samsung_enabled: true });
     });
   });
 

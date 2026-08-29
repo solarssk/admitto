@@ -1,9 +1,6 @@
 import type { ToastVariant } from "@admitto/ui";
 import { fetchBulkSendStatus } from "../api/client.js";
-
-function pluralize(count: number, singular: string): string {
-  return count === 1 ? singular : `${singular}s`;
-}
+import { pluralize } from "../utils/pluralize.js";
 
 function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";

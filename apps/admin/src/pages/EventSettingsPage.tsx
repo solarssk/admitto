@@ -68,6 +68,7 @@ import {
   SUPERADMIN_ONLY_TABS,
   type EventSettingsTab,
 } from "../settings/eventSettingsTabs.js";
+import { pluralSuffix } from "../utils/pluralize.js";
 import "./event-settings-page.css";
 
 /** Created/Archived stamp in the acting admin's timezone when known; UTC fallback for legacy rows. */
@@ -91,6 +92,7 @@ type SettingsForm = {
   walletApiKeyEdit: { mode: SecretEditMode; value: string };
   walletAppleEnabled: boolean;
   walletGoogleEnabled: boolean;
+  walletSamsungEnabled: boolean;
   walletFieldMapping: WalletFieldMappingRow[];
   timezone: string;
   capacity: string;
@@ -110,6 +112,7 @@ type SettingsPatch = Partial<{
   wallet_api_key: string | null;
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
+  wallet_samsung_enabled: boolean;
   wallet_field_mapping: Record<string, string> | null;
   timezone: string;
   capacity: number | null;
@@ -155,10 +158,6 @@ const BULK_REVOKE_CONFIRM_DELAY_SECONDS = 10;
 const UNSAVED_CHANGES_WARNING = " You also have unsaved changes elsewhere on this page. They'll be lost when this finishes.";
 
 /** English plural suffix for a count — used by the Danger Zone's toasts and row descriptions. */
-function pluralSuffix(count: number): string {
-  return count === 1 ? "" : "s";
-}
-
 /** Label + icon per placeholder, one entry each - the icon groups the Value dropdown's options by
  * category so the list is easier to scan (matches WALLET_MAPPING_PLACEHOLDERS' existing grouping
  * order: attendee, event, notes, maps, address, ticket) instead of relying on option order alone. */
@@ -371,6 +370,7 @@ function toForm(data: EventSettingsDto): SettingsForm {
     walletApiKeyEdit: { mode: "idle", value: "" },
     walletAppleEnabled: data.wallet_apple_enabled,
     walletGoogleEnabled: data.wallet_google_enabled,
+    walletSamsungEnabled: data.wallet_samsung_enabled,
     walletFieldMapping: Object.entries(data.wallet_field_mapping ?? {}).map(([key, value]) => ({
       id: crypto.randomUUID(),
       key,
@@ -407,6 +407,7 @@ function buildWalletPatch(
   | "wallet_api_key"
   | "wallet_apple_enabled"
   | "wallet_google_enabled"
+  | "wallet_samsung_enabled"
   | "wallet_field_mapping"
 > {
   const patch: SettingsPatch = {};
@@ -426,6 +427,9 @@ function buildWalletPatch(
   }
   if (form.walletGoogleEnabled !== original.walletGoogleEnabled) {
     patch.wallet_google_enabled = form.walletGoogleEnabled;
+  }
+  if (form.walletSamsungEnabled !== original.walletSamsungEnabled) {
+    patch.wallet_samsung_enabled = form.walletSamsungEnabled;
   }
   if (JSON.stringify(form.walletFieldMapping) !== JSON.stringify(original.walletFieldMapping)) {
     patch.wallet_field_mapping = buildWalletFieldMappingPatch(form.walletFieldMapping);
@@ -1945,9 +1949,9 @@ export function EventSettingsPage() {
                   <Switch
                     id="event-wallet-samsung-enabled"
                     aria-label="Samsung Wallet"
-                    checked={false}
-                    disabled
-                    onChange={() => {}}
+                    checked={form.walletSamsungEnabled}
+                    disabled={isArchived || saving}
+                    onChange={(e) => setForm({ ...form, walletSamsungEnabled: e.target.checked })}
                   />
                 </div>
               </div>

@@ -19,6 +19,7 @@ const EVENT_REP_B = "evt-reports-test-b";
 const EVENT_EMPTY = "evt-reports-empty";
 const EVENT_MISSING = "evt-reports-missing";
 const EVENT_WALLETS = "evt-reports-wallets";
+const EVENT_WALLETS_APPLE_ONLY = "evt-reports-wallets-apple-only";
 
 const EMAIL_ADMIN = "reports-admin@example.com";
 const EMAIL_ADMIN_B = "reports-admin-b@example.com";
@@ -41,6 +42,8 @@ const ATT_W_VOIDED = "att-reports-w-voided";
 const ATT_W_NOPASS = "att-reports-w-nopass";
 const ATT_W_NOTYPE = "att-reports-w-notype";
 const ATT_W_LEGACY_TYPE = "att-reports-w-legacy-type";
+const ATT_W_APPLE_ONLY_EVENT = "att-reports-w-apple-only-event";
+const ATT_W_GOOGLE_ONLY_EVENT = "att-reports-w-google-only-event";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -82,7 +85,7 @@ async function createUnvalidatedAttendees(
 }
 
 async function seed(client: PrismaClient) {
-  const eventIds = [EVENT_REP, EVENT_REP_B, EVENT_EMPTY, EVENT_WALLETS];
+  const eventIds = [EVENT_REP, EVENT_REP_B, EVENT_EMPTY, EVENT_WALLETS, EVENT_WALLETS_APPLE_ONLY];
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.emailDelivery.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -144,6 +147,19 @@ async function seed(client: PrismaClient) {
         date: new Date("2027-06-01T12:00:00.000Z"),
         organization_id: ORG_REP,
       },
+      // Minimal, separate event (not EVENT_WALLETS above) so this doesn't need to mutate a
+      // fixture several other tests in this file already depend on - proves the route handler
+      // actually reads wallet_apple_enabled/wallet_google_enabled from the DB and threads them
+      // through to the aggregation, on top of aggregateWalletPasses' own unit coverage
+      // (wallet-reports-helpers.test.ts) for the filtering logic itself.
+      {
+        id: EVENT_WALLETS_APPLE_ONLY,
+        title: "Apple-Only Wallets Event",
+        slug: "reports-wallets-apple-only",
+        date: new Date("2027-07-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+        wallet_google_enabled: false,
+      },
     ],
   });
 
@@ -153,6 +169,50 @@ async function seed(client: PrismaClient) {
       { event_id: EVENT_REP, key: "VIP", label: "VIP", color: "purple", sort_order: 1 },
       { event_id: EVENT_WALLETS, key: "General", label: "General", sort_order: 0 },
     ],
+  });
+
+  await createUnvalidatedAttendees(client, [
+    {
+      id: ATT_W_APPLE_ONLY_EVENT,
+      event_id: EVENT_WALLETS_APPLE_ONLY,
+      name: "Apple-Only Event Attendee",
+      email: "apple-only-event@example.com",
+      ticket_type: "General",
+      ...mkAttendeeToken(),
+    },
+  ]);
+  await client.walletPass.create({
+    data: {
+      attendee_id: ATT_W_APPLE_ONLY_EVENT,
+      status: "active",
+      issued_at: new Date("2027-06-15T00:00:00.000Z"),
+      apple_active_registrations: 1,
+      google_active_registrations: 1,
+    },
+  });
+  // A pass registered only on the platform this event has since disabled - the reclassification
+  // check above already covers a both-platform pass staying "confirmed" via its still-enabled
+  // Apple registration alone; this one has no Apple registration at all, so it only demonstrates
+  // the bug if admission_by_wallet's own DB filter (confirmedWalletFilter) is built from
+  // enabledPlatforms too, not just aggregateWalletPasses (CodeRabbit review).
+  await createUnvalidatedAttendees(client, [
+    {
+      id: ATT_W_GOOGLE_ONLY_EVENT,
+      event_id: EVENT_WALLETS_APPLE_ONLY,
+      name: "Google-Only Event Attendee",
+      email: "google-only-event@example.com",
+      ticket_type: "General",
+      ...mkAttendeeToken(),
+    },
+  ]);
+  await client.walletPass.create({
+    data: {
+      attendee_id: ATT_W_GOOGLE_ONLY_EVENT,
+      status: "active",
+      issued_at: new Date("2027-06-15T00:00:00.000Z"),
+      apple_active_registrations: 0,
+      google_active_registrations: 1,
+    },
   });
 
   const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
@@ -1985,6 +2045,33 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.adoption.confirmed).toBe(0);
     expect(body.adoption.cancelled).toBe(0);
     expect(body.issued_by_day).toEqual([]);
+  });
+
+  // End-to-end wiring check (event.wallet_apple_enabled/wallet_google_enabled -> route handler ->
+  // enabledWalletPlatforms -> aggregateWalletPasses) on top of aggregateWalletPasses' own unit
+  // coverage for the filtering logic itself (wallet-reports-helpers.test.ts).
+  it("reclassifies a both-platform pass as apple-only when the event has Google Wallet disabled, and excludes a google-only pass from admission_by_wallet entirely", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS_APPLE_ONLY}/reports/wallets`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      adoption: { got_pass: number; confirmed: number };
+      platform: { apple_only: number; google_only: number; both: number; not_installed: number };
+      admission_by_wallet: {
+        with_wallet: { total: number; admitted: number; pct: number };
+        without_wallet: { total: number; admitted: number; pct: number };
+      };
+    };
+    expect(body.adoption.got_pass).toBe(2);
+    expect(body.adoption.confirmed).toBe(1);
+    expect(body.platform).toEqual({ apple_only: 1, google_only: 0, both: 0, not_installed: 1 });
+    // ATT_W_GOOGLE_ONLY_EVENT's registration is only on the now-disabled Google platform - without
+    // enabledPlatforms gating confirmedWalletFilter too (not just aggregateWalletPasses above),
+    // this would still count it as "with wallet" here despite `platform.not_installed` already
+    // reporting it as not installed (CodeRabbit review).
+    expect(body.admission_by_wallet.with_wallet.total).toBe(1);
+    expect(body.admission_by_wallet.without_wallet.total).toBe(1);
   });
 
   it("aggregates adoption, platform mix, ticket-type breakdown, time-to-tap, and admission-by-wallet-status", async () => {

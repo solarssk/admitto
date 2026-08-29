@@ -1,10 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
+  aggregateWalletPasses,
   bucketForDays,
+  buildWalletExportCsvRow,
   classifyPassPlatform,
   confirmedPlatformLabel,
   computeTapDays,
 } from "../src/admin/reports-routes.js";
+
+const BOTH_ENABLED = { apple: true, google: true };
+
+function pass(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    issued_at: new Date("2026-01-01T00:00:00.000Z"),
+    status: "active",
+    apple_active_registrations: 0,
+    google_active_registrations: 0,
+    registration_checked_at: null,
+    attendee: { ticket_type: "General", email_deliveries: [] },
+    ...overrides,
+  };
+}
 
 describe("classifyPassPlatform", () => {
   it("classifies an apple-only registration", () => {
@@ -86,5 +102,104 @@ describe("bucketForDays", () => {
   it("buckets anything over 7 days as 8_plus", () => {
     expect(bucketForDays(8)).toBe("8_plus");
     expect(bucketForDays(30)).toBe("8_plus");
+  });
+});
+
+describe("aggregateWalletPasses — enabledPlatforms gating", () => {
+  it("counts a pass active on both platforms as both when both are enabled", () => {
+    const result = aggregateWalletPasses(
+      [pass({ apple_active_registrations: 1, google_active_registrations: 1 })],
+      BOTH_ENABLED,
+    );
+    expect(result.both).toBe(1);
+    expect(result.appleOnly).toBe(0);
+    expect(result.googleOnly).toBe(0);
+    expect(result.confirmed).toBe(1);
+  });
+
+  it("reclassifies a both-active pass as apple_only when Google is disabled, not as both or google_only", () => {
+    const result = aggregateWalletPasses(
+      [pass({ apple_active_registrations: 1, google_active_registrations: 1 })],
+      { apple: true, google: false },
+    );
+    expect(result.appleOnly).toBe(1);
+    expect(result.googleOnly).toBe(0);
+    expect(result.both).toBe(0);
+    // Still confirmed - the pass DOES have a live Apple registration, which stays a real
+    // confirmation even though Google's (also real) registration is no longer counted.
+    expect(result.confirmed).toBe(1);
+  });
+
+  it("counts a Google-only pass as not confirmed at all when Google is the disabled platform", () => {
+    const result = aggregateWalletPasses(
+      [pass({ apple_active_registrations: 0, google_active_registrations: 1 })],
+      { apple: true, google: false },
+    );
+    expect(result.confirmed).toBe(0);
+    expect(result.googleOnly).toBe(0);
+    expect(result.appleOnly).toBe(0);
+  });
+
+  it("counts nothing as confirmed when neither platform is enabled, regardless of raw registrations", () => {
+    const result = aggregateWalletPasses(
+      [pass({ apple_active_registrations: 1, google_active_registrations: 1 })],
+      { apple: false, google: false },
+    );
+    expect(result.confirmed).toBe(0);
+    expect(result.appleOnly).toBe(0);
+    expect(result.googleOnly).toBe(0);
+    expect(result.both).toBe(0);
+  });
+});
+
+describe("buildWalletExportCsvRow — enabledPlatforms gating", () => {
+  const catalog: never[] = [];
+  const operatorMap = {};
+
+  function exportRow(walletOverrides: Partial<Record<string, unknown>>, enabledPlatforms: { apple: boolean; google: boolean }) {
+    const row = {
+      name: "Jane Doe",
+      email: "jane@example.com",
+      ticket_type: "General",
+      admitted_at: null,
+      admitted_by: null,
+      email_deliveries: [],
+      wallet_pass: {
+        status: "active",
+        issued_at: new Date("2026-01-01T00:00:00.000Z"),
+        voided_at: null,
+        apple_active_registrations: 1,
+        apple_inactive_registrations: 0,
+        google_active_registrations: 1,
+        google_inactive_registrations: 0,
+        registration_checked_at: new Date("2026-01-02T00:00:00.000Z"),
+        ...walletOverrides,
+      },
+    };
+    const csv = buildWalletExportCsvRow(row as never, catalog, "UTC", operatorMap, enabledPlatforms);
+    return csv.split(",").map((c) => c.replace(/^"|"$/g, ""));
+  }
+
+  // Columns: Name, Email, Ticket type, Wallet pass status, Pass issued at, Apple active,
+  // Apple inactive, Google active, Google inactive, Confirmed platform, ...
+  it("blanks the Google columns and excludes Google from Confirmed platform when Google is disabled", () => {
+    const row = exportRow({}, { apple: true, google: false });
+    expect(row[5]).toBe("1"); // Apple active
+    expect(row[7]).toBe(""); // Google active - blanked, not "1"
+    expect(row[8]).toBe(""); // Google inactive - blanked
+    expect(row[9]).toBe("Apple"); // Confirmed platform - Google's registration doesn't count
+  });
+
+  it("keeps both platforms' raw columns and the Both label when both are enabled", () => {
+    const row = exportRow({}, BOTH_ENABLED);
+    expect(row[5]).toBe("1");
+    expect(row[7]).toBe("1");
+    expect(row[9]).toBe("Both");
+  });
+
+  it("still blanks a disabled platform's columns even for a never-synced pass (both reasons for blank stay independent)", () => {
+    const row = exportRow({ registration_checked_at: null }, { apple: true, google: false });
+    expect(row[5]).toBe(""); // Apple active - blank because unsynced, not because disabled
+    expect(row[9]).toBe(""); // Confirmed platform - blank, unsynced
   });
 });
