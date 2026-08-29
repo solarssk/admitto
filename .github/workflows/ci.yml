@@ -371,22 +371,27 @@ jobs:
         run: |
           # E.164-leaning: a leading "+" (rare outside phone numbers) followed by 7-21 real
           # digits, allowing space/dot/paren/dash separators grouped in runs of at most 2 between
-          # digits (covers "+1 (234) 567-8900"'s "paren+space"/"paren+space" pairs without letting
-          # separators pad out the count). Each unit past the first digit is exactly one digit,
-          # optionally preceded by up to 2 separator chars - so {6,20} counts real digits, not
-          # characters: a naive `[0-9 .()-]{5,19}` (the first version of this check) let separator
-          # padding satisfy the length requirement with almost no real digits, e.g. matching
-          # "+1-----2" (2 real digits) or accepting unbounded separator runs (caught by review on
-          # PR #1158 before this shipped). The (^|[^0-9]) / ($|[^0-9]) boundary groups require a
-          # non-digit (or line start/end) on both sides, so this does not fire on a "+" that is
-          # itself part of a longer digit run - eg. semver build metadata like
-          # "1.0.0+20130313144700", or a big numeric id - the main false-positive class for naive
-          # phone regexes. A "+"-prefixed decimal with phone-length digit count (e.g. "+12.345678",
-          # 8 real digits) can still match - digit count alone can't distinguish that from a short
-          # real phone number, and no separator-shape fix changes that; unchanged from the original
-          # design intent, not a regression. Wider scope than the email check above (also
-          # .yaml/.yml/.sql): measured zero false positives against this repo's current tracked
-          # files in that scope before wiring this in as a blocking check.
+          # digits (covers a US-style grouping - country code, then an area code wrapped in
+          # parens followed by a space, then a dashed local number - without letting separators
+          # pad out the count). Each unit past the first digit is exactly one digit, optionally
+          # preceded by up to 2 separator chars - so {6,20} counts real digits, not characters: a
+          # naive `[0-9 .()-]{5,19}` (the first version of this check) let separator padding
+          # satisfy the length requirement with almost no real digits - a "+" followed by one
+          # digit, five dashes, and one more digit used to match despite having only 2 real
+          # digits (caught by review on PR #1158 before this shipped). The (^|[^0-9]) / ($|[^0-9])
+          # boundary groups require a non-digit (or line start/end) on both sides, so this does
+          # not fire on a "+" that is itself part of a longer digit run - eg. semver build
+          # metadata like "1.0.0+20130313144700", or a big numeric id - the main false-positive
+          # class for naive phone regexes. A "+"-prefixed decimal value can still match if its
+          # digit count alone happens to land in phone-number range - digit count alone can't
+          # distinguish that from a short real phone number, and no separator-shape fix changes
+          # that; unchanged from the original design intent, not a regression. Wider scope than
+          # the email check above (also .yaml/.yml/.sql): measured zero false positives against
+          # this repo's current tracked files in that scope before wiring this in as a blocking
+          # check. NOTE FOR FUTURE EDITS: this step scans .yml files too, including this workflow
+          # file itself - do not put a literal phone-shaped example in a comment near this step,
+          # it will match its own check (this is exactly how the previous comment revision broke
+          # CI; describe examples in prose instead of a quoted literal).
           HITS=$(git ls-files -z -- '*.csv' '*.tsv' '*.json' '*.yaml' '*.yml' '*.sql' ':!package-lock.json' \
             | xargs -0 grep -hREo '(^|[^0-9])\+[1-9]([0-9]|[ .()-]{1,2}[0-9]){6,20}($|[^0-9])' -- || true)
           if [ -n "$HITS" ]; then
