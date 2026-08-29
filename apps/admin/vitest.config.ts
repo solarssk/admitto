@@ -12,7 +12,87 @@ export default defineConfig({
   test: {
     coverage: vitestCoverage,
     environment: "node",
-    include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
+    // AttendeeDetailPage.*.test.tsx's org-admin variant files share one project so they can
+    // load attendeeDetailPageSetup.ts via `setupFiles` - the vi.mock() calls it contains
+    // (attendeeDetailForm.js, AuthProvider.js, react-router) were byte-for-byte identical
+    // across these files. A plain side-effect `import "./attendeeDetailPageSetup.js"` from
+    // inside a test file does NOT work here: vi.mock hoisting is a per-file static-analysis
+    // transform that only sees mock calls written directly in that file's own source -
+    // `setupFiles` is Vitest's actual supported mechanism for sharing mock registration across
+    // files (confirmed working). archived.test.tsx keeps its own local `vi.mock("react-router",
+    // ...)` on top of the shared setup - it needs `archived_at` set on the event, unlike every
+    // sibling file - a later, file-local vi.mock() call for a path also registered in
+    // `setupFiles` wins over the setupFile's version (also confirmed working, not assumed).
+    // The remaining AttendeeDetailPage test files genuinely differ in more than that one field
+    // and correctly keep all their own local mocks, not included here: errors/notes/revokePass
+    // need a superadmin (or per-test-mutable) assignment, walletActions needs extra
+    // wallet-specific outlet-context fields on top of a different assignment too.
+    // AttendeesPage.{sort,mailStatusFilter,pageSize,search}.test.tsx are byte-for-byte
+    // identical (bar one file's extra `act` import) from the top of the file through
+    // renderPage() - same shared-setup treatment as the AttendeeDetailPage project above.
+    // mailGate and exportMenu each only needed one extra api/client.js function (respectively
+    // fetchEventMailSettings, exportAttendees) made controllable on top of the shared shape -
+    // attendeesPageSetup.tsx now exports both as configurable vi.fn() handles, so these two
+    // files no longer need their own local vi.mock() at all and join this project too. This
+    // also sidesteps a real failure mode found earlier: registering the SAME module path both
+    // in setupFiles and again locally (even to layer in one extra override) broke
+    // importOriginal() in the local factory - a single registration with configurable handles
+    // has no such layering to get wrong. load.test.tsx shares the same near-complete overlap and
+    // joins for the same reason, keeping only its own extra "/import" route (renderPage() stays
+    // local - it's a plain function, not a vi.mock() registration, so nothing about sharing the
+    // rest of the setup requires sharing it too). AttendeesPage's remaining 3 files (archived,
+    // bulkSelection, exportAndSend) each genuinely diverge somewhere else in the shared span
+    // (archived_at handling, a `sendEventBulk`/`bulkResendTickets` assertion, distinct fixture
+    // rows) and correctly keep their own local setup.
+    // CheckInPage.{manualEntryTiming,cameraViewStale}.test.tsx are the only two CheckInPage
+    // files that both need the full checkInApiMock.js shape AND lookupCheckInAttendees/
+    // submitCheckInScan controllable on top of it - genuinely the same test environment (same
+    // page, same four mocked modules, same controllable functions), unlike CheckInPage's other
+    // files which each mock a different subset. torch.test.tsx does NOT join this project - it
+    // doesn't need either of those two functions controllable, so its own vi.mock() body is
+    // shorter and would only diverge from this shared one, not match it.
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "attendee-detail-page-shared-setup",
+          include: [
+            "test/attendees/AttendeeDetailPage.{statusTones,resend,profileEdit,mailGate,deleteAttendee,revokeCheckIn,copyTicketLink,archived}.test.tsx",
+          ],
+          setupFiles: ["./test/attendees/attendeeDetailPageSetup.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "attendees-page-shared-setup",
+          include: [
+            "test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search,mailGate,exportMenu,load}.test.tsx",
+          ],
+          setupFiles: ["./test/attendees/attendeesPageSetup.tsx"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "checkin-page-scan-shared-setup",
+          include: ["test/checkin/CheckInPage.{manualEntryTiming,cameraViewStale}.test.tsx"],
+          setupFiles: ["./test/checkin/checkInScanApiSetup.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "default",
+          include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
+          exclude: [
+            "test/attendees/AttendeeDetailPage.{statusTones,resend,profileEdit,mailGate,deleteAttendee,revokeCheckIn,copyTicketLink,archived}.test.tsx",
+            "test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search,mailGate,exportMenu,load}.test.tsx",
+            "test/checkin/CheckInPage.{manualEntryTiming,cameraViewStale}.test.tsx",
+          ],
+        },
+      },
+    ],
     // Vitest's default thread count is `os.availableParallelism() - 1`. With 264 files each
     // spinning up its own jsdom environment plus React rendering, running that many concurrent
     // worker threads saturates the machine and starves individual tests of CPU time - `waitFor`/

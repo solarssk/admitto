@@ -1,10 +1,5 @@
 import { vi } from "vitest";
 
-/** Shared `reportApiError` handle for `useConnectionState()` mocks - a fresh `vi.fn()` per call
- * breaks CommunicationPage's own memoization (it sits in the dependency array of several
- * effects), so every file must hoist the *same* stable identity, not declare its own. */
-export const reportApiError = vi.fn();
-
 /** Handles for the five api/client.js calls every CommunicationPage.*.test.tsx file wants
  * individually controllable - which template loads (fetchEventTemplates/fetchEventTemplate/
  * fetchEventTemplateById) and the two the bounce banner/delivery log tab need

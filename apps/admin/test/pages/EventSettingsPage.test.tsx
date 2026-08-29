@@ -5,14 +5,14 @@ import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, MemoryRouter, Outlet, Route, Routes } from "react-router";
 import { resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { makeOrgAdminAssignment, makeSuperadminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
 import type { RoleAssignment, TicketTypeDto } from "../../src/api/types.js";
 
 const superadminAssignments: RoleAssignment[] = [
-  { role: "superadmin", scope_type: "instance", scope_id: null },
+  makeSuperadminAssignment(),
 ];
 const orgAdminAssignments: RoleAssignment[] = [
-  { role: "admin", scope_type: "organization", scope_id: "org-1" },
+  makeOrgAdminAssignment(),
 ];
 let mockAssignments: RoleAssignment[] = superadminAssignments;
 let mockBlocker: {

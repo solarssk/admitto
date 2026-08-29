@@ -5,21 +5,12 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 import { baseAttendeeDetailEvent, getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { loadAttendeeDetailData } from "./attendeeDetailPageSetup.js";
 
-const loadAttendeeDetailData = vi.fn();
-
-vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/attendees/attendeeDetailForm.js")>();
-  return {
-    ...actual,
-    loadAttendeeDetailData: (...args: unknown[]) => loadAttendeeDetailData(...args),
-  };
-});
-
-vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ assignments: [{ role: "admin", scope_type: "organization", scope_id: "org-1" }] }),
-}));
-
+// Archived-lockdown coverage needs the event itself archived, unlike every sibling
+// AttendeeDetailPage.*.test.tsx file, so this overrides attendeeDetailPageSetup.ts's shared
+// (non-archived) react-router mock locally - a later, file-local vi.mock() call for the same
+// path wins over the setupFile's earlier registration (verified empirically).
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
   return {

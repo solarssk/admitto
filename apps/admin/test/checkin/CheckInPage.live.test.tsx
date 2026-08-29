@@ -42,15 +42,9 @@ vi.mock("../../src/hooks/useIsDesktop.js", () => ({
   isDesktopViewport: () => true,
 }));
 
-vi.mock("../../src/api/client.js", () => ({
+vi.mock("../../src/api/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchTicketTypes: vi.fn().mockResolvedValue([]),
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
   fetchCheckInHistory: (...args: unknown[]) => fetchCheckInHistory(...args),
   fetchCheckInStats: (...args: unknown[]) => fetchCheckInStats(...args),
   fetchCheckInOpsConfig: (...args: unknown[]) => fetchCheckInOpsConfig(...args),

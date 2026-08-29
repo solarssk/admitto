@@ -5,7 +5,8 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 import { formatUtcDateTime } from "../../src/utils/event-dates.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
-import { communicationApiMocks, reportApiError } from "./communicationApiMock.js";
+import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
+import { communicationApiMocks } from "./communicationApiMock.js";
 import type { DeliveryDetailDto, DeliveryDto } from "../../src/api/types.js";
 
 const { fetchEventOverview, fetchEventTemplate, fetchEventTemplates, fetchEventDeliveries } =
@@ -17,9 +18,7 @@ const outletContext = vi.hoisted(() => ({
   event: { id: "evt-1", title: "Demo", archived_at: null, timezone: "Europe/Warsaw" },
 }));
 
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError }),
-}));
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 // buildCommunicationApiMock is loaded via a dynamic import *inside* the factory (same technique
 // as checkInScanApiSetup.ts) rather than a plain top-level import - vi.mock() calls hoist above

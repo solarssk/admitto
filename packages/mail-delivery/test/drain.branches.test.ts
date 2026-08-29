@@ -4,12 +4,13 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { MailConfigError, resolveMailConfig, setMailSettings } from "@admitto/mailer-config";
+import { MailConfigError, resolveMailConfig } from "@admitto/mailer-config";
 import { generateToken } from "@admitto/tickets";
 import { createMailer, sendBatch } from "@admitto/mailer";
 import { resolveAttendeeMailLinks } from "../src/links.js";
 import { cancelBulkSendBatch, claimInitialDelivery, drainPendingDeliveries, sendTicketEmails } from "../src/index.js";
 import { resetDb } from "./resetDb.js";
+import { seedOrgAndEvent } from "./seedOrgAndEvent.js";
 
 vi.mock("@admitto/mailer", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@admitto/mailer")>();
@@ -39,25 +40,20 @@ vi.mock("../src/links.js", async (importOriginal) => {
 const prisma = createTestPrismaClient();
 const EVENT_ID = "evt-mail-drain-branches";
 
+const TEST_ENV = { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" };
+const NOOP_DEPS = { exportSink: () => undefined };
+const DRAIN_OPTIONS = { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" };
+
 beforeAll(async () => {
   await resetDb();
-  await prisma.organization.create({
-    data: { id: "org-drain-b", name: "Drain Branches Org", slug: "drain-branches-org" },
+  await seedOrgAndEvent(prisma, {
+    orgId: "org-drain-b",
+    orgName: "Drain Branches Org",
+    orgSlug: "drain-branches-org",
+    eventId: EVENT_ID,
+    eventTitle: "Drain Branches",
+    eventSlug: "drain-branches",
   });
-  await prisma.event.create({
-    data: {
-      id: EVENT_ID,
-      organization_id: "org-drain-b",
-      title: "Drain Branches",
-      slug: "drain-branches",
-      date: new Date("2026-09-01"),
-    },
-  });
-  await setMailSettings(
-    { scopeType: "organization", scopeId: "org-drain-b" },
-    { provider: "export_only", fromAddress: "events@example.com" },
-    prisma,
-  );
   await prisma.attendee.create({
     data: {
       id: "att-drain-branch",
@@ -112,8 +108,8 @@ async function enqueueOne() {
     EVENT_ID,
     { attendeeIds: ["att-drain-branch"] },
     prisma,
-    { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-    { exportSink: () => undefined },
+    TEST_ENV,
+    NOOP_DEPS,
   );
 }
 
@@ -122,12 +118,7 @@ describe("drainPendingDeliveries branch coverage", () => {
     await enqueueOne();
     vi.mocked(resolveAttendeeMailLinks).mockRejectedValueOnce(new Error("gone"));
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
-      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
     const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
     expect(row.status).toBe("failed");
@@ -137,12 +128,7 @@ describe("drainPendingDeliveries branch coverage", () => {
     await enqueueOne();
     vi.mocked(sendBatch).mockRejectedValueOnce(new Error("transport down"));
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
-      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain.failed).toBe(1);
   });
 
@@ -150,12 +136,7 @@ describe("drainPendingDeliveries branch coverage", () => {
     await enqueueOne();
     vi.mocked(sendBatch).mockRejectedValueOnce("raw-string-failure");
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
-      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain.failed).toBe(1);
     const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
     expect(row.error).toContain("raw-string-failure");
@@ -170,12 +151,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       results: [],
     });
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
-      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
   });
 
@@ -190,12 +166,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       return { total: 1, sent: 0, failed: 1, results: [] };
     });
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
-      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
     expect(after.status).toBe("cancelled");
@@ -210,12 +181,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       results: [{ status: "rejected", provider: "export_only", error: "bounce" }],
     });
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
-      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
   });
 
@@ -234,12 +200,7 @@ describe("drainPendingDeliveries branch coverage", () => {
     });
     vi.mocked(sendBatch).mockRejectedValueOnce(new Error("still down"));
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
-      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
     expect(after.attempts).toBe(8);
@@ -267,12 +228,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       results: [{ status: "rejected", provider: "export_only", error: "bounce" }],
     });
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
-      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
     expect(after.attempts).toBe(8);
@@ -295,12 +251,7 @@ describe("drainPendingDeliveries branch coverage", () => {
     ] as never);
 
     try {
-      const drain = await drainPendingDeliveries(
-        prisma,
-        { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-        { exportSink: () => undefined },
-        { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-      );
+      const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
       expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
     } finally {
       findMany.mockRestore();
@@ -324,12 +275,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       return actual.resolveAttendeeMailLinks(...args);
     });
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
-      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
 
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
     expect(sendBatch).not.toHaveBeenCalled();
@@ -353,12 +299,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       throw new Error("link resolution blew up after the cancel landed");
     });
 
-    const firstTick = await drainPendingDeliveries(
-      prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
-      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-    );
+    const firstTick = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(firstTick).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
     expect(sendBatch).not.toHaveBeenCalled();
 
@@ -368,12 +309,7 @@ describe("drainPendingDeliveries branch coverage", () => {
 
     // A later tick must not find anything to retry - the row is "cancelled", not the
     // "failed"+retryable state the old unconditional update would have left it in.
-    const secondTick = await drainPendingDeliveries(
-      prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
-      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-    );
+    const secondTick = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(secondTick).toEqual({ claimed: 0, sent: 0, failed: 0, skipped: 0, eventIds: [] });
     expect(sendBatch).not.toHaveBeenCalled();
     const finalRow = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
@@ -398,12 +334,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       throw new Error("transport timeout right as the cancel landed");
     });
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
-      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
     expect(after.status).toBe("cancelled");
@@ -440,12 +371,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       return actual.sendBatch(...args);
     });
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
-      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
 
     // The original attempt's result (a real, successful send) can no longer be safely recorded
     // against this row - it moved on to a new attempt mid-flight - so it's dropped rather than
@@ -491,15 +417,15 @@ describe("drainPendingDeliveries branch coverage", () => {
       EVENT_ID,
       { attendeeIds: ["att-drain-branch"] },
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
+      TEST_ENV,
+      NOOP_DEPS,
     );
     await sendTicketEmails(
       EVENT_B,
       { attendeeIds: ["att-drain-branch-b"] },
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
+      TEST_ENV,
+      NOOP_DEPS,
     );
 
     vi.mocked(resolveMailConfig).mockImplementation(async (eventId, ...rest) => {
@@ -512,8 +438,8 @@ describe("drainPendingDeliveries branch coverage", () => {
 
     const drain = await drainPendingDeliveries(
       prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
+      TEST_ENV,
+      NOOP_DEPS,
       { baseUrl: "https://tickets.example.com" },
     );
     expect(drain.claimed).toBe(2);
@@ -540,12 +466,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       throw new Error("bad transport config");
     });
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
-      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
     expect(after.status).toBe("cancelled");
@@ -555,12 +476,7 @@ describe("drainPendingDeliveries branch coverage", () => {
     await enqueueOne();
     vi.mocked(createMailer).mockRejectedValueOnce(new Error("mailer boom"));
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
-      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
     const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
     expect(row.status).toBe("failed");
@@ -576,12 +492,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       ),
     );
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" },
-      { exportSink: () => undefined },
-      { eventId: EVENT_ID, baseUrl: "https://tickets.example.com" },
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
     const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
     expect(row.status).toBe("failed");

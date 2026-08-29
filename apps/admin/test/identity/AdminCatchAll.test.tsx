@@ -6,11 +6,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({
-    assignments: [{ role: "superadmin", scope_type: "instance", scope_id: null }],
+    assignments: [makeSuperadminAssignment()],
   }),
 }));
 
 import { AdminGuard } from "../../src/auth/RoleRouter.js";
+import { makeSuperadminAssignment } from "../test-utils.js";
 
 afterEach(() => {
   cleanup();

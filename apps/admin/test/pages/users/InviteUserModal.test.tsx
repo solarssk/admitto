@@ -12,6 +12,7 @@ vi.mock("../../../src/api/client.js", () => ({
 }));
 
 import { createAdminUser, fetchAdminEvents, fetchAdminOrganizations, grantUserRole } from "../../../src/api/client.js";
+import { makeOrgAdminAssignment } from "../../test-utils.js";
 
 afterEach(() => {
   cleanup();
@@ -254,7 +255,7 @@ describe("InviteUserModal", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => {
-      expect(grantUserRole).toHaveBeenCalledWith("user-2", { role: "admin", scope_type: "organization", scope_id: "org-1" });
+      expect(grantUserRole).toHaveBeenCalledWith("user-2", makeOrgAdminAssignment());
     });
   });
 

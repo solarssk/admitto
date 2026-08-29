@@ -4,6 +4,7 @@ import { MemoryRouter, Outlet, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RoleAssignment } from "../../src/api/types.js";
 import { EventsListShell } from "../../src/layouts/EventsListShell.js";
+import { makeSuperadminAssignment } from "../test-utils.js";
 
 let mockAssignments: RoleAssignment[] = [];
 
@@ -41,7 +42,7 @@ afterEach(() => {
 
 describe("EventsListShell", () => {
   it("links the brand to /admin for admin-panel users", () => {
-    mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
+    mockAssignments = [makeSuperadminAssignment()];
     renderShell("/admin");
     const brand = screen.getByRole("link", { name: "Admitto" });
     expect(brand.getAttribute("href")).toBe("/admin");

@@ -14,6 +14,9 @@ import type { ConnectionContextValue, ConnectionState } from "../../src/connecti
  *   ...
  *   useConnectionState.mockReturnValue(connectionStateValue("connected"));
  */
-export function connectionStateValue(state: ConnectionState): ConnectionContextValue {
-  return { state, lastCheckedAt: null, reportApiError: vi.fn() };
+export function connectionStateValue(
+  state: ConnectionState,
+  reportApiError: (status: number) => void = vi.fn(),
+): ConnectionContextValue {
+  return { state, lastCheckedAt: null, reportApiError };
 }

@@ -4,8 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage, recoverLegacyAfterDelete, resolveTestSendTemplateLabel } from "../../src/pages/CommunicationPage.js";
 import { makeEmailPreviewInert } from "../../src/communication/inertEmailPreview.js";
-import { getTooltipText, renderWithToast } from "../test-utils.js";
-import { communicationApiMocks, reportApiError } from "./communicationApiMock.js";
+import { clickKeepEditing, getTooltipText, renderWithToast } from "../test-utils.js";
+import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
+import { communicationApiMocks } from "./communicationApiMock.js";
 
 const {
   fetchEventTemplates,
@@ -27,9 +28,7 @@ const updateEventTemplateMetadata = vi.fn();
 const fetchTicketTypes = vi.fn();
 const fetchEventMailSettings = vi.fn();
 
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError }),
-}));
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 // buildCommunicationApiMock is loaded via a dynamic import *inside* the factory (same technique
 // as checkInScanApiSetup.ts) rather than a plain top-level import - vi.mock() calls hoist above
@@ -960,7 +959,7 @@ describe("CommunicationPage templates", () => {
     });
 
     fireEvent.click(screen.getByRole("radio", { name: "MJML" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Keep editing" }));
+    await clickKeepEditing();
     expect(screen.getByLabelText("HTML body")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Switch format" })).toBeNull();
   });

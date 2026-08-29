@@ -5,7 +5,7 @@ import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes } from 
 import { ReportsPage } from "../../src/pages/ReportsPage.js";
 import type { EventReportsResponse } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { connectionStateValue, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const fetchEventReports = vi.fn();
 const fetchTicketTypes = vi.fn();
@@ -72,7 +72,7 @@ vi.mock("../../src/hooks/useEventStream.js", () => ({
 }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ state: "connected", reportApiError }),
+  useConnectionState: () => connectionStateValue("connected", reportApiError),
 }));
 
 // react-apexcharts has no jsdom/ResizeObserver setup in this project (apps/admin/vitest.config.ts

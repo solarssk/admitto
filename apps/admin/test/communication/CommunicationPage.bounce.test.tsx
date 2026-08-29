@@ -5,7 +5,8 @@ import { RouterProvider } from "react-router/dom";
 import { MemoryRouter, Route, Routes, createMemoryRouter } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
-import { communicationApiMocks, reportApiError } from "./communicationApiMock.js";
+import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
+import { communicationApiMocks } from "./communicationApiMock.js";
 
 const { fetchEventOverview, fetchEventTemplate, fetchEventTemplates, fetchEventDeliveries } =
   communicationApiMocks;
@@ -18,11 +19,9 @@ const resendTicket = vi.fn();
 // re-fires all of them on every render, flickering `loading` fast enough that
 // useDelayedLoading's 200ms window never elapses and the whole page intermittently renders
 // null - a CI-only race, since a fast/idle local machine never lingers in that window long
-// enough to observe it. The shared `reportApiError` handle every sibling CommunicationPage test
-// file hoists the same way already has a stable identity for exactly this reason.
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError }),
-}));
+// enough to observe it. The automocked `reportApiError` (`ConnectionStateProvider.js`'s
+// `__mocks__`) has a stable identity for exactly this reason.
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 // buildCommunicationApiMock is loaded via a dynamic import *inside* the factory (same technique
 // as checkInScanApiSetup.ts) rather than a plain top-level import - vi.mock() calls hoist above

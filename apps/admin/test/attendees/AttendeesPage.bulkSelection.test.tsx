@@ -6,6 +6,7 @@ import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
 import { getTooltipText, mockMatchMedia } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
+import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
 
 const fetchEventAttendees = vi.fn();
 const fetchEventMailSettings = vi.fn();
@@ -25,7 +26,6 @@ const fetchTicketTypes = vi.fn();
 const fetchEventItems = vi.fn();
 const bulkRevokeItems = vi.fn();
 const addToast = vi.fn();
-const reportApiError = vi.fn();
 const pollWalletPushCompletion = vi.fn();
 
 function mailSettings(provider: string | null) {
@@ -60,9 +60,7 @@ const rowA = makeRow("att-1", "Jane Doe");
 const rowB = makeRow("att-2", "John Smith");
 const rowC = makeRow("att-3", "Alex Kim");
 
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError }),
-}));
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 vi.mock("@admitto/ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@admitto/ui")>();
@@ -72,6 +70,8 @@ vi.mock("@admitto/ui", async (importOriginal) => {
   };
 });
 
+// Deliberately duplicated (see AttendeesPage.exportAndSend.test.tsx) - vi.mock() has no
+// vi.spyOn()-style call-through shortcut for ES modules (vitest-dev/vitest#6100).
 const { pollBulkSendCompletion, setPollBulkSendCompletionActual, getPollBulkSendCompletionActual } =
   vi.hoisted(() => {
     let actual: typeof import("../../src/attendees/pollBulkSendCompletion.js").pollBulkSendCompletion;
@@ -99,16 +99,8 @@ vi.mock("../../src/attendees/pollWalletPushCompletion.js", () => ({
   pollWalletPushCompletion: (...args: unknown[]) => pollWalletPushCompletion(...args),
 }));
 
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    code?: string;
-    constructor(status: number, message: string, code?: string) {
-      super(message);
-      this.status = status;
-      this.code = code;
-    }
-  },
+vi.mock("../../src/api/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
   bulkChangeTicketType: (...args: unknown[]) => bulkChangeTicketType(...args),
