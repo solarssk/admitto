@@ -1,0 +1,79 @@
+name: DAST baseline scan
+
+# Dynamic scan on top of the same docker-compose stack deploy-smoke.yml already builds and
+# health-checks (see that workflow for the stack itself). Runs OWASP ZAP's baseline scan
+# (passive rules + a short spidering crawl, no active/attack payloads) against the
+# unauthenticated, public/login-adjacent surface only — /, /login, /healthz and whatever the
+# spider reaches from there without credentials.
+#
+# What this covers: missing security headers, cookie flags, information disclosure, and other
+# passive-scan findings on the surface a request can reach before authenticating.
+# What this does NOT cover yet: anything behind /admin or /operator (an authenticated crawl is
+# future scope — ZAP's baseline scan has no session), and active/attack scanning (ZAP's full
+# scan, not baseline, which is unsuitable for a shared CI stack).
+#
+# Report-only: fail_action is false and this does not gate merges. Results are uploaded as a
+# workflow artifact (HTML/JSON/MD reports). ZAP's baseline scanner has no native SARIF output, so
+# Security-tab integration is left for a follow-up rather than bolting on a hand-rolled converter.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  dast-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Prepare deploy env
+        working-directory: deploy
+        run: |
+          cp .env.example .env
+          sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=smoke-test-secret/' .env
+          sed -i 's|^DATABASE_URL=.*|DATABASE_URL=postgresql://admitto_app:smoke-test-secret@db:5432/admitto|' .env
+          ENCRYPTION_KEY=$(openssl rand -base64 32)
+          node -e "if (Buffer.from(process.argv[1], 'base64').length !== 32) { console.error('ENCRYPTION_KEY must decode to 32 bytes'); process.exit(1); }" "$ENCRYPTION_KEY"
+          sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|" .env
+          sed -i 's|^BASE_URL=.*|BASE_URL=http://127.0.0.1:8080|' .env
+          sed -i 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=smoke-redis-secret/' .env
+          sed -i 's|^REDIS_URL=.*|REDIS_URL=redis://:smoke-redis-secret@redis:6379|' .env
+          node validate-env.mjs .env
+
+      - name: Build and start stack
+        working-directory: deploy
+        run: docker compose up -d --build
+
+      - name: Wait for healthy proxy
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8080/healthz >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "healthz never became ready"
+          docker compose -f deploy/docker-compose.yml logs
+          exit 1
+
+      - name: ZAP baseline scan
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25  # v0.15.0
+        with:
+          target: "http://127.0.0.1:8080"
+          artifact_name: "zap-baseline-report"
+          # Report-only per this workflow's scope — do not fail CI on findings and do not file a
+          # GitHub issue; the uploaded artifact is the record for now.
+          fail_action: false
+          allow_issue_writing: false
+
+      - name: Tear down
+        if: always()
+        working-directory: deploy
+        run: docker compose down -v
