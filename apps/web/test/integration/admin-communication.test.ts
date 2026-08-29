@@ -105,16 +105,8 @@ async function seed(client: PrismaClient) {
 
   const password_hash = await hashPassword(PASSWORD);
 
-  await seedOrgAndEvent(
-    client,
-    { id: ORG_A, name: "Org A", slug: "admin-comm-a" },
-    { id: EVENT_A, title: "Event A", slug: "event-admin-comm-a", date: "2026-10-01", organizationId: ORG_A },
-  );
-  await seedOrgAndEvent(
-    client,
-    { id: ORG_B, name: "Org B", slug: "admin-comm-b" },
-    { id: EVENT_B, title: "Event B", slug: "event-admin-comm-b", date: "2026-11-01", organizationId: ORG_B },
-  );
+  await seedOrgAndEvent(client, { id: ORG_A, name: "Org A", slug: "admin-comm-a" }, { id: EVENT_A, title: "Event A", slug: "event-admin-comm-a", date: "2026-10-01", organizationId: ORG_A });
+  await seedOrgAndEvent(client, { id: ORG_B, name: "Org B", slug: "admin-comm-b" }, { id: EVENT_B, title: "Event B", slug: "event-admin-comm-b", date: "2026-11-01", organizationId: ORG_B });
   await client.event.create({
     data: {
       id: EVENT_C,

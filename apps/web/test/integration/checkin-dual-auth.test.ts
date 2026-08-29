@@ -53,16 +53,8 @@ async function seedDualAuthFixture(client: PrismaClient): Promise<void> {
 
   const password_hash = await hashPassword("x");
 
-  await seedOrgAndEvent(
-    client,
-    { id: ORG_A, name: "A", slug: "dual-a" },
-    { id: EVENT_A, title: "A", slug: "ev-dual-a", date: "2026-09-01", organizationId: ORG_A },
-  );
-  await seedOrgAndEvent(
-    client,
-    { id: ORG_B, name: "B", slug: "dual-b" },
-    { id: EVENT_B, title: "B", slug: "ev-dual-b", date: "2026-09-01", organizationId: ORG_B },
-  );
+  await seedOrgAndEvent(client, { id: ORG_A, name: "A", slug: "dual-a" }, { id: EVENT_A, title: "A", slug: "ev-dual-a", date: "2026-09-01", organizationId: ORG_A });
+  await seedOrgAndEvent(client, { id: ORG_B, name: "B", slug: "dual-b" }, { id: EVENT_B, title: "B", slug: "ev-dual-b", date: "2026-09-01", organizationId: ORG_B });
   await client.user.createMany({
     data: [
       { id: USER_SUPER, email: "s@example.com", password_hash },
