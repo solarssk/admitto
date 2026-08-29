@@ -4,51 +4,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 import { renderWithToast } from "../test-utils.js";
+import { communicationApiMocks, reportApiError } from "./communicationApiMock.js";
 
-const fetchEventTemplates = vi.fn();
-const fetchEventTemplate = vi.fn();
-const fetchEventTemplateById = vi.fn();
-const fetchEventOverview = vi.fn();
-const fetchEventDeliveries = vi.fn();
-
-const reportApiError = vi.fn();
+const { fetchEventTemplates, fetchEventTemplate, fetchEventOverview } = communicationApiMocks;
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => ({ reportApiError }),
 }));
 
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    code?: string;
-    constructor(status: number, message: string, code?: string) {
-      super(message);
-      this.status = status;
-      this.code = code;
-    }
-  },
-  TemplateValidationError: class TemplateValidationError extends Error {},
-  fetchEventTemplates: (...args: unknown[]) => fetchEventTemplates(...args),
-  fetchEventTemplate: (...args: unknown[]) => fetchEventTemplate(...args),
-  fetchEventTemplateById: (...args: unknown[]) => fetchEventTemplateById(...args),
-  fetchEventOverview: (...args: unknown[]) => fetchEventOverview(...args),
-  fetchEventDeliveries: (...args: unknown[]) => fetchEventDeliveries(...args),
-  previewEventTemplate: vi.fn(),
-  previewEventTemplateById: vi.fn(),
-  saveEventTemplate: vi.fn(),
-  saveEventTemplateById: vi.fn(),
-  createEventTemplate: vi.fn(),
-  deleteEventTemplate: vi.fn(),
-  updateEventTemplateMetadata: vi.fn(),
-  testSendEventTemplate: vi.fn(),
-  testSendEventTemplateById: vi.fn(),
-  sendEventBulk: vi.fn(),
-  fetchBulkSendStatus: vi.fn(),
-  fetchTicketTypes: vi.fn().mockResolvedValue([]),
-  fetchEventMailSettings: vi.fn().mockResolvedValue({
-    fields: { fromName: { value: null }, fromAddress: { value: null } },
-  }),
-}));
+// buildCommunicationApiMock is loaded via a dynamic import *inside* the factory (same technique
+// as checkInScanApiSetup.ts) rather than a plain top-level import - vi.mock() calls hoist above
+// regular imports, and this factory calls it in an immediately-evaluated position, which hits a
+// temporal-dead-zone ReferenceError on a plain static import (confirmed by trying it first).
+vi.mock("../../src/api/client.js", async (importOriginal) => {
+  const { buildCommunicationApiMock } = await import("./communicationApiMock.js");
+  return buildCommunicationApiMock(await importOriginal<typeof import("../../src/api/client.js")>());
+});
 
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
@@ -108,6 +79,16 @@ function focusAtEnd(el: HTMLInputElement | HTMLTextAreaElement) {
   el.setSelectionRange(el.value.length, el.value.length);
 }
 
+/** Renders the page and returns the body editor once it's mounted - the "arrange" every chip-
+ * insertion test below starts from, before diverging into its own cursor position/click scenario. */
+async function renderAndGetBodyField(labelText: "MJML body" | "HTML body" = "MJML body") {
+  renderPage();
+  await waitFor(() => {
+    expect(screen.getByLabelText(labelText)).toBeTruthy();
+  });
+  return screen.getByLabelText(labelText) as HTMLTextAreaElement;
+}
+
 beforeEach(() => {
   fetchEventOverview.mockResolvedValue({
     email_bounced: 0,
@@ -135,12 +116,7 @@ afterEach(() => {
 // `<mj-image src="<mj-image src="{{logo2}}" ...`).
 describe("CommunicationPage placeholder chip insertion", () => {
   it("appends repeated clicks on the same image chip as separate, well-formed elements instead of overwriting or nesting them", async () => {
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByLabelText("MJML body")).toBeTruthy();
-    });
-
-    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
+    const bodyTextarea = await renderAndGetBodyField();
     focusAtEnd(bodyTextarea);
 
     const chip = screen.getByRole("button", { name: "{{logo_url}}" });
@@ -155,12 +131,7 @@ describe("CommunicationPage placeholder chip insertion", () => {
   });
 
   it("appends repeated clicks on a plain-text placeholder chip sequentially, not overwriting", async () => {
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByLabelText("MJML body")).toBeTruthy();
-    });
-
-    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
+    const bodyTextarea = await renderAndGetBodyField();
     focusAtEnd(bodyTextarea);
 
     const chip = screen.getByRole("button", { name: "{{first_name}}" });
@@ -208,10 +179,7 @@ describe("CommunicationPage placeholder chip insertion outside the <mjml> root",
 
   it("redirects an image chip click to inside <mj-column> when the body was never focused (cursor defaults to 0, before <mjml>)", async () => {
     fetchEventTemplate.mockResolvedValue(mjmlTemplate);
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByLabelText("MJML body")).toBeTruthy();
-    });
+    const bodyTextarea = await renderAndGetBodyField();
 
     // Deliberately do NOT focus the textarea — this is the exact scenario that produced the bug:
     // the user's first action on the page is clicking a placeholder chip, so the browser's
@@ -219,7 +187,6 @@ describe("CommunicationPage placeholder chip insertion outside the <mjml> root",
     const chip = screen.getByRole("button", { name: "{{logo_url}}" });
     fireEvent.click(chip);
 
-    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
     expect(bodyTextarea.value).toBe(
       '<mjml><mj-body><mj-section><mj-column><mj-text>{{event_name}}</mj-text>' +
         '<mj-image src="{{logo_url}}" alt="Logo" width="200px" /></mj-column></mj-section></mj-body></mjml>',
@@ -228,15 +195,11 @@ describe("CommunicationPage placeholder chip insertion outside the <mjml> root",
 
   it("redirects a plain-text chip click the same way, wrapping the bare token in its own <mj-text>", async () => {
     fetchEventTemplate.mockResolvedValue(mjmlTemplate);
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByLabelText("MJML body")).toBeTruthy();
-    });
+    const bodyTextarea = await renderAndGetBodyField();
 
     const chip = screen.getByRole("button", { name: "{{first_name}}" });
     fireEvent.click(chip);
 
-    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
     expect(bodyTextarea.value).toBe(
       '<mjml><mj-body><mj-section><mj-column><mj-text>{{event_name}}</mj-text>' +
         "<mj-text>{{first_name}}</mj-text></mj-column></mj-section></mj-body></mjml>",
@@ -245,12 +208,7 @@ describe("CommunicationPage placeholder chip insertion outside the <mjml> root",
 
   it("does not redirect when the cursor is already inside the <mjml> root (normal usage is unaffected)", async () => {
     fetchEventTemplate.mockResolvedValue(mjmlTemplate);
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByLabelText("MJML body")).toBeTruthy();
-    });
-
-    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
+    const bodyTextarea = await renderAndGetBodyField();
     // Place the cursor right after "{{event_name}}", genuinely inside <mj-column>/<mj-text> —
     // not at the very end of the whole string, which for this fixture sits right after </mjml>
     // (i.e. outside the root, a different case covered by the next test).
@@ -274,12 +232,7 @@ describe("CommunicationPage placeholder chip insertion outside the <mjml> root",
   // redirect, unlike a bare token (which belongs inside <mj-text> just fine).
   it("redirects an image chip click out of an existing <mj-text>, instead of nesting <mj-image> inside it", async () => {
     fetchEventTemplate.mockResolvedValue(mjmlTemplate);
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByLabelText("MJML body")).toBeTruthy();
-    });
-
-    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
+    const bodyTextarea = await renderAndGetBodyField();
     // Cursor genuinely inside the existing <mj-text>{{event_name}}</mj-text> — same position the
     // previous test used for a bare token, where inserting in place is correct.
     fireEvent.focus(bodyTextarea);
@@ -306,12 +259,7 @@ describe("CommunicationPage placeholder chip insertion outside the <mjml> root",
       body_template:
         '<mjml><mj-body><mj-section><mj-column><mj-image src="" alt="Logo" /></mj-column></mj-section></mj-body></mjml>',
     });
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByLabelText("MJML body")).toBeTruthy();
-    });
-
-    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
+    const bodyTextarea = await renderAndGetBodyField();
     fireEvent.focus(bodyTextarea);
     const insideSrcPos = bodyTextarea.value.indexOf('src="') + 'src="'.length;
     bodyTextarea.setSelectionRange(insideSrcPos, insideSrcPos);
@@ -328,12 +276,7 @@ describe("CommunicationPage placeholder chip insertion outside the <mjml> root",
 
   it("redirects when the cursor sits after </mjml> (e.g. clicking at the very end of a template with no trailing content)", async () => {
     fetchEventTemplate.mockResolvedValue(mjmlTemplate);
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByLabelText("MJML body")).toBeTruthy();
-    });
-
-    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
+    const bodyTextarea = await renderAndGetBodyField();
     focusAtEnd(bodyTextarea);
 
     const chip = screen.getByRole("button", { name: "{{first_name}}" });
@@ -353,12 +296,7 @@ describe("CommunicationPage placeholder chip insertion outside the <mjml> root",
   // that gap.
   it("redirects a chip click when the cursor sits between components inside the <mjml> root (e.g. right after </mj-section>, before </mj-body>)", async () => {
     fetchEventTemplate.mockResolvedValue(mjmlTemplate);
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByLabelText("MJML body")).toBeTruthy();
-    });
-
-    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
+    const bodyTextarea = await renderAndGetBodyField();
     fireEvent.focus(bodyTextarea);
     const afterSectionPos = bodyTextarea.value.indexOf("</mj-section>") + "</mj-section>".length;
     bodyTextarea.setSelectionRange(afterSectionPos, afterSectionPos);
@@ -379,15 +317,11 @@ describe("CommunicationPage placeholder chip insertion outside the <mjml> root",
       ...mjmlTemplate,
       body_template: '<mj-text>orphan</mj-text><mjml><mj-body></mj-body></mjml>',
     });
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByLabelText("MJML body")).toBeTruthy();
-    });
+    const bodyTextarea = await renderAndGetBodyField();
 
     const chip = screen.getByRole("button", { name: "{{first_name}}" });
     fireEvent.click(chip);
 
-    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
     // No </mj-column> exists anywhere, so there's no safe place to redirect to — falls back to
     // the original (still bug-prone, but no worse than before this fix) raw cursor position.
     expect(bodyTextarea.value).toBe(
@@ -407,10 +341,7 @@ describe("CommunicationPage placeholder chip list", () => {
       allowed_placeholders: ["first_name", "logo_url", "header_image_url"],
       image_placeholders: ["logo_url", "header_image_url"],
     });
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByLabelText("MJML body")).toBeTruthy();
-    });
+    await renderAndGetBodyField();
 
     expect(screen.getByRole("button", { name: "{{logo_url}}" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "{{header_image_url}}" })).toBeNull();
@@ -422,12 +353,7 @@ describe("CommunicationPage placeholder chip list", () => {
       allowed_placeholders: ["first_name", "event_map_url"],
       image_placeholders: ["event_map_url"],
     });
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByLabelText("MJML body")).toBeTruthy();
-    });
-
-    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
+    const bodyTextarea = await renderAndGetBodyField();
     focusAtEnd(bodyTextarea);
     fireEvent.click(screen.getByRole("button", { name: "{{event_map_url}}" }));
 
@@ -445,12 +371,7 @@ describe("CommunicationPage placeholder chip list", () => {
       ...legacyTemplate,
       allowed_placeholders: ["first_name", "apple_wallet_url"],
     });
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByLabelText("MJML body")).toBeTruthy();
-    });
-
-    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
+    const bodyTextarea = await renderAndGetBodyField();
     focusAtEnd(bodyTextarea);
     fireEvent.click(screen.getByRole("button", { name: "{{apple_wallet_url}}" }));
 
@@ -466,12 +387,7 @@ describe("CommunicationPage placeholder chip list", () => {
       ...legacyTemplate,
       allowed_placeholders: ["first_name", "google_wallet_url"],
     });
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByLabelText("MJML body")).toBeTruthy();
-    });
-
-    const bodyTextarea = screen.getByLabelText("MJML body") as HTMLTextAreaElement;
+    const bodyTextarea = await renderAndGetBodyField();
     focusAtEnd(bodyTextarea);
     fireEvent.click(screen.getByRole("button", { name: "{{google_wallet_url}}" }));
 
@@ -487,12 +403,7 @@ describe("CommunicationPage placeholder chip list", () => {
       body_template: "<p>Hi</p>",
       allowed_placeholders: ["first_name", "apple_wallet_url", "google_wallet_url"],
     });
-    renderPage();
-    await waitFor(() => {
-      expect(screen.getByLabelText("HTML body")).toBeTruthy();
-    });
-
-    const bodyTextarea = screen.getByLabelText("HTML body") as HTMLTextAreaElement;
+    const bodyTextarea = await renderAndGetBodyField("HTML body");
     focusAtEnd(bodyTextarea);
     fireEvent.click(screen.getByRole("button", { name: "{{apple_wallet_url}}" }));
     expect(bodyTextarea.value).toContain(
@@ -551,8 +462,7 @@ describe("CommunicationPage placeholder chip list", () => {
       body_template:
         "<mjml><mj-body><mj-section><mj-column><mj-text>Hi</mj-text></mj-column></mj-section></mj-body></mjml>",
     });
-    renderPage();
-    const body = (await screen.findByLabelText("MJML body")) as HTMLTextAreaElement;
+    const body = await renderAndGetBodyField();
     body.focus();
     body.setSelectionRange(0, 0);
 

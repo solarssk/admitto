@@ -5,59 +5,35 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 import { formatUtcDateTime } from "../../src/utils/event-dates.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { communicationApiMocks, reportApiError } from "./communicationApiMock.js";
 import type { DeliveryDetailDto, DeliveryDto } from "../../src/api/types.js";
 
-const fetchEventOverview = vi.fn();
-const fetchEventTemplate = vi.fn();
-const fetchEventTemplates = vi.fn();
-const fetchEventDeliveries = vi.fn();
+const { fetchEventOverview, fetchEventTemplate, fetchEventTemplates, fetchEventDeliveries } =
+  communicationApiMocks;
 const fetchEventDelivery = vi.fn();
 const fetchRenderedDelivery = vi.fn();
 const exportDeliveryLog = vi.fn();
-const { connectionState, outletContext } = vi.hoisted(() => ({
-  connectionState: { reportApiError: vi.fn() },
-  outletContext: {
-    event: { id: "evt-1", title: "Demo", archived_at: null, timezone: "Europe/Warsaw" },
-  },
+const outletContext = vi.hoisted(() => ({
+  event: { id: "evt-1", title: "Demo", archived_at: null, timezone: "Europe/Warsaw" },
 }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => connectionState,
+  useConnectionState: () => ({ reportApiError }),
 }));
 
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
-  TemplateValidationError: class TemplateValidationError extends Error {},
-  fetchEventOverview: (...args: unknown[]) => fetchEventOverview(...args),
-  fetchEventTemplate: (...args: unknown[]) => fetchEventTemplate(...args),
-  fetchEventTemplates: (...args: unknown[]) => fetchEventTemplates(...args),
-  fetchEventDeliveries: (...args: unknown[]) => fetchEventDeliveries(...args),
-  fetchEventDelivery: (...args: unknown[]) => fetchEventDelivery(...args),
-  fetchRenderedDelivery: (...args: unknown[]) => fetchRenderedDelivery(...args),
-  exportDeliveryLog: (...args: unknown[]) => exportDeliveryLog(...args),
-  fetchEventTemplateById: vi.fn(),
-  previewEventTemplate: vi.fn().mockResolvedValue({ subject: "", html: "" }),
-  previewEventTemplateById: vi.fn().mockResolvedValue({ subject: "", html: "" }),
-  saveEventTemplate: vi.fn(),
-  saveEventTemplateById: vi.fn(),
-  createEventTemplate: vi.fn(),
-  deleteEventTemplate: vi.fn(),
-  updateEventTemplateMetadata: vi.fn(),
-  testSendEventTemplate: vi.fn(),
-  testSendEventTemplateById: vi.fn(),
-  sendEventBulk: vi.fn(),
-  fetchBulkSendStatus: vi.fn(),
-  fetchTicketTypes: vi.fn().mockResolvedValue([]),
-  fetchEventMailSettings: vi.fn().mockResolvedValue({
-    fields: { fromName: { value: null }, fromAddress: { value: null } },
-  }),
-}));
+// buildCommunicationApiMock is loaded via a dynamic import *inside* the factory (same technique
+// as checkInScanApiSetup.ts) rather than a plain top-level import - vi.mock() calls hoist above
+// regular imports, and this factory calls it in an immediately-evaluated position, which hits a
+// temporal-dead-zone ReferenceError on a plain static import (confirmed by trying it first).
+vi.mock("../../src/api/client.js", async (importOriginal) => {
+  const { buildCommunicationApiMock } = await import("./communicationApiMock.js");
+  return {
+    ...buildCommunicationApiMock(await importOriginal<typeof import("../../src/api/client.js")>()),
+    fetchEventDelivery: (...args: unknown[]) => fetchEventDelivery(...args),
+    fetchRenderedDelivery: (...args: unknown[]) => fetchRenderedDelivery(...args),
+    exportDeliveryLog: (...args: unknown[]) => exportDeliveryLog(...args),
+  };
+});
 
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
@@ -184,6 +160,75 @@ function renderPage() {
 
 async function goToDeliveryLogTab() {
   fireEvent.click(await screen.findByRole("tab", { name: /Delivery log/i }));
+}
+
+/** Renders the page, opens the delivery log, and opens `attendeeName`'s row-actions menu - the
+ * "arrange" every delivery-log row-action test below starts from, before diverging into its own
+ * fetch outcome. */
+async function openRowActionsMenu(attendeeName: string) {
+  renderPage();
+  await goToDeliveryLogTab();
+  await screen.findByText(attendeeName);
+  fireEvent.click(screen.getByRole("button", { name: `Actions for ${attendeeName}'s message` }));
+}
+
+/** Same as `openRowActionsMenu`, but also clicks `menuItem` from the now-open menu. */
+async function openRowMenuItem(attendeeName: string, menuItem: string) {
+  await openRowActionsMenu(attendeeName);
+  fireEvent.click(screen.getByRole("menuitem", { name: menuItem }));
+}
+
+/** Opens the sent-message preview modal for `attendeeName`'s row. */
+async function openSentMessagePreviewDialog(attendeeName: string) {
+  await openRowMenuItem(attendeeName, "View sent message");
+  return screen.findByRole("dialog", { name: "Sent message preview" });
+}
+
+/** Opens the delivery-details modal for `attendeeName`'s row, without waiting for its own data
+ * fetch to resolve - used directly by the two tests exercising a still-pending/rejected fetch;
+ * every happy-path test instead calls `openLoadedDeliveryDetails`, below. */
+async function openDeliveryDetailsDialog(attendeeName: string) {
+  await openRowMenuItem(attendeeName, "View delivery details");
+  return screen.findByRole("dialog", { name: "Delivery details" });
+}
+
+/** Same as `openDeliveryDetailsDialog`, but also waits for the modal's own data fetch to finish -
+ * what every happy-path delivery-details test below wants. */
+async function openLoadedDeliveryDetails(attendeeName: string) {
+  const dialog = await openDeliveryDetailsDialog(attendeeName);
+  await within(dialog).findByText("Overview");
+  return dialog;
+}
+
+/** Stubs the browser download machinery (createObjectURL/revokeObjectURL + anchor .click()) that
+ * Export-as-.txt exercises. Call `restore()` (typically in a `finally`) to undo the stubs. */
+function stubDownload() {
+  const createObjectURL = vi.fn((_blob: Blob | MediaSource) => "blob:mock-delivery");
+  const revokeObjectURL = vi.fn();
+  const originalCreate = URL.createObjectURL;
+  const originalRevoke = URL.revokeObjectURL;
+  URL.createObjectURL = createObjectURL;
+  URL.revokeObjectURL = revokeObjectURL;
+  const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  return {
+    createObjectURL,
+    clickSpy,
+    restore() {
+      clickSpy.mockRestore();
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+    },
+  };
+}
+
+/** Reads a downloaded Blob's content back as text, the way a saved .txt file would be read. */
+function readBlobAsText(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
+  });
 }
 
 afterEach(() => {
@@ -535,11 +580,7 @@ describe("CommunicationPage delivery log - row menu", () => {
   it("opens with two diagnostic actions (no attendee link - the recipient name links there instead)", async () => {
     fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest One");
-
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
+    await openRowActionsMenu("Guest One");
     const menu = screen.getByRole("menu");
     const items = within(menu).getAllByRole("menuitem");
     expect(items.map((item) => item.textContent?.trim())).toEqual([
@@ -566,13 +607,7 @@ describe("CommunicationPage delivery log - sent message preview modal", () => {
       html: '<p>Hi</p><img src="https://tickets.example.com/q/tok123.png" alt="QR" /><a href="https://tickets.example.com/t/tok123">View ticket</a>',
     });
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest One");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View sent message" }));
-
-    const dialog = await screen.findByRole("dialog", { name: "Sent message preview" });
+    const dialog = await openSentMessagePreviewDialog("Guest One");
     await within(dialog).findByText("Your ticket for Test Event");
 
     const iframe = within(dialog).getByTitle("Sent message preview");
@@ -601,12 +636,7 @@ describe("CommunicationPage delivery log - sent message preview modal", () => {
     );
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest One");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View sent message" }));
-    await screen.findByRole("dialog", { name: "Sent message preview" });
+    await openSentMessagePreviewDialog("Guest One");
 
     // Closing unmounts the modal, whose cleanup aborts the in-flight fetch - the resulting
     // rejection must be swallowed (controller.signal.aborted guards) rather than trying to
@@ -628,13 +658,7 @@ describe("CommunicationPage delivery log - sent message preview modal", () => {
     fetchEventDeliveries.mockResolvedValue({ items: [acceptedRow], total: 1 });
     fetchRenderedDelivery.mockRejectedValueOnce(new Error("boom"));
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest One");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View sent message" }));
-
-    const dialog = await screen.findByRole("dialog", { name: "Sent message preview" });
+    const dialog = await openSentMessagePreviewDialog("Guest One");
     expect(await within(dialog).findByText("Could not load the sent message.")).toBeTruthy();
   });
 
@@ -645,13 +669,7 @@ describe("CommunicationPage delivery log - sent message preview modal", () => {
     });
     fetchRenderedDelivery.mockResolvedValue({ subject: null, html: null });
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest One");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View sent message" }));
-
-    const dialog = await screen.findByRole("dialog", { name: "Sent message preview" });
+    const dialog = await openSentMessagePreviewDialog("Guest One");
     expect(
       await within(dialog).findByText("This message's stored content is no longer available."),
     ).toBeTruthy();
@@ -664,14 +682,7 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     fetchEventDeliveries.mockResolvedValue({ items: [failedResendRow], total: 1 });
     fetchEventDelivery.mockResolvedValue(detailFixture());
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest Two");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
-
-    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
-    await within(dialog).findByText("Overview");
+    const dialog = await openLoadedDeliveryDetails("Guest Two");
 
     expect(within(dialog).getByText("Admin User")).toBeTruthy();
     // Notice shows code + short transport error (not a Bounce NDR dump). Raw fields also list the code.
@@ -705,14 +716,7 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
         "Bounce 550/5.7.1: exceeded unknown recipient count limit -------------- UWAGA: Niniejsza wiadomo&#347;&#263;",
     });
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest Two");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
-
-    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
-    await within(dialog).findByText("Overview");
+    const dialog = await openLoadedDeliveryDetails("Guest Two");
 
     const notice = within(dialog).getByRole("alert");
     expect(notice.textContent).toMatch(/550\/5\.7\.1/);
@@ -735,14 +739,7 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
       timeline: [acceptedRow],
     });
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest One");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest One's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
-
-    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
-    await within(dialog).findByText("Overview");
+    const dialog = await openLoadedDeliveryDetails("Guest One");
 
     const notice = within(dialog).getByRole("status");
     expect(notice.textContent).toMatch(/accepted this message for delivery/i);
@@ -763,14 +760,7 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
       sent_at: "2026-09-01T13:10:00.000Z",
     });
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest Two");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
-
-    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
-    await within(dialog).findByText("Overview");
+    const dialog = await openLoadedDeliveryDetails("Guest Two");
 
     expect(within(dialog).queryByRole("alert")).toBeNull();
     expect(within(dialog).queryByText("Connection timed out")).toBeNull();
@@ -788,14 +778,7 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     });
     fetchEventDelivery.mockResolvedValue(sparseDetailFixture());
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest Two");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
-
-    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
-    await within(dialog).findByText("Overview");
+    const dialog = await openLoadedDeliveryDetails("Guest Two");
 
     expect(within(dialog).getByText(/no email on file/)).toBeTruthy();
     expect(within(dialog).getByText("System")).toBeTruthy();
@@ -813,12 +796,7 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     );
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest Two");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
-    await screen.findByRole("dialog", { name: "Delivery details" });
+    await openDeliveryDetailsDialog("Guest Two");
 
     // Closing unmounts the modal, whose cleanup aborts the in-flight fetch - the resulting
     // rejection must be swallowed (controller.signal.aborted guards) rather than trying to
@@ -839,13 +817,7 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     fetchEventDeliveries.mockResolvedValue({ items: [failedResendRow], total: 1 });
     fetchEventDelivery.mockRejectedValueOnce(new Error("boom"));
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest Two");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
-
-    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
+    const dialog = await openDeliveryDetailsDialog("Guest Two");
     expect(await within(dialog).findByText("Could not load delivery details.")).toBeTruthy();
   });
 
@@ -854,14 +826,7 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     fetchEventDelivery.mockResolvedValue(detailFixture());
     fetchRenderedDelivery.mockResolvedValue({ subject: "Your ticket", html: "<p>Hi</p>" });
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest Two");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
-
-    const detailsDialog = await screen.findByRole("dialog", { name: "Delivery details" });
-    await within(detailsDialog).findByText("Overview");
+    const detailsDialog = await openLoadedDeliveryDetails("Guest Two");
     fireEvent.click(within(detailsDialog).getByRole("button", { name: "View sent message" }));
 
     expect(screen.queryByRole("dialog", { name: "Delivery details" })).toBeNull();
@@ -873,14 +838,7 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     fetchEventDeliveries.mockResolvedValue({ items: [failedResendRow], total: 1 });
     fetchEventDelivery.mockResolvedValue(detailFixture());
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest Two");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
-
-    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
-    await within(dialog).findByText("Overview");
+    const dialog = await openLoadedDeliveryDetails("Guest Two");
     const link = within(dialog).getByRole("link", { name: "Open attendee" });
     expect(link.getAttribute("href")).toBe("/admin/events/evt-1/attendees/att-2");
   });
@@ -889,14 +847,7 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     fetchEventDeliveries.mockResolvedValue({ items: [failedResendRow], total: 1 });
     fetchEventDelivery.mockResolvedValue(detailFixture());
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest Two");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
-
-    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
-    await within(dialog).findByText("Overview");
+    const dialog = await openLoadedDeliveryDetails("Guest Two");
     fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog", { name: "Delivery details" })).toBeNull();
   });
@@ -905,35 +856,15 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     fetchEventDeliveries.mockResolvedValue({ items: [failedResendRow], total: 1 });
     fetchEventDelivery.mockResolvedValue(detailFixture());
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest Two");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
-    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
-    await within(dialog).findByText("Overview");
-
-    const createObjectURL = vi.fn((_blob: Blob | MediaSource) => "blob:mock-delivery");
-    const revokeObjectURL = vi.fn();
-    const originalCreate = URL.createObjectURL;
-    const originalRevoke = URL.revokeObjectURL;
-    URL.createObjectURL = createObjectURL;
-    URL.revokeObjectURL = revokeObjectURL;
-    const clickSpy = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(() => {});
+    const dialog = await openLoadedDeliveryDetails("Guest Two");
+    const download = stubDownload();
 
     try {
       fireEvent.click(within(dialog).getByRole("button", { name: "Export as .txt" }));
 
-      expect(createObjectURL).toHaveBeenCalledOnce();
-      const blob = createObjectURL.mock.calls[0]![0] as Blob;
-      const text = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsText(blob);
-      });
+      expect(download.createObjectURL).toHaveBeenCalledOnce();
+      const blob = download.createObjectURL.mock.calls[0]![0] as Blob;
+      const text = await readBlobAsText(blob);
 
       expect(text).toContain("Delivery ID: dlv-2");
       expect(text).toContain("Attendee ID: att-2");
@@ -944,11 +875,9 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
       expect(text).toContain("Resend 1: failed");
       // No fabricated provider transcript (plan.md: no Postmark integration exists).
       expect(text).not.toContain("250 2.0.0 OK");
-      expect(clickSpy).toHaveBeenCalledOnce();
+      expect(download.clickSpy).toHaveBeenCalledOnce();
     } finally {
-      clickSpy.mockRestore();
-      URL.createObjectURL = originalCreate;
-      URL.revokeObjectURL = originalRevoke;
+      download.restore();
     }
   });
 
@@ -970,33 +899,14 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
       timeline: [staleSentInitial, failedResendRow],
     });
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest Two");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
-    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
-    await within(dialog).findByText("Overview");
-
-    const createObjectURL = vi.fn((_blob: Blob | MediaSource) => "blob:mock-delivery-stale");
-    const originalCreate = URL.createObjectURL;
-    const originalRevoke = URL.revokeObjectURL;
-    URL.createObjectURL = createObjectURL;
-    URL.revokeObjectURL = vi.fn();
-    const clickSpy = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(() => {});
+    const dialog = await openLoadedDeliveryDetails("Guest Two");
+    const download = stubDownload();
 
     try {
       fireEvent.click(within(dialog).getByRole("button", { name: "Export as .txt" }));
 
-      const blob = createObjectURL.mock.calls[0]![0] as Blob;
-      const text = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsText(blob);
-      });
+      const blob = download.createObjectURL.mock.calls[0]![0] as Blob;
+      const text = await readBlobAsText(blob);
 
       const lines = text.split("\n");
       const initialLine = lines.find((line) => line.startsWith("Initial send:"));
@@ -1005,9 +915,7 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
       expect(initialLine).not.toContain("Connection timed out");
       expect(resendLine).toMatch(/^Resend 1: failed \(.+\) - Connection timed out$/);
     } finally {
-      clickSpy.mockRestore();
-      URL.createObjectURL = originalCreate;
-      URL.revokeObjectURL = originalRevoke;
+      download.restore();
     }
   });
 
@@ -1018,35 +926,15 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     });
     fetchEventDelivery.mockResolvedValue({ ...sparseDetailFixture(), retryable: null });
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest Two");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
-    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
-    await within(dialog).findByText("Overview");
-
-    const createObjectURL = vi.fn((_blob: Blob | MediaSource) => "blob:mock-delivery-sparse");
-    const revokeObjectURL = vi.fn();
-    const originalCreate = URL.createObjectURL;
-    const originalRevoke = URL.revokeObjectURL;
-    URL.createObjectURL = createObjectURL;
-    URL.revokeObjectURL = revokeObjectURL;
-    const clickSpy = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(() => {});
+    const dialog = await openLoadedDeliveryDetails("Guest Two");
+    const download = stubDownload();
 
     try {
       fireEvent.click(within(dialog).getByRole("button", { name: "Export as .txt" }));
 
-      expect(createObjectURL).toHaveBeenCalledOnce();
-      const blob = createObjectURL.mock.calls[0]![0] as Blob;
-      const text = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsText(blob);
-      });
+      expect(download.createObjectURL).toHaveBeenCalledOnce();
+      const blob = download.createObjectURL.mock.calls[0]![0] as Blob;
+      const text = await readBlobAsText(blob);
 
       expect(text).toContain("Recipient: Guest Two <no email on file>");
       expect(text).toContain("Retryable: -");
@@ -1057,9 +945,7 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
       expect(text).toContain("Session ID: -");
       expect(text).toContain("Client timezone: -");
     } finally {
-      clickSpy.mockRestore();
-      URL.createObjectURL = originalCreate;
-      URL.revokeObjectURL = originalRevoke;
+      download.restore();
     }
   });
 
@@ -1067,14 +953,7 @@ describe("CommunicationPage delivery log - delivery details modal", () => {
     fetchEventDeliveries.mockResolvedValue({ items: [failedResendRow], total: 1 });
     fetchEventDelivery.mockResolvedValue({ ...detailFixture(), retryable: false });
 
-    renderPage();
-    await goToDeliveryLogTab();
-    await screen.findByText("Guest Two");
-    fireEvent.click(screen.getByRole("button", { name: "Actions for Guest Two's message" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "View delivery details" }));
-
-    const dialog = await screen.findByRole("dialog", { name: "Delivery details" });
-    await within(dialog).findByText("Overview");
+    const dialog = await openLoadedDeliveryDetails("Guest Two");
     expect(within(dialog).getByText("No")).toBeTruthy();
   });
 });
@@ -1182,7 +1061,7 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
       await waitFor(() =>
         expect(assignSpy).toHaveBeenCalledWith("/login?next=%2Fadmin%2Fevents%2Fevt-1%2Fcommunication"),
       );
-      expect(connectionState.reportApiError).toHaveBeenCalledWith(401);
+      expect(reportApiError).toHaveBeenCalledWith(401);
       expect(screen.queryByText("Could not load deliveries.")).toBeNull();
     } finally {
       if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
@@ -1197,7 +1076,7 @@ describe("CommunicationPage delivery log - error handling, tab URL sync, live po
     await goToDeliveryLogTab();
 
     expect(await screen.findByText("Could not load deliveries.")).toBeTruthy();
-    expect(connectionState.reportApiError).toHaveBeenCalledWith(500);
+    expect(reportApiError).toHaveBeenCalledWith(500);
   });
 
   it("shows a Retry EmptyState on a failed load, and recovers when Retry succeeds (AGENTS.md initial-load-failure pattern)", async () => {
