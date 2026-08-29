@@ -3,8 +3,10 @@ name: CodeQL
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  # No `branches:` filter here on purpose — same reasoning as ci.yml's `pull_request` trigger:
+  # a `branches: [main]` filter silently skips this required `analyze` check for every PR in a
+  # stack once the bottom-most link merges and its base ref stops resolving to `main`.
+  pull_request: {}
   schedule:
     - cron: "0 3 * * 1"
 
