@@ -56,6 +56,11 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   };
 });
 
+const reportApiError = vi.fn();
+vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
+  useConnectionState: () => ({ reportApiError }),
+}));
+
 import {
   archiveEvent,
   fetchAdminEvents,

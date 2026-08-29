@@ -4,7 +4,8 @@ import { Button, Card, EmptyState, HintLabel, useToast } from "@admitto/ui";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
 import { Segmented } from "../components/Segmented.js";
-import { archiveEvent, fetchAdminEvents, unarchiveEvent } from "../api/client.js";
+import { ApiError, archiveEvent, fetchAdminEvents, unarchiveEvent } from "../api/client.js";
+import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -58,6 +59,7 @@ function actorCell(
 /** Settings panel — archive/unarchive events (superadmin-only section). */
 export function EventArchivingPanel() {
   const { addToast } = useToast();
+  const { reportApiError } = useConnectionState();
   const isDesktop = useIsDesktop();
   const [events, setEvents] = useState<EventDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,12 +80,13 @@ export function EventArchivingPanel() {
       setEvents(list);
     } catch (err) {
       if (signal?.aborted) return;
+      if (err instanceof ApiError) reportApiError(err.status);
       const message = operatorApiErrorMessage(err, "Could not load events.");
       setError(message);
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, []);
+  }, [reportApiError]);
 
   useEffect(() => {
     const controller = new AbortController();
