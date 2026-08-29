@@ -20,7 +20,7 @@
   color: var(--text-primary);
   font: inherit;
   cursor: pointer;
-  transition: opacity var(--dur-fast, 120ms) var(--ease-out, ease-out);
+  transition: opacity var(--dur-fast, 120ms) var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .searchable-select__trigger:disabled {

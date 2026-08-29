@@ -53,7 +53,7 @@ const tableProps = {
   canBulkSend: true,
   eventTimezone: "UTC",
   event: { archived_at: null as string | null },
-  walletPlatforms: { apple: true, google: true, any: true },
+  walletPlatforms: { apple: true, google: true, samsung: false, any: true },
 };
 
 beforeEach(() => {
@@ -127,7 +127,7 @@ describe("AttendeesTable Wallet column", () => {
       <AttendeesTable
         {...tableProps}
         items={[baseRow]}
-        walletPlatforms={{ apple: false, google: false, any: false }}
+        walletPlatforms={{ apple: false, google: false, samsung: false, any: false }}
       />,
     );
 
@@ -142,7 +142,7 @@ describe("AttendeesTable Wallet column", () => {
       <AttendeesTable
         {...tableProps}
         items={[baseRow]}
-        walletPlatforms={{ apple: true, google: false, any: true }}
+        walletPlatforms={{ apple: true, google: false, samsung: false, any: true }}
       />,
     );
 
