@@ -310,7 +310,7 @@ export function parseFlexibleCalendarDate(input: string): string | null {
 
   if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(trimmed)) {
     const [y, m, d] = trimmed.split("-").map((part) => Number.parseInt(part, 10));
-    return toIsoDateParts(y, m, d);
+    return toIsoDateParts(y!, m!, d!);
   }
 
   const chunks = trimmed.split(/[./\s-]+/).filter(Boolean);

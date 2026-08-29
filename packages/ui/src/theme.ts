@@ -148,8 +148,8 @@ const FONT_FORMAT_BY_EXT: Record<string, string> = {
 /** CSS `format()` hint from a font URL's extension - browsers mostly sniff the bytes directly
  * regardless, but a correct hint is still the honest thing to declare. */
 function fontFormat(url: string): string | undefined {
-  const match = /\.([a-z0-9]+)$/i.exec(url);
-  return match ? FONT_FORMAT_BY_EXT[match[1].toLowerCase()] : undefined;
+  const ext = /\.([a-z0-9]+)$/i.exec(url)?.[1];
+  return ext ? FONT_FORMAT_BY_EXT[ext.toLowerCase()] : undefined;
 }
 
 /** Escape `\` and `"` for safe interpolation into a double-quoted CSS string - defense in depth
