@@ -256,7 +256,7 @@
   min-height: 2px;
   border-radius: 2px 2px 0 0;
   background: var(--primary);
-  transition: height 0.5s var(--ease-out, ease-out);
+  transition: height 0.5s var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .reports-chart__bar--peak {
@@ -265,7 +265,7 @@
 
 .reports-chart__label {
   margin-top: 6px;
-  font-size: var(--fs-2xs, 10px);
+  font-size: 10px;
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -279,7 +279,7 @@
 }
 
 .reports-chart__count {
-  font-size: var(--fs-2xs, 10px);
+  font-size: 10px;
   color: var(--text-muted);
   min-height: 14px;
   margin-bottom: 4px;
@@ -511,8 +511,8 @@
 }
 
 .reports-mono {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--fs-xs, 12px);
+  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace);
+  font-size: var(--fs-xs, 0.75rem);
 }
 
 @media (max-width: 960px) {
