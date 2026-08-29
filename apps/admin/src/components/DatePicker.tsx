@@ -32,7 +32,15 @@ const HIDDEN_FIXED_PANEL: CSSProperties = {
 };
 function parseIsoDate(iso: string): { y: number; m: number; d: number } | null {
   if (!ISO_DATE_RE.test(iso)) return null;
-  const [y, m, d] = iso.split("-").map((part) => Number.parseInt(part, 10));
+  // ISO_DATE_RE (^\d{4}-\d{2}-\d{2}$) already guarantees exactly 3 dash-separated segments, so
+  // these are never actually undefined - same !-after-invariant pattern as event-dates.ts's own
+  // previousIsoDate a few lines away. A ?? "" fallback here would satisfy noUncheckedIndexedAccess
+  // too, but leaves a branch no real input can ever take the other side of - untestable without
+  // bypassing the regex above, and coverage tooling correctly flags exactly that as never hit.
+  const [yStr, mStr, dStr] = iso.split("-");
+  const y = Number.parseInt(yStr!, 10);
+  const m = Number.parseInt(mStr!, 10);
+  const d = Number.parseInt(dStr!, 10);
   if (!Number.isFinite(y) || m < 1 || m > 12 || d < 1 || d > 31) return null;
   return { y, m, d };
 }

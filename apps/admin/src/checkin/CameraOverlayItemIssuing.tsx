@@ -213,19 +213,24 @@ export function CameraOverlayItemIssuing({
           Next
         </Button>
       ) : (
+        // action! below: isDone() (alreadyDone) is false only when actions.length > 0, so
+        // actions[0] is in-bounds here - a real check (`action &&`) would be an untestable
+        // branch (no real state reaches this render with an empty actions array), the same
+        // reasoning as DatePicker.tsx's parseIsoDate a few files over.
         <Button
           type="button"
           variant="primary"
           size="lg"
           block
           disabled={!canAct || pending}
-          aria-label={itemActionAriaLabel(currentItem.key, action)}
+          aria-label={itemActionAriaLabel(currentItem.key, action!)}
           onClick={() => {
             const key = currentItem.key;
+            const currentAction = action!;
             if (!itemGuard.start(key)) return;
-            setLocallyIssued((prev) => new Map(prev).set(key, action));
+            setLocallyIssued((prev) => new Map(prev).set(key, currentAction));
             goForward();
-            void onItemAction(key, action).then((success) => {
+            void onItemAction(key, currentAction).then((success) => {
               if (success) return;
               // Request actually failed — clear the guard so a retry (after
               // navigating Back) works, and drop the optimistic mark so the
@@ -240,7 +245,7 @@ export function CameraOverlayItemIssuing({
             });
           }}
         >
-          {itemActionLabel(currentItem.key, action)}
+          {itemActionLabel(currentItem.key, action!)}
         </Button>
       )}
       {/* Dots only, no visible "Item X of Y" label (kept for screen readers
