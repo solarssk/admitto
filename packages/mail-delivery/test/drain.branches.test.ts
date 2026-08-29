@@ -118,12 +118,7 @@ describe("drainPendingDeliveries branch coverage", () => {
     await enqueueOne();
     vi.mocked(resolveAttendeeMailLinks).mockRejectedValueOnce(new Error("gone"));
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      TEST_ENV,
-      NOOP_DEPS,
-      DRAIN_OPTIONS,
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
     const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
     expect(row.status).toBe("failed");
@@ -133,12 +128,7 @@ describe("drainPendingDeliveries branch coverage", () => {
     await enqueueOne();
     vi.mocked(sendBatch).mockRejectedValueOnce(new Error("transport down"));
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      TEST_ENV,
-      NOOP_DEPS,
-      DRAIN_OPTIONS,
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain.failed).toBe(1);
   });
 
@@ -146,12 +136,7 @@ describe("drainPendingDeliveries branch coverage", () => {
     await enqueueOne();
     vi.mocked(sendBatch).mockRejectedValueOnce("raw-string-failure");
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      TEST_ENV,
-      NOOP_DEPS,
-      DRAIN_OPTIONS,
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain.failed).toBe(1);
     const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
     expect(row.error).toContain("raw-string-failure");
@@ -166,12 +151,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       results: [],
     });
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      TEST_ENV,
-      NOOP_DEPS,
-      DRAIN_OPTIONS,
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
   });
 
@@ -186,12 +166,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       return { total: 1, sent: 0, failed: 1, results: [] };
     });
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      TEST_ENV,
-      NOOP_DEPS,
-      DRAIN_OPTIONS,
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
     expect(after.status).toBe("cancelled");
@@ -206,12 +181,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       results: [{ status: "rejected", provider: "export_only", error: "bounce" }],
     });
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      TEST_ENV,
-      NOOP_DEPS,
-      DRAIN_OPTIONS,
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
   });
 
@@ -230,12 +200,7 @@ describe("drainPendingDeliveries branch coverage", () => {
     });
     vi.mocked(sendBatch).mockRejectedValueOnce(new Error("still down"));
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      TEST_ENV,
-      NOOP_DEPS,
-      DRAIN_OPTIONS,
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
     expect(after.attempts).toBe(8);
@@ -263,12 +228,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       results: [{ status: "rejected", provider: "export_only", error: "bounce" }],
     });
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      TEST_ENV,
-      NOOP_DEPS,
-      DRAIN_OPTIONS,
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
     expect(after.attempts).toBe(8);
@@ -291,12 +251,7 @@ describe("drainPendingDeliveries branch coverage", () => {
     ] as never);
 
     try {
-      const drain = await drainPendingDeliveries(
-        prisma,
-        TEST_ENV,
-        NOOP_DEPS,
-        DRAIN_OPTIONS,
-      );
+      const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
       expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
     } finally {
       findMany.mockRestore();
@@ -320,12 +275,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       return actual.resolveAttendeeMailLinks(...args);
     });
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      TEST_ENV,
-      NOOP_DEPS,
-      DRAIN_OPTIONS,
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
 
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
     expect(sendBatch).not.toHaveBeenCalled();
@@ -349,12 +299,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       throw new Error("link resolution blew up after the cancel landed");
     });
 
-    const firstTick = await drainPendingDeliveries(
-      prisma,
-      TEST_ENV,
-      NOOP_DEPS,
-      DRAIN_OPTIONS,
-    );
+    const firstTick = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(firstTick).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
     expect(sendBatch).not.toHaveBeenCalled();
 
@@ -364,12 +309,7 @@ describe("drainPendingDeliveries branch coverage", () => {
 
     // A later tick must not find anything to retry - the row is "cancelled", not the
     // "failed"+retryable state the old unconditional update would have left it in.
-    const secondTick = await drainPendingDeliveries(
-      prisma,
-      TEST_ENV,
-      NOOP_DEPS,
-      DRAIN_OPTIONS,
-    );
+    const secondTick = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(secondTick).toEqual({ claimed: 0, sent: 0, failed: 0, skipped: 0, eventIds: [] });
     expect(sendBatch).not.toHaveBeenCalled();
     const finalRow = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
@@ -394,12 +334,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       throw new Error("transport timeout right as the cancel landed");
     });
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      TEST_ENV,
-      NOOP_DEPS,
-      DRAIN_OPTIONS,
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
     expect(after.status).toBe("cancelled");
@@ -436,12 +371,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       return actual.sendBatch(...args);
     });
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      TEST_ENV,
-      NOOP_DEPS,
-      DRAIN_OPTIONS,
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
 
     // The original attempt's result (a real, successful send) can no longer be safely recorded
     // against this row - it moved on to a new attempt mid-flight - so it's dropped rather than
@@ -536,12 +466,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       throw new Error("bad transport config");
     });
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      TEST_ENV,
-      NOOP_DEPS,
-      DRAIN_OPTIONS,
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 0, skipped: 1, eventIds: [EVENT_ID] });
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: row.id } });
     expect(after.status).toBe("cancelled");
@@ -551,12 +476,7 @@ describe("drainPendingDeliveries branch coverage", () => {
     await enqueueOne();
     vi.mocked(createMailer).mockRejectedValueOnce(new Error("mailer boom"));
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      TEST_ENV,
-      NOOP_DEPS,
-      DRAIN_OPTIONS,
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
     const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
     expect(row.status).toBe("failed");
@@ -572,12 +492,7 @@ describe("drainPendingDeliveries branch coverage", () => {
       ),
     );
 
-    const drain = await drainPendingDeliveries(
-      prisma,
-      TEST_ENV,
-      NOOP_DEPS,
-      DRAIN_OPTIONS,
-    );
+    const drain = await drainPendingDeliveries(prisma, TEST_ENV, NOOP_DEPS, DRAIN_OPTIONS);
     expect(drain).toEqual({ claimed: 1, sent: 0, failed: 1, skipped: 0, eventIds: [EVENT_ID] });
     const row = await prisma.emailDelivery.findFirstOrThrow({ where: { event_id: EVENT_ID } });
     expect(row.status).toBe("failed");
