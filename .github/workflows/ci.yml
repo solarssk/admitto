@@ -400,6 +400,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      security-events: write
     needs: [build-test, migration-safety]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -407,3 +408,27 @@ jobs:
           persist-credentials: false
       - name: Build production image
         run: docker build -f Dockerfile -t admitto-app .
+
+      # Report-only: catches base-image CVE drift on every main build instead of waiting for the
+      # next release tag, where publish-container.yml's Trivy step still does the blocking
+      # CRITICAL gate. Same tool/settings, exit-code 0 here since nothing downstream depends on
+      # this build passing or failing on vulnerabilities.
+      - name: Trivy vulnerability scan (SARIF, report-only)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: admitto-app
+          format: sarif
+          output: trivy-results.sarif
+          scanners: vuln
+          vuln-type: os,library
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
+          exit-code: 0
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28  # v4
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-container-main
