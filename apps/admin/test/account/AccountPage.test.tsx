@@ -1713,8 +1713,8 @@ function clickIdentityMenuItem(namePattern: RegExp | string) {
 
 /** Opens the "Unlink SSO" confirm dialog and submits it with a valid new password. Caller must
  * mock `mockFetchAccount`/`mockFetchSessions` and configure `mockUnlinkExternalIdentity`
- * beforehand. */
-async function submitUnlinkSsoDialog(): Promise<void> {
+ * beforehand. Returns the dialog element, for callers that assert on it staying open. */
+async function submitUnlinkSsoDialog(): Promise<HTMLElement> {
   renderWithToast(<AccountPage />);
 
   await screen.findByRole("button", { name: "SSO" });
@@ -1722,6 +1722,7 @@ async function submitUnlinkSsoDialog(): Promise<void> {
   const dialog = await screen.findByRole("dialog");
   fireEvent.change(within(dialog).getByLabelText("New local password"), { target: { value: "long-enough-password" } });
   fireEvent.click(within(dialog).getByRole("button", { name: "Unlink" }));
+  return dialog;
 }
 
 /** Same as `submitUnlinkSsoDialog`, but for the totp_required case: waits for the rejected first
@@ -1896,10 +1897,10 @@ describe("AccountPage profile: SSO unlink", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     const { ApiError } = await import("../../src/api/client.js");
     mockUnlinkExternalIdentity.mockRejectedValueOnce(new ApiError(400, "invalid_request", "invalid_request"));
-    await submitUnlinkSsoDialog();
+    const dialog = await submitUnlinkSsoDialog();
 
     await waitFor(() => {
-      expect(screen.getByText("Password must be at least 12 characters.")).toBeTruthy();
+      expect(within(dialog).getByText("Password must be at least 12 characters.")).toBeTruthy();
     });
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
