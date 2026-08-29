@@ -18,3 +18,20 @@ export async function seedOrgAndEvent(
     },
   });
 }
+
+/** Creates an admin (scoped to `orgId`) and an operator (scoped to `eventId`) - the common pair
+ * several single-org/single-event integration test `seed()` functions repeat. */
+export async function createAdminAndOp(
+  client: PrismaClient,
+  opts: { adminEmail: string; opEmail: string; passwordHash: string; orgId: string; eventId: string },
+): Promise<{ adminId: string; opId: string }> {
+  const adminUser = await client.user.create({ data: { email: opts.adminEmail, password_hash: opts.passwordHash } });
+  const opUser = await client.user.create({ data: { email: opts.opEmail, password_hash: opts.passwordHash } });
+  await client.roleAssignment.createMany({
+    data: [
+      { user_id: adminUser.id, role: "admin", scope_type: "organization", scope_id: opts.orgId },
+      { user_id: opUser.id, role: "operator", scope_type: "event", scope_id: opts.eventId },
+    ],
+  });
+  return { adminId: adminUser.id, opId: opUser.id };
+}

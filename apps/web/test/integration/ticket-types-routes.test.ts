@@ -7,6 +7,7 @@ import { hashPassword } from "@admitto/auth";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
+import { createAdminAndOp } from "../helpers/seed-org-and-event.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -63,17 +64,7 @@ async function seed(client: PrismaClient) {
     ],
   });
 
-  const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
-  const opUser = await client.user.create({ data: { email: EMAIL_OP, password_hash } });
-  adminId = adminUser.id;
-  opId = opUser.id;
-
-  await client.roleAssignment.createMany({
-    data: [
-      { user_id: adminId, role: "admin", scope_type: "organization", scope_id: ORG_TT },
-      { user_id: opId, role: "operator", scope_type: "event", scope_id: EVENT_TT },
-    ],
-  });
+  ({ adminId, opId } = await createAdminAndOp(client, { adminEmail: EMAIL_ADMIN, opEmail: EMAIL_OP, passwordHash: password_hash, orgId: ORG_TT, eventId: EVENT_TT }));
 
   await enrollConfirmedTotp(client, adminId);
 }
