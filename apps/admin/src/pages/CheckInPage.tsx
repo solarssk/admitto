@@ -476,7 +476,6 @@ function CheckInScanResultView({
   scanResult,
   card,
   ticketTypes,
-  eventTimezone,
   pending,
   busy,
   canAct,
@@ -665,7 +664,6 @@ function CheckInMobileOverlay({
 }
 
 export function CheckInPage({
-  eventTitle = "Event",
   eventTimezone: eventTimezoneProp,
   eventDate: eventDateProp,
   eventOrganizationId: eventOrganizationIdProp,

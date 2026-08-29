@@ -86,7 +86,6 @@ export function CheckInCameraResultPanel({
   ticketTypes = [],
   pending,
   canAct,
-  eventTimezone,
   onConfirm,
   onReset,
   onCancel,

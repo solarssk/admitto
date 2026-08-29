@@ -1217,7 +1217,6 @@ function AttendeeNotesTab({
   notesPage,
   notesPageSize,
   onPageChange,
-  event,
   draft,
   onDraftChange,
   onSubmit,
