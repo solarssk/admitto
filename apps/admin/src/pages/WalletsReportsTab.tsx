@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import {
   Area,
   AreaChart,
@@ -73,6 +74,20 @@ const BUCKET_COLORS: Record<EventWalletReportsResponse["time_to_wallet_tap"]["bu
   "8_plus": GRAY_400,
 };
 
+/** Recharts gives every chart's root <svg> tabindex="0" and role="application" by default (its
+ * own built-in keyboard-accessibility layer), which a plain mouse click also focuses. A
+ * `.recharts-surface:focus { outline: none }` rule (reports-page.css) suppresses the resulting
+ * outline in most browsers, but :focus-visible's mouse-vs-keyboard heuristic isn't guaranteed
+ * consistent for a non-standard interactive element like this across every browser - confirmed
+ * still showing a raw focus ring on click in one real-world test despite that CSS rule matching
+ * correctly in automated testing. Preventing the mousedown's default action stops the browser
+ * from moving focus there at all on a click, at the event level rather than relying on any CSS
+ * pseudo-class - a real Tab keypress still focuses and shows the CSS rule's ring normally, since
+ * keyboard navigation doesn't fire mousedown. */
+function preventFocusRing(event: ReactMouseEvent) {
+  event.preventDefault();
+}
+
 /** HintLabel next to the card title, not a bare icon in the header's actions slot - the app's
  * own established convention for a card-title info icon (ReportsPage.tsx's "Attendance
  * confirmation" card, EventSettingsPage.tsx, AccountPage.tsx, ...) puts it inline with the title
@@ -114,7 +129,7 @@ function AdoptionGauge({
     { name: "Voided", value: voidedPct, fill: STATUS_ERROR },
   ];
   return (
-    <div className="wallets-gauge-overlay">
+    <div className="wallets-gauge-overlay" onMouseDown={preventFocusRing}>
       <ResponsiveContainer width="100%" height={256}>
         <RadialBarChart
           data={rings}
@@ -202,7 +217,7 @@ function PlatformDonut({
 }>) {
   const slices = platformSlices(platform, enabledPlatforms);
   return (
-    <div className="wallets-gauge-overlay">
+    <div className="wallets-gauge-overlay" onMouseDown={preventFocusRing}>
       <ResponsiveContainer width="100%" height={256}>
         <PieChart style={{ fontFamily: FONT_FAMILY }}>
           <Pie
@@ -308,8 +323,9 @@ function CumulativeChart({ data }: Readonly<{ data: EventWalletReportsResponse["
   const yTicks = Array.from({ length: tickAmount + 1 }, (_, i) => (i * axisMax) / tickAmount);
   const dayFormatter = (ts: number) => new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short" }).format(ts);
   return (
-    <ResponsiveContainer width="100%" height={220}>
-      <AreaChart data={points} style={{ fontFamily: FONT_FAMILY }}>
+    <div onMouseDown={preventFocusRing}>
+      <ResponsiveContainer width="100%" height={220}>
+        <AreaChart data={points} style={{ fontFamily: FONT_FAMILY }}>
         <defs>
           <linearGradient id="wallets-cumulative-fill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={PRIMARY} stopOpacity={0.3} />
@@ -357,7 +373,8 @@ function CumulativeChart({ data }: Readonly<{ data: EventWalletReportsResponse["
           isAnimationActive={false}
         />
       </AreaChart>
-    </ResponsiveContainer>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -443,8 +460,9 @@ function TimeToTapChart({ buckets }: Readonly<{ buckets: EventWalletReportsRespo
   }
 
   return (
-    <ResponsiveContainer width="100%" height={230}>
-      <BarChart data={rows} barCategoryGap="50%" style={{ fontFamily: FONT_FAMILY }}>
+    <div onMouseDown={preventFocusRing}>
+      <ResponsiveContainer width="100%" height={230}>
+        <BarChart data={rows} barCategoryGap="50%" style={{ fontFamily: FONT_FAMILY }}>
         <CartesianGrid stroke={BORDER} strokeDasharray="3 3" />
         <XAxis
           dataKey="label"
@@ -465,7 +483,8 @@ function TimeToTapChart({ buckets }: Readonly<{ buckets: EventWalletReportsRespo
         />
         <Bar dataKey="pct" shape={BarShape} isAnimationActive={false} barSize={40} />
       </BarChart>
-    </ResponsiveContainer>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -481,7 +500,7 @@ function TimeToTapChart({ buckets }: Readonly<{ buckets: EventWalletReportsRespo
 function AdmissionGauge({ pct, color }: Readonly<{ pct: number; color: string }>) {
   return (
     <div className="wallets-compare-ring">
-      <div className="wallets-admission-gauge">
+      <div className="wallets-admission-gauge" onMouseDown={preventFocusRing}>
         <ResponsiveContainer width="100%" height="100%">
           <RadialBarChart
             data={[{ name: "pct", value: pct, fill: color }]}
