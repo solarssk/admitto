@@ -10,9 +10,14 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { useClickOutside, type OutsideInteraction } from "./useClickOutside.js";
-import { attachFixedOverlayLifecycle, getFixedOverlayViewport } from "../utils/fixed-overlay-lifecycle.js";
+import {
+  attachFixedOverlayLifecycle,
+  getFixedOverlayViewport,
+  type FixedOverlayViewport,
+} from "../utils/fixed-overlay-lifecycle.js";
 import { getPreferredTimeFormat } from "../utils/locale-store.js";
 import "../staff.css";
 
@@ -125,6 +130,176 @@ function pickerOptionClassName(selected: boolean): string {
   );
 }
 
+type PickerPlacement = { above: boolean; style: CSSProperties };
+
+/** Pure placement math for the fixed-position picker panel - see the useLayoutEffect call site
+ * for why this exists (flips above/below, clamps to the viewport, clamps + scrolls its height). */
+function computePickerPlacement(
+  rect: DOMRect,
+  panelHeight: number,
+  panelWidth: number,
+  viewport: FixedOverlayViewport,
+): PickerPlacement {
+  const spaceBelow = viewport.bottom - rect.bottom;
+  const spaceAbove = rect.top - viewport.top;
+  const above = spaceBelow < panelHeight + PICKER_GAP_PX && spaceAbove > spaceBelow;
+  const available = Math.max(0, (above ? spaceAbove : spaceBelow) - PICKER_GAP_PX - VIEWPORT_PAD_PX);
+  const maxHeight = panelHeight > available ? available : undefined;
+  const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
+  const top = above ? rect.top - usedHeight - PICKER_GAP_PX : rect.bottom + PICKER_GAP_PX;
+  let left = rect.left;
+  left = Math.min(left, viewport.right - VIEWPORT_PAD_PX - panelWidth);
+  left = Math.max(left, viewport.left + VIEWPORT_PAD_PX);
+
+  return {
+    above,
+    style: {
+      position: "fixed",
+      top,
+      left,
+      maxHeight: maxHeight !== undefined ? `${maxHeight}px` : undefined,
+      overflowY: maxHeight !== undefined ? "auto" : undefined,
+      visibility: "visible",
+    },
+  };
+}
+
+function renderFieldMessage(
+  error: string | undefined,
+  typedInvalid: boolean,
+  hint: string | undefined,
+  ids: { errorId?: string; invalidHintId?: string; hintId?: string },
+): ReactNode {
+  if (error) {
+    return <span id={ids.errorId} className="at-hint at-hint--error">{error}</span>;
+  }
+  if (typedInvalid) {
+    return (
+      <span id={ids.invalidHintId} className="at-hint at-hint--error">
+        Use a time such as 18:00 or 6:00 PM.
+      </span>
+    );
+  }
+  if (hint) {
+    return <span id={ids.hintId} className="at-hint">{hint}</span>;
+  }
+  return null;
+}
+
+type TimePickerPanelProps = {
+  controlId: string;
+  panelRef: RefObject<HTMLDivElement | null>;
+  twelveHour: boolean;
+  pickerAbove: boolean;
+  pickerStyle: CSSProperties;
+  pickerTime: TimeParts;
+  onChoose: (next: TimeParts) => void;
+};
+
+/** The hour/minute/(AM-PM) column grid rendered inside the fixed-position popup. Not a modal -
+ * no focus trap, closes on outside click like a listbox - hence `role="group"`, matching the
+ * sibling DatePicker (`role="grid"`) and TimezoneSelect (`role="listbox"`) popups in this row,
+ * neither of which uses `role="dialog"`. */
+function TimePickerPanel({
+  controlId,
+  panelRef,
+  twelveHour,
+  pickerAbove,
+  pickerStyle,
+  pickerTime,
+  onChoose,
+}: Readonly<TimePickerPanelProps>) {
+  const hours = twelveHour ? TWELVE_HOUR_OPTIONS : TWENTY_FOUR_HOUR_OPTIONS;
+  const pickerHour = getPickerHour(pickerTime, twelveHour);
+  const meridiem = getMeridiem(pickerTime.hours);
+
+  function handleHourClick(event: MouseEvent<HTMLButtonElement>): void {
+    const hour = Number(event.currentTarget.value);
+    if (!twelveHour) {
+      onChoose({ ...pickerTime, hours: hour });
+      return;
+    }
+    const nextHour = getMeridiem(pickerTime.hours) === "PM" ? hour % 12 + 12 : hour % 12;
+    onChoose({ ...pickerTime, hours: nextHour });
+  }
+
+  function handleMinuteClick(event: MouseEvent<HTMLButtonElement>): void {
+    onChoose({ ...pickerTime, minutes: Number(event.currentTarget.value) });
+  }
+
+  function handleMeridiemClick(event: MouseEvent<HTMLButtonElement>): void {
+    const period = event.currentTarget.value as Meridiem;
+    const hour = pickerTime.hours % 12;
+    onChoose({ ...pickerTime, hours: period === "PM" ? hour + 12 : hour });
+  }
+
+  return (
+    <div
+      ref={panelRef}
+      id={`${controlId}-picker`}
+      className={joinClassNames(
+        "time-input__picker",
+        twelveHour ? "time-input__picker--twelve-hour" : "time-input__picker--twenty-four-hour",
+        pickerAbove && "time-input__picker--above",
+      )}
+      style={pickerStyle}
+      role="group"
+      aria-label="Choose time"
+    >
+      <div className="time-input__picker-column">
+        <span className="time-input__picker-label">Hour</span>
+        <div className="time-input__picker-scroll" aria-label="Hour">
+          {hours.map((hour) => (
+            <button
+              key={hour}
+              type="button"
+              value={hour}
+              className={pickerOptionClassName(pickerHour === hour)}
+              onClick={handleHourClick}
+            >
+              {String(hour).padStart(2, "0")}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="time-input__picker-column">
+        <span className="time-input__picker-label">Minute</span>
+        <div className="time-input__picker-scroll" aria-label="Minute">
+          {MINUTE_OPTIONS.map((minute) => (
+            <button
+              key={minute}
+              type="button"
+              value={minute}
+              className={pickerOptionClassName(pickerTime.minutes === minute)}
+              onClick={handleMinuteClick}
+            >
+              {String(minute).padStart(2, "0")}
+            </button>
+          ))}
+        </div>
+      </div>
+      {twelveHour ? (
+        <div className="time-input__picker-column time-input__picker-column--meridiem">
+          <span className="time-input__picker-label">AM/PM</span>
+          <div className="time-input__picker-scroll" aria-label="AM or PM">
+            {MERIDIEM_OPTIONS.map((period) => (
+              <button
+                key={period}
+                type="button"
+                value={period}
+                className={pickerOptionClassName(meridiem === period)}
+                onClick={handleMeridiemClick}
+              >
+                {period}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export interface TimeInputProps {
   value: string;
   onChange: (value: string) => void;
@@ -226,30 +401,14 @@ export function TimeInput({
     /* v8 ignore if */
     if (!trigger || !panel) return;
     const updatePlacement = () => {
-      const rect = trigger.getBoundingClientRect();
-      const panelHeight = panel.scrollHeight;
-      const panelWidth = panel.offsetWidth;
-      const viewport = getFixedOverlayViewport();
-      const spaceBelow = viewport.bottom - rect.bottom;
-      const spaceAbove = rect.top - viewport.top;
-      const above = spaceBelow < panelHeight + PICKER_GAP_PX && spaceAbove > spaceBelow;
-      const available = Math.max(0, (above ? spaceAbove : spaceBelow) - PICKER_GAP_PX - VIEWPORT_PAD_PX);
-      const maxHeight = panelHeight > available ? available : undefined;
-      const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
-      const top = above ? rect.top - usedHeight - PICKER_GAP_PX : rect.bottom + PICKER_GAP_PX;
-      let left = rect.left;
-      left = Math.min(left, viewport.right - VIEWPORT_PAD_PX - panelWidth);
-      left = Math.max(left, viewport.left + VIEWPORT_PAD_PX);
-
+      const { above, style } = computePickerPlacement(
+        trigger.getBoundingClientRect(),
+        panel.scrollHeight,
+        panel.offsetWidth,
+        getFixedOverlayViewport(),
+      );
       setPickerAbove(above);
-      setPickerStyle({
-        position: "fixed",
-        top,
-        left,
-        maxHeight: maxHeight !== undefined ? `${maxHeight}px` : undefined,
-        overflowY: maxHeight !== undefined ? "auto" : undefined,
-        visibility: "visible",
-      });
+      setPickerStyle(style);
     };
     updatePlacement();
     return attachFixedOverlayLifecycle(panel, updatePlacement, () => closePicker("scroll"));
@@ -322,37 +481,11 @@ export function TimeInput({
     }
   }
 
-  function handleHourClick(event: MouseEvent<HTMLButtonElement>): void {
-    const hour = Number(event.currentTarget.value);
-    if (!twelveHour) {
-      chooseTime({ ...pickerTime, hours: hour });
-      return;
-    }
-    const nextHour = getMeridiem(pickerTime.hours) === "PM" ? hour % 12 + 12 : hour % 12;
-    chooseTime({ ...pickerTime, hours: nextHour });
-  }
-
-  function handleMinuteClick(event: MouseEvent<HTMLButtonElement>): void {
-    chooseTime({ ...pickerTime, minutes: Number(event.currentTarget.value) });
-  }
-
-  function handleMeridiemClick(event: MouseEvent<HTMLButtonElement>): void {
-    const period = event.currentTarget.value as Meridiem;
-    const hour = pickerTime.hours % 12;
-    chooseTime({ ...pickerTime, hours: period === "PM" ? hour + 12 : hour });
-  }
-
-  const hours = twelveHour ? TWELVE_HOUR_OPTIONS : TWENTY_FOUR_HOUR_OPTIONS;
-  const pickerHour = getPickerHour(pickerTime, twelveHour);
-  const meridiem = getMeridiem(pickerTime.hours);
-  let fieldMessage: ReactNode = null;
-  if (error) {
-    fieldMessage = <span id={errorId} className="at-hint at-hint--error">{error}</span>;
-  } else if (typedInvalid) {
-    fieldMessage = <span id={invalidHintId} className="at-hint at-hint--error">Use a time such as 18:00 or 6:00 PM.</span>;
-  } else if (hint) {
-    fieldMessage = <span id={hintId} className="at-hint">{hint}</span>;
-  }
+  const fieldMessage = renderFieldMessage(error, typedInvalid, hint, {
+    errorId,
+    invalidHintId,
+    hintId,
+  });
 
   return (
     <div className="at-field time-input" ref={containerRef}>
@@ -387,69 +520,15 @@ export function TimeInput({
         />
       </div>
       {pickerOpen ? (
-        <div
-          ref={pickerRef}
-          id={`${controlId}-picker`}
-          className={joinClassNames(
-            "time-input__picker",
-            twelveHour ? "time-input__picker--twelve-hour" : "time-input__picker--twenty-four-hour",
-            pickerAbove && "time-input__picker--above",
-          )}
-          style={pickerStyle}
-          role="dialog"
-          aria-label="Choose time"
-        >
-          <div className="time-input__picker-column">
-            <span className="time-input__picker-label">Hour</span>
-            <div className="time-input__picker-scroll" aria-label="Hour">
-              {hours.map((hour) => (
-                <button
-                  key={hour}
-                  type="button"
-                  value={hour}
-                  className={pickerOptionClassName(pickerHour === hour)}
-                  onClick={handleHourClick}
-                >
-                  {String(hour).padStart(2, "0")}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="time-input__picker-column">
-            <span className="time-input__picker-label">Minute</span>
-            <div className="time-input__picker-scroll" aria-label="Minute">
-              {MINUTE_OPTIONS.map((minute) => (
-                <button
-                  key={minute}
-                  type="button"
-                  value={minute}
-                  className={pickerOptionClassName(pickerTime.minutes === minute)}
-                  onClick={handleMinuteClick}
-                >
-                  {String(minute).padStart(2, "0")}
-                </button>
-              ))}
-            </div>
-          </div>
-          {twelveHour ? (
-            <div className="time-input__picker-column time-input__picker-column--meridiem">
-              <span className="time-input__picker-label">AM/PM</span>
-              <div className="time-input__picker-scroll" aria-label="AM or PM">
-              {MERIDIEM_OPTIONS.map((period) => (
-                <button
-                  key={period}
-                  type="button"
-                  value={period}
-                  className={pickerOptionClassName(meridiem === period)}
-                  onClick={handleMeridiemClick}
-                >
-                  {period}
-                </button>
-              ))}
-              </div>
-            </div>
-          ) : null}
-        </div>
+        <TimePickerPanel
+          controlId={controlId}
+          panelRef={pickerRef}
+          twelveHour={twelveHour}
+          pickerAbove={pickerAbove}
+          pickerStyle={pickerStyle}
+          pickerTime={pickerTime}
+          onChoose={chooseTime}
+        />
       ) : null}
       {fieldMessage}
     </div>

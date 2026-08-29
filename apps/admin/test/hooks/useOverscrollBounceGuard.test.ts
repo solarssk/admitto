@@ -74,40 +74,18 @@ describe("useOverscrollBounceGuard", () => {
     expect(dispatchWheel(el, -100)).toBe(true);
   });
 
-  it("does not cancel a wheel gesture for a nested scrollable picker", () => {
+  it.each([
+    ["auto", true],
+    ["scroll", true],
+    ["clip", false],
+    ["hidden", false],
+  ] as const)("wheel gesture on a nested picker with overflow-y: %s (allowed=%s)", (overflowY, allowed) => {
     const el = makeScrollable({ scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
-    const option = makeNestedPicker("auto");
+    const option = makeNestedPicker(overflowY);
     el.appendChild(option.parentElement!);
     renderHook(() => useOverscrollBounceGuard({ current: el }));
 
-    expect(dispatchWheel(option, 100)).toBe(true);
-  });
-
-  it("does not cancel a wheel gesture for a nested picker with forced scrolling", () => {
-    const el = makeScrollable({ scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
-    const option = makeNestedPicker("scroll");
-    el.appendChild(option.parentElement!);
-    renderHook(() => useOverscrollBounceGuard({ current: el }));
-
-    expect(dispatchWheel(option, 100)).toBe(true);
-  });
-
-  it("still cancels a wheel gesture for a clipped nested picker", () => {
-    const el = makeScrollable({ scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
-    const option = makeNestedPicker("clip");
-    el.appendChild(option.parentElement!);
-    renderHook(() => useOverscrollBounceGuard({ current: el }));
-
-    expect(dispatchWheel(option, 100)).toBe(false);
-  });
-
-  it("still cancels a wheel gesture for a hidden-overflow nested picker", () => {
-    const el = makeScrollable({ scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
-    const option = makeNestedPicker("hidden");
-    el.appendChild(option.parentElement!);
-    renderHook(() => useOverscrollBounceGuard({ current: el }));
-
-    expect(dispatchWheel(option, 100)).toBe(false);
+    expect(dispatchWheel(option, 100)).toBe(allowed);
   });
 
   it("allows scrolling back up from the bottom and down from the top", () => {
