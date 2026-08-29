@@ -34,16 +34,13 @@ import { useConnectionState } from "../connection/ConnectionStateProvider.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { formatEventDateTime } from "../utils/event-dates.js";
 import { formatFileSize } from "../utils/formatFileSize.js";
+import { pluralize } from "../utils/pluralize.js";
 import "../attendees/attendees.css";
 import "./import.css";
 
 type Step = "upload" | "preview" | "done";
 
 const SAMPLE_DISPLAY_LIMIT = 20;
-
-function pluralize(count: number, singular: string): string {
-  return count === 1 ? singular : `${singular}s`;
-}
 
 /** The server caps invalid/skipped row detail at a fixed count (CodeRabbit review: a file where
  * every row is skipped/invalid would otherwise render tens of thousands of DOM rows) - this
