@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BrandingSettingsPanel } from "../../src/settings/BrandingSettingsPanel.js";
-import { renderWithToast } from "../test-utils.js";
+import { getTooltipText, renderWithToast } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -645,7 +645,7 @@ describe("BrandingSettingsPanel - font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    expect(screen.queryByTitle(/browser is faking it/)).toBeNull();
+    expect(document.querySelector(".theme-preview__faux")).toBeNull();
   });
 
   it("opens the font family modal when the Custom font tile is clicked", async () => {
@@ -1111,8 +1111,10 @@ describe("BrandingSettingsPanel - font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    expect(screen.getAllByTitle("No bold file uploaded. The browser is faking it.")).toHaveLength(1);
-    expect(screen.getAllByTitle("No italic file uploaded. The browser is faking it.")).toHaveLength(1);
+    const fauxIcons = document.querySelectorAll(".theme-preview__faux");
+    expect(fauxIcons).toHaveLength(2);
+    expect(getTooltipText(fauxIcons[0] as HTMLElement)).toBe("No bold file uploaded. The browser is faking it.");
+    expect(getTooltipText(fauxIcons[1] as HTMLElement)).toBe("No italic file uploaded. The browser is faking it.");
   });
 
   it("shows no faked-style hint for a web-safe font (a real OS family always has all 4 styles)", async () => {
@@ -1121,7 +1123,7 @@ describe("BrandingSettingsPanel - font picker", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    expect(screen.queryByTitle(/browser is faking it/)).toBeNull();
+    expect(document.querySelector(".theme-preview__faux")).toBeNull();
   });
 
   it("shows a disabled Registration form dropdown placeholder, not a functional picker", async () => {
