@@ -3,8 +3,12 @@ name: DAST baseline scan
 # Dynamic scan on top of the same docker-compose stack deploy-smoke.yml already builds and
 # health-checks (see that workflow for the stack itself). Runs OWASP ZAP's baseline scan
 # (passive rules + a short spidering crawl, no active/attack payloads) against the
-# unauthenticated, public/login-adjacent surface only — /, /login, /healthz and whatever the
-# spider reaches from there without credentials.
+# unauthenticated, public/login-adjacent surface only — a fresh stack's database has no users, so
+# a synthetic one is seeded first (isFirstRunRequired() otherwise redirects every staff path to
+# /setup, not the pages this workflow means to scan - see deploy/README.md's "First superadmin").
+# Two scans run, since action-baseline only takes one target per invocation: / (spidered from the
+# real login page once seeded) and /healthz explicitly (a machine health-check endpoint no page
+# links to, so spidering from / would never reach it on its own).
 #
 # What this covers: missing security headers, cookie flags, information disclosure, and other
 # passive-scan findings on the surface a request can reach before authenticating.
@@ -63,13 +67,35 @@ jobs:
           docker compose -f deploy/docker-compose.yml logs
           exit 1
 
-      - name: ZAP baseline scan
+      # A fresh stack's database has no users, and isFirstRunRequired() (apps/web/src/setup-routes.ts)
+      # redirects /, /login, and every other staff path to /setup until one exists (documented in
+      # deploy/README.md's "First superadmin" section) - without this, ZAP's spider only ever
+      # reaches the first-run setup wizard, never the actual login page this workflow means to
+      # scan. Same CLI this repo documents for break-glass recovery; a random password since
+      # nothing ever needs to sign in as this account, only for it to exist.
+      - name: Seed a synthetic user so /login resolves
+        working-directory: deploy
+        run: |
+          openssl rand -base64 24 | docker compose run --rm -T app node packages/auth/dist/cli.js bootstrap-superadmin --email dast-scan@example.com
+
+      - name: ZAP baseline scan (/, spidered from the real login page)
         uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25  # v0.15.0
         with:
           target: "http://127.0.0.1:8080"
           artifact_name: "zap-baseline-report"
           # Report-only per this workflow's scope — do not fail CI on findings and do not file a
           # GitHub issue; the uploaded artifact is the record for now.
+          fail_action: false
+          allow_issue_writing: false
+
+      # /healthz isn't linked from any page a spider would crawl (it's a machine health-check
+      # endpoint, not a user-facing one), so it needs its own explicit scan rather than relying on
+      # discovery from the / target above - action-baseline only accepts a single `target` per run.
+      - name: ZAP baseline scan (/healthz, not reachable by spidering from /)
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25  # v0.15.0
+        with:
+          target: "http://127.0.0.1:8080/healthz"
+          artifact_name: "zap-baseline-report-healthz"
           fail_action: false
           allow_issue_writing: false
 
