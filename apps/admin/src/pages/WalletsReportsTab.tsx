@@ -427,14 +427,13 @@ function ticketTypeAdoptionRows(rows: EventWalletReportsResponse["by_ticket_type
 // another component's render body gets a new identity every render): reads the row straight off
 // Recharts' own `payload` (the exact data item for that bar, always populated - see Bar.js's
 // computeBarRectangles) instead of an index into a rows array TimeToTapChart would otherwise have
-// to close over. x/y/width/height come through as `string | number | undefined` (Recharts'
-// generic shape-geometry type covers every axis type it supports, not just this numeric one) -
-// Number(...) with a fallback narrows them back to the plain numbers this bar chart's own geometry
-// always uses. Recharts' own ActiveShape type declares `payload` optional (it's `any`-typed
-// upstream, covering every chart type's own shape props) - the ! below reflects that Bar.js's
-// computeBarRectangles always spreads the real data item onto every shape invocation, never omits
-// it, same as the other !-after-invariant sites in this codebase (e.g. event-dates.ts's
-// previousIsoDate).
+// to close over. Recharts' own BarRectangleItem type (Bar.d.ts) redeclares x/y/width/height as
+// plain required `number`s, narrowing Rectangle's own optional `number | undefined` props -
+// there's no real "missing geometry" case to fall back for here, only `payload` stays optional
+// (Recharts' ActiveShape type leaves it `any`-typed upstream, covering every chart type's own
+// shape props) - the ! below reflects that computeBarRectangles always spreads the real data item
+// onto every shape invocation, never omits it, same as the other !-after-invariant sites in this
+// codebase (e.g. event-dates.ts's previousIsoDate).
 function BarShape({
   x,
   y,
@@ -442,24 +441,20 @@ function BarShape({
   height,
   payload,
 }: Readonly<{
-  x?: string | number;
-  y?: string | number;
-  width?: string | number;
-  height?: string | number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
   payload?: { pct: number; count: number; fill: string };
 }>) {
   const row = payload!;
-  const left = Number(x ?? 0);
-  const top = Number(y ?? 0);
-  const barWidth = Number(width ?? 0);
-  const barHeight = Number(height ?? 0);
   const insideBar = row.pct >= 15;
   return (
     <g>
-      <rect x={left} y={top} width={barWidth} height={barHeight} rx={4} ry={4} fill={row.fill} />
+      <rect x={x} y={y} width={width} height={height} rx={4} ry={4} fill={row.fill} />
       <text
-        x={left + barWidth / 2}
-        y={insideBar ? top + 16 : top - 8}
+        x={x + width / 2}
+        y={insideBar ? y + 16 : y - 8}
         textAnchor="middle"
         fontSize={12}
         fontWeight={700}
