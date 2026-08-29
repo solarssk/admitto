@@ -38,7 +38,13 @@ let capturedTap:
         name: string,
         props: { payload: { count: number } },
       ) => [string, undefined];
-      barShape?: (props: { x: number; y: number; width: number; height: number; index: number }) => ReactElement;
+      barShape?: (props: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        payload: { pct: number; count: number; fill: string };
+      }) => ReactElement;
     }
   | undefined;
 
@@ -456,11 +462,23 @@ describe("WalletsReportsTab", () => {
     // label prop - see WalletsReportsTab.tsx's BarShape comment for why) - calling it directly
     // with synthetic geometry, then reaching into its <text> child, is the only way to exercise
     // this without a real Recharts render.
-    const tallBarShape = capturedTap?.barShape?.({ x: 0, y: 100, width: 40, height: 130, index: 0 });
+    const tallBarShape = capturedTap?.barShape?.({
+      x: 0,
+      y: 100,
+      width: 40,
+      height: 130,
+      payload: { pct: 50, count: 5, fill: "#000000" },
+    });
     const tallBarText = (tallBarShape?.props.children as ReactElement[])[1] as ReactElement<{ children: number; fill: string }>;
     expect(tallBarText.props.children).toBe(5);
     expect(tallBarText.props.fill).toBe("#ffffff");
-    const shortBarShape = capturedTap?.barShape?.({ x: 0, y: 220, width: 40, height: 10, index: 2 });
+    const shortBarShape = capturedTap?.barShape?.({
+      x: 0,
+      y: 220,
+      width: 40,
+      height: 10,
+      payload: { pct: 10, count: 1, fill: "#000000" },
+    });
     const shortBarText = (shortBarShape?.props.children as ReactElement[])[1] as ReactElement<{ children: number; fill: string }>;
     expect(shortBarText.props.children).toBe(1);
     expect(shortBarText.props.fill).not.toBe("#ffffff");

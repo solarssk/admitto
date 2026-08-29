@@ -129,7 +129,11 @@ function AdoptionGauge({
     { name: "Voided", value: voidedPct, fill: STATUS_ERROR },
   ];
   return (
-    <div className="wallets-gauge-overlay" onMouseDown={preventFocusRing}>
+    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+      className="wallets-gauge-overlay"
+      role="presentation"
+      onMouseDown={preventFocusRing}
+    >
       <ResponsiveContainer width="100%" height={256}>
         <RadialBarChart
           data={rings}
@@ -217,7 +221,11 @@ function PlatformDonut({
 }>) {
   const slices = platformSlices(platform, enabledPlatforms);
   return (
-    <div className="wallets-gauge-overlay" onMouseDown={preventFocusRing}>
+    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+      className="wallets-gauge-overlay"
+      role="presentation"
+      onMouseDown={preventFocusRing}
+    >
       <ResponsiveContainer width="100%" height={256}>
         <PieChart style={{ fontFamily: FONT_FAMILY }}>
           <Pie
@@ -323,7 +331,10 @@ function CumulativeChart({ data }: Readonly<{ data: EventWalletReportsResponse["
   const yTicks = Array.from({ length: tickAmount + 1 }, (_, i) => (i * axisMax) / tickAmount);
   const dayFormatter = (ts: number) => new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short" }).format(ts);
   return (
-    <div onMouseDown={preventFocusRing}>
+    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+      role="presentation"
+      onMouseDown={preventFocusRing}
+    >
       <ResponsiveContainer width="100%" height={220}>
         <AreaChart data={points} style={{ fontFamily: FONT_FAMILY }}>
         <defs>
@@ -394,6 +405,72 @@ function ticketTypeAdoptionRows(rows: EventWalletReportsResponse["by_ticket_type
     }));
 }
 
+// Diagnosed by logging the raw geometry Recharts computed per bar: with the default Cell-per-bar
+// rendering TimeToTapChart never painted anything - `isAnimating: true`, `animationElapsedTime: 0`
+// forever, every bar frozen at its zero-size entrance-animation starting frame (Recharts' default
+// Rectangle skips rendering entirely at 0x0, so this showed as nothing at all, not a
+// visible-but-tiny bar). `isAnimationActive={false}` on the <Bar> below fixes the height/y side of
+// that. Separately, and regardless of animation, the computed `width` for every bar was *also* 0
+// (so was Recharts' own `background` reference rect) - the chart's category-bandwidth calculation
+// itself doesn't produce a usable width here, so `barSize={40}` sets it explicitly instead of
+// trusting that computation. This `shape` render prop (drawing the rect + label directly) replaces
+// Cell-based per-bar coloring so the chart always renders regardless of whichever of those two
+// Recharts computations is fed into it.
+//
+// A tall bar's own count label lands inside its colored fill, not above it (there's no "outside
+// the bar" room left once a bar is anywhere near 100% of the 0-100 axis) - dark navy text there
+// read as nearly illegible against the bar's own color. White reads fine on every bucket's color;
+// only a near-empty bar would put it on the white card background instead, where white would
+// vanish, hence the threshold.
+//
+// Module scope, not defined inside TimeToTapChart (Sonar S6478 - a component defined inside
+// another component's render body gets a new identity every render): reads the row straight off
+// Recharts' own `payload` (the exact data item for that bar, always populated - see Bar.js's
+// computeBarRectangles) instead of an index into a rows array TimeToTapChart would otherwise have
+// to close over. x/y/width/height come through as `string | number | undefined` (Recharts'
+// generic shape-geometry type covers every axis type it supports, not just this numeric one) -
+// Number(...) with a fallback narrows them back to the plain numbers this bar chart's own geometry
+// always uses. Recharts' own ActiveShape type declares `payload` optional (it's `any`-typed
+// upstream, covering every chart type's own shape props) - the ! below reflects that Bar.js's
+// computeBarRectangles always spreads the real data item onto every shape invocation, never omits
+// it, same as the other !-after-invariant sites in this codebase (e.g. event-dates.ts's
+// previousIsoDate).
+function BarShape({
+  x,
+  y,
+  width,
+  height,
+  payload,
+}: Readonly<{
+  x?: string | number;
+  y?: string | number;
+  width?: string | number;
+  height?: string | number;
+  payload?: { pct: number; count: number; fill: string };
+}>) {
+  const row = payload!;
+  const left = Number(x ?? 0);
+  const top = Number(y ?? 0);
+  const barWidth = Number(width ?? 0);
+  const barHeight = Number(height ?? 0);
+  const insideBar = row.pct >= 15;
+  return (
+    <g>
+      <rect x={left} y={top} width={barWidth} height={barHeight} rx={4} ry={4} fill={row.fill} />
+      <text
+        x={left + barWidth / 2}
+        y={insideBar ? top + 16 : top - 8}
+        textAnchor="middle"
+        fontSize={12}
+        fontWeight={700}
+        fill={insideBar ? "#ffffff" : TEXT_PRIMARY}
+      >
+        {row.count}
+      </text>
+    </g>
+  );
+}
+
 /** Bar chart, not a breakdown list - four short rows of text left this card noticeably shorter
  * than "Admission rate by wallet status" beside it (both stretch to match the taller one), and a
  * distribution across "how many days" reads more naturally as bar heights to compare at a glance
@@ -408,59 +485,11 @@ function TimeToTapChart({ buckets }: Readonly<{ buckets: EventWalletReportsRespo
     fill: BUCKET_COLORS[b.key],
   }));
 
-  // Diagnosed by logging the raw geometry Recharts computed per bar: with the default
-  // Cell-per-bar rendering this chart never painted anything - `isAnimating: true`,
-  // `animationElapsedTime: 0` forever, every bar frozen at its zero-size entrance-animation
-  // starting frame (Recharts' default Rectangle skips rendering entirely at 0x0, so this showed
-  // as nothing at all, not a visible-but-tiny bar). `isAnimationActive={false}` below fixes the
-  // height/y side of that. Separately, and regardless of animation, the computed `width` for
-  // every bar was *also* 0 (so was Recharts' own `background` reference rect) - this chart's
-  // category-bandwidth calculation itself doesn't produce a usable width here, so `barSize={40}`
-  // sets it explicitly instead of trusting that computation. A `shape` render prop (drawing the
-  // rect + label directly) replaces Cell-based per-bar coloring so this always renders regardless
-  // of whichever of those two Recharts computations is fed into it.
-  //
-  // A tall bar's own count label lands inside its colored fill, not above it (there's no
-  // "outside the bar" room left once a bar is anywhere near 100% of the 0-100 axis) - dark navy
-  // text there read as nearly illegible against the bar's own color. White reads fine on every
-  // bucket's color; only a near-empty bar would put it on the white card background instead,
-  // where white would vanish, hence the threshold.
-  // x/y/width/height come through as `string | number | undefined` (Recharts' generic
-  // shape-geometry type covers every axis type it supports, not just this numeric one) -
-  // Number(...) with a fallback narrows them back to the plain numbers this bar chart's own
-  // geometry always uses.
-  function BarShape({
-    x,
-    y,
-    width,
-    height,
-    index,
-  }: Readonly<{ x?: string | number; y?: string | number; width?: string | number; height?: string | number; index?: number }>) {
-    const row = rows[index ?? 0]!;
-    const left = Number(x ?? 0);
-    const top = Number(y ?? 0);
-    const barWidth = Number(width ?? 0);
-    const barHeight = Number(height ?? 0);
-    const insideBar = row.pct >= 15;
-    return (
-      <g>
-        <rect x={left} y={top} width={barWidth} height={barHeight} rx={4} ry={4} fill={row.fill} />
-        <text
-          x={left + barWidth / 2}
-          y={insideBar ? top + 16 : top - 8}
-          textAnchor="middle"
-          fontSize={12}
-          fontWeight={700}
-          fill={insideBar ? "#ffffff" : TEXT_PRIMARY}
-        >
-          {row.count}
-        </text>
-      </g>
-    );
-  }
-
   return (
-    <div onMouseDown={preventFocusRing}>
+    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+      role="presentation"
+      onMouseDown={preventFocusRing}
+    >
       <ResponsiveContainer width="100%" height={230}>
         <BarChart data={rows} barCategoryGap="50%" style={{ fontFamily: FONT_FAMILY }}>
         <CartesianGrid stroke={BORDER} strokeDasharray="3 3" />
@@ -500,7 +529,11 @@ function TimeToTapChart({ buckets }: Readonly<{ buckets: EventWalletReportsRespo
 function AdmissionGauge({ pct, color }: Readonly<{ pct: number; color: string }>) {
   return (
     <div className="wallets-compare-ring">
-      <div className="wallets-admission-gauge" onMouseDown={preventFocusRing}>
+      <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+        className="wallets-admission-gauge"
+        role="presentation"
+        onMouseDown={preventFocusRing}
+      >
         <ResponsiveContainer width="100%" height="100%">
           <RadialBarChart
             data={[{ name: "pct", value: pct, fill: color }]}
