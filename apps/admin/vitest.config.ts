@@ -12,26 +12,28 @@ export default defineConfig({
   test: {
     coverage: vitestCoverage,
     environment: "node",
-    // AttendeeDetailPage.*.test.tsx's plain org-admin, non-archived-event variant files
-    // (statusTones, resend, profileEdit, mailGate, deleteAttendee, revokeCheckIn,
-    // copyTicketLink) share one project so they can load attendeeDetailPageSetup.ts via
-    // `setupFiles` - the three vi.mock() calls it contains are 100% identical across these 7
-    // files (verified: a plain side-effect `import "./attendeeDetailPageSetup.js"` from inside
-    // the test file does NOT work, since vi.mock hoisting is a per-file static-analysis
+    // AttendeeDetailPage.*.test.tsx's org-admin variant files share one project so they can
+    // load attendeeDetailPageSetup.ts via `setupFiles` - the vi.mock() calls it contains
+    // (attendeeDetailForm.js, AuthProvider.js, react-router) were byte-for-byte identical
+    // across these files. A plain side-effect `import "./attendeeDetailPageSetup.js"` from
+    // inside a test file does NOT work here: vi.mock hoisting is a per-file static-analysis
     // transform that only sees mock calls written directly in that file's own source -
     // `setupFiles` is Vitest's actual supported mechanism for sharing mock registration across
-    // files, confirmed working here). The other AttendeeDetailPage test files genuinely differ
-    // in this setup and correctly keep their own local mocks, not included here: errors/notes/
-    // revokePass need a superadmin (or per-test-mutable) assignment, walletActions needs extra
-    // wallet-specific outlet-context fields, and archived needs archived_at set on the event -
-    // each a real behavioral difference, not incidental duplication.
+    // files (confirmed working). archived.test.tsx keeps its own local `vi.mock("react-router",
+    // ...)` on top of the shared setup - it needs `archived_at` set on the event, unlike every
+    // sibling file - a later, file-local vi.mock() call for a path also registered in
+    // `setupFiles` wins over the setupFile's version (also confirmed working, not assumed).
+    // The remaining AttendeeDetailPage test files genuinely differ in more than that one field
+    // and correctly keep all their own local mocks, not included here: errors/notes/revokePass
+    // need a superadmin (or per-test-mutable) assignment, walletActions needs extra
+    // wallet-specific outlet-context fields on top of a different assignment too.
     projects: [
       {
         extends: true,
         test: {
           name: "attendee-detail-page-shared-setup",
           include: [
-            "test/attendees/AttendeeDetailPage.{statusTones,resend,profileEdit,mailGate,deleteAttendee,revokeCheckIn,copyTicketLink}.test.tsx",
+            "test/attendees/AttendeeDetailPage.{statusTones,resend,profileEdit,mailGate,deleteAttendee,revokeCheckIn,copyTicketLink,archived}.test.tsx",
           ],
           setupFiles: ["./test/attendees/attendeeDetailPageSetup.ts"],
         },
@@ -42,7 +44,7 @@ export default defineConfig({
           name: "default",
           include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
           exclude: [
-            "test/attendees/AttendeeDetailPage.{statusTones,resend,profileEdit,mailGate,deleteAttendee,revokeCheckIn,copyTicketLink}.test.tsx",
+            "test/attendees/AttendeeDetailPage.{statusTones,resend,profileEdit,mailGate,deleteAttendee,revokeCheckIn,copyTicketLink,archived}.test.tsx",
           ],
         },
       },
