@@ -3,10 +3,11 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE, SETTING_BRANDING_THEME } from "@admitto/auth";
-import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
-import { createApp } from "../../src/app.js";
-import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { hashPassword, SETTING_BRANDING_THEME } from "@admitto/auth";
+import { sessionCookieFor } from "../helpers/session-cookie.js";
+import { buildTestApp } from "../helpers/build-test-app.js";
+import { seedOrgAndEvent } from "../helpers/seed-org-and-event.js";
+import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -23,7 +24,7 @@ const EMAIL_OP = "staff-foundation-op@example.com";
 const PASSWORD = "staff-pass-123";
 
 let prisma: PrismaClient;
-let app: ReturnType<typeof createApp>;
+let app: ReturnType<typeof buildTestApp>;
 let superId: string;
 let adminId: string;
 let opId: string;
@@ -45,31 +46,7 @@ async function seed(client: PrismaClient) {
 
   const password_hash = await hashPassword(PASSWORD);
 
-  await client.organization.createMany({
-    data: [
-      { id: ORG_A, name: "Org A", slug: "staff-foundation-a" },
-      { id: ORG_B, name: "Org B", slug: "staff-foundation-b" },
-    ],
-  });
-
-  await client.event.createMany({
-    data: [
-      {
-        id: EVENT_A,
-        title: "Event A",
-        slug: "event-a",
-        date: new Date("2026-10-01"),
-        organization_id: ORG_A,
-      },
-      {
-        id: EVENT_B,
-        title: "Event B",
-        slug: "event-b",
-        date: new Date("2026-11-01"),
-        organization_id: ORG_B,
-      },
-    ],
-  });
+  await Promise.all([seedOrgAndEvent(client, { id: ORG_A, name: "Org A", slug: "staff-foundation-a" }, { id: EVENT_A, title: "Event A", slug: "event-a", date: "2026-10-01", organizationId: ORG_A }), seedOrgAndEvent(client, { id: ORG_B, name: "Org B", slug: "staff-foundation-b" }, { id: EVENT_B, title: "Event B", slug: "event-b", date: "2026-11-01", organizationId: ORG_B })]);
 
   const superUser = await client.user.create({ data: { email: EMAIL_SUPER, password_hash } });
   const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
@@ -87,44 +64,32 @@ async function seed(client: PrismaClient) {
   });
 
   for (const userId of [superId, adminId]) {
-    await client.userMfaMethod.create({
-      data: {
-        user_id: userId,
-        type: "totp",
-        secret_enc: encryptTotpSecret(generateTotpSecret()),
-        confirmed_at: new Date(),
-      },
-    });
+    await enrollConfirmedTotp(client, userId);
   }
 }
 
 beforeAll(async () => {
   prisma = createTestPrismaClient();
   await seed(prisma);
-  app = createApp({
-    prisma,
-    checkinToken: CHECKIN_TOKEN,
-    allowCheckinBearer: true,
-    baseUrl: "https://tickets.example.com",
-    rateLimitStore: createRateLimitStore(),
-    skipCheckinBootValidation: true,
-    adminDistRoot,
-  });
+  app = buildTestApp({ prisma, checkinToken: CHECKIN_TOKEN, adminDistRoot });
 });
 
 afterAll(async () => {
   await prisma?.$disconnect();
 });
 
-async function sessionCookieFor(userId: string): Promise<string> {
-  const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
-  return `admitto_session=${rawToken}`;
+/** Re-fetches the saved admin theme as superId - shared setup for the "PUT then re-GET" tests
+ * below, which only differ in what they assert about the persisted response. */
+async function getAdminTheme(): Promise<Response> {
+  return app.request("/api/admin/theme", {
+    headers: { Cookie: await sessionCookieFor(prisma, superId) },
+  });
 }
 
 describe("GET /api/admin/me", () => {
   it("returns profile for org admin session", async () => {
     const res = await app.request("/api/admin/me", {
-      headers: { Cookie: await sessionCookieFor(adminId) },
+      headers: { Cookie: await sessionCookieFor(prisma, adminId) },
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -146,7 +111,7 @@ describe("GET /api/admin/me", () => {
 
   it("rejects operator session", async () => {
     const res = await app.request("/api/admin/me", {
-      headers: { Cookie: await sessionCookieFor(opId) },
+      headers: { Cookie: await sessionCookieFor(prisma, opId) },
     });
     expect(res.status).toBe(403);
   });
@@ -160,14 +125,14 @@ describe("GET /api/admin/events", () => {
 
   it("returns 403 for operator-only", async () => {
     const res = await app.request("/api/admin/events", {
-      headers: { Cookie: await sessionCookieFor(opId) },
+      headers: { Cookie: await sessionCookieFor(prisma, opId) },
     });
     expect(res.status).toBe(403);
   });
 
   it("scopes org admin to their organization", async () => {
     const res = await app.request("/api/admin/events", {
-      headers: { Cookie: await sessionCookieFor(adminId) },
+      headers: { Cookie: await sessionCookieFor(prisma, adminId) },
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { events: Array<{ id: string }> };
@@ -176,7 +141,7 @@ describe("GET /api/admin/events", () => {
 
   it("returns all events for superadmin including fixture events", async () => {
     const res = await app.request("/api/admin/events", {
-      headers: { Cookie: await sessionCookieFor(superId) },
+      headers: { Cookie: await sessionCookieFor(prisma, superId) },
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { events: Array<{ id: string }> };
@@ -192,14 +157,14 @@ describe("GET /api/admin/events", () => {
     });
 
     const hidden = await app.request("/api/admin/events", {
-      headers: { Cookie: await sessionCookieFor(superId) },
+      headers: { Cookie: await sessionCookieFor(prisma, superId) },
     });
     expect(hidden.status).toBe(200);
     const hiddenBody = (await hidden.json()) as { events: Array<{ id: string }> };
     expect(hiddenBody.events.some((e) => e.id === EVENT_A)).toBe(false);
 
     const included = await app.request("/api/admin/events?includeArchived=true", {
-      headers: { Cookie: await sessionCookieFor(superId) },
+      headers: { Cookie: await sessionCookieFor(prisma, superId) },
     });
     expect(included.status).toBe(200);
     const includedBody = (await included.json()) as {
@@ -240,7 +205,7 @@ describe("GET /api/checkin/events", () => {
     await seedCountFixtureAttendee();
 
     const res = await app.request("/api/checkin/events?includeAttendeeCount=true", {
-      headers: { Cookie: await sessionCookieFor(opId) },
+      headers: { Cookie: await sessionCookieFor(prisma, opId) },
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -254,7 +219,7 @@ describe("GET /api/checkin/events", () => {
 
   it("omits the wallet platform toggles from the operator-facing event list (security review: no legitimate need to see them)", async () => {
     const res = await app.request("/api/checkin/events", {
-      headers: { Cookie: await sessionCookieFor(opId) },
+      headers: { Cookie: await sessionCookieFor(prisma, opId) },
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { events: Array<Record<string, unknown>> };
@@ -273,7 +238,7 @@ describe("GET /api/checkin/events", () => {
     await seedCountFixtureAttendee();
 
     const res = await app.request("/api/checkin/events", {
-      headers: { Cookie: await sessionCookieFor(opId) },
+      headers: { Cookie: await sessionCookieFor(prisma, opId) },
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -294,7 +259,7 @@ describe("GET /api/checkin/events", () => {
 
     try {
       const res = await app.request("/api/checkin/events?includeAttendeeCount=true", {
-        headers: { Cookie: await sessionCookieFor(opId) },
+        headers: { Cookie: await sessionCookieFor(prisma, opId) },
       });
       expect(res.status).toBe(200);
       const body = (await res.json()) as { events: Array<{ id: string; attendee_count: number }> };
@@ -319,7 +284,7 @@ describe("GET /api/checkin/events", () => {
 
     try {
       const res = await app.request("/api/checkin/events", {
-        headers: { Cookie: await sessionCookieFor(opId) },
+        headers: { Cookie: await sessionCookieFor(prisma, opId) },
       });
       expect(res.status).toBe(200);
       const body = (await res.json()) as { events: Array<{ id: string }> };
@@ -334,7 +299,7 @@ describe("GET /api/checkin/events", () => {
 
   it("lists org events for org admin", async () => {
     const res = await app.request("/api/checkin/events", {
-      headers: { Cookie: await sessionCookieFor(adminId) },
+      headers: { Cookie: await sessionCookieFor(prisma, adminId) },
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { events: Array<{ id: string }> };
@@ -345,7 +310,7 @@ describe("GET /api/checkin/events", () => {
 describe("GET /api/staff/theme", () => {
   it("allows operator to read theme via session path", async () => {
     const res = await app.request("/api/staff/theme", {
-      headers: { Cookie: await sessionCookieFor(opId) },
+      headers: { Cookie: await sessionCookieFor(prisma, opId) },
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { theme: object; vars: Record<string, string> };
@@ -356,7 +321,7 @@ describe("GET /api/staff/theme", () => {
     const res = await app.request("/api/staff/theme", {
       method: "PUT",
       headers: {
-        Cookie: await sessionCookieFor(opId),
+        Cookie: await sessionCookieFor(prisma, opId),
         "Content-Type": "application/json",
         ...sameOrigin,
       },
@@ -375,14 +340,14 @@ describe("GET /api/admin/theme", () => {
 
   it("allows org admin via admin API path", async () => {
     const res = await app.request("/api/admin/theme", {
-      headers: { Cookie: await sessionCookieFor(adminId) },
+      headers: { Cookie: await sessionCookieFor(prisma, adminId) },
     });
     expect(res.status).toBe(200);
   });
 
   it("returns default theme when no branding configured", async () => {
     const res = await app.request("/api/admin/theme", {
-      headers: { Cookie: await sessionCookieFor(superId) },
+      headers: { Cookie: await sessionCookieFor(prisma, superId) },
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -405,7 +370,7 @@ describe("PUT /api/admin/theme", () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",
       headers: {
-        Cookie: await sessionCookieFor(superId),
+        Cookie: await sessionCookieFor(prisma, superId),
         "Content-Type": "application/json",
         ...sameOrigin,
       },
@@ -419,9 +384,7 @@ describe("PUT /api/admin/theme", () => {
     expect(body.theme.primary).toBe("#aabbcc");
     expect(body.vars["--primary"]).toBe("#aabbcc");
 
-    const getRes = await app.request("/api/admin/theme", {
-      headers: { Cookie: await sessionCookieFor(superId) },
-    });
+    const getRes = await getAdminTheme();
     const persisted = (await getRes.json()) as { theme: { primary?: string } };
     expect(persisted.theme.primary).toBe("#aabbcc");
   });
@@ -430,7 +393,7 @@ describe("PUT /api/admin/theme", () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",
       headers: {
-        Cookie: await sessionCookieFor(adminId),
+        Cookie: await sessionCookieFor(prisma, adminId),
         "Content-Type": "application/json",
         ...sameOrigin,
       },
@@ -443,7 +406,7 @@ describe("PUT /api/admin/theme", () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",
       headers: {
-        Cookie: await sessionCookieFor(superId),
+        Cookie: await sessionCookieFor(prisma, superId),
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ primary: "#112233" }),
@@ -455,7 +418,7 @@ describe("PUT /api/admin/theme", () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",
       headers: {
-        Cookie: await sessionCookieFor(superId),
+        Cookie: await sessionCookieFor(prisma, superId),
         "Content-Type": "application/json",
         ...sameOrigin,
       },
@@ -469,7 +432,7 @@ describe("PUT /api/admin/theme", () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",
       headers: {
-        Cookie: await sessionCookieFor(superId),
+        Cookie: await sessionCookieFor(prisma, superId),
         "Content-Type": "application/json",
         ...sameOrigin,
       },
@@ -500,7 +463,7 @@ describe("PUT /api/admin/theme", () => {
       const put1 = await app.request("/api/admin/theme", {
         method: "PUT",
         headers: {
-          Cookie: await sessionCookieFor(superId),
+          Cookie: await sessionCookieFor(prisma, superId),
           "Content-Type": "application/json",
           ...sameOrigin,
         },
@@ -519,7 +482,7 @@ describe("PUT /api/admin/theme", () => {
       const put2 = await app.request("/api/admin/theme", {
         method: "PUT",
         headers: {
-          Cookie: await sessionCookieFor(superId),
+          Cookie: await sessionCookieFor(prisma, superId),
           "Content-Type": "application/json",
           ...sameOrigin,
         },
@@ -563,7 +526,7 @@ describe("PUT /api/admin/theme", () => {
       const put1 = await app.request("/api/admin/theme", {
         method: "PUT",
         headers: {
-          Cookie: await sessionCookieFor(superId),
+          Cookie: await sessionCookieFor(prisma, superId),
           "Content-Type": "application/json",
           ...sameOrigin,
         },
@@ -596,7 +559,7 @@ describe("PUT /api/admin/theme", () => {
       const put2 = await app.request("/api/admin/theme", {
         method: "PUT",
         headers: {
-          Cookie: await sessionCookieFor(superId),
+          Cookie: await sessionCookieFor(prisma, superId),
           "Content-Type": "application/json",
           ...sameOrigin,
         },
@@ -624,7 +587,7 @@ describe("PUT /api/admin/theme", () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",
       headers: {
-        Cookie: await sessionCookieFor(superId),
+        Cookie: await sessionCookieFor(prisma, superId),
         "Content-Type": "application/json",
         ...sameOrigin,
       },
@@ -645,9 +608,7 @@ describe("PUT /api/admin/theme", () => {
     expect(body.vars["--primary"]).toBe("#066fd1");
     expect(body.vars["--font-sans"]).toBe('"Evil", Inter, system-ui, sans-serif');
 
-    const getRes = await app.request("/api/admin/theme", {
-      headers: { Cookie: await sessionCookieFor(superId) },
-    });
+    const getRes = await getAdminTheme();
     const persisted = (await getRes.json()) as {
       theme: { primary?: string; font_family_name?: string; custom_font_families?: unknown[] };
     };
@@ -660,7 +621,7 @@ describe("PUT /api/admin/theme", () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",
       headers: {
-        Cookie: await sessionCookieFor(superId),
+        Cookie: await sessionCookieFor(prisma, superId),
         "Content-Type": "application/json",
         ...sameOrigin,
       },
@@ -671,9 +632,7 @@ describe("PUT /api/admin/theme", () => {
     expect(body.theme.font_family_name).toBe("Admin Sans");
     expect(body.theme.ticket_font_family_name).toBe("Ticket Sans");
 
-    const getRes = await app.request("/api/admin/theme", {
-      headers: { Cookie: await sessionCookieFor(superId) },
-    });
+    const getRes = await getAdminTheme();
     const persisted = (await getRes.json()) as {
       theme: { font_family_name?: string; ticket_font_family_name?: string };
     };
@@ -685,7 +644,7 @@ describe("PUT /api/admin/theme", () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",
       headers: {
-        Cookie: await sessionCookieFor(superId),
+        Cookie: await sessionCookieFor(prisma, superId),
         "Content-Type": "application/json",
         ...sameOrigin,
       },
@@ -716,9 +675,7 @@ describe("PUT /api/admin/theme", () => {
     expect(body.theme.font_family_name).toBe("Brand Sans");
     expect(body.vars["--font-sans"]).toBe('"Brand Sans", Inter, system-ui, sans-serif');
 
-    const getRes = await app.request("/api/admin/theme", {
-      headers: { Cookie: await sessionCookieFor(superId) },
-    });
+    const getRes = await getAdminTheme();
     const persisted = (await getRes.json()) as {
       theme: { font_family_name?: string; custom_font_families?: Array<{ name: string; variants: unknown[] }> };
     };
@@ -735,7 +692,7 @@ describe("PUT /api/admin/theme", () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",
       headers: {
-        Cookie: await sessionCookieFor(superId),
+        Cookie: await sessionCookieFor(prisma, superId),
         "Content-Type": "application/json",
         ...sameOrigin,
       },
@@ -763,7 +720,7 @@ describe("PUT /api/admin/theme", () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",
       headers: {
-        Cookie: await sessionCookieFor(superId),
+        Cookie: await sessionCookieFor(prisma, superId),
         "Content-Type": "application/json",
         ...sameOrigin,
       },
@@ -787,7 +744,7 @@ describe("PUT /api/admin/theme", () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",
       headers: {
-        Cookie: await sessionCookieFor(superId),
+        Cookie: await sessionCookieFor(prisma, superId),
         "Content-Type": "application/json",
         ...sameOrigin,
       },
@@ -813,7 +770,7 @@ describe("PUT /api/admin/theme", () => {
 describe("GET /api/admin/maps/config", () => {
   it("returns the default map tile config for an org admin", async () => {
     const res = await app.request("/api/admin/maps/config", {
-      headers: { Cookie: await sessionCookieFor(adminId) },
+      headers: { Cookie: await sessionCookieFor(prisma, adminId) },
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -842,7 +799,7 @@ describe("GET /api/admin/maps/config", () => {
 describe("staff SPA routes", () => {
   it("serves admin SPA for org admin", async () => {
     const res = await app.request("/admin", {
-      headers: { Cookie: await sessionCookieFor(adminId) },
+      headers: { Cookie: await sessionCookieFor(prisma, adminId) },
     });
     expect(res.status).toBe(200);
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
@@ -853,7 +810,7 @@ describe("staff SPA routes", () => {
 
   it("redirects operator-only away from /admin", async () => {
     const res = await app.request("/admin", {
-      headers: { Cookie: await sessionCookieFor(opId) },
+      headers: { Cookie: await sessionCookieFor(prisma, opId) },
     });
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/operator");
@@ -861,7 +818,7 @@ describe("staff SPA routes", () => {
 
   it("redirects operator-only away from /admin subpaths", async () => {
     const res = await app.request("/admin/users", {
-      headers: { Cookie: await sessionCookieFor(opId) },
+      headers: { Cookie: await sessionCookieFor(prisma, opId) },
     });
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/operator");
@@ -869,7 +826,7 @@ describe("staff SPA routes", () => {
 
   it("serves operator SPA for operator", async () => {
     const res = await app.request("/operator", {
-      headers: { Cookie: await sessionCookieFor(opId) },
+      headers: { Cookie: await sessionCookieFor(prisma, opId) },
     });
     expect(res.status).toBe(200);
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
@@ -879,7 +836,7 @@ describe("staff SPA routes", () => {
 
   it("serves admin SPA for superadmin on /admin/settings", async () => {
     const res = await app.request("/admin/settings", {
-      headers: { Cookie: await sessionCookieFor(superId) },
+      headers: { Cookie: await sessionCookieFor(prisma, superId) },
     });
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("staff-spa-fixture");
