@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - CSS custom-property fallback values for spacing, radius, shadow, and typography tokens (not just color, which was already fixed) now match their real defined values across the admin panel, the public ticket page, and the shared `@admitto/ui` package - the automated coverage check that already caught color-token drift now also covers these three token files.
+- Settings → Identity's disabled "SAML" protocol tile and Settings → Branding's "faux bold/italic" font-preview hints now use the app's real tooltip (announced to screen readers, reachable by keyboard) instead of a native browser title attribute that only showed on mouse hover. Attendees' bulk-selection "Clear selection" button now has a visible focus ring, matching every other icon-only button in the app.
 - Settings → Archiving no longer silently drops the connection-state banner when the events list fails to load - a 401 or 5xx now flags the same shared connection-state indicator every other events-list screen already reports through.
 - Organisation and per-event Mail settings no longer jump when Save is clicked with an invalid field - clicking Save repeatedly used to re-scroll the page every time, even when the error was already visible.
 - SMTP advanced tuning fields (rate limit, max connections, max messages, connection/greeting/socket timeouts) that fail validation are no longer silently dropped on save with no feedback - they're now checked and show an error like every other field.

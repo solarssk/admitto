@@ -708,14 +708,13 @@ export function IdentityProviderEditor({
             <i className="ti ti-shield-lock" aria-hidden="true" />{" "}
             OpenID Connect
           </span>
-          <span
-            className="identity-protocol-tile identity-protocol-tile--disabled"
-            title="SAML support is coming soon"
-          >
-            <i className="ti ti-certificate" aria-hidden="true" />{" "}
-            SAML
-            <span className="identity-protocol-tile__badge">Soon</span>
-          </span>
+          <Tooltip content="SAML support is coming soon">
+            <span className="identity-protocol-tile identity-protocol-tile--disabled">
+              <i className="ti ti-certificate" aria-hidden="true" />{" "}
+              SAML
+              <span className="identity-protocol-tile__badge">Soon</span>
+            </span>
+          </Tooltip>
         </div>
       )}
       <Card

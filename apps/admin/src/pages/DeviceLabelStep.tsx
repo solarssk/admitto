@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Card } from "@admitto/ui";
+import { Button, Card, Input } from "@admitto/ui";
 import { submitSessionDeviceLabel } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { parseDeviceName } from "../utils/parseDeviceName.js";
@@ -51,36 +51,25 @@ export function DeviceLabelStep({ onSaved, onSkip }: Readonly<DeviceLabelStepPro
             event day.
           </p>
           <form className="at-stack" onSubmit={(e) => void onSubmit(e)}>
-            <div className="at-field">
-              <label className="at-label" htmlFor="device-label-field">
-                Device label
-              </label>
-              <input
-                id="device-label-field"
-                className="at-input"
-                value={label}
-                onChange={(e) => setLabel(e.target.value)}
-                placeholder="Tablet 1, main entrance"
-                maxLength={120}
-                autoComplete="off"
-                disabled={busy}
-              />
-              {detectedLabel && (
-                <p className="at-hint">Detected from your browser. Edit if needed.</p>
-              )}
-            </div>
-            {error && (
-              <p className="text-error" role="alert">
-                {error}
-              </p>
-            )}
+            <Input
+              id="device-label-field"
+              label="Device label"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Tablet 1, main entrance"
+              maxLength={120}
+              autoComplete="off"
+              disabled={busy}
+              hint={detectedLabel ? "Detected from your browser. Edit if needed." : undefined}
+              error={error ?? undefined}
+            />
             <div className="at-row at-row--gap">
-              <button type="button" className="at-btn at-btn--ghost" disabled={busy} onClick={onSkip}>
+              <Button type="button" variant="ghost" disabled={busy} onClick={onSkip}>
                 Continue without label
-              </button>
-              <button type="submit" className="at-btn at-btn--primary" disabled={busy}>
+              </Button>
+              <Button type="submit" variant="primary" disabled={busy}>
                 {busy ? "Saving…" : "Continue"}
-              </button>
+              </Button>
             </div>
           </form>
         </Card>
