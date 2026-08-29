@@ -4,29 +4,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { DatePicker } from "../../src/components/DatePicker.js";
 import * as eventDates from "../../src/utils/event-dates.js";
+import { mockVisualViewport, mockPlacementLayout } from "./panelPlacementMocks.js";
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-
-function mockVisualViewport(
-  width: number,
-  getHeight: () => number,
-  getOffsetTop: () => number = () => 0,
-  getOffsetLeft: () => number = () => 0,
-): VisualViewport {
-  const viewport = new EventTarget();
-  Object.defineProperties(viewport, {
-    width: { value: width },
-    height: { get: getHeight },
-    offsetTop: { get: getOffsetTop },
-    offsetLeft: { get: getOffsetLeft },
-  });
-  vi.stubGlobal("visualViewport", viewport);
-  return viewport as VisualViewport;
-}
 
 function mockOpenCalendarBasics() {
   vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-07-02");
@@ -42,22 +26,6 @@ function mockOpenCalendarBasics() {
   ]);
   vi.spyOn(eventDates, "formatIsoCalendarDate").mockImplementation((iso) => iso);
   vi.spyOn(eventDates, "localeDateInputPattern").mockReturnValue("dd.mm.yyyy");
-}
-
-/** Stubs the layout reads DatePicker's placement effect uses - jsdom has no real layout engine,
- * so getBoundingClientRect/scrollHeight/offsetWidth/innerWidth/innerHeight all default to 0. */
-function mockPlacementLayout(opts: {
-  rect: { top: number; bottom: number; left: number };
-  panelHeight: number;
-  panelWidth: number;
-  innerWidth: number;
-  innerHeight: number;
-}) {
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(opts.rect as DOMRect);
-  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(opts.panelHeight);
-  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(opts.panelWidth);
-  vi.spyOn(window, "innerWidth", "get").mockReturnValue(opts.innerWidth);
-  vi.spyOn(window, "innerHeight", "get").mockReturnValue(opts.innerHeight);
 }
 
 describe("DatePicker", () => {
@@ -88,19 +56,7 @@ describe("DatePicker", () => {
 
   it("opens a calendar panel and selects a day", () => {
     const onChange = vi.fn();
-    vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-07-02");
-    vi.spyOn(eventDates, "formatCalendarMonth").mockReturnValue("July 2026");
-    vi.spyOn(eventDates, "getWeekdayLabelsShort").mockReturnValue([
-      "Mon",
-      "Tue",
-      "Wed",
-      "Thu",
-      "Fri",
-      "Sat",
-      "Sun",
-    ]);
-    vi.spyOn(eventDates, "formatIsoCalendarDate").mockImplementation((iso) => iso);
-    vi.spyOn(eventDates, "localeDateInputPattern").mockReturnValue("dd.mm.yyyy");
+    mockOpenCalendarBasics();
 
     render(<DatePicker value="" onChange={onChange} label="Date" />);
     fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
@@ -191,19 +147,8 @@ describe("DatePicker", () => {
 
   it("sets today from the footer action", () => {
     const onChange = vi.fn();
-    vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-07-02");
-    vi.spyOn(eventDates, "formatCalendarMonth").mockReturnValue("July 2026");
-    vi.spyOn(eventDates, "getWeekdayLabelsShort").mockReturnValue([
-      "Mon",
-      "Tue",
-      "Wed",
-      "Thu",
-      "Fri",
-      "Sat",
-      "Sun",
-    ]);
+    mockOpenCalendarBasics();
     vi.spyOn(eventDates, "formatIsoCalendarDate").mockReturnValue("2 Jul 2026");
-    vi.spyOn(eventDates, "localeDateInputPattern").mockReturnValue("dd.mm.yyyy");
 
     render(<DatePicker value="" onChange={onChange} label="Date" />);
     fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
@@ -212,19 +157,7 @@ describe("DatePicker", () => {
   });
 
   it("closes on Escape and returns focus to the input", async () => {
-    vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-07-02");
-    vi.spyOn(eventDates, "formatCalendarMonth").mockReturnValue("July 2026");
-    vi.spyOn(eventDates, "getWeekdayLabelsShort").mockReturnValue([
-      "Mon",
-      "Tue",
-      "Wed",
-      "Thu",
-      "Fri",
-      "Sat",
-      "Sun",
-    ]);
-    vi.spyOn(eventDates, "formatIsoCalendarDate").mockImplementation((iso) => iso);
-    vi.spyOn(eventDates, "localeDateInputPattern").mockReturnValue("dd.mm.yyyy");
+    mockOpenCalendarBasics();
 
     render(<DatePicker value="" onChange={() => {}} label="Date" />);
     const input = screen.getByLabelText(/date/i);
@@ -238,19 +171,7 @@ describe("DatePicker", () => {
   });
 
   it("closes without stealing focus back when the user tabs to a control outside the panel", async () => {
-    vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-07-02");
-    vi.spyOn(eventDates, "formatCalendarMonth").mockReturnValue("July 2026");
-    vi.spyOn(eventDates, "getWeekdayLabelsShort").mockReturnValue([
-      "Mon",
-      "Tue",
-      "Wed",
-      "Thu",
-      "Fri",
-      "Sat",
-      "Sun",
-    ]);
-    vi.spyOn(eventDates, "formatIsoCalendarDate").mockImplementation((iso) => iso);
-    vi.spyOn(eventDates, "localeDateInputPattern").mockReturnValue("dd.mm.yyyy");
+    mockOpenCalendarBasics();
 
     render(
       <div>
@@ -277,19 +198,7 @@ describe("DatePicker", () => {
 
   it("moves highlight with arrow keys and selects with Enter", () => {
     const onChange = vi.fn();
-    vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-07-02");
-    vi.spyOn(eventDates, "formatCalendarMonth").mockReturnValue("July 2026");
-    vi.spyOn(eventDates, "getWeekdayLabelsShort").mockReturnValue([
-      "Mon",
-      "Tue",
-      "Wed",
-      "Thu",
-      "Fri",
-      "Sat",
-      "Sun",
-    ]);
-    vi.spyOn(eventDates, "formatIsoCalendarDate").mockImplementation((iso) => iso);
-    vi.spyOn(eventDates, "localeDateInputPattern").mockReturnValue("dd.mm.yyyy");
+    mockOpenCalendarBasics();
 
     render(<DatePicker value="2026-07-02" onChange={onChange} label="Date" />);
     fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
@@ -301,19 +210,8 @@ describe("DatePicker", () => {
 
   it("allows navigating to another month when editing an existing date", () => {
     const onChange = vi.fn();
-    vi.spyOn(eventDates, "todayIsoDate").mockReturnValue("2026-07-02");
+    mockOpenCalendarBasics();
     vi.spyOn(eventDates, "formatCalendarMonth").mockImplementation((year, month) => `${year}-${month}`);
-    vi.spyOn(eventDates, "getWeekdayLabelsShort").mockReturnValue([
-      "Mon",
-      "Tue",
-      "Wed",
-      "Thu",
-      "Fri",
-      "Sat",
-      "Sun",
-    ]);
-    vi.spyOn(eventDates, "formatIsoCalendarDate").mockImplementation((iso) => iso);
-    vi.spyOn(eventDates, "localeDateInputPattern").mockReturnValue("dd.mm.yyyy");
 
     render(<DatePicker value="2026-07-15" onChange={onChange} label="Date" />);
     fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
