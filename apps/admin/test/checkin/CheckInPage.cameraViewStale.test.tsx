@@ -100,6 +100,28 @@ afterEach(() => {
   desktopMatchListeners.clear();
 });
 
+/** Renders on the mobile camera overlay and simulates a scan that resolves to Anna Alpha's
+ * already-admitted card - shared "arrange" for the two tests below, which then each change what
+ * surface renders underneath that already-showing card and assert it didn't carry over. */
+async function scanAndShowAdmittedCard(token: string): Promise<void> {
+  renderPage();
+  await screen.findByLabelText("Camera check-in");
+  await waitFor(() => expect(capturedOnScan).toBeTypeOf("function"));
+
+  submitCheckInScan.mockResolvedValueOnce({
+    status: "ALREADY_CHECKED_IN",
+    confirmed: true,
+    card: admittedCard,
+  });
+  await act(async () => {
+    capturedOnScan?.(token);
+  });
+  // The mobile result renders Anna Alpha's name in more than one place (the compact result card
+  // and the full attendee-card view beneath it) — assert presence via count, not a single-match
+  // query.
+  await waitFor(() => expect(screen.getAllByText("Anna Alpha").length).toBeGreaterThan(0));
+}
+
 describe("check-in card/scanResult — mobile camera view no longer inherits stale state (PO review)", () => {
   // The operator mobile shell defaults the camera ON (isDesktopViewport()
   // false at mount — see operatorCamera's useState initializer in
@@ -134,22 +156,7 @@ describe("check-in card/scanResult — mobile camera view no longer inherits sta
 
   it("closing the mobile camera after a scan clears the card, so the scan-bar view doesn't inherit it", async () => {
     mockCheckInBootstrap();
-    renderPage();
-    await screen.findByLabelText("Camera check-in");
-    await waitFor(() => expect(capturedOnScan).toBeTypeOf("function"));
-
-    submitCheckInScan.mockResolvedValueOnce({
-      status: "ALREADY_CHECKED_IN",
-      confirmed: true,
-      card: admittedCard,
-    });
-    await act(async () => {
-      capturedOnScan?.("TEST-FIXTURE-TOKEN-NOT-REAL-SECRET-000002");
-    });
-    // The mobile result renders Anna Alpha's name in more than one place
-    // (the compact result card and the full attendee-card view beneath it)
-    // — assert presence via count, not a single-match query.
-    await waitFor(() => expect(screen.getAllByText("Anna Alpha").length).toBeGreaterThan(0));
+    await scanAndShowAdmittedCard("TEST-FIXTURE-TOKEN-NOT-REAL-SECRET-000002");
 
     fireEvent.click(screen.getByRole("button", { name: "Exit camera mode" }));
 
@@ -162,20 +169,8 @@ describe("check-in card/scanResult — mobile camera view no longer inherits sta
 
   it("a desktop↔mobile breakpoint crossing while the camera stays on clears the surface it swapped away from (code review)", async () => {
     mockCheckInBootstrap();
-    renderPage();
     // Starts on the mobile overlay (camera defaults on on mobile).
-    await screen.findByLabelText("Camera check-in");
-    await waitFor(() => expect(capturedOnScan).toBeTypeOf("function"));
-
-    submitCheckInScan.mockResolvedValueOnce({
-      status: "ALREADY_CHECKED_IN",
-      confirmed: true,
-      card: admittedCard,
-    });
-    await act(async () => {
-      capturedOnScan?.("TEST-FIXTURE-TOKEN-NOT-REAL-SECRET-000003");
-    });
-    await waitFor(() => expect(screen.getAllByText("Anna Alpha").length).toBeGreaterThan(0));
+    await scanAndShowAdmittedCard("TEST-FIXTURE-TOKEN-NOT-REAL-SECRET-000003");
 
     // The device crosses the desktop breakpoint (rotation/resize) while the
     // camera stays on the whole time — cameraActive never changes, only

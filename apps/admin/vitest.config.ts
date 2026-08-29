@@ -37,10 +37,13 @@ export default defineConfig({
     // also sidesteps a real failure mode found earlier: registering the SAME module path both
     // in setupFiles and again locally (even to layer in one extra override) broke
     // importOriginal() in the local factory - a single registration with configurable handles
-    // has no such layering to get wrong. AttendeesPage's remaining 4 files (archived,
-    // bulkSelection, exportAndSend, load) each genuinely diverge somewhere else in the shared
-    // span (archived_at handling, a `sendEventBulk`/`bulkResendTickets` assertion, distinct
-    // fixture rows) and correctly keep their own local setup.
+    // has no such layering to get wrong. load.test.tsx shares the same near-complete overlap and
+    // joins for the same reason, keeping only its own extra "/import" route (renderPage() stays
+    // local - it's a plain function, not a vi.mock() registration, so nothing about sharing the
+    // rest of the setup requires sharing it too). AttendeesPage's remaining 3 files (archived,
+    // bulkSelection, exportAndSend) each genuinely diverge somewhere else in the shared span
+    // (archived_at handling, a `sendEventBulk`/`bulkResendTickets` assertion, distinct fixture
+    // rows) and correctly keep their own local setup.
     projects: [
       {
         extends: true,
@@ -57,7 +60,7 @@ export default defineConfig({
         test: {
           name: "attendees-page-shared-setup",
           include: [
-            "test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search,mailGate,exportMenu}.test.tsx",
+            "test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search,mailGate,exportMenu,load}.test.tsx",
           ],
           setupFiles: ["./test/attendees/attendeesPageSetup.tsx"],
         },
@@ -69,7 +72,7 @@ export default defineConfig({
           include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
           exclude: [
             "test/attendees/AttendeeDetailPage.{statusTones,resend,profileEdit,mailGate,deleteAttendee,revokeCheckIn,copyTicketLink,archived}.test.tsx",
-            "test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search,mailGate,exportMenu}.test.tsx",
+            "test/attendees/AttendeesPage.{sort,mailStatusFilter,pageSize,search,mailGate,exportMenu,load}.test.tsx",
           ],
         },
       },
