@@ -53,7 +53,10 @@ proves itself stable).
 
 Runs against a real dev server in the "single server (production-like)" mode above, plus its own
 disposable Postgres database — **do not point it at your shared local `admitto` dev database**,
-`apps/admin/e2e/seed.ts` resets its fixture attendee's admitted status on every run.
+`apps/admin/e2e/seed.ts` resets its fixture attendee's admitted status on every run. It also
+upserts a synthetic operator account with a fixed password into `DATABASE_URL`, which is why it
+requires `E2E_SEED_ALLOW_WRITE=true` as a deliberate, separate opt-in — set it only once you have
+double-checked `DATABASE_URL` is the disposable `admitto_e2e` database below, not a shared one.
 
 ```bash
 # One-time: a dedicated database, separate from your normal dev DB
@@ -67,6 +70,7 @@ npx playwright install chromium   # first time only
 DATABASE_URL=postgresql://admitto:admitto@localhost:5432/admitto_e2e \
 ENCRYPTION_KEY=$(openssl rand -base64 32) \
 REDIS_URL=redis://localhost:6379 \
+E2E_SEED_ALLOW_WRITE=true \
 npm run e2e -w @admitto/admin
 ```
 

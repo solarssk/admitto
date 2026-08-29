@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { readSeedData } from "./seed.js";
+import { readSeedData, seedCheckinE2eData } from "./seed.js";
 
 /**
  * First browser-level E2E test in this repo (see AGENTS.md — no Playwright/Cypress coverage
@@ -8,6 +8,18 @@ import { readSeedData } from "./seed.js";
  * (persisted server-side, verified by a fresh lookup after the admit) — not the camera/QR
  * scanning path, which needs real camera hardware or a mock that is a separate, harder problem.
  */
+
+// globalSetup's seed only ever runs once per whole test run, not before each retry (CI runs with
+// retries: 1) - a retry after a transient failure that happened AFTER "Confirm check-in" already
+// admitted the attendee server-side would otherwise start from an already-admitted attendee, and
+// fail immediately at the earlier "Ready to check in" assertion instead of getting a real chance
+// to recover from whatever was actually transient. seedCheckinE2eData() is the same idempotent
+// reset globalSetup already used - re-running it here before every attempt (first try or retry
+// alike) keeps each attempt starting from the same known "not admitted" state.
+test.beforeEach(async () => {
+  await seedCheckinE2eData();
+});
+
 test("operator logs in, looks up an attendee manually, and admits them", async ({ page }) => {
   const seed = await readSeedData();
 

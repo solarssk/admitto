@@ -42,6 +42,20 @@ export async function seedCheckinE2eData(): Promise<SeedResult> {
   if (process.env["NODE_ENV"] === "production") {
     throw new Error("Refusing to run E2E seed data in production");
   }
+  // A second, independent gate on top of the NODE_ENV check above: this script upserts a
+  // synthetic operator with a fixed password against whatever DATABASE_URL it's given, and
+  // NODE_ENV alone doesn't prove that's actually a disposable E2E database - it could just as
+  // easily be unset or "development" while pointed at a shared team/staging database by mistake.
+  // Requires a deliberate opt-in env var, set explicitly by apps/admin/README.md's documented
+  // local command and by e2e-checkin-smoke.yml's own ephemeral-Postgres job, rather than
+  // inferring "safe to write" from NODE_ENV.
+  if (process.env["E2E_SEED_ALLOW_WRITE"] !== "true") {
+    throw new Error(
+      'Refusing to write E2E seed data: E2E_SEED_ALLOW_WRITE is not "true". This script upserts ' +
+        "a synthetic operator account into whatever DATABASE_URL is set - set this flag only when " +
+        "you have verified DATABASE_URL points at a disposable E2E database, never a shared one.",
+    );
+  }
 
   const org = await prisma.organization.upsert({
     where: { slug: E2E_ORG_SLUG },

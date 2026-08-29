@@ -19,6 +19,9 @@ env:
   DATABASE_URL: postgresql://admitto@localhost:5432/admitto
   REDIS_URL: redis://localhost:6379
   ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  # apps/admin/e2e/seed.ts's own deliberate opt-in, required before it writes anything - this
+  # job's Postgres above is genuinely ephemeral/isolated, so it's safe to set unconditionally here.
+  E2E_SEED_ALLOW_WRITE: "true"
 
 jobs:
   checkin-smoke:

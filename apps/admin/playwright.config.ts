@@ -45,7 +45,13 @@ export default defineConfig({
     command: "node --import tsx --env-file-if-exists=.env src/index.ts",
     cwd: webDir,
     url: BASE_URL,
-    reuseExistingServer: !process.env["CI"],
+    // Never reuse an already-running server, even locally: globalSetup seeds DATABASE_URL into
+    // a fresh webServer instance started with that exact env - a stray server already listening
+    // on this port (e.g. left over from an earlier run, or someone's own `npm run dev`) could be
+    // wired to a completely different database, so the seeded fixtures and the server the test
+    // actually talks to would silently diverge. This test suite is one file; the local-dev speed
+    // reuse would normally save isn't worth that risk.
+    reuseExistingServer: false,
     timeout: 60_000,
     env: {
       NODE_ENV: "development",
