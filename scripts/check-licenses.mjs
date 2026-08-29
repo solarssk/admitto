@@ -71,6 +71,21 @@ const ALLOWLIST = new Set([
   // Both halves of this compound license are themselves permissive (Zlib is BSD/MIT-equivalent),
   // so unlike an "X OR <copyleft>" expression there is no compliance choice to make here.
   "(MIT AND Zlib)",
+  // Dual-licensed "X OR Y" packages where at least one option is a fully permissive license we
+  // can simply choose - no compliance obligation beyond attribution (already covered by shipping
+  // node_modules/*/LICENSE files, per this repo's redistribution model).
+  "(MIT OR EUPL-1.1+)", // @zone-eu/mailsplit
+  "(Unlicense OR Apache-2.0)", // @zxing/text-encoding
+  "(MIT OR GPL-3.0-or-later)", // jszip
+  "MIT AND ISC", // victory-vendor (transitive via recharts)
+  // Weak (file-level) copyleft licenses reviewed and used unmodified as installed dependencies -
+  // Admitto never patches these packages' own source, so their copyleft obligations (share
+  // modifications to the library itself) don't reach application code. See THIRD-PARTY-NOTICES.md
+  // for the redistribution-relevant detail on each.
+  "LGPL-3.0-or-later", // @img/sharp-libvips-* native binaries
+  "Apache-2.0 AND LGPL-3.0-or-later AND MIT", // @img/sharp-wasm32
+  "EPL-2.0", // elkjs (graph layout, used via its public API only)
+  "MPL-2.0", // lightningcss / lightningcss-darwin-arm64 (Vite's CSS transform pipeline)
 ]);
 
 let raw;
