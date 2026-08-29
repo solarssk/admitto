@@ -4,9 +4,10 @@
  *
  * Runs license-checker (a pinned version, via `npx`, deliberately NOT a project devDependency -
  * see the comment above PINNED_VERSION) against every workspace's node_modules and reports any
- * third-party package whose license isn't on the ALLOWLIST below. Admitto is redistributed as a
- * self-hostable product, so an incompatible-license dependency is a real distribution risk, not
- * a hypothetical one.
+ * third-party package whose license isn't on the ALLOWLIST below, and isn't one of the
+ * individually-reviewed package@version entries in REVIEWED_PACKAGE_VERSIONS. Admitto is
+ * redistributed as a self-hostable product, so an incompatible-license dependency is a real
+ * distribution risk, not a hypothetical one.
  *
  * This check is currently report-only (see ci.yml: `continue-on-error: true` on this step) - it
  * always prints a full report but only exits non-zero (which the workflow does not treat as a
@@ -46,10 +47,13 @@ const PINNED_VERSION = "25.0.1";
 
 // Standard OSI-recognized permissive licenses actually present in this repo's dependency tree
 // (verified with `npx --yes license-checker@25.0.1 --excludePrivatePackages --summary`, 978
-// third-party packages as of the PR that added this check). Anything not listed here - including
-// every copyleft license (GPL/AGPL/LGPL/MPL/EPL) and any "SEE LICENSE IN LICENSE"/custom license -
-// is intentionally left off so it surfaces in the report below for manual review, rather than
-// being silently allowed.
+// third-party packages as of the PR that added this check). A license string added here is
+// approved for ANY package that reports it, present or future - correct only for licenses whose
+// terms don't depend on how the specific package is used (plain permissive, or a dual license
+// with a permissive option). Copyleft licenses (GPL/AGPL/LGPL/MPL/EPL) go in
+// REVIEWED_PACKAGE_VERSIONS below instead, scoped to the specific package - never here. Anything
+// not covered by either is intentionally left off so it surfaces in the report below for manual
+// review, rather than being silently allowed.
 const ALLOWLIST = new Set([
   "MIT",
   "ISC",
@@ -73,19 +77,34 @@ const ALLOWLIST = new Set([
   "(MIT AND Zlib)",
   // Dual-licensed "X OR Y" packages where at least one option is a fully permissive license we
   // can simply choose - no compliance obligation beyond attribution (already covered by shipping
-  // node_modules/*/LICENSE files, per this repo's redistribution model).
+  // node_modules/*/LICENSE files, per this repo's redistribution model). Global by license string
+  // (not scoped per-package below) because the "we can choose the permissive side" reasoning comes
+  // from the license expression itself, not from anything specific to which package carries it.
   "(MIT OR EUPL-1.1+)", // @zone-eu/mailsplit
   "(Unlicense OR Apache-2.0)", // @zxing/text-encoding
   "(MIT OR GPL-3.0-or-later)", // jszip
   "MIT AND ISC", // victory-vendor (transitive via recharts)
-  // Weak (file-level) copyleft licenses reviewed and used unmodified as installed dependencies -
-  // Admitto never patches these packages' own source, so their copyleft obligations (share
-  // modifications to the library itself) don't reach application code. See THIRD-PARTY-NOTICES.md
-  // for the redistribution-relevant detail on each.
-  "LGPL-3.0-or-later", // @img/sharp-libvips-* native binaries
-  "Apache-2.0 AND LGPL-3.0-or-later AND MIT", // @img/sharp-wasm32
-  "EPL-2.0", // elkjs (graph layout, used via its public API only)
-  "MPL-2.0", // lightningcss / lightningcss-darwin-arm64 (Vite's CSS transform pipeline)
+]);
+
+// Weak (file-level) copyleft licenses reviewed for these SPECIFIC packages, at the versions
+// actually reviewed - not a global license-string allowance. Unlike the permissive ALLOWLIST
+// above, whether a copyleft license is fine here depends on facts specific to each package (is it
+// used unmodified? is source of the library itself, not just the app, being redistributed?), not
+// on the license string alone - a different package reporting the same license string (LGPL-3.0,
+// EPL-2.0, MPL-2.0, ...) has not had that review and must still be flagged. Bump the pinned
+// version here (after re-reviewing) when Dependabot updates one of these; a version bump is not
+// automatically covered by the old entry.
+const REVIEWED_PACKAGE_VERSIONS = new Set([
+  // libvips native binaries + wasm build (via sharp) - LGPL-3.0-or-later; Admitto links prebuilt
+  // binaries and never patches libvips's own source. See THIRD-PARTY-NOTICES.md.
+  "@img/sharp-libvips-darwin-arm64@1.3.2",
+  "@img/sharp-wasm32@0.35.3",
+  // elkjs - EPL-2.0 (file-level copyleft); used only through its public API, unmodified.
+  "elkjs@0.11.1",
+  // lightningcss - MPL-2.0 (file-level copyleft); build/dev tooling only (Vite's CSS pipeline),
+  // used unmodified, not shipped in the runtime server image.
+  "lightningcss@1.33.0",
+  "lightningcss-darwin-arm64@1.33.0",
 ]);
 
 let raw;
@@ -103,7 +122,9 @@ try {
 
 const packages = JSON.parse(raw);
 const entries = Object.entries(packages);
-const flagged = entries.filter(([, info]) => !ALLOWLIST.has(info.licenses));
+const flagged = entries.filter(
+  ([pkg, info]) => !ALLOWLIST.has(info.licenses) && !REVIEWED_PACKAGE_VERSIONS.has(pkg),
+);
 
 console.log(`license check: scanned ${entries.length} third-party package(s).`);
 console.log(`license check: ${entries.length - flagged.length} allowed, ${flagged.length} flagged.`);
@@ -116,7 +137,10 @@ if (flagged.length > 0) {
   }
   console.log(
     "\nThis does not mean these packages are forbidden - it means nobody has confirmed they're"
-    + " fine yet. Add a license string to ALLOWLIST in this script only after reviewing it.",
+    + " fine yet. After reviewing: add a fully-permissive license string to ALLOWLIST (applies to"
+    + " any package reporting it), or add this exact package@version to REVIEWED_PACKAGE_VERSIONS"
+    + " (copyleft licenses - scoped to the specific package/version reviewed, not the license"
+    + " string, since compliance depends on how that package is actually used).",
   );
   process.exit(1);
 }
