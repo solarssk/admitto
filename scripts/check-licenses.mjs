@@ -1,0 +1,91 @@
+#!/usr/bin/env node
+/**
+ * License-compliance check for the resolved npm dependency tree.
+ *
+ * Runs license-checker (a pinned version, via `npx`, deliberately NOT a project devDependency -
+ * see the comment above PINNED_VERSION) against every workspace's node_modules and reports any
+ * third-party package whose license isn't on the ALLOWLIST below. Admitto is redistributed as a
+ * self-hostable product, so an incompatible-license dependency is a real distribution risk, not
+ * a hypothetical one.
+ *
+ * This check is currently report-only (see ci.yml: `continue-on-error: true` on this step) - it
+ * always prints a full report but only exits non-zero (which the workflow does not treat as a
+ * failure yet) when something outside the allowlist is found. Flip that off once the flagged
+ * packages below have had a human look and the report has run clean for a while.
+ *
+ * Usage:
+ *   node scripts/check-licenses.mjs
+ */
+import { execFileSync } from "node:child_process";
+
+// license-checker itself is intentionally NOT a project devDependency: this repo's root
+// `overrides.brace-expansion` (needed by the modern glob/minimatch used elsewhere) breaks
+// license-checker's own bundled legacy `glob@7` -> `minimatch@3` chain when it's hoisted into
+// this project's node_modules and inherits that override ("TypeError: expand is not a function").
+// Running it through `npx` gives it an isolated dependency tree instead. Pinned exact version so
+// CI doesn't silently pick up a different license-checker release (and thus a different report)
+// between runs.
+const PINNED_VERSION = "25.0.1";
+
+// Standard OSI-recognized permissive licenses actually present in this repo's dependency tree
+// (verified with `npx --yes license-checker@25.0.1 --excludePrivatePackages --summary`, 978
+// third-party packages as of the PR that added this check). Anything not listed here - including
+// every copyleft license (GPL/AGPL/LGPL/MPL/EPL) and any "SEE LICENSE IN LICENSE"/custom license -
+// is intentionally left off so it surfaces in the report below for manual review, rather than
+// being silently allowed.
+const ALLOWLIST = [
+  "MIT",
+  "ISC",
+  "Apache-2.0",
+  "BSD-3-Clause",
+  "BSD-2-Clause",
+  "BlueOak-1.0.0",
+  "Unlicense",
+  "OFL-1.1", // SIL Open Font License - bundled @fontsource/* text fonts.
+  "MIT-0",
+  "CC0-1.0",
+  "0BSD",
+  "CC-BY-4.0", // Attribution-only; caniuse-lite's browser data.
+  "Python-2.0", // Python Software Foundation License - permissive despite the name; argparse.
+  // license-checker appends "*" when it guessed the license from LICENSE file text rather than
+  // an explicit package.json field. Verified-permissive in every case found in this tree.
+  "MIT*",
+  "ISC*",
+  // Both halves of this compound license are themselves permissive (Zlib is BSD/MIT-equivalent),
+  // so unlike an "X OR <copyleft>" expression there is no compliance choice to make here.
+  "(MIT AND Zlib)",
+];
+
+let raw;
+try {
+  raw = execFileSync(
+    "npx",
+    ["--yes", `license-checker@${PINNED_VERSION}`, "--excludePrivatePackages", "--json"],
+    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+  );
+} catch (err) {
+  console.error("license check: failed to run license-checker.");
+  console.error(err.message);
+  process.exit(1);
+}
+
+const packages = JSON.parse(raw);
+const entries = Object.entries(packages);
+const flagged = entries.filter(([, info]) => !ALLOWLIST.includes(info.licenses));
+
+console.log(`license check: scanned ${entries.length} third-party package(s).`);
+console.log(`license check: ${entries.length - flagged.length} allowed, ${flagged.length} flagged.`);
+
+if (flagged.length > 0) {
+  console.log("\nFlagged (license not on the allowlist - needs human review):");
+  for (const [pkg, info] of flagged.sort(([a], [b]) => a.localeCompare(b))) {
+    console.log(`  - ${pkg}: ${info.licenses} (${info.repository ?? "no repository listed"})`);
+  }
+  console.log(
+    "\nThis does not mean these packages are forbidden - it means nobody has confirmed they're"
+    + " fine yet. Add a license string to ALLOWLIST in this script only after reviewing it.",
+  );
+  process.exit(1);
+}
+
+console.log("\nAll scanned packages are on the allowlist.");
