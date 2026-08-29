@@ -367,6 +367,24 @@ jobs:
             exit 1
           fi
           echo "OK: no real email addresses in data files"
+      - name: No phone-number-shaped strings in tracked data files
+        run: |
+          # E.164-leaning: a leading "+" (rare outside phone numbers) followed by 7-21 digits,
+          # allowing space/dot/paren/dash separators. The (^|[^0-9]) / ($|[^0-9]) boundary groups
+          # require a non-digit (or line start/end) on both sides, so this does not fire on a "+"
+          # that is itself part of a longer digit run - eg. semver build metadata like
+          # "1.0.0+20130313144700", or a big numeric id - which is the main false-positive class
+          # for naive phone regexes. Wider scope than the email check above (also .yaml/.yml/.sql):
+          # measured zero false positives against this repo's current tracked files in that scope
+          # before wiring this in as a blocking check.
+          HITS=$(git ls-files -z -- '*.csv' '*.tsv' '*.json' '*.yaml' '*.yml' '*.sql' ':!package-lock.json' \
+            | xargs -0 grep -hREo '(^|[^0-9])\+[1-9][0-9 .()-]{5,19}[0-9]($|[^0-9])' -- || true)
+          if [ -n "$HITS" ]; then
+            echo "Suspicious phone numbers found in data files:"
+            echo "$HITS"
+            exit 1
+          fi
+          echo "OK: no phone-number-shaped strings in data files"
 
   migration-safety:
     runs-on: ubuntu-latest
