@@ -125,6 +125,25 @@ and the content rules behind it, see [docs/dev/error-and-notice-copy.md](docs/de
 
 When an agent repeats a mistake, add a precise rule here (or in a scoped `.cursor/rules/*.mdc` file). One line per gotcha; cut rules that no longer prevent real errors.
 
+**SonarCloud Automatic Analysis needs `sonar.tests` listed explicitly in `.sonarcloud.properties`
+(repo root) — without it every `*.test.ts(x)` file analyzes as production source (qualifier `FIL`
+instead of `UTS`), so intentional test-fixture duplication (db seeding, TOTP enrollment, login
+flows repeated across integration test files) counts against the "New Code Duplication" quality
+gate as if it were a production-code smell.** Confirmed via the public API
+(`api/components/tree?component=solarssk_admitto&qualifiers=UTS`) that this project had **zero**
+files classified `UTS` project-wide before this fix — every workspace's tests were silently being
+scanned as source. Once classified `UTS`, SonarCloud still analyzes Bugs and Code Smells on that
+file (per SonarSource's own docs), it just stops counting Duplication and Security Hotspots there —
+this is not "tests go unanalyzed", it's Sonar's own documented, intentional scope split.
+**`.sonarcloud.properties` under Automatic Analysis (the GitHub App mode, no CI scanner step) does
+not support wildcard patterns** — `sonar.test.inclusions=**/*.test.ts` or `sonar.tests=packages/*/test`
+are silently ignored, not an error. List every workspace's `test/` directory as a literal,
+comma-separated path instead (this repo keeps 100% of test files under a dedicated `test/`
+directory per workspace, never co-located next to source, so `sonar.tests` alone covers everything
+with no `sonar.test.inclusions` glob needed). Verify empirically after any change here — push, wait
+for the SonarCloud re-scan, then re-query the `UTS` qualifier via the API — don't trust the docs'
+description of the property over what the dashboard actually shows for this project.
+
 **Font formats (`apps/admin`'s own bundled fonts): woff2 only, no woff/truetype fallback** — the
 app's JS already requires a browser new enough that woff2 is a given, so older formats are pure
 dead weight in the package-shipped CSS (Tabler icons, `@fontsource` text fonts). This does **not**
