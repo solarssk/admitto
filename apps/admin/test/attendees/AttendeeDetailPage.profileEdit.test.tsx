@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // This import must come first, before every other import in the file - see
 // attendeeDetailPageMocks.ts's own doc comment for why.
-import { mockAttendeeDetailForm, mockAuthProvider, mockOutletEvent } from "./attendeeDetailPageMocks.js";
+import { mockAttendeeDetailForm, mockAuthProvider, mockModule, mockOutletEvent } from "./attendeeDetailPageMocks.js";
 import { baseAttendeeDetailEvent, mockMatchMedia, renderWithToast } from "../test-utils.js";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,10 +24,8 @@ const updateAttendee = vi.fn();
 const resendTicket = vi.fn();
 const fetchEventCustomFields = vi.fn();
 
-vi.mock("../../src/api/client.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/api/client.js")>();
-  return {
-    ...actual,
+vi.mock("../../src/api/client.js", (importOriginal) =>
+  mockModule(importOriginal, () => ({
     updateAttendee: (...args: unknown[]) => updateAttendee(...args),
     resendTicket: (...args: unknown[]) => resendTicket(...args),
     fetchAttendeeDetail: vi.fn(),
@@ -40,8 +38,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
       { id: "tt-1", key: "vip", label: "VIP", color: "purple", sort_order: 0, attendee_count: 1, created_at: "2026-01-01T00:00:00.000Z" },
       { id: "tt-2", key: "standard", label: "Standard", color: "gray", sort_order: 1, attendee_count: 0, created_at: "2026-01-01T00:00:00.000Z" },
     ]),
-  };
-});
+  })),
+);
 
 function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
   return {

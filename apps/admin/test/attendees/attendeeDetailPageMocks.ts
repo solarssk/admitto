@@ -125,3 +125,21 @@ export async function mockOutletEvent<T extends Record<string, unknown>>(
     useOutletContext: () => ({ event: getEvent() }),
   };
 }
+
+/** Generic `vi.mock(...)` body for the same "spread real exports, override a few" shape as the
+ * three functions above, for a module none of them cover - in practice always
+ * `vi.mock("../../src/api/client.js", ...)`, whose *override set* (which functions get mocked)
+ * is inherently different per file, but whose *wrapper* was identical everywhere. Extracted for a
+ * concrete, measured reason, not just style: once the three mocks above got short enough, this
+ * file's own PR (#1141) found SonarCloud chaining that wrapper - unchanged, but now sitting right
+ * after an equally short block above it with nothing large enough between them to stop the match -
+ * into the same clone as the mocks above, even though neither block crossed the duplicate-block
+ * threshold alone. Same hoisting rules as the others apply (see point 1 above): the call site
+ * wraps this in an inline `(importOriginal) => mockModule(importOriginal, () => ({...}))`. */
+export async function mockModule<T extends object>(
+  importOriginal: () => Promise<T>,
+  getOverrides: () => Partial<T>,
+) {
+  const actual = await importOriginal();
+  return { ...actual, ...getOverrides() };
+}

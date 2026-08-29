@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // This import must come first, before every other import in the file - see
 // attendeeDetailPageMocks.ts's own doc comment for why.
-import { mockAttendeeDetailForm, mockAuthProvider, mockOutletEvent } from "./attendeeDetailPageMocks.js";
+import { mockAttendeeDetailForm, mockAuthProvider, mockModule, mockOutletEvent } from "./attendeeDetailPageMocks.js";
 import { baseAttendeeDetailEvent, mockMatchMedia, renderWithToast } from "../test-utils.js";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,10 +20,8 @@ vi.mock("react-router", (importOriginal) =>
   mockOutletEvent(importOriginal, () => baseAttendeeDetailEvent),
 );
 
-vi.mock("../../src/api/client.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/api/client.js")>();
-  return {
-    ...actual,
+vi.mock("../../src/api/client.js", (importOriginal) =>
+  mockModule(importOriginal, () => ({
     fetchAttendeeDetail: vi.fn(),
     revokeAttendeeCheckIn: vi.fn(),
     resendTicket: vi.fn(),
@@ -35,8 +33,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
       fields: { provider: { value: null, source: "organization", locked: false } },
     }),
     fetchTicketTypes: vi.fn().mockResolvedValue([]),
-  };
-});
+  })),
+);
 
 function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
   return {
