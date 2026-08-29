@@ -25,6 +25,35 @@ const tsUnusedVarsOptions = {
   ignoreRestSiblings: true,
 };
 
+// Shared by packages/ui's own *.tsx files and every apps/*/src file below — both are React/TSX,
+// so the plugin set, parser options, and rule list were byte-for-byte identical two ways (only
+// `files` differed), which is exactly what SonarCloud's new-code duplication gate flagged. One
+// definition, two `files` globs, rather than two copies drifting apart later.
+const reactTsxConfig = {
+  plugins: {
+    security,
+    "@typescript-eslint": tsPlugin,
+    "react-hooks": reactHooks,
+  },
+  languageOptions: {
+    parser: tsParser,
+    ecmaVersion: 2022,
+    sourceType: "module",
+    parserOptions: {
+      ecmaFeatures: { jsx: true },
+    },
+  },
+  rules: {
+    ...security.configs.recommended.rules,
+    ...tsPlugin.configs.recommended.rules,
+    "@typescript-eslint/no-unused-vars": ["error", tsUnusedVarsOptions],
+    // Typed records, React state, and route params — false positives.
+    "security/detect-object-injection": "off",
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn",
+  },
+};
+
 export default [
   {
     // Prisma's `prisma-client` generator emits raw, uncompiled TypeScript directly into
@@ -48,52 +77,10 @@ export default [
   {
     // packages/ui is a React component library — same shape as apps/*/src below.
     files: ["packages/*/src/**/*.tsx"],
-    plugins: {
-      security,
-      "@typescript-eslint": tsPlugin,
-      "react-hooks": reactHooks,
-    },
-    languageOptions: {
-      parser: tsParser,
-      ecmaVersion: 2022,
-      sourceType: "module",
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-      },
-    },
-    rules: {
-      ...security.configs.recommended.rules,
-      ...tsPlugin.configs.recommended.rules,
-      "@typescript-eslint/no-unused-vars": ["error", tsUnusedVarsOptions],
-      // Typed records, React state, and route params — false positives (same as apps/*).
-      "security/detect-object-injection": "off",
-      "react-hooks/rules-of-hooks": "error",
-      "react-hooks/exhaustive-deps": "warn",
-    },
+    ...reactTsxConfig,
   },
   {
     files: ["apps/*/src/**/*.{ts,tsx}"],
-    plugins: {
-      security,
-      "@typescript-eslint": tsPlugin,
-      "react-hooks": reactHooks,
-    },
-    languageOptions: {
-      parser: tsParser,
-      ecmaVersion: 2022,
-      sourceType: "module",
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-      },
-    },
-    rules: {
-      ...security.configs.recommended.rules,
-      ...tsPlugin.configs.recommended.rules,
-      "@typescript-eslint/no-unused-vars": ["error", tsUnusedVarsOptions],
-      // Typed records, React state, and route params — false positives (same as packages/*).
-      "security/detect-object-injection": "off",
-      "react-hooks/rules-of-hooks": "error",
-      "react-hooks/exhaustive-deps": "warn",
-    },
+    ...reactTsxConfig,
   },
 ];
