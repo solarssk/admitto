@@ -66,9 +66,13 @@ jobs:
       - run: npm run build
       - name: Migrate database
         run: npm run db:migrate -w @admitto/db
+      # Calls the locally pinned binary directly (apps/admin's own @playwright/test devDependency,
+      # already resolved by npm ci above via package-lock.json) instead of a bare `npx playwright`
+      # - SonarCloud githubactions:S6505/S8543: npx can install an on-demand, unpinned package and
+      # run its lifecycle scripts if one isn't already present locally. This path is always
+      # present after npm ci, so this never triggers any install at all, on-demand or otherwise.
       - name: Install Playwright browser (chromium)
-        working-directory: apps/admin
-        run: npx playwright install --with-deps chromium
+        run: node_modules/.bin/playwright install --with-deps chromium
       - name: Run check-in E2E smoke test
         run: npm run e2e -w @admitto/admin
       - name: Upload Playwright report
