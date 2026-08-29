@@ -29,6 +29,7 @@ let mockArchivedAt: string | null = null;
 let mockWalletEnabled = true;
 let mockWalletAppleEnabled = true;
 let mockWalletGoogleEnabled = true;
+let mockWalletSamsungEnabled = true;
 
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
@@ -51,6 +52,9 @@ vi.mock("react-router", async (importOriginal) => {
         },
         get wallet_google_enabled() {
           return mockWalletGoogleEnabled;
+        },
+        get wallet_samsung_enabled() {
+          return mockWalletSamsungEnabled;
         },
         get archived_at() {
           return mockArchivedAt;
@@ -165,6 +169,7 @@ afterEach(() => {
   mockWalletEnabled = true;
   mockWalletAppleEnabled = true;
   mockWalletGoogleEnabled = true;
+  mockWalletSamsungEnabled = true;
   vi.unstubAllGlobals();
 });
 
@@ -753,5 +758,31 @@ describe("AttendeeDetailPage — Wallet card gated by the event's platform toggl
     fireEvent.click(screen.getByRole("button", { name: "Wallet pass links" }));
     expect(screen.queryByRole("menuitem", { name: /Copy Apple Wallet link/ })).toBeNull();
     expect(screen.getByRole("menuitem", { name: /Copy Google Wallet link/ })).toBeTruthy();
+  });
+
+  it("shows a reserved Samsung Wallet row when Samsung Wallet is enabled, alongside Apple/Google", async () => {
+    mockWalletSamsungEnabled = true;
+    mockLoad(
+      baseDetail({
+        wallet_pass: walletPass({ apple_active_registrations: 1, google_active_registrations: 1 }),
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.getByText("Samsung Wallet")).toBeTruthy();
+    // No samsung_active_registrations field exists anywhere (no PassCreator API support yet) - the
+    // row can only ever say this, unlike Apple/Google's real registration status above it.
+    expect(screen.getByText("Not supported yet")).toBeTruthy();
+  });
+
+  it("omits the Samsung Wallet row when Samsung Wallet is disabled, even with Apple/Google both on", async () => {
+    mockWalletSamsungEnabled = false;
+    mockLoad(baseDetail({ wallet_pass: walletPass() }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.getByText("Wallet", { selector: ".at-card__title" })).toBeTruthy();
+    expect(screen.queryByText("Samsung Wallet")).toBeNull();
   });
 });

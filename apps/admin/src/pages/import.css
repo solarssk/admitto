@@ -392,7 +392,7 @@ fieldset:disabled .import-dropzone {
 
 .import-sample__note {
   font-size: var(--fs-sm);
-  font-weight: var(--fw-normal, 400);
+  font-weight: var(--fw-regular, 400);
   color: var(--text-muted);
 }
 
@@ -445,7 +445,7 @@ fieldset:disabled .import-dropzone {
 }
 
 .import-sample__uuid {
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace);
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }

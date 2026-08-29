@@ -25,6 +25,7 @@ let outletEvent = {
   wallet_enabled: true,
   wallet_apple_enabled: true,
   wallet_google_enabled: true,
+  wallet_samsung_enabled: true,
   archived_at: null as string | null,
   organization_id: "org-1",
 };

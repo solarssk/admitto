@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import { listCheckInEvents } from "@admitto/auth";
-import { attachWeatherToEventDtos, serializeEventDto } from "./admin-api-routes.js";
+import { attachWeatherToEventDtos, omitWalletSettings, serializeEventDto } from "./admin-api-routes.js";
 import { refreshMapsConfigCacheIfStale } from "../maps/maps-org-settings.js";
 import {
   checkInScan,
@@ -34,7 +34,9 @@ import {
 /** GET /api/checkin/events — session-only capability list (P4).
  *  `attendee_count` costs an extra aggregate query, so it is opt-in via
  *  `?includeAttendeeCount=true` and omitted from the DTO otherwise — only the
- *  operator event picker displays it. */
+ *  operator event picker displays it. Wallet platform toggles are stripped from the response
+ *  (omitWalletSettings): an operator has no legitimate need to see them, unlike the admin
+ *  event picker sharing this same serializeEventDto. */
 export async function handleGetCheckinEvents(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   const includeAttendeeCount = c.req.query("includeAttendeeCount") === "true";
@@ -43,13 +45,15 @@ export async function handleGetCheckinEvents(c: Context, db: PrismaClient): Prom
 
   if (!includeAttendeeCount) {
     const dtos = events.map((e) => serializeEventDto(e));
-    return c.json({ events: await attachWeatherToEventDtos(db, events, dtos) });
+    const withWeather = await attachWeatherToEventDtos(db, events, dtos);
+    return c.json({ events: withWeather.map(omitWalletSettings) });
   }
 
   const countByEvent = await countAttendeesByEvent(db, events.map((e) => e.id));
   const dtos = events.map((e) => serializeEventDto(e, countByEvent.get(e.id) ?? 0));
+  const withWeather = await attachWeatherToEventDtos(db, events, dtos);
   return c.json({
-    events: await attachWeatherToEventDtos(db, events, dtos),
+    events: withWeather.map(omitWalletSettings),
   });
 }
 
