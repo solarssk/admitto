@@ -152,6 +152,18 @@ under Automatic Analysis, so every path listed in `sonar.tests` is still also a 
 glob patterns rather than the bare-path list `sonar.tests` takes). Confirmed broken as a hard
 failure (not a warning) on the very next push to `main` after adding `sonar.tests` without this.
 
+**SonarCloud Automatic Analysis cannot ingest coverage, full stop — not a `.sonarcloud.properties`
+config gap.** Confirmed from SonarSource's own docs: "Code coverage information is not supported"
+is listed as a current Automatic Analysis limitation, and the JS/TS coverage page has a dedicated
+section titled "Use CI-based, not automatic analysis." `sonar.javascript.lcov.reportPaths` is real
+but is a CI-based-analysis-only property (`sonar-project.properties`, read by an actual
+`sonar-scanner`/`sonarqube-scan-action` run) — Automatic Analysis never reads
+`sonar-project.properties` at all (it reads `.sonarcloud.properties` instead) and has coverage
+support removed at the product level regardless of any property. Don't spend time trying to wire
+coverage into `.sonarcloud.properties`; see
+[docs/dev/sonarcloud-ci-coverage-migration.md](docs/dev/sonarcloud-ci-coverage-migration.md) for
+the sourced answer and the concrete (human-gated, needs a `SONAR_TOKEN`) migration path.
+
 **Font formats (`apps/admin`'s own bundled fonts): woff2 only, no woff/truetype fallback** — the
 app's JS already requires a browser new enough that woff2 is a given, so older formats are pure
 dead weight in the package-shipped CSS (Tabler icons, `@fontsource` text fonts). This does **not**
