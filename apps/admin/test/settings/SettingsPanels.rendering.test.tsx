@@ -38,6 +38,11 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
   };
 });
 
+const reportApiError = vi.fn();
+vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
+  useConnectionState: () => ({ reportApiError }),
+}));
+
 function emptySystemLog(cursor = 0): SystemLogResponse {
   return { entries: [], cursor };
 }

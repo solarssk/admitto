@@ -54,6 +54,47 @@ function providerEditPath(id: string): string {
   return `/admin/settings/identity/providers/${encodeURIComponent(id)}`;
 }
 
+/** Load state + retry + delayed-loading skeleton flag for a single fetched resource -
+ * `loadProviders`/`loadCf` were structurally identical copies of this shape before being
+ * factored out. `fetchFn` must be a stable reference (a module-level import, or a value the
+ * caller has itself memoized) - it's a `useCallback`/`useEffect` dependency. */
+function useLoadableResource<T>(fetchFn: (signal?: AbortSignal) => Promise<T>, initialValue: T, fallbackMessage: string) {
+  const [data, setData] = useState<T>(initialValue);
+  const [state, setState] = useState<LoadState>("loading");
+  const [error, setError] = useState(fallbackMessage);
+  const [retryTick, setRetryTick] = useState(0);
+
+  const load = useCallback(
+    async (signal: AbortSignal) => {
+      setState((prev) => (prev === "ready" ? prev : "loading"));
+      try {
+        setData(await fetchFn(signal));
+        setState("ready");
+      } catch (err) {
+        if (signal.aborted) return;
+        if (err instanceof ApiError && err.status === 401) {
+          redirectToLogin();
+          return;
+        }
+        setError(operatorApiErrorMessage(err, fallbackMessage));
+        setState("error");
+      }
+    },
+    [fetchFn, fallbackMessage],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load, retryTick]);
+
+  const retry = useCallback(() => setRetryTick((n) => n + 1), []);
+  const showSkeleton = useDelayedLoading(state === "loading");
+
+  return { data, setData, state, error, retry, showSkeleton };
+}
+
 const PROVIDER_NEW_PATH = `${IDENTITY_PROVIDERS_ROUTE}/new`;
 
 const IDENTITY_PROVIDERS_HINT =
@@ -125,78 +166,34 @@ export function IdentityProvidersPanel() {
   const location = useLocation();
   const params = useParams<{ providerId?: string }>();
   const modal = resolveModal(location.pathname, params.providerId);
-  const [providers, setProviders] = useState<ProviderRow[]>([]);
-  const [cf, setCf] = useState<CfAccessSummaryDto | null>(null);
-  const [providersState, setProvidersState] = useState<LoadState>("loading");
-  const [cfState, setCfState] = useState<LoadState>("loading");
-  // operatorApiErrorMessage always returns a real message (never empty), so these only ever hold
-  // their initial value before the first load error sets a real one - not "no message yet".
-  const [providersError, setProvidersError] = useState("Could not load identity providers.");
-  const [cfError, setCfError] = useState("Could not load the Cloudflare Access configuration.");
   // Ids with an in-flight toggle, so toggling two different providers
   // back-to-back doesn't re-enable the first row's Switch while its request
   // is still pending.
   const { ids: togglingIds, start: startToggling, finish: finishToggling } = useInFlightIds();
-  // Retry ticks drive the load effects (mount + Retry button). Each effect owns its
-  // AbortController and aborts on cleanup, so a React StrictMode remount and a Retry
-  // both re-fetch cleanly without leaking in-flight requests or getting stuck on a
-  // one-shot ref.
-  const [providersRetry, setProvidersRetry] = useState(0);
-  const [cfRetry, setCfRetry] = useState(0);
 
-  const loadProviders = useCallback(async (signal: AbortSignal) => {
-    setProvidersState((prev) => (prev === "ready" ? prev : "loading"));
-    try {
-      const data = await fetchIdentityProviders(signal);
-      setProviders(data.providers);
-      setProvidersState("ready");
-    } catch (err) {
-      if (signal.aborted) return;
-      if (err instanceof ApiError && err.status === 401) {
-        redirectToLogin();
-        return;
-      }
-      setProvidersError(operatorApiErrorMessage(err, "Could not load identity providers."));
-      setProvidersState("error");
-    }
-  }, []);
-
-  const loadCf = useCallback(async (signal: AbortSignal) => {
-    setCfState((prev) => (prev === "ready" ? prev : "loading"));
-    try {
-      setCf(await fetchCfAccessSummary(signal));
-      setCfState("ready");
-    } catch (err) {
-      if (signal.aborted) return;
-      if (err instanceof ApiError && err.status === 401) {
-        redirectToLogin();
-        return;
-      }
-      setCfError(operatorApiErrorMessage(err, "Could not load the Cloudflare Access configuration."));
-      setCfState("error");
-    }
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadProviders(controller.signal);
-    return () => controller.abort();
-  }, [loadProviders, providersRetry]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadCf(controller.signal);
-    return () => controller.abort();
-  }, [loadCf, cfRetry]);
-
-  const retryProviders = useCallback(() => setProvidersRetry((n) => n + 1), []);
-  const retryCf = useCallback(() => setCfRetry((n) => n + 1), []);
-
-  // A fetch that resolves near-instantly (localhost, a warm cache) would
-  // otherwise flash the skeleton on and off faster than it can register as
-  // "loading" — show it only once the fetch has genuinely taken a moment.
-  const showProvidersSkeleton = useDelayedLoading(providersState === "loading");
-  const showCfSkeleton = useDelayedLoading(cfState === "loading");
+  const fetchProviderRows = useCallback(
+    async (signal?: AbortSignal) => (await fetchIdentityProviders(signal)).providers,
+    [],
+  );
+  const {
+    data: providers,
+    setData: setProviders,
+    state: providersState,
+    error: providersError,
+    retry: retryProviders,
+    showSkeleton: showProvidersSkeleton,
+  } = useLoadableResource<ProviderRow[]>(fetchProviderRows, [], "Could not load identity providers.");
+  const {
+    data: cf,
+    state: cfState,
+    error: cfError,
+    retry: retryCf,
+    showSkeleton: showCfSkeleton,
+  } = useLoadableResource<CfAccessSummaryDto | null>(
+    fetchCfAccessSummary,
+    null,
+    "Could not load the Cloudflare Access configuration.",
+  );
 
   // The list no longer unmounts when a modal route is visited (unlike a full page
   // navigation), so refresh both lists ourselves once a modal closes back to the
@@ -240,7 +237,7 @@ export function IdentityProvidersPanel() {
         finishToggling(provider.id);
       }
     },
-    [addToast, retryProviders, startToggling, finishToggling],
+    [addToast, retryProviders, setProviders, startToggling, finishToggling],
   );
 
   return (

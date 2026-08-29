@@ -26,6 +26,47 @@ vi.mock("../../src/admin/admin-helpers.js", async (importOriginal) => {
 
 import { handleExportSelectedAttendees } from "../../src/admin/attendees-api-routes.js";
 
+function buildMockContext() {
+  return {
+    req: {
+      json: async () => ({ attendee_ids: ["att-1"], format: "csv" }),
+    },
+    json: (body: unknown, status?: number) =>
+      new Response(JSON.stringify(body), { status: status ?? 200 }),
+    get: () => undefined,
+  };
+}
+
+function buildMockDb() {
+  return {
+    event: {
+      findUnique: vi.fn().mockResolvedValue({
+        id: "evt-export-artifact",
+        title: "Export Artifact",
+        date: new Date("2026-09-01T09:00:00Z"),
+        timezone: "UTC",
+        organization_id: "org-1",
+      }),
+    },
+    attendee: {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          name: "Guest",
+          email: "guest@example.com",
+          company: null,
+          department: null,
+          custom_data: null,
+          ticket_type: null,
+          admitted_at: null,
+        },
+      ]),
+    },
+    attendeeActionLog: {
+      create: vi.fn(),
+    },
+  };
+}
+
 describe("handleExportSelectedAttendees artifact failures", () => {
   beforeEach(() => {
     buildAttendeesExportArtifact.mockReset();
@@ -34,44 +75,7 @@ describe("handleExportSelectedAttendees artifact failures", () => {
   it("returns 400 validation_failed when buildAttendeesExportArtifact throws", async () => {
     buildAttendeesExportArtifact.mockRejectedValue(new Error("artifact boom"));
 
-    const c = {
-      req: {
-        json: async () => ({ attendee_ids: ["att-1"], format: "csv" }),
-      },
-      json: (body: unknown, status?: number) =>
-        new Response(JSON.stringify(body), { status: status ?? 200 }),
-      get: () => undefined,
-    };
-
-    const db = {
-      event: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: "evt-export-artifact",
-          title: "Export Artifact",
-          date: new Date("2026-09-01T09:00:00Z"),
-          timezone: "UTC",
-          organization_id: "org-1",
-        }),
-      },
-      attendee: {
-        findMany: vi.fn().mockResolvedValue([
-          {
-            name: "Guest",
-            email: "guest@example.com",
-            company: null,
-            department: null,
-            custom_data: null,
-            ticket_type: null,
-            admitted_at: null,
-          },
-        ]),
-      },
-      attendeeActionLog: {
-        create: vi.fn(),
-      },
-    };
-
-    const res = await handleExportSelectedAttendees(c as never, db as never);
+    const res = await handleExportSelectedAttendees(buildMockContext() as never, buildMockDb() as never);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "validation_failed" });
     expect(buildAttendeesExportArtifact).toHaveBeenCalledOnce();
@@ -82,42 +86,7 @@ describe("handleExportSelectedAttendees artifact failures", () => {
       new Error("unknown_custom_data_field:sock_size"),
     );
 
-    const c = {
-      req: {
-        json: async () => ({ attendee_ids: ["att-1"], format: "csv" }),
-      },
-      json: (body: unknown, status?: number) =>
-        new Response(JSON.stringify(body), { status: status ?? 200 }),
-      get: () => undefined,
-    };
-
-    const db = {
-      event: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: "evt-export-artifact",
-          title: "Export Artifact",
-          date: new Date("2026-09-01T09:00:00Z"),
-          timezone: "UTC",
-          organization_id: "org-1",
-        }),
-      },
-      attendee: {
-        findMany: vi.fn().mockResolvedValue([
-          {
-            name: "Guest",
-            email: "guest@example.com",
-            company: null,
-            department: null,
-            custom_data: null,
-            ticket_type: null,
-            admitted_at: null,
-          },
-        ]),
-      },
-      attendeeActionLog: { create: vi.fn() },
-    };
-
-    const res = await handleExportSelectedAttendees(c as never, db as never);
+    const res = await handleExportSelectedAttendees(buildMockContext() as never, buildMockDb() as never);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "unknown_custom_data_field", field: "sock_size" });
   });
@@ -129,42 +98,7 @@ describe("handleExportSelectedAttendees artifact failures", () => {
       new Error("Can't reach database server at `db.internal:5432`"),
     );
 
-    const c = {
-      req: {
-        json: async () => ({ attendee_ids: ["att-1"], format: "csv" }),
-      },
-      json: (body: unknown, status?: number) =>
-        new Response(JSON.stringify(body), { status: status ?? 200 }),
-      get: () => undefined,
-    };
-
-    const db = {
-      event: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: "evt-export-artifact",
-          title: "Export Artifact",
-          date: new Date("2026-09-01T09:00:00Z"),
-          timezone: "UTC",
-          organization_id: "org-1",
-        }),
-      },
-      attendee: {
-        findMany: vi.fn().mockResolvedValue([
-          {
-            name: "Guest",
-            email: "guest@example.com",
-            company: null,
-            department: null,
-            custom_data: null,
-            ticket_type: null,
-            admitted_at: null,
-          },
-        ]),
-      },
-      attendeeActionLog: { create: vi.fn() },
-    };
-
-    const res = await handleExportSelectedAttendees(c as never, db as never);
+    const res = await handleExportSelectedAttendees(buildMockContext() as never, buildMockDb() as never);
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string; field?: string };
     expect(body).toEqual({ error: "validation_failed" });
@@ -178,42 +112,7 @@ describe("handleExportSelectedAttendees artifact failures", () => {
     // to attach.
     buildAttendeesExportArtifact.mockRejectedValue(new Error("unknown_custom_data_field"));
 
-    const c = {
-      req: {
-        json: async () => ({ attendee_ids: ["att-1"], format: "csv" }),
-      },
-      json: (body: unknown, status?: number) =>
-        new Response(JSON.stringify(body), { status: status ?? 200 }),
-      get: () => undefined,
-    };
-
-    const db = {
-      event: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: "evt-export-artifact",
-          title: "Export Artifact",
-          date: new Date("2026-09-01T09:00:00Z"),
-          timezone: "UTC",
-          organization_id: "org-1",
-        }),
-      },
-      attendee: {
-        findMany: vi.fn().mockResolvedValue([
-          {
-            name: "Guest",
-            email: "guest@example.com",
-            company: null,
-            department: null,
-            custom_data: null,
-            ticket_type: null,
-            admitted_at: null,
-          },
-        ]),
-      },
-      attendeeActionLog: { create: vi.fn() },
-    };
-
-    const res = await handleExportSelectedAttendees(c as never, db as never);
+    const res = await handleExportSelectedAttendees(buildMockContext() as never, buildMockDb() as never);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "unknown_custom_data_field" });
   });
@@ -221,42 +120,7 @@ describe("handleExportSelectedAttendees artifact failures", () => {
   it("drops a trailing empty field slug rather than attaching a blank field", async () => {
     buildAttendeesExportArtifact.mockRejectedValue(new Error("validation_failed:"));
 
-    const c = {
-      req: {
-        json: async () => ({ attendee_ids: ["att-1"], format: "csv" }),
-      },
-      json: (body: unknown, status?: number) =>
-        new Response(JSON.stringify(body), { status: status ?? 200 }),
-      get: () => undefined,
-    };
-
-    const db = {
-      event: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: "evt-export-artifact",
-          title: "Export Artifact",
-          date: new Date("2026-09-01T09:00:00Z"),
-          timezone: "UTC",
-          organization_id: "org-1",
-        }),
-      },
-      attendee: {
-        findMany: vi.fn().mockResolvedValue([
-          {
-            name: "Guest",
-            email: "guest@example.com",
-            company: null,
-            department: null,
-            custom_data: null,
-            ticket_type: null,
-            admitted_at: null,
-          },
-        ]),
-      },
-      attendeeActionLog: { create: vi.fn() },
-    };
-
-    const res = await handleExportSelectedAttendees(c as never, db as never);
+    const res = await handleExportSelectedAttendees(buildMockContext() as never, buildMockDb() as never);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "validation_failed" });
   });

@@ -22,6 +22,7 @@ import {
   patchSecuritySettings,
   patchSupportContact,
 } from "../../src/api/client.js";
+import type { SystemSettingsDto } from "../../src/api/types.js";
 
 const mockFetch = vi.mocked(fetchSecuritySettings);
 const mockPatch = vi.mocked(patchSecuritySettings);
@@ -37,6 +38,27 @@ const emptySettings = {
 };
 
 const emptySupportContact = { support_contact_name: null, support_contact_email: null };
+
+/** Mocks a settings fetch and renders the panel, waiting for the URL field to appear. */
+async function renderWithSettings(settings: SystemSettingsDto = emptySettings): Promise<void> {
+  mockFetch.mockResolvedValueOnce(settings);
+  renderWithToast(<GeneralSettingsPanel />);
+  await waitFor(() => {
+    expect(screen.getByLabelText("URL")).toBeTruthy();
+  });
+}
+
+/** Renders with default settings, types `value` into URL, and saves - shared setup for the
+ * client-side URL validation tests below, which only differ in the rejected value and message. */
+async function expectUrlRejected(value: string, toastPattern: RegExp): Promise<void> {
+  await renderWithSettings();
+  fireEvent.change(screen.getByLabelText("URL"), { target: { value } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => {
+    expect(screen.getByTestId("at-toast").textContent).toMatch(toastPattern);
+  });
+  expect(mockPatch).not.toHaveBeenCalled();
+}
 
 beforeEach(() => {
   // Save always calls both patch endpoints (Promise.allSettled), regardless of which section a
@@ -240,86 +262,26 @@ describe("GeneralSettingsPanel", () => {
   });
 
   it("rejects HTTP URL on save without calling either API", async () => {
-    mockFetch.mockResolvedValueOnce(emptySettings);
-    renderWithToast(<GeneralSettingsPanel />);
-    await waitFor(() => {
-      expect(screen.getByLabelText("URL")).toBeTruthy();
-    });
-    fireEvent.change(screen.getByLabelText("URL"), {
-      target: { value: "http://insecure.example.com" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/must use https/i);
-    });
-    expect(mockPatch).not.toHaveBeenCalled();
+    await expectUrlRejected("http://insecure.example.com", /must use https/i);
     expect(mockPatchContact).not.toHaveBeenCalled();
   });
 
   it("rejects query string on save without calling API", async () => {
-    mockFetch.mockResolvedValueOnce(emptySettings);
-    renderWithToast(<GeneralSettingsPanel />);
-    await waitFor(() => {
-      expect(screen.getByLabelText("URL")).toBeTruthy();
-    });
-    fireEvent.change(screen.getByLabelText("URL"), {
-      target: { value: "https://tickets.example.com?preview=1" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/a query/i);
-    });
-    expect(mockPatch).not.toHaveBeenCalled();
+    await expectUrlRejected("https://tickets.example.com?preview=1", /a query/i);
   });
 
   it("rejects embedded credentials on save without calling API", async () => {
-    mockFetch.mockResolvedValueOnce(emptySettings);
-    renderWithToast(<GeneralSettingsPanel />);
-    await waitFor(() => {
-      expect(screen.getByLabelText("URL")).toBeTruthy();
-    });
-    fireEvent.change(screen.getByLabelText("URL"), {
-      target: { value: "https://user:pass@tickets.example.com" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/credentials/i);
-    });
-    expect(mockPatch).not.toHaveBeenCalled();
+    await expectUrlRejected("https://user:pass@tickets.example.com", /credentials/i);
   });
 
   it("rejects a trailing slash on save without calling API", async () => {
-    mockFetch.mockResolvedValueOnce(emptySettings);
-    renderWithToast(<GeneralSettingsPanel />);
-    await waitFor(() => {
-      expect(screen.getByLabelText("URL")).toBeTruthy();
-    });
-    fireEvent.change(screen.getByLabelText("URL"), {
-      target: { value: "https://tickets.example.com/" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/trailing slash/i);
-    });
-    expect(mockPatch).not.toHaveBeenCalled();
+    await expectUrlRejected("https://tickets.example.com/", /trailing slash/i);
   });
 
   it("rejects a malformed HTTPS URL on save without calling API", async () => {
-    mockFetch.mockResolvedValueOnce(emptySettings);
-    renderWithToast(<GeneralSettingsPanel />);
-    await waitFor(() => {
-      expect(screen.getByLabelText("URL")).toBeTruthy();
-    });
     // Passes the https:// prefix and trailing-slash checks, but a space makes it fail to parse
     // as a URL at all - exercises the isValidInstanceUrl try/catch, not just its early returns.
-    fireEvent.change(screen.getByLabelText("URL"), {
-      target: { value: "https://exa mple.com" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/must use https/i);
-    });
-    expect(mockPatch).not.toHaveBeenCalled();
+    await expectUrlRejected("https://exa mple.com", /must use https/i);
   });
 
   it("saves support contact without calling the URL patch when Instance URL is locked", async () => {
