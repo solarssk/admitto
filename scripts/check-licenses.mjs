@@ -25,6 +25,14 @@ import { execFileSync } from "node:child_process";
 // Running it through `npx` gives it an isolated dependency tree instead. Pinned exact version so
 // CI doesn't silently pick up a different license-checker release (and thus a different report)
 // between runs.
+//
+// `--ignore-scripts` is passed to npx itself (before the positional package, so it's consumed as
+// npm-exec's own config flag rather than forwarded to license-checker) - this repo's `npm ci`
+// steps already run with `--ignore-scripts` as supply-chain hardening, and npx's on-demand
+// install of an absent package does not inherit that by default: without it, a cold runner would
+// let license-checker's (or an unpinned transitive dependency's) lifecycle scripts execute during
+// PR CI. license-checker itself needs no install-time script to run correctly, so this has no
+// functional effect on the tool - only on whether its dependency tree's scripts get to run.
 const PINNED_VERSION = "25.0.1";
 
 // Standard OSI-recognized permissive licenses actually present in this repo's dependency tree
@@ -60,7 +68,7 @@ let raw;
 try {
   raw = execFileSync(
     "npx",
-    ["--yes", `license-checker@${PINNED_VERSION}`, "--excludePrivatePackages", "--json"],
+    ["--yes", "--ignore-scripts", `license-checker@${PINNED_VERSION}`, "--excludePrivatePackages", "--json"],
     { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
   );
 } catch (err) {
