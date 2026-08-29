@@ -1,10 +1,11 @@
 name: Semgrep
 
-# PRs: CodeQL (security-extended) is the SAST gate. This workflow blocks merges to
-# `main` and runs weekly — Semgrep and CodeQL rule sets are complementary, not
-# identical (see SECURITY.md).
+# CodeQL (security-extended) and Semgrep rule sets are complementary, not identical
+# (see SECURITY.md) - both now run on every PR so a pattern one engine misses isn't
+# left undetected on main until the weekly schedule.
 
 on:
+  pull_request:
   push:
     branches: [main]
   schedule:
@@ -37,7 +38,7 @@ jobs:
           python -m pip install semgrep==1.136.0 --break-system-packages
 
       - name: Run Semgrep
-        # --error: gate on main merge and weekly schedule. PRs use CodeQL for SAST feedback.
+        # --error: any finding fails the job, on PRs, main merges, and the weekly schedule alike.
         run: |
           semgrep scan \
             --config=p/javascript \

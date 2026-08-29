@@ -145,6 +145,12 @@ workspace (`scripts/*.test.sh`, `scripts/fixtures/`), which are easy to forget s
 follow the per-workspace `test/` convention. Verify empirically after any change here — push, wait
 for the SonarCloud re-scan, then re-query the `UTS` qualifier via the API — don't trust the docs'
 description of the property over what the dashboard actually shows for this project.
+**Setting `sonar.tests` alone, without also excluding those same paths from `sonar.sources`, fails
+the whole project scan** ("source and test file paths overlap") — `sonar.sources` defaults to `.`
+under Automatic Analysis, so every path listed in `sonar.tests` is still also a source path unless
+`sonar.exclusions` mirrors the same list (with a trailing `/**` per directory, since exclusions are
+glob patterns rather than the bare-path list `sonar.tests` takes). Confirmed broken as a hard
+failure (not a warning) on the very next push to `main` after adding `sonar.tests` without this.
 
 **SonarCloud Automatic Analysis cannot ingest coverage, full stop — not a `.sonarcloud.properties`
 config gap.** Confirmed from SonarSource's own docs: "Code coverage information is not supported"

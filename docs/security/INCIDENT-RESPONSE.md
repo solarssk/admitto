@@ -88,10 +88,24 @@ Readiness output is intended for operators — no personal data in responses.
 
 ## Aftercare
 
-1. Root cause and timeline.
+1. Root cause and timeline — see **Post-incident review** below for how deep this needs to go.
 2. Update runbook or perimeter controls if needed.
 3. Privacy / DPO sign-off when personal data was involved (include 72h authority notification decision if GDPR applies).
 4. Patch dependencies or deploy hotfix release if applicable.
+
+### Post-incident review
+
+- **P1:** always write one. Circulate to customer security + platform owner within 5 business days.
+- **P2:** always write one, less formally — a few paragraphs is enough. Circulate to platform owner + event operator.
+- **P3:** a review is optional; the [SECURITY.md](../../SECURITY.md) disclosure record itself usually covers it.
+
+Keep it short and blameless — a paragraph per section, not a full report:
+
+- **What happened** — plain-language summary, who noticed it and how.
+- **Timeline** — detection, containment, resolution, each with a timestamp.
+- **Root cause** — the actual mechanism, not just "human error."
+- **Impact** — what broke, for whom, for how long; personal data involved, if any.
+- **What we're changing** — the concrete follow-up (a runbook update, a new alert, a code fix) with an owner. If there's nothing to change, say why.
 
 ---
 
