@@ -6,11 +6,11 @@ import {
   baseAttendeeDetail,
   baseAttendeeDetailEvent,
   mockAttendeeDetailLoad,
-  mockMatchMedia,
   renderAttendeeDetailRoute,
+  useAttendeeDetailPageLifecycle,
 } from "../test-utils.js";
-import { cleanup, fireEvent, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { loadAttendeeDetailData } from "../../src/attendees/attendeeDetailForm.js";
 
@@ -67,15 +67,7 @@ function chipIconClasses(container: HTMLElement, label: string): string {
   return icon?.className ?? "";
 }
 
-beforeEach(() => {
-  mockMatchMedia(true);
-});
-
-afterEach(() => {
-  cleanup();
-  vi.clearAllMocks();
-  vi.unstubAllGlobals();
-});
+useAttendeeDetailPageLifecycle();
 
 describe("AttendeeDetailPage status strip icon tones (Codecov review — passStatusTone/rsvpTone fallback branches)", () => {
   it("falls back to a neutral pass icon for a status with no dedicated tone (cancelled)", async () => {

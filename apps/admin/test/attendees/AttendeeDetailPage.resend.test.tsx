@@ -6,11 +6,11 @@ import {
   baseAttendeeDetail,
   baseAttendeeDetailEvent,
   mockAttendeeDetailLoad,
-  mockMatchMedia,
   renderAttendeeDetailRoute,
+  useAttendeeDetailPageLifecycle,
 } from "../test-utils.js";
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { loadAttendeeDetailData } from "../../src/attendees/attendeeDetailForm.js";
 
@@ -46,15 +46,7 @@ function renderPage() {
   renderAttendeeDetailRoute(<AttendeeDetailPage />);
 }
 
-beforeEach(() => {
-  mockMatchMedia(true);
-});
-
-afterEach(() => {
-  cleanup();
-  vi.clearAllMocks();
-  vi.unstubAllGlobals();
-});
+useAttendeeDetailPageLifecycle();
 
 describe("AttendeeDetailPage — Resend ticket modal", () => {
   it("opens the resend modal with the 'other address' option available", async () => {

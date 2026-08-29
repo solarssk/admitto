@@ -6,12 +6,12 @@ import {
   baseAttendeeDetail,
   baseAttendeeDetailEvent,
   mockAttendeeDetailLoad,
-  mockMatchMedia,
   renderAttendeeDetailRoute,
   renderWithToast,
+  useAttendeeDetailPageLifecycle,
 } from "../test-utils.js";
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { loadAttendeeDetailData } from "../../src/attendees/attendeeDetailForm.js";
@@ -80,15 +80,10 @@ function renderPage() {
   renderAttendeeDetailRoute(<AttendeeDetailPage />);
 }
 
-beforeEach(() => {
-  mockMatchMedia(true);
-  fetchEventCustomFields.mockResolvedValue([dietaryCustomField]);
-});
+useAttendeeDetailPageLifecycle();
 
-afterEach(() => {
-  cleanup();
-  vi.clearAllMocks();
-  vi.unstubAllGlobals();
+beforeEach(() => {
+  fetchEventCustomFields.mockResolvedValue([dietaryCustomField]);
 });
 
 describe("AttendeeDetailPage profile edit (active event)", () => {

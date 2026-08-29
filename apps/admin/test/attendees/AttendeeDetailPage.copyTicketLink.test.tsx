@@ -6,12 +6,12 @@ import {
   baseAttendeeDetail,
   baseAttendeeDetailEvent,
   mockAttendeeDetailLoad,
-  mockMatchMedia,
   renderAttendeeDetailRoute,
   renderWithToast,
+  useAttendeeDetailPageLifecycle,
 } from "../test-utils.js";
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
@@ -52,15 +52,7 @@ function renderPage() {
   renderAttendeeDetailRoute(<AttendeeDetailPage />);
 }
 
-beforeEach(() => {
-  mockMatchMedia(true);
-});
-
-afterEach(() => {
-  cleanup();
-  vi.clearAllMocks();
-  vi.unstubAllGlobals();
-});
+useAttendeeDetailPageLifecycle();
 
 describe("AttendeeDetailPage — Copy ticket link", () => {
   it("fetches the ticket URL and copies it to the clipboard", async () => {

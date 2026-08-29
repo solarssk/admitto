@@ -6,12 +6,12 @@ import {
   baseAttendeeDetail,
   baseAttendeeDetailEvent,
   mockAttendeeDetailLoad,
-  mockMatchMedia,
   renderAttendeeDetailRoute,
   renderWithToast,
+  useAttendeeDetailPageLifecycle,
 } from "../test-utils.js";
-import { act, cleanup, fireEvent, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, Route } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
@@ -71,15 +71,7 @@ async function openDeleteDialog() {
   await screen.findByText("Permanently delete this attendee?");
 }
 
-beforeEach(() => {
-  mockMatchMedia(true);
-});
-
-afterEach(() => {
-  cleanup();
-  vi.clearAllMocks();
-  vi.unstubAllGlobals();
-});
+useAttendeeDetailPageLifecycle();
 
 describe("AttendeeDetailPage — Delete attendee (GDPR erasure, #356)", () => {
   it("keeps the confirm button disabled until the attendee's exact name is typed", async () => {

@@ -6,11 +6,11 @@ import {
   baseAttendeeDetail,
   baseAttendeeDetailEvent,
   mockAttendeeDetailLoad,
-  mockMatchMedia,
   renderAttendeeDetailRoute,
+  useAttendeeDetailPageLifecycle,
 } from "../test-utils.js";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { loadAttendeeDetailData } from "../../src/attendees/attendeeDetailForm.js";
 
@@ -61,15 +61,7 @@ function renderPage() {
   renderAttendeeDetailRoute(<AttendeeDetailPage />);
 }
 
-beforeEach(() => {
-  mockMatchMedia(true);
-});
-
-afterEach(() => {
-  cleanup();
-  vi.clearAllMocks();
-  vi.unstubAllGlobals();
-});
+useAttendeeDetailPageLifecycle();
 
 describe("AttendeeDetailPage More actions — Resend ticket mail-configured gate (PO review, matches AttendeesPage's Send tickets)", () => {
   it("disables Resend ticket with an explanatory tooltip when neither the event nor the org has a mail transport", async () => {

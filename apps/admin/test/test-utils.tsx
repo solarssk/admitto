@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { fireEvent, render, screen, type RenderOptions } from "@testing-library/react";
-import { vi } from "vitest";
+import { cleanup, fireEvent, render, screen, type RenderOptions } from "@testing-library/react";
+import { afterEach, beforeEach, vi } from "vitest";
 import type { Mock } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
@@ -175,4 +175,21 @@ export function mockMatchMedia(matches: boolean): MockMediaQueryList {
   };
   vi.stubGlobal("matchMedia", () => mq);
   return mq;
+}
+
+/** Shared `beforeEach`/`afterEach` for AttendeeDetailPage.*.test.tsx files that don't need extra
+ * per-test reset beyond `mockMatchMedia`/`cleanup`/`clearAllMocks`/`unstubAllGlobals` - call once at
+ * the top level of the test file, in place of writing both hooks out by hand. A file that also
+ * needs to reset its own mutable state between tests (e.g. AttendeeDetailPage.walletActions.test.tsx
+ * resetting its wallet-toggle `let`s, AttendeeDetailPage.notes.test.tsx resetting `assignments`)
+ * keeps its own `afterEach` instead of calling this. */
+export function useAttendeeDetailPageLifecycle() {
+  beforeEach(() => {
+    mockMatchMedia(true);
+  });
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+  });
 }

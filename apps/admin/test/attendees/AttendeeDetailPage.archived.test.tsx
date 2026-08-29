@@ -7,11 +7,11 @@ import {
   baseAttendeeDetailEvent,
   getTooltipText,
   mockAttendeeDetailLoad,
-  mockMatchMedia,
   renderAttendeeDetailRoute,
+  useAttendeeDetailPageLifecycle,
 } from "../test-utils.js";
-import { cleanup, fireEvent, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { loadAttendeeDetailData } from "../../src/attendees/attendeeDetailForm.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
@@ -44,15 +44,7 @@ function renderPage() {
   renderAttendeeDetailRoute(<AttendeeDetailPage />);
 }
 
-beforeEach(() => {
-  mockMatchMedia(true);
-});
-
-afterEach(() => {
-  cleanup();
-  vi.clearAllMocks();
-  vi.unstubAllGlobals();
-});
+useAttendeeDetailPageLifecycle();
 
 function expectArchivedLock(control: HTMLElement) {
   expect((control as HTMLButtonElement | HTMLSelectElement).disabled).toBe(true);

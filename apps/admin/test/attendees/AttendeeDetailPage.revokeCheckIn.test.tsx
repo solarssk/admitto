@@ -9,9 +9,10 @@ import {
   mockAttendeeDetailLoad,
   mockMatchMedia,
   renderAttendeeDetailRoute,
+  useAttendeeDetailPageLifecycle,
 } from "../test-utils.js";
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { useNavigate } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { loadAttendeeDetailData } from "../../src/attendees/attendeeDetailForm.js";
@@ -67,15 +68,7 @@ function renderPage({ withRouteChangeControl = false } = {}) {
   );
 }
 
-beforeEach(() => {
-  mockMatchMedia(true);
-});
-
-afterEach(() => {
-  cleanup();
-  vi.clearAllMocks();
-  vi.unstubAllGlobals();
-});
+useAttendeeDetailPageLifecycle();
 
 /** Revoke pass/check-in live only inside "More actions" now, on every viewport (the standalone
  * desktop "Revoke" dropdown was folded in there too) - matches accessible names with a regex
