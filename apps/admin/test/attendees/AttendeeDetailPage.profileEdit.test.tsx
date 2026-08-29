@@ -1,33 +1,24 @@
 // @vitest-environment jsdom
+// This import must come first, before every other import in the file - see
+// attendeeDetailPageMocks.ts's own doc comment for why.
+import { mockAttendeeDetailForm, mockAuthProvider, mockOutletEvent } from "./attendeeDetailPageMocks.js";
+import { baseAttendeeDetailEvent, mockMatchMedia, renderWithToast } from "../test-utils.js";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { baseAttendeeDetailEvent, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 
-vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/attendees/attendeeDetailForm.js")>();
-  return {
-    ...actual,
-    loadAttendeeDetailData: (...args: unknown[]) => loadAttendeeDetailData(...args),
-  };
-});
+vi.mock("../../src/attendees/attendeeDetailForm.js", (importOriginal) =>
+  mockAttendeeDetailForm(importOriginal, () => loadAttendeeDetailData),
+);
 
-vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ assignments: [{ role: "admin", scope_type: "organization", scope_id: "org-1" }] }),
-}));
+vi.mock("../../src/auth/AuthProvider.js", () => mockAuthProvider());
 
-vi.mock("react-router", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router")>();
-  return {
-    ...actual,
-    useOutletContext: () => ({
-      event: baseAttendeeDetailEvent,
-    }),
-  };
-});
+vi.mock("react-router", (importOriginal) =>
+  mockOutletEvent(importOriginal, () => baseAttendeeDetailEvent),
+);
 
 const updateAttendee = vi.fn();
 const resendTicket = vi.fn();

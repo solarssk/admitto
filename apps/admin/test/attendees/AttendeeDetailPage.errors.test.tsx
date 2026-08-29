@@ -1,34 +1,27 @@
 // @vitest-environment jsdom
+// This import must come first, before every other import in the file - see
+// attendeeDetailPageMocks.ts's own doc comment for why.
+import { mockAttendeeDetailForm, mockAuthProvider, mockOutletEvent } from "./attendeeDetailPageMocks.js";
+import { baseAttendeeDetailEvent, mockMatchMedia, renderWithToast } from "../test-utils.js";
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ApiError } from "../../src/api/client.js";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { baseAttendeeDetailEvent, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 
-vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/attendees/attendeeDetailForm.js")>();
-  return {
-    ...actual,
-    loadAttendeeDetailData: (...args: unknown[]) => loadAttendeeDetailData(...args),
-  };
-});
+vi.mock("../../src/attendees/attendeeDetailForm.js", (importOriginal) =>
+  mockAttendeeDetailForm(importOriginal, () => loadAttendeeDetailData),
+);
 
-vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ assignments: [{ role: "superadmin", scope_type: "instance", scope_id: null }] }),
-}));
+vi.mock("../../src/auth/AuthProvider.js", () =>
+  mockAuthProvider(() => ({ assignments: [{ role: "superadmin", scope_type: "instance", scope_id: null }] })),
+);
 
-vi.mock("react-router", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router")>();
-  return {
-    ...actual,
-    useOutletContext: () => ({
-      event: baseAttendeeDetailEvent,
-    }),
-  };
-});
+vi.mock("react-router", (importOriginal) =>
+  mockOutletEvent(importOriginal, () => baseAttendeeDetailEvent),
+);
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();

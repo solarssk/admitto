@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
+// This import must come first, before every other import in the file - see
+// attendeeDetailPageMocks.ts's own doc comment for why.
+import { mockAttendeeDetailForm, mockAuthProvider, mockOutletEvent } from "./attendeeDetailPageMocks.js";
+import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import type { RoleAssignment } from "../../src/api/types.js";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 const loadAttendeeDetailData = vi.fn();
 const addAttendeeNote = vi.fn();
@@ -30,27 +33,15 @@ let outletEvent = {
   organization_id: "org-1",
 };
 
-vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/attendees/attendeeDetailForm.js")>();
-  return {
-    ...actual,
-    loadAttendeeDetailData: (...args: unknown[]) => loadAttendeeDetailData(...args),
-  };
-});
+vi.mock("../../src/attendees/attendeeDetailForm.js", (importOriginal) =>
+  mockAttendeeDetailForm(importOriginal, () => loadAttendeeDetailData),
+);
 
 // `assignments`/`currentUser` are read fresh on every call (not captured once at mock setup),
 // so individual tests can reassign them before rendering to exercise admin/superadmin RBAC.
-vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ assignments, user: currentUser }),
-}));
+vi.mock("../../src/auth/AuthProvider.js", () => mockAuthProvider(() => ({ assignments, user: currentUser })));
 
-vi.mock("react-router", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router")>();
-  return {
-    ...actual,
-    useOutletContext: () => ({ event: outletEvent }),
-  };
-});
+vi.mock("react-router", (importOriginal) => mockOutletEvent(importOriginal, () => outletEvent));
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
