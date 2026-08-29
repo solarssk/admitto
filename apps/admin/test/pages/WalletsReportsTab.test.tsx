@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WalletsReportsTab } from "../../src/pages/WalletsReportsTab.js";
@@ -18,20 +19,120 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   fetchEventWalletReports: (...args: unknown[]) => fetchEventWalletReports(...args),
 }));
 
-// react-apexcharts has no jsdom-verified rendering path here (no ResizeObserver polyfill in
-// apps/admin/vitest.config.ts) - stubbing it out lets these tests assert on the *data this
+// Donut/cumulative/bar Tooltip and axis formatters (see below).
+let capturedDonut: { values: number[]; tooltipFormatter?: (value: number) => string } | undefined;
+let capturedCumulative:
+  | {
+      points: Array<{ date: number; value: number }>;
+      yTickFormatter?: (v: number) => string;
+    }
+  | undefined;
+let capturedTap:
+  | {
+      rows: Array<{ label: string; pct: number; count: number }>;
+      yTickFormatter?: (v: number) => string;
+      tooltipFormatter?: (
+        value: number,
+        name: string,
+        props: { payload: { count: number } },
+      ) => [string, undefined];
+      barLabel?: (props: { x: number; y: number; width: number; index: number }) => ReactElement;
+    }
+  | undefined;
+
+// Recharts has no jsdom-verified rendering path here (no ResizeObserver polyfill in
+// apps/admin/vitest.config.ts, and jsdom doesn't do real layout anyway, so ResponsiveContainer
+// would always measure a 0x0 box) - stubbing it out lets these tests assert on the *data this
 // component computes and passes into each chart* (the actual logic worth covering) instead of
-// depending on a third-party SVG chart library rendering correctly under jsdom. `options` isn't
-// JSON-serializable (it carries formatter functions) - capturing the raw objects in render order
-// lets a test invoke a specific chart's own tooltip/label formatters directly, the only way to
-// exercise that logic without a real ApexCharts instance calling them itself.
-const capturedOptions: unknown[] = [];
-vi.mock("react-apexcharts", () => ({
-  default: (props: { series: unknown; type: string; options: unknown }) => {
-    capturedOptions.push(props.options);
-    return <div data-testid="apex-chart" data-series={JSON.stringify(props.series)} data-type={props.type} />;
-  },
-}));
+// depending on a third-party SVG chart library rendering correctly under jsdom. Each mocked
+// chart-root component (RadialBarChart/PieChart/AreaChart/BarChart) renders a marker div carrying
+// its own `data` as a `data-*` JSON attribute (the direct equivalent of ApexCharts' own `series`),
+// and separately captures its Tooltip/axis-formatter and Bar `label` render-prop functions (not
+// JSON-serializable) so a test can invoke them directly - the only way to exercise that logic
+// without a real Recharts instance calling them itself.
+vi.mock("recharts", () => {
+  function childProps(children: ReactNode, type: unknown): any {
+    let found: any;
+    Children.forEach(children, (child) => {
+      if (isValidElement(child) && child.type === type) found = child.props;
+    });
+    return found;
+  }
+
+  const RadialBar = () => null;
+  const PolarAngleAxis = () => null;
+  const Cell = () => null;
+  const Area = () => null;
+  const Bar = () => null;
+  const XAxis = () => null;
+  const YAxis = () => null;
+  const CartesianGrid = () => null;
+  const Tooltip = () => null;
+  const Pie = () => null;
+
+  const ResponsiveContainer = ({ children }: { children: ReactNode }) => <>{children}</>;
+
+  const RadialBarChart = ({ data }: { data: Array<{ value: number }> }) => (
+    <div data-testid="rc-radialbar" data-values={JSON.stringify(data.map((d) => d.value))} />
+  );
+
+  const PieChart = ({ children }: { children: ReactNode }) => {
+    const pie = childProps(children, Pie);
+    const tooltip = childProps(children, Tooltip);
+    const values = ((pie?.data ?? []) as Array<{ count: number }>).map((d) => d.count);
+    capturedDonut = { values, tooltipFormatter: tooltip?.formatter };
+    return <div data-testid="rc-pie" data-values={JSON.stringify(values)} />;
+  };
+
+  const AreaChart = ({
+    data,
+    children,
+  }: {
+    data: Array<{ date: number; value: number }>;
+    children: ReactNode;
+  }) => {
+    const yAxis = childProps(children, YAxis);
+    capturedCumulative = { points: data, yTickFormatter: yAxis?.tickFormatter };
+    return <div data-testid="rc-area" data-points={JSON.stringify(data)} />;
+  };
+
+  const BarChart = ({
+    data,
+    children,
+  }: {
+    data: Array<{ label: string; pct: number; count: number }>;
+    children: ReactNode;
+  }) => {
+    const yAxis = childProps(children, YAxis);
+    const tooltip = childProps(children, Tooltip);
+    const bar = childProps(children, Bar);
+    capturedTap = {
+      rows: data,
+      yTickFormatter: yAxis?.tickFormatter,
+      tooltipFormatter: tooltip?.formatter,
+      barLabel: bar?.label,
+    };
+    return <div data-testid="rc-bar" data-rows={JSON.stringify(data)} />;
+  };
+
+  return {
+    ResponsiveContainer,
+    RadialBarChart,
+    RadialBar,
+    PolarAngleAxis,
+    PieChart,
+    Pie,
+    Cell,
+    AreaChart,
+    Area,
+    BarChart,
+    Bar,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+  };
+});
 
 function fixture(overrides: Partial<EventWalletReportsResponse> = {}): EventWalletReportsResponse {
   return {
@@ -88,25 +189,26 @@ function breakdownRows(container: HTMLElement): Array<{ name: string; meta: stri
   }));
 }
 
-function chartSeries(el: HTMLElement): unknown {
-  return JSON.parse(el.getAttribute("data-series") ?? "null");
+/** Reads the `data-values` JSON attribute the mocked `RadialBarChart`/`PieChart` (see the
+ * "recharts" mock above) captures from each ring's/slice's own `value`/`count` field - the
+ * Recharts equivalent of the old `data-series` attribute. */
+function dataValues(el: HTMLElement): number[] {
+  return JSON.parse(el.getAttribute("data-values") ?? "null");
 }
 
-/** Every captured chart `options` object (see the react-apexcharts mock above) whose own
- * `chart.type` matches - each chart component sets this itself, redundantly with the `type` prop,
- * so it doubles as a stable way to pick out one chart's options among everything captured this
- * render. `options` isn't JSON-serializable (it carries formatter functions), so this is the only
- * way to reach them - chartSeries above only covers the `data-series` attribute. */
-function optionsByType(type: string): Record<string, any>[] {
-  return capturedOptions.filter((o) => (o as { chart?: { type?: string } }).chart?.type === type) as Record<
-    string,
-    any
-  >[];
+function dataPoints(el: HTMLElement): Array<{ date: number; value: number }> {
+  return JSON.parse(el.getAttribute("data-points") ?? "null");
+}
+
+function dataRows(el: HTMLElement): Array<{ label: string; pct: number; count: number }> {
+  return JSON.parse(el.getAttribute("data-rows") ?? "null");
 }
 
 beforeEach(() => {
   mockMatchMedia(true);
-  capturedOptions.length = 0;
+  capturedDonut = undefined;
+  capturedCumulative = undefined;
+  capturedTap = undefined;
 });
 
 afterEach(() => {
@@ -207,7 +309,7 @@ describe("WalletsReportsTab", () => {
     // Adoption gauge: [issuedPct, installedPct, voidedPct] - voidedPct (20) is computed by the
     // component itself via pctOf(cancelled=3, got_pass=15), not read straight off the fixture.
     const adoptionCard = cardByTitle("Wallet adoption");
-    expect(chartSeries(within(adoptionCard).getByTestId("apex-chart"))).toEqual([75, 66.7, 20]);
+    expect(dataValues(within(adoptionCard).getByTestId("rc-radialbar"))).toEqual([75, 66.7, 20]);
     expect(breakdownRows(adoptionCard)).toEqual([
       { name: "Issued", meta: "15 · 75%" },
       { name: "Installed", meta: "10 · 66.7% of issued" },
@@ -218,7 +320,7 @@ describe("WalletsReportsTab", () => {
     // - and the breakdown list's own per-platform percentages, each independently computed by
     // pctOf(count, issued=15).
     const platformCard = cardByTitle("Wallet platform");
-    expect(chartSeries(within(platformCard).getByTestId("apex-chart"))).toEqual([6, 3, 0, 1, 5]);
+    expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([6, 3, 0, 1, 5]);
     expect(breakdownRows(platformCard)).toEqual([
       { name: "Apple Wallet", meta: "6 · 40%" },
       { name: "Google Wallet", meta: "3 · 20%" },
@@ -239,22 +341,23 @@ describe("WalletsReportsTab", () => {
     // Cumulative chart: a leading zero point one day before the first real day is unshifted onto
     // the series, so a 2-row fixture produces 3 plotted points ending at the real final cumulative.
     const cumulativeCard = cardByTitle("Cumulative passes issued");
-    const cumulativeSeries = chartSeries(within(cumulativeCard).getByTestId("apex-chart")) as Array<{
-      data: [number, number][];
-    }>;
-    expect(cumulativeSeries[0]!.data).toHaveLength(3);
-    expect(cumulativeSeries[0]!.data[0]![1]).toBe(0);
-    expect(cumulativeSeries[0]!.data.at(-1)).toEqual([Date.parse("2026-06-02T12:00:00Z"), 5]);
+    const cumulativePoints = dataPoints(within(cumulativeCard).getByTestId("rc-area"));
+    expect(cumulativePoints).toHaveLength(3);
+    expect(cumulativePoints[0]!.value).toBe(0);
+    expect(cumulativePoints.at(-1)).toEqual({ date: Date.parse("2026-06-02T12:00:00Z"), value: 5 });
 
-    // Time-to-tap bar chart: one bar per bucket, series value is each bucket's own pct.
+    // Time-to-tap bar chart: one bar per bucket, each row carrying its own bucket's own pct.
     const tapCard = cardByTitle("Time to wallet tap");
-    const tapSeries = chartSeries(within(tapCard).getByTestId("apex-chart")) as Array<{ data: number[] }>;
-    expect(tapSeries[0]!.data).toEqual([50, 30, 10, 10]);
+    const tapRows = dataRows(within(tapCard).getByTestId("rc-bar"));
+    expect(tapRows.map((r) => r.pct)).toEqual([50, 30, 10, 10]);
 
-    // Admission-by-wallet compare: two independent gauges plus the delta pill between them.
+    // Admission-by-wallet compare: two independent gauges (their own percentage rendered as
+    // plain text now, not a chart-native label) plus the delta pill between them.
     const compareCard = cardByTitle("Admission rate by wallet status");
-    const compareCharts = within(compareCard).getAllByTestId("apex-chart");
-    expect(compareCharts.map((el) => chartSeries(el))).toEqual([[75], [25]]);
+    const compareGauges = within(compareCard).getAllByTestId("rc-radialbar");
+    expect(compareGauges.map((el) => dataValues(el))).toEqual([[75], [25]]);
+    expect(within(compareCard).getByText("75%")).toBeTruthy();
+    expect(within(compareCard).getByText("25%")).toBeTruthy();
     const subs = compareCard.querySelectorAll(".wallets-compare-group__sub");
     expect(subs[0]?.textContent).toBe("9 of 12 attendees");
     expect(subs[1]?.textContent).toBe("2 of 8 attendees");
@@ -308,7 +411,7 @@ describe("WalletsReportsTab", () => {
 
     const cumulativeCard = cardByTitle("Cumulative passes issued");
     expect(within(cumulativeCard).getByText("No passes issued yet.")).toBeTruthy();
-    expect(within(cumulativeCard).queryByTestId("apex-chart")).toBeNull();
+    expect(within(cumulativeCard).queryByTestId("rc-area")).toBeNull();
   });
 
   it("shows 'Not enough data yet' instead of the time-to-tap chart when there's no average yet", async () => {
@@ -323,7 +426,7 @@ describe("WalletsReportsTab", () => {
 
     const tapCard = cardByTitle("Time to wallet tap");
     expect(within(tapCard).getByText("Not enough data yet.")).toBeTruthy();
-    expect(within(tapCard).queryByTestId("apex-chart")).toBeNull();
+    expect(within(tapCard).queryByTestId("rc-bar")).toBeNull();
   });
 
   it("formats chart tooltip/label text with correct singular/plural and rounding", async () => {
@@ -333,30 +436,34 @@ describe("WalletsReportsTab", () => {
     );
     await screen.findByText("Wallet adoption");
 
-    const [donutOptions] = optionsByType("donut");
-    expect(donutOptions!.tooltip.y.formatter(1)).toBe("1 pass");
-    expect(donutOptions!.tooltip.y.formatter(2)).toBe("2 passes");
-    expect(donutOptions!.tooltip.y.formatter(0)).toBe("0 passes");
+    expect(capturedDonut?.tooltipFormatter?.(1)).toBe("1 pass");
+    expect(capturedDonut?.tooltipFormatter?.(2)).toBe("2 passes");
+    expect(capturedDonut?.tooltipFormatter?.(0)).toBe("0 passes");
 
-    const [barOptions] = optionsByType("bar");
-    // buckets fixture: [{count:5},{count:3},{count:1},{count:1}] - dataPointIndex 2 and 3 are the
-    // fixture's two count===1 buckets, exercising the tooltip's own singular/plural branch.
-    expect(barOptions!.dataLabels.formatter(undefined, { dataPointIndex: 0 })).toBe("5");
-    expect(barOptions!.tooltip.y.formatter(50, { dataPointIndex: 0 })).toBe("5 attendees (50%)");
-    expect(barOptions!.tooltip.y.formatter(10, { dataPointIndex: 2 })).toBe("1 attendee (10%)");
-    // opts?.dataPointIndex ?? 0 - undefined opts falls back to bucket 0, not a crash.
-    expect(barOptions!.dataLabels.formatter(undefined, undefined)).toBe("5");
+    // buckets fixture: [{count:5},{count:3},{count:1},{count:1}] - index 2 is one of the
+    // fixture's two count===1 buckets (pct 10, below the 15% "label fits inside the bar"
+    // threshold), exercising the same singular/plural and color-threshold logic the old
+    // ApexCharts dataLabels formatter/color array covered. The bar's own count label is drawn via
+    // the <Bar label> render prop now, not a formatter function - calling it directly with
+    // synthetic geometry is the only way to exercise it without a real Recharts render.
+    const tallBarLabel = capturedTap?.barLabel?.({ x: 0, y: 100, width: 40, index: 0 });
+    expect(tallBarLabel?.props.children).toBe(5);
+    expect(tallBarLabel?.props.fill).toBe("#ffffff");
+    const shortBarLabel = capturedTap?.barLabel?.({ x: 0, y: 100, width: 40, index: 2 });
+    expect(shortBarLabel?.props.children).toBe(1);
+    expect(shortBarLabel?.props.fill).not.toBe("#ffffff");
 
-    const [areaOptions] = optionsByType("area");
-    expect(areaOptions!.yaxis.labels.formatter(2.6)).toBe("3");
-    expect(barOptions!.yaxis.labels.formatter(49.6)).toBe("50%");
+    expect(capturedTap?.tooltipFormatter?.(50, "pct", { payload: { count: 5 } })).toEqual([
+      "5 attendees (50%)",
+      undefined,
+    ]);
+    expect(capturedTap?.tooltipFormatter?.(10, "pct", { payload: { count: 1 } })).toEqual([
+      "1 attendee (10%)",
+      undefined,
+    ]);
 
-    // AdmissionGauge's own radialBar value label (AdoptionGauge, the other radialBar chart on
-    // this tab, hides its value label entirely and has no formatter to exercise).
-    const admissionGaugeOptions = optionsByType("radialBar").find(
-      (o) => typeof o.plotOptions?.radialBar?.dataLabels?.value?.formatter === "function",
-    );
-    expect(admissionGaugeOptions!.plotOptions.radialBar.dataLabels.value.formatter(75)).toBe("75%");
+    expect(capturedCumulative?.yTickFormatter?.(2.6)).toBe("3");
+    expect(capturedTap?.yTickFormatter?.(49.6)).toBe("50%");
   });
 
   it("excludes the Google slice and 'More than one wallet' from the donut and breakdown when Google Wallet is disabled for the event", async () => {
@@ -368,7 +475,7 @@ describe("WalletsReportsTab", () => {
     await screen.findByText("Wallet adoption");
 
     const platformCard = cardByTitle("Wallet platform");
-    expect(chartSeries(within(platformCard).getByTestId("apex-chart"))).toEqual([6, 0, 5]);
+    expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([6, 0, 5]);
     expect(breakdownRows(platformCard)).toEqual([
       { name: "Apple Wallet", meta: "6 · 40%" },
       { name: "Samsung Wallet", meta: "0 · 0%" },
@@ -387,7 +494,7 @@ describe("WalletsReportsTab", () => {
     await screen.findByText("Wallet adoption");
 
     const platformCard = cardByTitle("Wallet platform");
-    expect(chartSeries(within(platformCard).getByTestId("apex-chart"))).toEqual([3, 0, 5]);
+    expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([3, 0, 5]);
     expect(breakdownRows(platformCard)).toEqual([
       { name: "Google Wallet", meta: "3 · 20%" },
       { name: "Samsung Wallet", meta: "0 · 0%" },
@@ -421,7 +528,7 @@ describe("WalletsReportsTab", () => {
 
     const platformCard = cardByTitle("Wallet platform");
     // Apple, Google, More than one wallet, No wallet installed - no Samsung slice.
-    expect(chartSeries(within(platformCard).getByTestId("apex-chart"))).toEqual([6, 3, 1, 5]);
+    expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([6, 3, 1, 5]);
     expect(breakdownRows(platformCard).map((r) => r.name)).toEqual([
       "Apple Wallet",
       "Google Wallet",

@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Superadmins can now see in Logs & Audit when a "remember this device" cookie skipped the two-factor step at login, not just when a device was first remembered. Every prior MFA outcome already left an audit trail except this one - added as the compensating control for the "remember this device" fix above, so a stolen password combined with a stolen trusted-device cookie still leaves a queryable trace even though it's no longer blocked by an IP mismatch.
+- Reports → Wallets' charts now run on `recharts` (MIT) instead of `apexcharts`/`react-apexcharts`, which switched to a revenue-gated dual license (as of the pinned versions) that forbids free-tier redistribution in a self-hosted, redistributed toolkit like Admitto. No visible or behavioral change to the charts themselves.
 
 ## [0.6.3] - 2026-08-26
 
