@@ -25,6 +25,8 @@ let capturedCumulative:
   | {
       points: Array<{ date: number; value: number }>;
       yTickFormatter?: (v: number) => string;
+      yTicks?: number[];
+      labelFormatter?: (label: number) => string;
     }
   | undefined;
 let capturedTap:
@@ -92,7 +94,13 @@ vi.mock("recharts", () => {
     children: ReactNode;
   }) => {
     const yAxis = childProps(children, YAxis);
-    capturedCumulative = { points: data, yTickFormatter: yAxis?.tickFormatter };
+    const tooltip = childProps(children, Tooltip);
+    capturedCumulative = {
+      points: data,
+      yTickFormatter: yAxis?.tickFormatter,
+      yTicks: yAxis?.ticks,
+      labelFormatter: tooltip?.labelFormatter,
+    };
     return <div data-testid="rc-area" data-points={JSON.stringify(data)} />;
   };
 
@@ -468,6 +476,56 @@ describe("WalletsReportsTab", () => {
 
     expect(capturedCumulative?.yTickFormatter?.(2.6)).toBe("3");
     expect(capturedTap?.yTickFormatter?.(49.6)).toBe("50%");
+  });
+
+  it("computes a 'nice' whole-number Y-axis step for the cumulative chart, not a fractional default", async () => {
+    // niceStepMultiplier's three non-trivial bands (normalized <= 2, <= 5, and the > 5 fallback
+    // to 10) - the <= 1 band is already exercised by the main fixture test above (final
+    // cumulative 5 normalizes to exactly 1).
+    const cases: Array<{ finalCumulative: number; ticks: number[] }> = [
+      { finalCumulative: 8, ticks: [0, 2, 4, 6, 8] },
+      { finalCumulative: 20, ticks: [0, 5, 10, 15, 20] },
+      { finalCumulative: 45, ticks: [0, 10, 20, 30, 40, 50] },
+    ];
+
+    for (const { finalCumulative, ticks } of cases) {
+      fetchEventWalletReports.mockResolvedValue(
+        fixture({ issued_by_day: [{ date: "2026-06-01", count: finalCumulative, cumulative: finalCumulative }] }),
+      );
+
+      renderWithToast(
+        <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+      );
+      await screen.findByText("Wallet adoption");
+
+      expect(capturedCumulative?.yTicks).toEqual(ticks);
+      cleanup();
+    }
+  });
+
+  it("formats the cumulative chart's tooltip label as a full date", async () => {
+    fetchEventWalletReports.mockResolvedValue(fixture());
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    expect(capturedCumulative?.labelFormatter?.(Date.parse("2026-06-02T12:00:00Z"))).toBe("02 Jun 2026");
+  });
+
+  it("prevents the browser's default focus-ring outline on a chart click, at the mousedown event level", async () => {
+    fetchEventWalletReports.mockResolvedValue(fixture());
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    // fireEvent's return value mirrors native dispatchEvent: false once a handler in the
+    // (bubbling) chain has called preventDefault() - see preventFocusRing's own comment in
+    // WalletsReportsTab.tsx for why this runs at the event level instead of relying on CSS.
+    const cumulativeCard = cardByTitle("Cumulative passes issued");
+    const notPrevented = fireEvent.mouseDown(within(cumulativeCard).getByTestId("rc-area"));
+    expect(notPrevented).toBe(false);
   });
 
   it("excludes the Google slice and 'More than one wallet' from the donut and breakdown when Google Wallet is disabled for the event", async () => {
