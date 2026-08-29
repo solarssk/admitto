@@ -401,13 +401,6 @@ import { handleReadyz } from "./ops/readyz.js";
 import { handleOpsSystemLogIngest } from "./ops/system-log-ingest.js";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 
-/** Parse check-in history `limit` query param: default 10, clamped to 1–100. */
-function parseCheckinHistoryLimit(raw: string | undefined): number {
-  const limitParam = Number.parseInt(raw ?? "10", 10);
-  const parsed = Number.isFinite(limitParam) ? limitParam : 10;
-  return Math.max(1, Math.min(parsed, 100));
-}
-
 /** Injectable dependencies for `createApp()` (tests and custom deploy wiring). */
 export interface CreateAppOptions {
   prisma?: PrismaClient;

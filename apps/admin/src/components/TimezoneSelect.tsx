@@ -488,6 +488,18 @@ export function TimezoneSelect({
               role="listbox"
               className="timezone-select__list at-scroll"
               aria-label="Select timezone"
+              // aria-required lives here, not on the trigger button above: SonarCloud
+              // typescript:S6811 - aria-required isn't valid on a bare button's implicit
+              // "button" role. Tried role="combobox" on the trigger first, but that changes how
+              // its accessible name gets computed (a combobox's name doesn't come from its own
+              // visible text content the way a button's does) and broke every test asserting the
+              // trigger's name includes the selected timezone - too large a behavior change for
+              // this. listbox does support aria-required directly per the ARIA spec, and the
+              // caller's own visible "*" in its <label> (CreateEventModal's convention) already
+              // tells a user this is required before they ever open the dropdown - this is a
+              // supplementary, spec-valid signal for screen-reader users once it's open, not the
+              // only place required-ness is conveyed.
+              aria-required={required || undefined}
             >
               {optionCount === 0 ? (
                 <li className="timezone-select__empty" role="presentation">
