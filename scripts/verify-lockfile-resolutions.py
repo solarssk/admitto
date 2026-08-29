@@ -26,6 +26,10 @@ ROOT = Path(__file__).resolve().parent.parent
 # but unrelated to workspace package.json vs. lockfile drift, which is what this check guards.
 KNOWN_TRANSITIVE_MISMATCHES = {
     "chokidar",  # svgtofont -> nunjucks wants ^3.3.0; tree hoists 4.x
+    # playwright (pulled in by @playwright/test, apps/admin) declares an exact optional
+    # dependency on fsevents@2.3.2; the rest of the tree already hoists a newer 2.3.x. macOS-only
+    # (fsevents' own package.json restricts it to darwin), so this is invisible on Linux CI.
+    "fsevents",
 }
 
 

@@ -5,6 +5,7 @@
     "CI",
     "COUNT",
     "WEB_TEST_DATABASE_URL",
+    "E2E_SEED_ALLOW_WRITE",
     "EVENT_SLUG",
     "EMAIL_DOMAIN",
     "INSTANCE_ORG_ID",

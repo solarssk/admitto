@@ -190,4 +190,4 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 3. Run `npm run docs:env` and commit `ENV.md`.
 4. `npm run docs:check` fails if this file is stale or a scanned key is missing from the catalog.
 
-_Last generated from 102 distinct keys seen in scan (tests excluded)._
+_Last generated from 104 distinct keys seen in scan (tests excluded)._
