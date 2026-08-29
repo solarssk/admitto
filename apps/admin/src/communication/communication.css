@@ -250,7 +250,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-pill, 999px);
   padding: 2px 10px;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace);
   font-size: var(--fs-xs);
   background: var(--surface-sunken);
   cursor: pointer;
@@ -343,7 +343,7 @@
   padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace);
   font-size: var(--fs-sm);
   resize: vertical;
   /* Scrollbar look: shared .at-scroll (packages/ui) — applied via className, not here. */
@@ -620,7 +620,7 @@
 }
 
 .communication-table .mono {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace);
   font-size: var(--fs-xs);
 }
 

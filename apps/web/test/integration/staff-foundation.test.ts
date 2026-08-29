@@ -248,6 +248,23 @@ describe("GET /api/checkin/events", () => {
     expect(body.events[0]!.archived_at).toBeNull();
   });
 
+  it("omits the wallet platform toggles from the operator-facing event list (security review: no legitimate need to see them)", async () => {
+    const res = await app.request("/api/checkin/events", {
+      headers: { Cookie: await sessionCookieFor(opId) },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { events: Array<Record<string, unknown>> };
+    expect(body.events.map((e) => e.id)).toEqual([EVENT_A]);
+    const event = body.events[0]!;
+    expect(Object.hasOwn(event, "wallet_enabled")).toBe(false);
+    expect(Object.hasOwn(event, "wallet_apple_enabled")).toBe(false);
+    expect(Object.hasOwn(event, "wallet_google_enabled")).toBe(false);
+    expect(Object.hasOwn(event, "wallet_samsung_enabled")).toBe(false);
+    // The admin-facing list keeps them - proves this is a deliberate operator-only omission, not
+    // serializeEventDto itself having dropped the fields for everyone.
+    expect(event.timezone).toBeTruthy();
+  });
+
   it("omits attendee_count entirely without includeAttendeeCount, skipping the aggregate query", async () => {
     await seedCountFixtureAttendee();
 

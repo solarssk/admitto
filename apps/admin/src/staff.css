@@ -114,7 +114,7 @@
   bottom: 6px;
   z-index: 1;
   padding: 2px 6px;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-sm, 3px);
   background: rgba(255, 255, 255, 0.9);
   color: var(--text-secondary);
   font-size: 10px;
@@ -139,11 +139,11 @@
   align-items: center;
   gap: 4px;
   padding: 5px 9px;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-sm, 3px);
   /* Solid surface - translucent mixes disappear over busy OSM tiles. */
   background: var(--surface-card, #fff);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm, 0 1px 2px rgba(15, 23, 42, 0.12));
+  box-shadow: var(--shadow-sm, 0 1px 2px 0 rgba(15, 23, 42, 0.06));
   color: var(--text-secondary);
   font-size: var(--fs-xs);
   font-weight: 500;
@@ -201,7 +201,7 @@
   min-width: 3.25rem;
   padding: 6px 8px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 6px);
+  border-radius: var(--radius-sm, 3px);
   background: var(--surface-muted, var(--at-gray-50, #f8fafc));
   line-height: 1.1;
 }
@@ -1197,8 +1197,8 @@
   overflow-y: auto;
   background: var(--surface-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
-  box-shadow: var(--shadow-lg, 0 8px 24px rgb(15 23 42 / 12%));
+  border-radius: var(--radius-md, 6px);
+  box-shadow: var(--shadow-lg, 0 12px 28px -6px rgba(15, 23, 42, 0.18));
 }
 
 .ck-suggest__hit {
@@ -1258,7 +1258,7 @@
   gap: 8px;
   padding: 8px 12px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius-md, 6px);
   background: var(--surface-card);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -2603,7 +2603,7 @@
 
 .ck-inline-camera__hint {
   position: absolute;
-  bottom: var(--space-2, 8px);
+  bottom: var(--space-2, 0.5rem);
   left: 0;
   right: 0;
   color: rgba(255, 255, 255, 0.7);
@@ -2615,13 +2615,13 @@
 
 .ck-inline-camera__close {
   position: absolute;
-  top: var(--space-2, 8px);
-  right: var(--space-2, 8px);
+  top: var(--space-2, 0.5rem);
+  right: var(--space-2, 0.5rem);
   z-index: 2;
   background: rgba(14, 17, 23, 0.6);
   color: #fff;
   border: none;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm, 3px);
   width: 32px;
   height: 32px;
   display: flex;
@@ -3663,7 +3663,7 @@
   border: 0;
   background: var(--at-gray-100, #f1f5f9);
   color: var(--text-secondary);
-  font-size: var(--fs-xs, 12px);
+  font-size: var(--fs-xs, 0.75rem);
   font-weight: 600;
   padding: 4px 10px;
   border-radius: var(--radius-pill);
@@ -3708,7 +3708,7 @@
   background: var(--surface-card);
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg, 0 12px 28px rgba(0, 0, 0, 0.18));
+  box-shadow: var(--shadow-lg, 0 12px 28px -6px rgba(15, 23, 42, 0.18));
   padding: 8px;
   display: flex;
   flex-direction: column;
@@ -4577,7 +4577,7 @@ output.mail-field-hint {
   font-size: var(--fs-body);
   cursor: pointer;
   color: var(--text-muted);
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm, 3px);
 }
 
 .mail-secret-field__icon-btn:hover {
@@ -4869,7 +4869,7 @@ output.mail-field-hint {
   flex-direction: column;
   gap: 7px;
   background: var(--surface-sunken);
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm, 3px);
   padding: var(--space-3) var(--space-3);
   margin-bottom: 0;
 }
@@ -6016,7 +6016,7 @@ output.mail-field-hint {
   display: block;
   width: 100%;
   max-width: 24rem;
-  padding: var(--space-2) var(--space-8, 2rem) var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-8, 4rem) var(--space-2) var(--space-3);
   border: 1px solid var(--border-strong, var(--border));
   border-radius: var(--radius-sm);
   background: var(--surface-card, #fff) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E") no-repeat right var(--space-3) center;
@@ -6194,7 +6194,7 @@ output.mail-field-hint {
    showing - Clear view in particular used to swap the whole console out for a differently-sized
    light card, which read as the panel breaking rather than a deliberately cleared terminal. */
 .system-log-panel__console-empty {
-  padding-top: var(--space-6, 3rem);
+  padding-top: var(--space-6, 2rem);
   color: var(--at-gray-500);
   text-align: center;
 }
@@ -6355,7 +6355,7 @@ output.mail-field-hint {
   background: var(--surface-card, var(--bg-elevated));
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.08));
+  box-shadow: var(--shadow-md, 0 4px 12px -2px rgba(15, 23, 42, 0.10));
   z-index: 100;
 }
 
@@ -7562,7 +7562,7 @@ output.mail-field-hint {
 .timezone-select__trigger-placeholder {
   font-size: inherit;
   color: var(--text-muted);
-  font-weight: var(--fw-normal, 400);
+  font-weight: var(--fw-regular, 400);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7589,9 +7589,9 @@ output.mail-field-hint {
   gap: 0.5rem;
   padding: 0.65rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 0.5rem);
+  border-radius: var(--radius-md, 6px);
   background: var(--surface-card, #fff);
-  box-shadow: var(--shadow-md, 0 8px 24px rgba(15, 23, 42, 0.12));
+  box-shadow: var(--shadow-md, 0 4px 12px -2px rgba(15, 23, 42, 0.10));
   box-sizing: border-box;
 }
 
@@ -7611,7 +7611,7 @@ output.mail-field-hint {
 }
 
 .timezone-select--compact .timezone-select__trigger-city {
-  font-weight: var(--fw-normal, 400);
+  font-weight: var(--fw-regular, 400);
   white-space: nowrap;
 }
 
@@ -7636,7 +7636,7 @@ output.mail-field-hint {
 
 .timezone-select__list-shell {
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 0.375rem);
+  border-radius: var(--radius-sm, 3px);
   background: var(--surface-page, #f1f5f9);
   /* Scrolling lives on .timezone-select__list. overflow:auto on this rounded box
      would draw the native scrollbar as a hard rectangle across the corner (same
@@ -7685,7 +7685,7 @@ output.mail-field-hint {
   width: 100%;
   padding: 0.45rem 0.55rem;
   border: 0;
-  border-radius: var(--radius-sm, 0.375rem);
+  border-radius: var(--radius-sm, 3px);
   background: transparent;
   font: inherit;
   text-align: left;
@@ -7770,7 +7770,7 @@ output.mail-field-hint {
   width: 100%;
   height: var(--control-h);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 0.5rem);
+  border-radius: var(--radius-md, 6px);
   background: var(--surface-card, #fff);
   overflow: hidden;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -7859,7 +7859,7 @@ output.mail-field-hint {
   width: 100%;
   height: var(--control-h);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 0.5rem);
+  border-radius: var(--radius-md, 6px);
   background: var(--surface-card, #fff);
   overflow: hidden;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -7938,9 +7938,9 @@ output.mail-field-hint {
   max-width: min(13rem, calc(100vw - 32px));
   padding: 0.7rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 0.5rem);
+  border-radius: var(--radius-md, 6px);
   background: var(--surface-card, #fff);
-  box-shadow: var(--shadow-md, 0 8px 24px rgba(15, 23, 42, 0.12));
+  box-shadow: var(--shadow-md, 0 4px 12px -2px rgba(15, 23, 42, 0.10));
 }
 
 .time-input__picker--twelve-hour {
@@ -7970,7 +7970,7 @@ output.mail-field-hint {
   overscroll-behavior: contain;
   scroll-snap-type: y mandatory;
   scrollbar-width: none;
-  border-radius: var(--radius-sm, 0.375rem);
+  border-radius: var(--radius-sm, 3px);
   background: linear-gradient(to bottom, var(--surface-page, #f1f5f9), transparent 16%, transparent 84%, var(--surface-page, #f1f5f9));
 }
 
@@ -7988,7 +7988,7 @@ output.mail-field-hint {
   min-height: 2rem;
   padding: 0.25rem 0.4rem;
   border: 0;
-  border-radius: var(--radius-sm, 0.375rem);
+  border-radius: var(--radius-sm, 3px);
   background: transparent;
   color: var(--text-primary);
   font: inherit;
@@ -8055,9 +8055,9 @@ output.mail-field-hint {
   width: 18.5rem;
   padding: 0.75rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 0.5rem);
+  border-radius: var(--radius-md, 6px);
   background: var(--surface-card, #fff);
-  box-shadow: var(--shadow-md, 0 8px 24px rgba(15, 23, 42, 0.12));
+  box-shadow: var(--shadow-md, 0 4px 12px -2px rgba(15, 23, 42, 0.10));
 }
 
 /* Below the same 768px breakpoint useIsDesktop() switches on, a DatePicker can render inside
@@ -8093,7 +8093,7 @@ output.mail-field-hint {
   width: 2rem;
   height: 2rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 0.375rem);
+  border-radius: var(--radius-sm, 3px);
   background: var(--surface-page, #f1f5f9);
   color: var(--text-secondary);
   cursor: pointer;
@@ -8132,7 +8132,7 @@ output.mail-field-hint {
   justify-content: center;
   min-height: 2rem;
   border: none;
-  border-radius: var(--radius-sm, 0.375rem);
+  border-radius: var(--radius-sm, 3px);
   background: transparent;
   color: var(--text-primary);
   font: inherit;
