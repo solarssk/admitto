@@ -410,7 +410,9 @@ export function TransportTileGrid({
   const focusAndSelect = (index: number) => {
     if (locked) return;
     const wrapped = (index + tiles.length) % tiles.length;
-    onSelect(tiles[wrapped].value);
+    // wrapped is in [0, tiles.length): this only fires from an already-rendered tile's
+    // keydown, so tiles.length >= 1 and the modulo above is in-bounds.
+    onSelect(tiles[wrapped]!.value);
     tileRefs.current[wrapped]?.focus();
   };
 

@@ -32,7 +32,10 @@ const HIDDEN_FIXED_PANEL: CSSProperties = {
 };
 function parseIsoDate(iso: string): { y: number; m: number; d: number } | null {
   if (!ISO_DATE_RE.test(iso)) return null;
-  const [y, m, d] = iso.split("-").map((part) => Number.parseInt(part, 10));
+  const [yStr, mStr, dStr] = iso.split("-");
+  const y = Number.parseInt(yStr ?? "", 10);
+  const m = Number.parseInt(mStr ?? "", 10);
+  const d = Number.parseInt(dStr ?? "", 10);
   if (!Number.isFinite(y) || m < 1 || m > 12 || d < 1 || d > 31) return null;
   return { y, m, d };
 }

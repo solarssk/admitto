@@ -213,35 +213,39 @@ export function CameraOverlayItemIssuing({
           Next
         </Button>
       ) : (
-        <Button
-          type="button"
-          variant="primary"
-          size="lg"
-          block
-          disabled={!canAct || pending}
-          aria-label={itemActionAriaLabel(currentItem.key, action)}
-          onClick={() => {
-            const key = currentItem.key;
-            if (!itemGuard.start(key)) return;
-            setLocallyIssued((prev) => new Map(prev).set(key, action));
-            goForward();
-            void onItemAction(key, action).then((success) => {
-              if (success) return;
-              // Request actually failed — clear the guard so a retry (after
-              // navigating Back) works, and drop the optimistic mark so the
-              // summary doesn't misreport a false "issued".
-              itemGuard.finish(key);
-              setLocallyIssued((prev) => {
-                if (!prev.has(key)) return prev;
-                const next = new Map(prev);
-                next.delete(key);
-                return next;
+        // action is always defined here: isDone() (alreadyDone) is false only
+        // when actions.length > 0, so actions[0] is in-bounds.
+        action && (
+          <Button
+            type="button"
+            variant="primary"
+            size="lg"
+            block
+            disabled={!canAct || pending}
+            aria-label={itemActionAriaLabel(currentItem.key, action)}
+            onClick={() => {
+              const key = currentItem.key;
+              if (!itemGuard.start(key)) return;
+              setLocallyIssued((prev) => new Map(prev).set(key, action));
+              goForward();
+              void onItemAction(key, action).then((success) => {
+                if (success) return;
+                // Request actually failed — clear the guard so a retry (after
+                // navigating Back) works, and drop the optimistic mark so the
+                // summary doesn't misreport a false "issued".
+                itemGuard.finish(key);
+                setLocallyIssued((prev) => {
+                  if (!prev.has(key)) return prev;
+                  const next = new Map(prev);
+                  next.delete(key);
+                  return next;
+                });
               });
-            });
-          }}
-        >
-          {itemActionLabel(currentItem.key, action)}
-        </Button>
+            }}
+          >
+            {itemActionLabel(currentItem.key, action)}
+          </Button>
+        )
       )}
       {/* Dots only, no visible "Item X of Y" label (kept for screen readers
           via .sr-only below), folded into the existing nav row instead of

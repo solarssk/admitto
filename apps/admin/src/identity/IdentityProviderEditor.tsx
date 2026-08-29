@@ -87,12 +87,16 @@ function mappingsToBody(rows: MappingRow[]): ProviderRequestBody["mappings"] {
 
 function mappingsEqual(a: MappingRow[], b: MappingRow[]): boolean {
   if (a.length !== b.length) return false;
-  return a.every((row, i) =>
-    row.group === b[i].group &&
-    row.role === b[i].role &&
-    row.scope_type === b[i].scope_type &&
-    row.scope_id === b[i].scope_id,
-  );
+  return a.every((row, i) => {
+    // b[i] is in-bounds: a.length === b.length was checked above, and i ranges over a's indices.
+    const other = b[i]!;
+    return (
+      row.group === other.group &&
+      row.role === other.role &&
+      row.scope_type === other.scope_type &&
+      row.scope_id === other.scope_id
+    );
+  });
 }
 
 function draftFromDetail(detail: ProviderDetailDto): ProviderDraft {
