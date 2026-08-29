@@ -153,8 +153,7 @@ async function seed(client: PrismaClient) {
 
   const password_hash = await hashPassword(PASSWORD);
 
-  await seedOrgAndEvent(client, { id: ORG_A, name: "Org Import A", slug: "admin-import-a" }, { id: EVENT_A, title: "Import Event A", slug: "event-admin-import-a", date: "2026-10-01", organizationId: ORG_A });
-  await seedOrgAndEvent(client, { id: ORG_B, name: "Org Import B", slug: "admin-import-b" }, { id: EVENT_B, title: "Import Event B", slug: "event-admin-import-b", date: "2026-11-01", organizationId: ORG_B });
+  await Promise.all([seedOrgAndEvent(client, { id: ORG_A, name: "Org Import A", slug: "admin-import-a" }, { id: EVENT_A, title: "Import Event A", slug: "event-admin-import-a", date: "2026-10-01", organizationId: ORG_A }), seedOrgAndEvent(client, { id: ORG_B, name: "Org Import B", slug: "admin-import-b" }, { id: EVENT_B, title: "Import Event B", slug: "event-admin-import-b", date: "2026-11-01", organizationId: ORG_B })]);
 
   ({ adminId } = await createAdminAndOp(client, { adminEmail: EMAIL_ADMIN, opEmail: EMAIL_OP, passwordHash: password_hash, orgId: ORG_A, eventId: EVENT_A }));
   await enrollConfirmedTotp(client, adminId);
