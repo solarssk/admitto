@@ -250,7 +250,7 @@ describe("GET /api/checkin/events", () => {
 
   it("omits the wallet platform toggles from the operator-facing event list (security review: no legitimate need to see them)", async () => {
     const res = await app.request("/api/checkin/events", {
-      headers: { Cookie: await sessionCookieFor(opId) },
+      headers: { Cookie: await sessionCookieFor(prisma, opId) },
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { events: Array<Record<string, unknown>> };
