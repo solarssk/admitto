@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
-import { connectionStateValue } from "../test-utils.js";
 
 vi.mock("../../src/checkin/CameraScanner.js", () => ({
   CameraScanner: () => <div data-testid="camera-scanner" />,
@@ -29,9 +28,7 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ deviceLabel: "desk-1", assignments: [] }),
 }));
 
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => connectionStateValue("connected"),
-}));
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 vi.mock("../../src/hooks/useIsDesktop.js", () => ({
   useIsDesktop: () => true,

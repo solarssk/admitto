@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { CheckInPage } from "../../src/pages/CheckInPage.js";
-import { connectionStateValue } from "../test-utils.js";
 
 // Captures the real onScan callback CameraOverlay wires into CameraScanner
 // (the same one a real camera decode would invoke) so a scan can be
@@ -58,9 +57,7 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ deviceLabel: "desk-1", assignments: [] }),
 }));
 
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => connectionStateValue("connected"),
-}));
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),
