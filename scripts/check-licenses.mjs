@@ -50,7 +50,7 @@ const PINNED_VERSION = "25.0.1";
 // every copyleft license (GPL/AGPL/LGPL/MPL/EPL) and any "SEE LICENSE IN LICENSE"/custom license -
 // is intentionally left off so it surfaces in the report below for manual review, rather than
 // being silently allowed.
-const ALLOWLIST = [
+const ALLOWLIST = new Set([
   "MIT",
   "ISC",
   "Apache-2.0",
@@ -71,7 +71,7 @@ const ALLOWLIST = [
   // Both halves of this compound license are themselves permissive (Zlib is BSD/MIT-equivalent),
   // so unlike an "X OR <copyleft>" expression there is no compliance choice to make here.
   "(MIT AND Zlib)",
-];
+]);
 
 let raw;
 try {
@@ -88,14 +88,15 @@ try {
 
 const packages = JSON.parse(raw);
 const entries = Object.entries(packages);
-const flagged = entries.filter(([, info]) => !ALLOWLIST.includes(info.licenses));
+const flagged = entries.filter(([, info]) => !ALLOWLIST.has(info.licenses));
 
 console.log(`license check: scanned ${entries.length} third-party package(s).`);
 console.log(`license check: ${entries.length - flagged.length} allowed, ${flagged.length} flagged.`);
 
 if (flagged.length > 0) {
   console.log("\nFlagged (license not on the allowlist - needs human review):");
-  for (const [pkg, info] of flagged.sort(([a], [b]) => a.localeCompare(b))) {
+  const sortedFlagged = flagged.toSorted(([a], [b]) => a.localeCompare(b));
+  for (const [pkg, info] of sortedFlagged) {
     console.log(`  - ${pkg}: ${info.licenses} (${info.repository ?? "no repository listed"})`);
   }
   console.log(
