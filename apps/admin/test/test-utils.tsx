@@ -1,9 +1,11 @@
 import type { ReactNode } from "react";
 import { fireEvent, render, screen, type RenderOptions } from "@testing-library/react";
 import { vi } from "vitest";
-import { MemoryRouter } from "react-router";
+import type { Mock } from "vitest";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import type { TicketTypeDto } from "../src/api/types.js";
+import { AttendeeDetailPage } from "../src/pages/AttendeeDetailPage.js";
 
 /** Renders UI wrapped in `ToastProvider` for components that call `useToast()`. */
 export function renderWithToast(ui: ReactNode, options?: Omit<RenderOptions, "wrapper">) {
@@ -86,6 +88,43 @@ export const baseAttendeeDetail = {
   action_log: [] as unknown[],
   event_items: [] as unknown[],
 };
+
+/** Shared body for AttendeeDetailPage.*.test.tsx's own local `mockLoad(detail)` wrapper - resolves
+ * the mocked `loadAttendeeDetailData` once with `detail`. Kept as a thin per-file wrapper (calling
+ * this) rather than switching every `mockLoad(baseDetail())` call site (dozens per file) to pass
+ * `loadAttendeeDetailData` explicitly - only the wrapper's own body needed to change. `extra` covers
+ * the one file (profileEdit) that resolves with real `attributeFields` instead of `[]`. */
+export function mockAttendeeDetailLoad(
+  loadAttendeeDetailData: Mock,
+  detail: Record<string, unknown>,
+  extra: { attributeFields?: unknown[]; itemsWarning?: unknown } = {},
+) {
+  loadAttendeeDetailData.mockResolvedValueOnce({
+    detail,
+    attributeFields: extra.attributeFields ?? [],
+    itemsWarning: extra.itemsWarning ?? null,
+  });
+}
+
+/** Shared body for AttendeeDetailPage.*.test.tsx's own local `renderPage(...)` wrapper - same
+ * reasoning as `mockAttendeeDetailLoad` above: kept as a per-file wrapper so call sites don't
+ * change, only what the wrapper delegates to. `element` is what renders at the attendee-detail
+ * route (plain `<AttendeeDetailPage />`, or wrapped with a file-local `<RouteChangeControl />` for
+ * files that test stale-request handling across a route change); `extraRoutes` covers
+ * deleteAttendee's own extra "back to the list" route. */
+export function renderAttendeeDetailRoute(
+  element: ReactNode,
+  options: { extraRoutes?: ReactNode; initialEntry?: string } = {},
+) {
+  return renderWithToast(
+    <MemoryRouter initialEntries={[options.initialEntry ?? "/admin/events/evt-1/attendees/att-1"]}>
+      <Routes>
+        <Route path="/admin/events/:eventId/attendees/:attendeeId" element={element} />
+        {options.extraRoutes}
+      </Routes>
+    </MemoryRouter>,
+  );
+}
 
 /** A disabled control's reason now shows via the shared <Tooltip> (packages/ui) - a
  * hover-triggered, portal-rendered bubble (role="tooltip"), not a static title= attribute.

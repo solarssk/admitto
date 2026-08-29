@@ -2,10 +2,17 @@
 // This import must come first, before every other import in the file - see
 // attendeeDetailPageMocks.ts's own doc comment for why.
 import { mockAttendeeDetailForm, mockAuthProvider, mockModule, mockOutletEvent } from "./attendeeDetailPageMocks.js";
-import { baseAttendeeDetail, baseAttendeeDetailEvent, getTooltipText, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import {
+  baseAttendeeDetail,
+  baseAttendeeDetailEvent,
+  getTooltipText,
+  mockAttendeeDetailLoad,
+  mockMatchMedia,
+  renderAttendeeDetailRoute,
+} from "../test-utils.js";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 
 const loadAttendeeDetailData = vi.fn();
@@ -42,7 +49,7 @@ function baseDetail(overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 function mockLoad(detail: ReturnType<typeof baseDetail>) {
-  loadAttendeeDetailData.mockResolvedValueOnce({ detail, attributeFields: [], itemsWarning: null });
+  mockAttendeeDetailLoad(loadAttendeeDetailData, detail);
 }
 
 function RouteChangeControl() {
@@ -55,20 +62,11 @@ function RouteChangeControl() {
 }
 
 function renderPage({ withRouteChangeControl = false } = {}) {
-  renderWithToast(
-    <MemoryRouter initialEntries={["/admin/events/evt-1/attendees/att-1"]}>
-      <Routes>
-        <Route
-          path="/admin/events/:eventId/attendees/:attendeeId"
-          element={
-            <>
-              {withRouteChangeControl && <RouteChangeControl />}
-              <AttendeeDetailPage />
-            </>
-          }
-        />
-      </Routes>
-    </MemoryRouter>,
+  renderAttendeeDetailRoute(
+    <>
+      {withRouteChangeControl && <RouteChangeControl />}
+      <AttendeeDetailPage />
+    </>,
   );
 }
 
