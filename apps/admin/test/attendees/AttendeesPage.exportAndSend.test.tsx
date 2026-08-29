@@ -85,11 +85,8 @@ vi.mock("@admitto/ui", async (importOriginal) => {
   };
 });
 
-// Deliberately duplicated in AttendeesPage.bulkSelection.test.tsx, not missed: vi.mock() has no
-// vi.spyOn()-style call-through-by-default shortcut for ES modules (Vitest maintainers confirmed
-// this gap, closed "not planned" - vitest-dev/vitest#6100), so this hoisted capture-the-real-
-// implementation dance is the necessary workaround, not a naive reinvention. Two sites is below
-// the Rule of Three - extract into a shared helper only if a third file needs this exact pattern.
+// Same hoisted capture-the-real-implementation pattern as AttendeesPage.bulkSelection.test.tsx -
+// see that file for why it's intentionally kept duplicated rather than extracted.
 const { pollBulkSendCompletion, setPollBulkSendCompletionActual, getPollBulkSendCompletionActual } =
   vi.hoisted(() => {
     let actual: typeof import("../../src/attendees/pollBulkSendCompletion.js").pollBulkSendCompletion;
