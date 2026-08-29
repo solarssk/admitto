@@ -17,6 +17,15 @@
  *   node scripts/check-licenses.mjs
  */
 import { execFileSync } from "node:child_process";
+import { dirname, join } from "node:path";
+
+// Resolve npx by absolute path instead of letting the OS search PATH for a bare "npx" -
+// SonarCloud javascript:S4036 (CWE-88 untrusted search path): a PATH entry earlier than the
+// real npx that's writable by something less trusted than this CI job could substitute a
+// malicious binary. The official Node.js distribution (what actions/setup-node installs, and
+// what every local install used for this repo bundles) always ships npx as a sibling of the
+// running node executable, so this needs no separate lookup or dependency.
+const NPX_PATH = join(dirname(process.execPath), "npx");
 
 // license-checker itself is intentionally NOT a project devDependency: this repo's root
 // `overrides.brace-expansion` (needed by the modern glob/minimatch used elsewhere) breaks
@@ -67,7 +76,7 @@ const ALLOWLIST = [
 let raw;
 try {
   raw = execFileSync(
-    "npx",
+    NPX_PATH,
     ["--yes", "--ignore-scripts", `license-checker@${PINNED_VERSION}`, "--excludePrivatePackages", "--json"],
     { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
   );
