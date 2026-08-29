@@ -44,7 +44,10 @@ top of it.
   `AGENTS.md` Compounding rules entry for why it's a literal list, not a glob — `sonar.tests` never
   accepts wildcards, under either analysis mode, per SonarSource's
   ["Setting initial scope"](https://docs.sonarsource.com/sonarqube-cloud/managing-your-projects/project-analysis/setting-analysis-scope/setting-initial-scope)
-  docs), and `sonar.javascript.lcov.reportPaths` pointing at every workspace's LCOV output. This
+  docs), a matching `sonar.exclusions` (`sonar.sources` defaults to `.` when unset, which would
+  otherwise re-include every `sonar.tests` path as source too and fail the scan on that overlap —
+  the same fix `.sonarcloud.properties` already needed, mirrored here), and
+  `sonar.javascript.lcov.reportPaths` pointing at every workspace's LCOV output. This
   file is **inert today** — Automatic Analysis never reads `sonar-project.properties` (it reads
   `.sonarcloud.properties` instead, per SonarSource's own docs on that file). It only takes effect
   once the workflow step below exists and Automatic Analysis is off.
