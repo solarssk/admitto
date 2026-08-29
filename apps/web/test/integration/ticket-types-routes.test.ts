@@ -4,10 +4,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
-import { sessionCookieFor } from "../helpers/session-cookie.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 import { createAdminAndOp } from "../helpers/seed-org-and-event.js";
+import { bootSingleOrgFixture } from "../helpers/boot-single-org-fixture.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -72,9 +72,7 @@ async function seed(client: PrismaClient) {
 beforeAll(async () => {
   prisma = createTestPrismaClient();
   await seed(prisma);
-  app = buildTestApp({ prisma, checkinToken: "ticket-types-checkin-token-32-chr!!", adminDistRoot });
-  adminCookie = await sessionCookieFor(prisma, adminId);
-  opCookie = await sessionCookieFor(prisma, opId);
+  ({ app, adminCookie, opCookie } = await bootSingleOrgFixture({ prisma, adminId, opId, checkinToken: "ticket-types-checkin-token-32-chr!!", adminDistRoot }));
 });
 
 afterAll(async () => {
