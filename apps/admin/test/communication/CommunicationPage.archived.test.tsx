@@ -5,40 +5,26 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 import { getTooltipText, renderWithToast } from "../test-utils.js";
+import { communicationApiMocks } from "./communicationApiMock.js";
 
-const fetchEventTemplates = vi.fn();
-const fetchEventTemplate = vi.fn();
-const fetchEventTemplateById = vi.fn();
-const fetchEventOverview = vi.fn();
-const fetchEventDeliveries = vi.fn();
-
+const {
+  fetchEventTemplates,
+  fetchEventTemplate,
+  fetchEventTemplateById,
+  fetchEventOverview,
+  fetchEventDeliveries,
+} = communicationApiMocks;
 
 vi.mock("../../src/connection/ConnectionStateProvider.js");
 
-vi.mock("../../src/api/client.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
-  TemplateValidationError: class TemplateValidationError extends Error {},
-  fetchEventTemplates: (...args: unknown[]) => fetchEventTemplates(...args),
-  fetchEventTemplate: (...args: unknown[]) => fetchEventTemplate(...args),
-  fetchEventTemplateById: (...args: unknown[]) => fetchEventTemplateById(...args),
-  fetchEventOverview: (...args: unknown[]) => fetchEventOverview(...args),
-  fetchEventDeliveries: (...args: unknown[]) => fetchEventDeliveries(...args),
-  previewEventTemplate: vi.fn().mockResolvedValue({ subject: "", html: "" }),
-  previewEventTemplateById: vi.fn().mockResolvedValue({ subject: "", html: "" }),
-  saveEventTemplate: vi.fn(),
-  saveEventTemplateById: vi.fn(),
-  createEventTemplate: vi.fn(),
-  deleteEventTemplate: vi.fn(),
-  updateEventTemplateMetadata: vi.fn(),
-  testSendEventTemplate: vi.fn(),
-  testSendEventTemplateById: vi.fn(),
-  sendEventBulk: vi.fn(),
-  fetchBulkSendStatus: vi.fn(),
-  fetchTicketTypes: vi.fn().mockResolvedValue([]),
-  fetchEventMailSettings: vi.fn().mockResolvedValue({
-    fields: { fromName: { value: null }, fromAddress: { value: null } },
-  }),
-}));
+// buildCommunicationApiMock is loaded via a dynamic import *inside* the factory (same technique
+// as checkInScanApiSetup.ts) rather than a plain top-level import - vi.mock() calls hoist above
+// regular imports, and this factory calls it in an immediately-evaluated position, which hits a
+// temporal-dead-zone ReferenceError on a plain static import (confirmed by trying it first).
+vi.mock("../../src/api/client.js", async (importOriginal) => {
+  const { buildCommunicationApiMock } = await import("./communicationApiMock.js");
+  return buildCommunicationApiMock(await importOriginal<typeof import("../../src/api/client.js")>());
+});
 
 const blockerState = {
   state: "unblocked" as "unblocked" | "blocked",
