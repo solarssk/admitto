@@ -10,7 +10,7 @@ import type {
   EventResourceDto,
 } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
-import { makeTicketType, renderWithToast } from "../test-utils.js";
+import { connectionStateValue, makeTicketType, renderWithToast } from "../test-utils.js";
 import { formatEventCalendarDate } from "../../src/utils/event-dates.js";
 
 const fetchEventOverview = vi.fn();
@@ -36,7 +36,7 @@ vi.mock("../../src/hooks/useEventStream.js", () => ({
 }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ state: "connected", reportApiError }),
+  useConnectionState: () => connectionStateValue("connected", reportApiError),
 }));
 
 vi.mock("react-router", async () => {
@@ -60,14 +60,8 @@ vi.mock("react-router", async () => {
   };
 });
 
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
+vi.mock("../../src/api/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchEventOverview: (...args: unknown[]) => fetchEventOverview(...args),
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
   patchEventNote: vi.fn(),

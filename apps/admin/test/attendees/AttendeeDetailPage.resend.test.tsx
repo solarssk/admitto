@@ -3,31 +3,8 @@ import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
-import { baseAttendeeDetailEvent, mockMatchMedia, renderWithToast } from "../test-utils.js";
-
-const loadAttendeeDetailData = vi.fn();
-
-vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/attendees/attendeeDetailForm.js")>();
-  return {
-    ...actual,
-    loadAttendeeDetailData: (...args: unknown[]) => loadAttendeeDetailData(...args),
-  };
-});
-
-vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ assignments: [{ role: "admin", scope_type: "organization", scope_id: "org-1" }] }),
-}));
-
-vi.mock("react-router", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-router")>();
-  return {
-    ...actual,
-    useOutletContext: () => ({
-      event: baseAttendeeDetailEvent,
-    }),
-  };
-});
+import { baseAttendeeDetailEvent, makeOrgAdminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { loadAttendeeDetailData } from "./attendeeDetailPageSetup.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();

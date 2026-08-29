@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { UserMenu } from "../../src/components/UserMenu.js";
 import type { AuthUser, RoleAssignment } from "../../src/api/types.js";
+import { makeOrgAdminAssignment, makeSuperadminAssignment } from "../test-utils.js";
 
 const USER: AuthUser = {
   id: "u1",
@@ -57,13 +58,13 @@ describe("UserMenu", () => {
   });
 
   it("shows the Superadmin role badge for a superadmin", () => {
-    renderMenu([{ role: "superadmin", scope_type: "instance", scope_id: null }]);
+    renderMenu([makeSuperadminAssignment()]);
     fireEvent.click(screen.getByRole("button", { name: /Ola Operator/ }));
     expect(screen.getByText("Superadmin")).toBeTruthy();
   });
 
   it("shows the Administrator role badge for an org admin", () => {
-    renderMenu([{ role: "admin", scope_type: "organization", scope_id: "org-1" }]);
+    renderMenu([makeOrgAdminAssignment()]);
     fireEvent.click(screen.getByRole("button", { name: /Ola Operator/ }));
     expect(screen.getByText("Administrator")).toBeTruthy();
   });

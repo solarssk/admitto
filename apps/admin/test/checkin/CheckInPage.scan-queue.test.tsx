@@ -15,32 +15,22 @@ const undoLastCheckIn = vi.fn();
 const lookupCheckInAttendees = vi.fn();
 const fetchTicketTypes = vi.fn();
 
-vi.mock("../../src/hooks/useEventStream.js", () => ({
-  useEventStream: () => ({ connected: true, status: "connected" }),
-}));
+vi.mock("../../src/hooks/useEventStream.js");
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ deviceLabel: "desk-1", assignments: [] }),
 }));
 
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ state: "connected", reportApiError: vi.fn() }),
-}));
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
 vi.mock("../../src/hooks/useIsDesktop.js", () => ({
   useIsDesktop: () => true,
   isDesktopViewport: () => true,
 }));
 
-vi.mock("../../src/api/client.js", () => ({
+vi.mock("../../src/api/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
   fetchCheckInHistory: (...args: unknown[]) => fetchCheckInHistory(...args),
   fetchCheckInStats: (...args: unknown[]) => fetchCheckInStats(...args),
   fetchCheckInOpsConfig: (...args: unknown[]) => fetchCheckInOpsConfig(...args),

@@ -6,6 +6,7 @@ import { createMemoryRouter } from "react-router";
 import { render } from "@testing-library/react";
 import { ToastProvider } from "@admitto/ui";
 import { CfAccessEditor } from "../../src/identity/CfAccessEditor.js";
+import { clickDiscardUnsavedChanges, clickKeepEditing } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -351,7 +352,7 @@ describe("CfAccessEditor (slice 4)", () => {
     const teamInput = await screen.findByDisplayValue("https://t");
     fireEvent.change(teamInput, { target: { value: "https://edited" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    await clickDiscardUnsavedChanges();
     await waitFor(() => expect(router.state.location.pathname).toBe("/admin/settings/identity/providers"));
   });
 
@@ -361,7 +362,7 @@ describe("CfAccessEditor (slice 4)", () => {
     const teamInput = await screen.findByDisplayValue("https://t");
     fireEvent.change(teamInput, { target: { value: "https://edited" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Keep editing" }));
+    await clickKeepEditing();
     expect(router.state.location.pathname).toBe("/admin/settings/identity/cloudflare");
     expect(screen.getByDisplayValue("https://edited")).toBeTruthy();
   });
@@ -374,7 +375,7 @@ describe("CfAccessEditor (slice 4)", () => {
     act(() => {
       router.navigate("/admin/settings/identity/providers");
     });
-    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    await clickDiscardUnsavedChanges();
     await waitFor(() => expect(router.state.location.pathname).toBe("/admin/settings/identity/providers"));
   });
 
@@ -386,7 +387,7 @@ describe("CfAccessEditor (slice 4)", () => {
     act(() => {
       router.navigate("/admin/settings/identity/providers");
     });
-    fireEvent.click(await screen.findByRole("button", { name: "Keep editing" }));
+    await clickKeepEditing();
     expect(router.state.location.pathname).toBe("/admin/settings/identity/cloudflare");
   });
 

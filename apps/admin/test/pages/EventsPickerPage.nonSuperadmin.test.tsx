@@ -7,7 +7,7 @@ import { EventsPickerPage } from "../../src/pages/EventsPickerPage.js";
 // A plain org admin, not a superadmin — exercises the non-superadmin copy branch of the
 // "everything's archived" EmptyState, which AdminPages.errors.test.tsx's file-wide
 // superadmin mock can never reach.
-const adminAssignments = [{ role: "admin", scope_type: "organization", scope_id: "org-1" }];
+const adminAssignments = [makeOrgAdminAssignment()];
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ assignments: adminAssignments }),
@@ -24,6 +24,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
 });
 
 import { fetchAdminEvents } from "../../src/api/client.js";
+import { makeOrgAdminAssignment } from "../test-utils.js";
 
 afterEach(cleanup);
 

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { EventSettingsPage } from "../../src/pages/EventSettingsPage.js";
-import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { makeSuperadminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 // Focused regression coverage for the shared-layout staleness fix: Settings is
 // the only page that mutates `archived_at`/other event fields, but every
@@ -15,7 +15,7 @@ import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 // (instead of extending the large pre-existing EventSettingsPage test suite)
 // to avoid merge conflicts with sibling PRs that also touch that file.
 
-const superadminAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
+const superadminAssignments = [makeSuperadminAssignment()];
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ assignments: superadminAssignments }),

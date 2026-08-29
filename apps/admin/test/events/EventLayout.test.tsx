@@ -8,14 +8,8 @@ import type { EventDto } from "../../src/api/types.js";
 
 const fetchAdminEvents = vi.fn();
 
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
+vi.mock("../../src/api/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchAdminEvents: (...args: unknown[]) => fetchAdminEvents(...args),
 }));
 

@@ -4,10 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { UsersPage } from "../../src/pages/UsersPage.js";
-import { mockMatchMedia } from "../test-utils.js";
+import { makeSuperadminAssignment, mockMatchMedia } from "../test-utils.js";
 import type { UserListItemDto } from "../../src/api/types.js";
 
-const SUPERADMIN_ASSIGNMENTS = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
+const SUPERADMIN_ASSIGNMENTS = [makeSuperadminAssignment()];
 const useAuthMock = vi.fn(() => ({
   assignments: SUPERADMIN_ASSIGNMENTS as Array<{ role: string; scope_type: string; scope_id: string | null }>,
   user: { id: "current-admin" },

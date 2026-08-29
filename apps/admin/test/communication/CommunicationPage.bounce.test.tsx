@@ -5,6 +5,7 @@ import { RouterProvider } from "react-router/dom";
 import { MemoryRouter, Route, Routes, createMemoryRouter } from "react-router";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
+import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
 
 const fetchEventOverview = vi.fn();
 const fetchEventTemplate = vi.fn();
@@ -12,7 +13,6 @@ const fetchEventTemplates = vi.fn();
 const fetchEventDeliveries = vi.fn();
 const dismissBounce = vi.fn();
 const resendTicket = vi.fn();
-const reportApiError = vi.fn();
 
 // A fresh `vi.fn()` per call (as this used to return) breaks CommunicationPage's own
 // memoization: `reportApiError` sits in the dependency array of 3 effects (initial template
@@ -22,18 +22,10 @@ const reportApiError = vi.fn();
 // null - a CI-only race, since a fast/idle local machine never lingers in that window long
 // enough to observe it. Every sibling CommunicationPage test file already hoists this the same
 // way; this file was the one holdout.
-vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
-  useConnectionState: () => ({ reportApiError }),
-}));
+vi.mock("../../src/connection/ConnectionStateProvider.js");
 
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
+vi.mock("../../src/api/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   TemplateValidationError: class TemplateValidationError extends Error {},
   fetchEventOverview: (...args: unknown[]) => fetchEventOverview(...args),
   fetchEventTemplate: (...args: unknown[]) => fetchEventTemplate(...args),

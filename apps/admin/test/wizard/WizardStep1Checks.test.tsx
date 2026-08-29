@@ -7,14 +7,8 @@ import { renderWithToast } from "../test-utils.js";
 const fetchSetupChecks = vi.fn();
 const onChecksOk = vi.fn();
 
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    constructor(status: number, message: string) {
-      super(message);
-      this.status = status;
-    }
-  },
+vi.mock("../../src/api/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchSetupChecks: (...args: unknown[]) => fetchSetupChecks(...args),
 }));
 

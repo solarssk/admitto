@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LocationSettingsPanel } from "../../src/settings/LocationSettingsPanel.js";
-import { renderWithToast } from "../test-utils.js";
+import { makeOrgAdminAssignment, makeSuperadminAssignment, renderWithToast } from "../test-utils.js";
 import type { EventLocationDto, GeocodingResultDto, MapTileConfigDto } from "../../src/api/types.js";
 
 // jsdom doesn't implement ResizeObserver - the real MapPicker rendered inside this panel uses
@@ -16,7 +16,7 @@ class MockResizeObserver {
 vi.stubGlobal("ResizeObserver", MockResizeObserver);
 
 let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [
-  { role: "superadmin", scope_type: "instance", scope_id: null },
+  makeSuperadminAssignment(),
 ];
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
@@ -204,7 +204,7 @@ function renderPanelWithRoutes() {
 }
 
 beforeEach(() => {
-  mockAssignments = [{ role: "superadmin", scope_type: "instance", scope_id: null }];
+  mockAssignments = [makeSuperadminAssignment()];
   mockFetchLocation.mockReset();
   mockSaveLocation.mockReset();
   mockSearch.mockReset();
@@ -718,7 +718,7 @@ describe("LocationSettingsPanel — venue search", () => {
   });
 
   it("warns about missing Support contact on load, before any search", async () => {
-    mockAssignments = [{ role: "admin", scope_type: "organization", scope_id: "org-1" }];
+    mockAssignments = [makeOrgAdminAssignment()];
     mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
     mockFetchTiles.mockResolvedValue({ ...TILE_CONFIG, contact_configured: false });
     renderPanelWithRoutes();

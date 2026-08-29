@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ImportPage } from "../../src/pages/ImportPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
-import { getTooltipText, renderWithToast } from "../test-utils.js";
+import { getTooltipText, makeOrgAdminAssignment, renderWithToast } from "../test-utils.js";
 
 const fetchEventCustomFields = vi.fn();
 
@@ -13,19 +13,11 @@ vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
 }));
 
 vi.mock("../../src/auth/AuthProvider.js", () => ({
-  useAuth: () => ({ assignments: [{ role: "admin", scope_type: "organization", scope_id: "org-1" }] }),
+  useAuth: () => ({ assignments: [makeOrgAdminAssignment()] }),
 }));
 
-vi.mock("../../src/api/client.js", () => ({
-  ApiError: class ApiError extends Error {
-    status: number;
-    code?: string;
-    constructor(status: number, message: string, code?: string) {
-      super(message);
-      this.status = status;
-      this.code = code;
-    }
-  },
+vi.mock("../../src/api/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchEventCustomFields: (...args: unknown[]) => fetchEventCustomFields(...args),
   previewImport: vi.fn(),
   fetchImportHistory: vi.fn().mockResolvedValue([]),
