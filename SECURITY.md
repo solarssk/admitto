@@ -48,8 +48,16 @@ Active automated checks in this repository:
 | Trivy (report-only) | Container image scan (OS + libraries), SARIF to Security tab | Every merge to `main` | `.github/workflows/ci.yml` (`docker-build`) |
 | Trivy | Container image scan (OS + libraries); **scan-before-push** CRITICAL gate | Release tags + manual dispatch | `.github/workflows/publish-container.yml` |
 | CycloneDX SBOM | Container image bill of materials | Release tags | `.github/workflows/publish-container.yml` (artifact + release asset) |
-| Codecov | Test coverage reporting (no merge gate) | Every PR | `.github/workflows/ci.yml` (`test-web` / `test-admin` / `test-rest`) |
-| SonarCloud | Code quality and maintainability (SAST-adjacent, e.g. hardcoded-secret patterns, injection-prone constructs) | Automatic analysis on every PR and `main` push | GitHub App (`sonarcloud.io`) — not a workflow file in this repo |
+| Codecov | Test coverage reporting; `codecov/project` and `codecov/patch` status checks + PR comment configured (`codecov.yml`), not yet in `main`'s required checks so still non-blocking today | Every PR | `.github/workflows/ci.yml` (`test-web` / `test-admin` / `test-rest`) |
+| SonarCloud | Code quality and maintainability (SAST-adjacent, e.g. hardcoded-secret patterns, injection-prone constructs). Automatic Analysis cannot ingest coverage under any configuration (confirmed from SonarSource's own docs); a CI-based migration that would add a coverage quality-gate condition is planned but blocked on a human generating a `SONAR_TOKEN` — see [docs/dev/sonarcloud-ci-coverage-migration.md](docs/dev/sonarcloud-ci-coverage-migration.md) | Automatic analysis on every PR and `main` push | GitHub App (`sonarcloud.io`) — not a workflow file in this repo |
+| OWASP ZAP baseline | DAST, unauthenticated passive scan (no merge gate) | Manual dispatch + weekly | `.github/workflows/dast-baseline.yml` |
+
+**DAST scope (2026-08-29):** the ZAP baseline scan runs against the same docker-compose stack
+`deploy-smoke.yml` builds, unauthenticated — it only reaches `/`, `/login`, `/healthz`, and
+whatever its spider finds from there without credentials. Nothing behind `/admin` or `/operator`
+is covered yet; an authenticated crawl is future scope. Report-only for now: results are a
+workflow artifact, not a Security-tab SARIF upload (ZAP's baseline scanner has no native SARIF
+output) and do not block any pipeline.
 
 **Codecov data:** CI uploads LCOV coverage reports (file paths and hit counts). No secrets, attendee PII, or production credentials are sent. Treat Codecov as development tooling; customer production data stays in customer PostgreSQL.
 
