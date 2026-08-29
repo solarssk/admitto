@@ -3,10 +3,11 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { hashPassword } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { sessionCookieFor } from "../helpers/session-cookie.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -162,11 +163,6 @@ async function seed(client: PrismaClient) {
   });
 }
 
-async function sessionCookieFor(userId: string): Promise<string> {
-  const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
-  return `admitto_session=${rawToken}`;
-}
-
 /** The "badge" item is backfilled lazily (see event-items.ts), so fetch its
  * id via the list endpoint instead of assuming a fixed seeded id. */
 async function getBadgeItemId(eventId: string): Promise<string> {
@@ -191,8 +187,8 @@ beforeAll(async () => {
     skipCheckinBootValidation: true,
     adminDistRoot,
   });
-  adminCookie = await sessionCookieFor(adminId);
-  opCookie = await sessionCookieFor(opId);
+  adminCookie = await sessionCookieFor(prisma, adminId);
+  opCookie = await sessionCookieFor(prisma, opId);
 });
 
 afterAll(async () => {
@@ -1225,7 +1221,6 @@ describe("content_fields conflict under real concurrency", () => {
     expect(owners).toHaveLength(1);
   });
 });
-
 
 type OpsConfigBody = {
   badge_at_entry: boolean;

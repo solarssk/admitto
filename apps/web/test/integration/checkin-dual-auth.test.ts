@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { hashPassword, createSession, SESSION_STAGE } from "@admitto/auth";
+import { hashPassword } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import {
   createCheckinPreAuth,
@@ -16,6 +16,7 @@ import { handleCheckinStats } from "../../src/admin/checkin-api-routes.js";
 import { handleCheckinTicketTypes } from "../../src/admin/ticket-types-routes.js";
 import { rateLimit } from "../../src/rate-limit/policies.js";
 import { InMemoryRateLimitStore, type RateLimitStore } from "../../src/rate-limit/index.js";
+import { sessionCookieFor } from "../helpers/session-cookie.js";
 
 const TOKEN = "test-operator-token-abc123";
 const ORG_A = "org-dual-a";
@@ -160,16 +161,11 @@ afterAll(async () => {
   await prisma?.$disconnect();
 });
 
-async function sessionCookieFor(userId: string): Promise<string> {
-  const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
-  return `admitto_session=${rawToken}`;
-}
-
 describe("createCheckinPreAuth + eventScope — session matrix", () => {
   const dualTestApp = () => buildSessionApp(false);
 
   it("operator matching event → 200", async () => {
-    const cookie = await sessionCookieFor(USER_OP_A);
+    const cookie = await sessionCookieFor(prisma, USER_OP_A);
     const res = await dualTestApp().request(`/api/checkin/test?eventId=${EVENT_A}`, {
       headers: { Cookie: cookie },
     });
@@ -177,7 +173,7 @@ describe("createCheckinPreAuth + eventScope — session matrix", () => {
   });
 
   it("operator wrong event → 403", async () => {
-    const cookie = await sessionCookieFor(USER_OP_A);
+    const cookie = await sessionCookieFor(prisma, USER_OP_A);
     const res = await dualTestApp().request(`/api/checkin/test?eventId=${EVENT_B}`, {
       headers: { Cookie: cookie },
     });
@@ -185,7 +181,7 @@ describe("createCheckinPreAuth + eventScope — session matrix", () => {
   });
 
   it("admin matching org → 200", async () => {
-    const cookie = await sessionCookieFor(USER_ADMIN_A);
+    const cookie = await sessionCookieFor(prisma, USER_ADMIN_A);
     const res = await dualTestApp().request(`/api/checkin/test?eventId=${EVENT_A}`, {
       headers: { Cookie: cookie },
     });
@@ -193,7 +189,7 @@ describe("createCheckinPreAuth + eventScope — session matrix", () => {
   });
 
   it("admin wrong org → 403", async () => {
-    const cookie = await sessionCookieFor(USER_ADMIN_A);
+    const cookie = await sessionCookieFor(prisma, USER_ADMIN_A);
     const res = await dualTestApp().request(`/api/checkin/test?eventId=${EVENT_B}`, {
       headers: { Cookie: cookie },
     });
@@ -201,7 +197,7 @@ describe("createCheckinPreAuth + eventScope — session matrix", () => {
   });
 
   it("superadmin → 200", async () => {
-    const cookie = await sessionCookieFor(USER_SUPER);
+    const cookie = await sessionCookieFor(prisma, USER_SUPER);
     const res = await dualTestApp().request(`/api/checkin/test?eventId=${EVENT_B}`, {
       headers: { Cookie: cookie },
     });
@@ -209,7 +205,7 @@ describe("createCheckinPreAuth + eventScope — session matrix", () => {
   });
 
   it("missing eventId → 400", async () => {
-    const cookie = await sessionCookieFor(USER_SUPER);
+    const cookie = await sessionCookieFor(prisma, USER_SUPER);
     const res = await dualTestApp().request("/api/checkin/test", { headers: { Cookie: cookie } });
     expect(res.status).toBe(400);
   });
@@ -285,7 +281,7 @@ describe("scan middleware order", () => {
   });
 
   it("authenticated invalid JSON → 400", async () => {
-    const cookie = await sessionCookieFor(USER_OP_A);
+    const cookie = await sessionCookieFor(prisma, USER_OP_A);
     const res = await scanApp().request("/api/checkin/scan", {
       method: "POST",
       headers: { Cookie: cookie, "Content-Type": "application/json", ...sameOrigin },
@@ -295,7 +291,7 @@ describe("scan middleware order", () => {
   });
 
   it("session auth uses body.eventId", async () => {
-    const cookie = await sessionCookieFor(USER_OP_A);
+    const cookie = await sessionCookieFor(prisma, USER_OP_A);
     const res = await scanApp().request("/api/checkin/scan", {
       method: "POST",
       headers: { Cookie: cookie, "Content-Type": "application/json", ...sameOrigin },
@@ -305,7 +301,7 @@ describe("scan middleware order", () => {
   });
 
   it("rejects cross-origin session scan before body parse", async () => {
-    const cookie = await sessionCookieFor(USER_OP_A);
+    const cookie = await sessionCookieFor(prisma, USER_OP_A);
     const res = await scanApp().request("/api/checkin/scan", {
       method: "POST",
       headers: {
@@ -322,7 +318,7 @@ describe("scan middleware order", () => {
   it("cross-origin session scan 403 does not consume per-user scan quota", async () => {
     const store = new InMemoryRateLimitStore();
     const scanApp = () => buildScanApp(false, store);
-    const cookie = await sessionCookieFor(USER_OP_A);
+    const cookie = await sessionCookieFor(prisma, USER_OP_A);
     const crossOrigin = {
       Cookie: cookie,
       "Content-Type": "application/json",
@@ -397,7 +393,7 @@ describe("GET /api/checkin/stats", () => {
         },
       ],
     });
-    const cookie = await sessionCookieFor(USER_OP_A);
+    const cookie = await sessionCookieFor(prisma, USER_OP_A);
     const res = await buildStatsApp().request(`/api/checkin/stats?eventId=${EVENT_A}`, {
       headers: { Cookie: cookie },
     });
@@ -408,7 +404,7 @@ describe("GET /api/checkin/stats", () => {
   });
 
   it("excludes revoked and cancelled attendees from both counts (#380)", async () => {
-    const cookie = await sessionCookieFor(USER_OP_A);
+    const cookie = await sessionCookieFor(prisma, USER_OP_A);
     const fetchStats = async () =>
       (await (
         await buildStatsApp().request(`/api/checkin/stats?eventId=${EVENT_A}`, {
@@ -461,7 +457,7 @@ describe("GET /api/checkin/ticket-types", () => {
     await prisma.ticketType.createMany({
       data: [{ event_id: EVENT_A, key: "vip", label: "VIP", color: "purple" }],
     });
-    const cookie = await sessionCookieFor(USER_OP_A);
+    const cookie = await sessionCookieFor(prisma, USER_OP_A);
     const res = await buildTicketTypesApp().request(`/api/checkin/ticket-types?eventId=${EVENT_A}`, {
       headers: { Cookie: cookie },
     });
@@ -473,7 +469,7 @@ describe("GET /api/checkin/ticket-types", () => {
   });
 
   it("rejects an operator scoped to a different event", async () => {
-    const cookie = await sessionCookieFor(USER_OP_A);
+    const cookie = await sessionCookieFor(prisma, USER_OP_A);
     const res = await buildTicketTypesApp().request(`/api/checkin/ticket-types?eventId=${EVENT_B}`, {
       headers: { Cookie: cookie },
     });

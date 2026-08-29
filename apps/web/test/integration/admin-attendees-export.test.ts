@@ -4,7 +4,7 @@ import ExcelJS from "exceljs";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { hashPassword } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
@@ -13,6 +13,7 @@ import { drainExportJobs } from "@admitto/tickets";
 import { getDefaultStorage } from "@admitto/storage";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
+import { sessionCookieFor } from "../helpers/session-cookie.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const CHECKIN_TOKEN = "admin-export-checkin-token-32chars!!";
@@ -81,7 +82,6 @@ async function exportAttendeesAndDrain(path: string, cookie: string): Promise<Re
     { headers: { Cookie: cookie } },
   );
 }
-
 
 async function seed(client: PrismaClient) {
   const eventIds = [EVENT_EX, EVENT_EX_B, EVENT_EMPTY, EVENT_EX_JACKET, EVENT_EX_SHIRT, EVENT_EX_INJ_HEADER];
@@ -330,11 +330,6 @@ async function seed(client: PrismaClient) {
   });
 }
 
-async function sessionCookieFor(userId: string): Promise<string> {
-  const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
-  return `admitto_session=${rawToken}`;
-}
-
 async function parseXlsxRows(buf: ArrayBuffer): Promise<string[][]> {
   const sheet = await parseXlsxSheet(buf);
   if (!sheet) return [];
@@ -380,8 +375,8 @@ beforeAll(async () => {
     skipCheckinBootValidation: true,
     adminDistRoot,
   });
-  adminCookie = await sessionCookieFor(adminId);
-  opCookie = await sessionCookieFor(opId);
+  adminCookie = await sessionCookieFor(prisma, adminId);
+  opCookie = await sessionCookieFor(prisma, opId);
 });
 
 afterAll(async () => {

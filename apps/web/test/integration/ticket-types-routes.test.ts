@@ -3,10 +3,11 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { hashPassword } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { sessionCookieFor } from "../helpers/session-cookie.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -85,11 +86,6 @@ async function seed(client: PrismaClient) {
   });
 }
 
-async function sessionCookieFor(userId: string): Promise<string> {
-  const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
-  return `admitto_session=${rawToken}`;
-}
-
 beforeAll(async () => {
   prisma = createTestPrismaClient();
   await seed(prisma);
@@ -102,8 +98,8 @@ beforeAll(async () => {
     skipCheckinBootValidation: true,
     adminDistRoot,
   });
-  adminCookie = await sessionCookieFor(adminId);
-  opCookie = await sessionCookieFor(opId);
+  adminCookie = await sessionCookieFor(prisma, adminId);
+  opCookie = await sessionCookieFor(prisma, opId);
 });
 
 afterAll(async () => {

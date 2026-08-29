@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient, Prisma } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { hashPassword } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { drainImportJobs } from "@admitto/import";
 import { getDefaultStorage, resetDefaultStorageForTests } from "@admitto/storage";
@@ -13,6 +13,7 @@ import { buildXlsxBuffer } from "../../src/admin/xlsx-to-csv.js";
 import { createApp } from "../../src/app.js";
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
+import { sessionCookieFor } from "../helpers/session-cookie.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -231,10 +232,6 @@ async function seed(client: PrismaClient) {
 }
 
 /** Create a full-session cookie string for the given user id. */
-async function sessionCookieFor(userId: string): Promise<string> {
-  const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
-  return `admitto_session=${rawToken}`;
-}
 
 beforeAll(async () => {
   uploadDir = await mkdtemp(join(tmpdir(), "admitto-import-"));
@@ -254,9 +251,9 @@ beforeAll(async () => {
     skipCheckinBootValidation: true,
     adminDistRoot,
   });
-  adminCookie = await sessionCookieFor(adminId);
+  adminCookie = await sessionCookieFor(prisma, adminId);
   const opUser = await prisma.user.findUniqueOrThrow({ where: { email: EMAIL_OP } });
-  opCookie = await sessionCookieFor(opUser.id);
+  opCookie = await sessionCookieFor(prisma, opUser.id);
 });
 
 beforeEach(async () => {
@@ -1200,7 +1197,7 @@ describe("POST /api/admin/events/:eventId/import/commit", () => {
           confirmed_at: new Date(),
         },
       });
-      const superCookie = await sessionCookieFor(superUser.id);
+      const superCookie = await sessionCookieFor(prisma, superUser.id);
       const current = await prisma.attendee.count({
         where: { event_id: EVENT_A, status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },
       });

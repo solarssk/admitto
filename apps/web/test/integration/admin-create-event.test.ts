@@ -3,11 +3,12 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient, Prisma } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { hashPassword } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { sessionCookieFor } from "../helpers/session-cookie.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -109,9 +110,9 @@ beforeAll(async () => {
     skipCheckinBootValidation: true,
     adminDistRoot,
   });
-  superCookie = await sessionCookieFor(superId);
-  adminCookie = await sessionCookieFor(adminId);
-  opCookie = await sessionCookieFor(opId);
+  superCookie = await sessionCookieFor(prisma, superId);
+  adminCookie = await sessionCookieFor(prisma, adminId);
+  opCookie = await sessionCookieFor(prisma, opId);
 });
 
 afterAll(async () => {
@@ -119,11 +120,6 @@ afterAll(async () => {
   else delete process.env.INSTANCE_ORG_ID;
   await prisma?.$disconnect();
 });
-
-async function sessionCookieFor(userId: string): Promise<string> {
-  const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
-  return `admitto_session=${rawToken}`;
-}
 
 async function postCreateEvent(
   cookie: string,

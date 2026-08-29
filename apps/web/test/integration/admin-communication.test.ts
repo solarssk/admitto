@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { createSession, hashPassword, SESSION_STAGE, setSetting, SETTING_INSTANCE_URL } from "@admitto/auth";
+import { hashPassword, setSetting, SETTING_INSTANCE_URL } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { setMailSettings } from "@admitto/mailer-config";
 import {
@@ -28,6 +28,7 @@ import {
   MAX_TEMPLATE_TEST_SEND_BODY_BYTES,
 } from "../../src/admin/communication-api-routes.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { sessionCookieFor } from "../helpers/session-cookie.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -423,11 +424,6 @@ async function seed(client: PrismaClient) {
   });
 }
 
-async function sessionCookieFor(userId: string): Promise<string> {
-  const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
-  return `admitto_session=${rawToken}`;
-}
-
 function createMailAppWithoutInjectedBaseUrl(): ReturnType<typeof createApp> {
   const prevNode = process.env.NODE_ENV;
   process.env.NODE_ENV = "development";
@@ -460,8 +456,8 @@ beforeAll(async () => {
     adminDistRoot,
     mailDeliveryDeps: { exportSink: (p) => { exported.push(p); } },
   });
-  adminCookie = await sessionCookieFor(adminId);
-  opCookie = await sessionCookieFor(opId);
+  adminCookie = await sessionCookieFor(prisma, adminId);
+  opCookie = await sessionCookieFor(prisma, opId);
 });
 
 afterAll(async () => {

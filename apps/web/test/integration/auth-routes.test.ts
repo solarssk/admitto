@@ -4,6 +4,7 @@ import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword } from "@admitto/auth";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { sessionCookie } from "../helpers/session-cookie.js";
 
 const CHECKIN_TOKEN = "test-checkin-token-for-vitest-32chars!";
 const EVENT_ID = "event-web-auth-routes";
@@ -82,13 +83,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await prisma?.$disconnect();
 });
-
-function sessionCookie(res: Response): string | undefined {
-  const setCookie = res.headers.getSetCookie?.() ?? [];
-  const line = setCookie.find((c) => c.startsWith("admitto_session="));
-  if (!line) return undefined;
-  return line.split(";")[0];
-}
 
 function hasHttpOnlySessionCookie(res: Response): boolean {
   const setCookie = res.headers.getSetCookie?.() ?? [];

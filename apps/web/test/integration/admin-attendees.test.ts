@@ -26,6 +26,7 @@ import { WALLET_MESSAGE_SEND_BODY_MAX_BYTES } from "../../src/admin/wallet-messa
 import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { sessionCookieFor } from "../helpers/session-cookie.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -245,11 +246,6 @@ async function seed(client: PrismaClient) {
   });
 }
 
-async function sessionCookieFor(userId: string): Promise<string> {
-  const { rawToken } = await createSession(prisma, { userId, stage: SESSION_STAGE.FULL });
-  return `admitto_session=${rawToken}`;
-}
-
 /** Runs `fn` with a session cookie for a temporary superadmin, reassigning the sole existing
  * superadmin role row to it for the duration (RoleAssignment_single_superadmin_key allows only
  * one superadmin instance-wide) and restoring the prior assignment afterwards - same pattern as
@@ -288,7 +284,7 @@ async function withSuperadminCookie(fn: (cookie: string) => Promise<void>): Prom
         data: { user_id: superUser.id, role: "superadmin", scope_type: "instance", scope_id: null },
       });
     }
-    await fn(await sessionCookieFor(superUser.id));
+    await fn(await sessionCookieFor(prisma, superUser.id));
   } finally {
     if (priorSuper) {
       await prisma.roleAssignment.update({
@@ -337,8 +333,8 @@ beforeAll(async () => {
     adminDistRoot,
     mailDeliveryDeps: { exportSink: (p) => { exported.push(p); } },
   });
-  adminCookie = await sessionCookieFor(adminId);
-  opCookie = await sessionCookieFor(opId);
+  adminCookie = await sessionCookieFor(prisma, adminId);
+  opCookie = await sessionCookieFor(prisma, opId);
 });
 
 afterAll(async () => {
