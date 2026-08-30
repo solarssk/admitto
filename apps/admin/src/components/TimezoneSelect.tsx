@@ -502,13 +502,13 @@ export function TimezoneSelect({
               aria-required={required || undefined}
             >
               {optionCount === 0 ? (
-                <li className="timezone-select__empty" role="presentation">
+                <li className="timezone-select__empty" role="presentation" /* NOSONAR - decorative row inside role="listbox", not an <img>; no semantic tag replaces this ARIA technique */>
                   No matching timezones
                 </li>
               ) : (
                 listItems.map((item) =>
                   item.kind === "group" ? (
-                    <li key={item.id} className="timezone-select__group" role="presentation">
+                    <li key={item.id} className="timezone-select__group" role="presentation" /* NOSONAR - group-header row inside role="listbox", not an <img>; keeps it out of AT's option list */>
                       {item.label}
                     </li>
                   ) : (
