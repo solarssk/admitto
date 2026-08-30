@@ -188,7 +188,7 @@ function renderFieldMessage(
 
 type TimePickerPanelProps = {
   controlId: string;
-  panelRef: RefObject<HTMLDivElement | null>;
+  panelRef: RefObject<HTMLFieldSetElement | null>;
   twelveHour: boolean;
   pickerAbove: boolean;
   pickerStyle: CSSProperties;
@@ -197,9 +197,9 @@ type TimePickerPanelProps = {
 };
 
 /** The hour/minute/(AM-PM) column grid rendered inside the fixed-position popup. Not a modal -
- * no focus trap, closes on outside click like a listbox - hence `role="group"`, matching the
- * sibling DatePicker (`role="grid"`) and TimezoneSelect (`role="listbox"`) popups in this row,
- * neither of which uses `role="dialog"`. */
+ * no focus trap, closes on outside click like a listbox - hence a `<fieldset>` (implicit
+ * role="group"), matching the sibling DatePicker (`role="grid"`) and TimezoneSelect
+ * (`role="listbox"`) popups in this row, neither of which uses `role="dialog"`. */
 function TimePickerPanel({
   controlId,
   panelRef,
@@ -234,7 +234,7 @@ function TimePickerPanel({
   }
 
   return (
-    <div
+    <fieldset
       ref={panelRef}
       id={`${controlId}-picker`}
       className={joinClassNames(
@@ -243,7 +243,6 @@ function TimePickerPanel({
         pickerAbove && "time-input__picker--above",
       )}
       style={pickerStyle}
-      role="group"
       aria-label="Choose time"
     >
       <div className="time-input__picker-column">
@@ -296,7 +295,7 @@ function TimePickerPanel({
           </div>
         </div>
       ) : null}
-    </div>
+    </fieldset>
   );
 }
 
@@ -337,7 +336,7 @@ export function TimeInput({
   const preferredTimeFormat = getPreferredTimeFormat();
   const twelveHour = resolveTwelveHourFormat(hourCycle, preferredTimeFormat);
   const containerRef = useRef<HTMLDivElement>(null);
-  const pickerRef = useRef<HTMLDivElement>(null);
+  const pickerRef = useRef<HTMLFieldSetElement>(null);
   // A click-away is observed on pointerdown. If the following click belongs to the same
   // trigger gesture, it must not reopen the picker that pointerdown just closed.
   const suppressNextIconClickRef = useRef(false);

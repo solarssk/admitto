@@ -4,7 +4,7 @@ import type { MailMessage, MailSender } from "./types.js";
 
 /** Quote a display name for RFC5322 From (escapes backslash and double-quote). */
 export function quoteDisplayName(name: string): string {
-  const escaped = name.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+  const escaped = name.replaceAll("\\", "\\\\").replaceAll('"', String.raw`\"`);
   return `"${escaped}"`;
 }
 

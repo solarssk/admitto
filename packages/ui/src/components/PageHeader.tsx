@@ -13,7 +13,7 @@ export function PageHeader({ title, subtitle, breadcrumb = null, actions, classN
       {breadcrumb && breadcrumb.length > 0 && (
         <nav className="at-breadcrumb" aria-label="Breadcrumb">
           {breadcrumb.map((item, i) => (
-            <span key={`crumb-${i}`} className="at-breadcrumb__item">
+            <span key={`crumb-${i}`} className="at-breadcrumb__item" /* NOSONAR - breadcrumb is stateless spans of arbitrary ReactNode; position in the trail is the only, and semantically correct, identity available */>
               {i > 0 && <span className="at-breadcrumb__sep">/</span>}
               {item}
             </span>

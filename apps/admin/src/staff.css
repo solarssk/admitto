@@ -7936,6 +7936,7 @@ output.mail-field-hint {
   gap: 0.65rem;
   width: max-content;
   max-width: min(13rem, calc(100vw - 32px));
+  margin: 0;
   padding: 0.7rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-md, 6px);
