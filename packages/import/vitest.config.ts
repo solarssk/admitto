@@ -1,6 +1,9 @@
 import { defineConfig } from "vitest/config";
 import { vitestCoverage } from "../../vitest.coverage.ts";
 
+const TEST_DB_USER = "admitto";
+const TEST_DB_PASSWORD = "admitto";
+
 export default defineConfig({
   test: {
     coverage: vitestCoverage,
@@ -9,7 +12,7 @@ export default defineConfig({
     // Sequential: shared Postgres test database; concurrent db push --force-reset would race.
     fileParallelism: false,
     env: {
-      DATABASE_URL: "postgresql://admitto:admitto@localhost:5432/admitto_import_test",
+      DATABASE_URL: `postgresql://${TEST_DB_USER}:${TEST_DB_PASSWORD}@localhost:5432/admitto_import_test`,
     },
   },
 });

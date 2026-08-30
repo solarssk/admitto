@@ -7,7 +7,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-export DATABASE_URL="${WEB_TEST_DATABASE_URL:-postgresql://admitto:admitto@localhost:5432/admitto_web_test}"
+WEB_TEST_DB_USER="${WEB_TEST_DB_USER:-admitto}"
+WEB_TEST_DB_PASSWORD="${WEB_TEST_DB_PASSWORD:-admitto}"
+export DATABASE_URL="${WEB_TEST_DATABASE_URL:-postgresql://${WEB_TEST_DB_USER}:${WEB_TEST_DB_PASSWORD}@localhost:5432/admitto_web_test}"
 export ENCRYPTION_KEY="${ENCRYPTION_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}"
 
 bash infra/scripts/create-test-dbs.sh

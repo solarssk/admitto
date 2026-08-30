@@ -1,6 +1,9 @@
 import { defineConfig } from "vitest/config";
 import { vitestCoverage } from "../../vitest.coverage.ts";
 
+const AUTH_TEST_DB_USER = "admitto";
+const AUTH_TEST_DB_PASSWORD = "admitto";
+
 export default defineConfig({
   test: {
     coverage: vitestCoverage,
@@ -17,7 +20,7 @@ export default defineConfig({
     pool: "forks",
     maxWorkers: 1,
     env: {
-      DATABASE_URL: "postgresql://admitto:admitto@localhost:5432/admitto_auth_test",
+      DATABASE_URL: `postgresql://${AUTH_TEST_DB_USER}:${AUTH_TEST_DB_PASSWORD}@localhost:5432/admitto_auth_test`,
       NODE_ENV: "test",
       ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
     },
