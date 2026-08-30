@@ -855,7 +855,7 @@ async function cloudflareAccessRow(
   const sourceProvider = config.sourceProviderId
     ? (await listOidcProviders(db)).find((provider) => provider.id === config.sourceProviderId)
     : undefined;
-  if (!sourceProvider || !sourceProvider.enabled) {
+  if (!sourceProvider?.enabled) {
     const sourceStatus = sourceProvider ? "disabled" : "missing";
     return {
       id: "cloudflare_access",

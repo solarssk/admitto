@@ -404,7 +404,7 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
     textarea.style.left = "-9999px";
     document.body.appendChild(textarea);
     textarea.select();
-    const ok = document.execCommand("copy");
+    const ok = document.execCommand("copy"); // NOSONAR - deprecated, but still the only cross-browser fallback for copy in a non-secure context (self-hosted over plain HTTP), where navigator.clipboard is unavailable
     textarea.remove();
     return ok;
   } catch {
