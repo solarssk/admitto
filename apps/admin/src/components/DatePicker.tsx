@@ -433,7 +433,12 @@ export function DatePicker({
             ))}
           </div>
 
-          <div className="date-picker__grid" role="grid">
+          <div
+            className="date-picker__grid"
+            role="grid"
+            tabIndex={-1}
+            onMouseLeave={() => setHighlightDay(parsed?.d ?? todayParts.d)}
+          >
             {Array.from({ length: offset }, (_, i) => (
               <span key={`pad-${i}`} className="date-picker__day date-picker__day--empty" />
             ))}
