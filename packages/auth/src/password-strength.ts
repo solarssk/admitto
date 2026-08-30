@@ -33,7 +33,7 @@ export function isSimpleAsciiRun(lower: string): boolean {
   let ascending = true;
   let descending = true;
   for (let i = 1; i < lower.length; i++) {
-    const step = lower.charCodeAt(i) - lower.charCodeAt(i - 1);
+    const step = lower.codePointAt(i)! - lower.codePointAt(i - 1)!;
     if (step !== 1) ascending = false;
     if (step !== -1) descending = false;
     if (!ascending && !descending) return false;
