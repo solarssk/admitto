@@ -539,4 +539,25 @@ describe("DatePicker", () => {
     const selected = screen.getByRole("gridcell", { name: "2026-07-02" });
     expect(selected.className).toContain("date-picker__day--highlighted");
   });
+
+  it("falls back to today when the pointer leaves the grid with no date selected", async () => {
+    mockOpenCalendarBasics();
+    mockPlacementLayout({
+      rect: { top: 100, bottom: 140, left: 50 },
+      panelHeight: 300,
+      panelWidth: 296,
+      innerWidth: 1024,
+      innerHeight: 768,
+    });
+    render(<DatePicker value="" onChange={() => {}} label="Date" />);
+    fireEvent.click(screen.getByRole("button", { name: "Open calendar" }));
+    const hovered = await screen.findByRole("gridcell", { name: "2026-07-10" });
+    fireEvent.mouseEnter(hovered);
+
+    fireEvent.mouseLeave(hovered.closest('[role="grid"]')!);
+
+    expect(hovered.className).not.toContain("date-picker__day--highlighted");
+    const today = screen.getByRole("gridcell", { name: "2026-07-02" });
+    expect(today.className).toContain("date-picker__day--highlighted");
+  });
 });

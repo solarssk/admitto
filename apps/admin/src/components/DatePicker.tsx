@@ -436,6 +436,7 @@ export function DatePicker({
           <div
             className="date-picker__grid"
             role="grid"
+            tabIndex={-1}
             onMouseLeave={() => setHighlightDay(parsed?.d ?? todayParts.d)}
           >
             {Array.from({ length: offset }, (_, i) => (
