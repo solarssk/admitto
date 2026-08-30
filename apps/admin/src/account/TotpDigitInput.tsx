@@ -60,7 +60,7 @@ export function TotpDigitInput({ value, onChange, disabled, id }: Readonly<Props
     <div className="account-otp-digits">
       {digits.map((d, i) => (
         <input
-          key={i}
+          key={i} /* NOSONAR - fixed 6-slot OTP input, never reordered/inserted/removed; the digit's position is its identity, not an incidental list index */
           ref={(el) => {
             inputRefs.current[i] = el;
           }}
