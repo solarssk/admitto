@@ -69,7 +69,7 @@
     "@simplewebauthn/server": "^13.3.2",
     "argon2": "^0.45.1",
     "jose": "^6.2.10",
-    "otplib": "^13.4.1",
+    "otplib": "^13.5.0",
     "undici": "^8.10.0"
   },
   "devDependencies": {
