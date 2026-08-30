@@ -1,6 +1,9 @@
 import { defineConfig } from "vitest/config";
 import { vitestCoverage } from "../../vitest.coverage.ts";
 
+const TEST_DB_USER = "admitto";
+const TEST_DB_PASSWORD = "admitto";
+
 export default defineConfig({
   test: {
     coverage: vitestCoverage,
@@ -16,7 +19,7 @@ export default defineConfig({
     // room to cover both sequential 60s sub-steps.
     hookTimeout: 120_000,
     env: {
-      DATABASE_URL: "postgresql://admitto:admitto@localhost:5432/admitto_mail_delivery_test",
+      DATABASE_URL: `postgresql://${TEST_DB_USER}:${TEST_DB_PASSWORD}@localhost:5432/admitto_mail_delivery_test`,
       ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
       NODE_ENV: "test",
       BASE_URL: "https://tickets.example.com",
