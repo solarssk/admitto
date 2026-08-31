@@ -618,11 +618,98 @@ describe("EventSettingsPage tabs", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "Push this update to installed wallet passes?",
     });
+    // Regression (CodeRabbit review): the callback promise EventSettingsPage hands back to
+    // LocationSettingsPanel.handleApplyTimezone must stay pending while this dialog is up - it
+    // used to resolve the instant the dialog opened, showing this success toast before the
+    // operator had chosen anything.
+    expect(screen.queryByText(/Event timezone set to/)).toBeNull();
+
     fireEvent.click(within(dialog).getByRole("button", { name: "Save and push" }));
 
     await waitFor(() =>
       expect(patchEvent).toHaveBeenCalledWith("evt-1", { timezone: "America/New_York" }),
     );
+    expect(await screen.findByText("Event timezone set to America/New_York.")).toBeTruthy();
+  });
+
+  // Regression (CodeRabbit review): same premature-resolve bug as the test above, from the other
+  // side - cancelling used to still resolve the callback promise, so
+  // LocationSettingsPanel.handleApplyTimezone showed its success toast anyway even though nothing
+  // was actually applied.
+  it("cancelling the suggested-timezone confirm shows neither a success nor an error toast", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 2,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+    });
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce({
+      ...emptyLocation,
+      latitude: 40.7128,
+      longitude: -74.006,
+      venue_name: "New York Hall",
+    });
+    vi.mocked(fetchTimezoneForCoordinates).mockResolvedValueOnce({ timezone: "America/New_York" });
+    renderSettings("/admin/events/evt-1/settings?tab=location");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Use" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Push this update to installed wallet passes?",
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(patchEvent).not.toHaveBeenCalled();
+    // The button isn't stuck in its busy state - the pending promise settled (rejected, silently
+    // swallowed by handleApplyTimezone's own sentinel check) instead of hanging forever.
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Use" }).hasAttribute("disabled")).toBe(false);
+    });
+    expect(screen.queryByText(/Event timezone set to/)).toBeNull();
+    expect(screen.queryByText(/Failed to update timezone/)).toBeNull();
+  });
+
+  // Regression (CodeRabbit review): this standalone { timezone } patch never includes any Wallet
+  // tab draft, so the confirm decision must read the event's currently *persisted* wallet
+  // configuration - not `form`, which was wrong on both sides (a disabled-in-the-draft-only
+  // Wallet would wrongly skip confirming a push the server still sends; an enabled-in-the-draft
+  // Wallet, when the persisted config is actually off, would wrongly confirm one the server
+  // suppresses).
+  it("confirms the suggested timezone against the event's saved wallet config, ignoring an unsaved Wallet-tab draft", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 2,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+    });
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce({
+      ...emptyLocation,
+      latitude: 40.7128,
+      longitude: -74.006,
+      venue_name: "New York Hall",
+    });
+    vi.mocked(fetchTimezoneForCoordinates).mockResolvedValueOnce({ timezone: "America/New_York" });
+    renderSettings("/admin/events/evt-1/settings?tab=location");
+    await screen.findByRole("button", { name: "Use" });
+
+    // Draft (unsaved) disable of the master Wallet switch - not reflected in `event`, and this
+    // timezone patch never sends wallet_enabled, so it has no bearing on whether the server's own
+    // push actually fires. LocationSettingsPanel isn't remounted by this tab round-trip (no
+    // locationCardResetKey bump), so its already-fetched suggestedTimezone/"Use" button survives.
+    fireEvent.click(screen.getByRole("tab", { name: "Wallet" }));
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+    fireEvent.click(document.getElementById("event-wallet-enabled") as HTMLInputElement);
+    fireEvent.click(screen.getByRole("tab", { name: "Location" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Use" }));
+
+    // Still confirms - the persisted event.wallet_enabled is still true, only the unsaved draft
+    // says otherwise.
+    await screen.findByRole("dialog", { name: "Push this update to installed wallet passes?" });
   });
 
   it("refetches the Wallet tab's location preview after a Location tab save", async () => {

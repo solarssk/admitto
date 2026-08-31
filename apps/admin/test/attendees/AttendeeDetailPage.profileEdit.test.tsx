@@ -170,6 +170,24 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     expect(screen.queryByText("This will also update their installed wallet pass.")).toBeNull();
   });
 
+  // Regression (CodeRabbit review): voiding a pass never clears its registration counts, and
+  // pushWalletUpdateOnAttendeeChangeBestEffort itself skips a non-active pass on an ordinary
+  // profile edit (it only pushes a voided one when that same request is the one that just voided
+  // it) - showing this notice for a voided pass would promise an update that won't happen.
+  it("does not show the wallet-push notice when the pass has been voided", async () => {
+    mockLoad(
+      baseDetail({
+        wallet_pass: { status: "voided", apple_active_registrations: 1, google_active_registrations: 0 },
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Company"), { target: { value: "Acme Corp" } });
+    expect(screen.queryByText("This will also update their installed wallet pass.")).toBeNull();
+  });
+
   it("does not show the wallet-push notice when only a non-wallet-relevant field changes", async () => {
     mockLoad(
       baseDetail({

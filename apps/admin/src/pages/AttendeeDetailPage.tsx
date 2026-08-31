@@ -1444,7 +1444,11 @@ function buildAttendeePatch(
  * regardless of which platform toggles are currently on, so a registration on a since-disabled
  * platform still gets pushed - hiding the notice there would under-warn (CodeRabbit review). A
  * pass with zero registrations at all (never actually added) still doesn't count - nobody has it
- * to be bothered by an update. Informational only, not a blocking ConfirmDialog (unlike the
+ * to be bothered by an update. status === "active" is required too - pushWalletUpdateOnAttendeeChangeBestEffort
+ * itself skips a voided pass on an ordinary profile edit (it only pushes a voided one when that
+ * same request is the one that just voided it), and voiding never clears the registration counts,
+ * so a voided pass would otherwise still read as "confirmed installed" here (CodeRabbit review).
+ * Informational only, not a blocking ConfirmDialog (unlike the
  * event-wide cascade in EventSettingsPage.tsx) - editing one attendee's profile is a frequent,
  * single-target action that only ever reaches their own already-installed pass, not hundreds of
  * others (AGENTS.md's toast/Notice/ConfirmDialog table: a persistent fact about the surrounding
@@ -1456,6 +1460,7 @@ function computeWalletPushNoticeVisible(
 ): boolean {
   const hasConfirmedWalletRegistration =
     !!detail.wallet_pass &&
+    detail.wallet_pass.status === "active" &&
     ((detail.wallet_pass.apple_active_registrations ?? 0) > 0 ||
       (detail.wallet_pass.google_active_registrations ?? 0) > 0);
   if (!hasConfirmedWalletRegistration) return false;

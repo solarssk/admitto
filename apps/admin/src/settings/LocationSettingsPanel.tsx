@@ -419,6 +419,10 @@ export function LocationSettingsPanel({
       await onApplyTimezone!(suggested);
       addToast(`Event timezone set to ${suggested}.`, "success");
     } catch (err) {
+      // EventSettingsPage.tsx's own onApplyTimezone rejects with this sentinel when the operator
+      // cancels its wallet-push confirm dialog instead of choosing to proceed - neither a success
+      // nor a real failure, so neither toast applies (CodeRabbit review).
+      if (err instanceof Error && err.message === "wallet_push_cancelled") return;
       addToast(operatorApiErrorMessage(err, "Failed to update timezone."), "error");
     } finally {
       setApplyingTimezone(false);
