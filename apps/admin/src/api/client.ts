@@ -1129,6 +1129,42 @@ export async function fetchWalletPushJobStatus(
   return parseJson<WalletPushJobStatusResponse>(res);
 }
 
+/** Admin/superadmin-only: manually pull the current device-registration status from the provider
+ * for every wallet pass under the event at once (including a voided one - voiding doesn't
+ * unregister the device), from the Attendees header's "More actions" menu. */
+export async function triggerEventWideWalletRefreshStatus(eventId: string): Promise<{ jobId: string }> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet-refresh-status`,
+    jsonPostInit({}),
+  );
+  return parseJson<{ jobId: string }>(res);
+}
+
+export interface WalletRefreshStatusJobStatusResponse {
+  jobId: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  error: string | null;
+  progressTotal: number | null;
+  progressDone: number | null;
+  refreshed: number | null;
+  skipped: number | null;
+  errored: number | null;
+}
+
+/** Poll async wallet_refresh_status job status - enqueued by triggerEventWideWalletRefreshStatus
+ * above. */
+export async function fetchWalletRefreshStatusJobStatus(
+  eventId: string,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<WalletRefreshStatusJobStatusResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet-refresh-status/jobs/${encodeURIComponent(jobId)}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<WalletRefreshStatusJobStatusResponse>(res);
+}
+
 /** Which attendees a wallet_push job actually targeted - `null` for a job that predates this
  * field, or whose stored request wasn't recognized. */
 export type WalletPushHistoryScope =
