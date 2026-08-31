@@ -1,35 +1,17 @@
 import type { ToastVariant } from "@admitto/ui";
 import { fetchWalletRefreshStatusJobStatus, type WalletRefreshStatusJobStatusResponse } from "../api/client.js";
-
-function isAbortError(err: unknown): boolean {
-  return err instanceof DOMException && err.name === "AbortError";
-}
-
-// Plain setTimeout, not the shared lib/sleep-with-abort.js (window.setTimeout) - same reasoning
-// as pollWalletPushCompletion.ts's own local copy: this needs to run under a plain Node test
-// environment (vi.useFakeTimers()), where `window` doesn't exist at all.
-function sleepWithAbort(ms: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) {
-    return Promise.reject(new DOMException("Aborted", "AbortError"));
-  }
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(new DOMException("Aborted", "AbortError"));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
+import { isAbortError, sleepWithAbort } from "./sleepWithAbort.js";
 
 export type PollWalletRefreshStatusCompletionOptions = {
   maxAttempts?: number;
   intervalMs?: number;
   /** Cancel polling when the operator leaves Attendees or switches events. */
   signal: AbortSignal;
+  /** Called once the job reaches "succeeded", after the toast - the caller reloads the attendee
+   * list so the Wallet column's registration counts reflect what the job just wrote (P2 review:
+   * the list otherwise keeps showing pre-refresh statuses until a manual reload). Not called for
+   * "failed", still-running, or an aborted poll - there's nothing new to show in those cases. */
+  onSuccess?: () => void;
 };
 
 /** The success-toast branch of pollWalletRefreshStatusCompletion, split out to keep that
@@ -68,6 +50,7 @@ export async function pollWalletRefreshStatusCompletion(
   const maxAttempts = options.maxAttempts ?? 900;
   const intervalMs = options.intervalMs ?? 2000;
   const signal = options.signal;
+  const onSuccess = options.onSuccess;
 
   try {
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -75,6 +58,7 @@ export async function pollWalletRefreshStatusCompletion(
       const status = await fetchWalletRefreshStatusJobStatus(eventId, jobId, signal);
       if (status.status === "succeeded") {
         toastWalletRefreshStatusSucceeded(status, addToast);
+        onSuccess?.();
         return;
       }
       if (status.status === "failed") {

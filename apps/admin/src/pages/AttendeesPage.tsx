@@ -1138,36 +1138,43 @@ export function AttendeesPage() {
     }
   };
 
-  /** Header "Refresh status" (More actions) — enqueues an async wallet_refresh_status job for
+  /** Header "Refresh status" (More actions) - enqueues an async wallet_refresh_status job for
    * every wallet pass under the event at once (an explicit operator click, unlike anything
    * automatic). Not selection-scoped, unlike the bulk bar's own "Refresh status" - every wallet
-   * pass with a known device-registration id is a target, resolved by the job itself. */
+   * pass with a known device-registration id is a target, resolved by the job itself. Guards its
+   * success/error side effects against the operator navigating to a different event before the
+   * request resolves, same isStillOnEvent pattern as runBulkAction (CodeRabbit review) - busy
+   * cleanup stays unconditional. */
   const handleTriggerEventWideRefreshStatus = async () => {
     if (!eventId) return;
+    const initiatingEventId = eventId;
+    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
     setEventWideRefreshStatusBusy(true);
     setEventWideRefreshStatusError(null);
     try {
-      const result = await triggerEventWideWalletRefreshStatus(eventId);
+      const result = await triggerEventWideWalletRefreshStatus(initiatingEventId);
+      if (!isStillOnEvent()) return;
       setEventWideRefreshStatusConfirmOpen(false);
       addToast("Refresh queued - you'll see a summary once it finishes.", "info");
       walletRefreshStatusPollRef.current?.abort();
       const ac = new AbortController();
       walletRefreshStatusPollRef.current = ac;
-      void pollWalletRefreshStatusCompletion(eventId, result.jobId, addToast, { signal: ac.signal }).catch(() => {
+      void pollWalletRefreshStatusCompletion(initiatingEventId, result.jobId, addToast, {
+        signal: ac.signal,
+        onSuccess: () => setReloadToken((n) => n + 1),
+      }).catch(() => {
         if (ac.signal.aborted) return;
         addToast("Could not refresh wallet status.", "info");
       });
     } catch (err) {
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-          return;
-        }
-        setEventWideRefreshStatusError(operatorApiErrorMessage(err, "Refresh failed."));
-      } else {
-        setEventWideRefreshStatusError("Failed to refresh wallet status.");
+      if (isStillOnEvent()) {
+        reportBulkActionError(err, {
+          reportApiError,
+          setError: setEventWideRefreshStatusError,
+          addToast,
+          apiErrorFallback: "Refresh failed.",
+          genericFallback: "Failed to refresh wallet status.",
+        });
       }
     } finally {
       setEventWideRefreshStatusBusy(false);
