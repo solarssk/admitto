@@ -8,7 +8,7 @@ Find an attendee without a working QR and correct a recent check-in or item acti
 
 ## Before you start
 
-- Manual lookup must be enabled in **Requirements**.
+- Manual lookup must be enabled in **Event Settings' Check-in tab**.
 - Ask for enough information to identify the correct attendee.
 - Use your own account and the correct event.
 

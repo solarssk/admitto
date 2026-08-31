@@ -12,7 +12,7 @@ import { ReportsPage } from "../../src/pages/ReportsPage.js";
 import { EventsPickerPage } from "../../src/pages/EventsPickerPage.js";
 import { ImportPage } from "../../src/pages/ImportPage.js";
 import { DeviceLabelStep } from "../../src/pages/DeviceLabelStep.js";
-import { getTooltipText, makeSuperadminAssignment, mockMatchMedia, renderWithToast, renderWithToastAndRouter } from "../test-utils.js";
+import { makeSuperadminAssignment, mockMatchMedia, renderWithToast, renderWithToastAndRouter } from "../test-utils.js";
 
 const superadminAssignments = [
   makeSuperadminAssignment(),
@@ -59,10 +59,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchEventItems: vi.fn(),
     fetchEventCustomFields: vi.fn(),
     fetchTicketTypes: vi.fn().mockResolvedValue([]),
-    fetchOpsConfig: vi.fn(),
     createEventItem: vi.fn(),
     updateEventItem: vi.fn(),
-    updateOpsConfig: vi.fn(),
     fetchEventReports: vi.fn(),
     exportEventReportsCsv: vi.fn(),
     fetchAdminEvents: vi.fn(),
@@ -88,7 +86,6 @@ import {
   fetchEventItems,
   fetchEventReports,
   fetchEventSettings,
-  fetchOpsConfig,
   fetchRoleAssignments,
   fetchSessions,
   fetchTicketTypes,
@@ -97,7 +94,6 @@ import {
   patchEvent,
   submitSessionDeviceLabel,
   updateEventItem,
-  updateOpsConfig,
 } from "../../src/api/client.js";
 
 const eventSettings = {
@@ -130,13 +126,6 @@ const sampleItem = {
   enabled: true,
   icon: null,
   config: { issue_on_checkin: true },
-};
-
-const opsConfig = {
-  badge_at_entry: false,
-  require_confirm_on_scan: false,
-  allow_manual_lookup: true,
-  auto_advance_on_valid: false,
 };
 
 const emptyReport = {
@@ -491,7 +480,6 @@ describe("RequirementsPage operator errors", () => {
   beforeEach(() => {
     vi.mocked(fetchEventItems).mockResolvedValue([sampleItem]);
     vi.mocked(fetchEventCustomFields).mockResolvedValue([]);
-    vi.mocked(fetchOpsConfig).mockResolvedValue(opsConfig);
   });
 
   it("explains a forbidden requirements load without exposing the API error", async () => {
@@ -608,77 +596,6 @@ describe("RequirementsPage operator errors", () => {
     });
   });
 
-  it("toasts behaviour save failure", async () => {
-    vi.mocked(fetchEventItems).mockResolvedValueOnce([]);
-    vi.mocked(updateOpsConfig).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderRequirements();
-    await waitFor(() => {
-      expect(screen.getByRole("switch", { name: "Issue badge at entry" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("switch", { name: "Issue badge at entry" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save check-in behaviour/);
-    });
-  });
-
-  it("disables Issue badge at entry when the badge item is inactive", async () => {
-    // mockResolvedValue (not Once): the effect can re-run more than once in
-    // this test harness (unstable useConnectionState mock identity), so every
-    // fetchEventItems call must consistently report the badge as disabled.
-    vi.mocked(fetchEventItems).mockResolvedValue([{ ...sampleItem, enabled: false }]);
-    renderRequirements();
-    await waitFor(() => {
-      expect(screen.getByRole("switch", { name: "Issue badge at entry" })).toBeTruthy();
-    });
-    const toggle = screen.getByRole("switch", {
-      name: "Issue badge at entry",
-    }) as HTMLInputElement;
-    expect(toggle.disabled).toBe(true);
-    expect(getTooltipText(toggle)).toMatch(/badge item is disabled/);
-  });
-
-  it("disables Issue badge at entry when the badge item has Issue on check-in off", async () => {
-    vi.mocked(fetchEventItems).mockResolvedValue([
-      { ...sampleItem, config: { issue_on_checkin: false } },
-    ]);
-    renderRequirements();
-    await waitFor(() => {
-      expect(screen.getByRole("switch", { name: "Issue badge at entry" })).toBeTruthy();
-    });
-    const toggle = screen.getByRole("switch", {
-      name: "Issue badge at entry",
-    }) as HTMLInputElement;
-    expect(toggle.disabled).toBe(true);
-    expect(getTooltipText(toggle)).toMatch(/Issue on check-in/);
-  });
-
-  it("keeps Issue badge at entry enabled when the badge item is active", async () => {
-    renderRequirements();
-    await waitFor(() => {
-      expect(screen.getByRole("switch", { name: "Issue badge at entry" })).toBeTruthy();
-    });
-    const toggle = screen.getByRole("switch", {
-      name: "Issue badge at entry",
-    }) as HTMLInputElement;
-    expect(toggle.disabled).toBe(false);
-    expect(getTooltipText(toggle)).toBeNull();
-  });
-
-  it("toasts when enabling badge_at_entry is rejected as badge_item_inactive", async () => {
-    // Defensive fallback: the Switch is disabled once the badge item is
-    // inactive, so this only guards a race between page load and toggle.
-    vi.mocked(updateOpsConfig).mockRejectedValueOnce(
-      new ApiError(409, "badge_item_inactive", "badge_item_inactive"),
-    );
-    renderRequirements();
-    await waitFor(() => {
-      expect(screen.getByRole("switch", { name: "Issue badge at entry" })).toBeTruthy();
-    });
-    fireEvent.click(screen.getByRole("switch", { name: "Issue badge at entry" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/badge item is disabled/);
-    });
-  });
 });
 
 describe("ReportsPage operator errors", () => {

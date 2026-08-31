@@ -6,13 +6,10 @@ import {
   createEventItem,
   fetchEventCustomFields,
   fetchEventItems,
-  fetchOpsConfig,
   updateEventItem,
-  updateOpsConfig,
 } from "../api/client.js";
-import { isBadgeItemUsable } from "@admitto/tickets/event-item-usability";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventCustomFieldDto, EventDto, EventItemDto, OpsConfigDto } from "../api/types.js";
+import type { EventCustomFieldDto, EventDto, EventItemDto } from "../api/types.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useConnectionState } from "../connection/ConnectionStateProvider.js";
@@ -28,8 +25,6 @@ import "../requirements/requirements.css";
 
 const EVENT_ITEMS_HINT =
   "Once an item has been issued to attendees, you can't disable it until its returns are recorded.";
-const CHECK_IN_BEHAVIOUR_HINT =
-  "Controls how the check-in screen behaves for operators: confirmation prompts, manual lookup, and what happens automatically after a valid scan.";
 
 /** Redirect to the login page, preserving the current path to return to after auth. */
 function redirectToLogin(): void {
@@ -142,130 +137,6 @@ function EventItemsTableBody({
           </td>
         </tr>
       ))}
-    </>
-  );
-}
-
-function CheckInBehaviourContent({
-  opsConfig,
-  loading,
-  showLoading,
-  event,
-  opsTogglingIds,
-  badgeInactive,
-  onToggle,
-}: {
-  readonly opsConfig: OpsConfigDto | null;
-  readonly loading: boolean;
-  readonly showLoading: boolean;
-  readonly event: EventDto;
-  readonly opsTogglingIds: ReadonlySet<string>;
-  readonly badgeInactive: boolean;
-  readonly onToggle: (field: keyof OpsConfigDto, value: boolean) => void;
-}) {
-  if (opsConfig == null && loading) return showLoading ? <p>Loading…</p> : null;
-  if (!opsConfig) return null;
-  return (
-    <>
-      <div className="requirements-behaviour-row">
-        <div className="requirements-behaviour-row__text">
-          <strong>Issue badge at entry</strong>
-          <p>
-            Automatically issues the badge item when an attendee is admitted. The badge item
-            must exist, be active, and have "Issue on check-in" turned on.
-          </p>
-        </div>
-        <ArchivedGuard
-          event={event}
-          reasonId="badge-at-entry-reason"
-          disabled={opsTogglingIds.has("badge_at_entry") || badgeInactive}
-          tooltip={
-            badgeInactive
-              ? "Can't enable this. The badge item is disabled or has \"Issue on check-in\" turned off."
-              : undefined
-          }
-        >
-          {(guard) => (
-            <Switch
-              checked={opsConfig.badge_at_entry}
-              aria-busy={opsTogglingIds.has("badge_at_entry")}
-              onChange={(e) => onToggle("badge_at_entry", e.target.checked)}
-              aria-label="Issue badge at entry"
-              {...guard}
-            />
-          )}
-        </ArchivedGuard>
-      </div>
-      <div className="requirements-behaviour-row">
-        <div className="requirements-behaviour-row__text">
-          <strong>Require confirmation on scan</strong>
-          <p>Scan shows a preview; operator must confirm before check-in is recorded.</p>
-        </div>
-        <ArchivedGuard
-          event={event}
-          reasonId="confirm-on-scan-reason"
-          disabled={opsTogglingIds.has("require_confirm_on_scan")}
-        >
-          {(guard) => (
-            <Switch
-              checked={opsConfig.require_confirm_on_scan}
-              aria-busy={opsTogglingIds.has("require_confirm_on_scan")}
-              onChange={(e) => onToggle("require_confirm_on_scan", e.target.checked)}
-              aria-label="Require confirmation on scan"
-              {...guard}
-            />
-          )}
-        </ArchivedGuard>
-      </div>
-      <div className="requirements-behaviour-row">
-        <div className="requirements-behaviour-row__text">
-          <strong>Allow manual lookup</strong>
-          <p>
-            When off, operators can only check in by scanning a QR code. Searching by name
-            or partial text is blocked on the check-in screen (the admin Attendees page is
-            unaffected).
-          </p>
-        </div>
-        <ArchivedGuard
-          event={event}
-          reasonId="manual-lookup-reason"
-          disabled={opsTogglingIds.has("allow_manual_lookup")}
-        >
-          {(guard) => (
-            <Switch
-              checked={opsConfig.allow_manual_lookup}
-              aria-busy={opsTogglingIds.has("allow_manual_lookup")}
-              onChange={(e) => onToggle("allow_manual_lookup", e.target.checked)}
-              aria-label="Allow manual lookup"
-              {...guard}
-            />
-          )}
-        </ArchivedGuard>
-      </div>
-      <div className="requirements-behaviour-row">
-        <div className="requirements-behaviour-row__text">
-          <strong>Auto-advance after valid check-in</strong>
-          <p>
-            After a valid scan, the check-in screen clears automatically for the next
-            attendee, without tapping Next.
-          </p>
-        </div>
-        <ArchivedGuard
-          event={event}
-          reasonId="auto-advance-reason"
-          disabled={opsTogglingIds.has("auto_advance_on_valid")}
-        >
-          {(guard) => (
-            <Switch
-              checked={opsConfig.auto_advance_on_valid}
-              aria-busy={opsTogglingIds.has("auto_advance_on_valid")}
-              onChange={(e) => onToggle("auto_advance_on_valid", e.target.checked)}
-              aria-label="Auto-advance on valid scan"
-              {...guard}
-            />
-          )}
-        </ArchivedGuard>
-      </div>
     </>
   );
 }
@@ -383,7 +254,6 @@ export function RequirementsPage() {
 
   const [items, setItems] = useState<EventItemDto[]>([]);
   const [customFields, setCustomFields] = useState<EventCustomFieldDto[]>([]);
-  const [opsConfig, setOpsConfig] = useState<OpsConfigDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<EventItemDto | null>(null);
@@ -402,7 +272,6 @@ export function RequirementsPage() {
   const addKeyPreview = uniqueItemKey(addLabel, items.map((i) => i.key));
 
   const { ids: togglingIds, start: startToggling, finish: finishToggling } = useInFlightIds();
-  const { ids: opsTogglingIds, start: startOpsToggle, finish: finishOpsToggle } = useInFlightIds();
 
   function closeAddModal() {
     setAddOpen(false);
@@ -417,7 +286,6 @@ export function RequirementsPage() {
   useEffect(() => {
     setItems([]);
     setCustomFields([]);
-    setOpsConfig(null);
     setSelectedItem(null);
     hasLoadedRef.current = false;
   }, [eventId]);
@@ -435,15 +303,13 @@ export function RequirementsPage() {
     // reads as a flash/jump instead of a smooth in-place update.
     if (!hasLoadedRef.current) setLoading(true);
     try {
-      const [itemRows, fields, ops] = await Promise.all([
+      const [itemRows, fields] = await Promise.all([
         fetchEventItems(eventId, ac.signal),
         fetchEventCustomFields(eventId, ac.signal),
-        fetchOpsConfig(eventId, ac.signal),
       ]);
       if (ac.signal.aborted) return;
       setItems(itemRows);
       setCustomFields(fields);
-      setOpsConfig(ops);
       setLoadError(null);
       hasLoadedRef.current = true;
     } catch (err) {
@@ -454,7 +320,6 @@ export function RequirementsPage() {
       hasLoadedRef.current = false;
       setItems([]);
       setCustomFields([]);
-      setOpsConfig(null);
       setSelectedItem(null);
       if (err instanceof ApiError) {
         reportApiError(err.status);
@@ -474,13 +339,6 @@ export function RequirementsPage() {
     return () => listAbortRef.current?.abort();
   }, [load, reloadToken]);
 
-  const badgeItem = items.find((i) => i.key === "badge");
-  // "Issue badge at entry" is a no-op unless the badge item exists, is
-  // active, and has "Issue on check-in" enabled — disable the toggle in any
-  // of those cases instead of letting operators turn on a setting that
-  // can't work (single source of truth; no separate warning banner needed).
-  const badgeInactive = !badgeItem || !isBadgeItemUsable(badgeItem.enabled, badgeItem.config);
-
   async function handleToggleEnabled(item: EventItemDto) {
     if (!eventId || togglingIds.has(item.id)) return;
     startToggling(item.id);
@@ -488,18 +346,6 @@ export function RequirementsPage() {
       const updated = await updateEventItem(eventId, item.id, { enabled: !item.enabled });
       setItems((rows) => rows.map((r) => (r.id === updated.id ? updated : r)));
       addToast(updated.enabled ? "Item enabled" : "Item disabled", "success");
-      if (updated.key === "badge" && !updated.enabled) {
-        // Server auto-disables badge_at_entry when the badge item is turned
-        // off — refresh so the Check-in behaviour toggle doesn't show stale ON.
-        // Best-effort: the item update already succeeded and was already
-        // toasted above, so a failure here shouldn't surface as an error —
-        // opsConfig just stays stale until the next full page load.
-        try {
-          setOpsConfig(await fetchOpsConfig(eventId));
-        } catch {
-          // Ignored — see comment above.
-        }
-      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "item_in_use")) {
         addToast(
@@ -546,32 +392,6 @@ export function RequirementsPage() {
       }
     } finally {
       setAdding(false);
-    }
-  }
-
-  async function handleOpsToggle(
-    field: keyof OpsConfigDto,
-    value: boolean,
-  ) {
-    if (!eventId || !opsConfig || !startOpsToggle(field)) return;
-    const prev = opsConfig;
-    setOpsConfig({ ...opsConfig, [field]: value });
-    try {
-      const next = await updateOpsConfig(eventId, { [field]: value });
-      setOpsConfig(next);
-      addToast("Setting updated", "success");
-    } catch (err) {
-      setOpsConfig(prev);
-      if (err instanceof ApiError && err.status === 409 && hasApiErrorCode(err, "badge_item_inactive")) {
-        addToast(
-          "Can't enable this. The badge item is disabled or has \"Issue on check-in\" turned off.",
-          "warning",
-        );
-      } else {
-        addToast(operatorApiErrorMessage(err, "Failed to save check-in behaviour."), "error");
-      }
-    } finally {
-      finishOpsToggle(field);
     }
   }
 
@@ -667,23 +487,6 @@ export function RequirementsPage() {
         showLoading={showLoading}
         onChanged={() => setReloadToken((n) => n + 1)}
       />
-
-      <section className="requirements-section">
-        <Card
-          title={<HintLabel hint={CHECK_IN_BEHAVIOUR_HINT}>Check-in behaviour</HintLabel>}
-          padded={false}
-        >
-          <CheckInBehaviourContent
-            opsConfig={opsConfig}
-            loading={loading}
-            showLoading={showLoading}
-            event={event}
-            opsTogglingIds={opsTogglingIds}
-            badgeInactive={badgeInactive}
-            onToggle={(field, value) => void handleOpsToggle(field, value)}
-          />
-        </Card>
-      </section>
         </>
       )}
 
