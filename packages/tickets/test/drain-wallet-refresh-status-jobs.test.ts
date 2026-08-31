@@ -187,6 +187,31 @@ describe("drainWalletRefreshStatusJobs", () => {
     expect(db.event.findUnique).not.toHaveBeenCalled();
   });
 
+  it("fails the job with a bad-request message when result_json itself is missing entirely", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob({ result_json: null }) as never);
+
+    await drainWalletRefreshStatusJobs(db as never);
+
+    const finalCall = db.adminJob.update.mock.calls.find(
+      (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "failed",
+    );
+    expect(finalCall![0].data.error).toBe(WALLET_REFRESH_STATUS_JOB_BAD_REQUEST_ERROR);
+  });
+
+  it("fails the job with a bad-request message when result_json.request is present but not an object (e.g. a string)", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(
+      baseJob({ result_json: { request: "not-an-object" } }) as never,
+    );
+
+    await drainWalletRefreshStatusJobs(db as never);
+
+    const finalCall = db.adminJob.update.mock.calls.find(
+      (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "failed",
+    );
+    expect(finalCall![0].data.error).toBe(WALLET_REFRESH_STATUS_JOB_BAD_REQUEST_ERROR);
+    expect(db.event.findUnique).not.toHaveBeenCalled();
+  });
+
   it("fails the job with a not-configured message when the event has no resolvable wallet provider", async () => {
     vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
     vi.mocked(resolveWalletProvider).mockReturnValueOnce(null as never);
@@ -211,6 +236,31 @@ describe("drainWalletRefreshStatusJobs", () => {
     expect(finalCall![0].data.error).toBe(WALLET_REFRESH_STATUS_JOB_GENERIC_ERROR);
     const [entry] = querySystemLogs({ source: "wallet", search: "wallet_refresh_status_job_failed" });
     expect(entry?.fields).toMatchObject({ job_id: "job-wrs-1", error: "db exploded" });
+  });
+
+  it("logs the raw value (not an Error instance) when something throws a non-Error, e.g. a plain string", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
+    db.walletPass.findMany.mockRejectedValueOnce("plain string error");
+
+    await drainWalletRefreshStatusJobs(db as never);
+
+    const finalCall = db.adminJob.update.mock.calls.find(
+      (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "failed",
+    );
+    expect(finalCall![0].data.error).toBe(WALLET_REFRESH_STATUS_JOB_GENERIC_ERROR);
+    const [entry] = querySystemLogs({ source: "wallet", search: "wallet_refresh_status_job_failed" });
+    expect(entry?.fields).toMatchObject({ job_id: "job-wrs-1", error: "plain string error" });
+  });
+
+  it("claims up to the given limit in one drain call when options.limit is set", async () => {
+    vi.mocked(claimNextAdminJob)
+      .mockResolvedValueOnce(baseJob({ id: "job-wrs-1" }) as never)
+      .mockResolvedValueOnce(baseJob({ id: "job-wrs-2" }) as never);
+
+    const result = await drainWalletRefreshStatusJobs(db as never, { limit: 2 });
+
+    expect(result).toEqual({ claimed: 2, succeeded: 2, failed: 0, reclaimed: 0 });
+    expect(claimNextAdminJob).toHaveBeenCalledTimes(2);
   });
 
   it("does nothing when there's no pending job", async () => {

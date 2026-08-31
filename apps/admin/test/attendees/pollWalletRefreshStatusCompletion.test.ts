@@ -127,6 +127,32 @@ describe("pollWalletRefreshStatusCompletion", () => {
     expect(addToast).toHaveBeenCalledWith("Wallet status refresh is still running in the background.", "info");
   });
 
+  it("skips the final 'still running' toast when the signal was aborted exactly as attempts ran out", async () => {
+    const addToast = vi.fn();
+    // A plain AbortSignal can't be aborted after its final sleep resolves without also rejecting
+    // that sleep (dispatching "abort" mid-wait always throws inside sleepWithAbort, which is
+    // covered separately above). This fake reports not-aborted for the loop's own checks but
+    // aborted by the time the post-loop check runs, to reach that branch in isolation.
+    let abortedReads = 0;
+    const fakeSignal = {
+      get aborted() {
+        abortedReads += 1;
+        return abortedReads > 2;
+      },
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as AbortSignal;
+    fetchWalletRefreshStatusJobStatus.mockResolvedValue(baseStatus({ status: "running" }));
+
+    await pollWalletRefreshStatusCompletion("evt-1", "job-1", addToast, {
+      maxAttempts: 1,
+      intervalMs: 0,
+      signal: fakeSignal,
+    });
+
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
   it("exits quietly when already aborted before the first poll", async () => {
     const addToast = vi.fn();
     const ac = new AbortController();

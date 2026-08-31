@@ -399,4 +399,14 @@ describe("AttendeesPage export and header Send tickets", () => {
       expect(within(dialog).getByText(/Send failed/)).toBeTruthy();
     });
   });
+
+  it("hides the header 'Refresh status' wallet item when the event has no wallet platform configured", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "More actions" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+
+    expect(screen.queryByRole("menuitem", { name: /^Refresh status/ })).toBeNull();
+  });
 });

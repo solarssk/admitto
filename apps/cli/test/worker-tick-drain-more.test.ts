@@ -153,6 +153,21 @@ describe("runWorkerTick — signalling a backlog beyond one tick's capacity", ()
     await expect(tick()).resolves.toBe(true);
   });
 
+  it("skips draining wallet_refresh_status when its advisory lock is already held elsewhere", async () => {
+    const locks = {
+      tryAcquire: vi.fn(async (job: string) => job !== "wallet_refresh_status"),
+      release: vi.fn(async () => undefined),
+      releaseAll: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+    };
+
+    await runWorkerTick({} as never, locks as never, createRetentionSchedule());
+
+    expect(drainWalletRefreshStatusJobs).not.toHaveBeenCalled();
+    // The lock is only ever released by the job that successfully acquired it.
+    expect(locks.release).not.toHaveBeenCalledWith("wallet_refresh_status");
+  });
+
   it("signals more when wallet_message claims a job, even though it only ever takes one", async () => {
     drainWalletMessageJobs.mockResolvedValue({ claimed: 1, succeeded: 1, failed: 0, reclaimed: 0 });
     await expect(tick()).resolves.toBe(true);
