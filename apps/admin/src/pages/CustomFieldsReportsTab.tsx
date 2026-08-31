@@ -72,7 +72,7 @@ function CategoryDonut({
       role="presentation"
       onMouseDown={preventFocusRing}
     >
-      <ResponsiveContainer width="100%" height={256}>
+      <ResponsiveContainer width="100%" height="100%">
         <PieChart style={{ fontFamily: FONT_FAMILY }}>
           <Pie
             data={slices}
@@ -106,8 +106,9 @@ function CategoryDonut({
 
 /** Single ring for a `text` field's fill rate - mirrors WalletsReportsTab.tsx's AdmissionGauge.
  * Free-text answers don't bucket into categories the way select/boolean do, so "answered vs not"
- * is the only meaningful chart here. Same fixed 256px box as CategoryDonut above
- * (.wallets-gauge-overlay), so every card in this tab's grid reads at a consistent chart size. */
+ * is the only meaningful chart here. Same responsive box as CategoryDonut above
+ * (.wallets-gauge-overlay - up to 256px, shrinking with its card on a narrower screen), so every
+ * card in this tab's grid reads at a consistent chart size whenever there's room for one. */
 function FillRateGauge({ pct }: Readonly<{ pct: number }>) {
   return (
     <div // NOSONAR - mousedown-only, see preventFocusRing above; not an interactive element itself
@@ -115,7 +116,7 @@ function FillRateGauge({ pct }: Readonly<{ pct: number }>) {
       role="presentation"
       onMouseDown={preventFocusRing}
     >
-      <ResponsiveContainer width="100%" height={256}>
+      <ResponsiveContainer width="100%" height="100%">
         <RadialBarChart
           data={[{ name: "pct", value: pct, fill: PRIMARY }]}
           innerRadius="58%"

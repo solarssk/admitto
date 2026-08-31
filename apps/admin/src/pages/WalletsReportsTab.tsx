@@ -132,7 +132,7 @@ function AdoptionGauge({
       role="presentation"
       onMouseDown={preventFocusRing}
     >
-      <ResponsiveContainer width="100%" height={256}>
+      <ResponsiveContainer width="100%" height="100%">
         <RadialBarChart
           data={rings}
           innerRadius="32%"
@@ -224,7 +224,7 @@ function PlatformDonut({
       role="presentation"
       onMouseDown={preventFocusRing}
     >
-      <ResponsiveContainer width="100%" height={256}>
+      <ResponsiveContainer width="100%" height="100%">
         <PieChart style={{ fontFamily: FONT_FAMILY }}>
           <Pie
             data={slices}

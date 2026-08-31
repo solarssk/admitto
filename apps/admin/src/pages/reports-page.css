@@ -355,19 +355,21 @@
   gap: var(--space-4);
 }
 
-/* Same auto-fit grid as .reports-grid-3 above, but with a wider track minimum -
-   CustomFieldsReportsTab.tsx's own cards hold a fixed 256px .wallets-gauge-overlay
-   (donut/gauge), unlike .reports-grid-3's other consumer (Event day's plain BreakdownRows
-   cards, fully fluid width). At .reports-grid-3's 220px minimum, a card's own interior
-   (220px minus .at-card__body's 2x24px padding = 172px) is narrower than the fixed chart,
-   which never shrinks (.wallets-gauge-overlay has no min-width, .wallets-adoption's
-   flex-wrap only reflows the breakdown list below it, it doesn't shrink the donut itself) -
-   causing the chart to overflow its own card. 320px covers the 256px chart plus its card's
-   48px of horizontal padding with a small margin, so a card can never end up narrower than
-   its own fixed-width content demands. */
+/* Same auto-fit grid as .reports-grid-3 above, but with a wider preferred track width -
+   CustomFieldsReportsTab.tsx's own cards hold .wallets-gauge-overlay (donut/gauge), unlike
+   .reports-grid-3's other consumer (Event day's plain BreakdownRows cards, fully fluid width),
+   so a card here wants more room than .reports-grid-3's plain 220px whenever there's space to
+   give it - the chart itself is comfortably legible around 256px, cramped much below that.
+   min(280px, 100%), not a bare 280px (bot review, PR #1185 - a bare pixel minimum can exceed
+   the viewport itself at phone widths once .content's and .at-card__body's padding are
+   subtracted, forcing the whole grid wider than the page): this still resolves to a real 280px
+   floor whenever the viewport has room for it, but on a narrower one it caps at 100% of the
+   available track space instead of forcing an oversized column - the chart itself shrinks to
+   match (.wallets-gauge-overlay's own width: min(256px, 100%) + aspect-ratio), so there's
+   nothing left demanding more room than the card can actually give it. */
 .custom-fields-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: var(--space-4);
 }
 
@@ -696,17 +698,23 @@
 
 /* HTML overlay for the adoption gauge's center label - see AdoptionGauge in
    WalletsReportsTab.tsx for why this isn't the chart library's own native center label.
-   Explicit height, not just width - every ResponsiveContainer inside this box already renders at
-   height={256} via its own prop, so this is redundant in the common case, but it gives the box a
-   real CSS-committed size on the very first layout pass regardless of how deep this element sits
-   inside flex/grid ancestors (CustomFieldsReportsTab.tsx's .reports-grid-3 is an auto-fit grid,
-   a slower/more iterative layout negotiation than this file's own plain two-column .reports-panels
-   - a real reported case of Recharts' ResizeObserver catching a transient 0x0 box and logging its
-   own "width(0) and height(0)" console warning before self-correcting on the next resize tick). */
+   width: min(256px, 100%) + aspect-ratio, not a flat 256px square - a bare 256px never shrinks
+   (bot review, PR #1185): at a narrow viewport this box is wider than the space its own card
+   actually has (.content's 24px page padding + .at-card__body's 24px card padding leave well
+   under 256px available on a ~320-360px phone), forcing it past the card's edge instead of
+   scaling down. min(256px, 100%) still resolves to exactly 256px whenever there's room (every
+   desktop/tablet case, unchanged from before), and aspect-ratio keeps it square as it shrinks -
+   both give the box a real, CSS-committed, non-zero size on the very first layout pass either
+   way, which is what originally motivated an explicit height here (a real reported case of
+   Recharts' ResizeObserver catching a transient 0x0 box and logging its own "width(0) and
+   height(0)" console warning before self-correcting on the next resize tick). The matching
+   ResponsiveContainer inside must use height="100%" (not a literal 256 prop) for the actual SVG
+   chart to track this box's own aspect-ratio-computed height instead of always rendering at a
+   fixed 256px regardless of how far this box itself has shrunk. */
 .wallets-gauge-overlay {
   position: relative;
-  width: 256px;
-  height: 256px;
+  width: min(256px, 100%);
+  aspect-ratio: 1 / 1;
   flex: none;
 }
 
