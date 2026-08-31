@@ -52,7 +52,11 @@ works; Admitto never signs or hosts pass files itself.
 - **Live updates to already-issued, active passes.** Editing an attendee (name, email, company,
   department, ticket type) or a wallet-relevant event field (title, date, hours, timezone, the
   Apple Wallet toggle, event type, or a Location field) automatically refreshes passes already on
-  attendees' devices - no manual re-issue needed. Two things this does not cover: a voided pass is
+  attendees' devices - no manual re-issue needed. Saving an event-wide change shows a confirmation
+  naming how many attendees currently have the pass installed, so it's clear this reaches real
+  devices; editing a single attendee shows a lighter, non-blocking note instead, since that only
+  ever affects one person. Neither appears when nothing is actually installed yet. Two things this
+  does not cover: a voided pass is
   skipped until it is restored *and* separately pushed again, since restoring only clears the void
   flag rather than refreshing content; and a single-attendee edit pushes immediately in the same
   request rather than through the background job queue, so it never shows up in Event Settings →

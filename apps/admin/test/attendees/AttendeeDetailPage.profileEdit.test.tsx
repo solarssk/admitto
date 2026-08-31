@@ -144,6 +144,46 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
   });
 
+  it("shows the wallet-push notice once a wallet-relevant field is edited on an attendee with an installed pass", async () => {
+    mockLoad(
+      baseDetail({
+        wallet_pass: { status: "active", apple_active_registrations: 1, google_active_registrations: 0 },
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.queryByText("This will also update their installed wallet pass.")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Company"), { target: { value: "Acme Corp" } });
+    expect(screen.getByText("This will also update their installed wallet pass.")).toBeTruthy();
+  });
+
+  it("does not show the wallet-push notice when the attendee has no installed wallet pass", async () => {
+    mockLoad(baseDetail({ wallet_pass: null }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Company"), { target: { value: "Acme Corp" } });
+    expect(screen.queryByText("This will also update their installed wallet pass.")).toBeNull();
+  });
+
+  it("does not show the wallet-push notice when only a non-wallet-relevant field changes", async () => {
+    mockLoad(
+      baseDetail({
+        wallet_pass: { status: "active", apple_active_registrations: 1, google_active_registrations: 0 },
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Dietary"), { target: { value: "vegetarian" } });
+    expect(screen.queryByText("This will also update their installed wallet pass.")).toBeNull();
+  });
+
   it("shows the email-conflict inline error instead of a toast, without saving", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockLoad(baseDetail());

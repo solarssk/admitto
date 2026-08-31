@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
+import { WALLET_RELEVANT_ATTENDEE_FIELDS } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
 import {
   listDeliveries,
@@ -1757,7 +1758,7 @@ export async function handlePatchEventAttendee(c: Context, db: PrismaClient): Pr
       await syncWalletPassOnStatusChangeBestEffort(db, eventId, attendeeId, statusChange);
       walletPassMaybeStale = true;
     }
-    if (profileChanges?.fields.some((field) => WALLET_RELEVANT_ATTENDEE_FIELDS.has(field))) {
+    if (profileChanges?.fields.some((field) => WALLET_RELEVANT_ATTENDEE_FIELD_SET.has(field))) {
       await pushWalletUpdateOnAttendeeChangeBestEffort(
         db,
         c,
@@ -1939,22 +1940,15 @@ async function syncWalletPassOnStatusChangeBestEffort(
   }
 }
 
-/** Attendee fields that appear in a wallet pass via buildWalletPassInput (packages/tickets/src/
- * wallet-pass-input.ts) - name, email, company, department, ticket type. Only these are worth an
- * automatic push to an already-issued pass; a patch that touches only, say, custom_data or RSVP
- * never reaches pushWalletUpdateOnAttendeeChangeBestEffort below. */
-const WALLET_RELEVANT_ATTENDEE_FIELDS: ReadonlySet<string> = new Set([
-  "first_name",
-  "last_name",
-  "email",
-  "company",
-  "department",
-  "ticket_type",
-]);
+/** Set form of the shared WALLET_RELEVANT_ATTENDEE_FIELDS list (packages/shared), for the O(1)
+ * `.has()` lookup below - only these are worth an automatic push to an already-issued pass; a
+ * patch that touches only, say, custom_data or RSVP never reaches
+ * pushWalletUpdateOnAttendeeChangeBestEffort below. */
+const WALLET_RELEVANT_ATTENDEE_FIELD_SET: ReadonlySet<string> = new Set(WALLET_RELEVANT_ATTENDEE_FIELDS);
 
 /** Best-effort: pushes the attendee's current name/ticket type/event details to their
  * already-issued *active* wallet pass whenever a save changes one of
- * WALLET_RELEVANT_ATTENDEE_FIELDS above - the attendee-scoped counterpart of
+ * WALLET_RELEVANT_ATTENDEE_FIELD_SET above - the attendee-scoped counterpart of
  * event-settings-routes.ts's own pushWalletUpdatesBestEffort for the event's basic fields. A
  * single attendee is one PassCreator call, cheap enough to push synchronously rather than through
  * the wallet_push job system built for the event-wide/bulk triggers. Only an *active* pass is
@@ -1986,7 +1980,7 @@ async function pushWalletUpdateOnAttendeeChangeBestEffort(
   changedFields: readonly string[],
   justVoidedThisRequest: boolean,
 ): Promise<void> {
-  if (!changedFields.some((field) => WALLET_RELEVANT_ATTENDEE_FIELDS.has(field))) return;
+  if (!changedFields.some((field) => WALLET_RELEVANT_ATTENDEE_FIELD_SET.has(field))) return;
 
   try {
     const [event, walletPass] = await Promise.all([

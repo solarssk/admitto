@@ -6,6 +6,7 @@ import {
   resolveAppleMapsUrl,
   resolveGoogleMapsUrl,
 } from "@admitto/location";
+import { WALLET_RELEVANT_LOCATION_FIELDS } from "@admitto/shared";
 import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, useToast } from "@admitto/ui";
 import {
   fetchEventLocation,
@@ -18,6 +19,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventLocationDto, GeocodingResultDto, MapTileConfigDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { TimeInput } from "../components/TimeInput.js";
 import { VenueAutocomplete } from "../components/VenueAutocomplete.js";
 import { whenShown, useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -33,6 +35,7 @@ import {
   type LocationDraft,
 } from "./locationSettingsForm.js";
 import { formatMapCoordinates } from "./locationTimezone.js";
+import { describeWalletPushConfirm } from "../utils/walletPushConfirm.js";
 import "./location-settings.css";
 
 const EMPTY_DRAFT: LocationDraft = {
@@ -91,6 +94,7 @@ export function LocationSettingsPanel({
   eventId,
   isArchived,
   eventTimezone,
+  installedWalletPassCount,
   onDirtyChange,
   onSavingChange,
   onLocationSaved,
@@ -99,6 +103,10 @@ export function LocationSettingsPanel({
   eventId: string;
   isArchived: boolean;
   eventTimezone: string;
+  /** Live count of the event's active, confirmed-installed wallet passes - drives the "this will
+   * push to N installed wallet passes" confirm dialog shown before a save that touches a
+   * WALLET_RELEVANT_LOCATION_FIELDS field (EventSettingsPage.tsx's own EventSettingsDto). */
+  installedWalletPassCount: number;
   onDirtyChange?: (dirty: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
   /** Called after a successful location save so the shell can refresh sidebar `event.location`. */
@@ -120,6 +128,7 @@ export function LocationSettingsPanel({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [applyingTimezone, setApplyingTimezone] = useState(false);
+  const [walletPushConfirmOpen, setWalletPushConfirmOpen] = useState(false);
 
   const [contactConfigured, setContactConfigured] = useState(true);
   /** Draft-side geocoding provenance (search/reverse) until the next save clears or confirms it. */
@@ -181,10 +190,7 @@ export function LocationSettingsPanel({
     return () => loadAbortRef.current?.abort();
   }, [loadSettings]);
 
-  const handleSave = async () => {
-    // Save controls only render after a successful load (apiData is set).
-    const body = buildEventLocationPatchBody(draft, savedDraft, pendingGeocodingProviderRef.current);
-    if (Object.keys(body).length === 0) return;
+  const commitSave = async (body: ReturnType<typeof buildEventLocationPatchBody>) => {
     setSaving(true);
     try {
       const data = await saveEventLocation(eventId, body);
@@ -196,6 +202,28 @@ export function LocationSettingsPanel({
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSave = async () => {
+    // Save controls only render after a successful load (apiData is set).
+    const body = buildEventLocationPatchBody(draft, savedDraft, pendingGeocodingProviderRef.current);
+    if (Object.keys(body).length === 0) return;
+    // Only worth confirming when the save would actually push to a real, currently-installed
+    // wallet pass - matching EventSettingsPage.tsx's own General/Wallet-tab confirm (same "don't
+    // overuse confirmation dialogs" reasoning, NN/g).
+    if (
+      installedWalletPassCount > 0 &&
+      Object.keys(body).some((key) => (WALLET_RELEVANT_LOCATION_FIELDS as readonly string[]).includes(key))
+    ) {
+      setWalletPushConfirmOpen(true);
+      return;
+    }
+    await commitSave(body);
+  };
+
+  const handleWalletPushConfirm = async () => {
+    setWalletPushConfirmOpen(false);
+    await commitSave(buildEventLocationPatchBody(draft, savedDraft, pendingGeocodingProviderRef.current));
   };
 
   const handleReset = () => {
@@ -848,6 +876,16 @@ export function LocationSettingsPanel({
           onSave={() => void handleSave()}
         />
       )}
+
+      <ConfirmDialog
+        open={walletPushConfirmOpen}
+        title="Push this update to installed wallet passes?"
+        message={describeWalletPushConfirm(installedWalletPassCount)}
+        confirmLabel="Save and push"
+        loading={saving}
+        onConfirm={() => void handleWalletPushConfirm()}
+        onCancel={() => setWalletPushConfirmOpen(false)}
+      />
 
       <FixMapsLinkModal
         open={fixLinksOpen}

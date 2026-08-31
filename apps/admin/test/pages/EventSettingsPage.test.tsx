@@ -154,6 +154,7 @@ const activeEvent = {
   deletion_blockers: ["attendees"] as string[],
   admitted_count: 0,
   issued_items_count: 0,
+  installed_wallet_pass_count: 0,
   organization_name: "Org",
   active_items: [] as Array<{ id: string; name: string; enabled: boolean }>,
   logo_url: null,
@@ -2066,6 +2067,104 @@ describe("EventSettingsPage tabs", () => {
       expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
     });
     expect(screen.getByRole("tab", { name: "Wallet" }).getAttribute("aria-selected")).toBe("true");
+  });
+});
+
+describe("EventSettingsPage — wallet push confirm dialog before save", () => {
+  it("confirms before saving a wallet-relevant field when installed passes exist", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 3,
+    });
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2027" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Push this update to installed wallet passes?",
+    });
+    expect(within(dialog).getByText(/3 attendees' installed wallet passes/)).toBeTruthy();
+    expect(patchEvent).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save and push" }));
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { title: "Summit 2027" });
+    });
+  });
+
+  it("uses singular wording for exactly one installed pass", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 1,
+    });
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2027" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Push this update to installed wallet passes?",
+    });
+    expect(within(dialog).getByText(/1 attendee's installed wallet pass\./)).toBeTruthy();
+  });
+
+  it("cancelling the confirm dialog does not save", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 2,
+    });
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2027" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Push this update to installed wallet passes?",
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(patchEvent).not.toHaveBeenCalled();
+    // The unsaved edit is still there - cancelling the confirm only closes the dialog.
+    expect((screen.getByLabelText("Event title") as HTMLInputElement).value).toBe("Summit 2027");
+  });
+
+  it("saves directly, without confirming, when the event has no installed wallet passes", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 0,
+    });
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2027" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { title: "Summit 2027" });
+    });
+  });
+
+  it("saves directly, without confirming, when the change doesn't touch a wallet-relevant field", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 5,
+    });
+    renderSettings();
+    await screen.findByLabelText("Capacity");
+
+    fireEvent.change(screen.getByLabelText("Capacity"), { target: { value: "150" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { capacity: 150 });
+    });
   });
 });
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
-import { enabledWalletPlatforms, type EnabledWalletPlatforms } from "@admitto/shared";
+import { WALLET_RELEVANT_ATTENDEE_FIELDS, enabledWalletPlatforms, type EnabledWalletPlatforms } from "@admitto/shared";
 import {
   Avatar,
   Badge,
@@ -2173,6 +2173,18 @@ export function AttendeeDetailPage() {
 
   const lastMail = detail.deliveries[0]?.status ?? null;
   const emailChanged = form.email !== initialEmail;
+  // Informational only, not a blocking ConfirmDialog (unlike the event-wide cascade in
+  // EventSettingsPage.tsx) - editing one attendee's profile is a frequent, single-target action
+  // that only ever reaches their own already-installed pass, not hundreds of others (AGENTS.md's
+  // toast/Notice/ConfirmDialog table: a persistent fact about the surrounding view, not a
+  // destructive confirmation). Reuses buildAttendeePatch's own diff instead of a second,
+  // independently-maintained field comparison.
+  const walletPushNoticeVisible =
+    !!detail.wallet_pass &&
+    isWalletPassInstalled(detail.wallet_pass, walletPlatforms) &&
+    Object.keys(buildAttendeePatch(form, detail, attributeFields)).some((key) =>
+      (WALLET_RELEVANT_ATTENDEE_FIELDS as readonly string[]).includes(key),
+    );
   const isRevoked = detail.status === "revoked";
   // A stored ticket_type with no matching catalog entry (type deleted after assignment, or
   // legacy pre-catalog data) has no option to bind to — the picker would otherwise silently
@@ -2461,6 +2473,11 @@ export function AttendeeDetailPage() {
                 }
               >
                 Someone else updated this attendee. Reload and reapply your edits.
+              </Notice>
+            )}
+            {walletPushNoticeVisible && (
+              <Notice variant="info" className="attendee-form__warn">
+                This will also update their installed wallet pass.
               </Notice>
             )}
             <Tooltip

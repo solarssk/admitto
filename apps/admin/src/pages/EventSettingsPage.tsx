@@ -28,6 +28,7 @@ import {
   type WalletPushHistoryScope,
 } from "../api/client.js";
 import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet/passcreator-mapper";
+import { WALLET_RELEVANT_EVENT_FIELDS } from "@admitto/shared";
 import { formatEventHoursRange } from "@admitto/shared/region-date-format";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -69,6 +70,7 @@ import {
   type EventSettingsTab,
 } from "../settings/eventSettingsTabs.js";
 import { pluralSuffix } from "../utils/pluralize.js";
+import { describeWalletPushConfirm } from "../utils/walletPushConfirm.js";
 import "./event-settings-page.css";
 
 /** Created/Archived stamp in the acting admin's timezone when known; UTC fallback for legacy rows. */
@@ -539,6 +541,16 @@ function addVisitedTab(
 
 function appendUnsavedWarning(message: string, pageDirty: boolean): string {
   return pageDirty ? message + UNSAVED_CHANGES_WARNING : message;
+}
+
+/** True when `patch` touches a field that would trigger an automatic wallet-pass-refresh push to
+ * every already-issued active pass (event-settings-routes.ts's pushWalletUpdatesBestEffort) - the
+ * same WALLET_RELEVANT_EVENT_FIELDS list the server itself checks, shared so this can't drift out
+ * of sync with what actually triggers the push. */
+function patchTouchesWalletRelevantField(patch: SettingsPatch): boolean {
+  return Object.keys(patch).some((key) =>
+    (WALLET_RELEVANT_EVENT_FIELDS as readonly string[]).includes(key),
+  );
 }
 
 function describeRevokeCheckins(admittedCount: number): string {
@@ -1118,6 +1130,7 @@ export function EventSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [walletPushConfirmOpen, setWalletPushConfirmOpen] = useState(false);
   const [walletTesting, setWalletTesting] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -1314,8 +1327,8 @@ export function EventSettingsPage() {
     if (original) setForm({ ...original });
   }
 
-  async function handleSave() {
-    if (!eventId || !form || !original || !dirty) return;
+  async function commitSave() {
+    if (!eventId || !form || !original) return;
     await saveEventSettings({
       eventId,
       form,
@@ -1327,6 +1340,28 @@ export function EventSettingsPage() {
       addToast,
       refreshLayoutEvent,
     });
+  }
+
+  async function handleSave() {
+    if (!eventId || !form || !original || !dirty) return;
+    // Only worth confirming when the save would actually push to a real, currently-installed
+    // wallet pass - an event with none yet (or a save that doesn't touch a wallet-relevant field)
+    // goes straight through, matching the "don't overuse confirmation dialogs" guidance this
+    // pattern is otherwise at risk of (NN/g).
+    if (
+      event &&
+      event.installed_wallet_pass_count > 0 &&
+      patchTouchesWalletRelevantField(buildSettingsPatch(form, original))
+    ) {
+      setWalletPushConfirmOpen(true);
+      return;
+    }
+    await commitSave();
+  }
+
+  async function handleWalletPushConfirm() {
+    setWalletPushConfirmOpen(false);
+    await commitSave();
   }
 
   async function handleTestWallet() {
@@ -1682,6 +1717,7 @@ export function EventSettingsPage() {
           eventId={eventId}
           isArchived={isArchived}
           eventTimezone={form.timezone}
+          installedWalletPassCount={event.installed_wallet_pass_count}
           onDirtyChange={setLocationDirty}
           onSavingChange={setLocationSaving}
           onLocationSaved={async () => {
@@ -2272,6 +2308,15 @@ export function EventSettingsPage() {
         </Notice>
       </EventSettingsTabPanel>
 
+      <ConfirmDialog
+        open={walletPushConfirmOpen}
+        title="Push this update to installed wallet passes?"
+        message={describeWalletPushConfirm(event.installed_wallet_pass_count)}
+        confirmLabel="Save and push"
+        loading={saving}
+        onConfirm={() => void handleWalletPushConfirm()}
+        onCancel={() => setWalletPushConfirmOpen(false)}
+      />
       <ConfirmDialog
         open={revokeCheckinsOpen}
         title="Revoke all check-ins?"
