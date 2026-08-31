@@ -2371,6 +2371,74 @@ describe("AttendeesPage bulk Set company / Set department", () => {
     expect(screen.queryByRole("dialog", { name: "Set company" })).toBeNull();
     expect(bulkSetAttendeeField).not.toHaveBeenCalled();
   });
+
+  it("ignores a backdrop click while the request is still in flight", async () => {
+    let resolveField!: (value: { updatedCount: number; alreadySetCount: number; conflictCount: number }) => void;
+    bulkSetAttendeeField.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveField = resolve;
+      }),
+    );
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Set company/, "Set company");
+    fireEvent.change(within(dialog).getByLabelText("Company"), { target: { value: "Acme" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => expect(bulkSetAttendeeField).toHaveBeenCalled());
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+    expect(screen.getByRole("dialog", { name: "Set company" })).toBeTruthy();
+
+    await act(async () => {
+      resolveField({ updatedCount: 2, alreadySetCount: 0, conflictCount: 0 });
+      await Promise.resolve();
+    });
+  });
+
+  it("closes the department dialog without applying when Cancel is clicked", async () => {
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Set department/, "Set department");
+    fireEvent.change(within(dialog).getByLabelText("Department"), { target: { value: "Sales" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: "Set department" })).toBeNull();
+    expect(bulkSetAttendeeField).not.toHaveBeenCalled();
+  });
+
+  it("ignores a backdrop click on the department dialog while the request is still in flight", async () => {
+    let resolveField!: (value: { updatedCount: number; alreadySetCount: number; conflictCount: number }) => void;
+    bulkSetAttendeeField.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveField = resolve;
+      }),
+    );
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Set department/, "Set department");
+    fireEvent.change(within(dialog).getByLabelText("Department"), { target: { value: "Sales" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => expect(bulkSetAttendeeField).toHaveBeenCalled());
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+    expect(screen.getByRole("dialog", { name: "Set department" })).toBeTruthy();
+
+    await act(async () => {
+      resolveField({ updatedCount: 2, alreadySetCount: 0, conflictCount: 0 });
+      await Promise.resolve();
+    });
+  });
+
+  it("uses singular phrasing in the hint line for a single selected attendee", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(bulkBar().getByText("1")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    const dialog = clickMenuItemAndArmDialog(/Set company/, "Set company");
+
+    expect(within(dialog).getByText("Set the company for 1 selected attendee.")).toBeTruthy();
+  });
 });
 
 describe("AttendeesPage bulk revoke items (#551)", () => {
