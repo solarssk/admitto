@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
+import { CUSTOM_FIELD_NOT_ANSWERED_KEY } from "@admitto/shared";
 import { isReservedCustomDataSourceField, writeBulkActionLog } from "@admitto/tickets";
 import {
   adminAuditFromContext,
@@ -39,6 +40,17 @@ export async function acquireEventCustomFieldsLock(
 
 const slugField = z.string().trim().regex(/^[a-z0-9_]+$/, "invalid slug");
 
+/** A single `select` option value - rejects the exact sentinel the Custom fields report uses for
+ * its "not answered" bucket (reports-routes.ts), so an admin naming an option that literally
+ * (never realistically, but not impossible) collides with it can't make a real answer and the
+ * unanswered bucket share one key/color in that report. */
+const optionValueField = z
+  .string()
+  .trim()
+  .min(1)
+  .max(60)
+  .refine((value) => value !== CUSTOM_FIELD_NOT_ANSWERED_KEY, { message: "reserved option value" });
+
 const createFieldSchema = z
   .object({
     source_field: slugField.min(1).max(60),
@@ -46,7 +58,7 @@ const createFieldSchema = z
     description: z.string().trim().max(500).optional(),
     type: z.enum(["text", "select", "boolean"]).optional(),
     required: z.boolean().optional(),
-    options: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
+    options: z.array(optionValueField).max(20).optional(),
   })
   .strict()
   .refine((row) => row.type !== "select" || (row.options != null && row.options.length > 0), {
@@ -69,7 +81,7 @@ const patchFieldSchema = z
     required: z.boolean().optional(),
     // null (not just omitted) is how the client asks to clear a previous select's options when
     // switching to text/boolean - omitting the key means "leave options untouched" for PATCH.
-    options: z.union([z.array(z.string().trim().min(1).max(60)).max(20), z.null()]).optional(),
+    options: z.union([z.array(optionValueField).max(20), z.null()]).optional(),
   })
   .strict()
   .refine((row) => row.type !== "select" || (row.options != null && row.options.length > 0), {

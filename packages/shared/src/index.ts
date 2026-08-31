@@ -3,6 +3,8 @@ export { redactEmail } from "./redact.js";
 export { NO_COMPRESSION_HEADERS } from "./noCompressionHeaders.js";
 export type { DeliveryDetailDto, DeliveryDto } from "./deliveryDto.js";
 export type { EventWalletReportsResponse } from "./eventWalletReportsDto.js";
+export type { EventCustomFieldReportsResponse } from "./eventCustomFieldReportsDto.js";
+export { CUSTOM_FIELD_NOT_ANSWERED_KEY } from "./eventCustomFieldReportsDto.js";
 export {
   enabledWalletPlatforms,
   type EnabledWalletPlatforms,

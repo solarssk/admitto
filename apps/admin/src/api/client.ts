@@ -111,6 +111,7 @@ import type {
   EventResourceDto,
   EventReportsResponse,
   EventWalletReportsResponse,
+  EventCustomFieldReportsResponse,
   AccountDto,
   PatchAccountProfileBody,
   PatchAccountPasswordBody,
@@ -2879,6 +2880,17 @@ export async function exportEventWalletReportsCsv(eventId: string, signal?: Abor
 /** Same-origin URL for the wallets printable HTML report (open in new tab for Save as PDF). */
 export function eventWalletReportsPrintUrl(eventId: string): string {
   return `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=pdf&report=wallets`;
+}
+
+export async function fetchEventCustomFieldReports(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<EventCustomFieldReportsResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/reports/custom-fields`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<EventCustomFieldReportsResponse>(res);
 }
 
 // --- Identity providers & Cloudflare Access (SPA Settings → Identity, #266) ---

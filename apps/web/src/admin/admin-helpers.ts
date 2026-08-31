@@ -62,6 +62,23 @@ export async function countAttendeesByCustomFieldValue(
   return new Map(rows.map((row) => [row.value, row.count]));
 }
 
+/** Count of attendees with any (non-null) value for one event custom field - a plain COUNT, not
+ * grouped like countAttendeesByCustomFieldValue above, since a `text` field's free-form values
+ * don't bucket meaningfully and a full per-value GROUP BY would be wasted work just to sum it back
+ * down to one number. */
+export async function countAttendeesWithCustomFieldAnswered(
+  db: PrismaClient,
+  eventId: string,
+  sourceField: string,
+): Promise<number> {
+  const rows = await db.$queryRaw<{ count: number }[]>(Prisma.sql`
+    SELECT COUNT(*)::int AS count
+    FROM "Attendee"
+    WHERE event_id = ${eventId} AND custom_data->>${sourceField} IS NOT NULL
+  `);
+  return rows[0]?.count ?? 0;
+}
+
 /** Return 403 when the session user cannot manage the event; otherwise null. */
 export async function assertEventManageAccess(
   c: Context,

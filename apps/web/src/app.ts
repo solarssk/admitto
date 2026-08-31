@@ -193,7 +193,12 @@ import {
   handleGetEventOpsConfig,
   handlePatchEventOpsConfig,
 } from "./admin/event-items-api-routes.js";
-import { handleGetReports, handleExportReports, handleGetWalletReports } from "./admin/reports-routes.js";
+import {
+  handleGetReports,
+  handleExportReports,
+  handleGetWalletReports,
+  handleGetCustomFieldReports,
+} from "./admin/reports-routes.js";
 import { handleGetEventOverview } from "./admin/overview-routes.js";
 import {
   handlePatchEventNote,
@@ -1808,6 +1813,9 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/events/:eventId/reports/wallets", staffAdminGate, (c) =>
     handleGetWalletReports(c, db),
+  );
+  app.get("/api/admin/events/:eventId/reports/custom-fields", staffAdminGate, (c) =>
+    handleGetCustomFieldReports(c, db),
   );
   app.get("/api/admin/theme", staffAdminGate, (c) => handleGetStaffTheme(c, db));
   app.put("/api/admin/theme", jsonPostCsrf, staffAdminGate, (c) => handlePutStaffTheme(c, db));
