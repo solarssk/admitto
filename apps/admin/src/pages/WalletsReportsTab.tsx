@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import {
   Area,
@@ -19,11 +19,9 @@ import {
 } from "recharts";
 import { Button, Card, EmptyState, HintLabel, Notice, ticketTypeChartColor } from "@admitto/ui";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
-import { ApiError, fetchEventWalletReports } from "../api/client.js";
-import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { fetchEventWalletReports } from "../api/client.js";
 import type { EventWalletReportsResponse } from "../api/types.js";
-import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useReportFetch } from "../hooks/useReportFetch.js";
 import { viewerLocalTime } from "../utils/event-dates.js";
 import { BreakdownRows, pctOf, type BreakdownRow } from "./ReportsPage.js";
 // This component's own .wallets-* rules live in reports-page.css alongside ReportsPage's own
@@ -600,46 +598,11 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
   eventId,
   walletPlatforms,
 }: Readonly<{ eventId: string; walletPlatforms: EnabledWalletPlatforms }>) {
-  const { reportApiError } = useConnectionState();
-  const abortRef = useRef<AbortController | null>(null);
-  const [data, setData] = useState<EventWalletReportsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadData = useCallback(async () => {
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-    setLoading(true);
-    setError(null);
-    try {
-      const report = await fetchEventWalletReports(eventId, ac.signal);
-      if (ac.signal.aborted) return;
-      setData(report);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      setData(null);
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        setError(
-          hasApiErrorCode(err, "forbidden")
-            ? "You do not have access to this event."
-            : operatorApiErrorMessage(err, "Request failed."),
-        );
-      } else {
-        setError("Could not load wallet report.");
-      }
-    } finally {
-      if (!ac.signal.aborted) setLoading(false);
-    }
-  }, [eventId, reportApiError]);
-
-  useEffect(() => {
-    void loadData();
-    return () => abortRef.current?.abort();
-  }, [loadData]);
-
-  const showLoadingSkeleton = useDelayedLoading(loading);
+  const { data, loading, error, showLoadingSkeleton, retry } = useReportFetch(
+    fetchEventWalletReports,
+    eventId,
+    "Could not load wallet report.",
+  );
 
   if (loading && showLoadingSkeleton) {
     return <p className="wallets-description">Loading wallet report…</p>;
@@ -652,7 +615,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
         title="Could not load wallet report"
         description={error}
         action={
-          <Button variant="secondary" onClick={() => void loadData()}>
+          <Button variant="secondary" onClick={retry}>
             Retry
           </Button>
         }

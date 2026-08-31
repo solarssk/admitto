@@ -1,6 +1,5 @@
 import type {
   DeliveryDto,
-  EventCustomFieldReportsResponse,
   EventWalletReportsResponse as EventWalletReportsDto,
   HealthOverallStatus,
   HealthRowStatus,
@@ -1903,7 +1902,7 @@ export interface EventWalletReportsResponse extends Omit<EventWalletReportsDto, 
   by_ticket_type: Array<Omit<EventWalletReportsDto["by_ticket_type"][number], "color"> & { color: TicketTypeColor }>;
 }
 
-export type { EventCustomFieldReportsResponse };
+export type { EventCustomFieldReportsResponse } from "@admitto/shared";
 
 // --- Identity providers & Cloudflare Access (SPA Settings → Identity, #266) ---
 

@@ -1,13 +1,11 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { Cell, Pie, PieChart, PolarAngleAxis, RadialBar, RadialBarChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Button, Card, EmptyState } from "@admitto/ui";
 import { CUSTOM_FIELD_NOT_ANSWERED_KEY } from "@admitto/shared";
-import { ApiError, fetchEventCustomFieldReports } from "../api/client.js";
-import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { fetchEventCustomFieldReports } from "../api/client.js";
 import type { EventCustomFieldReportsResponse } from "../api/types.js";
-import { useConnectionState } from "../connection/ConnectionStateProvider.js";
-import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useReportFetch } from "../hooks/useReportFetch.js";
 import { BreakdownRows, type BreakdownRow } from "./ReportsPage.js";
 import "./reports-page.css";
 
@@ -185,46 +183,11 @@ function CustomFieldCard({
 export const CustomFieldsReportsTab = memo(function CustomFieldsReportsTab({
   eventId,
 }: Readonly<{ eventId: string }>) {
-  const { reportApiError } = useConnectionState();
-  const abortRef = useRef<AbortController | null>(null);
-  const [data, setData] = useState<EventCustomFieldReportsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadData = useCallback(async () => {
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-    setLoading(true);
-    setError(null);
-    try {
-      const report = await fetchEventCustomFieldReports(eventId, ac.signal);
-      if (ac.signal.aborted) return;
-      setData(report);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      setData(null);
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        setError(
-          hasApiErrorCode(err, "forbidden")
-            ? "You do not have access to this event."
-            : operatorApiErrorMessage(err, "Request failed."),
-        );
-      } else {
-        setError("Could not load custom field report.");
-      }
-    } finally {
-      if (!ac.signal.aborted) setLoading(false);
-    }
-  }, [eventId, reportApiError]);
-
-  useEffect(() => {
-    void loadData();
-    return () => abortRef.current?.abort();
-  }, [loadData]);
-
-  const showLoadingSkeleton = useDelayedLoading(loading);
+  const { data, loading, error, showLoadingSkeleton, retry } = useReportFetch(
+    fetchEventCustomFieldReports,
+    eventId,
+    "Could not load custom field report.",
+  );
 
   if (loading && showLoadingSkeleton) {
     return <p className="wallets-description">Loading custom field report…</p>;
@@ -237,7 +200,7 @@ export const CustomFieldsReportsTab = memo(function CustomFieldsReportsTab({
         title="Could not load custom field report"
         description={error}
         action={
-          <Button variant="secondary" onClick={() => void loadData()}>
+          <Button variant="secondary" onClick={retry}>
             Retry
           </Button>
         }
