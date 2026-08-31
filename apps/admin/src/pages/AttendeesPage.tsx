@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
 import { Button, EmptyState, ModalBackdrop, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
-import { enabledWalletPlatforms } from "@admitto/shared";
+import { enabledWalletPlatforms, type EnabledWalletPlatforms } from "@admitto/shared";
 import {
   ApiError,
   bulkChangeRsvpStatus,
@@ -31,6 +31,7 @@ import {
   fetchEventItems,
   fetchTicketTypes,
   sendEventBulk,
+  triggerEventWideWalletRefreshStatus,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type {
@@ -47,6 +48,7 @@ import { AddAttendeeModal } from "../attendees/AddAttendeeModal.js";
 import { AttendeesTable } from "../attendees/AttendeesTable.js";
 import { pollBulkSendCompletion } from "../attendees/pollBulkSendCompletion.js";
 import { pollWalletPushCompletion } from "../attendees/pollWalletPushCompletion.js";
+import { pollWalletRefreshStatusCompletion } from "../attendees/pollWalletRefreshStatusCompletion.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { RSVP_LABELS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
@@ -626,6 +628,9 @@ interface HeaderMoreMenuProps {
   isDesktop: boolean;
   exportingFormat: ExportFormat | null;
   onExport: (format: ExportFormat) => void;
+  walletPlatforms: EnabledWalletPlatforms;
+  onTriggerEventWideRefreshStatus: () => void;
+  eventWideRefreshStatusBusy: boolean;
 }
 
 /** Header "More" menu — bundles Import and Send tickets behind one compact button, keeping
@@ -647,6 +652,9 @@ function HeaderMoreMenu({
   isDesktop,
   exportingFormat,
   onExport,
+  walletPlatforms,
+  onTriggerEventWideRefreshStatus,
+  eventWideRefreshStatusBusy,
 }: Readonly<HeaderMoreMenuProps>) {
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
@@ -691,6 +699,22 @@ function HeaderMoreMenu({
               onSendTickets();
             }}
           />
+          {walletPlatforms.any && (
+            <>
+              <hr className="more-actions-menu__divider" />
+              <MoreActionsMenuItem
+                icon="cloud-download"
+                label={eventWideRefreshStatusBusy ? "Refreshing status…" : "Refresh status"}
+                hint="Pull the latest device-registration status for every wallet pass"
+                disabled={archived || eventWideRefreshStatusBusy}
+                tooltip={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
+                onClick={() => {
+                  setOpen(false);
+                  onTriggerEventWideRefreshStatus();
+                }}
+              />
+            </>
+          )}
           {!isDesktop && (
             <>
               <hr className="more-actions-menu__divider" />
@@ -826,6 +850,8 @@ export function AttendeesPage() {
   const selectedSendPollRef = useRef<AbortController | null>(null);
   /** Detached wallet_push job poll (bulk ticket-type change), same reasoning. */
   const walletPushPollRef = useRef<AbortController | null>(null);
+  /** Detached wallet_refresh_status job poll (header "Refresh status"), same reasoning. */
+  const walletRefreshStatusPollRef = useRef<AbortController | null>(null);
   useEffect(() => {
     return () => {
       headerSendPollRef.current?.abort();
@@ -834,6 +860,8 @@ export function AttendeesPage() {
       selectedSendPollRef.current = null;
       walletPushPollRef.current?.abort();
       walletPushPollRef.current = null;
+      walletRefreshStatusPollRef.current?.abort();
+      walletRefreshStatusPollRef.current = null;
     };
   }, [eventId]);
 
@@ -905,6 +933,9 @@ export function AttendeesPage() {
   const [bulkDeleteWalletBusy, setBulkDeleteWalletBusy] = useState(false);
   const [bulkDeleteWalletConfirmOpen, setBulkDeleteWalletConfirmOpen] = useState(false);
   const [bulkDeleteWalletError, setBulkDeleteWalletError] = useState<string | null>(null);
+  const [eventWideRefreshStatusBusy, setEventWideRefreshStatusBusy] = useState(false);
+  const [eventWideRefreshStatusConfirmOpen, setEventWideRefreshStatusConfirmOpen] = useState(false);
+  const [eventWideRefreshStatusError, setEventWideRefreshStatusError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   // Lets the debounce timer below compare against the *currently committed* search value
@@ -1104,6 +1135,49 @@ export function AttendeesPage() {
       }
     } finally {
       setSendBusy(false);
+    }
+  };
+
+  /** Header "Refresh status" (More actions) - enqueues an async wallet_refresh_status job for
+   * every wallet pass under the event at once (an explicit operator click, unlike anything
+   * automatic). Not selection-scoped, unlike the bulk bar's own "Refresh status" - every wallet
+   * pass with a known device-registration id is a target, resolved by the job itself. Guards its
+   * success/error side effects against the operator navigating to a different event before the
+   * request resolves, same isStillOnEvent pattern as runBulkAction (CodeRabbit review) - busy
+   * cleanup stays unconditional. */
+  const handleTriggerEventWideRefreshStatus = async () => {
+    if (!eventId) return;
+    const initiatingEventId = eventId;
+    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
+    setEventWideRefreshStatusBusy(true);
+    setEventWideRefreshStatusError(null);
+    try {
+      const result = await triggerEventWideWalletRefreshStatus(initiatingEventId);
+      if (!isStillOnEvent()) return;
+      setEventWideRefreshStatusConfirmOpen(false);
+      addToast("Refresh queued - you'll see a summary once it finishes.", "info");
+      walletRefreshStatusPollRef.current?.abort();
+      const ac = new AbortController();
+      walletRefreshStatusPollRef.current = ac;
+      void pollWalletRefreshStatusCompletion(initiatingEventId, result.jobId, addToast, {
+        signal: ac.signal,
+        onSuccess: () => setReloadToken((n) => n + 1),
+      }).catch(() => {
+        if (ac.signal.aborted) return;
+        addToast("Could not refresh wallet status.", "info");
+      });
+    } catch (err) {
+      if (isStillOnEvent()) {
+        reportBulkActionError(err, {
+          reportApiError,
+          setError: setEventWideRefreshStatusError,
+          addToast,
+          apiErrorFallback: "Refresh failed.",
+          genericFallback: "Failed to refresh wallet status.",
+        });
+      }
+    } finally {
+      setEventWideRefreshStatusBusy(false);
     }
   };
 
@@ -1609,6 +1683,12 @@ export function AttendeesPage() {
               isDesktop={isDesktop}
               exportingFormat={exportingFormat}
               onExport={handleExport}
+              walletPlatforms={walletPlatforms}
+              onTriggerEventWideRefreshStatus={() => {
+                setEventWideRefreshStatusError(null);
+                setEventWideRefreshStatusConfirmOpen(true);
+              }}
+              eventWideRefreshStatusBusy={eventWideRefreshStatusBusy}
             />
             {/* Hidden below 768px — its 3 formats fold into HeaderMoreMenu's own panel there
              * instead (above), so only "+ Add"/"More" remain as standalone buttons, which is
@@ -1805,6 +1885,22 @@ export function AttendeesPage() {
         }}
       />
 
+      <ConfirmDialog
+        open={eventWideRefreshStatusConfirmOpen}
+        title="Refresh the wallet status for every attendee with a pass?"
+        message="Pulls each attendee's current device-registration status from the provider, across the whole event. Attendees with no pass are left untouched."
+        errorMessage={eventWideRefreshStatusError}
+        confirmLabel="Refresh status"
+        confirmVariant="primary"
+        loading={eventWideRefreshStatusBusy}
+        onConfirm={() => void handleTriggerEventWideRefreshStatus()}
+        onCancel={() => {
+          if (!eventWideRefreshStatusBusy) {
+            setEventWideRefreshStatusConfirmOpen(false);
+            setEventWideRefreshStatusError(null);
+          }
+        }}
+      />
 
       <ConfirmDialog
         open={bulkSendConfirmOpen}

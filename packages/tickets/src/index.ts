@@ -137,6 +137,8 @@ export { loadWalletMessageTargets } from "./send-wallet-message.js";
 export type { SendWalletMessageTarget } from "./send-wallet-message.js";
 export { drainWalletMessageJobs } from "./drain-wallet-message-jobs.js";
 export type { DrainWalletMessageJobsResult } from "./drain-wallet-message-jobs.js";
+export { drainWalletRefreshStatusJobs } from "./drain-wallet-refresh-status-jobs.js";
+export type { DrainWalletRefreshStatusJobsResult } from "./drain-wallet-refresh-status-jobs.js";
 export {
   reclaimStaleExportJobs,
   parseExportJobStaleRunningMs,

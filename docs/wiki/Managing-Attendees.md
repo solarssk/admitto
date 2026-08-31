@@ -65,6 +65,7 @@ The attendee appears once in the event with accurate contact, ticket, and event-
 - **Delete attendee** permanently erases that person's event record for GDPR. Prefer revoke or status corrections when the person should stay in history.
 - **Delete wallet pass** permanently removes the pass record at the provider, so it stops receiving updates - it does **not** remove the pass from the attendee's phone (Apple/Google Wallet gives no third party a way to do that; only the attendee can). It also does not affect check-in - use **Revoke pass** to block entry. The attendee would need to add a new pass from their ticket page. Prefer **Void wallet pass** when the person should be able to get it back.
 - **Refresh status** pulls that attendee's current device-registration status directly from the provider, immediately - use it when the provider's own dashboard already shows a pass as added but Admitto's Wallet column or Attendee Detail hasn't caught up yet, instead of waiting for the periodic background check to reach that attendee.
+- Attendees' header **More actions** also has a **Refresh status** for the whole event, not just a selection - pulls the current device-registration status for every wallet pass under the event at once (including a voided one, since voiding doesn't unregister the device), running in the background with a summary toast once it finishes. Appears once this event has Wallet configured.
 - Export attendee information only for an approved event purpose.
 
 ## What changes after this action
