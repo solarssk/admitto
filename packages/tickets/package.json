@@ -58,7 +58,7 @@
     "@types/node": "^24.0.0",
     "@types/pdfkit": "^0.17.6",
     "@types/qrcode": "^1.5.5",
-    "prisma": "^7.9.1",
+    "prisma": "^7.10.0",
     "typescript": "^7.0.2",
     "vitest": "4.1.11"
   }
