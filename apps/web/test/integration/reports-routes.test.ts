@@ -20,6 +20,7 @@ const EVENT_EMPTY = "evt-reports-empty";
 const EVENT_MISSING = "evt-reports-missing";
 const EVENT_WALLETS = "evt-reports-wallets";
 const EVENT_WALLETS_APPLE_ONLY = "evt-reports-wallets-apple-only";
+const EVENT_CUSTOM_FIELDS = "evt-reports-custom-fields";
 
 const EMAIL_ADMIN = "reports-admin@example.com";
 const EMAIL_ADMIN_B = "reports-admin-b@example.com";
@@ -44,6 +45,12 @@ const ATT_W_NOTYPE = "att-reports-w-notype";
 const ATT_W_LEGACY_TYPE = "att-reports-w-legacy-type";
 const ATT_W_APPLE_ONLY_EVENT = "att-reports-w-apple-only-event";
 const ATT_W_GOOGLE_ONLY_EVENT = "att-reports-w-google-only-event";
+
+const ATT_CF_1 = "att-reports-cf-1";
+const ATT_CF_2 = "att-reports-cf-2";
+const ATT_CF_3 = "att-reports-cf-3";
+const ATT_CF_4 = "att-reports-cf-4";
+const ATT_CF_5 = "att-reports-cf-5";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -85,7 +92,14 @@ async function createUnvalidatedAttendees(
 }
 
 async function seed(client: PrismaClient) {
-  const eventIds = [EVENT_REP, EVENT_REP_B, EVENT_EMPTY, EVENT_WALLETS, EVENT_WALLETS_APPLE_ONLY];
+  const eventIds = [
+    EVENT_REP,
+    EVENT_REP_B,
+    EVENT_EMPTY,
+    EVENT_WALLETS,
+    EVENT_WALLETS_APPLE_ONLY,
+    EVENT_CUSTOM_FIELDS,
+  ];
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.emailDelivery.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -159,6 +173,13 @@ async function seed(client: PrismaClient) {
         date: new Date("2027-07-01T12:00:00.000Z"),
         organization_id: ORG_REP,
         wallet_google_enabled: false,
+      },
+      {
+        id: EVENT_CUSTOM_FIELDS,
+        title: "Custom Fields Reports Event",
+        slug: "reports-custom-fields",
+        date: new Date("2027-08-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
       },
     ],
   });
@@ -521,6 +542,82 @@ async function seed(client: PrismaClient) {
         provider: "export_only",
         status: "sent",
         sent_at: new Date("2026-01-10T10:00:00.000Z"),
+      },
+    ],
+  });
+
+  // One field of each EventCustomField type - covers the report's generic per-type behavior
+  // (select/boolean chart as a distribution, text only gets a fill-rate stat), not any single
+  // field's own meaning. EventCustomField.event_id cascades on Event delete (schema.prisma), so
+  // no separate cleanup is needed in this file's own deleteMany block above.
+  await client.eventCustomField.createMany({
+    data: [
+      {
+        event_id: EVENT_CUSTOM_FIELDS,
+        source_field: "dietary",
+        label: "Dietary requirements",
+        type: "text",
+        description: "Let us know about any allergies or dietary preferences.",
+      },
+      {
+        event_id: EVENT_CUSTOM_FIELDS,
+        source_field: "shirt_size",
+        label: "Shirt size",
+        type: "select",
+        options: ["S", "M", "L"],
+        // description deliberately omitted (stays null) - covers the report's fallback text.
+      },
+      { event_id: EVENT_CUSTOM_FIELDS, source_field: "vegetarian", label: "Vegetarian", type: "boolean" },
+      // Answered by every attendee below (unlike the three above) - covers the "not answered"
+      // bucket being omitted entirely once nobody is missing a value, per
+      // EventCustomFieldReportsResponse's own doc comment.
+      { event_id: EVENT_CUSTOM_FIELDS, source_field: "newsletter_optin", label: "Newsletter opt-in", type: "boolean" },
+    ],
+  });
+
+  await client.attendee.createMany({
+    data: [
+      {
+        id: ATT_CF_1,
+        event_id: EVENT_CUSTOM_FIELDS,
+        email: "cf1@example.com",
+        name: "CF One",
+        custom_data: { dietary: "Vegan", shirt_size: "M", vegetarian: "true", newsletter_optin: "true" },
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_CF_2,
+        event_id: EVENT_CUSTOM_FIELDS,
+        email: "cf2@example.com",
+        name: "CF Two",
+        custom_data: { dietary: "None", shirt_size: "M", vegetarian: "false", newsletter_optin: "false" },
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_CF_3,
+        event_id: EVENT_CUSTOM_FIELDS,
+        email: "cf3@example.com",
+        name: "CF Three",
+        // dietary deliberately unanswered - exercises the "not answered" bucket/fill-rate math.
+        custom_data: { shirt_size: "L", vegetarian: "true", newsletter_optin: "true" },
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_CF_4,
+        event_id: EVENT_CUSTOM_FIELDS,
+        email: "cf4@example.com",
+        name: "CF Four",
+        // dietary/shirt_size/vegetarian all deliberately unanswered.
+        custom_data: { newsletter_optin: "false" },
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_CF_5,
+        event_id: EVENT_CUSTOM_FIELDS,
+        email: "cf5@example.com",
+        name: "CF Five",
+        custom_data: { dietary: "Gluten-free", newsletter_optin: "true" },
+        ...mkAttendeeToken(),
       },
     ],
   });
@@ -2157,6 +2254,107 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.admission_by_wallet.with_wallet).toEqual({ total: 5, admitted: 3, pct: 60 });
     expect(body.admission_by_wallet.without_wallet.total).toBe(3);
     expect(body.admission_by_wallet.without_wallet.admitted).toBe(2);
+  });
+});
+
+describe("GET /api/admin/events/:eventId/reports/custom-fields", () => {
+  it("returns 401 without auth", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_CUSTOM_FIELDS}/reports/custom-fields`);
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 for operator (staff admin gate)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_REP}/reports/custom-fields`, {
+      headers: { Cookie: opCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for admin without event org access", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_CUSTOM_FIELDS}/reports/custom-fields`, {
+      headers: { Cookie: adminBCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns an empty fields array for an event with no custom fields configured", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EMPTY}/reports/custom-fields`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { total_attendees: number; fields: unknown[] };
+    expect(body.total_attendees).toBe(0);
+    expect(body.fields).toEqual([]);
+  });
+
+  type CustomFieldReportBody = {
+    total_attendees: number;
+    fields: Array<{
+      source_field: string;
+      label: string;
+      description: string | null;
+      type: "text" | "select" | "boolean";
+      distribution: Array<{ key: string; label: string; count: number; pct: number }> | null;
+      response_rate: { answered: number; pct: number } | null;
+    }>;
+  };
+
+  it("charts select/boolean fields as a distribution with a not-answered bucket, and text fields as a fill-rate stat only", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_CUSTOM_FIELDS}/reports/custom-fields`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as CustomFieldReportBody;
+
+    expect(body.total_attendees).toBe(5);
+    // Registry order (created_at asc), same order the Requirements page's own field list uses.
+    expect(body.fields.map((f) => f.source_field)).toEqual([
+      "dietary",
+      "shirt_size",
+      "vegetarian",
+      "newsletter_optin",
+    ]);
+
+    const dietary = body.fields.find((f) => f.source_field === "dietary")!;
+    expect(dietary.type).toBe("text");
+    expect(dietary.description).toBe("Let us know about any allergies or dietary preferences.");
+    expect(dietary.distribution).toBeNull();
+    // ATT_CF_1, ATT_CF_2, ATT_CF_5 answered; ATT_CF_3/4 did not.
+    expect(dietary.response_rate).toEqual({ answered: 3, pct: 60 });
+
+    const shirtSize = body.fields.find((f) => f.source_field === "shirt_size")!;
+    expect(shirtSize.type).toBe("select");
+    // No description set on this field - passed through as-is (null), not a server-side fallback.
+    expect(shirtSize.description).toBeNull();
+    expect(shirtSize.response_rate).toBeNull();
+    // Real values sorted by count descending, "not answered" always trailing regardless of its
+    // own count (it's a fallback bucket, not a real answer competing for rank).
+    expect(shirtSize.distribution).toEqual([
+      { key: "M", label: "M", count: 2, pct: 40 },
+      { key: "L", label: "L", count: 1, pct: 20 },
+      { key: "__not_answered__", label: "Not answered", count: 2, pct: 40 },
+    ]);
+
+    const vegetarian = body.fields.find((f) => f.source_field === "vegetarian")!;
+    expect(vegetarian.type).toBe("boolean");
+    expect(vegetarian.response_rate).toBeNull();
+    expect(vegetarian.distribution).toEqual([
+      { key: "true", label: "Yes", count: 2, pct: 40 },
+      { key: "false", label: "No", count: 1, pct: 20 },
+      { key: "__not_answered__", label: "Not answered", count: 2, pct: 40 },
+    ]);
+  });
+
+  it("omits the not-answered bucket entirely once every attendee has answered a field", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_CUSTOM_FIELDS}/reports/custom-fields`, {
+      headers: { Cookie: adminCookie },
+    });
+    const body = (await res.json()) as CustomFieldReportBody;
+    const newsletter = body.fields.find((f) => f.source_field === "newsletter_optin")!;
+    expect(newsletter.distribution).toEqual([
+      { key: "true", label: "Yes", count: 3, pct: 60 },
+      { key: "false", label: "No", count: 2, pct: 40 },
+    ]);
   });
 });
 

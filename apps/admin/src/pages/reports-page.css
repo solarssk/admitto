@@ -679,20 +679,29 @@
 }
 
 /* HTML overlay for the adoption gauge's center label - see AdoptionGauge in
-   WalletsReportsTab.tsx for why this isn't the chart library's own native center label. */
+   WalletsReportsTab.tsx for why this isn't the chart library's own native center label.
+   Explicit height, not just width - every ResponsiveContainer inside this box already renders at
+   height={256} via its own prop, so this is redundant in the common case, but it gives the box a
+   real CSS-committed size on the very first layout pass regardless of how deep this element sits
+   inside flex/grid ancestors (CustomFieldsReportsTab.tsx's .reports-grid-3 is an auto-fit grid,
+   a slower/more iterative layout negotiation than this file's own plain two-column .reports-panels
+   - a real reported case of Recharts' ResizeObserver catching a transient 0x0 box and logging its
+   own "width(0) and height(0)" console warning before self-correcting on the next resize tick). */
 .wallets-gauge-overlay {
   position: relative;
   width: 256px;
+  height: 256px;
   flex: none;
 }
 
 /* Recharts renders every chart's root <svg> with tabindex="0" and role="application" by
    default (its own built-in keyboard-accessibility support), which a plain click also focuses -
    with nothing styling that state, the browser's raw default outline showed instead of this
-   app's own focus-ring convention (attendees.css, communication.css, ...). Covers every chart on
-   this page (Recharts is only used here, in WalletsReportsTab), not just the two inside
-   .wallets-gauge-overlay. Suppressed only for mouse-driven focus, not :focus-visible, so keyboard
-   navigation into a chart keeps a visible indicator. */
+   app's own focus-ring convention (attendees.css, communication.css, ...). Covers every Recharts
+   chart on this page - WalletsReportsTab.tsx and CustomFieldsReportsTab.tsx both use it, the only
+   two consumers - not just the two inside .wallets-gauge-overlay. Suppressed only for
+   mouse-driven focus, not :focus-visible, so keyboard navigation into a chart keeps a visible
+   indicator. */
 .recharts-surface:focus {
   outline: none;
 }
