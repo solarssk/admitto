@@ -21,6 +21,11 @@ export {
   type WalletRegistrationSyncResult,
 } from "./registration-sync.js";
 export {
+  refreshOneWalletPassStatus,
+  WalletStatusCheckInconclusiveError,
+  type WalletStatusRefreshOutcome,
+} from "./refresh-wallet-pass-status.js";
+export {
   applyWebhookUpdate,
   parseAdmittoUserProvidedId,
   parseWebhookData,

@@ -1,29 +1,6 @@
 import type { ToastVariant } from "@admitto/ui";
 import { fetchWalletPushJobStatus, type WalletPushJobStatusResponse } from "../api/client.js";
-
-function isAbortError(err: unknown): boolean {
-  return err instanceof DOMException && err.name === "AbortError";
-}
-
-// Plain setTimeout, not the shared lib/sleep-with-abort.js (window.setTimeout) - same reasoning
-// as pollBulkSendCompletion.ts's own local copy: this needs to run under a plain Node test
-// environment (vi.useFakeTimers()), where `window` doesn't exist at all.
-function sleepWithAbort(ms: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) {
-    return Promise.reject(new DOMException("Aborted", "AbortError"));
-  }
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(new DOMException("Aborted", "AbortError"));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
+import { isAbortError, sleepWithAbort } from "./sleepWithAbort.js";
 
 export type PollWalletPushCompletionOptions = {
   maxAttempts?: number;

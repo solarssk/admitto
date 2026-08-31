@@ -506,6 +506,12 @@ export const RATE_POLICIES = {
     "admin_wallet_message_job_status",
     "wallet-message-job-status",
   ),
+  /** Polling GET …/wallet-refresh-status/jobs/:jobId - same budget class as
+   * wallet-push-job-status. */
+  "admin:wallet-refresh-status-job-status": pollingJobStatusPolicy(
+    "admin_wallet_refresh_status_job_status",
+    "wallet-refresh-status-job-status",
+  ),
   /** POST …/wallet-message/send handles both dry-run (recipient count) and the real send -
    * dry-run is exempted via skipWalletMessageRateLimitForDryRun so adjusting filters while
    * composing stays responsive; the real send itself is tightly bounded. Less strict than mail's

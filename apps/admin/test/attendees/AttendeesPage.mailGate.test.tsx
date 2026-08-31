@@ -18,7 +18,7 @@ describe("AttendeesPage header Send tickets — mail-configured gate", () => {
     fetchEventMailSettings.mockResolvedValue(mailSettings(null));
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: "More" }));
+    fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
     const sendTicketsItem = await screen.findByRole("menuitem", { name: /^Send tickets/ });
 
     await waitFor(() => expect(sendTicketsItem.disabled).toBe(true));
@@ -29,7 +29,7 @@ describe("AttendeesPage header Send tickets — mail-configured gate", () => {
     fetchEventMailSettings.mockResolvedValue(mailSettings("graph"));
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: "More" }));
+    fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
     const sendTicketsItem = await screen.findByRole("menuitem", { name: /^Send tickets/ });
     await waitFor(() => expect(fetchEventMailSettings).toHaveBeenCalled());
     expect(sendTicketsItem.disabled).toBe(false);
@@ -39,7 +39,7 @@ describe("AttendeesPage header Send tickets — mail-configured gate", () => {
     fetchEventMailSettings.mockResolvedValue(mailSettings("export_only"));
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: "More" }));
+    fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
     const sendTicketsItem = await screen.findByRole("menuitem", { name: /^Send tickets/ });
     await waitFor(() => expect(sendTicketsItem.disabled).toBe(true));
   });
@@ -48,7 +48,7 @@ describe("AttendeesPage header Send tickets — mail-configured gate", () => {
     fetchEventMailSettings.mockRejectedValue(new Error("network down"));
     renderPage();
 
-    fireEvent.click(await screen.findByRole("button", { name: "More" }));
+    fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
     const sendTicketsItem = await screen.findByRole("menuitem", { name: /^Send tickets/ });
     await waitFor(() => expect(fetchEventMailSettings).toHaveBeenCalled());
     expect(sendTicketsItem.disabled).toBe(false);

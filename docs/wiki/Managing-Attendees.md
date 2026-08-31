@@ -35,7 +35,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
    - **Send tickets**
    - **Check in** without scanning (asks for confirmation first, same as the other bulk actions below; can normally be undone afterward with **Revoke check-in**)
    - **Revoke check-in**, **Revoke items**, or **Revoke pass**
-   - **Void wallet pass**, **Push updates**, or **Delete wallet pass** (only enabled when the selection includes at least one attendee who added a pass)
+   - **Void wallet pass**, **Push updates**, **Refresh status**, or **Delete wallet pass** (only enabled when the selection includes at least one attendee who added a pass)
    - **Change ticket type** (also pushes the new type to any already-issued wallet passes in the selection, in the background) or **Change attendance status**
    - **Export** the selection as CSV
    - **Delete** selected attendees (GDPR erasure; confirmation with a delay)
@@ -66,6 +66,7 @@ The attendee appears once in the event with accurate contact, ticket, and event-
 - **Delete wallet pass** permanently removes the pass record at the provider, so it stops receiving updates - it does **not** remove the pass from the attendee's phone (Apple/Google Wallet gives no third party a way to do that; only the attendee can). It also does not affect check-in - use **Revoke pass** to block entry. The attendee would need to add a new pass from their ticket page. Prefer **Void wallet pass** when the person should be able to get it back.
 - **Refresh status** pulls that attendee's current device-registration status directly from the provider, immediately - use it when the provider's own dashboard already shows a pass as added but Admitto's Wallet column or Attendee Detail hasn't caught up yet, instead of waiting for the periodic background check to reach that attendee.
 - Attendees' header **More actions** also has a **Push updates** for the whole event, not just a selection - use it when a pass needs refreshing but nothing wallet-relevant technically changed (Event Settings' own automatic push only fires on an actual field change). Appears once this event has Wallet configured; the run shows up in Event Settings → Wallet's push history as "Whole event · manual push".
+- Attendees' header **More actions** also has a **Refresh status** for the whole event, not just a selection - pulls the current device-registration status for every wallet pass under the event at once (including a voided one, since voiding doesn't unregister the device), running in the background with a summary toast once it finishes. Appears once this event has Wallet configured.
 - Export attendee information only for an approved event purpose.
 
 ## What changes after this action
