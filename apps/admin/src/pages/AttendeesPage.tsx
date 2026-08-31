@@ -615,7 +615,7 @@ interface BulkTextFieldDialogProps {
   busy: boolean;
   selectedCount: number;
   title: string;
-  /** Used in the "Set the {fieldLabel} for N selected attendees." hint line — lowercase,
+  /** Used in the "Set the {fieldLabel} for N selected attendees." hint line - lowercase,
    * mid-sentence, same convention as CardPickerDialog's own fieldLabel above. */
   fieldLabel: string;
   /** The text input's own label, e.g. "Company" - capitalized, standalone, unlike fieldLabel. */
@@ -628,7 +628,7 @@ interface BulkTextFieldDialogProps {
   onClose: () => void;
 }
 
-/** Type one value and apply it to every selected attendee at once — shared by bulk "Set company"
+/** Type one value and apply it to every selected attendee at once - shared by bulk "Set company"
  * and "Set department", which would otherwise be two near-identical dialogs. A plain, reversible
  * profile edit (unlike Delete or Revoke), so this gets its own small modal instead of ConfirmDialog
  * - same reasoning as DeviceLabelEditModal/UserEditModal (AGENTS.md toast-vs-inline table reserves
@@ -1496,7 +1496,7 @@ export function AttendeesPage() {
       },
     });
 
-  /** Bulk "Set company" for an explicit subset of selected attendees — same effect as editing an
+  /** Bulk "Set company" for an explicit subset of selected attendees - same effect as editing an
    * attendee's Company field from their detail page, applied to every selection member at once.
    * Mirrors company/department into custom_data server-side too (bulk-set-field), so an attendee
    * whose company came from a custom field picks up the new value the same way a single edit
@@ -1528,7 +1528,7 @@ export function AttendeesPage() {
     });
   };
 
-  /** Bulk "Set department" for an explicit subset of selected attendees — same shape as
+  /** Bulk "Set department" for an explicit subset of selected attendees - same shape as
    * handleBulkSetCompanyConfirm above, for the Department field. */
   const handleBulkSetDepartmentConfirm = () => {
     const value = setDepartmentValue.trim();

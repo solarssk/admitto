@@ -2481,7 +2481,7 @@ function computeBulkFieldChange(
   row: { id: string; company: string | null; department: string | null; custom_data: unknown },
   field: "company" | "department",
   target: string | null,
-): { data: Prisma.AttendeeUncheckedUpdateInput; oldValue: string | null; from: string | null; to: string | null } | null {
+): { data: Prisma.AttendeeUncheckedUpdateInput; from: string | null; to: string | null } | null {
   const resolved = resolveCompanyDepartment(row);
   const current = field === "company" ? resolved.company : resolved.department;
   if (current === target) return null;
@@ -2513,24 +2513,26 @@ function computeBulkFieldChange(
   if (customData) {
     data.custom_data = customData as Prisma.InputJsonValue;
   }
-  // The CAS guard below re-checks the *legacy column* (row.company/row.department), not the
-  // resolved value above - safe because every writer of these fields (this bulk path and the
-  // single-attendee PATCH) always mirrors the legacy column and custom_data together via
-  // applyMirroredScalarPatchField, so the legacy column can't drift out of sync with custom_data
-  // on its own between this read and the write below.
-  const oldValue = field === "company" ? row.company : row.department;
-  return { data, oldValue, from, to };
+  return { data, from, to };
 }
 
 /** POST /api/admin/events/:eventId/attendees/bulk-set-field - set one profile field (company or
  * department) to the same value for every selected attendee at once, from the Attendees list's
- * row-selection bulk bar. Same per-row CAS write shape as bulk-ticket-type/bulk-rsvp above (see
- * applyBulkAttendeeChanges's doc comment for the full rationale) - re-checked here per row instead
- * of via that shared helper, since the custom_data mirror write differs per row (see
- * computeBulkFieldChange above). Ids that don't belong to this event are silently ignored, same as
- * every other bulk action. Rows already at the target value are left untouched (no updated_at
- * bump, no log entry) and reported back as alreadySetCount; rows that lost the race against a
- * concurrent write are also left untouched and reported back as conflictCount. */
+ * row-selection bulk bar. Ids that don't belong to this event are silently ignored, same as every
+ * other bulk action. Rows already at the target value are left untouched (no updated_at bump, no
+ * log entry) and reported back as alreadySetCount; rows that lost the race against a concurrent
+ * write are also left untouched and reported back as conflictCount.
+ *
+ * The per-row CAS is keyed on the whole row's `updated_at` (read alongside company/department/
+ * custom_data below, in the same transaction), not just the target field's own prior value like
+ * applyBulkAttendeeChanges's sibling bulk endpoints use - those only ever overwrite the one scalar
+ * column they read, so a stale read of that column is the only thing that can go stale. This
+ * endpoint's write also replaces the *entire* custom_data object with a clone taken at read time,
+ * so a concurrent edit to some other custom-data key (e.g. the single-attendee PATCH editing a
+ * custom field this bulk action never touches) between this findMany and the write below would
+ * otherwise be silently reverted even though the two writes touch different keys - the row's own
+ * updated_at is bumped by any such write, so keying the CAS on it (ADR 0028's same invariant, used
+ * via optimisticAttendeeUpdate for the single-attendee PATCH) catches that case too (bot review). */
 export async function handleBulkSetAttendeeField(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -2551,15 +2553,16 @@ export async function handleBulkSetAttendeeField(c: Context, db: PrismaClient): 
   const target = value === "" ? null : value;
 
   try {
-    const counts = await db.$transaction(async (tx) => {
+    const { updatedIds, ...counts } = await db.$transaction(async (tx) => {
       const owned = await tx.attendee.findMany({
         where: { id: { in: attendeeIds }, event_id: eventId },
-        select: { id: true, company: true, department: true, custom_data: true },
+        select: { id: true, company: true, department: true, custom_data: true, updated_at: true },
       });
 
       let updatedCount = 0;
       let alreadySetCount = 0;
       let conflictCount = 0;
+      const updatedIds: string[] = [];
       const logEntries: { attendee_id: string; metadata: Record<string, unknown> }[] = [];
 
       for (const row of owned) {
@@ -2569,7 +2572,7 @@ export async function handleBulkSetAttendeeField(c: Context, db: PrismaClient): 
           continue;
         }
         const { count } = await tx.attendee.updateMany({
-          where: { id: row.id, [field]: change.oldValue },
+          where: { id: row.id, updated_at: row.updated_at },
           data: { ...change.data, updated_at: new Date() },
         });
         if (count === 0) {
@@ -2577,6 +2580,7 @@ export async function handleBulkSetAttendeeField(c: Context, db: PrismaClient): 
           continue;
         }
         updatedCount += 1;
+        updatedIds.push(row.id);
         logEntries.push({
           attendee_id: row.id,
           metadata: { fields: [field], field_changes: { [field]: { from: change.from, to: change.to } } },
@@ -2592,10 +2596,29 @@ export async function handleBulkSetAttendeeField(c: Context, db: PrismaClient): 
         });
       }
 
-      return { updatedCount, alreadySetCount, conflictCount };
+      return { updatedCount, alreadySetCount, conflictCount, updatedIds };
     });
 
-    return c.json(counts);
+    // Best-effort, outside the transaction - company/department are both wallet-content-relevant
+    // (WALLET_RELEVANT_ATTENDEE_FIELD_SET), so any row this write actually changed is a candidate;
+    // enqueueWalletPushJob itself re-checks which ones still have an active WalletPass and no-ops
+    // entirely when none do. Same reasoning as handleBulkTicketTypeEventAttendees's own enqueue
+    // (bot review): job creation doesn't need atomicity with the field write, and a transient
+    // failure here must not turn an already-committed change into a 500 the operator would retry
+    // into a no-op (every row already at the target value on the retry).
+    let walletPushJobId: string | null = null;
+    if (updatedIds.length > 0) {
+      try {
+        const event = await db.event.findUnique({ where: { id: eventId }, select: { organization_id: true } });
+        if (event) {
+          walletPushJobId = await enqueueWalletPushJob(db, c, eventId, event.organization_id, updatedIds);
+        }
+      } catch (enqueueErr) {
+        console.error("handleBulkSetAttendeeField: wallet push enqueue failed:", enqueueErr);
+      }
+    }
+
+    return c.json({ ...counts, walletPushJobId });
   } catch (err) {
     if (err instanceof Response) return err;
     console.error("handleBulkSetAttendeeField failed:", err);
