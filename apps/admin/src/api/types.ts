@@ -1902,6 +1902,8 @@ export interface EventWalletReportsResponse extends Omit<EventWalletReportsDto, 
   by_ticket_type: Array<Omit<EventWalletReportsDto["by_ticket_type"][number], "color"> & { color: TicketTypeColor }>;
 }
 
+export type { EventCustomFieldReportsResponse } from "@admitto/shared";
+
 // --- Identity providers & Cloudflare Access (SPA Settings → Identity, #266) ---
 
 export interface IdentityProviderListItem {
