@@ -385,10 +385,13 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
         map_latitude: latitude ?? null,
         map_longitude: longitude ?? null,
         map_zoom: latitude != null && longitude != null ? 15 : null,
-        // A freshly created event never sets these - same computation as toEventSummary
-        // (packages/auth), not hardcoded false, so this doesn't silently drift if creation ever
-        // starts cloning wallet config from a template.
-        wallet_configured: Boolean(created.wallet_template_id && created.wallet_api_key_enc),
+        // CreateEventBody has no wallet_template_id/wallet_api_key field, so a freshly created
+        // event is deterministically unconfigured - not the toEventSummary-style computed boolean
+        // (packages/auth), which would need `created.wallet_template_id &&
+        // created.wallet_api_key_enc` to ever be reachable with both operands true, which nothing
+        // in this handler can currently produce. Revisit if creation ever starts cloning wallet
+        // config from a template.
+        wallet_configured: false,
       };
     });
 

@@ -3,9 +3,10 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
-import { mockMatchMedia } from "../test-utils.js";
+import { getTooltipText, mockMatchMedia } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
+import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 
 const fetchEventAttendees = vi.fn();
 const exportAttendees = vi.fn();
@@ -427,6 +428,26 @@ describe("AttendeesPage export and header Send tickets", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     expect(screen.queryByRole("menuitem", { name: /^Push updates/ })).toBeNull();
+  });
+
+  it("shows the archived tooltip on the header 'Push updates' item for an archived, wallet-configured event", async () => {
+    useOutletContextMock.mockReturnValue({
+      event: {
+        ...defaultOutletContext.event,
+        archived_at: "2026-01-01T00:00:00.000Z",
+        wallet_enabled: true,
+        wallet_apple_enabled: true,
+        wallet_google_enabled: true,
+        wallet_configured: true,
+      },
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "More actions" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const pushUpdatesItem = screen.getByRole("menuitem", { name: /^Push updates/ });
+    expect(getTooltipText(pushUpdatesItem)).toBe(ARCHIVED_ACTION_TOOLTIP);
   });
 
   it("hides the header 'Refresh status' wallet item when the event has no wallet platform configured", async () => {

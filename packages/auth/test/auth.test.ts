@@ -503,6 +503,27 @@ describe("authorization", () => {
 
     await prisma.eventLocation.deleteMany({ where: { event_id: EVENT_A } });
   });
+
+  it("listAdminEvents — wallet_configured reflects template id + API key presence, never the raw values", async () => {
+    const unconfigured = (await listAdminEvents(prisma, USER_SUPER)).find((e) => e.id === EVENT_A);
+    expect(unconfigured?.wallet_configured).toBe(false);
+
+    await prisma.event.update({
+      where: { id: EVENT_A },
+      data: { wallet_template_id: "tmpl-auth-test", wallet_api_key_enc: "encrypted-key" },
+    });
+    try {
+      const configured = (await listAdminEvents(prisma, USER_SUPER)).find((e) => e.id === EVENT_A);
+      expect(configured?.wallet_configured).toBe(true);
+      expect(configured).not.toHaveProperty("wallet_template_id");
+      expect(configured).not.toHaveProperty("wallet_api_key_enc");
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_A },
+        data: { wallet_template_id: null, wallet_api_key_enc: null },
+      });
+    }
+  });
 });
 
 describe("bootstrap", () => {

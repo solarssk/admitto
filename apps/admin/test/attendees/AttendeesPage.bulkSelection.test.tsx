@@ -2684,6 +2684,12 @@ describe("AttendeesPage header 'Push updates' (event-wide, wallet configured)", 
     const busyItem = screen.getByRole("menuitem", { name: /^Pushing updates…/ });
     expect((busyItem as HTMLButtonElement).disabled).toBe(true);
 
+    // The dialog's backdrop is wired to onCancel unconditionally (unlike its Cancel button,
+    // which the confirm-dialog component itself disables while loading) - onCancel's own busy
+    // guard must be the thing keeping the dialog open here, not a disabled backdrop.
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+    expect(screen.getByRole("dialog", { name: "Push updates to every installed wallet pass?" })).toBeTruthy();
+
     await act(async () => {
       resolveTrigger({ jobId: "job-1" });
       await Promise.resolve();
@@ -2740,6 +2746,46 @@ describe("AttendeesPage header 'Push updates' (event-wide, wallet configured)", 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith("Could not refresh wallet push status.", "info");
     });
+  });
+
+  it("does not toast a poll failure once the operator has navigated to a different event mid-poll", async () => {
+    let rejectPoll!: (err: unknown) => void;
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    triggerEventWideWalletPush.mockResolvedValue({ jobId: "job-1" });
+    pollWalletPushCompletion.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectPoll = reject;
+      }),
+    );
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Push updates/ }));
+    const dialog = screen.getByRole("dialog", { name: "Push updates to every installed wallet pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Push updates" }));
+
+    await waitFor(() => expect(pollWalletPushCompletion).toHaveBeenCalled());
+
+    // Navigating to a different event aborts the poll's AbortController (cleanup effect keyed on
+    // eventId) before the rejection below settles - the poll's own catch checks ac.signal.aborted
+    // and must skip the toast rather than reporting a stale event's failure.
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+
+    await act(async () => {
+      rejectPoll(new Error("network down"));
+      await Promise.resolve();
+    });
+
+    expect(addToast).not.toHaveBeenCalledWith("Could not refresh wallet push status.", "info");
   });
 });
 
@@ -2836,6 +2882,14 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     const busyItem = screen.getByRole("menuitem", { name: /^Refreshing status…/ });
     expect((busyItem as HTMLButtonElement).disabled).toBe(true);
+
+    // The dialog's backdrop is wired to onCancel unconditionally (unlike its Cancel button,
+    // which the confirm-dialog component itself disables while loading) - onCancel's own busy
+    // guard must be the thing keeping the dialog open here, not a disabled backdrop.
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+    expect(
+      screen.getByRole("dialog", { name: "Refresh the wallet status for every attendee with a pass?" }),
+    ).toBeTruthy();
 
     await act(async () => {
       resolveTrigger({ jobId: "job-1" });
