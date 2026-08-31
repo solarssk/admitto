@@ -8528,7 +8528,7 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-set-field", () => {
         name: `Bulk Set Field ${id}`,
         company: opts.company ?? null,
         department: opts.department ?? null,
-        custom_data: opts.custom_data ?? {},
+        custom_data: (opts.custom_data ?? {}) as Prisma.InputJsonValue,
         token_hash: hashToken(generateToken()),
         token_enc: encryptToString(generateToken()),
       },
