@@ -18,6 +18,7 @@ const bulkRevokeCheckIn = vi.fn();
 const bulkRevokePass = vi.fn();
 const bulkVoidWalletPass = vi.fn();
 const bulkReissueWalletPass = vi.fn();
+const bulkRefreshWalletStatus = vi.fn();
 const bulkDeleteWalletPass = vi.fn();
 const bulkChangeTicketType = vi.fn();
 const bulkChangeRsvpStatus = vi.fn();
@@ -119,6 +120,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   bulkRevokePass: (...args: unknown[]) => bulkRevokePass(...args),
   bulkVoidWalletPass: (...args: unknown[]) => bulkVoidWalletPass(...args),
   bulkReissueWalletPass: (...args: unknown[]) => bulkReissueWalletPass(...args),
+  bulkRefreshWalletStatus: (...args: unknown[]) => bulkRefreshWalletStatus(...args),
   bulkDeleteWalletPass: (...args: unknown[]) => bulkDeleteWalletPass(...args),
   updateAttendee: vi.fn(),
 }));
@@ -1023,6 +1025,51 @@ describe("AttendeesPage bulk wallet actions (#879)", () => {
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
   });
 
+  it("refreshes the wallet status for the selected attendees via the More actions menu (no confirmation - read-only), toasts, and clears the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkRefreshWalletStatus.mockResolvedValue({ refreshed: 1, skipped: 0, errored: 0 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /^Refresh status/ }));
+
+    // Read-only at the provider - fires immediately, no ConfirmDialog to click through.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => {
+      expect(bulkRefreshWalletStatus).toHaveBeenCalledWith("evt-1", ["att-1"]);
+    });
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("1 wallet pass refreshed.", "success");
+    });
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("toasts that nobody had a pass with a known device-registration ID when the whole selection is skipped", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkRefreshWalletStatus.mockResolvedValue({ refreshed: 0, skipped: 1, errored: 0 });
+
+    renderPage();
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    fireEvent.click(bulkBar().getByRole("menuitem", { name: /^Refresh status/ }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "None of the selected attendees had a wallet pass with a known device-registration ID to check.",
+        "info",
+      );
+    });
+  });
+
   it("deletes the wallet pass for the selected attendees via the More actions menu, toasts, and clears the selection", async () => {
     fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
     bulkDeleteWalletPass.mockResolvedValue({ deleted: 1, skipped: 0, errored: 0 });
@@ -1058,6 +1105,10 @@ describe("AttendeesPage bulk wallet actions (#879)", () => {
     const item = bulkBar().getByRole("menuitem", { name: /^Void wallet pass/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
     expect(getTooltipText(item)).toBe("None of the selected attendees have added a wallet pass.");
+
+    const refreshItem = bulkBar().getByRole("menuitem", { name: /^Refresh status/ }) as HTMLButtonElement;
+    expect(refreshItem.disabled).toBe(true);
+    expect(getTooltipText(refreshItem)).toBe("None of the selected attendees have added a wallet pass.");
   });
 
   it("Cancel closes the bulk-wallet-void dialog without calling bulkVoidWalletPass", async () => {

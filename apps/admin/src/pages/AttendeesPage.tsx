@@ -902,8 +902,6 @@ export function AttendeesPage() {
   const [bulkReissueWalletConfirmOpen, setBulkReissueWalletConfirmOpen] = useState(false);
   const [bulkReissueWalletError, setBulkReissueWalletError] = useState<string | null>(null);
   const [bulkRefreshWalletStatusBusy, setBulkRefreshWalletStatusBusy] = useState(false);
-  const [bulkRefreshWalletStatusConfirmOpen, setBulkRefreshWalletStatusConfirmOpen] = useState(false);
-  const [bulkRefreshWalletStatusError, setBulkRefreshWalletStatusError] = useState<string | null>(null);
   const [bulkDeleteWalletBusy, setBulkDeleteWalletBusy] = useState(false);
   const [bulkDeleteWalletConfirmOpen, setBulkDeleteWalletConfirmOpen] = useState(false);
   const [bulkDeleteWalletError, setBulkDeleteWalletError] = useState<string | null>(null);
@@ -1472,8 +1470,12 @@ export function AttendeesPage() {
 
   /** Bulk "Refresh status" for an explicit subset of selected attendees - pulls each selected
    * attendee's current device-registration status from the provider at once, same effect as the
-   * attendee detail page's single "Refresh status" action. An attendee with no wallet pass, or no
-   * known device-registration id, is left untouched server-side and counted separately. */
+   * attendee detail page's single "Refresh status" action. Runs immediately on click, no confirm
+   * dialog - it's read-only at the provider (just refreshes cached registration fields), matching
+   * the single-attendee action's own no-confirmation precedent (AGENTS.md reserves ConfirmDialog
+   * for destructive/irreversible actions; errors toast instead of an inline dialog error, same
+   * convention). An attendee with no wallet pass, or no known device-registration id, is left
+   * untouched server-side and counted separately. */
   const handleBulkRefreshWalletStatusSelected = () =>
     runBulkAction({
       eventId,
@@ -1481,7 +1483,6 @@ export function AttendeesPage() {
       selectedCount: selectedIds.size,
       reportApiError,
       setBusy: setBulkRefreshWalletStatusBusy,
-      setError: setBulkRefreshWalletStatusError,
       addToast,
       apiErrorFallback: "Refresh status failed.",
       genericFallback: "Failed to refresh wallet status.",
@@ -1491,12 +1492,11 @@ export function AttendeesPage() {
           { count: result.refreshed, skipped: result.skipped, errored: result.errored },
           {
             verb: "refreshed",
-            skipReason: "had no pass to refresh",
-            noneMessage: "None of the selected attendees had a wallet pass to refresh.",
+            skipReason: "had no pass or no known device-registration ID to check",
+            noneMessage: "None of the selected attendees had a wallet pass with a known device-registration ID to check.",
           },
           addToast,
         );
-        setBulkRefreshWalletStatusConfirmOpen(false);
         clearSelection();
         setReloadToken((n) => n + 1);
       },
@@ -1728,10 +1728,7 @@ export function AttendeesPage() {
           setBulkReissueWalletConfirmOpen(true);
         }}
         bulkReissueWalletBusy={bulkReissueWalletBusy}
-        onBulkRefreshWalletStatus={() => {
-          setBulkRefreshWalletStatusError(null);
-          setBulkRefreshWalletStatusConfirmOpen(true);
-        }}
+        onBulkRefreshWalletStatus={() => void handleBulkRefreshWalletStatusSelected()}
         bulkRefreshWalletStatusBusy={bulkRefreshWalletStatusBusy}
         onBulkDeleteWallet={() => {
           setBulkDeleteWalletError(null);
@@ -1950,23 +1947,6 @@ export function AttendeesPage() {
           if (!bulkReissueWalletBusy) {
             setBulkReissueWalletConfirmOpen(false);
             setBulkReissueWalletError(null);
-          }
-        }}
-      />
-
-      <ConfirmDialog
-        open={bulkRefreshWalletStatusConfirmOpen}
-        title={`Refresh the wallet status for ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}?`}
-        message="Pulls each attendee's current device-registration status from the provider. Attendees with no pass are left untouched."
-        errorMessage={bulkRefreshWalletStatusError}
-        confirmLabel="Refresh status"
-        confirmVariant="primary"
-        loading={bulkRefreshWalletStatusBusy}
-        onConfirm={() => void handleBulkRefreshWalletStatusSelected()}
-        onCancel={() => {
-          if (!bulkRefreshWalletStatusBusy) {
-            setBulkRefreshWalletStatusConfirmOpen(false);
-            setBulkRefreshWalletStatusError(null);
           }
         }}
       />
