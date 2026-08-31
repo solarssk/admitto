@@ -67,7 +67,7 @@ function CategoryDonut({
 }: Readonly<{ distribution: NonNullable<CustomFieldReport["distribution"]>; totalAttendees: number }>) {
   const slices = distribution.map((row, index) => ({ ...row, color: categoryColor(row.key, index) }));
   return (
-    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+    <div // NOSONAR - mousedown-only, see preventFocusRing above; not an interactive element itself
       className="wallets-gauge-overlay"
       role="presentation"
       onMouseDown={preventFocusRing}
@@ -110,7 +110,7 @@ function CategoryDonut({
  * (.wallets-gauge-overlay), so every card in this tab's grid reads at a consistent chart size. */
 function FillRateGauge({ pct }: Readonly<{ pct: number }>) {
   return (
-    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+    <div // NOSONAR - mousedown-only, see preventFocusRing above; not an interactive element itself
       className="wallets-gauge-overlay"
       role="presentation"
       onMouseDown={preventFocusRing}

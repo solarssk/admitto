@@ -1009,7 +1009,7 @@ async function loadCustomFieldReportsAggregates(
   return { total_attendees: totalAttendees, fields };
 }
 
-/** GET /api/admin/events/:eventId/reports/custom-fields — one chart/stat per the event's own
+/** GET /api/admin/events/:eventId/reports/custom-fields - one chart/stat per the event's own
  * EventCustomField registry. Read-only, no audit, same access gate as the other reports
  * endpoints. */
 export async function handleGetCustomFieldReports(c: Context, db: PrismaClient): Promise<Response> {
