@@ -1,9 +1,8 @@
-import type { Dispatch, RefObject, SetStateAction } from "react";
 import { Card, HintLabel } from "@admitto/ui";
 import { uploadEventBrandingFile } from "../api/client.js";
 import { EventImageAssetLibrary } from "../components/EventImageAssetLibrary.js";
 import { LogoUploadZone } from "../components/LogoUploadZone.js";
-import type { SettingsForm } from "../pages/EventSettingsPage.js";
+import type { EventSettingsFormPanelProps, SettingsForm } from "../pages/EventSettingsPage.js";
 import { SettingsFooter } from "./mailTransportFormParts.js";
 
 const EVENT_LOGO_HINT = "Overrides the organisation logo for this event.";
@@ -22,20 +21,14 @@ export function EventImagesPanel({
   validationErrorsRef,
   onReset,
   onSave,
-}: Readonly<{
-  eventId: string;
-  form: SettingsForm;
-  setForm: Dispatch<SetStateAction<SettingsForm | null>>;
-  original: SettingsForm;
-  isArchived: boolean;
-  saving: boolean;
-  logoUploading: boolean;
-  onUploadingChange: (uploading: boolean) => void;
-  dirty: boolean;
-  validationErrorsRef: RefObject<HTMLUListElement | null>;
-  onReset: () => void;
-  onSave: () => void;
-}>) {
+}: Readonly<
+  EventSettingsFormPanelProps & {
+    eventId: string;
+    original: SettingsForm;
+    logoUploading: boolean;
+    onUploadingChange: (uploading: boolean) => void;
+  }
+>) {
   return (
     <div className="settings-sections">
       <Card

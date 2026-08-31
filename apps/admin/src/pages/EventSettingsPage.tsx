@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type RefObject,
+  type SetStateAction,
+} from "react";
 import {
   useBlocker,
   useNavigate,
@@ -72,6 +81,20 @@ export type SettingsForm = {
   logoUrl: string;
   logoOriginalUrl: string;
   logoCrop: LogoCropMeta | null;
+};
+
+/** Shared by every tab panel that edits `form` and renders its own SettingsFooter (General,
+ * Images, Wallet) - factored out so this one shape only needs to change in one place instead of
+ * being retyped identically in each panel. */
+export type EventSettingsFormPanelProps = {
+  form: SettingsForm;
+  setForm: Dispatch<SetStateAction<SettingsForm | null>>;
+  isArchived: boolean;
+  saving: boolean;
+  dirty: boolean;
+  validationErrorsRef: RefObject<HTMLUListElement | null>;
+  onReset: () => void;
+  onSave: () => void;
 };
 
 type SettingsPatch = Partial<{

@@ -1,11 +1,10 @@
-import type { Dispatch, RefObject, SetStateAction } from "react";
 import { Badge, Card, HintLabel, Input } from "@admitto/ui";
 import type { EventSettingsDto, EventType } from "../api/types.js";
 import { DatePicker } from "../components/DatePicker.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { TimeInput } from "../components/TimeInput.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
-import type { SettingsForm } from "../pages/EventSettingsPage.js";
+import type { EventSettingsFormPanelProps } from "../pages/EventSettingsPage.js";
 import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
 import { buildEventTypeOptions } from "./eventTypeOptions.js";
 import { SettingsFooter, NO_AUTOFILL_PROPS } from "./mailTransportFormParts.js";
@@ -46,18 +45,12 @@ export function EventGeneralInfoPanel({
   validationErrorsRef,
   onReset,
   onSave,
-}: Readonly<{
-  event: EventSettingsDto;
-  form: SettingsForm;
-  setForm: Dispatch<SetStateAction<SettingsForm | null>>;
-  isArchived: boolean;
-  saving: boolean;
-  logoUploading: boolean;
-  dirty: boolean;
-  validationErrorsRef: RefObject<HTMLUListElement | null>;
-  onReset: () => void;
-  onSave: () => void;
-}>) {
+}: Readonly<
+  EventSettingsFormPanelProps & {
+    event: EventSettingsDto;
+    logoUploading: boolean;
+  }
+>) {
   return (
     <>
       <Card title={<HintLabel hint={STATUS_HINT}>Status</HintLabel>} className="event-settings-card">

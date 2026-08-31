@@ -1,4 +1,4 @@
-import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
+import type { ReactNode } from "react";
 import {
   Button,
   Card,
@@ -18,7 +18,7 @@ import type { EventLocationDto, EventSettingsDto } from "../api/types.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { SamsungWalletIcon } from "../components/SamsungWalletIcon.js";
-import type { SettingsForm } from "../pages/EventSettingsPage.js";
+import type { EventSettingsFormPanelProps, SettingsForm } from "../pages/EventSettingsPage.js";
 import {
   formatUtcDateTime,
   formatWalletDatePreview,
@@ -356,29 +356,23 @@ export function EventWalletPanel({
   walletPushHistoryPageSize,
   onWalletPushHistoryPageChange,
   onWalletPushHistoryPageSizeChange,
-}: Readonly<{
-  event: EventSettingsDto;
-  form: SettingsForm;
-  setForm: Dispatch<SetStateAction<SettingsForm | null>>;
-  isArchived: boolean;
-  saving: boolean;
-  dirty: boolean;
-  validationErrorsRef: RefObject<HTMLUListElement | null>;
-  onReset: () => void;
-  onSave: () => void;
-  walletTesting: boolean;
-  onTestWallet: () => void;
-  walletLocationPreview: EventLocationDto | null | undefined;
-  walletPushHistory: WalletPushHistoryEntry[] | null;
-  walletPushHistoryTotal: number;
-  walletPushHistoryError: string | null;
-  onRetryWalletPushHistory: () => void;
-  showWalletPushHistoryLoading: boolean;
-  walletPushHistoryPage: number;
-  walletPushHistoryPageSize: number;
-  onWalletPushHistoryPageChange: (page: number) => void;
-  onWalletPushHistoryPageSizeChange: (pageSize: number) => void;
-}>) {
+}: Readonly<
+  EventSettingsFormPanelProps & {
+    event: EventSettingsDto;
+    walletTesting: boolean;
+    onTestWallet: () => void;
+    walletLocationPreview: EventLocationDto | null | undefined;
+    walletPushHistory: WalletPushHistoryEntry[] | null;
+    walletPushHistoryTotal: number;
+    walletPushHistoryError: string | null;
+    onRetryWalletPushHistory: () => void;
+    showWalletPushHistoryLoading: boolean;
+    walletPushHistoryPage: number;
+    walletPushHistoryPageSize: number;
+    onWalletPushHistoryPageChange: (page: number) => void;
+    onWalletPushHistoryPageSizeChange: (pageSize: number) => void;
+  }
+>) {
   return (
     <>
       <Card
