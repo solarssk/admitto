@@ -917,6 +917,44 @@ async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
   }
 }
 
+interface TestWalletConnectionDeps {
+  eventId: string;
+  form: Pick<SettingsForm, "walletTemplateId" | "walletApiKeyEdit">;
+  setWalletTesting: (value: boolean) => void;
+  addToast: AddToast;
+}
+
+/** Extracted out of handleTestWallet (SonarCloud S3776). */
+async function confirmTestWalletConnection(deps: TestWalletConnectionDeps): Promise<void> {
+  const { eventId, form, setWalletTesting, addToast } = deps;
+  const templateId = form.walletTemplateId.trim();
+  if (!templateId) {
+    addToast("Enter a Template ID before testing the connection.", "error");
+    return;
+  }
+  if (form.walletApiKeyEdit.mode === "clear") {
+    addToast("The API key will be cleared on save - set a new one to test the connection.", "error");
+    return;
+  }
+  setWalletTesting(true);
+  try {
+    const result = await testWalletConnection(eventId, {
+      templateId,
+      ...(form.walletApiKeyEdit.mode === "replace" && form.walletApiKeyEdit.value.trim()
+        ? { apiKey: form.walletApiKeyEdit.value.trim() }
+        : {}),
+    });
+    addToast(
+      result.ok ? (result.message ?? "Connected.") : (result.error ?? "Could not reach PassCreator."),
+      result.ok ? "success" : "error",
+    );
+  } catch (err) {
+    addToast(operatorApiErrorMessage(err, "Could not test the wallet connection."), "error");
+  } finally {
+    setWalletTesting(false);
+  }
+}
+
 interface EventSettingsTabPanelProps {
   readonly tab: EventSettingsTab;
   readonly activeTab: EventSettingsTab;
@@ -1331,32 +1369,7 @@ export function EventSettingsPage() {
 
   async function handleTestWallet() {
     if (!eventId || !form) return;
-    const templateId = form.walletTemplateId.trim();
-    if (!templateId) {
-      addToast("Enter a Template ID before testing the connection.", "error");
-      return;
-    }
-    if (form.walletApiKeyEdit.mode === "clear") {
-      addToast("The API key will be cleared on save - set a new one to test the connection.", "error");
-      return;
-    }
-    setWalletTesting(true);
-    try {
-      const result = await testWalletConnection(eventId, {
-        templateId,
-        ...(form.walletApiKeyEdit.mode === "replace" && form.walletApiKeyEdit.value.trim()
-          ? { apiKey: form.walletApiKeyEdit.value.trim() }
-          : {}),
-      });
-      addToast(
-        result.ok ? (result.message ?? "Connected.") : (result.error ?? "Could not reach PassCreator."),
-        result.ok ? "success" : "error",
-      );
-    } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Could not test the wallet connection."), "error");
-    } finally {
-      setWalletTesting(false);
-    }
+    await confirmTestWalletConnection({ eventId, form, setWalletTesting, addToast });
   }
 
   async function handleArchiveConfirm() {
