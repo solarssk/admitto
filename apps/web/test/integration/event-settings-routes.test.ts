@@ -346,6 +346,60 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     }
   });
 
+  it("returns installed_wallet_pass_count reflecting only active passes with a confirmed device registration", async () => {
+    const installedAttendee = await prisma.attendee.create({
+      data: { event_id: EVENT_SET, email: "installed-guest@example.com", name: "Installed Guest", status: "registered" },
+    });
+    const issuedNotInstalledAttendee = await prisma.attendee.create({
+      data: { event_id: EVENT_SET, email: "issued-guest@example.com", name: "Issued Guest", status: "registered" },
+    });
+    const voidedInstalledAttendee = await prisma.attendee.create({
+      data: { event_id: EVENT_SET, email: "voided-guest@example.com", name: "Voided Guest", status: "registered" },
+    });
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: installedAttendee.id,
+        provider: "passcreator",
+        provider_pass_id: `pc-${installedAttendee.id}`,
+        status: "active",
+        google_active_registrations: 1,
+      },
+    });
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: issuedNotInstalledAttendee.id,
+        provider: "passcreator",
+        provider_pass_id: `pc-${issuedNotInstalledAttendee.id}`,
+        status: "active",
+      },
+    });
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: voidedInstalledAttendee.id,
+        provider: "passcreator",
+        provider_pass_id: `pc-${voidedInstalledAttendee.id}`,
+        status: "voided",
+        apple_active_registrations: 1,
+      },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { installed_wallet_pass_count: number };
+      expect(body.installed_wallet_pass_count).toBe(1);
+    } finally {
+      await prisma.walletPass.deleteMany({
+        where: { attendee_id: { in: [installedAttendee.id, issuedNotInstalledAttendee.id, voidedInstalledAttendee.id] } },
+      });
+      await prisma.attendee.deleteMany({
+        where: { id: { in: [installedAttendee.id, issuedNotInstalledAttendee.id, voidedInstalledAttendee.id] } },
+      });
+    }
+  });
+
   // Regression (bot review): revokeAllItemsForEvent skips a blocked-pass attendee's items via
   // the isAdmittable guard, so counting their items here would show/enable "Revoke all items
   // issued" for items the bulk action can never actually revoke, leaving the count stuck nonzero.

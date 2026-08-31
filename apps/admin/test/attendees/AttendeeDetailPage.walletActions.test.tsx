@@ -715,6 +715,28 @@ describe("AttendeeDetailPage — Wallet card gated by the event's platform toggl
     expect(screen.queryByLabelText("Apple Wallet: Registered")).toBeNull();
   });
 
+  // Regression (CodeRabbit review): pushWalletUpdateOnAttendeeChangeBestEffort
+  // (attendees-api-routes.ts) pushes to any *active* pass regardless of which platform toggles
+  // are currently on - it doesn't call enabledWalletPlatforms at all, unlike the status badge
+  // above. A registration on a platform since disabled still gets pushed, so the profile-edit
+  // notice must not hide just because that platform's own card row is now hidden.
+  it("still shows the wallet-push notice while editing, for a registration on a platform that's since been disabled", async () => {
+    mockWalletAppleEnabled = false;
+    mockLoad(
+      baseDetail({
+        wallet_pass: walletPass({ apple_active_registrations: 1, google_active_registrations: 0 }),
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.queryByText("This will also update their installed wallet pass.")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Company"), { target: { value: "Acme Corp" } });
+    expect(screen.getByText("This will also update their installed wallet pass.")).toBeTruthy();
+  });
+
   it("hides the Wallet card when the master switch is on but both individual platforms are off", async () => {
     mockWalletAppleEnabled = false;
     mockWalletGoogleEnabled = false;

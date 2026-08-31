@@ -22,6 +22,7 @@ import {
   type EventType,
   type LogoCropMeta,
 } from "@admitto/mail-templates";
+import { WALLET_RELEVANT_EVENT_FIELDS } from "@admitto/shared";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { normalizeTimeZone } from "@admitto/shared/timezones";
 import { decryptFromString, encryptToString } from "@admitto/crypto";
@@ -156,6 +157,7 @@ function serializeEventSettings(
   event: EventSettingsRow,
   deletability: { isDeletable: boolean; deletionBlockers: EventDeletionBlocker[] },
   revokeCounts: { admittedCount: number; issuedItemsCount: number },
+  installedWalletPassCount: number,
 ): EventSettingsDto {
   const normalizeNullableTimeZone = (value: string | null) =>
     value === null ? null : normalizeTimeZone(value) ?? value;
@@ -186,6 +188,7 @@ function serializeEventSettings(
     deletion_blockers: deletability.deletionBlockers,
     admitted_count: revokeCounts.admittedCount,
     issued_items_count: revokeCounts.issuedItemsCount,
+    installed_wallet_pass_count: installedWalletPassCount,
     organization_name: event.organization.name,
     active_items: event.event_items.map((item) => ({
       id: item.id,
@@ -276,6 +279,22 @@ async function loadRevokeCounts(
   return { admittedCount, issuedItemsCount };
 }
 
+/** Live count backing the "this will push to N installed wallet passes" confirm dialog shown
+ * before a save that touches a WALLET_RELEVANT_EVENT_FIELDS field - deliberately narrower than
+ * the event-wide push job's own target query (drain-wallet-push-jobs.ts's loadEventWideTargets,
+ * every *active* pass with a provider_pass_id, regardless of confirmed install), since the point
+ * here is warning about real people who'd actually notice the update on their phone, not how many
+ * PassCreator API calls will fire - an issued-but-never-installed pass doesn't bother anyone. */
+async function loadInstalledWalletPassCount(db: PrismaClient, eventId: string): Promise<number> {
+  return db.walletPass.count({
+    where: {
+      status: "active",
+      attendee: { event_id: eventId },
+      OR: [{ apple_active_registrations: { gt: 0 } }, { google_active_registrations: { gt: 0 } }],
+    },
+  });
+}
+
 async function loadEventSettingsRow(
   db: PrismaClient,
   eventId: string,
@@ -298,11 +317,12 @@ export async function handleGetEventSettings(c: Context, db: PrismaClient): Prom
   const event = await loadEventSettingsRow(db, eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const [deletability, revokeCounts] = await Promise.all([
+  const [deletability, revokeCounts, installedWalletPassCount] = await Promise.all([
     loadDeletability(db, eventId, event),
     loadRevokeCounts(db, eventId),
+    loadInstalledWalletPassCount(db, eventId),
   ]);
-  return c.json(serializeEventSettings(event, deletability, revokeCounts));
+  return c.json(serializeEventSettings(event, deletability, revokeCounts, installedWalletPassCount));
 }
 
 const walletTestSchema = z.object({
@@ -639,7 +659,7 @@ type WalletRelevantEventSnapshot = {
   wallet_apple_enabled: boolean;
 };
 
-/** True only when one of the wallet-relevant fields' *persisted* value actually differs -
+/** True only when one of WALLET_RELEVANT_EVENT_FIELDS' *persisted* values actually differs -
  * comparing against the pre-write row, not just whether the patch touched the key, so
  * resubmitting an unchanged value (e.g. a client re-saving the same title) never counts as a
  * change (bot review: an unconditional key-presence check would let a resubmit loop repeatedly
@@ -649,15 +669,12 @@ function walletRelevantEventFieldsChanged(
   existing: WalletRelevantEventSnapshot,
   updated: WalletRelevantEventSnapshot,
 ): boolean {
-  return (
-    existing.title !== updated.title ||
-    existing.date.getTime() !== updated.date.getTime() ||
-    existing.timezone !== updated.timezone ||
-    existing.event_hours_start !== updated.event_hours_start ||
-    existing.event_hours_end !== updated.event_hours_end ||
-    existing.event_type !== updated.event_type ||
-    existing.wallet_apple_enabled !== updated.wallet_apple_enabled
-  );
+  return WALLET_RELEVANT_EVENT_FIELDS.some((field) => {
+    const a = existing[field];
+    const b = updated[field];
+    if (a instanceof Date && b instanceof Date) return a.getTime() !== b.getTime();
+    return a !== b;
+  });
 }
 
 /** Best-effort: enqueues a wallet_push job to refresh every already-issued active wallet pass's
@@ -820,9 +837,14 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
       });
     }
 
-    const deletability = await loadDeletability(db, eventId, updated);
-    const revokeCounts = await loadRevokeCounts(db, eventId);
-    return c.json({ event: serializeEventSettings(updated, deletability, revokeCounts) });
+    const [deletability, revokeCounts, installedWalletPassCount] = await Promise.all([
+      loadDeletability(db, eventId, updated),
+      loadRevokeCounts(db, eventId),
+      loadInstalledWalletPassCount(db, eventId),
+    ]);
+    return c.json({
+      event: serializeEventSettings(updated, deletability, revokeCounts, installedWalletPassCount),
+    });
   } catch (err) {
     console.error("[audit] event_updated transaction failed", err);
     recordSystemLog({

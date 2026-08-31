@@ -64,6 +64,10 @@ export type EventSettingsDto = {
   admitted_count: number;
   /** Individual issued/returned item hand-outs across all attendees — drives "Revoke all items issued". */
   issued_items_count: number;
+  /** Active wallet passes with a confirmed device registration — drives the "this will push to N
+   * installed wallet passes" confirm dialog shown before a save that touches a
+   * WALLET_RELEVANT_EVENT_FIELDS field. */
+  installed_wallet_pass_count: number;
   organization_name: string;
   active_items: Array<{ id: string; name: string; enabled: boolean }>;
   /** Event's own branding overrides — null means "inherited from organization". */

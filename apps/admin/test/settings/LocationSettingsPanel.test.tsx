@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LocationSettingsPanel } from "../../src/settings/LocationSettingsPanel.js";
@@ -168,6 +168,8 @@ function renderPanel(
     eventId: string;
     isArchived: boolean;
     eventTimezone: string;
+    installedWalletPassCount: number;
+    walletConfiguredForPush: boolean;
     onDirtyChange: (d: boolean) => void;
     onSavingChange: (s: boolean) => void;
     onLocationSaved: () => Promise<void> | void;
@@ -180,6 +182,8 @@ function renderPanel(
         eventId="evt-1"
         isArchived={false}
         eventTimezone="Europe/Warsaw"
+        installedWalletPassCount={0}
+        walletConfiguredForPush
         {...props}
       />
     </MemoryRouter>,
@@ -194,7 +198,13 @@ function renderPanelWithRoutes() {
         <Route
           path="/admin/events/evt-1/settings"
           element={
-            <LocationSettingsPanel eventId="evt-1" isArchived={false} eventTimezone="Europe/Warsaw" />
+            <LocationSettingsPanel
+              eventId="evt-1"
+              isArchived={false}
+              eventTimezone="Europe/Warsaw"
+              installedWalletPassCount={0}
+              walletConfiguredForPush={false}
+            />
           }
         />
         <Route path="/admin/settings" element={<div>organisation-settings-page</div>} />
@@ -1325,6 +1335,73 @@ describe("LocationSettingsPanel — editable fields", () => {
         venue_phone_number: "+91 80 4252 1000",
         venue_place_id: "I4CCAB9B9CD77B6BA",
       }),
+    );
+  });
+
+  it("confirms before saving a wallet-relevant field when installed passes exist", async () => {
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockSaveLocation.mockResolvedValue({ ...EMPTY_LOCATION, venue_room: "Hall B" });
+    renderPanel({ installedWalletPassCount: 4 });
+
+    fireEvent.change(await screen.findByLabelText("Venue room"), { target: { value: "Hall B" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Push this update to installed wallet passes?",
+    });
+    expect(within(dialog).getByText(/4 attendees' installed wallet passes/)).toBeTruthy();
+    expect(mockSaveLocation).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save and push" }));
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", { venue_room: "Hall B" }),
+    );
+  });
+
+  it("cancelling the wallet push confirm does not save the location", async () => {
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    renderPanel({ installedWalletPassCount: 2 });
+
+    fireEvent.change(await screen.findByLabelText("Venue room"), { target: { value: "Hall B" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Push this update to installed wallet passes?",
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mockSaveLocation).not.toHaveBeenCalled();
+  });
+
+  it("saves directly, without confirming, when the event has no installed wallet passes", async () => {
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockSaveLocation.mockResolvedValue({ ...EMPTY_LOCATION, venue_room: "Hall B" });
+    renderPanel({ installedWalletPassCount: 0 });
+
+    fireEvent.change(await screen.findByLabelText("Venue room"), { target: { value: "Hall B" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", { venue_room: "Hall B" }),
+    );
+  });
+
+  // Regression (CodeRabbit review): the server's own push trigger
+  // (event-location-routes.ts's pushWalletUpdatesBestEffort) silently no-ops once Wallet is
+  // disabled or its template/API key is missing, regardless of how many passes were installed
+  // while it was configured - confirming here anyway would warn about a push that won't happen.
+  it("saves directly, without confirming, when installed passes exist but Wallet is no longer configured", async () => {
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockSaveLocation.mockResolvedValue({ ...EMPTY_LOCATION, venue_room: "Hall B" });
+    renderPanel({ installedWalletPassCount: 3, walletConfiguredForPush: false });
+
+    fireEvent.change(await screen.findByLabelText("Venue room"), { target: { value: "Hall B" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", { venue_room: "Hall B" }),
     );
   });
 
