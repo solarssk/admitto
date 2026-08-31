@@ -32,6 +32,7 @@ import type {
   BulkWalletVoidResponse,
   BulkWalletReissueResponse,
   BulkWalletDeleteResponse,
+  BulkWalletRefreshStatusResponse,
   WalletPassActionDto,
   EventItemDto,
   EventItemsListResponse,
@@ -1272,6 +1273,20 @@ export async function bulkDeleteWalletPass(
     jsonPostInit({ attendeeIds }),
   );
   return parseJson<BulkWalletDeleteResponse>(res);
+}
+
+/** Admin/superadmin-only: pull the current device-registration status from the provider for every
+ * selected attendee's wallet pass at once. Attendees with no pass, or no known
+ * device-registration id, are skipped. */
+export async function bulkRefreshWalletStatus(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<BulkWalletRefreshStatusResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-wallet-refresh-status`,
+    jsonPostInit({ attendeeIds }),
+  );
+  return parseJson<BulkWalletRefreshStatusResponse>(res);
 }
 
 export async function resendTicket(

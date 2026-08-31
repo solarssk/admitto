@@ -569,6 +569,14 @@ export interface BulkWalletDeleteResponse {
   errored: number;
 }
 
+/** Bulk wallet-refresh-status summary from POST .../attendees/bulk-wallet-refresh-status. */
+export interface BulkWalletRefreshStatusResponse {
+  refreshed: number;
+  /** No WalletPass row, or no known device-registration id to check - left untouched. */
+  skipped: number;
+  errored: number;
+}
+
 /** Admin SPA DTOs for event item configuration (mirror of web API).
  * `content_fields` references EventCustomField rows by source_field (see below) - it does not
  * embed field definitions. */

@@ -20,6 +20,7 @@ import {
   bulkRevokePass,
   bulkVoidWalletPass,
   bulkReissueWalletPass,
+  bulkRefreshWalletStatus,
   bulkDeleteWalletPass,
   bulkDeleteAttendees,
   bulkResendTickets,
@@ -662,7 +663,9 @@ function HeaderMoreMenu({
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        More
+        {/* Shortened below 768px, same convention as the selection bulk bar's own "More
+         * actions" button (BulkMoreActionsMenu, attendees.css). */}
+        {isDesktop ? "More actions" : "More"}
       </Button>
       {open && (
         <div className="more-actions-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
@@ -898,6 +901,7 @@ export function AttendeesPage() {
   const [bulkReissueWalletBusy, setBulkReissueWalletBusy] = useState(false);
   const [bulkReissueWalletConfirmOpen, setBulkReissueWalletConfirmOpen] = useState(false);
   const [bulkReissueWalletError, setBulkReissueWalletError] = useState<string | null>(null);
+  const [bulkRefreshWalletStatusBusy, setBulkRefreshWalletStatusBusy] = useState(false);
   const [bulkDeleteWalletBusy, setBulkDeleteWalletBusy] = useState(false);
   const [bulkDeleteWalletConfirmOpen, setBulkDeleteWalletConfirmOpen] = useState(false);
   const [bulkDeleteWalletError, setBulkDeleteWalletError] = useState<string | null>(null);
@@ -1464,6 +1468,40 @@ export function AttendeesPage() {
       },
     });
 
+  /** Bulk "Refresh status" for an explicit subset of selected attendees - pulls each selected
+   * attendee's current device-registration status from the provider at once, same effect as the
+   * attendee detail page's single "Refresh status" action. Runs immediately on click, no confirm
+   * dialog - it's read-only at the provider (just refreshes cached registration fields), matching
+   * the single-attendee action's own no-confirmation precedent (AGENTS.md reserves ConfirmDialog
+   * for destructive/irreversible actions; errors toast instead of an inline dialog error, same
+   * convention). An attendee with no wallet pass, or no known device-registration id, is left
+   * untouched server-side and counted separately. */
+  const handleBulkRefreshWalletStatusSelected = () =>
+    runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setBulkRefreshWalletStatusBusy,
+      addToast,
+      apiErrorFallback: "Refresh status failed.",
+      genericFallback: "Failed to refresh wallet status.",
+      action: (id) => bulkRefreshWalletStatus(id, [...selectedIds]),
+      onSuccess: (result) => {
+        notifyBulkWalletActionResult(
+          { count: result.refreshed, skipped: result.skipped, errored: result.errored },
+          {
+            verb: "refreshed",
+            skipReason: "had no pass or no known device-registration ID to check",
+            noneMessage: "None of the selected attendees had a wallet pass with a known device-registration ID to check.",
+          },
+          addToast,
+        );
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
+
   /** Bulk "Delete wallet pass" for an explicit subset of selected attendees - same effect as the
    * attendee detail page's single "Delete wallet pass" action, run once per selected attendee.
    * Irreversible; an attendee with no wallet pass is left untouched server-side and counted
@@ -1690,6 +1728,8 @@ export function AttendeesPage() {
           setBulkReissueWalletConfirmOpen(true);
         }}
         bulkReissueWalletBusy={bulkReissueWalletBusy}
+        onBulkRefreshWalletStatus={() => void handleBulkRefreshWalletStatusSelected()}
+        bulkRefreshWalletStatusBusy={bulkRefreshWalletStatusBusy}
         onBulkDeleteWallet={() => {
           setBulkDeleteWalletError(null);
           setBulkDeleteWalletConfirmOpen(true);

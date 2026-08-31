@@ -249,9 +249,9 @@ describe("AttendeesPage export and header Send tickets", () => {
     });
     renderPage();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "More" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "More actions" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Send tickets/ }));
     const dialog = screen.getByRole("dialog", { name: "Send tickets" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Send tickets" }));
@@ -266,9 +266,9 @@ describe("AttendeesPage export and header Send tickets", () => {
     fetchBulkSendStatus.mockRejectedValue(new Error("network down"));
     renderPage();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "More" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "More actions" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Send tickets/ }));
     const dialog = screen.getByRole("dialog", { name: "Send tickets" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Send tickets" }));
@@ -284,9 +284,9 @@ describe("AttendeesPage export and header Send tickets", () => {
     bulkResendTickets.mockResolvedValueOnce({ batchId: "batch-hdr-empty", queued: 0, skipped: 2, failed: 0 });
     renderPage();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "More" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "More actions" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Send tickets/ }));
     fireEvent.click(
       within(screen.getByRole("dialog", { name: "Send tickets" })).getByRole("button", {
@@ -315,9 +315,9 @@ describe("AttendeesPage export and header Send tickets", () => {
 
     const { unmount } = renderPage();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "More" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "More actions" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Send tickets/ }));
     fireEvent.click(
       within(screen.getByRole("dialog", { name: "Send tickets" })).getByRole("button", {
@@ -355,8 +355,8 @@ describe("AttendeesPage export and header Send tickets", () => {
     });
 
     renderPage();
-    expect(await screen.findByRole("button", { name: "More" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(await screen.findByRole("button", { name: "More actions" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Send tickets/ }));
     fireEvent.click(
       within(screen.getByRole("dialog", { name: "Send tickets" })).getByRole("button", {
@@ -365,7 +365,7 @@ describe("AttendeesPage export and header Send tickets", () => {
     );
     await waitFor(() => expect(firstSignalRef.current).toBeTruthy());
 
-    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Send tickets/ }));
     fireEvent.click(
       within(screen.getByRole("dialog", { name: "Send tickets" })).getByRole("button", {
@@ -389,9 +389,9 @@ describe("AttendeesPage export and header Send tickets", () => {
     bulkResendTickets.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderPage();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "More" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "More actions" })).toBeTruthy();
     });
-    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Send tickets/ }));
     const dialog = screen.getByRole("dialog", { name: "Send tickets" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Send tickets" }));

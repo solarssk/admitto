@@ -2084,6 +2084,158 @@ describe("attendee wallet actions — void/restore/reissue", () => {
     });
   });
 
+  describe("bulk-wallet-refresh-status", () => {
+    // Each test below cleans up its own attendee/pass in a finally block, same reasoning as the
+    // single-attendee "refresh-status" describe above: this block runs before the later
+    // "wallet_status on GET list" block, which relies on an unfiltered, default-page-size
+    // attendee list still finding its own fixture on page 1.
+    it("pulls the current status for each selected pass with a known device-registration id, skipping the rest", async () => {
+      const knownId = "att-bulk-wallet-refresh-known";
+      const noUpidId = "att-bulk-wallet-refresh-no-upid";
+      try {
+        await seedActionAttendee(knownId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${knownId}`,
+        });
+        // Has a pass, but never registered a device - nothing this endpoint can look up.
+        await seedActionAttendee(noUpidId, WALLET_ACTION_EVENT, { withPass: true });
+        getRegistrationStatusSpy.mockResolvedValueOnce({
+          appleActiveRegistrations: 2,
+          appleInactiveRegistrations: 0,
+          googleActiveRegistrations: 0,
+          googleInactiveRegistrations: 0,
+          firstDownloadedAt: "2026-08-25 09:00",
+        });
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-refresh-status`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [knownId, noUpidId] }),
+          },
+        );
+
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { refreshed: number; skipped: number; errored: number };
+        expect(body).toEqual({ refreshed: 1, skipped: 1, errored: 0 });
+        expect(getRegistrationStatusSpy).toHaveBeenCalledTimes(1);
+        expect(getRegistrationStatusSpy).toHaveBeenCalledWith(`admitto:${WALLET_ACTION_EVENT}:${knownId}`);
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: knownId } });
+        expect(row?.apple_active_registrations).toBe(2);
+        // Read-only at the provider - same convention as the single-attendee route, no action log.
+        expect(await prisma.attendeeActionLog.count({ where: { attendee_id: knownId } })).toBe(0);
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: { in: [knownId, noUpidId] } } });
+        await prisma.attendee.deleteMany({ where: { id: { in: [knownId, noUpidId] } } });
+      }
+    });
+
+    it("counts a pass replaced mid-flight (a CAS conflict) as skipped, not errored", async () => {
+      const attendeeId = "att-bulk-wallet-refresh-replaced";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        getRegistrationStatusSpy.mockImplementationOnce(async () => {
+          // Simulates a concurrent delete+re-add landing between loadBulkWalletTargets's read and
+          // refreshOneWalletPassStatus's own write - the row now belongs to a different pass.
+          await prisma.walletPass.update({
+            where: { attendee_id: attendeeId },
+            data: { provider_pass_id: "pc-bulk-replaced-mid-flight", user_provided_id: "admitto:bulk-replaced" },
+          });
+          return {
+            appleActiveRegistrations: 1,
+            appleInactiveRegistrations: 0,
+            googleActiveRegistrations: 0,
+            googleInactiveRegistrations: 0,
+            firstDownloadedAt: null,
+          };
+        });
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-refresh-status`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [attendeeId] }),
+          },
+        );
+
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { refreshed: number; skipped: number; errored: number };
+        expect(body).toEqual({ refreshed: 0, skipped: 1, errored: 0 });
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        // The replacement row (provider_pass_id/user_provided_id from mid-flight) must be
+        // untouched by the stale response for the old pass.
+        expect(row?.provider_pass_id).toBe("pc-bulk-replaced-mid-flight");
+        expect(row?.apple_active_registrations).toBeNull();
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("counts a still-inconclusive check (no match after the retry) as errored, not skipped", async () => {
+      const attendeeId = "att-bulk-wallet-refresh-inconclusive";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        getRegistrationStatusSpy.mockResolvedValue(null);
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-refresh-status`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [attendeeId] }),
+          },
+        );
+
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { refreshed: number; skipped: number; errored: number };
+        expect(body).toEqual({ refreshed: 0, skipped: 0, errored: 1 });
+        expect(getRegistrationStatusSpy).toHaveBeenCalledTimes(2);
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("returns 403 when the event is archived", async () => {
+      const attendeeId = "att-bulk-wallet-refresh-archived";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { archived_at: new Date() } });
+        try {
+          const res = await app.request(
+            `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-refresh-status`,
+            {
+              method: "POST",
+              headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+              body: JSON.stringify({ attendeeIds: [attendeeId] }),
+            },
+          );
+          expect(res.status).toBe(403);
+          const body = (await res.json()) as { code: string };
+          expect(body.code).toBe("event_archived");
+          expect(getRegistrationStatusSpy).not.toHaveBeenCalled();
+        } finally {
+          await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { archived_at: null } });
+        }
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+  });
+
   describe("bulk-wallet-delete", () => {
     it("deletes every wallet pass in the selection at the provider and locally, skipping the rest", async () => {
       const withPassId = "att-bulk-wallet-delete-with-pass";
