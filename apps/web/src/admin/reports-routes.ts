@@ -922,6 +922,7 @@ export async function handleGetWalletReports(c: Context, db: PrismaClient): Prom
   const timeZone = resolvePreviewEventTimeZone(event.timezone);
   const platforms = enabledWalletPlatforms(event);
   const body = await loadWalletReportsAggregates(db, eventId, timeZone, event.date, platforms);
+  c.header("Cache-Control", "no-store");
   return c.json(body);
 }
 
@@ -1025,6 +1026,7 @@ export async function handleGetCustomFieldReports(c: Context, db: PrismaClient):
   if (forbidden) return forbidden;
 
   const body = await loadCustomFieldReportsAggregates(db, eventId);
+  c.header("Cache-Control", "no-store");
   return c.json(body);
 }
 
@@ -1177,6 +1179,7 @@ export async function handleGetReports(c: Context, db: PrismaClient): Promise<Re
     by_operator: aggregates.by_operator,
   };
 
+  c.header("Cache-Control", "no-store");
   return c.json(body);
 }
 
