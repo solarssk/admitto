@@ -23,7 +23,6 @@ import {
   revokeAllItemsIssued,
   testWalletConnection,
   unarchiveEvent,
-  uploadEventBrandingFile,
   type WalletPushHistoryEntry,
   type WalletPushHistoryScope,
 } from "../api/client.js";
@@ -38,6 +37,7 @@ import {
   EventBounceIngestPanel,
   type EventBounceIngestPanelHandle,
 } from "../settings/EventBounceIngestPanel.js";
+import { EventImagesPanel } from "../settings/EventImagesPanel.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
 import { buildEventTypeOptions, EVENT_TYPE_LABELS } from "../settings/eventTypeOptions.js";
 import { SettingsFooter, NO_AUTOFILL_PROPS, SecretFieldRow } from "../settings/mailTransportFormParts.js";
@@ -46,8 +46,6 @@ import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
-import { EventImageAssetLibrary } from "../components/EventImageAssetLibrary.js";
-import { LogoUploadZone } from "../components/LogoUploadZone.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import { DatePicker } from "../components/DatePicker.js";
@@ -81,7 +79,7 @@ function formatActorStamp(iso: string, timezone: string | null | undefined): str
  * server's own mapping shape is a plain key->placeholder record with no row identity. */
 type WalletFieldMappingRow = { id: string; key: string; value: string };
 
-type SettingsForm = {
+export type SettingsForm = {
   title: string;
   date: string;
   eventHoursStart: string;
@@ -128,8 +126,6 @@ const BASIC_INFORMATION_HINT =
 const BASIC_INFORMATION_INTRO =
   "Set the event details used across admin and tickets.";
 const STATUS_HINT = "Current event status and ownership.";
-const EVENT_LOGO_HINT =
-  "Overrides the organisation logo for this event.";
 const DANGER_ZONE_HINT = "Actions that change event data or availability.";
 const WALLET_CARD_HINT = "Per-event Apple/Google Wallet pass configuration.";
 const WALLET_CARD_INTRO =
@@ -1734,54 +1730,20 @@ export function EventSettingsPage() {
       </EventSettingsTabPanel>
 
       <EventSettingsTabPanel tab="images" activeTab={tab} visited={visitedTabs} label="Images">
-        <Card
-          title={<HintLabel hint={EVENT_LOGO_HINT}>Event logo</HintLabel>}
-          className="event-settings-card"
-        >
-          <LogoUploadZone
-            label="Event logo"
-            hideLabel
-            hint="PNG, JPG, WebP · max 2 MB · leave blank to use the organization's logo"
-            value={form.logoUrl}
-            originalUrl={form.logoOriginalUrl || null}
-            cropMeta={form.logoCrop}
-            committedValue={original!.logoUrl}
-            committedOriginalUrl={original!.logoOriginalUrl}
-            disabled={isArchived || saving}
-            onChange={(url) => setForm((prev) => prev && { ...prev, logoUrl: url })}
-            onSourceChange={(source) =>
-              setForm(
-                (prev) =>
-                  prev && {
-                    ...prev,
-                    logoOriginalUrl: source.originalUrl ?? "",
-                    logoCrop: source.crop,
-                  },
-              )
-            }
-            uploadFn={(fd) => uploadEventBrandingFile(eventId, fd)}
-            onUploadingChange={setLogoUploading}
-          />
-          {isArchived && (
-            <p className="field-hint event-settings-archived-note">
-              This event is archived - images cannot be changed.
-            </p>
-          )}
-        </Card>
-
-        <EventImageAssetLibrary eventId={eventId} disabled={isArchived} />
-
-        {!isArchived && (
-          <SettingsFooter
-            validationErrors={[]}
-            validationErrorsRef={basicValidationErrorsRef}
-            hasUnsavedChanges={dirty}
-            saving={saving || logoUploading}
-            busyLabel={logoUploading && !saving ? "Uploading…" : "Saving…"}
-            onReset={handleBasicReset}
-            onSave={() => void handleSave()}
-          />
-        )}
+        <EventImagesPanel
+          eventId={eventId}
+          form={form}
+          setForm={setForm}
+          original={original!}
+          isArchived={isArchived}
+          saving={saving}
+          logoUploading={logoUploading}
+          onUploadingChange={setLogoUploading}
+          dirty={dirty}
+          validationErrorsRef={basicValidationErrorsRef}
+          onReset={handleBasicReset}
+          onSave={() => void handleSave()}
+        />
       </EventSettingsTabPanel>
 
       {isSa && (
