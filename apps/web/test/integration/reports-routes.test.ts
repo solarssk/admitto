@@ -758,6 +758,7 @@ describe("GET /api/admin/events/:eventId/reports", () => {
       headers: { Cookie: adminCookie },
     });
     expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
     const body = (await res.json()) as {
       event: { id: string; title: string; capacity: number | null };
       summary: {
@@ -2226,6 +2227,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
       headers: { Cookie: adminCookie },
     });
     expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
     const body = (await res.json()) as {
       total_attendees: number;
       synced_at: string | null;
@@ -2342,6 +2344,7 @@ describe("GET /api/admin/events/:eventId/reports/custom-fields", () => {
       headers: { Cookie: adminCookie },
     });
     expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
     const body = (await res.json()) as EventCustomFieldReportsResponse;
 
     expect(body.total_attendees).toBe(5);
