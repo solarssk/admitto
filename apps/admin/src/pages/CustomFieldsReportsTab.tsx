@@ -221,7 +221,7 @@ export const CustomFieldsReportsTab = memo(function CustomFieldsReportsTab({
   }
 
   return (
-    <div className="reports-grid-3">
+    <div className="custom-fields-grid">
       {data.fields.map((field) => (
         <CustomFieldCard key={field.id} field={field} totalAttendees={data.total_attendees} />
       ))}

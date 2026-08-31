@@ -936,7 +936,11 @@ function booleanValueLabel(value: string): string {
 
 /** One field's `select`/`boolean` category distribution, sorted by count descending with a
  * trailing "not answered" bucket so percentages always sum to 100 (same shape as the other
- * breakdown cards on this page - rsvpBreakdownRows et al on the frontend). */
+ * breakdown cards on this page - rsvpBreakdownRows et al on the frontend). A tied count falls
+ * back to sorting by the raw value itself, not left to whatever order the GROUP BY below happens
+ * to return - Postgres makes no row-order guarantee for a GROUP BY without an ORDER BY, and the
+ * frontend assigns both a row's chart position and its color by array index (CodeRabbit review,
+ * PR #1185), so an unstable order would visibly reshuffle a tied field between requests. */
 async function loadCustomFieldDistribution(
   db: PrismaClient,
   eventId: string,
@@ -947,7 +951,7 @@ async function loadCustomFieldDistribution(
   const labelFor = field.type === "boolean" ? booleanValueLabel : (value: string) => value;
   const rows = [...valueCounts.entries()]
     .map(([key, count]) => ({ key, label: labelFor(key), count, pct: oneDecimalPct(count, totalAttendees) }))
-    .sort((a, b) => b.count - a.count);
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
 
   const answered = rows.reduce((sum, row) => sum + row.count, 0);
   const notAnswered = totalAttendees - answered;

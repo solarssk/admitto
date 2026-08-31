@@ -22,6 +22,10 @@ const EVENT_MISSING = "evt-reports-missing";
 const EVENT_WALLETS = "evt-reports-wallets";
 const EVENT_WALLETS_APPLE_ONLY = "evt-reports-wallets-apple-only";
 const EVENT_CUSTOM_FIELDS = "evt-reports-custom-fields";
+// Minimal, separate event (not EVENT_CUSTOM_FIELDS above) so this doesn't need to mutate a
+// fixture several other tests in this file already depend on - proves the tie-breaker on its
+// own two-attendee, exactly-tied dataset (same reasoning as EVENT_WALLETS_APPLE_ONLY below).
+const EVENT_CUSTOM_FIELDS_TIE = "evt-reports-custom-fields-tie";
 
 const EMAIL_ADMIN = "reports-admin@example.com";
 const EMAIL_ADMIN_B = "reports-admin-b@example.com";
@@ -52,6 +56,8 @@ const ATT_CF_2 = "att-reports-cf-2";
 const ATT_CF_3 = "att-reports-cf-3";
 const ATT_CF_4 = "att-reports-cf-4";
 const ATT_CF_5 = "att-reports-cf-5";
+const ATT_CF_TIE_1 = "att-reports-cf-tie-1";
+const ATT_CF_TIE_2 = "att-reports-cf-tie-2";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -100,6 +106,7 @@ async function seed(client: PrismaClient) {
     EVENT_WALLETS,
     EVENT_WALLETS_APPLE_ONLY,
     EVENT_CUSTOM_FIELDS,
+    EVENT_CUSTOM_FIELDS_TIE,
   ];
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -180,6 +187,13 @@ async function seed(client: PrismaClient) {
         title: "Custom Fields Reports Event",
         slug: "reports-custom-fields",
         date: new Date("2027-08-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+      {
+        id: EVENT_CUSTOM_FIELDS_TIE,
+        title: "Custom Fields Tie Event",
+        slug: "reports-custom-fields-tie",
+        date: new Date("2027-08-02T12:00:00.000Z"),
         organization_id: ORG_REP,
       },
     ],
@@ -618,6 +632,41 @@ async function seed(client: PrismaClient) {
         email: "cf5@example.com",
         name: "CF Five",
         custom_data: { dietary: "Gluten-free", newsletter_optin: "true" },
+        ...mkAttendeeToken(),
+      },
+    ],
+  });
+
+  // Two options, each picked by exactly one attendee - a genuine tie the raw SQL GROUP BY
+  // (countAttendeesByCustomFieldValue) has no ORDER BY to break deterministically on its own.
+  // "B" is created and answered before "A" so an accidental insertion-order or creation-order
+  // "fix" wouldn't hide a missing tie-breaker - only sorting by the value itself keeps this
+  // A-then-B regardless of DB/query-plan behavior.
+  await client.eventCustomField.create({
+    data: {
+      event_id: EVENT_CUSTOM_FIELDS_TIE,
+      source_field: "tie_field",
+      label: "Tie field",
+      type: "select",
+      options: ["B", "A"],
+    },
+  });
+  await client.attendee.createMany({
+    data: [
+      {
+        id: ATT_CF_TIE_1,
+        event_id: EVENT_CUSTOM_FIELDS_TIE,
+        email: "cf-tie1@example.com",
+        name: "CF Tie One",
+        custom_data: { tie_field: "B" },
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_CF_TIE_2,
+        event_id: EVENT_CUSTOM_FIELDS_TIE,
+        email: "cf-tie2@example.com",
+        name: "CF Tie Two",
+        custom_data: { tie_field: "A" },
         ...mkAttendeeToken(),
       },
     ],
@@ -2343,6 +2392,20 @@ describe("GET /api/admin/events/:eventId/reports/custom-fields", () => {
     expect(newsletter.distribution).toEqual([
       { key: "true", label: "Yes", count: 3, pct: 60 },
       { key: "false", label: "No", count: 2, pct: 40 },
+    ]);
+  });
+
+  it("breaks a tied count deterministically by value, not by GROUP BY's unordered row order", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_CUSTOM_FIELDS_TIE}/reports/custom-fields`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventCustomFieldReportsResponse;
+    const tieField = body.fields.find((f) => f.source_field === "tie_field")!;
+    // Both values have count 1 - without a tie-breaker this could come back as either order.
+    expect(tieField.distribution).toEqual([
+      { key: "A", label: "A", count: 1, pct: 50 },
+      { key: "B", label: "B", count: 1, pct: 50 },
     ]);
   });
 });

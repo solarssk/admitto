@@ -355,6 +355,22 @@
   gap: var(--space-4);
 }
 
+/* Same auto-fit grid as .reports-grid-3 above, but with a wider track minimum -
+   CustomFieldsReportsTab.tsx's own cards hold a fixed 256px .wallets-gauge-overlay
+   (donut/gauge), unlike .reports-grid-3's other consumer (Event day's plain BreakdownRows
+   cards, fully fluid width). At .reports-grid-3's 220px minimum, a card's own interior
+   (220px minus .at-card__body's 2x24px padding = 172px) is narrower than the fixed chart,
+   which never shrinks (.wallets-gauge-overlay has no min-width, .wallets-adoption's
+   flex-wrap only reflows the breakdown list below it, it doesn't shrink the donut itself) -
+   causing the chart to overflow its own card. 320px covers the 256px chart plus its card's
+   48px of horizontal padding with a small margin, so a card can never end up narrower than
+   its own fixed-width content demands. */
+.custom-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-4);
+}
+
 .reports-log-pagesize .searchable-select {
   width: auto;
 }
