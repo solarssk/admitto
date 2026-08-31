@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaClient, Prisma } from "@admitto/db";
+import type { EventCustomFieldReportsResponse } from "@admitto/shared";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE, updateSessionDeviceLabel } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
@@ -2287,24 +2288,12 @@ describe("GET /api/admin/events/:eventId/reports/custom-fields", () => {
     expect(body.fields).toEqual([]);
   });
 
-  type CustomFieldReportBody = {
-    total_attendees: number;
-    fields: Array<{
-      source_field: string;
-      label: string;
-      description: string | null;
-      type: "text" | "select" | "boolean";
-      distribution: Array<{ key: string; label: string; count: number; pct: number }> | null;
-      response_rate: { answered: number; pct: number } | null;
-    }>;
-  };
-
   it("charts select/boolean fields as a distribution with a not-answered bucket, and text fields as a fill-rate stat only", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_CUSTOM_FIELDS}/reports/custom-fields`, {
       headers: { Cookie: adminCookie },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as CustomFieldReportBody;
+    const body = (await res.json()) as EventCustomFieldReportsResponse;
 
     expect(body.total_attendees).toBe(5);
     // Registry order (created_at asc), same order the Requirements page's own field list uses.
@@ -2349,7 +2338,7 @@ describe("GET /api/admin/events/:eventId/reports/custom-fields", () => {
     const res = await app.request(`/api/admin/events/${EVENT_CUSTOM_FIELDS}/reports/custom-fields`, {
       headers: { Cookie: adminCookie },
     });
-    const body = (await res.json()) as CustomFieldReportBody;
+    const body = (await res.json()) as EventCustomFieldReportsResponse;
     const newsletter = body.fields.find((f) => f.source_field === "newsletter_optin")!;
     expect(newsletter.distribution).toEqual([
       { key: "true", label: "Yes", count: 3, pct: 60 },

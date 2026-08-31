@@ -28,6 +28,11 @@ export function useReportFetch<T>(
     abortRef.current = ac;
     setLoading(true);
     setError(null);
+    // ReportsPage doesn't remount on an eventId-only in-SPA navigation (its own reconcile-timer
+    // comment explains why) - without this, switching events while this tab is the active/sticky
+    // one would keep rendering the *previous* event's chart data until the new fetch resolves,
+    // since `data` only otherwise changes on a successful response.
+    setData(null);
     try {
       const report = await fetchFn(eventId, ac.signal);
       if (ac.signal.aborted) return;

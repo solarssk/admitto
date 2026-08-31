@@ -45,11 +45,14 @@ vi.mock("recharts", () => {
 
   const PieChart = ({ children }: { children: ReactNode }) => {
     const pie = childProps(children, Pie);
+    const tooltip = childProps(children, Tooltip);
     const slices = (pie?.data ?? []) as Array<{ key: string; count: number; color: string }>;
     return (
       <div
         data-testid="rc-pie"
         data-slices={JSON.stringify(slices.map((s) => ({ key: s.key, count: s.count, color: s.color })))}
+        data-tooltip-one={tooltip?.formatter?.(1)}
+        data-tooltip-many={tooltip?.formatter?.(3)}
       />
     );
   };
@@ -241,6 +244,10 @@ describe("CustomFieldsReportsTab", () => {
       { name: "L", meta: "1 · 20%" },
       { name: "Not answered", meta: "2 · 40%" },
     ]);
+    // Tooltip pluralizes "attendee(s)" off the hovered slice's own count.
+    const shirtPie = shirtCard.querySelector('[data-testid="rc-pie"]')!;
+    expect(shirtPie.getAttribute("data-tooltip-one")).toBe("1 attendee");
+    expect(shirtPie.getAttribute("data-tooltip-many")).toBe("3 attendees");
 
     // boolean field: same donut/list rendering as select, generically - no "Yes is green" special
     // casing, same not-answered-is-gray rule.

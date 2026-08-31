@@ -228,6 +228,22 @@ describe("POST /api/admin/events/:eventId/custom-fields", () => {
     expect(res.status).toBe(400);
   });
 
+  it("rejects the reserved not-answered sentinel as a select option value", async () => {
+    // Must never collide with the Custom fields report's own "not answered" bucket key
+    // (CUSTOM_FIELD_NOT_ANSWERED_KEY, packages/shared/src/eventCustomFieldReportsDto.ts).
+    const res = await app.request(`/api/admin/events/${EVENT_CF}/custom-fields`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        source_field: "reserved_option",
+        label: "Reserved option",
+        type: "select",
+        options: ["S", "__not_answered__"],
+      }),
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("rejects an invalid source_field slug", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_CF}/custom-fields`, {
       method: "POST",
@@ -390,6 +406,25 @@ describe("PATCH /api/admin/events/:eventId/custom-fields/:fieldId", () => {
       orderBy: { created_at: "desc" },
     });
     expect(log?.metadata).toEqual({ source_field: "parking" });
+  });
+
+  it("rejects the reserved not-answered sentinel as a select option value", async () => {
+    const created = await prisma.eventCustomField.create({
+      data: {
+        event_id: EVENT_CF,
+        source_field: "patch_reserved_option",
+        label: "Patch reserved option",
+        type: "select",
+        options: ["S", "M"],
+      },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_CF}/custom-fields/${created.id}`, {
+      method: "PATCH",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ options: ["S", "__not_answered__"] }),
+    });
+    expect(res.status).toBe(400);
   });
 
   it("sets and then clears a field's description (explicit null)", async () => {
