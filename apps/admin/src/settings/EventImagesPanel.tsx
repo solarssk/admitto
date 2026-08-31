@@ -3,7 +3,7 @@ import { uploadEventBrandingFile } from "../api/client.js";
 import { EventImageAssetLibrary } from "../components/EventImageAssetLibrary.js";
 import { LogoUploadZone } from "../components/LogoUploadZone.js";
 import type { EventSettingsFormPanelProps, SettingsForm } from "../pages/EventSettingsPage.js";
-import { SettingsFooter } from "./mailTransportFormParts.js";
+import { LogoAwareSettingsFooter } from "./mailTransportFormParts.js";
 
 const EVENT_LOGO_HINT = "Overrides the organisation logo for this event.";
 
@@ -68,17 +68,15 @@ export function EventImagesPanel({
 
       <EventImageAssetLibrary eventId={eventId} disabled={isArchived} />
 
-      {!isArchived && (
-        <SettingsFooter
-          validationErrors={[]}
-          validationErrorsRef={validationErrorsRef}
-          hasUnsavedChanges={dirty}
-          saving={saving || logoUploading}
-          busyLabel={logoUploading && !saving ? "Uploading…" : "Saving…"}
-          onReset={onReset}
-          onSave={onSave}
-        />
-      )}
+      <LogoAwareSettingsFooter
+        isArchived={isArchived}
+        dirty={dirty}
+        saving={saving}
+        logoUploading={logoUploading}
+        validationErrorsRef={validationErrorsRef}
+        onReset={onReset}
+        onSave={onSave}
+      />
     </div>
   );
 }

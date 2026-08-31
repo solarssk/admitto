@@ -7,7 +7,7 @@ import { TimezoneSelect } from "../components/TimezoneSelect.js";
 import type { EventSettingsFormPanelProps } from "../pages/EventSettingsPage.js";
 import { formatEventDateTime, formatUtcDateTime } from "../utils/event-dates.js";
 import { buildEventTypeOptions } from "./eventTypeOptions.js";
-import { SettingsFooter, NO_AUTOFILL_PROPS } from "./mailTransportFormParts.js";
+import { LogoAwareSettingsFooter, NO_AUTOFILL_PROPS } from "./mailTransportFormParts.js";
 
 const BASIC_INFORMATION_HINT = "Title, date, capacity, and timezone.";
 const BASIC_INFORMATION_INTRO = "Set the event details used across admin and tickets.";
@@ -199,17 +199,15 @@ export function EventGeneralInfoPanel({
         </div>
       </Card>
 
-      {!isArchived && (
-        <SettingsFooter
-          validationErrors={[]}
-          validationErrorsRef={validationErrorsRef}
-          hasUnsavedChanges={dirty}
-          saving={saving || logoUploading}
-          busyLabel={logoUploading && !saving ? "Uploading…" : "Saving…"}
-          onReset={onReset}
-          onSave={onSave}
-        />
-      )}
+      <LogoAwareSettingsFooter
+        isArchived={isArchived}
+        dirty={dirty}
+        saving={saving}
+        logoUploading={logoUploading}
+        validationErrorsRef={validationErrorsRef}
+        onReset={onReset}
+        onSave={onSave}
+      />
     </>
   );
 }
