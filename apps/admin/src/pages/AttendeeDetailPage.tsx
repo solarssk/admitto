@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
-import { enabledWalletPlatforms, type EnabledWalletPlatforms } from "@admitto/shared";
+import { WALLET_RELEVANT_ATTENDEE_FIELDS, enabledWalletPlatforms, type EnabledWalletPlatforms } from "@admitto/shared";
 import {
   Avatar,
   Badge,
@@ -1434,6 +1434,41 @@ function buildAttendeePatch(
   return patch;
 }
 
+/** True once the edit form differs from the loaded attendee on a WALLET_RELEVANT_ATTENDEE_FIELDS
+ * field, and the attendee has a confirmed device registration to actually receive the resulting
+ * push - extracted out of AttendeeDetailPage (SonarCloud S3776), same reasoning as
+ * isAttendeeFormDirty above. Deliberately NOT isWalletPassInstalled(detail.wallet_pass,
+ * walletPlatforms) - that helper's platform gating is correct for the status badge (don't claim
+ * "Added" from a disabled platform's stale registration), but wrong here:
+ * pushWalletUpdateOnAttendeeChangeBestEffort (attendees-api-routes.ts) pushes to any *active* pass
+ * regardless of which platform toggles are currently on, so a registration on a since-disabled
+ * platform still gets pushed - hiding the notice there would under-warn (CodeRabbit review). A
+ * pass with zero registrations at all (never actually added) still doesn't count - nobody has it
+ * to be bothered by an update. status === "active" is required too - pushWalletUpdateOnAttendeeChangeBestEffort
+ * itself skips a voided pass on an ordinary profile edit (it only pushes a voided one when that
+ * same request is the one that just voided it), and voiding never clears the registration counts,
+ * so a voided pass would otherwise still read as "confirmed installed" here (CodeRabbit review).
+ * Informational only, not a blocking ConfirmDialog (unlike the
+ * event-wide cascade in EventSettingsPage.tsx) - editing one attendee's profile is a frequent,
+ * single-target action that only ever reaches their own already-installed pass, not hundreds of
+ * others (AGENTS.md's toast/Notice/ConfirmDialog table: a persistent fact about the surrounding
+ * view, not a destructive confirmation). */
+function computeWalletPushNoticeVisible(
+  form: AttendeeFormState,
+  detail: AttendeeDetailDto,
+  attributeFields: CustomDataFieldDef[],
+): boolean {
+  const hasConfirmedWalletRegistration =
+    !!detail.wallet_pass &&
+    detail.wallet_pass.status === "active" &&
+    ((detail.wallet_pass.apple_active_registrations ?? 0) > 0 ||
+      (detail.wallet_pass.google_active_registrations ?? 0) > 0);
+  if (!hasConfirmedWalletRegistration) return false;
+  return Object.keys(buildAttendeePatch(form, detail, attributeFields)).some((key) =>
+    (WALLET_RELEVANT_ATTENDEE_FIELDS as readonly string[]).includes(key),
+  );
+}
+
 type SaveErrorOutcome =
   | { kind: "email_conflict" }
   | { kind: "stale_write" }
@@ -2173,6 +2208,7 @@ export function AttendeeDetailPage() {
 
   const lastMail = detail.deliveries[0]?.status ?? null;
   const emailChanged = form.email !== initialEmail;
+  const walletPushNoticeVisible = computeWalletPushNoticeVisible(form, detail, attributeFields);
   const isRevoked = detail.status === "revoked";
   // A stored ticket_type with no matching catalog entry (type deleted after assignment, or
   // legacy pre-catalog data) has no option to bind to — the picker would otherwise silently
@@ -2461,6 +2497,11 @@ export function AttendeeDetailPage() {
                 }
               >
                 Someone else updated this attendee. Reload and reapply your edits.
+              </Notice>
+            )}
+            {walletPushNoticeVisible && (
+              <Notice variant="info" className="attendee-form__warn">
+                This will also update their installed wallet pass.
               </Notice>
             )}
             <Tooltip

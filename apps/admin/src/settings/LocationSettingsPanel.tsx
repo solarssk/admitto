@@ -6,6 +6,7 @@ import {
   resolveAppleMapsUrl,
   resolveGoogleMapsUrl,
 } from "@admitto/location";
+import { WALLET_RELEVANT_LOCATION_FIELDS } from "@admitto/shared";
 import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, useToast } from "@admitto/ui";
 import {
   fetchEventLocation,
@@ -18,6 +19,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventLocationDto, GeocodingResultDto, MapTileConfigDto } from "../api/types.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { TimeInput } from "../components/TimeInput.js";
 import { VenueAutocomplete } from "../components/VenueAutocomplete.js";
 import { whenShown, useDelayedLoading } from "../hooks/useDelayedLoading.js";
@@ -33,6 +35,7 @@ import {
   type LocationDraft,
 } from "./locationSettingsForm.js";
 import { formatMapCoordinates } from "./locationTimezone.js";
+import { describeWalletPushConfirm } from "../utils/walletPushConfirm.js";
 import "./location-settings.css";
 
 const EMPTY_DRAFT: LocationDraft = {
@@ -91,6 +94,8 @@ export function LocationSettingsPanel({
   eventId,
   isArchived,
   eventTimezone,
+  installedWalletPassCount,
+  walletConfiguredForPush,
   onDirtyChange,
   onSavingChange,
   onLocationSaved,
@@ -99,6 +104,17 @@ export function LocationSettingsPanel({
   eventId: string;
   isArchived: boolean;
   eventTimezone: string;
+  /** Live count of the event's active, confirmed-installed wallet passes - drives the "this will
+   * push to N installed wallet passes" confirm dialog shown before a save that touches a
+   * WALLET_RELEVANT_LOCATION_FIELDS field (EventSettingsPage.tsx's own EventSettingsDto). */
+  installedWalletPassCount: number;
+  /** True when the event's Wallet feature is fully configured right now (master switch, template
+   * ID, API key) - the Location tab can't itself change any of these, so unlike
+   * EventSettingsPage.tsx's own equivalent check this doesn't need to account for a pending
+   * unsaved edit. When false, event-location-routes.ts's own pushWalletUpdatesBestEffort
+   * suppresses the push server-side regardless of installedWalletPassCount, so confirming here
+   * would warn about an update that won't actually happen (CodeRabbit review). */
+  walletConfiguredForPush: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
   /** Called after a successful location save so the shell can refresh sidebar `event.location`. */
@@ -120,6 +136,7 @@ export function LocationSettingsPanel({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [applyingTimezone, setApplyingTimezone] = useState(false);
+  const [walletPushConfirmOpen, setWalletPushConfirmOpen] = useState(false);
 
   const [contactConfigured, setContactConfigured] = useState(true);
   /** Draft-side geocoding provenance (search/reverse) until the next save clears or confirms it. */
@@ -181,10 +198,7 @@ export function LocationSettingsPanel({
     return () => loadAbortRef.current?.abort();
   }, [loadSettings]);
 
-  const handleSave = async () => {
-    // Save controls only render after a successful load (apiData is set).
-    const body = buildEventLocationPatchBody(draft, savedDraft, pendingGeocodingProviderRef.current);
-    if (Object.keys(body).length === 0) return;
+  const commitSave = async (body: ReturnType<typeof buildEventLocationPatchBody>) => {
     setSaving(true);
     try {
       const data = await saveEventLocation(eventId, body);
@@ -196,6 +210,29 @@ export function LocationSettingsPanel({
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSave = async () => {
+    // Save controls only render after a successful load (apiData is set).
+    const body = buildEventLocationPatchBody(draft, savedDraft, pendingGeocodingProviderRef.current);
+    if (Object.keys(body).length === 0) return;
+    // Only worth confirming when the save would actually push to a real, currently-installed
+    // wallet pass - matching EventSettingsPage.tsx's own General/Wallet-tab confirm (same "don't
+    // overuse confirmation dialogs" reasoning, NN/g).
+    if (
+      installedWalletPassCount > 0 &&
+      walletConfiguredForPush &&
+      Object.keys(body).some((key) => (WALLET_RELEVANT_LOCATION_FIELDS as readonly string[]).includes(key))
+    ) {
+      setWalletPushConfirmOpen(true);
+      return;
+    }
+    await commitSave(body);
+  };
+
+  const handleWalletPushConfirm = async () => {
+    setWalletPushConfirmOpen(false);
+    await commitSave(buildEventLocationPatchBody(draft, savedDraft, pendingGeocodingProviderRef.current));
   };
 
   const handleReset = () => {
@@ -382,6 +419,10 @@ export function LocationSettingsPanel({
       await onApplyTimezone!(suggested);
       addToast(`Event timezone set to ${suggested}.`, "success");
     } catch (err) {
+      // EventSettingsPage.tsx's own onApplyTimezone rejects with this sentinel when the operator
+      // cancels its wallet-push confirm dialog instead of choosing to proceed - neither a success
+      // nor a real failure, so neither toast applies (CodeRabbit review).
+      if (err instanceof Error && err.message === "wallet_push_cancelled") return;
       addToast(operatorApiErrorMessage(err, "Failed to update timezone."), "error");
     } finally {
       setApplyingTimezone(false);
@@ -848,6 +889,16 @@ export function LocationSettingsPanel({
           onSave={() => void handleSave()}
         />
       )}
+
+      <ConfirmDialog
+        open={walletPushConfirmOpen}
+        title="Push this update to installed wallet passes?"
+        message={describeWalletPushConfirm(installedWalletPassCount)}
+        confirmLabel="Save and push"
+        loading={saving}
+        onConfirm={() => void handleWalletPushConfirm()}
+        onCancel={() => setWalletPushConfirmOpen(false)}
+      />
 
       <FixMapsLinkModal
         open={fixLinksOpen}

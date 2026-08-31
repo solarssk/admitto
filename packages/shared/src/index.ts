@@ -8,6 +8,11 @@ export {
   type EnabledWalletPlatforms,
   type EventWalletToggles,
 } from "./walletPlatforms.js";
+export {
+  WALLET_RELEVANT_EVENT_FIELDS,
+  WALLET_RELEVANT_ATTENDEE_FIELDS,
+  WALLET_RELEVANT_LOCATION_FIELDS,
+} from "./walletPushRelevantFields.js";
 export type { HealthOverallStatus, HealthRowStatus } from "./healthStatus.js";
 export {
   SUPPORTED_LOCALE_TAGS,
