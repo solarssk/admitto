@@ -41,6 +41,7 @@ import {
   EventBounceIngestPanel,
   type EventBounceIngestPanelHandle,
 } from "../settings/EventBounceIngestPanel.js";
+import { CheckInBehaviourPanel } from "../settings/CheckInBehaviourPanel.js";
 import { EventDangerZonePanel } from "../settings/EventDangerZonePanel.js";
 import { EventGeneralInfoPanel } from "../settings/EventGeneralInfoPanel.js";
 import { EventImagesPanel } from "../settings/EventImagesPanel.js";
@@ -434,6 +435,7 @@ interface ArchiveToggleDeps {
   setMailCardResetKey: (updater: (n: number) => number) => void;
   setLocationCardResetKey: (updater: (n: number) => number) => void;
   setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
+  setCheckinBehaviourCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
   refreshLayoutEvent?: () => Promise<void>;
@@ -449,6 +451,7 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
     setMailCardResetKey,
     setLocationCardResetKey,
     setTicketTypesCardResetKey,
+    setCheckinBehaviourCardResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -466,6 +469,7 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
     setMailCardResetKey((n) => n + 1);
     setLocationCardResetKey((n) => n + 1);
     setTicketTypesCardResetKey((n) => n + 1);
+    setCheckinBehaviourCardResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -545,6 +549,7 @@ interface RevokeCheckinsDeps {
   setMailCardResetKey: (updater: (n: number) => number) => void;
   setLocationCardResetKey: (updater: (n: number) => number) => void;
   setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
+  setCheckinBehaviourCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
   refreshLayoutEvent?: () => Promise<void>;
@@ -559,6 +564,7 @@ async function confirmRevokeCheckins(deps: RevokeCheckinsDeps): Promise<void> {
     setMailCardResetKey,
     setLocationCardResetKey,
     setTicketTypesCardResetKey,
+    setCheckinBehaviourCardResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -576,6 +582,7 @@ async function confirmRevokeCheckins(deps: RevokeCheckinsDeps): Promise<void> {
     setMailCardResetKey((n) => n + 1);
     setLocationCardResetKey((n) => n + 1);
     setTicketTypesCardResetKey((n) => n + 1);
+    setCheckinBehaviourCardResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -592,6 +599,7 @@ interface RevokeItemsDeps {
   setMailCardResetKey: (updater: (n: number) => number) => void;
   setLocationCardResetKey: (updater: (n: number) => number) => void;
   setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
+  setCheckinBehaviourCardResetKey: (updater: (n: number) => number) => void;
   addToast: AddToast;
   load: () => Promise<void>;
   refreshLayoutEvent?: () => Promise<void>;
@@ -606,6 +614,7 @@ async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
     setMailCardResetKey,
     setLocationCardResetKey,
     setTicketTypesCardResetKey,
+    setCheckinBehaviourCardResetKey,
     addToast,
     load,
     refreshLayoutEvent,
@@ -623,6 +632,7 @@ async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
     setMailCardResetKey((n) => n + 1);
     setLocationCardResetKey((n) => n + 1);
     setTicketTypesCardResetKey((n) => n + 1);
+    setCheckinBehaviourCardResetKey((n) => n + 1);
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
@@ -752,6 +762,10 @@ export function EventSettingsPage() {
   const [locationSaving, setLocationSaving] = useState(false);
   // Same reasoning as mailCardResetKey above, applied to LocationSettingsPanel's own draft state.
   const [locationCardResetKey, setLocationCardResetKey] = useState(0);
+  const [checkinBehaviourDirty, setCheckinBehaviourDirty] = useState(false);
+  const [checkinBehaviourSaving, setCheckinBehaviourSaving] = useState(false);
+  // Same reasoning as mailCardResetKey above, applied to CheckInBehaviourPanel's own draft state.
+  const [checkinBehaviourCardResetKey, setCheckinBehaviourCardResetKey] = useState(0);
   const basicValidationErrorsRef = useRef<HTMLUListElement>(null);
 
   const initialTab = inPageTabFromSearch(searchParams, isSa);
@@ -869,10 +883,10 @@ export function EventSettingsPage() {
   // (CodeRabbit review).
   const mailTabDirty = mailDirty || bounceDirty;
   const mailTabSaving = mailSaving || bounceSaving;
-  const pageDirty = dirty || mailTabDirty || locationDirty || ticketTypesDirty;
+  const pageDirty = dirty || mailTabDirty || locationDirty || ticketTypesDirty || checkinBehaviourDirty;
   // Same combination for "a save request is in flight" - a Danger Zone action firing while the
   // Mail or Location tab's own save is still in flight would race against it on the same event record.
-  const pageBusy = saving || mailTabSaving || locationSaving || ticketTypesSaving;
+  const pageBusy = saving || mailTabSaving || locationSaving || ticketTypesSaving || checkinBehaviourSaving;
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // these "Loading…" placeholders on and off faster than they can register as loading —
   // show them only once the fetch has genuinely taken a moment.
@@ -986,6 +1000,7 @@ export function EventSettingsPage() {
       setMailCardResetKey,
       setLocationCardResetKey,
       setTicketTypesCardResetKey,
+      setCheckinBehaviourCardResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -1011,6 +1026,7 @@ export function EventSettingsPage() {
       setMailCardResetKey,
       setLocationCardResetKey,
       setTicketTypesCardResetKey,
+      setCheckinBehaviourCardResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -1026,6 +1042,7 @@ export function EventSettingsPage() {
       setMailCardResetKey,
       setLocationCardResetKey,
       setTicketTypesCardResetKey,
+      setCheckinBehaviourCardResetKey,
       addToast,
       load,
       refreshLayoutEvent,
@@ -1228,6 +1245,21 @@ export function EventSettingsPage() {
           validationErrorsRef={basicValidationErrorsRef}
           onReset={handleBasicReset}
           onSave={() => void handleSave()}
+        />
+      </EventSettingsTabPanel>
+
+      <EventSettingsTabPanel
+        tab="checkin-behaviour"
+        activeTab={tab}
+        visited={visitedTabs}
+        label="Check-in"
+      >
+        <CheckInBehaviourPanel
+          key={checkinBehaviourCardResetKey}
+          eventId={eventId}
+          isArchived={isArchived}
+          onDirtyChange={setCheckinBehaviourDirty}
+          onSavingChange={setCheckinBehaviourSaving}
         />
       </EventSettingsTabPanel>
 

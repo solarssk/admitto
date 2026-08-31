@@ -4,24 +4,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { RequirementsPage } from "../../src/pages/RequirementsPage.js";
-import type { EventItemDto, OpsConfigDto } from "../../src/api/types.js";
+import type { EventItemDto } from "../../src/api/types.js";
 
 const fetchEventItems = vi.fn();
 const fetchEventCustomFields = vi.fn();
-const fetchOpsConfig = vi.fn();
 const updateEventItem = vi.fn();
 const createEventItem = vi.fn();
-const updateOpsConfig = vi.fn();
 
 vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchEventItems: (...args: unknown[]) => fetchEventItems(...args),
   fetchEventCustomFields: (...args: unknown[]) => fetchEventCustomFields(...args),
-  fetchOpsConfig: (...args: unknown[]) => fetchOpsConfig(...args),
   updateEventItem: (...args: unknown[]) => updateEventItem(...args),
   createEventItem: (...args: unknown[]) => createEventItem(...args),
   deleteEventItem: vi.fn(),
-  updateOpsConfig: (...args: unknown[]) => updateOpsConfig(...args),
 }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js");
@@ -52,16 +48,6 @@ const badgeItem: EventItemDto = {
   icon: null,
   config: { issue_on_checkin: true, requires_return: false },
 };
-
-function makeOpsConfig(overrides: Partial<OpsConfigDto> = {}): OpsConfigDto {
-  return {
-    require_confirm_on_scan: false,
-    badge_at_entry: true,
-    allow_manual_lookup: true,
-    auto_advance_on_valid: true,
-    ...overrides,
-  };
-}
 
 function renderPage() {
   return render(
@@ -95,7 +81,6 @@ describe("RequirementsPage delayed loading (no-flash grace window)", () => {
     // pre-delay window (real fetch in flight, items/fields still their initial []) would
     // fall straight through "Loading…" into the "confirmed empty" messages below.
     fetchEventItems.mockImplementationOnce(() => new Promise(() => {}));
-    fetchOpsConfig.mockImplementationOnce(() => new Promise(() => {}));
     vi.useFakeTimers();
     renderPage();
     // Deliberately not advancing timers — this is the pre-delay window.
@@ -110,7 +95,6 @@ describe("RequirementsPage load failure", () => {
     fetchEventItems
       .mockRejectedValueOnce(new ApiError(500, "server error"))
       .mockResolvedValueOnce([badgeItem]);
-    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
 
@@ -122,54 +106,11 @@ describe("RequirementsPage load failure", () => {
     await waitFor(() => {
       expect(screen.queryByText("Could not load requirements")).toBeNull();
     });
-    expect(await screen.findByRole("switch", { name: "Issue badge at entry" })).toBeTruthy();
+    expect(await screen.findByRole("switch", { name: "Disable Badge" })).toBeTruthy();
   });
 });
 
-describe("RequirementsPage badge/ops-config sync", () => {
-  it("refreshes ops config after disabling the badge item, so the toggle doesn't show stale ON", async () => {
-    fetchEventItems.mockResolvedValue([badgeItem]);
-    fetchOpsConfig
-      .mockResolvedValueOnce(makeOpsConfig({ badge_at_entry: true }))
-      .mockResolvedValueOnce(makeOpsConfig({ badge_at_entry: false }));
-    updateEventItem.mockResolvedValueOnce({ ...badgeItem, enabled: false });
-
-    renderPage();
-
-    const badgeToggle = await screen.findByRole("switch", { name: "Issue badge at entry" });
-    await waitFor(() => expect(badgeToggle).toHaveProperty("checked", true));
-
-    fireEvent.click(screen.getByRole("switch", { name: "Disable Badge" }));
-
-    await waitFor(() => {
-      expect(fetchOpsConfig).toHaveBeenCalledTimes(2);
-    });
-    await waitFor(() => {
-      expect(badgeToggle).toHaveProperty("checked", false);
-    });
-  });
-
-  it("still shows the success toast when the item update succeeds but the ops-config refresh fails", async () => {
-    fetchEventItems.mockResolvedValue([badgeItem]);
-    fetchOpsConfig
-      .mockResolvedValueOnce(makeOpsConfig({ badge_at_entry: true }))
-      .mockRejectedValueOnce(new Error("network error"));
-    updateEventItem.mockResolvedValueOnce({ ...badgeItem, enabled: false });
-
-    renderPage();
-    await screen.findByRole("switch", { name: "Issue badge at entry" });
-
-    fireEvent.click(screen.getByRole("switch", { name: "Disable Badge" }));
-
-    await waitFor(() => {
-      expect(addToast).toHaveBeenCalledWith("Item disabled", "success");
-    });
-    expect(addToast).not.toHaveBeenCalledWith(
-      expect.stringMatching(/Failed to update item/),
-      "error",
-    );
-  });
-
+describe("RequirementsPage — item enable/disable toggle", () => {
   it("shows the enabled toast when toggling an item back on", async () => {
     const disabledGiftbag: EventItemDto = {
       ...badgeItem,
@@ -179,7 +120,6 @@ describe("RequirementsPage badge/ops-config sync", () => {
       enabled: false,
     };
     fetchEventItems.mockResolvedValue([disabledGiftbag]);
-    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
     updateEventItem.mockResolvedValueOnce({ ...disabledGiftbag, enabled: true });
 
     renderPage();
@@ -189,62 +129,11 @@ describe("RequirementsPage badge/ops-config sync", () => {
       expect(addToast).toHaveBeenCalledWith("Item enabled", "success");
     });
   });
-
-  it("does not refetch ops config when toggling a non-badge item", async () => {
-    const giftbag: EventItemDto = { ...badgeItem, id: "item-gift", key: "giftbag", label: "Gift bag" };
-    fetchEventItems.mockResolvedValue([giftbag]);
-    fetchOpsConfig.mockResolvedValueOnce(makeOpsConfig());
-    updateEventItem.mockResolvedValueOnce({ ...giftbag, enabled: false });
-
-    renderPage();
-    await screen.findByRole("switch", { name: "Issue badge at entry" });
-
-    fireEvent.click(screen.getByRole("switch", { name: "Disable Gift bag" }));
-
-    await waitFor(() => {
-      expect(updateEventItem).toHaveBeenCalled();
-    });
-    expect(fetchOpsConfig).toHaveBeenCalledTimes(1);
-  });
-
-  it("toggles require-confirm-on-scan, allow-manual-lookup, and auto-advance", async () => {
-    fetchEventItems.mockResolvedValue([badgeItem]);
-    fetchOpsConfig.mockResolvedValue(
-      makeOpsConfig({
-        require_confirm_on_scan: false,
-        allow_manual_lookup: true,
-        auto_advance_on_valid: true,
-      }),
-    );
-    updateOpsConfig
-      .mockResolvedValueOnce(makeOpsConfig({ require_confirm_on_scan: true }))
-      .mockResolvedValueOnce(makeOpsConfig({ allow_manual_lookup: false }))
-      .mockResolvedValueOnce(makeOpsConfig({ auto_advance_on_valid: false }));
-
-    renderPage();
-    await screen.findByRole("switch", { name: "Issue badge at entry" });
-
-    fireEvent.click(screen.getByRole("switch", { name: "Require confirmation on scan" }));
-    await waitFor(() => {
-      expect(updateOpsConfig).toHaveBeenCalledWith("evt-1", { require_confirm_on_scan: true });
-    });
-
-    fireEvent.click(screen.getByRole("switch", { name: "Allow manual lookup" }));
-    await waitFor(() => {
-      expect(updateOpsConfig).toHaveBeenCalledWith("evt-1", { allow_manual_lookup: false });
-    });
-
-    fireEvent.click(screen.getByRole("switch", { name: "Auto-advance on valid scan" }));
-    await waitFor(() => {
-      expect(updateOpsConfig).toHaveBeenCalledWith("evt-1", { auto_advance_on_valid: false });
-    });
-  });
 });
 
 describe("RequirementsPage — Add item and Edit item", () => {
   it("shows the Add item modal header subtitle", async () => {
     fetchEventItems.mockResolvedValue([]);
-    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Add" }));
@@ -257,7 +146,6 @@ describe("RequirementsPage — Add item and Edit item", () => {
 
   it("shows an inline error and does not create an item when the name has no usable characters", async () => {
     fetchEventItems.mockResolvedValue([]);
-    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Add" }));
@@ -273,7 +161,6 @@ describe("RequirementsPage — Add item and Edit item", () => {
 
   it("clears the Add item name error once the user edits the input", async () => {
     fetchEventItems.mockResolvedValue([]);
-    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Add" }));
@@ -292,7 +179,6 @@ describe("RequirementsPage — Add item and Edit item", () => {
   it("shows a warning toast when creating an item whose name already exists", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventItems.mockResolvedValue([]);
-    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
     createEventItem.mockRejectedValueOnce(new ApiError(409, "key_conflict", "key_conflict"));
 
     renderPage();
@@ -307,7 +193,6 @@ describe("RequirementsPage — Add item and Edit item", () => {
 
   it("closes the Add item modal via the backdrop and via Cancel, without creating", async () => {
     fetchEventItems.mockResolvedValue([]);
-    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Add" }));
@@ -326,7 +211,6 @@ describe("RequirementsPage — Add item and Edit item", () => {
 
   it("opens the edit drawer for an item when clicking Edit item", async () => {
     fetchEventItems.mockResolvedValue([badgeItem]);
-    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Edit item" }));
@@ -337,7 +221,6 @@ describe("RequirementsPage — Add item and Edit item", () => {
 
   it("closes the Add item modal on Escape", async () => {
     fetchEventItems.mockResolvedValue([]);
-    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Add" }));
@@ -350,7 +233,6 @@ describe("RequirementsPage — Add item and Edit item", () => {
 
   it("Event items table has column headers", async () => {
     fetchEventItems.mockResolvedValue([badgeItem]);
-    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
     await screen.findByText("Event items");
@@ -362,7 +244,6 @@ describe("RequirementsPage — Add item and Edit item", () => {
 
   it("shows an item's description in the table", async () => {
     fetchEventItems.mockResolvedValue([{ ...badgeItem, description: "Physical badge at the door." }]);
-    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
 
@@ -374,7 +255,6 @@ describe("RequirementsPage — Add item and Edit item", () => {
       { ...badgeItem, id: "item-a", key: "vip_badge", label: "VIP" },
       { ...badgeItem, id: "item-b", key: "vip_wristband", label: "VIP" },
     ]);
-    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
 
@@ -385,7 +265,6 @@ describe("RequirementsPage — Add item and Edit item", () => {
 
   it("clicking Add item again while the modal is already open closes it", async () => {
     fetchEventItems.mockResolvedValue([]);
-    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
     const addItemButton = await screen.findByRole("button", { name: "Add" });
@@ -399,7 +278,6 @@ describe("RequirementsPage — Add item and Edit item", () => {
 
   it("flags a colliding name with the unique-suffix hint", async () => {
     fetchEventItems.mockResolvedValue([{ ...badgeItem, key: "gift_bag", label: "Gift bag" }]);
-    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Add" }));
@@ -416,7 +294,6 @@ describe("RequirementsPage — Active toggle double-submit guard", () => {
       resolveUpdate = resolve;
     });
     fetchEventItems.mockResolvedValue([badgeItem]);
-    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
     updateEventItem.mockReturnValueOnce(pending);
 
     renderPage();

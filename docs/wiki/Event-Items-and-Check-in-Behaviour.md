@@ -23,11 +23,13 @@ Agree what operators will physically issue or return. Decide whether operators n
 
 ### Check-in behaviour
 
-1. Enable **Issue badge at entry** only when the Badge item is active and has **Issue on check-in** enabled. Admitto keeps that toggle in sync with Badge's Active / Issue on check-in state so the two cannot drift.
-2. Enable **Require confirmation on scan** when operators must review a preview before admission is recorded.
-3. Enable **Allow manual lookup** when operators may search by attendee name or email.
-4. Enable **Auto-advance after valid check-in** when the screen should clear automatically for the next attendee. When the attendee still has items to hand out, the card stays until those actions are done (desktop matches mobile).
-5. Test the complete flow with a synthetic attendee and every required item. On check-in, operators attest with **Mark issued** / **Mark given**, not a free-form instruction.
+1. Open **Event Settings**, then **Check-in**.
+2. Enable **Issue badge at entry** only when the Badge item is active and has **Issue on check-in** enabled. Admitto keeps that toggle in sync with Badge's Active / Issue on check-in state so the two cannot drift.
+3. Enable **Require confirmation on scan** when operators must review a preview before admission is recorded.
+4. Enable **Allow manual lookup** when operators may search by attendee name or email.
+5. Enable **Auto-advance after valid check-in** when the screen should clear automatically for the next attendee. When the attendee still has items to hand out, the card stays until those actions are done (desktop matches mobile).
+6. Select **Save** to apply the changes - unlike Event items, these four settings are not saved individually.
+7. Test the complete flow with a synthetic attendee and every required item. On check-in, operators attest with **Mark issued** / **Mark given**, not a free-form instruction.
 
 ## Expected result
 

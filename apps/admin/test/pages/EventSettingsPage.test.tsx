@@ -66,6 +66,9 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchTimezoneForCoordinates: vi.fn(),
     testWalletConnection: vi.fn(),
     fetchWalletPushHistory: vi.fn(),
+    fetchOpsConfig: vi.fn(),
+    updateOpsConfig: vi.fn(),
+    fetchEventItems: vi.fn(),
   };
 });
 
@@ -129,6 +132,9 @@ import {
   updateTicketType,
   uploadEventBrandingFile,
   fetchWalletPushHistory,
+  fetchOpsConfig,
+  updateOpsConfig,
+  fetchEventItems,
 } from "../../src/api/client.js";
 import type {
   EventBounceIngestSettingsResponse,
@@ -136,6 +142,7 @@ import type {
   EventMailSettingsResponse,
   MailSettingsFieldsDto,
   MapTileConfigDto,
+  OpsConfigDto,
 } from "../../src/api/types.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 import { formatEventDateTime, formatUtcDateTime } from "../../src/utils/event-dates.js";
@@ -201,6 +208,13 @@ const mapTileConfig: MapTileConfigDto = {
   attribution: "© OpenStreetMap contributors",
   max_zoom: 19,
   contact_configured: true,
+};
+
+const emptyOpsConfig: OpsConfigDto = {
+  require_confirm_on_scan: false,
+  badge_at_entry: false,
+  allow_manual_lookup: true,
+  auto_advance_on_valid: true,
 };
 
 function plainField<T>(value: T) {
@@ -309,6 +323,8 @@ beforeEach(() => {
   vi.mocked(reverseGeocoding).mockResolvedValue({ result: null, contact_configured: true });
   vi.mocked(fetchTimezoneForCoordinates).mockResolvedValue({ timezone: null });
   vi.mocked(fetchWalletPushHistory).mockResolvedValue({ items: [], total: 0 });
+  vi.mocked(fetchOpsConfig).mockResolvedValue(emptyOpsConfig);
+  vi.mocked(fetchEventItems).mockResolvedValue([]);
   mockBlocker = { state: "unblocked", proceed: vi.fn(), reset: vi.fn() };
   // window.matchMedia isn't implemented by jsdom; default to desktop so any component on
   // this page relying on useIsDesktop() (elsewhere in the app, not this page's Save button)
@@ -798,6 +814,25 @@ describe("EventSettingsPage tabs", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "Images" }));
     fireEvent.click(await screen.findByRole("button", { name: "Remove event logo" }));
     expect(screen.queryByRole("button", { name: "Remove event logo" })).toBeNull();
+  });
+
+  it("switches to the Check-in behaviour tab and shows its toggles, wired to ops-config", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    vi.mocked(fetchOpsConfig).mockResolvedValueOnce({ ...emptyOpsConfig, require_confirm_on_scan: true });
+    vi.mocked(updateOpsConfig).mockResolvedValueOnce({ ...emptyOpsConfig, allow_manual_lookup: false });
+    renderSettings();
+    fireEvent.click(await screen.findByRole("tab", { name: "Check-in" }));
+
+    const requireConfirm = await screen.findByRole("switch", { name: "Require confirmation on scan" });
+    expect(requireConfirm).toHaveProperty("checked", true);
+
+    fireEvent.click(screen.getByRole("switch", { name: "Allow manual lookup" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(updateOpsConfig)).toHaveBeenCalledWith("evt-1", { allow_manual_lookup: false });
+    });
+    expect(await screen.findByText("Check-in behaviour saved.")).toBeTruthy();
   });
 
   it("switches to the Images tab and shows event logo + image library", async () => {
