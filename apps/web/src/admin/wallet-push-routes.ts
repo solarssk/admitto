@@ -6,7 +6,7 @@
  */
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
-import { readWalletPushRequest, type WalletPushRequest } from "@admitto/tickets";
+import { readWalletPushRequest, resolveEventWalletProvider, type WalletPushRequest } from "@admitto/tickets";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
@@ -35,7 +35,7 @@ type WalletPushResultJson = {
  * WalletPushRequest - the history row still renders, just without this detail. */
 export type WalletPushHistoryScope =
   | { kind: "attendee_ids"; count: number }
-  | { kind: "event_wide"; reason: "location" | "settings" | null };
+  | { kind: "event_wide"; reason: "location" | "settings" | "manual" | null };
 
 /** Re-validates the stored request via the same parser the drain worker itself trusts
  * (packages/tickets), rather than the loose WalletPushResultJson cast below - a single
@@ -133,7 +133,7 @@ export async function enqueueEventWideWalletPushJob(
   c: Context,
   eventId: string,
   organizationId: string,
-  reason?: "location" | "settings",
+  reason?: "location" | "settings" | "manual",
 ): Promise<string> {
   const alreadyQueued = await findPendingEventWideWalletPushJob(db, eventId);
   if (alreadyQueued) return alreadyQueued;
@@ -147,6 +147,33 @@ export async function enqueueEventWideWalletPushJob(
     }
     throw err;
   }
+}
+
+/** POST /api/admin/events/:eventId/wallet-push - manual, operator-triggered event-wide push, from
+ * the Attendees header's "More actions" menu. Same target set and job as the automatic
+ * settings/location-save triggers (enqueueEventWideWalletPushJob above), just with an explicit
+ * click instead of a wallet-relevant field actually changing - reason: "manual" distinguishes it
+ * in the history list. Guarded on the event actually having wallet configured (unlike the
+ * automatic triggers, which are only ever called after already checking wallet_enabled/
+ * template_id/api_key themselves) - same resolveEventWalletProvider check the bulk wallet-action
+ * routes already use. */
+export async function handleTriggerEventWideWalletPush(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const event = await db.event.findUnique({ where: { id: eventId }, select: { organization_id: true } });
+  if (!event) return c.json({ error: "not_found" }, 404);
+
+  const provider = await resolveEventWalletProvider(db, eventId);
+  if (!provider) return c.json({ error: "wallet_not_configured" }, 409);
+
+  const jobId = await enqueueEventWideWalletPushJob(db, c, eventId, event.organization_id, "manual");
+  c.header("Cache-Control", "no-store");
+  return c.json({ jobId });
 }
 
 /** GET /api/admin/events/:eventId/wallet-push/jobs/:jobId */

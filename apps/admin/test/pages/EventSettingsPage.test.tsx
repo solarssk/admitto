@@ -1155,7 +1155,7 @@ describe("EventSettingsPage tabs", () => {
     expect(await screen.findByText("—")).toBeTruthy();
   });
 
-  it("describes every other scope shape: singular attendee count, settings reason, and no reason at all", async () => {
+  it("describes every other scope shape: singular attendee count, settings reason, manual reason, and no reason at all", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({
       items: [
@@ -1189,14 +1189,25 @@ describe("EventSettingsPage tabs", () => {
           error: null,
           scope: { kind: "event_wide", reason: null },
         },
+        {
+          id: "job-4",
+          created_at: "2026-06-07T07:00:00.000Z",
+          reissued: 3,
+          skipped: 0,
+          errored: 0,
+          status: "succeeded",
+          error: null,
+          scope: { kind: "event_wide", reason: "manual" },
+        },
       ],
-      total: 3,
+      total: 4,
     });
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
 
     expect(await screen.findByText("1 attendee")).toBeTruthy();
     expect(screen.getByText("Whole event · settings update")).toBeTruthy();
     expect(screen.getByText("Whole event")).toBeTruthy();
+    expect(screen.getByText("Whole event · manual push")).toBeTruthy();
   });
 
   it("shows an error and retries wallet push history on demand", async () => {

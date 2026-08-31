@@ -200,6 +200,7 @@ function describeWalletPushScope(scope: WalletPushHistoryScope | null): string {
   }
   if (scope.reason === "location") return "Whole event · location update";
   if (scope.reason === "settings") return "Whole event · settings update";
+  if (scope.reason === "manual") return "Whole event · manual push";
   return "Whole event";
 }
 

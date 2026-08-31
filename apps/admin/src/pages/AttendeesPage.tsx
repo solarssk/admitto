@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
 import { Button, EmptyState, ModalBackdrop, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
-import { enabledWalletPlatforms } from "@admitto/shared";
+import { enabledWalletPlatforms, type EnabledWalletPlatforms } from "@admitto/shared";
 import {
   ApiError,
   bulkChangeRsvpStatus,
@@ -30,6 +30,7 @@ import {
   fetchEventItems,
   fetchTicketTypes,
   sendEventBulk,
+  triggerEventWideWalletPush,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type {
@@ -625,6 +626,9 @@ interface HeaderMoreMenuProps {
   isDesktop: boolean;
   exportingFormat: ExportFormat | null;
   onExport: (format: ExportFormat) => void;
+  walletPlatforms: EnabledWalletPlatforms;
+  onTriggerEventWidePush: () => void;
+  eventWidePushBusy: boolean;
 }
 
 /** Header "More" menu — bundles Import and Send tickets behind one compact button, keeping
@@ -646,6 +650,9 @@ function HeaderMoreMenu({
   isDesktop,
   exportingFormat,
   onExport,
+  walletPlatforms,
+  onTriggerEventWidePush,
+  eventWidePushBusy,
 }: Readonly<HeaderMoreMenuProps>) {
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
@@ -688,6 +695,22 @@ function HeaderMoreMenu({
               onSendTickets();
             }}
           />
+          {walletPlatforms.any && (
+            <>
+              <hr className="more-actions-menu__divider" />
+              <MoreActionsMenuItem
+                icon="refresh-dot"
+                label={eventWidePushBusy ? "Pushing updates…" : "Push updates"}
+                hint="Push the latest details to every installed wallet pass"
+                disabled={archived || eventWidePushBusy}
+                tooltip={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
+                onClick={() => {
+                  setOpen(false);
+                  onTriggerEventWidePush();
+                }}
+              />
+            </>
+          )}
           {!isDesktop && (
             <>
               <hr className="more-actions-menu__divider" />
@@ -901,6 +924,9 @@ export function AttendeesPage() {
   const [bulkDeleteWalletBusy, setBulkDeleteWalletBusy] = useState(false);
   const [bulkDeleteWalletConfirmOpen, setBulkDeleteWalletConfirmOpen] = useState(false);
   const [bulkDeleteWalletError, setBulkDeleteWalletError] = useState<string | null>(null);
+  const [eventWidePushBusy, setEventWidePushBusy] = useState(false);
+  const [eventWidePushConfirmOpen, setEventWidePushConfirmOpen] = useState(false);
+  const [eventWidePushError, setEventWidePushError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
 
   // Lets the debounce timer below compare against the *currently committed* search value
@@ -1100,6 +1126,42 @@ export function AttendeesPage() {
       }
     } finally {
       setSendBusy(false);
+    }
+  };
+
+  /** Header "Push updates" (More actions) — enqueues the same async wallet_push job the
+   * automatic settings/location-save triggers use, but for an explicit operator click
+   * (reason: "manual"). Not selection-scoped, unlike the bulk bar's own "Push updates" — every
+   * already-issued active pass under the event is a target, resolved by the job itself. */
+  const handleTriggerEventWidePush = async () => {
+    if (!eventId) return;
+    setEventWidePushBusy(true);
+    setEventWidePushError(null);
+    try {
+      const result = await triggerEventWideWalletPush(eventId);
+      setEventWidePushConfirmOpen(false);
+      addToast("Push queued - you'll see a summary once it finishes.", "info");
+      walletPushPollRef.current?.abort();
+      const ac = new AbortController();
+      walletPushPollRef.current = ac;
+      void pollWalletPushCompletion(eventId, result.jobId, addToast, { signal: ac.signal }).catch(() => {
+        if (ac.signal.aborted) return;
+        addToast("Could not refresh wallet push status.", "info");
+      });
+    } catch (err) {
+      if (err instanceof ApiError) {
+        reportApiError(err.status);
+        if (err.status === 401) {
+          const next = encodeURIComponent(window.location.pathname);
+          window.location.assign(`/login?next=${next}`);
+          return;
+        }
+        setEventWidePushError(operatorApiErrorMessage(err, "Push failed."));
+      } else {
+        setEventWidePushError("Failed to push updates.");
+      }
+    } finally {
+      setEventWidePushBusy(false);
     }
   };
 
@@ -1571,6 +1633,12 @@ export function AttendeesPage() {
               isDesktop={isDesktop}
               exportingFormat={exportingFormat}
               onExport={handleExport}
+              walletPlatforms={walletPlatforms}
+              onTriggerEventWidePush={() => {
+                setEventWidePushError(null);
+                setEventWidePushConfirmOpen(true);
+              }}
+              eventWidePushBusy={eventWidePushBusy}
             />
             {/* Hidden below 768px — its 3 formats fold into HeaderMoreMenu's own panel there
              * instead (above), so only "+ Add"/"More" remain as standalone buttons, which is
@@ -1765,6 +1833,22 @@ export function AttendeesPage() {
         }}
       />
 
+      <ConfirmDialog
+        open={eventWidePushConfirmOpen}
+        title="Push updates to every installed wallet pass?"
+        message="Pushes each attendee's current name, ticket type, and event details to their already-installed wallet pass, across the whole event. Attendees with no pass are left untouched."
+        errorMessage={eventWidePushError}
+        confirmLabel="Push updates"
+        confirmVariant="primary"
+        loading={eventWidePushBusy}
+        onConfirm={() => void handleTriggerEventWidePush()}
+        onCancel={() => {
+          if (!eventWidePushBusy) {
+            setEventWidePushConfirmOpen(false);
+            setEventWidePushError(null);
+          }
+        }}
+      />
 
       <ConfirmDialog
         open={bulkSendConfirmOpen}

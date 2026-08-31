@@ -1127,11 +1127,23 @@ export async function fetchWalletPushJobStatus(
   return parseJson<WalletPushJobStatusResponse>(res);
 }
 
+/** Admin/superadmin-only: manually push the latest name/ticket type/event details to every
+ * already-issued active wallet pass under the event at once, from the Attendees header's "More
+ * actions" menu - same async job fetchWalletPushJobStatus above already polls, just enqueued by
+ * an explicit click instead of a wallet-relevant settings/location save. */
+export async function triggerEventWideWalletPush(eventId: string): Promise<{ jobId: string }> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet-push`,
+    jsonPostInit({}),
+  );
+  return parseJson<{ jobId: string }>(res);
+}
+
 /** Which attendees a wallet_push job actually targeted - `null` for a job that predates this
  * field, or whose stored request wasn't recognized. */
 export type WalletPushHistoryScope =
   | { kind: "attendee_ids"; count: number }
-  | { kind: "event_wide"; reason: "location" | "settings" | null };
+  | { kind: "event_wide"; reason: "location" | "settings" | "manual" | null };
 
 export interface WalletPushHistoryEntry {
   id: string;
