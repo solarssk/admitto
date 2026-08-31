@@ -95,6 +95,7 @@ export function LocationSettingsPanel({
   isArchived,
   eventTimezone,
   installedWalletPassCount,
+  walletConfiguredForPush,
   onDirtyChange,
   onSavingChange,
   onLocationSaved,
@@ -107,6 +108,13 @@ export function LocationSettingsPanel({
    * push to N installed wallet passes" confirm dialog shown before a save that touches a
    * WALLET_RELEVANT_LOCATION_FIELDS field (EventSettingsPage.tsx's own EventSettingsDto). */
   installedWalletPassCount: number;
+  /** True when the event's Wallet feature is fully configured right now (master switch, template
+   * ID, API key) - the Location tab can't itself change any of these, so unlike
+   * EventSettingsPage.tsx's own equivalent check this doesn't need to account for a pending
+   * unsaved edit. When false, event-location-routes.ts's own pushWalletUpdatesBestEffort
+   * suppresses the push server-side regardless of installedWalletPassCount, so confirming here
+   * would warn about an update that won't actually happen (CodeRabbit review). */
+  walletConfiguredForPush: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
   /** Called after a successful location save so the shell can refresh sidebar `event.location`. */
@@ -213,6 +221,7 @@ export function LocationSettingsPanel({
     // overuse confirmation dialogs" reasoning, NN/g).
     if (
       installedWalletPassCount > 0 &&
+      walletConfiguredForPush &&
       Object.keys(body).some((key) => (WALLET_RELEVANT_LOCATION_FIELDS as readonly string[]).includes(key))
     ) {
       setWalletPushConfirmOpen(true);

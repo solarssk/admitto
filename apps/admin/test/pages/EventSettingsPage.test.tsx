@@ -588,6 +588,43 @@ describe("EventSettingsPage tabs", () => {
     await waitFor(() => expect(refreshEvent).toHaveBeenCalled());
   });
 
+  // Regression (CodeRabbit review): the suggested-timezone "Use" shortcut patches the event
+  // directly, bypassing handleSave's own wallet-push confirm entirely - timezone is itself a
+  // wallet-relevant field, so this used to silently push to every installed pass the same way a
+  // regular General-tab save would, with no warning at all.
+  it("confirms the suggested location timezone before applying it, when installed passes exist", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 2,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+    });
+    vi.mocked(fetchEventLocation).mockResolvedValueOnce({
+      ...emptyLocation,
+      latitude: 40.7128,
+      longitude: -74.006,
+      venue_name: "New York Hall",
+    });
+    vi.mocked(fetchTimezoneForCoordinates).mockResolvedValueOnce({ timezone: "America/New_York" });
+    vi.mocked(patchEvent).mockResolvedValueOnce({
+      event: { ...activeEvent, timezone: "America/New_York" },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=location");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Use" }));
+    expect(patchEvent).not.toHaveBeenCalled();
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Push this update to installed wallet passes?",
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save and push" }));
+
+    await waitFor(() =>
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { timezone: "America/New_York" }),
+    );
+  });
+
   it("refetches the Wallet tab's location preview after a Location tab save", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, wallet_template_id: "tmpl-1" });
     vi.mocked(fetchEventLocation).mockResolvedValue(emptyLocation);
@@ -2075,6 +2112,9 @@ describe("EventSettingsPage — wallet push confirm dialog before save", () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,
       installed_wallet_pass_count: 3,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
     });
     renderSettings();
     await screen.findByLabelText("Event title");
@@ -2094,10 +2134,43 @@ describe("EventSettingsPage — wallet push confirm dialog before save", () => {
     });
   });
 
+  // Regression (CodeRabbit review): the wallet-push confirm gate's own buildSettingsPatch call
+  // ran outside saveEventSettings' try/catch, so an invalid capacity thrown while just checking
+  // "does this touch a wallet-relevant field" used to become an unhandled rejection instead of
+  // the existing "Capacity must be a positive whole number" toast.
+  it("still shows the invalid-capacity toast, not a broken save, when the event also has installed wallet passes", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 1,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+    });
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    // "0" (not e.g. "abc") - a type="number" input rejects non-numeric text outright (jsdom and
+    // real browsers both reset it to "" before onChange ever fires), so it can't reach
+    // parseCapacityInput's own validation the way an in-range-but-invalid number like 0 can.
+    fireEvent.change(screen.getByLabelText("Capacity"), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(
+        /Capacity must be a positive whole number/,
+      );
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(patchEvent).not.toHaveBeenCalled();
+  });
+
   it("uses singular wording for exactly one installed pass", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,
       installed_wallet_pass_count: 1,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
     });
     renderSettings();
     await screen.findByLabelText("Event title");
@@ -2115,6 +2188,9 @@ describe("EventSettingsPage — wallet push confirm dialog before save", () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,
       installed_wallet_pass_count: 2,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
     });
     renderSettings();
     await screen.findByLabelText("Event title");
@@ -2147,6 +2223,83 @@ describe("EventSettingsPage — wallet push confirm dialog before save", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => {
       expect(patchEvent).toHaveBeenCalledWith("evt-1", { title: "Summit 2027" });
+    });
+  });
+
+  // Regression (CodeRabbit review): pushWalletUpdatesBestEffort (event-settings-routes.ts) itself
+  // no-ops once Wallet is disabled or its template/API key is missing, regardless of how many
+  // passes were installed while it was configured - confirming here anyway would warn about a
+  // push that won't actually happen server-side.
+  it("saves directly, without confirming, when installed passes exist but Wallet is no longer configured", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 4,
+      wallet_enabled: false,
+    });
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2027" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { title: "Summit 2027" });
+    });
+  });
+
+  it("saves directly, without confirming, when the same save clears the wallet API key", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 3,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    fireEvent.change(await screen.findByLabelText("Event title"), { target: { value: "Summit 2027" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { title: "Summit 2027", wallet_api_key: null });
+    });
+  });
+
+  it("confirms when the same save sets a wallet API key that wasn't configured before", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 3,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: false },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Set" }));
+    fireEvent.change(screen.getByLabelText("API key"), { target: { value: "sk-live-123" } });
+    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    fireEvent.change(await screen.findByLabelText("Event title"), { target: { value: "Summit 2027" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Push this update to installed wallet passes?",
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save and push" }));
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", {
+        title: "Summit 2027",
+        wallet_api_key: "sk-live-123",
+      });
     });
   });
 

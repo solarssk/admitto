@@ -169,6 +169,7 @@ function renderPanel(
     isArchived: boolean;
     eventTimezone: string;
     installedWalletPassCount: number;
+    walletConfiguredForPush: boolean;
     onDirtyChange: (d: boolean) => void;
     onSavingChange: (s: boolean) => void;
     onLocationSaved: () => Promise<void> | void;
@@ -182,6 +183,7 @@ function renderPanel(
         isArchived={false}
         eventTimezone="Europe/Warsaw"
         installedWalletPassCount={0}
+        walletConfiguredForPush
         {...props}
       />
     </MemoryRouter>,
@@ -201,6 +203,7 @@ function renderPanelWithRoutes() {
               isArchived={false}
               eventTimezone="Europe/Warsaw"
               installedWalletPassCount={0}
+              walletConfiguredForPush={false}
             />
           }
         />
@@ -1374,6 +1377,24 @@ describe("LocationSettingsPanel — editable fields", () => {
     mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
     mockSaveLocation.mockResolvedValue({ ...EMPTY_LOCATION, venue_room: "Hall B" });
     renderPanel({ installedWalletPassCount: 0 });
+
+    fireEvent.change(await screen.findByLabelText("Venue room"), { target: { value: "Hall B" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", { venue_room: "Hall B" }),
+    );
+  });
+
+  // Regression (CodeRabbit review): the server's own push trigger
+  // (event-location-routes.ts's pushWalletUpdatesBestEffort) silently no-ops once Wallet is
+  // disabled or its template/API key is missing, regardless of how many passes were installed
+  // while it was configured - confirming here anyway would warn about a push that won't happen.
+  it("saves directly, without confirming, when installed passes exist but Wallet is no longer configured", async () => {
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockSaveLocation.mockResolvedValue({ ...EMPTY_LOCATION, venue_room: "Hall B" });
+    renderPanel({ installedWalletPassCount: 3, walletConfiguredForPush: false });
 
     fireEvent.change(await screen.findByLabelText("Venue room"), { target: { value: "Hall B" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));

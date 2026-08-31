@@ -2179,9 +2179,21 @@ export function AttendeeDetailPage() {
   // toast/Notice/ConfirmDialog table: a persistent fact about the surrounding view, not a
   // destructive confirmation). Reuses buildAttendeePatch's own diff instead of a second,
   // independently-maintained field comparison.
-  const walletPushNoticeVisible =
+  //
+  // Deliberately NOT isWalletPassInstalled(detail.wallet_pass, walletPlatforms) here - that
+  // helper's platform gating is correct for the status badge above (don't claim "Added" from a
+  // disabled platform's stale registration), but wrong for this notice:
+  // pushWalletUpdateOnAttendeeChangeBestEffort (attendees-api-routes.ts) pushes to any *active*
+  // pass regardless of which platform toggles are currently on, so a registration on a since-
+  // disabled platform still gets pushed - hiding the notice there would under-warn (CodeRabbit
+  // review). A pass with zero registrations at all (never actually added) still doesn't count -
+  // nobody has it to be bothered by an update.
+  const hasConfirmedWalletRegistration =
     !!detail.wallet_pass &&
-    isWalletPassInstalled(detail.wallet_pass, walletPlatforms) &&
+    ((detail.wallet_pass.apple_active_registrations ?? 0) > 0 ||
+      (detail.wallet_pass.google_active_registrations ?? 0) > 0);
+  const walletPushNoticeVisible =
+    hasConfirmedWalletRegistration &&
     Object.keys(buildAttendeePatch(form, detail, attributeFields)).some((key) =>
       (WALLET_RELEVANT_ATTENDEE_FIELDS as readonly string[]).includes(key),
     );

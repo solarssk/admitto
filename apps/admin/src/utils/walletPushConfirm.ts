@@ -1,5 +1,3 @@
-import { pluralSuffix } from "./pluralize.js";
-
 /** Shared copy for the "this will push to N installed wallet passes" confirm dialog shown on
  * Event Settings' General/Wallet tab (EventSettingsPage.tsx) and Location tab
  * (LocationSettingsPanel.tsx) before a save that touches a WALLET_RELEVANT_EVENT_FIELDS or

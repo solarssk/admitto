@@ -553,6 +553,21 @@ function patchTouchesWalletRelevantField(patch: SettingsPatch): boolean {
   );
 }
 
+/** True when the wallet feature will still be fully configured (master switch on, template ID
+ * set, an API key present) once `form` is saved - the exact condition
+ * event-settings-routes.ts's pushWalletUpdatesBestEffort itself gates the actual push on
+ * (`!updated.wallet_enabled || !updated.wallet_template_id || !updated.wallet_api_key_enc`).
+ * Confirming a push that this save's own wallet-tab edits (disabling Wallet, clearing the
+ * template/key) would suppress server-side would be a false warning (CodeRabbit review) - checked
+ * against `form`, not the currently-loaded `event`, since a save can change these fields in the
+ * same request as the wallet-relevant field that triggered the confirm. */
+function willWalletBeConfiguredForPush(form: SettingsForm, event: EventSettingsDto): boolean {
+  if (!form.walletEnabled || !form.walletTemplateId.trim()) return false;
+  if (form.walletApiKeyEdit.mode === "clear") return false;
+  if (form.walletApiKeyEdit.mode === "replace") return form.walletApiKeyEdit.value.trim().length > 0;
+  return event.wallet_api_key.configured;
+}
+
 function describeRevokeCheckins(admittedCount: number): string {
   return admittedCount > 0
     ? `Reverses check-in for all ${admittedCount} currently checked-in attendee${pluralSuffix(admittedCount)}. They can check in again afterwards.`
@@ -1131,6 +1146,10 @@ export function EventSettingsPage() {
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
   const [walletPushConfirmOpen, setWalletPushConfirmOpen] = useState(false);
+  // Which save this confirm dialog is gating - the regular form save (handleSave), or the
+  // Location tab's own "apply suggested timezone" shortcut (onApplyTimezone below), which
+  // otherwise patches straight past this confirm entirely (CodeRabbit review).
+  const pendingWalletPushActionRef = useRef<(() => Promise<void>) | null>(null);
   const [walletTesting, setWalletTesting] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -1345,23 +1364,33 @@ export function EventSettingsPage() {
   async function handleSave() {
     if (!eventId || !form || !original || !dirty) return;
     // Only worth confirming when the save would actually push to a real, currently-installed
-    // wallet pass - an event with none yet (or a save that doesn't touch a wallet-relevant field)
-    // goes straight through, matching the "don't overuse confirmation dialogs" guidance this
-    // pattern is otherwise at risk of (NN/g).
-    if (
-      event &&
-      event.installed_wallet_pass_count > 0 &&
-      patchTouchesWalletRelevantField(buildSettingsPatch(form, original))
-    ) {
-      setWalletPushConfirmOpen(true);
-      return;
+    // wallet pass - an event with none yet (or a save that doesn't touch a wallet-relevant field,
+    // or one whose own edits leave Wallet unconfigured) goes straight through, matching the
+    // "don't overuse confirmation dialogs" guidance this pattern is otherwise at risk of (NN/g).
+    try {
+      if (
+        event &&
+        event.installed_wallet_pass_count > 0 &&
+        willWalletBeConfiguredForPush(form, event) &&
+        patchTouchesWalletRelevantField(buildSettingsPatch(form, original))
+      ) {
+        pendingWalletPushActionRef.current = commitSave;
+        setWalletPushConfirmOpen(true);
+        return;
+      }
+    } catch {
+      // buildSettingsPatch can throw (e.g. invalid capacity) - fall through to commitSave, which
+      // rebuilds the same patch inside its own try/catch and shows the right validation toast,
+      // rather than this check's own throw becoming an unhandled rejection (CodeRabbit review).
     }
     await commitSave();
   }
 
   async function handleWalletPushConfirm() {
     setWalletPushConfirmOpen(false);
-    await commitSave();
+    const action = pendingWalletPushActionRef.current;
+    pendingWalletPushActionRef.current = null;
+    await action?.();
   }
 
   async function handleTestWallet() {
@@ -1718,6 +1747,9 @@ export function EventSettingsPage() {
           isArchived={isArchived}
           eventTimezone={form.timezone}
           installedWalletPassCount={event.installed_wallet_pass_count}
+          walletConfiguredForPush={
+            event.wallet_enabled && !!event.wallet_template_id && event.wallet_api_key.configured
+          }
           onDirtyChange={setLocationDirty}
           onSavingChange={setLocationSaving}
           onLocationSaved={async () => {
@@ -1729,13 +1761,24 @@ export function EventSettingsPage() {
           }}
           onApplyTimezone={async (timezone) => {
             // `form`/`original` are set whenever this panel mounts (gated by `!form` above).
-            const { event: updated } = await patchEvent(eventId, { timezone });
-            setEvent(updated);
-            const next = { ...form, timezone: updated.timezone };
-            const nextOriginal = { ...original!, timezone: updated.timezone };
-            setForm(next);
-            setOriginal(nextOriginal);
-            await refreshLayoutEvent?.();
+            const applyTimezone = async () => {
+              const { event: updated } = await patchEvent(eventId, { timezone });
+              setEvent(updated);
+              const next = { ...form, timezone: updated.timezone };
+              const nextOriginal = { ...original!, timezone: updated.timezone };
+              setForm(next);
+              setOriginal(nextOriginal);
+              await refreshLayoutEvent?.();
+            };
+            // timezone is unconditionally in WALLET_RELEVANT_EVENT_FIELDS - this shortcut patches
+            // straight past handleSave's own confirm gate otherwise, silently pushing to every
+            // installed pass the same way a regular General-tab save would (CodeRabbit review).
+            if (event.installed_wallet_pass_count > 0 && willWalletBeConfiguredForPush(form, event)) {
+              pendingWalletPushActionRef.current = applyTimezone;
+              setWalletPushConfirmOpen(true);
+              return;
+            }
+            await applyTimezone();
           }}
         />
       </EventSettingsTabPanel>
