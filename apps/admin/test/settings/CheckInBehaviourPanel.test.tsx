@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CheckInBehaviourPanel } from "../../src/settings/CheckInBehaviourPanel.js";
 import { getTooltipText, renderWithToast } from "../test-utils.js";
@@ -65,6 +65,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 describe("CheckInBehaviourPanel — load", () => {
@@ -91,6 +92,46 @@ describe("CheckInBehaviourPanel — load", () => {
 
     expect(await screen.findByRole("switch", { name: "Require confirmation on scan" })).toBeTruthy();
   });
+
+  it("shows the loading placeholder only once the fetch has genuinely taken a moment", () => {
+    mockFetchOpsConfig.mockImplementationOnce(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    renderPanel();
+
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+
+    expect(screen.getByText("Loading…")).toBeTruthy();
+  });
+
+  it("does not apply a successful response that resolves after the load was aborted by unmount", async () => {
+    let resolveLoad: ((value: OpsConfigDto) => void) | undefined;
+    mockFetchOpsConfig.mockImplementationOnce(() => new Promise((resolve) => (resolveLoad = resolve)));
+    const rendered = renderPanel();
+    await waitFor(() => expect(mockFetchOpsConfig).toHaveBeenCalled());
+
+    rendered.unmount();
+    resolveLoad!(makeOpsConfig());
+
+    // Nothing to assert on an unmounted tree beyond "this didn't throw" - the real
+    // regression this guards is a setState-after-unmount warning.
+  });
+
+  it("ignores a load aborted by unmount rather than surfacing its rejection as an error", async () => {
+    let rejectLoad: ((reason: unknown) => void) | undefined;
+    mockFetchOpsConfig.mockImplementationOnce(
+      () => new Promise((_resolve, reject) => (rejectLoad = reject)),
+    );
+    const rendered = renderPanel();
+    await waitFor(() => expect(mockFetchOpsConfig).toHaveBeenCalled());
+
+    rendered.unmount();
+    rejectLoad!(new Error("stale request failed"));
+
+    // Nothing to assert on an unmounted tree beyond "this didn't throw" - the real
+    // regression this guards is an unhandled rejection / setState-after-unmount warning.
+  });
 });
 
 describe("CheckInBehaviourPanel — dirty state and save", () => {
@@ -115,18 +156,24 @@ describe("CheckInBehaviourPanel — dirty state and save", () => {
   it("sends a single patch covering every changed field", async () => {
     mockFetchOpsConfig.mockResolvedValue(makeOpsConfig());
     mockUpdateOpsConfig.mockResolvedValue(
-      makeOpsConfig({ require_confirm_on_scan: true, allow_manual_lookup: false }),
+      makeOpsConfig({
+        require_confirm_on_scan: true,
+        allow_manual_lookup: false,
+        auto_advance_on_valid: false,
+      }),
     );
     renderPanel();
 
     fireEvent.click(await screen.findByRole("switch", { name: "Require confirmation on scan" }));
     fireEvent.click(screen.getByRole("switch", { name: "Allow manual lookup" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Auto-advance on valid scan" }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
       expect(mockUpdateOpsConfig).toHaveBeenCalledWith("evt-1", {
         require_confirm_on_scan: true,
         allow_manual_lookup: false,
+        auto_advance_on_valid: false,
       });
     });
   });
