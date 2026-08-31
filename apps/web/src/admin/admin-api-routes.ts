@@ -93,6 +93,7 @@ type EventJsonRow = {
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
   wallet_samsung_enabled: boolean;
+  wallet_configured: boolean;
 };
 
 /** List-card `/m/` path when maps are enabled and the event has a complete pin; otherwise null. */
@@ -154,6 +155,7 @@ export function serializeEventDto(
     wallet_apple_enabled: event.wallet_apple_enabled,
     wallet_google_enabled: event.wallet_google_enabled,
     wallet_samsung_enabled: event.wallet_samsung_enabled,
+    wallet_configured: event.wallet_configured,
     ...(count !== undefined ? { attendee_count: count } : {}),
   };
 }
@@ -173,11 +175,16 @@ export function omitWalletSettings<
     wallet_apple_enabled: boolean;
     wallet_google_enabled: boolean;
     wallet_samsung_enabled: boolean;
+    wallet_configured: boolean;
   },
 >(
   dto: T,
-): Omit<T, "wallet_enabled" | "wallet_apple_enabled" | "wallet_google_enabled" | "wallet_samsung_enabled"> {
-  const { wallet_enabled, wallet_apple_enabled, wallet_google_enabled, wallet_samsung_enabled, ...rest } = dto;
+): Omit<
+  T,
+  "wallet_enabled" | "wallet_apple_enabled" | "wallet_google_enabled" | "wallet_samsung_enabled" | "wallet_configured"
+> {
+  const { wallet_enabled, wallet_apple_enabled, wallet_google_enabled, wallet_samsung_enabled, wallet_configured, ...rest } =
+    dto;
   return rest;
 }
 
@@ -378,6 +385,10 @@ export async function handleCreateEvent(c: Context, db: PrismaClient): Promise<R
         map_latitude: latitude ?? null,
         map_longitude: longitude ?? null,
         map_zoom: latitude != null && longitude != null ? 15 : null,
+        // A freshly created event never sets these - same computation as toEventSummary
+        // (packages/auth), not hardcoded false, so this doesn't silently drift if creation ever
+        // starts cloning wallet config from a template.
+        wallet_configured: Boolean(created.wallet_template_id && created.wallet_api_key_enc),
       };
     });
 

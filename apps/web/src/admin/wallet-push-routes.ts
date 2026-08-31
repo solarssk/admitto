@@ -92,18 +92,23 @@ export async function enqueueWalletPushJob(
  * that one request kind (via a JSON-path filter on result_json.request.kind) so an
  * attendee_ids-kind job (e.g. from a bulk ticket-type change, covering only its own selection)
  * never gets mistaken for coverage of an event-wide push and suppresses one that's actually
- * needed (bot review). */
-async function findPendingEventWideWalletPushJob(db: PrismaClient, eventId: string): Promise<string | null> {
-  const job = await db.adminJob.findFirst({
+ * needed (bot review). Returns status alongside the id - enqueueEventWideWalletPushJob's callers
+ * need to tell a job that hasn't started yet (safe to coalesce with; the worker will still read
+ * current data) from one already running (may have already read its target set, so a manual
+ * click coalescing with it silently would refresh nothing the operator's click asked for). */
+async function findPendingEventWideWalletPushJob(
+  db: PrismaClient,
+  eventId: string,
+): Promise<{ id: string; status: string } | null> {
+  return db.adminJob.findFirst({
     where: {
       event_id: eventId,
       type: "wallet_push",
       status: { in: ["pending", "running"] },
       result_json: { path: ["request", "kind"], equals: "event_wide" },
     },
-    select: { id: true },
+    select: { id: true, status: true },
   });
-  return job?.id ?? null;
 }
 
 /** Enqueues a wallet_push job for every already-issued active pass under the event - event
@@ -127,23 +132,31 @@ async function findPendingEventWideWalletPushJob(db: PrismaClient, eventId: stri
  * (type=wallet_push, kind=event_wide, status pending/running) - see the migration named for it.
  * A P2002 from that index means this call lost the race; fetch and return whichever job won it
  * instead of failing the caller's save over what is, from the caller's perspective, already a
- * queued push. */
+ * queued push.
+ *
+ * alreadyRunning tells the caller whether the returned job was already running (vs. merely
+ * pending, or freshly created) at the moment this resolved - the automatic settings/location
+ * triggers ignore it (self-heals on the next qualifying save either way), but the manual header
+ * trigger uses it to tell the operator their click didn't queue a fresh push, instead of silently
+ * reporting success for a job that may already be past reading their latest change (bot review).
+ */
 export async function enqueueEventWideWalletPushJob(
   db: PrismaClient,
   c: Context,
   eventId: string,
   organizationId: string,
   reason?: "location" | "settings" | "manual",
-): Promise<string> {
-  const alreadyQueued = await findPendingEventWideWalletPushJob(db, eventId);
-  if (alreadyQueued) return alreadyQueued;
+): Promise<{ jobId: string; alreadyRunning: boolean }> {
+  const existing = await findPendingEventWideWalletPushJob(db, eventId);
+  if (existing) return { jobId: existing.id, alreadyRunning: existing.status === "running" };
 
   try {
-    return await createWalletPushJob(db, c, eventId, organizationId, { kind: "event_wide", eventId, reason });
+    const jobId = await createWalletPushJob(db, c, eventId, organizationId, { kind: "event_wide", eventId, reason });
+    return { jobId, alreadyRunning: false };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       const winner = await findPendingEventWideWalletPushJob(db, eventId);
-      if (winner) return winner;
+      if (winner) return { jobId: winner.id, alreadyRunning: winner.status === "running" };
     }
     throw err;
   }
@@ -171,9 +184,12 @@ export async function handleTriggerEventWideWalletPush(c: Context, db: PrismaCli
   const provider = await resolveEventWalletProvider(db, eventId);
   if (!provider) return c.json({ error: "wallet_not_configured" }, 409);
 
-  const jobId = await enqueueEventWideWalletPushJob(db, c, eventId, event.organization_id, "manual");
+  const result = await enqueueEventWideWalletPushJob(db, c, eventId, event.organization_id, "manual");
   c.header("Cache-Control", "no-store");
-  return c.json({ jobId });
+  if (result.alreadyRunning) {
+    return c.json({ error: "wallet_push_already_running", jobId: result.jobId }, 409);
+  }
+  return c.json({ jobId: result.jobId });
 }
 
 /** GET /api/admin/events/:eventId/wallet-push/jobs/:jobId */

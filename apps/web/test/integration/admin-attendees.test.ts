@@ -2194,6 +2194,25 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(jobs).toHaveLength(1);
     });
 
+    it("returns 409 without silently coalescing when an event-wide job is already running (bot review)", async () => {
+      const running = await prisma.adminJob.create({
+        data: {
+          type: "wallet_push",
+          status: "running",
+          organization_id: ORG_A,
+          event_id: WALLET_ACTION_EVENT,
+          result_json: { request: { kind: "event_wide", eventId: WALLET_ACTION_EVENT, reason: "settings" } },
+        },
+      });
+
+      const res = await postManualPush(WALLET_ACTION_EVENT);
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "wallet_push_already_running", jobId: running.id });
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_ACTION_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(1);
+    });
+
     it("returns 409 without enqueuing when the event's wallet isn't configured", async () => {
       const res = await postManualPush(WALLET_ACTION_EVENT_UNCONFIGURED);
 

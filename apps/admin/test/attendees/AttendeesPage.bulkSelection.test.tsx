@@ -27,6 +27,7 @@ const fetchEventItems = vi.fn();
 const bulkRevokeItems = vi.fn();
 const addToast = vi.fn();
 const pollWalletPushCompletion = vi.fn();
+const triggerEventWideWalletPush = vi.fn();
 
 function mailSettings(provider: string | null) {
   return {
@@ -120,6 +121,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   bulkVoidWalletPass: (...args: unknown[]) => bulkVoidWalletPass(...args),
   bulkReissueWalletPass: (...args: unknown[]) => bulkReissueWalletPass(...args),
   bulkDeleteWalletPass: (...args: unknown[]) => bulkDeleteWalletPass(...args),
+  triggerEventWideWalletPush: (...args: unknown[]) => triggerEventWideWalletPush(...args),
   updateAttendee: vi.fn(),
 }));
 
@@ -139,6 +141,7 @@ vi.mock("react-router", async (importOriginal) => {
         wallet_enabled: true,
         wallet_apple_enabled: true,
         wallet_google_enabled: true,
+        wallet_configured: true,
       },
     }),
   };
@@ -2542,5 +2545,141 @@ describe("AttendeesPage bulk bar on mobile (PO review — bar must never change 
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
 
     expect(bulkBar().getByRole("button", { name: "Send tickets" })).toBeTruthy();
+  });
+});
+
+describe("AttendeesPage header 'Push updates' (event-wide, wallet configured)", () => {
+  beforeEach(() => {
+    triggerEventWideWalletPush.mockReset();
+    pollWalletPushCompletion.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("confirms, triggers the event-wide job, toasts that it's queued, and polls for completion", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    triggerEventWideWalletPush.mockResolvedValue({ jobId: "job-1" });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Push updates/ }));
+
+    const dialog = screen.getByRole("dialog", { name: "Push updates to every installed wallet pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Push updates" }));
+
+    await waitFor(() => {
+      expect(triggerEventWideWalletPush).toHaveBeenCalledWith("evt-1");
+    });
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Push queued - you'll see a summary once it finishes.", "info");
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Push updates to every installed wallet pass?" })).toBeNull();
+    });
+    await waitFor(() => {
+      expect(pollWalletPushCompletion).toHaveBeenCalledWith(
+        "evt-1",
+        "job-1",
+        expect.any(Function),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+  });
+
+  it("shows an inline dialog error and keeps the dialog open when the trigger request fails", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    triggerEventWideWalletPush.mockRejectedValueOnce(new Error("network down"));
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Push updates/ }));
+
+    const dialog = screen.getByRole("dialog", { name: "Push updates to every installed wallet pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Push updates" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByRole("alert").textContent).toBe("Failed to push updates.");
+    });
+    expect(pollWalletPushCompletion).not.toHaveBeenCalled();
+  });
+
+  it("shows the busy label and disables the header item while the trigger request is in flight", async () => {
+    let resolveTrigger!: (value: { jobId: string }) => void;
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    triggerEventWideWalletPush.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveTrigger = resolve;
+      }),
+    );
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Push updates/ }));
+    const dialog = screen.getByRole("dialog", { name: "Push updates to every installed wallet pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Push updates" }));
+
+    await waitFor(() => expect(triggerEventWideWalletPush).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    const busyItem = screen.getByRole("menuitem", { name: /^Pushing updates…/ });
+    expect((busyItem as HTMLButtonElement).disabled).toBe(true);
+
+    await act(async () => {
+      resolveTrigger({ jobId: "job-1" });
+      await Promise.resolve();
+    });
+  });
+
+  it("maps the 'already running' API error to its dedicated copy", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    triggerEventWideWalletPush.mockRejectedValueOnce(new ApiError(409, "wallet_push_already_running"));
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Push updates/ }));
+
+    const dialog = screen.getByRole("dialog", { name: "Push updates to every installed wallet pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Push updates" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByRole("alert").textContent).toBe(
+        "A push is already running for this event. Try again once it finishes.",
+      );
+    });
+  });
+
+  it("closes without triggering when Cancel is clicked", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Push updates/ }));
+
+    const dialog = screen.getByRole("dialog", { name: "Push updates to every installed wallet pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: "Push updates to every installed wallet pass?" })).toBeNull();
+    expect(triggerEventWideWalletPush).not.toHaveBeenCalled();
+  });
+
+  it("toasts a fallback message when the completion poll itself fails (not aborted)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    triggerEventWideWalletPush.mockResolvedValue({ jobId: "job-1" });
+    pollWalletPushCompletion.mockRejectedValueOnce(new Error("network down"));
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Push updates/ }));
+    const dialog = screen.getByRole("dialog", { name: "Push updates to every installed wallet pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Push updates" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Could not refresh wallet push status.", "info");
+    });
   });
 });

@@ -627,6 +627,11 @@ interface HeaderMoreMenuProps {
   exportingFormat: ExportFormat | null;
   onExport: (format: ExportFormat) => void;
   walletPlatforms: EnabledWalletPlatforms;
+  /** Whether the event actually has a wallet template + decryptable API key - distinct from
+   * walletPlatforms.any (the platform toggles), which can be true with nothing configured yet.
+   * Gates "Push updates" alongside walletPlatforms.any so the item isn't offered when every click
+   * would deterministically 409 wallet_not_configured (bot review). */
+  walletConfigured: boolean;
   onTriggerEventWidePush: () => void;
   eventWidePushBusy: boolean;
 }
@@ -651,6 +656,7 @@ function HeaderMoreMenu({
   exportingFormat,
   onExport,
   walletPlatforms,
+  walletConfigured,
   onTriggerEventWidePush,
   eventWidePushBusy,
 }: Readonly<HeaderMoreMenuProps>) {
@@ -695,7 +701,7 @@ function HeaderMoreMenu({
               onSendTickets();
             }}
           />
-          {walletPlatforms.any && (
+          {walletPlatforms.any && walletConfigured && (
             <>
               <hr className="more-actions-menu__divider" />
               <MoreActionsMenuItem
@@ -1634,6 +1640,7 @@ export function AttendeesPage() {
               exportingFormat={exportingFormat}
               onExport={handleExport}
               walletPlatforms={walletPlatforms}
+              walletConfigured={event.wallet_configured}
               onTriggerEventWidePush={() => {
                 setEventWidePushError(null);
                 setEventWidePushConfirmOpen(true);

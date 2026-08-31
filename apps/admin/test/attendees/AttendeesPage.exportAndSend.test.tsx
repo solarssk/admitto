@@ -151,6 +151,10 @@ vi.mock("react-router", async (importOriginal) => {
         location: null,
         attendee_count: 1,
         archived_at: null,
+        wallet_enabled: true,
+        wallet_apple_enabled: true,
+        wallet_google_enabled: true,
+        wallet_configured: false,
       },
     }),
   };
@@ -398,5 +402,14 @@ describe("AttendeesPage export and header Send tickets", () => {
     await waitFor(() => {
       expect(within(dialog).getByText(/Send failed/)).toBeTruthy();
     });
+  });
+
+  it("hides the header 'Push updates' item when wallet platforms are enabled but not configured (bot review)", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "More" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.queryByRole("menuitem", { name: /^Push updates/ })).toBeNull();
   });
 });

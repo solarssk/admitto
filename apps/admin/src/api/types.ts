@@ -104,6 +104,10 @@ export interface EventDto {
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
   wallet_samsung_enabled: boolean;
+  /** True once the event has both a wallet template and a decryptable provider API key - distinct
+   * from the wallet_*_enabled toggles above (which can be on with nothing configured yet). Gates
+   * admin actions that would otherwise deterministically 409 wallet_not_configured. */
+  wallet_configured: boolean;
 }
 
 /** GET /api/checkin/events' own event shape - EventDto minus the wallet platform toggles, which
@@ -113,7 +117,7 @@ export interface EventDto {
  * either without a cast. */
 export type CheckInEventDto = Omit<
   EventDto,
-  "wallet_enabled" | "wallet_apple_enabled" | "wallet_google_enabled" | "wallet_samsung_enabled"
+  "wallet_enabled" | "wallet_apple_enabled" | "wallet_google_enabled" | "wallet_samsung_enabled" | "wallet_configured"
 >;
 
 export interface CreateEventBody {

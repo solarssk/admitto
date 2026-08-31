@@ -225,6 +225,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   wallet_provider_rejected: "The wallet provider rejected this request. Try again, or check the wallet configuration.",
   wallet_provider_timeout: "The wallet provider didn't respond in time. Try again.",
   wallet_provider_unauthorized: "The wallet provider rejected the configured API key. Check the wallet configuration.",
+  wallet_push_already_running: "A push is already running for this event. Try again once it finishes.",
   wallet_status_check_inconclusive: "Could not confirm the wallet pass status. Try again shortly.",
   already_archived: "This event is already archived.",
   cf_access_jwt_invalid: "Cloudflare Access could not verify this request.",
