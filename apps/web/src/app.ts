@@ -154,6 +154,7 @@ import {
   handleBulkVoidAttendeeWalletPass,
   handleBulkReissueAttendeeWalletPass,
   handleBulkDeleteAttendeeWalletPass,
+  handleBulkRefreshAttendeeWalletStatus,
   handleBulkTicketTypeEventAttendees,
   handleBulkRsvpEventAttendees,
   handleBulkSetAttendeeField,
@@ -178,6 +179,10 @@ import {
 } from "./admin/attendees-api-routes.js";
 import { handleGetWalletPushJob, handleGetWalletPushHistory } from "./admin/wallet-push-routes.js";
 import {
+  handleTriggerEventWideWalletRefreshStatus,
+  handleGetWalletRefreshStatusJob,
+} from "./admin/wallet-refresh-status-routes.js";
+import {
   handleWalletMessageSend,
   handleGetWalletMessageJob,
   handleGetWalletMessageHistory,
@@ -193,7 +198,12 @@ import {
   handleGetEventOpsConfig,
   handlePatchEventOpsConfig,
 } from "./admin/event-items-api-routes.js";
-import { handleGetReports, handleExportReports, handleGetWalletReports } from "./admin/reports-routes.js";
+import {
+  handleGetReports,
+  handleExportReports,
+  handleGetWalletReports,
+  handleGetCustomFieldReports,
+} from "./admin/reports-routes.js";
 import { handleGetEventOverview } from "./admin/overview-routes.js";
 import {
   handlePatchEventNote,
@@ -627,6 +637,10 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminImportCommitRateLimit = rateLimit(rateLimitStore, "admin:import-commit");
   const adminImportJobStatusRateLimit = rateLimit(rateLimitStore, "admin:import-job-status");
   const adminWalletPushJobStatusRateLimit = rateLimit(rateLimitStore, "admin:wallet-push-job-status");
+  const adminWalletRefreshStatusJobStatusRateLimit = rateLimit(
+    rateLimitStore,
+    "admin:wallet-refresh-status-job-status",
+  );
   const adminWalletMessageJobStatusRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-job-status");
   const adminWalletMessageSendRateLimit = rateLimit(rateLimitStore, "admin:wallet-message-send");
   const adminAttendeePatchRateLimit = rateLimit(rateLimitStore, "admin:attendee-patch");
@@ -1400,6 +1414,19 @@ export function createApp(options: CreateAppOptions = {}) {
     handleGetWalletPushHistory(c, db),
   );
   app.post(
+    "/api/admin/events/:eventId/wallet-refresh-status",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminWalletActionBulkRateLimit,
+    guardArchivedEvent((c) => handleTriggerEventWideWalletRefreshStatus(c, db)),
+  );
+  app.get(
+    "/api/admin/events/:eventId/wallet-refresh-status/jobs/:jobId",
+    staffAdminGate,
+    adminWalletRefreshStatusJobStatusRateLimit,
+    (c) => handleGetWalletRefreshStatusJob(c, db),
+  );
+  app.post(
     "/api/admin/events/:eventId/wallet-message/send",
     jsonPostCsrf,
     staffAdminGate,
@@ -1535,6 +1562,14 @@ export function createApp(options: CreateAppOptions = {}) {
     bulkAttendeeIdsBodyLimit,
     adminWalletActionBulkRateLimit,
     guardArchivedEvent((c) => handleBulkDeleteAttendeeWalletPass(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/bulk-wallet-refresh-status",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminWalletActionBulkRateLimit,
+    guardArchivedEvent((c) => handleBulkRefreshAttendeeWalletStatus(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-ticket-type",
@@ -1808,6 +1843,9 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/events/:eventId/reports/wallets", staffAdminGate, (c) =>
     handleGetWalletReports(c, db),
+  );
+  app.get("/api/admin/events/:eventId/reports/custom-fields", staffAdminGate, (c) =>
+    handleGetCustomFieldReports(c, db),
   );
   app.get("/api/admin/theme", staffAdminGate, (c) => handleGetStaffTheme(c, db));
   app.put("/api/admin/theme", jsonPostCsrf, staffAdminGate, (c) => handlePutStaffTheme(c, db));

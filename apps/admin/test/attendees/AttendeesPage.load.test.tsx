@@ -159,7 +159,7 @@ describe("AttendeesPage header actions on mobile (PO review — header must neve
 
     expect(screen.getByRole("button", { name: "+ Add attendee" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     expect(screen.getByRole("menuitem", { name: /^Send tickets/ })).toBeTruthy();
     expect(screen.queryByRole("menuitem", { name: /^Export/ })).toBeNull();
   });

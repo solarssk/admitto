@@ -249,6 +249,8 @@ export interface AttendeesTableProps {
   bulkVoidWalletBusy: boolean;
   onBulkReissueWallet: () => void;
   bulkReissueWalletBusy: boolean;
+  onBulkRefreshWalletStatus: () => void;
+  bulkRefreshWalletStatusBusy: boolean;
   onBulkDeleteWallet: () => void;
   bulkDeleteWalletBusy: boolean;
   onBulkDelete: () => void;
@@ -432,6 +434,8 @@ interface BulkItemPassWalletActions {
   bulkVoidWalletBusy: boolean;
   onBulkReissueWallet: () => void;
   bulkReissueWalletBusy: boolean;
+  onBulkRefreshWalletStatus: () => void;
+  bulkRefreshWalletStatusBusy: boolean;
   onBulkDeleteWallet: () => void;
   bulkDeleteWalletBusy: boolean;
   /** At least one selected attendee has a WalletPass row - there's something for Void/Reissue to
@@ -477,6 +481,8 @@ function BulkMoreActionsMenu({
   bulkVoidWalletBusy,
   onBulkReissueWallet,
   bulkReissueWalletBusy,
+  onBulkRefreshWalletStatus,
+  bulkRefreshWalletStatusBusy,
   onBulkDeleteWallet,
   bulkDeleteWalletBusy,
   canBulkWallet,
@@ -713,6 +719,17 @@ function BulkMoreActionsMenu({
                   onBulkReissueWallet();
                 }}
               />
+              <MoreActionsMenuItem
+                icon="cloud-download"
+                label={bulkRefreshWalletStatusBusy ? "Refreshing status…" : "Refresh status"}
+                hint={`Pull the latest device-registration status for ${attendeeCount(walletPassCount)}`}
+                disabled={archived || bulkRefreshWalletStatusBusy || !canBulkWallet}
+                tooltip={bulkWalletTooltip(archived, canBulkWallet)}
+                onClick={() => {
+                  setOpen(false);
+                  onBulkRefreshWalletStatus();
+                }}
+              />
               {/* Irreversible - removes the pass at the provider entirely, distinct from Void above
                * (which just marks it invalid while leaving it installed). Same "nothing to do" gate
                * as Void/Reissue. */}
@@ -814,6 +831,8 @@ function BulkBar({
   bulkVoidWalletBusy,
   onBulkReissueWallet,
   bulkReissueWalletBusy,
+  onBulkRefreshWalletStatus,
+  bulkRefreshWalletStatusBusy,
   onBulkDeleteWallet,
   bulkDeleteWalletBusy,
   canBulkWallet,
@@ -951,6 +970,8 @@ function BulkBar({
           bulkVoidWalletBusy={bulkVoidWalletBusy}
           onBulkReissueWallet={onBulkReissueWallet}
           bulkReissueWalletBusy={bulkReissueWalletBusy}
+          onBulkRefreshWalletStatus={onBulkRefreshWalletStatus}
+          bulkRefreshWalletStatusBusy={bulkRefreshWalletStatusBusy}
           onBulkDeleteWallet={onBulkDeleteWallet}
           bulkDeleteWalletBusy={bulkDeleteWalletBusy}
           canBulkWallet={canBulkWallet}
@@ -1388,6 +1409,8 @@ export function AttendeesTable({
   bulkVoidWalletBusy,
   onBulkReissueWallet,
   bulkReissueWalletBusy,
+  onBulkRefreshWalletStatus,
+  bulkRefreshWalletStatusBusy,
   onBulkDeleteWallet,
   bulkDeleteWalletBusy,
   onBulkDelete,
@@ -1502,6 +1525,8 @@ export function AttendeesTable({
           bulkVoidWalletBusy={bulkVoidWalletBusy}
           onBulkReissueWallet={onBulkReissueWallet}
           bulkReissueWalletBusy={bulkReissueWalletBusy}
+          onBulkRefreshWalletStatus={onBulkRefreshWalletStatus}
+          bulkRefreshWalletStatusBusy={bulkRefreshWalletStatusBusy}
           onBulkDeleteWallet={onBulkDeleteWallet}
           bulkDeleteWalletBusy={bulkDeleteWalletBusy}
           canBulkWallet={canBulkWallet}

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useOutletContext, useParams, useSearchParams } from "react-router";
-import { Badge, Button, Card, EmptyState, HintLabel, PageHeader, Skeleton, Tabs, ticketTypeChartColor, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, PageHeader, Skeleton, Spinner, Tabs, ticketTypeChartColor, useToast } from "@admitto/ui";
 import { enabledWalletPlatforms } from "@admitto/shared";
 import {
   ApiError,
@@ -14,7 +14,6 @@ import {
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto, EventReportsResponse, RsvpStatus, TicketTypeDto } from "../api/types.js";
-import { WalletsReportsTab } from "./WalletsReportsTab.js";
 import { RSVP_LABELS, RSVP_VARIANTS } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { isAdmitDedupHit, registerAdmitDedup } from "../checkin/admitDedup.js";
@@ -34,11 +33,14 @@ const LOG_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 const LOG_PAGE_SIZE_DEFAULT = 50;
 const REPORT_SUBTITLE = "Admission statistics and event-day analytics";
 
-type ReportsTab = "eventday" | "wallets";
+type ReportsTab = "eventday" | "wallets" | "customfields";
 
 /** Resolve the active tab from `?tab=`, same convention as usersTabFromSearch/inPageTabFromSearch. */
 function reportsTabFromSearch(params: URLSearchParams): ReportsTab {
-  return params.get("tab") === "wallets" ? "wallets" : "eventday";
+  const tab = params.get("tab");
+  if (tab === "wallets") return "wallets";
+  if (tab === "customfields") return "customfields";
+  return "eventday";
 }
 const ATTENDANCE_CONFIRMATION_HINT =
   "Shows RSVP status only for attendees who have already checked in, not everyone registered for the event.";
@@ -737,6 +739,24 @@ function applyReconcileResult(
   setOptimisticAdmittedDelta((current) => current - deltaAtFetchStart);
 }
 
+// Wallets and Custom fields both pull in Recharts - code-split so Event day (the default tab,
+// its own hand-rolled CSS bars) doesn't pay for that weight until an operator actually switches
+// tabs. Same route-level lazy() convention as App.tsx.
+const WalletsReportsTab = lazy(() =>
+  import("./WalletsReportsTab.js").then((m) => ({ default: m.WalletsReportsTab })),
+);
+const CustomFieldsReportsTab = lazy(() =>
+  import("./CustomFieldsReportsTab.js").then((m) => ({ default: m.CustomFieldsReportsTab })),
+);
+
+function ReportsTabFallback() {
+  return (
+    <output className="reports-tab-loading">
+      <Spinner label="Loading report" />
+    </output>
+  );
+}
+
 export function ReportsPage() {
   const { eventId } = useParams();
   const { event } = useOutletContext<{ event: EventDto }>();
@@ -770,6 +790,12 @@ export function ReportsPage() {
   const [walletsTabVisited, setWalletsTabVisited] = useState(
     () => reportsTabFromSearch(searchParams) === "wallets" && walletPlatforms.any,
   );
+  // Sticky like walletsTabVisited above, but with no gating flag to fall back from - every event
+  // can have custom fields (unlike Wallets, which is a per-event feature toggle), so the tab is
+  // always offered and a `?tab=customfields` link is never stale.
+  const [customFieldsTabVisited, setCustomFieldsTabVisited] = useState(
+    () => reportsTabFromSearch(searchParams) === "customfields",
+  );
 
   // The URL is the source of truth for the active tab, so a reload or a shared link lands back
   // on the same one instead of always resetting to Event day - same pattern as UsersPage/SettingsPage.
@@ -784,6 +810,7 @@ export function ReportsPage() {
     }
     if (target !== activeTab) setActiveTab(target);
     if (target === "wallets") setWalletsTabVisited(true);
+    if (target === "customfields") setCustomFieldsTabVisited(true);
   }, [searchParams, activeTab, walletPlatforms.any, setSearchParams]);
 
   const [data, setData] = useState<EventReportsResponse | null>(null);
@@ -990,8 +1017,10 @@ export function ReportsPage() {
             // exports independently (WalletsReportsTab owns its own fetch, ReportsPage never
             // sees its loading state), so gating on Event day's state while Wallets is active
             // would disable the button for a fetch that has nothing to do with what it's about
-            // to export.
-            disabled={activeTab === "eventday" && (loading || !!error)}
+            // to export. Custom fields has no CSV/PDF export of its own yet, so the button is
+            // simply unavailable while that tab is active, rather than falling through to
+            // export whichever other tab's data handleExportCsv/handleExportPdf default to.
+            disabled={(activeTab === "eventday" && (loading || !!error)) || activeTab === "customfields"}
             isDesktop={isDesktop}
             onExport={handleExport}
           />
@@ -1002,10 +1031,20 @@ export function ReportsPage() {
         tabs={[
           { id: "eventday", label: "Event day" },
           ...(walletPlatforms.any ? [{ id: "wallets" as const, label: "Wallets" }] : []),
+          { id: "customfields", label: "Custom fields" },
         ]}
         value={activeTab}
         onChange={(id) => setSearchParams({ tab: id }, { replace: true })}
       />
+
+      {customFieldsTabVisited && (
+        // Same display:contents reasoning as the Wallets wrapper below.
+        <div style={{ display: activeTab === "customfields" ? "contents" : "none" }}>
+          <Suspense fallback={<ReportsTabFallback />}>
+            <CustomFieldsReportsTab eventId={eventId} />
+          </Suspense>
+        </div>
+      )}
 
       {walletsTabVisited && (
         // display:contents when visible, not the no-style default - a plain wrapper div is its
@@ -1016,7 +1055,9 @@ export function ReportsPage() {
         // exactly as they were before this wrapper existed. display:none when hidden still works
         // the normal way (contents has no "hidden" state of its own to toggle).
         <div style={{ display: activeTab === "wallets" ? "contents" : "none" }}>
-          <WalletsReportsTab eventId={eventId} walletPlatforms={walletPlatforms} />
+          <Suspense fallback={<ReportsTabFallback />}>
+            <WalletsReportsTab eventId={eventId} walletPlatforms={walletPlatforms} />
+          </Suspense>
         </div>
       )}
 

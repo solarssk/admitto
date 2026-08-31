@@ -168,6 +168,7 @@ export type RateLimitScope =
   | "admin_import_commit"
   | "admin_import_job_status"
   | "admin_wallet_push_job_status"
+  | "admin_wallet_refresh_status_job_status"
   | "admin_wallet_message_job_status"
   | "admin_wallet_message_send"
   | "admin_template_preview"

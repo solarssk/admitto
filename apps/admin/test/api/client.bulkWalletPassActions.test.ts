@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { bulkDeleteWalletPass, bulkReissueWalletPass, bulkVoidWalletPass } from "../../src/api/client.js";
+import {
+  bulkDeleteWalletPass,
+  bulkReissueWalletPass,
+  bulkRefreshWalletStatus,
+  bulkVoidWalletPass,
+} from "../../src/api/client.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -47,6 +52,28 @@ describe("bulkReissueWalletPass (client) — thin wrapper coverage", () => {
       }),
     );
     expect(result).toEqual({ reissued: 2, skipped: 1, errored: 0 });
+  });
+});
+
+describe("bulkRefreshWalletStatus (client) — thin wrapper coverage", () => {
+  it("POSTs the encoded bulk-wallet-refresh-status endpoint with the selected ids", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ refreshed: 2, skipped: 1, errored: 0 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await bulkRefreshWalletStatus("evt-1", ["att-1", "att-2"]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/events/evt-1/attendees/bulk-wallet-refresh-status",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        body: JSON.stringify({ attendeeIds: ["att-1", "att-2"] }),
+      }),
+    );
+    expect(result).toEqual({ refreshed: 2, skipped: 1, errored: 0 });
   });
 });
 

@@ -73,9 +73,11 @@ const tableProps: AttendeesTableProps = {
   bulkRevokePassBusy: false,
   onBulkVoidWallet: vi.fn(),
   onBulkReissueWallet: vi.fn(),
+  onBulkRefreshWalletStatus: vi.fn(),
   onBulkDeleteWallet: vi.fn(),
   bulkVoidWalletBusy: false,
   bulkReissueWalletBusy: false,
+  bulkRefreshWalletStatusBusy: false,
   bulkDeleteWalletBusy: false,
   onBulkDelete: vi.fn(),
   eventTimezone: "UTC",
@@ -114,6 +116,12 @@ describe("AttendeesTable wallet bulk-action busy labels", () => {
     render(<AttendeesTable {...tableProps} items={[walletRow]} bulkDeleteWalletBusy />);
     const menu = openMoreActionsMenu();
     expect(menu.getByRole("menuitem", { name: /^Deleting wallet passes…/ })).toBeTruthy();
+  });
+
+  it("shows the busy label while a bulk refresh status is in flight", () => {
+    render(<AttendeesTable {...tableProps} items={[walletRow]} bulkRefreshWalletStatusBusy />);
+    const menu = openMoreActionsMenu();
+    expect(menu.getByRole("menuitem", { name: /^Refreshing status…/ })).toBeTruthy();
   });
 });
 

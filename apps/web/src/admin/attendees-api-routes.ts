@@ -16,7 +16,14 @@ import {
 import { TemplateNotFoundError } from "@admitto/mail-templates";
 import type { AttendeeStatus, WalletPassStatus } from "@admitto/db/status";
 import { decryptFromString } from "@admitto/crypto";
-import { WalletProviderError, resolveWalletProvider, type WalletPassProvider } from "@admitto/wallet";
+import {
+  WalletProviderError,
+  resolveWalletProvider,
+  refreshOneWalletPassStatus,
+  WalletStatusCheckInconclusiveError,
+  type WalletPassProvider,
+  type WalletStatusRefreshOutcome,
+} from "@admitto/wallet";
 import {
   loadEventCustomDataFields,
   buildCustomDataFromInput,
@@ -2623,6 +2630,7 @@ type BulkAttendeeAction =
   | "wallet_void"
   | "wallet_reissue"
   | "wallet_delete"
+  | "wallet_refresh_status"
   | "set_field";
 type BulkFailureTarget = { attendeeId: string } | { attendeeCount: number };
 
@@ -3071,19 +3079,20 @@ async function loadBulkWalletTargets(
   db: PrismaClient,
   eventId: string,
   attendeeIds: string[],
-): Promise<{ attendeeId: string; providerPassId: string; status: string }[]> {
+): Promise<{ attendeeId: string; providerPassId: string; status: string; userProvidedId: string | null }[]> {
   const rows = await db.walletPass.findMany({
     where: {
       attendee_id: { in: attendeeIds },
       provider_pass_id: { not: null },
       attendee: { event_id: eventId },
     },
-    select: { attendee_id: true, provider_pass_id: true, status: true },
+    select: { attendee_id: true, provider_pass_id: true, status: true, user_provided_id: true },
   });
   return rows.map((row) => ({
     attendeeId: row.attendee_id,
     providerPassId: row.provider_pass_id!,
     status: row.status,
+    userProvidedId: row.user_provided_id,
   }));
 }
 
@@ -3110,6 +3119,29 @@ async function voidOneWalletPass(
     });
   });
   return "voided";
+}
+
+/** Pulls one selected attendee's current device-registration status from the provider, via the
+ * same shared refreshOneWalletPassStatus (packages/wallet/src/refresh-wallet-pass-status.ts) the
+ * single-attendee "Refresh status" route uses. Attendees with no resolvable userProvidedId (never
+ * registered a device) count as skipped, same convention as void/reissue/delete above; a CAS
+ * "conflict" (pass changed mid-loop) also folds into skipped rather than errored - nothing to
+ * report to the operator beyond "already handled elsewhere". Read-only at the provider - no
+ * writeActionLog entry, matching the single-attendee route's own behavior. */
+async function refreshOneWalletStatusForBulk(
+  db: PrismaClient,
+  _eventId: string,
+  target: { attendeeId: string; providerPassId: string; userProvidedId: string | null },
+  provider: WalletPassProvider,
+  _audit: OpsAuditContext,
+): Promise<"refreshed" | "skipped"> {
+  if (!target.userProvidedId) return "skipped";
+  const outcome = await refreshOneWalletPassStatus(
+    db,
+    { attendeeId: target.attendeeId, providerPassId: target.providerPassId, userProvidedId: target.userProvidedId },
+    provider,
+  );
+  return outcome === "conflict" ? "skipped" : "refreshed";
 }
 
 /** Caps concurrent in-flight bulk-wallet requests to 1 per user+event. admin:wallet-action-bulk
@@ -3147,11 +3179,11 @@ async function runBulkWalletAction<K extends string>(
   c: Context,
   db: PrismaClient,
   successKey: K,
-  action: "wallet_void" | "wallet_reissue" | "wallet_delete",
+  action: "wallet_void" | "wallet_reissue" | "wallet_delete" | "wallet_refresh_status",
   perAttendee: (
     db: PrismaClient,
     eventId: string,
-    target: { attendeeId: string; providerPassId: string; status: string },
+    target: { attendeeId: string; providerPassId: string; status: string; userProvidedId: string | null },
     provider: WalletPassProvider,
     audit: OpsAuditContext,
   ) => Promise<K | "skipped">,
@@ -3230,6 +3262,15 @@ export async function handleBulkVoidAttendeeWalletPass(c: Context, db: PrismaCli
  * endpoints; attendees with no WalletPass row or no resolvable ticket count as skipped. */
 export async function handleBulkReissueAttendeeWalletPass(c: Context, db: PrismaClient): Promise<Response> {
   return runBulkWalletAction(c, db, "reissued", "wallet_reissue", reissueOneWalletPass);
+}
+
+/** POST /api/admin/events/:eventId/attendees/bulk-wallet-refresh-status - pull the current
+ * device-registration status from the provider for a selection of attendees at once, from the
+ * Attendees list's row-selection bulk bar. Same owned-id/chunked-Promise.allSettled shape as the
+ * sibling bulk endpoints; attendees with no WalletPass row, or no known userProvidedId (never
+ * registered a device), count as skipped. */
+export async function handleBulkRefreshAttendeeWalletStatus(c: Context, db: PrismaClient): Promise<Response> {
+  return runBulkWalletAction(c, db, "refreshed", "wallet_refresh_status", refreshOneWalletStatusForBulk);
 }
 
 /** Permanently removes one attendee's wallet pass at the provider and deletes the WalletPass row,
@@ -3932,55 +3973,24 @@ export async function handleRefreshAttendeeWalletStatus(c: Context, db: PrismaCl
   if (ctx instanceof Response) return ctx;
   if (!ctx.userProvidedId) return c.json({ error: "wallet_pass_not_refreshable" }, 409);
 
-  let status;
+  let outcome: WalletStatusRefreshOutcome;
   try {
-    status = await ctx.provider.getRegistrationStatus(ctx.userProvidedId);
-    if (!status) {
-      // PassCreator's search index can briefly lag right after a status-affecting event - a
-      // resolved "not found" here uses the exact same search endpoint whose lag app.ts's
-      // recoverDuplicatePass already retries for, and isn't authoritative on its own. One retry
-      // after the same short delay covers that; a thrown retry is folded into "still no match"
-      // rather than surfaced as its own error (bot review).
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      status = await ctx.provider.getRegistrationStatus(ctx.userProvidedId).catch(() => null);
-    }
+    outcome = await refreshOneWalletPassStatus(
+      db,
+      { attendeeId: ctx.attendeeId, providerPassId: ctx.providerPassId, userProvidedId: ctx.userProvidedId },
+      ctx.provider,
+    );
   } catch (err) {
+    if (err instanceof WalletStatusCheckInconclusiveError) {
+      // Still no match after refreshOneWalletPassStatus's own retry - genuinely gone at the
+      // provider (deleted out of band) or longer-than-usual index lag. Treating this as a
+      // successful check would silently clear every previously-known registration count, so
+      // report the check itself as failed instead (bot review).
+      return c.json({ error: "wallet_status_check_inconclusive" }, 502);
+    }
     return walletProviderErrorResponse(c, err, "handleRefreshAttendeeWalletStatus");
   }
-  if (!status) {
-    // Still no match after the retry - genuinely gone at the provider (deleted out of band) or
-    // longer-than-usual index lag. Either way, treating this as a successful check would silently
-    // clear every previously-known registration count and, via registration_sync_attempted_at
-    // below, delay the periodic worker's next real attempt by ~30 minutes. Leave the stored
-    // status untouched and report the check itself as failed instead (bot review).
-    return c.json({ error: "wallet_status_check_inconclusive" }, 502);
-  }
-
-  // Conditioned on the pass identity read above, not just attendee_id: a concurrent delete+re-add
-  // during the provider call (widened by the retry above) would otherwise let this write stale
-  // registration data from the old pass onto the new one's row (bot review).
-  const { count } = await db.walletPass.updateMany({
-    where: {
-      attendee_id: ctx.attendeeId,
-      provider_pass_id: ctx.providerPassId,
-      user_provided_id: ctx.userProvidedId,
-    },
-    data: {
-      apple_active_registrations: status.appleActiveRegistrations,
-      apple_inactive_registrations: status.appleInactiveRegistrations,
-      google_active_registrations: status.googleActiveRegistrations,
-      google_inactive_registrations: status.googleInactiveRegistrations,
-      first_downloaded_at: status.firstDownloadedAt,
-      registration_checked_at: new Date(),
-      // Matches syncOne's own success write (registration-sync.ts) - the periodic worker selects
-      // its next stale-row batch by this field, not registration_checked_at, so leaving it
-      // untouched here would make the row look never-synced and get re-picked (wasting one of the
-      // system-wide 25-per-tick slots) on the very next tick, seconds after this manual refresh
-      // already did the same work (bot review).
-      registration_sync_attempted_at: new Date(),
-    },
-  });
-  if (count === 0) return c.json({ error: "wallet_pass_changed" }, 409);
+  if (outcome === "conflict") return c.json({ error: "wallet_pass_changed" }, 409);
 
   const updated = await db.walletPass.findUniqueOrThrow({ where: { attendee_id: ctx.attendeeId } });
   return c.json(serializeWalletPassAction(updated));

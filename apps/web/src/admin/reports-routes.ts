@@ -1,12 +1,19 @@
 import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
-import { enabledWalletPlatforms, type EventWalletReportsResponse } from "@admitto/shared";
+import {
+  CUSTOM_FIELD_NOT_ANSWERED_KEY,
+  enabledWalletPlatforms,
+  type EventCustomFieldReportsResponse,
+  type EventWalletReportsResponse,
+} from "@admitto/shared";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
 import { loadEventTicketTypes, writeBulkActionLog, type TicketTypeInfo } from "@admitto/tickets";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
+  countAttendeesByCustomFieldValue,
+  countAttendeesWithCustomFieldAnswered,
   requireEventId,
   resolveUserDisplayMap,
   type UserDisplayRow,
@@ -915,6 +922,111 @@ export async function handleGetWalletReports(c: Context, db: PrismaClient): Prom
   const timeZone = resolvePreviewEventTimeZone(event.timezone);
   const platforms = enabledWalletPlatforms(event);
   const body = await loadWalletReportsAggregates(db, eventId, timeZone, event.date, platforms);
+  c.header("Cache-Control", "no-store");
+  return c.json(body);
+}
+
+/** Boolean-type display label for a stored custom_data value - always exactly "true"/"false" by
+ * the time it's in the database (normalizeCustomDataFieldValue is the single normalizer behind
+ * every write path: the attendee form, the PATCH endpoint, and CSV/XLSX import all route through
+ * it), so no alias handling ("yes"/"no"/"1"/"0") is needed here despite the form accepting those
+ * as input. */
+function booleanValueLabel(value: string): string {
+  return value === "true" ? "Yes" : "No";
+}
+
+/** One field's `select`/`boolean` category distribution, sorted by count descending with a
+ * trailing "not answered" bucket so percentages always sum to 100 (same shape as the other
+ * breakdown cards on this page - rsvpBreakdownRows et al on the frontend). A tied count falls
+ * back to sorting by the raw value itself, not left to whatever order the GROUP BY below happens
+ * to return - Postgres makes no row-order guarantee for a GROUP BY without an ORDER BY, and the
+ * frontend assigns both a row's chart position and its color by array index (CodeRabbit review,
+ * PR #1185), so an unstable order would visibly reshuffle a tied field between requests. */
+async function loadCustomFieldDistribution(
+  db: PrismaClient,
+  eventId: string,
+  field: { source_field: string; type: string },
+  totalAttendees: number,
+): Promise<EventCustomFieldReportsResponse["fields"][number]["distribution"]> {
+  const valueCounts = await countAttendeesByCustomFieldValue(db, eventId, field.source_field);
+  const labelFor = field.type === "boolean" ? booleanValueLabel : (value: string) => value;
+  const rows = [...valueCounts.entries()]
+    .map(([key, count]) => ({ key, label: labelFor(key), count, pct: oneDecimalPct(count, totalAttendees) }))
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+
+  const answered = rows.reduce((sum, row) => sum + row.count, 0);
+  const notAnswered = totalAttendees - answered;
+  if (notAnswered > 0) {
+    rows.push({
+      key: CUSTOM_FIELD_NOT_ANSWERED_KEY,
+      label: "Not answered",
+      count: notAnswered,
+      pct: oneDecimalPct(notAnswered, totalAttendees),
+    });
+  }
+  return rows;
+}
+
+/** Deliberately generic by `EventCustomField.type` rather than special-cased per field - an
+ * admin-defined field's meaning can't be known ahead of time, so the only thing this can key off
+ * is its type. `select`/`boolean` chart as a category distribution; `text` is free-form and only
+ * gets a fill-rate stat (see EventCustomFieldReportsResponse's own doc comment). */
+async function loadCustomFieldReportsAggregates(
+  db: PrismaClient,
+  eventId: string,
+): Promise<EventCustomFieldReportsResponse> {
+  const [totalAttendees, customFields] = await Promise.all([
+    db.attendee.count({ where: { event_id: eventId } }),
+    db.eventCustomField.findMany({
+      where: { event_id: eventId },
+      // Same order as the Requirements page's own field list (event-custom-fields-routes.ts).
+      orderBy: [{ created_at: "asc" }, { id: "asc" }],
+    }),
+  ]);
+
+  const fields = await Promise.all(
+    customFields.map(async (field) => {
+      const type = field.type as EventCustomFieldReportsResponse["fields"][number]["type"];
+      if (type === "text") {
+        const answered = await countAttendeesWithCustomFieldAnswered(db, eventId, field.source_field);
+        return {
+          id: field.id,
+          source_field: field.source_field,
+          label: field.label,
+          description: field.description,
+          type,
+          distribution: null,
+          response_rate: { answered, pct: oneDecimalPct(answered, totalAttendees) },
+        };
+      }
+      return {
+        id: field.id,
+        source_field: field.source_field,
+        label: field.label,
+        description: field.description,
+        type,
+        distribution: await loadCustomFieldDistribution(db, eventId, field, totalAttendees),
+        response_rate: null,
+      };
+    }),
+  );
+
+  return { total_attendees: totalAttendees, fields };
+}
+
+/** GET /api/admin/events/:eventId/reports/custom-fields - one chart/stat per the event's own
+ * EventCustomField registry. Read-only, no audit, same access gate as the other reports
+ * endpoints. */
+export async function handleGetCustomFieldReports(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdParam = requireEventId(c);
+  if (eventIdParam instanceof Response) return eventIdParam;
+  const eventId = eventIdParam;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const body = await loadCustomFieldReportsAggregates(db, eventId);
+  c.header("Cache-Control", "no-store");
   return c.json(body);
 }
 
@@ -1067,6 +1179,7 @@ export async function handleGetReports(c: Context, db: PrismaClient): Promise<Re
     by_operator: aggregates.by_operator,
   };
 
+  c.header("Cache-Control", "no-store");
   return c.json(body);
 }
 

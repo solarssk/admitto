@@ -141,7 +141,7 @@ describe("AttendeesPage archived lockdown", () => {
     // Import and Send tickets now live behind the header's "More" menu (#615) instead of their
     // own standalone buttons — MoreActionsMenuItem shows its disabled-reason via a hover tooltip
     // only (no static aria-describedby span), same as the bulk bar's own More-menu items.
-    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     const importItem = screen.getByRole("menuitem", { name: /^Import/ });
     const sendTicketsItem = screen.getByRole("menuitem", { name: /^Send tickets/ });
     for (const menuItem of [importItem, sendTicketsItem]) {
