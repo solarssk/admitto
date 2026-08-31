@@ -37,6 +37,7 @@ import {
   EventBounceIngestPanel,
   type EventBounceIngestPanelHandle,
 } from "../settings/EventBounceIngestPanel.js";
+import { EventDangerZonePanel } from "../settings/EventDangerZonePanel.js";
 import { EventGeneralInfoPanel } from "../settings/EventGeneralInfoPanel.js";
 import { EventImagesPanel } from "../settings/EventImagesPanel.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
@@ -45,7 +46,6 @@ import { SettingsFooter, NO_AUTOFILL_PROPS, SecretFieldRow } from "../settings/m
 import type { SecretEditMode } from "../settings/mailSettingsValidation.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
-import { ArchivedGuard } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { SamsungWalletIcon } from "../components/SamsungWalletIcon.js";
@@ -113,7 +113,6 @@ type SettingsPatch = Partial<{
 
 const EVENT_SETTINGS_SUBTITLE = "Manage event details, images, and access.";
 
-const DANGER_ZONE_HINT = "Actions that change event data or availability.";
 const WALLET_CARD_HINT = "Per-event Apple/Google Wallet pass configuration.";
 const WALLET_CARD_INTRO =
   "Lets attendees add their ticket to Apple Wallet or Google Wallet. The API key and template are specific to this event, nothing is shared with other events.";
@@ -487,18 +486,6 @@ function eventOverviewPath(eventId: string | undefined): string {
   return eventId ? `/admin/events/${eventId}/overview` : "/admin";
 }
 
-/** Tooltip shared by the Danger Zone's superadmin-gated actions: superadmin restriction wins
- * over the action-specific reason. Extracted out of EventSettingsPage (SonarCloud S3776). */
-function computeSuperadminTooltip(
-  isSa: boolean,
-  restrictedWhenTrue: boolean,
-  restrictedMessage: string,
-): string | undefined {
-  if (!isSa) return "Superadmin only";
-  if (restrictedWhenTrue) return restrictedMessage;
-  return undefined;
-}
-
 function addVisitedTab(
   visited: ReadonlySet<EventSettingsTab>,
   tab: EventSettingsTab,
@@ -508,48 +495,6 @@ function addVisitedTab(
 
 function appendUnsavedWarning(message: string, pageDirty: boolean): string {
   return pageDirty ? message + UNSAVED_CHANGES_WARNING : message;
-}
-
-function describeRevokeCheckins(admittedCount: number): string {
-  return admittedCount > 0
-    ? `Reverses check-in for all ${admittedCount} currently checked-in attendee${pluralSuffix(admittedCount)}. They can check in again afterwards.`
-    : "No attendees are currently checked in.";
-}
-
-function describeRevokeItems(issuedItemsCount: number): string {
-  return issuedItemsCount > 0
-    ? `Resets all ${issuedItemsCount} issued item${pluralSuffix(issuedItemsCount)} back to pending, for every attendee. They can be handed out again afterwards.`
-    : "No items have been issued yet.";
-}
-
-const DELETION_BLOCKER_LABELS: Record<string, string> = {
-  attendees: "attendees",
-  custom_items: "custom items",
-  custom_ticket_types: "custom ticket types",
-  contacts: "contacts",
-  resources: "resources",
-  pinned_note: "pinned note",
-  event_mail_template: "event-specific mail template",
-};
-
-function formatDeletionBlockers(blockers: readonly string[]): string {
-  return blockers
-    .map((key) => DELETION_BLOCKER_LABELS[key] ?? key.replaceAll("_", " "))
-    .join(", ");
-}
-
-function describeDeleteEvent(
-  isDeletable: boolean,
-  deletionBlockers: readonly string[] | undefined,
-): string {
-  if (isDeletable) {
-    return "Permanently deletes this event and everything in it. This can't be undone. Saved in the history log.";
-  }
-  const blockers = deletionBlockers ?? [];
-  if (blockers.length > 0) {
-    return `Still blocking delete: ${formatDeletionBlockers(blockers)}.`;
-  }
-  return "This event still has content that must be cleared before it can be permanently deleted.";
 }
 
 interface ArchiveDialogCopy {
@@ -1427,22 +1372,6 @@ export function EventSettingsPage() {
 
   if (!event || !form) return null;
 
-  const revokeCheckinsTooltip = computeSuperadminTooltip(
-    isSa,
-    event.admitted_count === 0,
-    "No check-ins to revoke",
-  );
-  const revokeItemsTooltip = computeSuperadminTooltip(
-    isSa,
-    event.issued_items_count === 0,
-    "No items to revoke",
-  );
-  const deleteEventDescription = describeDeleteEvent(event.is_deletable, event.deletion_blockers);
-  const deleteEventTooltip = computeSuperadminTooltip(
-    isSa,
-    !event.is_deletable,
-    deleteEventDescription,
-  );
   const archiveDialogCopy = getArchiveDialogCopy(archiveMode);
 
   const archiveToggleButton = isArchived ? (
@@ -1913,166 +1842,22 @@ export function EventSettingsPage() {
       )}
 
       <EventSettingsTabPanel tab="danger-zone" activeTab={tab} visited={visitedTabs} label="Danger zone">
-        <div className="at-card danger-zone-panel">
-          <div className="at-card__header danger-zone-panel__header">
-            <div className="at-card__title">
-              <HintLabel hint={DANGER_ZONE_HINT}>Danger zone</HintLabel>
-            </div>
-          </div>
-
-          <div className="danger-zone__item">
-            <div className="danger-zone__info">
-              <div className="danger-zone__title">Export personal data</div>
-              <p className="danger-zone__desc">
-                Downloads every attendee&apos;s personal data as a CSV file (a simple
-                spreadsheet). Saved in the history log.
-              </p>
-            </div>
-            <ArchivedGuard
-              event={null}
-              reasonId="export-pii-reason"
-              disabled={!isSa || exporting}
-              tooltip={isSa ? undefined : "Superadmin only"}
-            >
-              {(guard) => (
-                <Button
-                  variant="secondary"
-                  icon={<i className="ti ti-file-text" aria-hidden="true" />}
-                  {...guard}
-                  onClick={() => void handleExportPii()}
-                >
-                  {exporting ? "Exporting…" : "Export personal data"}
-                </Button>
-              )}
-            </ArchivedGuard>
-          </div>
-
-          <div className="danger-zone__item">
-            <div className="danger-zone__info">
-              <div className="danger-zone__title">Revoke all check-ins</div>
-              <p className="danger-zone__desc">{describeRevokeCheckins(event.admitted_count)}</p>
-            </div>
-            <ArchivedGuard
-              event={event}
-              reasonId="revoke-checkins-reason"
-              disabled={!isSa || event.admitted_count === 0 || revokingCheckins}
-              tooltip={revokeCheckinsTooltip}
-            >
-              {(guard) => (
-                <Button
-                  variant="danger"
-                  icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
-                  {...guard}
-                  onClick={() => setRevokeCheckinsOpen(true)}
-                >
-                  Revoke all check-ins
-                </Button>
-              )}
-            </ArchivedGuard>
-          </div>
-
-          <div className="danger-zone__item">
-            <div className="danger-zone__info">
-              <div className="danger-zone__title">Revoke all items issued</div>
-              <p className="danger-zone__desc">{describeRevokeItems(event.issued_items_count)}</p>
-            </div>
-            <ArchivedGuard
-              event={event}
-              reasonId="revoke-items-reason"
-              disabled={!isSa || event.issued_items_count === 0 || revokingItems}
-              tooltip={revokeItemsTooltip}
-            >
-              {(guard) => (
-                <Button
-                  variant="danger"
-                  icon={<i className="ti ti-package-off" aria-hidden="true" />}
-                  {...guard}
-                  onClick={() => setRevokeItemsOpen(true)}
-                >
-                  Revoke all items issued
-                </Button>
-              )}
-            </ArchivedGuard>
-          </div>
-
-          <div className="danger-zone__item">
-            <div className="danger-zone__info">
-              <div className="danger-zone__title">Revoke all Wallet passes</div>
-              <p className="danger-zone__desc">
-                Bulk revoke isn&apos;t built yet - planned for a future release. Attendees can
-                still add their ticket to Apple or Google Wallet from the ticket page.
-              </p>
-            </div>
-            <ArchivedGuard event={null} reasonId="wallet-revoke-reason" disabled tooltip="Not built yet">
-              {(guard) => (
-                <Button
-                  variant="secondary"
-                  icon={<i className="ti ti-wallet-off" aria-hidden="true" />}
-                  {...guard}
-                >
-                  Revoke all Wallet passes
-                </Button>
-              )}
-            </ArchivedGuard>
-          </div>
-
-          <div className="danger-zone__item">
-            <div className="danger-zone__info">
-              <div className="danger-zone__title">Archive event</div>
-              <p className="danger-zone__desc">
-                An archived event becomes fully read-only, including check-in. Only a superadmin
-                can undo this.
-              </p>
-            </div>
-            {isSa ? (
-              archiveToggleButton
-            ) : (
-              <ArchivedGuard event={null} reasonId="archive-event-reason" disabled tooltip="Superadmin only">
-                {(guard) => (
-                  <Button
-                    variant="danger"
-                    icon={<i className="ti ti-archive" aria-hidden="true" />}
-                    {...guard}
-                  >
-                    Archive event
-                  </Button>
-                )}
-              </ArchivedGuard>
-            )}
-          </div>
-
-          <div className="danger-zone__item">
-            <div className="danger-zone__info">
-              <div className="danger-zone__title">Delete event</div>
-              <p className="danger-zone__desc">{deleteEventDescription}</p>
-            </div>
-            <ArchivedGuard
-              event={null}
-              reasonId="delete-event-reason"
-              disabled={!isSa || !event.is_deletable || deleting}
-              tooltip={deleteEventTooltip}
-            >
-              {(guard) => (
-                <Button
-                  variant="danger"
-                  icon={<i className="ti ti-trash" aria-hidden="true" />}
-                  {...guard}
-                  onClick={() => {
-                    setDeleteError(null);
-                    setDeleteOpen(true);
-                  }}
-                >
-                  Delete event
-                </Button>
-              )}
-            </ArchivedGuard>
-          </div>
-        </div>
-
-        <Notice variant="error" className="danger-zone-notice">
-          These actions can affect this event&apos;s data or availability. Some are limited to
-          superadmins and saved in the history log.
-        </Notice>
+        <EventDangerZonePanel
+          event={event}
+          isSa={isSa}
+          exporting={exporting}
+          onExportPii={() => void handleExportPii()}
+          revokingCheckins={revokingCheckins}
+          onOpenRevokeCheckins={() => setRevokeCheckinsOpen(true)}
+          revokingItems={revokingItems}
+          onOpenRevokeItems={() => setRevokeItemsOpen(true)}
+          archiveToggleButton={archiveToggleButton}
+          deleting={deleting}
+          onOpenDelete={() => {
+            setDeleteError(null);
+            setDeleteOpen(true);
+          }}
+        />
       </EventSettingsTabPanel>
 
       <ConfirmDialog
