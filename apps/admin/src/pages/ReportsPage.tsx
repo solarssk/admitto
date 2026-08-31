@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useOutletContext, useParams, useSearchParams } from "react-router";
-import { Badge, Button, Card, EmptyState, HintLabel, PageHeader, Skeleton, Tabs, ticketTypeChartColor, useToast } from "@admitto/ui";
+import { Badge, Button, Card, EmptyState, HintLabel, PageHeader, Skeleton, Spinner, Tabs, ticketTypeChartColor, useToast } from "@admitto/ui";
 import { enabledWalletPlatforms } from "@admitto/shared";
 import {
   ApiError,
@@ -14,8 +14,6 @@ import {
 } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventDto, EventReportsResponse, RsvpStatus, TicketTypeDto } from "../api/types.js";
-import { CustomFieldsReportsTab } from "./CustomFieldsReportsTab.js";
-import { WalletsReportsTab } from "./WalletsReportsTab.js";
 import { RSVP_LABELS, RSVP_VARIANTS } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { isAdmitDedupHit, registerAdmitDedup } from "../checkin/admitDedup.js";
@@ -741,6 +739,24 @@ function applyReconcileResult(
   setOptimisticAdmittedDelta((current) => current - deltaAtFetchStart);
 }
 
+// Wallets and Custom fields both pull in Recharts - code-split so Event day (the default tab,
+// its own hand-rolled CSS bars) doesn't pay for that weight until an operator actually switches
+// tabs. Same route-level lazy() convention as App.tsx.
+const WalletsReportsTab = lazy(() =>
+  import("./WalletsReportsTab.js").then((m) => ({ default: m.WalletsReportsTab })),
+);
+const CustomFieldsReportsTab = lazy(() =>
+  import("./CustomFieldsReportsTab.js").then((m) => ({ default: m.CustomFieldsReportsTab })),
+);
+
+function ReportsTabFallback() {
+  return (
+    <output className="reports-tab-loading">
+      <Spinner label="Loading report" />
+    </output>
+  );
+}
+
 export function ReportsPage() {
   const { eventId } = useParams();
   const { event } = useOutletContext<{ event: EventDto }>();
@@ -1024,7 +1040,9 @@ export function ReportsPage() {
       {customFieldsTabVisited && (
         // Same display:contents reasoning as the Wallets wrapper below.
         <div style={{ display: activeTab === "customfields" ? "contents" : "none" }}>
-          <CustomFieldsReportsTab eventId={eventId} />
+          <Suspense fallback={<ReportsTabFallback />}>
+            <CustomFieldsReportsTab eventId={eventId} />
+          </Suspense>
         </div>
       )}
 
@@ -1037,7 +1055,9 @@ export function ReportsPage() {
         // exactly as they were before this wrapper existed. display:none when hidden still works
         // the normal way (contents has no "hidden" state of its own to toggle).
         <div style={{ display: activeTab === "wallets" ? "contents" : "none" }}>
-          <WalletsReportsTab eventId={eventId} walletPlatforms={walletPlatforms} />
+          <Suspense fallback={<ReportsTabFallback />}>
+            <WalletsReportsTab eventId={eventId} walletPlatforms={walletPlatforms} />
+          </Suspense>
         </div>
       )}
 

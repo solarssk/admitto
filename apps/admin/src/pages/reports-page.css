@@ -211,6 +211,12 @@
   margin-top: var(--space-4);
 }
 
+.reports-tab-loading {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-7) var(--space-4);
+}
+
 .reports-panels {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
