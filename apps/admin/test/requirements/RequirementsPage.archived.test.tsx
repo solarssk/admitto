@@ -5,22 +5,19 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { RequirementsPage } from "../../src/pages/RequirementsPage.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
-import type { EventItemDto, OpsConfigDto } from "../../src/api/types.js";
+import type { EventItemDto } from "../../src/api/types.js";
 import { getTooltipText } from "../test-utils.js";
 
 const fetchEventItems = vi.fn();
 const fetchEventCustomFields = vi.fn();
-const fetchOpsConfig = vi.fn();
 
 vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchEventItems: (...args: unknown[]) => fetchEventItems(...args),
   fetchEventCustomFields: (...args: unknown[]) => fetchEventCustomFields(...args),
-  fetchOpsConfig: (...args: unknown[]) => fetchOpsConfig(...args),
   updateEventItem: vi.fn(),
   createEventItem: vi.fn(),
   deleteEventItem: vi.fn(),
-  updateOpsConfig: vi.fn(),
 }));
 
 vi.mock("../../src/connection/ConnectionStateProvider.js");
@@ -45,16 +42,6 @@ const badgeItem: EventItemDto = {
   icon: null,
   config: { issue_on_checkin: true, requires_return: false },
 };
-
-function makeOpsConfig(overrides: Partial<OpsConfigDto> = {}): OpsConfigDto {
-  return {
-    require_confirm_on_scan: false,
-    badge_at_entry: true,
-    allow_manual_lookup: true,
-    auto_advance_on_valid: true,
-    ...overrides,
-  };
-}
 
 function renderPage() {
   return render(
@@ -87,9 +74,8 @@ function expectArchivedLock(control: HTMLElement) {
 }
 
 describe("RequirementsPage archived lockdown", () => {
-  it("disables add item, per-item controls, and all event behaviour switches with the archived reason", async () => {
+  it("disables add item and per-item controls with the archived reason", async () => {
     fetchEventItems.mockResolvedValue([badgeItem]);
-    fetchOpsConfig.mockResolvedValue(makeOpsConfig());
 
     renderPage();
 
@@ -100,12 +86,5 @@ describe("RequirementsPage archived lockdown", () => {
     expectArchivedLock(screen.getByRole("button", { name: "Add" }));
     expectArchivedLock(screen.getByRole("switch", { name: "Disable Badge" }));
     expectArchivedLock(screen.getByRole("button", { name: "Edit item" }));
-
-    // The archived reason must win even though the badge item is fully usable
-    // here (so the fallback "badge inactive" tooltip would not otherwise fire).
-    expectArchivedLock(await screen.findByRole("switch", { name: "Issue badge at entry" }));
-    expectArchivedLock(screen.getByRole("switch", { name: "Require confirmation on scan" }));
-    expectArchivedLock(screen.getByRole("switch", { name: "Allow manual lookup" }));
-    expectArchivedLock(screen.getByRole("switch", { name: "Auto-advance on valid scan" }));
   });
 });

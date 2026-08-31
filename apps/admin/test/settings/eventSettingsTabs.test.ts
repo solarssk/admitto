@@ -16,6 +16,10 @@ describe("inPageTabFromSearch", () => {
     expect(inPageTabFromSearch(paramsWithTab("images"), true)).toBe("images");
   });
 
+  it("resolves checkin-behaviour for a non-superadmin caller (not superadmin-gated)", () => {
+    expect(inPageTabFromSearch(paramsWithTab("checkin-behaviour"), false)).toBe("checkin-behaviour");
+  });
+
   it("maps the old 'branding' tab id to 'images', so an existing bookmark still lands correctly", () => {
     expect(inPageTabFromSearch(paramsWithTab("branding"), true)).toBe("images");
   });
