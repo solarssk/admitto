@@ -8139,3 +8139,185 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-rsvp", () => {
     expect(malformed.status).toBe(400);
   });
 });
+
+describe("POST /api/admin/events/:eventId/attendees/bulk-set-field", () => {
+  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - same reasoning as the
+  // bulk-rsvp block above.
+  beforeEach(() => rateLimitStore.reset());
+
+  afterAll(async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-setfield-" } } });
+    await prisma.attendee.deleteMany({ where: { id: { startsWith: "att-bulk-setfield-" } } });
+  });
+
+  async function seedSetField(
+    id: string,
+    opts: { company?: string | null; department?: string | null; custom_data?: Record<string, unknown> } = {},
+  ) {
+    await prisma.attendee.create({
+      data: {
+        id,
+        event_id: EVENT_A,
+        email: `${id}@example.com`,
+        name: `Bulk Set Field ${id}`,
+        company: opts.company ?? null,
+        department: opts.department ?? null,
+        custom_data: opts.custom_data ?? {},
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+      },
+    });
+  }
+
+  function postBulkSetField(eventId: string, body: unknown) {
+    return app.request(`/api/admin/events/${eventId}/attendees/bulk-set-field`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("sets company for every selected attendee and writes per-attendee attendee_edited logs with from→to", async () => {
+    const ids = ["att-bulk-setfield-1", "att-bulk-setfield-2"];
+    await seedSetField(ids[0]!, { company: null });
+    await seedSetField(ids[1]!, { company: "Old Co" });
+
+    const res = await postBulkSetField(EVENT_A, { attendeeIds: ids, field: "company", value: "Acme Inc." });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 2, alreadySetCount: 0, conflictCount: 0 });
+
+    const after = await prisma.attendee.findMany({ where: { id: { in: ids } }, select: { id: true, company: true } });
+    expect(after.every((a) => a.company === "Acme Inc.")).toBe(true);
+
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: { in: ids }, action_type: "attendee_edited" },
+    });
+    expect(logs).toHaveLength(2);
+    const byId = new Map(logs.map((l) => [l.attendee_id, l.metadata as Record<string, unknown>]));
+    expect(byId.get(ids[0]!)).toEqual({ fields: ["company"], field_changes: { company: { from: null, to: "Acme Inc." } } });
+    expect(byId.get(ids[1]!)).toEqual({
+      fields: ["company"],
+      field_changes: { company: { from: "Old Co", to: "Acme Inc." } },
+    });
+  });
+
+  it("mirrors the new value into custom_data.company, matching the single-attendee PATCH's own behavior", async () => {
+    // This attendee's *effective* company came from a registration-form custom field, not the
+    // legacy column (resolveCompanyDepartment prefers custom_data) - the bulk write must update
+    // both, or the change would silently not show up anywhere that reads the resolved value.
+    const id = "att-bulk-setfield-mirror";
+    await seedSetField(id, { company: null, custom_data: { company: "Old Co From Form", dietary: "vegan" } });
+
+    const res = await postBulkSetField(EVENT_A, { attendeeIds: [id], field: "company", value: "New Co" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0, conflictCount: 0 });
+
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id } });
+    expect(after.company).toBe("New Co");
+    expect((after.custom_data as Record<string, unknown>).company).toBe("New Co");
+    // Untouched, unrelated custom_data keys must survive the partial write.
+    expect((after.custom_data as Record<string, unknown>).dietary).toBe("vegan");
+  });
+
+  it("leaves rows already at the target value untouched — no update, no log", async () => {
+    const already = "att-bulk-setfield-already";
+    const fresh = "att-bulk-setfield-fresh";
+    await seedSetField(already, { department: "Sales" });
+    await seedSetField(fresh, { department: null });
+    const before = await prisma.attendee.findUniqueOrThrow({ where: { id: already }, select: { updated_at: true } });
+
+    const res = await postBulkSetField(EVENT_A, {
+      attendeeIds: [already, fresh],
+      field: "department",
+      value: "Sales",
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 1, conflictCount: 0 });
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id: already }, select: { updated_at: true } });
+    expect(after.updated_at.toISOString()).toBe(before.updated_at.toISOString());
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: already, action_type: "attendee_edited" },
+    });
+    expect(logs).toHaveLength(0);
+  });
+
+  it("does not clobber a row a concurrent single-attendee PATCH changed mid-transaction (same TOCTOU guard as bulk-rsvp, PR #569)", async () => {
+    const raced = "att-bulk-setfield-race-victim";
+    const safe = "att-bulk-setfield-race-safe";
+    await seedSetField(raced, { company: null });
+    await seedSetField(safe, { company: null });
+
+    let armed = true;
+    onAttendeeFindMany = async () => {
+      armed = false;
+      await prisma.attendee.update({ where: { id: raced }, data: { company: "Raced In First" } });
+    };
+
+    const res = await postBulkSetField(EVENT_A, {
+      attendeeIds: [raced, safe],
+      field: "company",
+      value: "Bulk Target",
+    });
+
+    expect(armed).toBe(false);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0, conflictCount: 1 });
+
+    const after = await prisma.attendee.findMany({
+      where: { id: { in: [raced, safe] } },
+      select: { id: true, company: true },
+    });
+    const byId = new Map(after.map((a) => [a.id, a.company]));
+    expect(byId.get(raced)).toBe("Raced In First");
+    expect(byId.get(safe)).toBe("Bulk Target");
+  });
+
+  it("returns 403 when the event is archived", async () => {
+    const id = "att-bulk-setfield-archived";
+    await seedSetField(id, { company: null });
+    await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: new Date() } });
+    try {
+      const res = await postBulkSetField(EVENT_A, { attendeeIds: [id], field: "company", value: "Acme" });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("event_archived");
+      const after = await prisma.attendee.findUniqueOrThrow({ where: { id } });
+      expect(after.company).toBeNull();
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: null } });
+    }
+  });
+
+  it("returns 403 for an admin outside the event's organization", async () => {
+    const res = await postBulkSetField(EVENT_B, { attendeeIds: ["att-does-not-matter"], field: "company", value: "x" });
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects an empty selection, an unknown field, an empty value, and a malformed body", async () => {
+    expect((await postBulkSetField(EVENT_A, { attendeeIds: [], field: "company", value: "x" })).status).toBe(400);
+    expect((await postBulkSetField(EVENT_A, { attendeeIds: ["x"], field: "role", value: "x" })).status).toBe(400);
+    expect((await postBulkSetField(EVENT_A, { attendeeIds: ["x"], field: "company" })).status).toBe(400);
+
+    const malformed = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-set-field`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not json",
+    });
+    expect(malformed.status).toBe(400);
+  });
+
+  it("silently ignores an id from a different event instead of failing the whole request", async () => {
+    const ownId = "att-bulk-setfield-own";
+    await seedSetField(ownId, { company: null });
+
+    const res = await postBulkSetField(EVENT_A, { attendeeIds: [ownId, ATT_B1], field: "company", value: "Acme" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 1, alreadySetCount: 0, conflictCount: 0 });
+    const other = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_B1 } });
+    expect(other.company).not.toBe("Acme");
+  });
+});

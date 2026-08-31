@@ -21,6 +21,7 @@ const bulkReissueWalletPass = vi.fn();
 const bulkDeleteWalletPass = vi.fn();
 const bulkChangeTicketType = vi.fn();
 const bulkChangeRsvpStatus = vi.fn();
+const bulkSetAttendeeField = vi.fn();
 const exportSelectedAttendees = vi.fn();
 const fetchTicketTypes = vi.fn();
 const fetchEventItems = vi.fn();
@@ -105,6 +106,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   fetchTicketTypes: (...args: unknown[]) => fetchTicketTypes(...args),
   bulkChangeTicketType: (...args: unknown[]) => bulkChangeTicketType(...args),
   bulkChangeRsvpStatus: (...args: unknown[]) => bulkChangeRsvpStatus(...args),
+  bulkSetAttendeeField: (...args: unknown[]) => bulkSetAttendeeField(...args),
   fetchEventMailSettings: (...args: unknown[]) => fetchEventMailSettings(...args),
   fetchEventItems: (...args: unknown[]) => fetchEventItems(...args),
   bulkRevokeItems: (...args: unknown[]) => bulkRevokeItems(...args),
@@ -2231,6 +2233,85 @@ describe("AttendeesPage bulk change attendance status", () => {
     await waitFor(() => {
       expect(within(dialog).getByRole("alert").textContent).toBe("Failed to change attendance status.");
     });
+  });
+});
+
+describe("AttendeesPage bulk Set company / Set department", () => {
+  async function selectTwoRowsAndOpenMenu() {
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
+    await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+  }
+
+  it("sets company for the selected attendees, toasts, and clears the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkSetAttendeeField.mockResolvedValue({ updatedCount: 2, alreadySetCount: 0, conflictCount: 0 });
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Set company/, "Set company");
+    fireEvent.change(within(dialog).getByLabelText("Company"), { target: { value: "Acme Inc." } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(bulkSetAttendeeField).toHaveBeenCalledWith("evt-1", ["att-1", "att-2"], "company", "Acme Inc.");
+    });
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith('2 attendees set to company "Acme Inc."', "success");
+    });
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("sets department for the selected attendees the same way", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkSetAttendeeField.mockResolvedValue({ updatedCount: 2, alreadySetCount: 0, conflictCount: 0 });
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Set department/, "Set department");
+    fireEvent.change(within(dialog).getByLabelText("Department"), { target: { value: "Sales" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(bulkSetAttendeeField).toHaveBeenCalledWith("evt-1", ["att-1", "att-2"], "department", "Sales");
+    });
+  });
+
+  it("keeps Apply disabled until a non-empty, non-whitespace value is typed", async () => {
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Set company/, "Set company");
+
+    const applyButton = () => within(dialog).getByRole("button", { name: "Apply" }) as HTMLButtonElement;
+    expect(applyButton().disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText("Company"), { target: { value: "   " } });
+    expect(applyButton().disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText("Company"), { target: { value: "Acme" } });
+    expect(applyButton().disabled).toBe(false);
+  });
+
+  it("shows an inline error in the dialog when the request fails, leaving the selection intact", async () => {
+    bulkSetAttendeeField.mockRejectedValueOnce(new Error("network down"));
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Set company/, "Set company");
+    fireEvent.change(within(dialog).getByLabelText("Company"), { target: { value: "Acme" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByRole("alert").textContent).toBe("Failed to set company.");
+    });
+    expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
+  });
+
+  it("closes without applying when Cancel is clicked", async () => {
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Set company/, "Set company");
+    fireEvent.change(within(dialog).getByLabelText("Company"), { target: { value: "Acme" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: "Set company" })).toBeNull();
+    expect(bulkSetAttendeeField).not.toHaveBeenCalled();
   });
 });
 

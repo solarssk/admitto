@@ -1187,6 +1187,24 @@ export async function bulkChangeRsvpStatus(
   return parseJson<BulkRsvpResponse>(res);
 }
 
+export type BulkSetFieldResponse = BulkTicketTypeResponse;
+
+/** Set one profile field (company or department) to the same value for every selected attendee
+ * at once. Ids outside the event are silently ignored server-side; rows already carrying the
+ * value are counted separately. */
+export async function bulkSetAttendeeField(
+  eventId: string,
+  attendeeIds: string[],
+  field: "company" | "department",
+  value: string,
+): Promise<BulkSetFieldResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-set-field`,
+    jsonPostInit({ attendeeIds, field, value }),
+  );
+  return parseJson<BulkSetFieldResponse>(res);
+}
+
 /** Manually check in a selection of attendees at once (no QR scan), from the Attendees list's
  * row-selection bulk bar. Same single-use CAS admission path as scan check-in. */
 export async function bulkCheckInAttendees(

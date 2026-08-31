@@ -2450,6 +2450,153 @@ export async function handleBulkRsvpEventAttendees(
   }
 }
 
+const bulkSetFieldBodySchema = z
+  .object({
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
+    field: z.enum(["company", "department"]),
+    // Same shape as the single-attendee PATCH's own company/department fields (line ~142) -
+    // trimmed, capped at 200, and nullable so a caller could in principle clear the field. The
+    // frontend dialog itself only offers setting a non-empty value (PO ask was "set", not
+    // "clear") - null stays accepted here so the endpoint's contract doesn't silently diverge
+    // from the single-attendee PATCH it mirrors.
+    value: z.string().trim().max(200).nullable(),
+  })
+  .strict();
+
+/** One selected attendee's computed bulk company/department write - mirrors
+ * applyMirroredScalarPatchField's own custom_data handling (used by the single-attendee PATCH,
+ * see computePatchChanges above) so the two paths can't silently diverge on how company/department
+ * are mirrored into custom_data. Unlike applyBulkAttendeeChanges's shared single-batched-UPDATE
+ * helper above, this can't reuse that helper: the custom_data JSON payload to write is different
+ * per row (each row's own existing custom_data, with just one key touched), not one shared SET
+ * clause for the whole selection. */
+function computeBulkFieldChange(
+  row: { id: string; company: string | null; department: string | null; custom_data: unknown },
+  field: "company" | "department",
+  target: string | null,
+): { data: Prisma.AttendeeUncheckedUpdateInput; oldValue: string | null; from: string | null; to: string | null } | null {
+  const resolved = resolveCompanyDepartment(row);
+  const current = field === "company" ? resolved.company : resolved.department;
+  if (current === target) return null;
+
+  const data: Prisma.AttendeeUncheckedUpdateInput = {};
+  const fields: string[] = [];
+  let from: string | null = null;
+  let to: string | null = null;
+  // Memoized via this closure (not a fresh clone per call) - applyMirroredScalarPatchField
+  // mutates the object touchCustomData() returns in place, so the mutation must land on the same
+  // reference read back below, exactly matching computePatchChanges's own touchCustomData above.
+  let customData: Record<string, unknown> | null = null;
+  const touchCustomData = (): Record<string, unknown> => {
+    customData ??= cloneCustomData(row.custom_data);
+    return customData;
+  };
+  applyMirroredScalarPatchField(
+    field,
+    current,
+    target,
+    data,
+    touchCustomData,
+    fields,
+    (_f, logFrom, logTo) => {
+      from = logFrom;
+      to = logTo;
+    },
+  );
+  if (customData) {
+    data.custom_data = customData as Prisma.InputJsonValue;
+  }
+  // The CAS guard below re-checks the *legacy column* (row.company/row.department), not the
+  // resolved value above - safe because every writer of these fields (this bulk path and the
+  // single-attendee PATCH) always mirrors the legacy column and custom_data together via
+  // applyMirroredScalarPatchField, so the legacy column can't drift out of sync with custom_data
+  // on its own between this read and the write below.
+  const oldValue = field === "company" ? row.company : row.department;
+  return { data, oldValue, from, to };
+}
+
+/** POST /api/admin/events/:eventId/attendees/bulk-set-field - set one profile field (company or
+ * department) to the same value for every selected attendee at once, from the Attendees list's
+ * row-selection bulk bar. Same per-row CAS write shape as bulk-ticket-type/bulk-rsvp above (see
+ * applyBulkAttendeeChanges's doc comment for the full rationale) - re-checked here per row instead
+ * of via that shared helper, since the custom_data mirror write differs per row (see
+ * computeBulkFieldChange above). Ids that don't belong to this event are silently ignored, same as
+ * every other bulk action. Rows already at the target value are left untouched (no updated_at
+ * bump, no log entry) and reported back as alreadySetCount; rows that lost the race against a
+ * concurrent write are also left untouched and reported back as conflictCount. */
+export async function handleBulkSetAttendeeField(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+  const parsed = bulkSetFieldBodySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
+  const { attendeeIds, field, value } = parsed.data;
+  const target = value === "" ? null : value;
+
+  try {
+    const counts = await db.$transaction(async (tx) => {
+      const owned = await tx.attendee.findMany({
+        where: { id: { in: attendeeIds }, event_id: eventId },
+        select: { id: true, company: true, department: true, custom_data: true },
+      });
+
+      let updatedCount = 0;
+      let alreadySetCount = 0;
+      let conflictCount = 0;
+      const logEntries: { attendee_id: string; metadata: Record<string, unknown> }[] = [];
+
+      for (const row of owned) {
+        const change = computeBulkFieldChange(row, field, target);
+        if (!change) {
+          alreadySetCount += 1;
+          continue;
+        }
+        const { count } = await tx.attendee.updateMany({
+          where: { id: row.id, [field]: change.oldValue },
+          data: { ...change.data, updated_at: new Date() },
+        });
+        if (count === 0) {
+          conflictCount += 1;
+          continue;
+        }
+        updatedCount += 1;
+        logEntries.push({
+          attendee_id: row.id,
+          metadata: { fields: [field], field_changes: { [field]: { from: change.from, to: change.to } } },
+        });
+      }
+
+      if (logEntries.length > 0) {
+        await writeActionLogMany(tx, {
+          event_id: eventId,
+          action_type: "attendee_edited",
+          audit: adminAuditFromContext(c),
+          entries: logEntries,
+        });
+      }
+
+      return { updatedCount, alreadySetCount, conflictCount };
+    });
+
+    return c.json(counts);
+  } catch (err) {
+    if (err instanceof Response) return err;
+    console.error("handleBulkSetAttendeeField failed:", err);
+    recordBulkAttendeeActionFailure(c, eventId, "set_field", { attendeeCount: attendeeIds.length });
+    return c.json({ error: "server error" }, 500);
+  }
+}
+
 const bulkCheckInAttendeesBodySchema = z
   .object({
     attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
@@ -2475,7 +2622,8 @@ type BulkAttendeeAction =
   | "revoke_pass"
   | "wallet_void"
   | "wallet_reissue"
-  | "wallet_delete";
+  | "wallet_delete"
+  | "set_field";
 type BulkFailureTarget = { attendeeId: string } | { attendeeCount: number };
 
 /** Record a bounded failure signal for a staff-triggered bulk operation. The selected attendee

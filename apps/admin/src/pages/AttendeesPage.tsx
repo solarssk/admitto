@@ -9,12 +9,13 @@ import {
   type RefObject,
 } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
-import { Button, EmptyState, ModalBackdrop, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
+import { Button, EmptyState, Input, ModalBackdrop, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
 import { enabledWalletPlatforms } from "@admitto/shared";
 import {
   ApiError,
   bulkChangeRsvpStatus,
   bulkChangeTicketType,
+  bulkSetAttendeeField,
   bulkCheckInAttendees,
   bulkRevokeCheckIn,
   bulkRevokePass,
@@ -606,6 +607,93 @@ function CardPickerDialog<T>({
   );
 }
 
+interface BulkTextFieldDialogProps {
+  open: boolean;
+  busy: boolean;
+  selectedCount: number;
+  title: string;
+  /** Used in the "Set the {fieldLabel} for N selected attendees." hint line — lowercase,
+   * mid-sentence, same convention as CardPickerDialog's own fieldLabel above. */
+  fieldLabel: string;
+  /** The text input's own label, e.g. "Company" - capitalized, standalone, unlike fieldLabel. */
+  inputLabel: string;
+  placeholder?: string;
+  error: string | null;
+  value: string;
+  onValueChange: (value: string) => void;
+  onConfirm: () => void;
+  onClose: () => void;
+}
+
+/** Type one value and apply it to every selected attendee at once — shared by bulk "Set company"
+ * and "Set department", which would otherwise be two near-identical dialogs. A plain, reversible
+ * profile edit (unlike Delete or Revoke), so this gets its own small modal instead of ConfirmDialog
+ * - same reasoning as DeviceLabelEditModal/UserEditModal (AGENTS.md toast-vs-inline table reserves
+ * ConfirmDialog for destructive/irreversible confirmations). Apply stays disabled until the typed
+ * value is non-empty - the frontend only offers *setting* a value in bulk, not clearing one. */
+function BulkTextFieldDialog({
+  open,
+  busy,
+  selectedCount,
+  title,
+  fieldLabel,
+  inputLabel,
+  placeholder,
+  error,
+  value,
+  onValueChange,
+  onConfirm,
+  onClose,
+}: Readonly<BulkTextFieldDialogProps>) {
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useModalFocusTrap(panelRef, open, onClose);
+  useOverscrollBounceGuard(scrollRef, open);
+
+  if (!open) return null;
+
+  const trimmed = value.trim();
+
+  return (
+    <dialog open className="add-attendee-modal" aria-modal="true" aria-labelledby={titleId}>
+      <ModalBackdrop onClose={onClose} />
+      <div className="add-attendee-modal__panel add-attendee-modal__panel--w420" ref={panelRef}>
+      <div className="add-attendee-modal__scroll at-scroll" ref={scrollRef}>
+        <h2 className="add-attendee-modal__title" id={titleId}>
+          {title}
+        </h2>
+        {error && (
+          <p className="add-attendee-modal__error" role="alert">
+            {error}
+          </p>
+        )}
+        <p className="mail-field-hint">
+          Set the {fieldLabel} for {selectedCount} selected attendee{selectedCount === 1 ? "" : "s"}.
+        </p>
+        <Input
+          label={inputLabel}
+          value={value}
+          disabled={busy}
+          onChange={(e) => onValueChange(e.target.value)}
+          maxLength={200}
+          placeholder={placeholder}
+          autoComplete="off"
+        />
+        <div className="change-type-actions">
+          <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="button" variant="primary" disabled={busy || !trimmed} onClick={onConfirm}>
+            {busy ? "Applying…" : "Apply"}
+          </Button>
+        </div>
+      </div>
+      </div>
+    </dialog>
+  );
+}
+
 /** Header "Send tickets" menu item's disabled-reason tooltip — mirrors AttendeesTable's own
  * bulkSendTicketsTooltip (Sonar S3358: was a nested ternary). */
 function headerSendTicketsTooltip(archived: boolean, mailConfigured: boolean | undefined): string | undefined {
@@ -883,6 +971,14 @@ export function AttendeesPage() {
   const [changeRsvpBusy, setChangeRsvpBusy] = useState(false);
   const [changeRsvpError, setChangeRsvpError] = useState<string | null>(null);
   const [changeRsvpValue, setChangeRsvpValue] = useState<RsvpStatus>("confirmed");
+  const [setCompanyOpen, setSetCompanyOpen] = useState(false);
+  const [setCompanyBusy, setSetCompanyBusy] = useState(false);
+  const [setCompanyError, setSetCompanyError] = useState<string | null>(null);
+  const [setCompanyValue, setSetCompanyValue] = useState("");
+  const [setDepartmentOpen, setSetDepartmentOpen] = useState(false);
+  const [setDepartmentBusy, setSetDepartmentBusy] = useState(false);
+  const [setDepartmentError, setSetDepartmentError] = useState<string | null>(null);
+  const [setDepartmentValue, setSetDepartmentValue] = useState("");
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
@@ -1322,6 +1418,67 @@ export function AttendeesPage() {
       },
     });
 
+  /** Bulk "Set company" for an explicit subset of selected attendees — same effect as editing an
+   * attendee's Company field from their detail page, applied to every selection member at once.
+   * Mirrors company/department into custom_data server-side too (bulk-set-field), so an attendee
+   * whose company came from a custom field picks up the new value the same way a single edit
+   * would. */
+  const handleBulkSetCompanyConfirm = () => {
+    const value = setCompanyValue.trim();
+    if (!value) return;
+    return runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setSetCompanyBusy,
+      setError: setSetCompanyError,
+      addToast,
+      apiErrorFallback: "Change failed.",
+      genericFallback: "Failed to set company.",
+      action: (id) => bulkSetAttendeeField(id, [...selectedIds], "company", value),
+      onSuccess: (result) => {
+        notifyBulkAssignResult(
+          result,
+          { alreadyHave: `company "${value}"`, setTo: `company "${value}"` },
+          addToast,
+        );
+        setSetCompanyOpen(false);
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
+  };
+
+  /** Bulk "Set department" for an explicit subset of selected attendees — same shape as
+   * handleBulkSetCompanyConfirm above, for the Department field. */
+  const handleBulkSetDepartmentConfirm = () => {
+    const value = setDepartmentValue.trim();
+    if (!value) return;
+    return runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setSetDepartmentBusy,
+      setError: setSetDepartmentError,
+      addToast,
+      apiErrorFallback: "Change failed.",
+      genericFallback: "Failed to set department.",
+      action: (id) => bulkSetAttendeeField(id, [...selectedIds], "department", value),
+      onSuccess: (result) => {
+        notifyBulkAssignResult(
+          result,
+          { alreadyHave: `department "${value}"`, setTo: `department "${value}"` },
+          addToast,
+        );
+        setSetDepartmentOpen(false);
+        clearSelection();
+        setReloadToken((n) => n + 1);
+      },
+    });
+  };
+
   /** Bulk GDPR erasure for an explicit subset of selected attendees — same effect as running
    * the attendee detail page's "Delete attendee" once per selected row. Guards every
    * completion effect against the operator navigating to a different event's Attendees list
@@ -1667,6 +1824,16 @@ export function AttendeesPage() {
           setChangeRsvpValue("confirmed");
           setChangeRsvpOpen(true);
         }}
+        onBulkSetCompany={() => {
+          setSetCompanyError(null);
+          setSetCompanyValue("");
+          setSetCompanyOpen(true);
+        }}
+        onBulkSetDepartment={() => {
+          setSetDepartmentError(null);
+          setSetDepartmentValue("");
+          setSetDepartmentOpen(true);
+        }}
         itemCount={eventItemCount}
         itemsError={eventItemsError}
         onRetryItems={() => setEventItemsRetryToken((n) => n + 1)}
@@ -1750,6 +1917,40 @@ export function AttendeesPage() {
         onConfirm={() => void handleBulkChangeRsvpConfirm()}
         onClose={() => {
           if (!changeRsvpBusy) setChangeRsvpOpen(false);
+        }}
+      />
+
+      <BulkTextFieldDialog
+        open={setCompanyOpen}
+        busy={setCompanyBusy}
+        selectedCount={selectedIds.size}
+        title="Set company"
+        fieldLabel="company"
+        inputLabel="Company"
+        placeholder="Acme Inc."
+        error={setCompanyError}
+        value={setCompanyValue}
+        onValueChange={setSetCompanyValue}
+        onConfirm={() => void handleBulkSetCompanyConfirm()}
+        onClose={() => {
+          if (!setCompanyBusy) setSetCompanyOpen(false);
+        }}
+      />
+
+      <BulkTextFieldDialog
+        open={setDepartmentOpen}
+        busy={setDepartmentBusy}
+        selectedCount={selectedIds.size}
+        title="Set department"
+        fieldLabel="department"
+        inputLabel="Department"
+        placeholder="Marketing"
+        error={setDepartmentError}
+        value={setDepartmentValue}
+        onValueChange={setSetDepartmentValue}
+        onConfirm={() => void handleBulkSetDepartmentConfirm()}
+        onClose={() => {
+          if (!setDepartmentBusy) setSetDepartmentOpen(false);
         }}
       />
 
