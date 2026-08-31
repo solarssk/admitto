@@ -1382,6 +1382,39 @@ export function SettingsFooter({
   );
 }
 
+/** SettingsFooter wrapper for panels whose saving state also depends on a logo upload
+ * (EventGeneralInfoPanel, EventImagesPanel) — both rendered the identical `!isArchived &&
+ * <SettingsFooter ... saving={saving || logoUploading} busyLabel={...} />` block. */
+export function LogoAwareSettingsFooter({
+  isArchived,
+  dirty,
+  saving,
+  logoUploading,
+  validationErrorsRef,
+  onReset,
+  onSave,
+}: Readonly<{
+  isArchived: boolean;
+  dirty: boolean;
+  saving: boolean;
+  logoUploading: boolean;
+  validationErrorsRef?: RefObject<HTMLUListElement | null>;
+  onReset: () => void;
+  onSave: () => void;
+}>) {
+  if (isArchived) return null;
+  return (
+    <SettingsFooter
+      validationErrorsRef={validationErrorsRef}
+      hasUnsavedChanges={dirty}
+      saving={saving || logoUploading}
+      busyLabel={logoUploading && !saving ? "Uploading…" : "Saving…"}
+      onReset={onReset}
+      onSave={onSave}
+    />
+  );
+}
+
 /** Snapshots which fields are relevant to the tested provider — undefined fields
  * are simply not rendered by TestResultPreview. */
 function snapshotFieldsFor(

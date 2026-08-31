@@ -138,7 +138,7 @@ import type {
   MapTileConfigDto,
 } from "../../src/api/types.js";
 import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
-import { formatUtcDateTime } from "../../src/utils/event-dates.js";
+import { formatEventDateTime, formatUtcDateTime } from "../../src/utils/event-dates.js";
 
 const activeEvent = {
   id: "evt-1",
@@ -742,12 +742,62 @@ describe("EventSettingsPage tabs", () => {
     ).toBeTruthy();
   });
 
+  it("shows the created date in the acting admin's timezone when known", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      created_by_timezone: "Europe/Warsaw",
+    });
+    renderSettings();
+    expect(
+      await screen.findByText(formatEventDateTime(activeEvent.created_at, "Europe/Warsaw")),
+    ).toBeTruthy();
+  });
+
+  it("updates date, capacity, and timezone on the General tab", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    fireEvent.change(screen.getByLabelText(/^Date/), { target: { value: "2026-07-04" } });
+    fireEvent.blur(screen.getByLabelText(/^Date/));
+    await waitFor(() =>
+      expect((screen.getByLabelText(/^Date/) as HTMLInputElement).value).not.toBe(""),
+    );
+
+    fireEvent.change(screen.getByLabelText("Capacity"), { target: { value: "250" } });
+    expect((screen.getByLabelText("Capacity") as HTMLInputElement).value).toBe("250");
+
+    fireEvent.click(screen.getByLabelText("Event timezone"));
+    fireEvent.change(screen.getByLabelText("Search timezones"), { target: { value: "tokyo" } });
+    const tokyoOption = await waitFor(() => {
+      const option = screen.getAllByRole("option").find((o) => o.textContent?.includes("Asia/Tokyo"));
+      if (!option) throw new Error("Tokyo option not found yet");
+      return option;
+    });
+    fireEvent.click(tokyoOption);
+    await waitFor(() => expect(screen.queryByLabelText("Search timezones")).toBeNull());
+    expect(screen.getByLabelText("Event timezone").textContent).toContain("Tokyo");
+  });
+
   it("shows an 'Archived on <date>' hint in the Status card for archived events", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(archivedEvent);
     renderSettings("/admin/events/evt-2/settings");
     expect(
       await screen.findByText(`Archived on ${formatUtcDateTime(archivedEvent.archived_at)}.`),
     ).toBeTruthy();
+  });
+
+  it("clears a set logo from the Images tab", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      logo_url: "/uploads/default/logo.png",
+      logo_original_url: "/uploads/default/logo-orig.png",
+      logo_crop: { unit: "%", x: 0, y: 0, width: 100, height: 100, zoom: 1 },
+    });
+    renderSettings();
+    fireEvent.click(await screen.findByRole("tab", { name: "Images" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove event logo" }));
+    expect(screen.queryByRole("button", { name: "Remove event logo" })).toBeNull();
   });
 
   it("switches to the Images tab and shows event logo + image library", async () => {
@@ -1215,6 +1265,15 @@ describe("EventSettingsPage tabs", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
 
     await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 2, 10, expect.anything()));
+
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [row], total: 15 });
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 1, 10, expect.anything()));
+
+    vi.mocked(fetchWalletPushHistory).mockResolvedValueOnce({ items: [row], total: 15 });
+    fireEvent.click(screen.getByRole("button", { name: "Rows per page, 10" }));
+    fireEvent.click(await screen.findByRole("button", { name: "25" }));
+    await waitFor(() => expect(fetchWalletPushHistory).toHaveBeenCalledWith("evt-1", 1, 25, expect.anything()));
   });
 
   it("saves the wallet Template ID through the event patch", async () => {
@@ -1591,7 +1650,18 @@ describe("EventSettingsPage tabs", () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({
       ...activeEvent,
       wallet_template_id: "tmpl-1",
-      wallet_field_mapping: { directions: "directions_text", access: "accessibility_text", city: "city" },
+      wallet_field_mapping: {
+        directions: "directions_text",
+        access: "accessibility_text",
+        city: "city",
+        eventLocation: "event_location",
+        objectName: "object_name",
+        streetAddr: "street",
+        postal: "postcode",
+        regionField: "region",
+        countryField: "country",
+        hours: "event_hours",
+      },
     });
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
     await waitFor(() => {
@@ -1622,6 +1692,29 @@ describe("EventSettingsPage tabs", () => {
     });
     await waitFor(() => {
       expect(hoverTooltipOf("City").textContent).toBe("Warsaw");
+    });
+    await waitFor(() => {
+      expect(hoverTooltipOf("Event location").textContent).toBe("Congress Hall");
+    });
+    await waitFor(() => {
+      expect(hoverTooltipOf("Venue name").textContent).toBe("Congress Hall");
+    });
+    await waitFor(() => {
+      expect(hoverTooltipOf("Street address").textContent).toBe("Main Street 1");
+    });
+    await waitFor(() => {
+      expect(hoverTooltipOf("Postal code").textContent).toBe("00-001");
+    });
+    await waitFor(() => {
+      expect(hoverTooltipOf("Region").textContent).toBe("Mazowieckie");
+    });
+    await waitFor(() => {
+      expect(hoverTooltipOf("Country").textContent).toBe("Poland");
+    });
+    await waitFor(() => {
+      expect(hoverTooltipOf("Event hours").textContent).toBe(
+        "Not set for this event - this field won't be sent.",
+      );
     });
   });
 
@@ -2890,6 +2983,32 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     expect(screen.getByText("No attendees are currently checked in.")).toBeTruthy();
     const describedBy = button.getAttribute("aria-describedby");
     expect(document.getElementById(describedBy!)?.textContent).toBe("No check-ins to revoke");
+  });
+
+  it("shows 'Superadmin only' on Revoke all check-ins for an org admin, even with admitted attendees", async () => {
+    mockAssignments = orgAdminAssignments;
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, admitted_count: 1 });
+    renderSettings();
+    await openDangerZone();
+    const button = (await screen.findByRole("button", {
+      name: "Revoke all check-ins",
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    const describedBy = button.getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy!)?.textContent).toBe("Superadmin only");
+  });
+
+  it("describes Delete event as blocked by cleared content when no specific blockers remain", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      is_deletable: false,
+      deletion_blockers: undefined,
+    });
+    renderSettings();
+    await openDangerZone();
+    expect(
+      screen.getAllByText("This event still has content that must be cleared before it can be permanently deleted.").length,
+    ).toBeGreaterThan(0);
   });
 
   it("enables Revoke all check-ins for a superadmin with admitted attendees", async () => {
