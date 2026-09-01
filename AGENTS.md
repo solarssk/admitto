@@ -10,7 +10,7 @@ Repo: https://github.com/solarssk/admitto
 
 Admitto is a self-hostable **internal event access gateway**: attendee import (CSV/XLSX, agency UUIDs), QR tickets, M365 mail, check-in for operators, admin tooling. Tabler-based staff SPA; OIDC-ready auth.
 
-**Out of scope for MVP:** payments, public registration UI inside Admitto (first-event intake is MS Forms → `/api/ingest` in v0.5), full CRM, drag-and-drop mail builder, native `.pkpass` (PassCreator first).
+**Out of scope for MVP:** payments, public registration UI inside Admitto (first-event intake is planned as MS Forms → `/api/ingest` - not yet built, not yet assigned to a specific version, see [VERSIONING.md](VERSIONING.md)), full CRM, drag-and-drop mail builder, native `.pkpass` (PassCreator first).
 
 ## Working style
 

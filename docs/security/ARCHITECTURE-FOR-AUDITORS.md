@@ -19,10 +19,11 @@ Admitto supports **internal corporate events**:
 1. Import attendee lists (spreadsheet or agency identifiers).
 2. Issue opaque ticket / QR tokens (no attendee name or email in the QR payload).
 3. Send ticket email via customer mail infrastructure.
-4. Check-in on event day (operator UI).
-5. Export lists for reporting.
+4. Issue an Apple/Google Wallet pass for a ticket, when the deployment configures a wallet provider.
+5. Check-in on event day (operator UI).
+6. Export lists for reporting.
 
-**Planned (not required for initial go-live):** wallet passes, registration ingest, RSVP flows.
+**Planned (not required for initial go-live):** an external, self-service registration/ingest API, and RSVP/calendar-invite flows.
 
 **Out of MVP scope:** public self-registration portal, payments, CRM, vendor-hosted SaaS.
 
@@ -68,25 +69,40 @@ having to refresh).
 
 ---
 
-## 3. Business flow (roadmap)
+## 3. Business flow
 
 ```mermaid
 flowchart LR
-  Reg[Registration source] --> Ingest[Ingest API - planned]
-  Ingest --> Core[Admitto database]
-  Core --> Mail[Ticket email]
-  Core --> Wallet[Wallet - planned]
-  Core --> RSVP[RSVP - planned]
-  Guest[Guest] --> Checkin[Check-in]
+  Import[Attendee list\nCSV/XLSX or agency import] --> Core[(Admitto database\nsource of truth)]
+  Core --> Mail[Ticket email\nQR + optional wallet links]
+  Core --> Wallet[Apple/Google\nWallet pass]
+  Guest[Guest] --> Checkin[Check-in\nscan or manual lookup]
   Checkin --> Core
-  Core --> Export[Organizer export]
+  Core --> Export[Organizer export\n/ reports]
+  Ingest[External registration source\nplanned, not built] -.-> Core
 ```
 
-**Today:** import, mail, check-in, export are in scope for MVP UI. Ingest, RSVP, and wallet are
-roadmap items — mention them to auditors as **planned**, not as deployed controls.
+**Today:** import, mail delivery, wallet passes, check-in, and export/reporting have all shipped (see VERSIONING.md and the release tag for maturity status - shipped is not the same as production-ready for a first event). A self-service external registration/ingest API (a form or third-party system submitting attendees directly into Admitto without staff re-keying them) is a roadmap item, not a deployed control - mention it to auditors as **planned**, not as existing.
 
 Admitto is intended as the **system of record for attendance** after guests are registered in the
-customer process.
+customer process (today, via staff-driven CSV/XLSX import).
+
+### 3.1 Triggers, actions, and processes
+
+The table below lists every event that causes Admitto to do something, for a reviewer who needs to trace cause and effect rather than just the end-to-end shape above. "Automatic" means it runs on a schedule or as a direct side effect with no staff action in the moment; every attendee-facing send today is staff-triggered, not automatic.
+
+| Trigger | Actor | Process | Result |
+|---|---|---|---|
+| Import a CSV/XLSX file | Staff | Parse, validate, dedupe against existing tokens, commit | Attendee rows created; a validation report shows accepted/rejected rows and why |
+| Send or resend a ticket | Staff | Render the event's mail template, queue a delivery row, hand off to the configured mail transport | The worker drains the queue and sends via Graph, SMTP, or Power Automate; delivery status is tracked per attendee |
+| Add to Wallet (attendee action) | Attendee, from the ticket page | Create or reuse a wallet pass via the configured provider (PassCreator) | Attendee receives an Apple/Google Wallet pass carrying the same QR token as the ticket |
+| Scan a QR code, or a manual name lookup | Operator | Validate the token, apply an atomic compare-and-set check-in | Check-in is recorded exactly once; a second scan of the same ticket is reported as already used, never double-counted |
+| A wallet pass is voided, restored, or an attendee's details change | Staff, or automatically as a side effect of revoking/restoring a ticket | Push the updated state to the wallet provider | The attendee's wallet pass reflects the new status/details (a lock-screen update, not a new pass) |
+| Mail bounces | External mail system | The worker's bounce-ingest process reads the bounce mailbox and marks the affected delivery | Delivery status changes to "bounced"; surfaced to staff in-app (no outbound alert is sent - see [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) |
+| Retention window elapses (sessions, trusted devices, security audit log, mail-body snapshots) | Automatic - the worker, on a fixed interval | Purge or nullify the expired rows | Reduces what's retained without staff action; see the Retention table in [DATA-PROTECTION.md](../../DATA-PROTECTION.md) |
+| Export attendees / reports | Staff | Query the database, render CSV/XLSX/PDF | File download; no data leaves the customer's own instance |
+
+There is currently **no date-triggered automation** (for example, an automatic reminder email sent N days before an event, or an automatic waitlist promotion) - every attendee-facing action above is either a direct staff action or an immediate side effect of one.
 
 ---
 

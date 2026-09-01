@@ -25,3 +25,4 @@ Consumers import from compiled `dist/` (`"@admitto/foo": "*"`), not from `src/`.
 | [`storage`](storage/README.md) | Branding uploads (local FS today; S3 later) and orphan GC |
 | [`tickets`](tickets/README.md) | QR tokens, issuance, check-in validation |
 | [`ui`](ui/README.md) | Shared React components and Tabler-flavoured tokens |
+| [`wallet`](wallet/README.md) | `WalletPassProvider` abstraction; PassCreator adapter (Apple/Google/Samsung Wallet) |

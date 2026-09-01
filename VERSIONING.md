@@ -45,7 +45,7 @@ flowchart LR
 |---------|--------|
 | **v0.4** | Operator UI + event-day ops + staff SPA foundation (through current `v0.4.x` patches — see [CHANGELOG.md](CHANGELOG.md)). |
 | **v0.5** | Delivered - wallet passes (Apple/Google via PassCreator), passkey/security-key registration, SSO/OIDC hardening, users-table UX. |
-| **v0.6** | Delivered - passkeys/security keys usable for sign-in and step-up (not just registration), first-time 2FA method choice, session-cookie and step-up security hardening. |
+| **v0.6** | Delivered - passkeys/security keys usable for sign-in and step-up (not just registration), first-time 2FA method choice, session-cookie and step-up security hardening; later 0.6.x patches added Reports' Wallets and Custom fields tabs, a Samsung Wallet settings toggle, passkey autofill (conditional mediation) on the login page, and multi-arch container images. |
 | **v0.7** | Hardening phase 1 (Outlook/iPhone/Android mail and ticket tests, operational fixes toward go-live). |
 | **v0.8–v0.9** | External-ingest `/api/ingest`, RSVP intake, calendar iMIP/ICS, waitlist, template lifecycle triggers, further hardening + dry run (backup/restore, event-day readiness — ADR 0012) - not yet scheduled to a specific version. |
 | **v1.0** | First event **go-live ready** = MVP complete. |

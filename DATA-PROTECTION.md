@@ -19,6 +19,7 @@
 | `AttendeeActionLog.metadata` (admin audit trail) | Accountability — who changed an attendee's email/company/department/ticket type, from what, to what, and when | Personal data — see **Admin audit trail** below |
 | `AdminAuditLog.metadata` for attendee create/erase (central audit log) | Security/incident-response — which attendee (name, email) was created or permanently erased, from which event, by whom | Personal data — see **Central admin audit log** below |
 | Wallet pass registration (name, event details sent to PassCreator; provider pass ID, download URL, and per-platform device-registration counts stored locally) | Apple/Google Wallet ticket delivery, when Wallet is enabled | Personal data — see [SUBPROCESSORS.md](docs/security/SUBPROCESSORS.md) |
+| `Attendee.custom_data` (event-specific custom fields, e.g. dietary, accessibility, shirt size, emergency contact) | Event-specific attendee data collection (Requirements page → Custom attendee fields); aggregated in Reports' **Custom fields** tab | Personal data - **may hold GDPR Art. 9 special-category data** if staff configure such a field; see **Admin audit trail** below for how edits to this field are (deliberately, only partially) audited |
 
 `AttendeeNote.body` is a free-text operator note. It may contain special-category data
 (for example accessibility, dietary, or medical information) if staff enter it. Operators
@@ -84,21 +85,16 @@ provider) operations, and outbound calls to external services (weather, maps/geo
   [docs/security/SECURITY-CONTROLS.md](docs/security/SECURITY-CONTROLS.md)'s "Known scope limits" — Admitto has no
   built-in SIEM or central log platform). **Exception:** login, MFA, logout, OIDC, and access-denied
   events are also written durably to the database — see **Durable security audit trail** below —
-  so those ten event types survive a restart even without external log shipping.
+  so those fifteen event types survive a restart even without external log shipping.
 - It follows the same redaction rules described in **Logs** above: attendee-facing data is never
   shown in full, and a staff member's email is shown in full only for the specific accountability
   events listed there.
 
 ## Durable security audit trail (`SecurityAuditLog`)
 
-A superadmin-only screen (Settings → **Logs & audit** → **Security audit log**, next to the
-existing admin **Audit log** panel) shows a durable, database-backed history of ten auth/security
-event types: login success/failure, MFA success/failure, MFA break-glass override, MFA recovery
-code use, logout, OIDC login success, OIDC superadmin-revoke-blocked, and access-denied. Unlike the
-System-logs live tail above, this table is not in-memory — it survives a container restart, so it
-is the reliable source for reconstructing login/MFA/OIDC history during an incident review.
+A superadmin-only screen (Settings → **Logs & audit** → **Security audit log**, next to the existing admin **Audit log** panel) shows a durable, database-backed history of fifteen auth/security event types: login success/failure, repeated-login-failure alerts, MFA success/failure, MFA break-glass override, MFA recovery code use, repeated-MFA-failure alerts, superadmin bootstrap, logout, OIDC login success, OIDC superadmin-revoke-blocked, access-denied, and trusted-device creation/use (including when a "remember this device" cookie skips the two-factor step). Unlike the System-logs live tail above, this table is not in-memory — it survives a container restart, so it is the reliable source for reconstructing login/MFA/OIDC history during an incident review.
 
-- **Why:** before this, the same ten events only reached stdout (durability depends entirely on
+- **Why:** before this, the same fifteen events only reached stdout (durability depends entirely on
   your own log shipping/rotation setup) and the 1000-entry live tail (wiped on every restart). This
   closes that gap independently of container/log configuration (issue #473).
 - **Access:** superadmin-only, same gate as the central admin audit log below.

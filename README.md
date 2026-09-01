@@ -8,11 +8,25 @@
   &nbsp;
   <a href="https://github.com/solarssk/admitto/releases"><img src="https://img.shields.io/github/v/tag/solarssk/admitto?sort=semver&label=release&color=066fd1" alt="release"></a>
   &nbsp;
-  <img src="https://img.shields.io/badge/node-24-brightgreen" alt="Node 24">
-  &nbsp;
-  <img src="https://img.shields.io/badge/prisma-7-2D3748" alt="Prisma 7">
+  <a href="https://github.com/solarssk/admitto/pkgs/container/admitto"><img src="https://img.shields.io/badge/docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white" alt="Docker: amd64 and arm64"></a>
   &nbsp;
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="Apache 2.0"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white" alt="Node.js 24">
+  &nbsp;
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
+  &nbsp;
+  <img src="https://img.shields.io/badge/Hono-4-E36002?logo=hono&logoColor=white" alt="Hono 4">
+  &nbsp;
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React 19">
+  &nbsp;
+  <img src="https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL">
+  &nbsp;
+  <img src="https://img.shields.io/badge/Prisma-7-2D3748?logo=prisma&logoColor=white" alt="Prisma 7">
+  &nbsp;
+  <img src="https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white" alt="Redis">
 </p>
 
 <p align="center">
@@ -22,11 +36,13 @@
 
 ---
 
-> Treat personal data carefully until your organisation's data protection review is complete.
-> See [DATA-PROTECTION.md](DATA-PROTECTION.md) and [SECURITY.md](SECURITY.md) before deploying.
->
-> This repository contains only generic code and synthetic data (`@example.com`).
-> No secrets and no real personal data are ever committed here.
+## What is Admitto?
+
+Admitto covers everything between "we have a guest list" and "the event is over and we know who showed up": import attendees, issue each one a secure QR ticket, deliver it by email (and optionally to Apple/Google Wallet), check people in at the door, and export who actually attended. It exists so that running an internal company event doesn't mean paying recurring fees for a general-purpose ticketing SaaS, or handing attendee data to one.
+
+The idea it's built around: **Admitto is the single source of truth** for who's invited, who confirmed, and who showed up. The ticket email, the ticket page, and a wallet pass are just delivery layers that reflect that state - none of them hold their own copy of the truth.
+
+**Who uses it day to day:** an Admin sets up the event, imports attendees, and sends tickets; an Operator (staff at the door) runs check-in on a tablet or scanner; a Superadmin configures the instance itself (mail, integrations, sign-in). Attendees never sign in at all - they receive a ticket and show it.
 
 ## Documentation map
 
@@ -82,7 +98,7 @@ Unfamiliar term below (TOTP, OIDC, …)? Check the [Glossary](docs/wiki/Glossary
 
 | | Layer | Technologies |
 |---|-------|-------------|
-| 🟢 | **Runtime** | Node.js 24, TypeScript, Docker |
+| 🟢 | **Runtime** | Node.js 24, TypeScript, Docker (multi-arch: `linux/amd64` + `linux/arm64`) |
 | 🔌 | **Backend** | Hono 4, PostgreSQL (Prisma 7), Redis |
 | 🎨 | **Frontend** | React 19, react-router 7, Vite, Tabler design tokens |
 | 📬 | **Mail** | M365 Graph · SMTP · Power Automate · IMAP bounce ingest |
@@ -138,7 +154,7 @@ More detail: [infra/README.md](infra/README.md) · [apps/web/README.md](apps/web
 
 ## Production deployment
 
-Self-hosted **Docker Compose** only. Images are published to `ghcr.io/solarssk/admitto` on each `vX.Y.Z` git tag.
+Self-hosted **Docker Compose** only. Images are published to `ghcr.io/solarssk/admitto` on each `vX.Y.Z` git tag, as a **multi-arch manifest** (`linux/amd64` + `linux/arm64`) - Docker pulls the right one automatically, whether you're on a standard x86 VPS or arm64 hardware (AWS Graviton, Oracle Cloud's free arm tier, Raspberry Pi-class devices, Apple Silicon via Docker Desktop). Both platforms pass the same Trivy CRITICAL-vulnerability gate before either is pushed.
 Compose runs **`app`**, **`migrate`**, and a single **`worker`** (mail drain, import/export, bounce, retention).
 See [deploy/README.md](deploy/README.md).
 
@@ -156,17 +172,7 @@ See [deploy/README.md](deploy/README.md).
 
 ## Roadmap
 
-Canonical roadmap: [VERSIONING.md](VERSIONING.md). Short view:
-
-| Milestone | What ships |
-|-----------|------------|
-| **v0.4.x** ✅ | Delivered - import → ticket mail → check-in → reports; location, bounce, Health, worker, … |
-| **v0.5.x** ✅ | Delivered - wallet passes (Apple/Google via PassCreator), passkey/security-key registration, SSO/OIDC hardening, users UX |
-| **v0.6.0** ✅ | Delivered - passkeys/security keys usable for sign-in and step-up (not just registration), "Forget all trusted devices", session-cookie and step-up security hardening |
-| **v0.7** | Hardening phase 1 (Outlook/iPhone/Android mail and ticket tests) |
-| **v0.8+** | External-ingest `/api/ingest`, RSVP intake + calendar invites, waitlist - not yet scheduled to a specific version |
-| **v1.0** | First event go-live |
-| **v1.1+** | Self-service registration, multi-language, multi-track |
+[VERSIONING.md](VERSIONING.md) is the **only** place the release line, what's shipped, and what's next are tracked - intentionally not duplicated here, so this README can't drift out of sync with it the way a second copy eventually would.
 
 ## Licence
 

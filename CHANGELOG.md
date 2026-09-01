@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-09-01
+
 ### Added
 
 - The published container image (`ghcr.io/solarssk/admitto`) is now multi-arch - `linux/amd64` and `linux/arm64` under one tag, so self-hosting on arm64 hardware (AWS Graviton, Oracle Cloud's free arm tier, Raspberry Pi-class devices, Apple Silicon via Docker Desktop) pulls a native image instead of needing QEMU emulation or failing outright. Both platforms go through the same Trivy CRITICAL-vulnerability gate before either is pushed.
@@ -1292,7 +1294,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.4...HEAD
+[0.6.4]: https://github.com/solarssk/admitto/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/solarssk/admitto/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/solarssk/admitto/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/solarssk/admitto/compare/v0.6.0...v0.6.1
