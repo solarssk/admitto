@@ -7,6 +7,8 @@ Use these pages when you need an exact field, value, status, or definition.
 ## Data and communication
 
 - [Import File Reference](Import-File-Reference) — accepted attendee columns, identifiers, and validation rules.
+- [Validation Reference](Validation-Reference) — every field-level and cross-field validation rule across the app, by screen.
+- [Notifications and Messages Reference](Notifications-and-Messages-Reference) — every message Admitto can send: trigger, subject, content, and recipients.
 - [Template Variables](Template-Variables) — supported message variables and placement rules.
 - [Email Delivery Statuses](Email-Delivery-Statuses) — what each recorded delivery result means.
 - [Pass Statuses](Pass-Statuses) — exact pass and wallet-pass status meanings and the void/restore cascade.

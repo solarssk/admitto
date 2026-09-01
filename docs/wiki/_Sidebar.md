@@ -72,6 +72,8 @@
 - [Reference Hub](Reference-and-Troubleshooting)
 - [Glossary](Glossary)
 - [Import File Reference](Import-File-Reference)
+- [Validation Reference](Validation-Reference)
+- [Notifications and Messages Reference](Notifications-and-Messages-Reference)
 
 **Help**
 

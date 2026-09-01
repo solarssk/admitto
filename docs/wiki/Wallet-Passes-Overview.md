@@ -71,10 +71,10 @@ works; Admitto never signs or hosts pass files itself.
   turning the whole feature off hides the Wallet column and the Attendee Detail Wallet card
   entirely, and turning off just Apple or just Google Wallet drops that platform's icon/row
   everywhere, without affecting the other one.
-- **Wallet lifecycle actions.** Void, push updates, and permanently delete a wallet pass at the
-  provider - available both from Attendee Detail (single attendee) and the Attendees list (bulk,
-  for a selection). Restore and Refresh status are Attendee Detail only, there is no bulk version
-  of either. Revoking an attendee's ticket also voids their wallet pass automatically; restoring
+- **Wallet lifecycle actions.** Void, push updates, refresh status, and permanently delete a wallet
+  pass at the provider - available both from Attendee Detail (single attendee) and the Attendees
+  list (bulk, for a selection). Restore is Attendee Detail only, there is no bulk version of it.
+  Revoking an attendee's ticket also voids their wallet pass automatically; restoring
   the ticket restores the pass the same way. A bulk action against a large selection takes
   noticeably longer than an equivalent single-attendee action multiplied out - each attendee's
   pass is updated one call at a time at a fixed pace, to stay within PassCreator's own request

@@ -18,7 +18,7 @@ Decide what the person must do, which organisation or event they need, and when 
 4. Optionally enter an internal staff **phone** (country code + number). It is never shown on tickets.
 5. Open **Role assignments** to add or review scoped roles. Superadmins and admins can filter assignments by event. **Granted** shows UTC and your local time.
 6. Superadmins can open **Active sessions** to see every signed-in staff session (device, IP with country when known, sign-in time, last activity), **Edit** a session's device label, end one session, or end every operator session for one event at once.
-7. In **Edit user**, profile fields (including email) save with **Save profile**. Role and scope changes save immediately from **Role & access**. **More actions** / Danger zone lets a Superadmin **Delete** the account or unlink SSO when applicable. Under **Sign-in security**, a Superadmin can also **Reset two-factor** or **Reset password** for a staff account that lost access, which revokes that account's sessions.
+7. In **Edit user**, profile fields (including email) save with **Save profile**. Role and scope changes save immediately from **Role & access**. **More actions** / Danger zone lets a Superadmin **Delete** the account or unlink SSO when applicable. Under **Sign-in security**, a Superadmin can also **Reset two-factor** or **Reset password** for a staff account that lost access (which revokes that account's sessions as part of the reset), or use the standalone **Revoke sessions** action to force-log-out a user without touching their password or two-factor setup.
 8. Use instance scope only for a Superadmin.
 9. Use organisation scope for an Admin.
 10. Use event scope for an Operator.
@@ -36,7 +36,7 @@ The user sees only the administration or check-in surfaces allowed by their curr
 - Disabling a user blocks the account; removing one assignment only removes that scope.
 - Do not remove or disable the last active Superadmin.
 - Local Admin and Superadmin accounts must follow the configured MFA policy. OIDC sessions follow the identity provider flow.
-- Resetting another Superadmin's two-factor or password requires the acting Superadmin to confirm their own authenticator app, backup code, passkey, or security key first. This protects against a single compromised Superadmin session being used to silently take over another Superadmin account. Resetting your own account never requires this. If you signed in through single sign-on and have no local password, you cannot set up any of these yourself to satisfy this (registering a passkey or security key also needs a local password first) - ask another Superadmin who already has one confirmed to perform the reset instead.
+- Resetting another Superadmin's two-factor or password, or revoking their sessions, requires the acting Superadmin to confirm their own authenticator app, backup code, passkey, or security key first. This protects against a single compromised Superadmin session being used to silently take over or lock out another Superadmin account. Acting on your own account never requires this. If you signed in through single sign-on and have no local password, you cannot set up any of these yourself to satisfy this (registering a passkey or security key also needs a local password first) - ask another Superadmin who already has one confirmed to perform the action instead.
 - Deleting a staff account is permanent. Prefer disable when you only need to stop access.
 
 ## What changes after this action
@@ -49,7 +49,7 @@ New sessions use the updated assignments. Use **Active sessions** when access mu
 - **The user sees the wrong events:** inspect every scope for their role type, not only the newest one.
 - **A role option is unavailable:** your own role may not manage that scope.
 - **No role assigned after sign-in:** the account lands on My account with a notice until a Superadmin grants a usable assignment.
-- **"You need a confirmed authenticator app, passkey, or security key..." when resetting another Superadmin:** set up two-factor authentication on your own account first, then retry the reset. If you have no local password (single sign-on only), you cannot do this yourself - ask another Superadmin with a confirmed second factor to perform the reset instead.
+- **"You need a confirmed authenticator app, passkey, or security key..." when resetting another Superadmin's two-factor/password or revoking their sessions:** set up two-factor authentication on your own account first, then retry the action. If you have no local password (single sign-on only), you cannot do this yourself - ask another Superadmin with a confirmed second factor to perform it instead.
 
 ## Related pages
 
