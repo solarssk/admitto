@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
+import type { TicketTypeInfo } from "@admitto/tickets";
 import {
   aggregateWalletPasses,
   bucketForDays,
   buildWalletExportCsvRow,
+  buildWalletTicketTypeBreakdown,
   classifyPassPlatform,
   confirmedPlatformLabel,
   computeTapDays,
+  earliestDeliverySuccessAt,
 } from "../src/admin/reports-routes.js";
+
+function ticketType(overrides: Partial<TicketTypeInfo> = {}): TicketTypeInfo {
+  return { id: "tt-1", key: "general", label: "General", color: "gray", sort_order: 0, ...overrides };
+}
 
 const BOTH_ENABLED = { apple: true, google: true };
 
@@ -80,6 +87,80 @@ describe("computeTapDays", () => {
 
   it("returns null instead of a negative value when the pass predates the email (clock skew or bad data)", () => {
     expect(computeTapDays(sentAt, new Date("2025-12-31T00:00:00.000Z"))).toBeNull();
+  });
+});
+
+describe("earliestDeliverySuccessAt", () => {
+  const accepted = new Date("2026-01-01T00:00:00.000Z");
+  const sent = new Date("2026-01-02T00:00:00.000Z");
+  const delivered = new Date("2026-01-03T00:00:00.000Z");
+
+  it("returns null with no deliveries", () => {
+    expect(earliestDeliverySuccessAt([])).toBeNull();
+  });
+
+  it("reads accepted_at ahead of sent_at/delivered_at - the only timestamp any configured mailer adapter actually sets", () => {
+    expect(earliestDeliverySuccessAt([{ accepted_at: accepted, sent_at: sent, delivered_at: delivered }])).toEqual(
+      accepted,
+    );
+  });
+
+  it("falls back to sent_at when accepted_at is missing on that delivery", () => {
+    expect(earliestDeliverySuccessAt([{ accepted_at: null, sent_at: sent, delivered_at: delivered }])).toEqual(sent);
+  });
+
+  it("falls back to delivered_at when neither accepted_at nor sent_at is set", () => {
+    expect(earliestDeliverySuccessAt([{ accepted_at: null, sent_at: null, delivered_at: delivered }])).toEqual(
+      delivered,
+    );
+  });
+
+  it("returns null when a delivery has no timestamp at all", () => {
+    expect(earliestDeliverySuccessAt([{ accepted_at: null, sent_at: null, delivered_at: null }])).toBeNull();
+  });
+
+  it("takes the minimum across multiple deliveries (initial + resend), not just the first array entry", () => {
+    const laterResend = { accepted_at: new Date("2026-01-10T00:00:00.000Z"), sent_at: null, delivered_at: null };
+    const earlierInitial = { accepted_at: accepted, sent_at: null, delivered_at: null };
+    expect(earliestDeliverySuccessAt([laterResend, earlierInitial])).toEqual(accepted);
+  });
+});
+
+describe("buildWalletTicketTypeBreakdown", () => {
+  it("falls back to 0 confirmed for a catalog type with no confirmed installs, distinct from its issued (got_pass) count", () => {
+    const catalog = [ticketType({ key: "vip", label: "VIP" })];
+    const totalByType = new Map([["vip", 5]]);
+    const gotPassByType = new Map([["vip", 4]]); // issued, but...
+    const confirmedByType = new Map<string | null, number>(); // ...none of those 4 ever installed
+    const [row] = buildWalletTicketTypeBreakdown(catalog, totalByType, gotPassByType, confirmedByType);
+    expect(row).toMatchObject({ key: "vip", total: 5, got_pass: 4, confirmed: 0, confirmed_pct: 0 });
+  });
+
+  it("falls back to 0 confirmed for the (none) bucket when no untyped attendee has installed", () => {
+    const totalByType = new Map<string | null, number>([[null, 3]]);
+    const gotPassByType = new Map<string | null, number>([[null, 2]]);
+    const confirmedByType = new Map<string | null, number>(); // no untyped attendee installed
+    const rows = buildWalletTicketTypeBreakdown([], totalByType, gotPassByType, confirmedByType);
+    expect(rows).toContainEqual(
+      expect.objectContaining({ key: null, type: "(none)", total: 3, got_pass: 2, confirmed: 0, confirmed_pct: 0 }),
+    );
+  });
+
+  it("falls back to 0 confirmed for a (not in catalog) key when no attendee of that stale type has installed", () => {
+    const totalByType = new Map<string | null, number>([["retired", 2]]);
+    const gotPassByType = new Map<string | null, number>([["retired", 1]]);
+    const confirmedByType = new Map<string | null, number>(); // none of the "retired"-type attendees installed
+    const rows = buildWalletTicketTypeBreakdown([], totalByType, gotPassByType, confirmedByType);
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        key: "retired",
+        type: "(not in catalog)",
+        total: 2,
+        got_pass: 1,
+        confirmed: 0,
+        confirmed_pct: 0,
+      }),
+    );
   });
 });
 

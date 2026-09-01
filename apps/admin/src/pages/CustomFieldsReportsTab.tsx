@@ -64,7 +64,12 @@ function distributionRows(distribution: NonNullable<CustomFieldReport["distribut
 function CategoryDonut({
   distribution,
   totalAttendees,
-}: Readonly<{ distribution: NonNullable<CustomFieldReport["distribution"]>; totalAttendees: number }>) {
+  isActive,
+}: Readonly<{
+  distribution: NonNullable<CustomFieldReport["distribution"]>;
+  totalAttendees: number;
+  isActive: boolean;
+}>) {
   const slices = distribution.map((row, index) => ({ ...row, color: categoryColor(row.key, index) }));
   return (
     <div // NOSONAR - mousedown-only, see preventFocusRing above; not an interactive element itself
@@ -72,30 +77,38 @@ function CategoryDonut({
       role="presentation"
       onMouseDown={preventFocusRing}
     >
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart style={{ fontFamily: FONT_FAMILY }}>
-          <Pie
-            data={slices}
-            dataKey="count"
-            nameKey="label"
-            innerRadius="58%"
-            outerRadius="90%"
-            stroke="#ffffff"
-            strokeWidth={2}
-            label={false}
-            labelLine={false}
-            isAnimationActive={false}
-          >
-            {slices.map((slice) => (
-              <Cell key={slice.key} fill={slice.color} />
-            ))}
-          </Pie>
-          <Tooltip
-            formatter={(value) => `${value} attendee${value === 1 ? "" : "s"}`}
-            position={{ y: 256 }}
-          />
-        </PieChart>
-      </ResponsiveContainer>
+      {/* Only mount ResponsiveContainer (and the ResizeObserver it installs) while this tab is
+          the visible one - ReportsPage keeps this whole tab mounted with display:none rather
+          than unmounting it on tab switch (to avoid refetching), so leaving the chart mounted
+          too left its observer watching a box that legitimately collapses to 0x0 the moment the
+          wrapper flips to display:none, which is exactly when Recharts logs its own "width(0)
+          and height(0)" console warning. */}
+      {isActive && (
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart style={{ fontFamily: FONT_FAMILY }}>
+            <Pie
+              data={slices}
+              dataKey="count"
+              nameKey="label"
+              innerRadius="58%"
+              outerRadius="90%"
+              stroke="#ffffff"
+              strokeWidth={2}
+              label={false}
+              labelLine={false}
+              isAnimationActive={false}
+            >
+              {slices.map((slice) => (
+                <Cell key={slice.key} fill={slice.color} />
+              ))}
+            </Pie>
+            <Tooltip
+              formatter={(value) => `${value} attendee${value === 1 ? "" : "s"}`}
+              position={{ y: 256 }}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+      )}
       <div className="wallets-gauge-overlay__center">
         <span className="wallets-gauge-overlay__value">{totalAttendees}</span>
         <span className="wallets-gauge-overlay__label">attendees</span>
@@ -109,26 +122,29 @@ function CategoryDonut({
  * is the only meaningful chart here. Same responsive box as CategoryDonut above
  * (.wallets-gauge-overlay - up to 256px, shrinking with its card on a narrower screen), so every
  * card in this tab's grid reads at a consistent chart size whenever there's room for one. */
-function FillRateGauge({ pct }: Readonly<{ pct: number }>) {
+function FillRateGauge({ pct, isActive }: Readonly<{ pct: number; isActive: boolean }>) {
   return (
     <div // NOSONAR - mousedown-only, see preventFocusRing above; not an interactive element itself
       className="wallets-gauge-overlay"
       role="presentation"
       onMouseDown={preventFocusRing}
     >
-      <ResponsiveContainer width="100%" height="100%">
-        <RadialBarChart
-          data={[{ name: "pct", value: pct, fill: PRIMARY }]}
-          innerRadius="58%"
-          outerRadius="90%"
-          startAngle={90}
-          endAngle={-270}
-          style={{ fontFamily: FONT_FAMILY }}
-        >
-          <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
-          <RadialBar dataKey="value" background={{ fill: GRAY_100 }} cornerRadius="50%" isAnimationActive={false} />
-        </RadialBarChart>
-      </ResponsiveContainer>
+      {/* Same isActive gating as CategoryDonut above - see its comment for why. */}
+      {isActive && (
+        <ResponsiveContainer width="100%" height="100%">
+          <RadialBarChart
+            data={[{ name: "pct", value: pct, fill: PRIMARY }]}
+            innerRadius="58%"
+            outerRadius="90%"
+            startAngle={90}
+            endAngle={-270}
+            style={{ fontFamily: FONT_FAMILY }}
+          >
+            <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
+            <RadialBar dataKey="value" background={{ fill: GRAY_100 }} cornerRadius="50%" isAnimationActive={false} />
+          </RadialBarChart>
+        </ResponsiveContainer>
+      )}
       <div className="wallets-gauge-overlay__center">
         <span className="wallets-gauge-overlay__value">{pct}%</span>
         <span className="wallets-gauge-overlay__label">filled in</span>
@@ -149,14 +165,15 @@ function FieldDescription({ description }: Readonly<{ description: string | null
 function CustomFieldCard({
   field,
   totalAttendees,
-}: Readonly<{ field: CustomFieldReport; totalAttendees: number }>) {
+  isActive,
+}: Readonly<{ field: CustomFieldReport; totalAttendees: number; isActive: boolean }>) {
   if (field.type === "text") {
     const rate = field.response_rate!;
     return (
       <Card title={field.label}>
         <FieldDescription description={field.description} />
         <div className="wallets-adoption">
-          <FillRateGauge pct={rate.pct} />
+          <FillRateGauge pct={rate.pct} isActive={isActive} />
           <p className="wallets-description">
             {rate.answered} of {totalAttendees} attendees have filled this in.
           </p>
@@ -169,7 +186,7 @@ function CustomFieldCard({
     <Card title={field.label}>
       <FieldDescription description={field.description} />
       <div className="wallets-adoption">
-        <CategoryDonut distribution={distribution} totalAttendees={totalAttendees} />
+        <CategoryDonut distribution={distribution} totalAttendees={totalAttendees} isActive={isActive} />
         <div className="wallets-adoption__breakdown">
           <BreakdownRows rows={distributionRows(distribution)} />
         </div>
@@ -180,10 +197,15 @@ function CustomFieldCard({
 
 // Memoized and kept mounted once visited, same reasoning as WalletsReportsTab.tsx: ReportsPage
 // re-renders on every live check-in (Event Day's SSE feed), and this tab stays mounted
-// underneath even while Event Day is the visible one.
+// underneath even while Event Day is the visible one. `isActive` (whether this is currently the
+// visible tab) still changes though, and memo's shallow prop comparison re-renders on that -
+// each chart below only mounts its ResponsiveContainer while isActive is true, so its
+// ResizeObserver stops watching once the tab hides instead of observing a box that just
+// collapsed to 0x0 under display:none (see CategoryDonut's own comment).
 export const CustomFieldsReportsTab = memo(function CustomFieldsReportsTab({
   eventId,
-}: Readonly<{ eventId: string }>) {
+  isActive,
+}: Readonly<{ eventId: string; isActive: boolean }>) {
   const { data, loading, error, showLoadingSkeleton, retry } = useReportFetch(
     fetchEventCustomFieldReports,
     eventId,
@@ -224,7 +246,7 @@ export const CustomFieldsReportsTab = memo(function CustomFieldsReportsTab({
   return (
     <div className="custom-fields-grid">
       {data.fields.map((field) => (
-        <CustomFieldCard key={field.id} field={field} totalAttendees={data.total_attendees} />
+        <CustomFieldCard key={field.id} field={field} totalAttendees={data.total_attendees} isActive={isActive} />
       ))}
     </div>
   );

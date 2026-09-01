@@ -37,8 +37,16 @@ export interface EventWalletReportsResponse {
     type: string;
     color: string;
     total: number;
+    /** Issued (pass generated), regardless of install status - the CSV/PDF export's own "Got
+     * pass" column. Kept alongside `confirmed` below rather than replaced by it, since the two
+     * answer different questions and the export intentionally reports the issued count. */
     got_pass: number;
     pct: number;
+    /** Actually installed (active on a device), i.e. the same definition as `adoption.confirmed`
+     * scoped to this ticket type - what the Wallets tab's "Adoption by ticket type" card shows,
+     * distinct from `got_pass` above (issued-but-not-installed passes don't count here). */
+    confirmed: number;
+    confirmed_pct: number;
   }>;
   /** Per-day counts in the event's own timezone, ascending, plus a running total. Extends through
    * today (or the event date, whichever is earlier) even when no pass was issued on the most

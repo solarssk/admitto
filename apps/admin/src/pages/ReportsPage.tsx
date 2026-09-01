@@ -1041,7 +1041,7 @@ export function ReportsPage() {
         // Same display:contents reasoning as the Wallets wrapper below.
         <div style={{ display: activeTab === "customfields" ? "contents" : "none" }}>
           <Suspense fallback={<ReportsTabFallback />}>
-            <CustomFieldsReportsTab eventId={eventId} />
+            <CustomFieldsReportsTab eventId={eventId} isActive={activeTab === "customfields"} />
           </Suspense>
         </div>
       )}

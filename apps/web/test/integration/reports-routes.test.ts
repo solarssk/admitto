@@ -517,7 +517,12 @@ async function seed(client: PrismaClient) {
 
   // 3 whole days before walletIssuedAt - exercises time_to_wallet_tap's "1_3" bucket. No other
   // wallet attendee besides ATT_W_NOT_INSTALLED (below) gets an EmailDelivery row, so they're
-  // excluded from the average/bucket entirely (computeTapDays returns null with no sent_at).
+  // excluded from the average/bucket entirely (earliestDeliverySuccessAt returns null with no
+  // successful delivery). status "accepted" with only accepted_at set (no sent_at) - not "sent" -
+  // is deliberate: it's the only status any configured mailer adapter actually reports (see
+  // earliestDeliverySuccessAt's own comment in reports-routes.ts), so this is the realistic
+  // shape a real ticket-email send produces, and is what production data looked like when this
+  // whole card was reporting "Not enough data yet." despite thousands of real sends.
   await client.emailDelivery.create({
     data: {
       organization_id: ORG_REP,
@@ -525,8 +530,8 @@ async function seed(client: PrismaClient) {
       attendee_id: ATT_W_APPLE,
       purpose: "initial",
       provider: "export_only",
-      status: "sent",
-      sent_at: new Date("2026-01-12T10:00:00.000Z"),
+      status: "accepted",
+      accepted_at: new Date("2026-01-12T10:00:00.000Z"),
     },
   });
 
@@ -2234,7 +2239,15 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
       passes_truncated: boolean;
       adoption: { got_pass: number; got_pass_pct: number; confirmed: number; confirmed_pct: number; cancelled: number };
       platform: { apple_only: number; google_only: number; both: number; not_installed: number };
-      by_ticket_type: Array<{ key: string | null; type: string; total: number; got_pass: number; pct: number }>;
+      by_ticket_type: Array<{
+        key: string | null;
+        type: string;
+        total: number;
+        got_pass: number;
+        pct: number;
+        confirmed: number;
+        confirmed_pct: number;
+      }>;
       issued_by_day: Array<{ count: number; cumulative: number }>;
       time_to_wallet_tap: {
         average_days: number | null;
@@ -2265,18 +2278,25 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(general!.total).toBe(6);
     expect(general!.got_pass).toBe(5);
     expect(general!.pct).toBeCloseTo(83.3);
+    // Installed (confirmed) count is distinct from got_pass (issued): of General's 5 issued
+    // passes, only APPLE/BOTH/GOOGLE are actually confirmed - NOT_INSTALLED (0 registrations)
+    // and VOIDED don't count, even though both are included in got_pass above.
+    expect(general!.confirmed).toBe(3);
+    expect(general!.confirmed_pct).toBeCloseTo(50);
 
     const none = body.by_ticket_type.find((t) => t.key === null);
     expect(none).toBeDefined();
     expect(none!.type).toBe("(none)");
     expect(none!.total).toBe(1);
     expect(none!.got_pass).toBe(1);
+    expect(none!.confirmed).toBe(1); // ATT_W_NOTYPE has an active apple registration
 
     const notInCatalog = body.by_ticket_type.find((t) => t.key === "Retired");
     expect(notInCatalog).toBeDefined();
     expect(notInCatalog!.type).toBe("(not in catalog)");
     expect(notInCatalog!.total).toBe(1);
     expect(notInCatalog!.got_pass).toBe(1);
+    expect(notInCatalog!.confirmed).toBe(1); // ATT_W_LEGACY_TYPE has an active apple registration
 
     // Every pass was issued on the same seeded day - assert on the first real entry and the
     // final cumulative rather than array length, since the zero-fill-through-today extension

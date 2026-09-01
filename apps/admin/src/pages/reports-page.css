@@ -361,22 +361,25 @@
   gap: var(--space-4);
 }
 
-/* Same auto-fit grid as .reports-grid-3 above, but with a wider preferred track width -
-   CustomFieldsReportsTab.tsx's own cards hold .wallets-gauge-overlay (donut/gauge), unlike
-   .reports-grid-3's other consumer (Event day's plain BreakdownRows cards, fully fluid width),
-   so a card here wants more room than .reports-grid-3's plain 220px whenever there's space to
-   give it - the chart itself is comfortably legible around 256px, cramped much below that.
-   min(280px, 100%), not a bare 280px (bot review, PR #1185 - a bare pixel minimum can exceed
-   the viewport itself at phone widths once .content's and .at-card__body's padding are
-   subtracted, forcing the whole grid wider than the page): this still resolves to a real 280px
-   floor whenever the viewport has room for it, but on a narrower one it caps at 100% of the
-   available track space instead of forcing an oversized column - the chart itself shrinks to
-   match (.wallets-gauge-overlay's own width: min(256px, 100%) + aspect-ratio), so there's
-   nothing left demanding more room than the card can actually give it. */
+/* Same fixed 2-up layout as .wallets-panels below, not the auto-fit pattern above: these cards
+   hold the same .wallets-gauge-overlay (donut/gauge) + breakdown list as the Wallets tab, so
+   they need the same real per-card width to stay legible. auto-fit(minmax(280px, 1fr)) let a
+   wide viewport grow to 3+ columns barely wider than the chart's own fixed 256px, leaving almost
+   no room for the list beside it - and a lone trailing card in an incomplete row stretched to
+   fill the whole remaining row width instead of matching its row-mates' size. A plain 2-column
+   grid can't do either. */
 .custom-fields-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-4);
+}
+
+/* Same breakpoint as .wallets-panels below, same reason - two chart+list cards need real width
+   to stay legible; below it they'd squeeze into two illegible columns. */
+@media (max-width: 960px) {
+  .custom-fields-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .reports-log-pagesize .searchable-select {
