@@ -21,6 +21,8 @@ import {
   resolveWalletProvider,
   refreshOneWalletPassStatus,
   WalletStatusCheckInconclusiveError,
+  ATTENDEE_FIELD_PLACEHOLDERS,
+  isWalletFieldMappingRelevant,
   type WalletPassProvider,
   type WalletStatusRefreshOutcome,
 } from "@admitto/wallet";
@@ -358,6 +360,11 @@ export type AttendeeDetailDto = {
    * populated after a pass has actually been created) - PO review, 2026-08-13. */
   wallet_apple_link: string | null;
   wallet_google_link: string | null;
+  /** The event's current wallet_field_mapping (Event.wallet_field_mapping, parsed) - null/empty
+   * means no custom PassCreator placeholder is sent at all. Lets the admin UI narrow its
+   * wallet-push notice to only a changed field that actually reaches an already-issued pass
+   * (isWalletFieldMappingRelevant, @admitto/wallet/passcreator-mapper). */
+  wallet_field_mapping: Record<string, string> | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
@@ -879,12 +886,13 @@ async function buildAttendeeDetailDto(
   },
   notesPage = 1,
 ): Promise<AttendeeDetailDto> {
-  const [deliveriesResult, action_log, event_items, notes, walletLinks] = await Promise.all([
+  const [deliveriesResult, action_log, event_items, notes, walletLinks, event] = await Promise.all([
     listDeliveries({ eventId, filters: { attendeeId: row.id } }, db),
     loadAttendeeActionLogEntries(db, row.id),
     loadAttendeeItemsSummary(db, eventId, row.id),
     loadAttendeeNotes(db, eventId, row.id, notesPage),
     resolveAttendeeWalletLinksForDto(db, row.id),
+    db.event.findUnique({ where: { id: eventId }, select: { wallet_field_mapping: true } }),
   ]);
   const { company, department } = resolveCompanyDepartment(row);
 
@@ -909,6 +917,7 @@ async function buildAttendeeDetailDto(
     wallet_pass: row.wallet_pass ? serializeWalletPassAction(row.wallet_pass) : null,
     wallet_apple_link: walletLinks.apple,
     wallet_google_link: walletLinks.google,
+    wallet_field_mapping: parseWalletFieldMapping(event?.wallet_field_mapping),
     custom_data: row.custom_data ?? null,
     deliveries: deliveriesResult.items.map(toDeliveryDto),
     action_log,
@@ -2008,11 +2017,20 @@ async function pushWalletUpdateOnAttendeeChangeBestEffort(
     if (!event || !walletPass?.provider_pass_id) return;
     if (walletPass.status !== "active" && !justVoidedThisRequest) return;
 
+    const walletFieldMapping = parseWalletFieldMapping(event.wallet_field_mapping);
+    // Only worth reissuing when at least one of the actually-changed fields reaches the pass -
+    // same reasoning as event-settings-routes.ts's own walletRelevantEventFieldsChanged. An
+    // attendee field with no template Additional Property pointed at it (e.g. `department` on a
+    // template that doesn't map it) cannot change any issued pass.
+    if (!changedFields.some((field) => isWalletFieldMappingRelevant(field, ATTENDEE_FIELD_PLACEHOLDERS, walletFieldMapping))) {
+      return;
+    }
+
     const provider = resolveWalletProvider({
       walletEnabled: event.wallet_enabled,
       walletTemplateId: event.wallet_template_id,
       walletApiKeyEnc: event.wallet_api_key_enc,
-      walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),
+      walletFieldMapping,
     });
     if (!provider) return;
 
@@ -2354,19 +2372,28 @@ export async function handleBulkTicketTypeEventAttendees(
       );
     });
 
-    // Best-effort - ticket_type is always wallet-content-relevant (ticketTypeLabel), so any row
-    // this write actually changed is a candidate; enqueueWalletPushJob itself re-checks which
-    // ones still have an active WalletPass and no-ops entirely when none do. Outside the
-    // transaction above: job creation doesn't need atomicity with the ticket_type write, and an
-    // event lookup failure here must not roll back a change that already committed. Caught
-    // separately from the transaction (bot review): the ticket_type write already succeeded at
-    // this point, so a transient failure here must still report that success, not a blanket 500 -
-    // a 500 would make the operator retry, find every row already at the target type (zero
-    // updatedIds on the retry), and silently never get a replacement wallet push queued.
+    // Best-effort - ticket_type is wallet-content-relevant (ticketTypeLabel) whenever the event's
+    // wallet_field_mapping actually points a PassCreator field at it (isWalletFieldMappingRelevant
+    // - a template with no field mapped to ticket_type never renders it, so enqueueing there would
+    // be a no-op push); any row this write actually changed is a candidate once that's true -
+    // enqueueWalletPushJob itself re-checks which ones still have an active WalletPass and no-ops
+    // entirely when none do. Outside the transaction above: job creation doesn't need atomicity
+    // with the ticket_type write, and an event lookup failure here must not roll back a change
+    // that already committed. Caught separately from the transaction (bot review): the ticket_type
+    // write already succeeded at this point, so a transient failure here must still report that
+    // success, not a blanket 500 - a 500 would make the operator retry, find every row already at
+    // the target type (zero updatedIds on the retry), and silently never get a replacement wallet
+    // push queued.
     let walletPushJobId: string | null = null;
     try {
-      const event = await db.event.findUnique({ where: { id: eventId }, select: { organization_id: true } });
-      if (event) {
+      const event = await db.event.findUnique({
+        where: { id: eventId },
+        select: { organization_id: true, wallet_field_mapping: true },
+      });
+      if (
+        event &&
+        isWalletFieldMappingRelevant("ticket_type", ATTENDEE_FIELD_PLACEHOLDERS, parseWalletFieldMapping(event.wallet_field_mapping))
+      ) {
         walletPushJobId = await enqueueWalletPushJob(db, c, eventId, event.organization_id, updatedIds);
       }
     } catch (enqueueErr) {
@@ -2628,17 +2655,25 @@ export async function handleBulkSetAttendeeField(c: Context, db: PrismaClient): 
     });
 
     // Best-effort, outside the transaction - company/department are both wallet-content-relevant
-    // (WALLET_RELEVANT_ATTENDEE_FIELD_SET), so any row this write actually changed is a candidate;
-    // enqueueWalletPushJob itself re-checks which ones still have an active WalletPass and no-ops
-    // entirely when none do. Same reasoning as handleBulkTicketTypeEventAttendees's own enqueue
-    // (bot review): job creation doesn't need atomicity with the field write, and a transient
-    // failure here must not turn an already-committed change into a 500 the operator would retry
-    // into a no-op (every row already at the target value on the retry).
+    // (WALLET_RELEVANT_ATTENDEE_FIELD_SET) whenever the event's wallet_field_mapping actually
+    // points a PassCreator field at the one being bulk-set (isWalletFieldMappingRelevant); any row
+    // this write actually changed is a candidate once that's true - enqueueWalletPushJob itself
+    // re-checks which ones still have an active WalletPass and no-ops entirely when none do. Same
+    // reasoning as handleBulkTicketTypeEventAttendees's own enqueue (bot review): job creation
+    // doesn't need atomicity with the field write, and a transient failure here must not turn an
+    // already-committed change into a 500 the operator would retry into a no-op (every row already
+    // at the target value on the retry).
     let walletPushJobId: string | null = null;
     if (updatedIds.length > 0) {
       try {
-        const event = await db.event.findUnique({ where: { id: eventId }, select: { organization_id: true } });
-        if (event) {
+        const event = await db.event.findUnique({
+          where: { id: eventId },
+          select: { organization_id: true, wallet_field_mapping: true },
+        });
+        if (
+          event &&
+          isWalletFieldMappingRelevant(field, ATTENDEE_FIELD_PLACEHOLDERS, parseWalletFieldMapping(event.wallet_field_mapping))
+        ) {
           walletPushJobId = await enqueueWalletPushJob(db, c, eventId, event.organization_id, updatedIds);
         }
       } catch (enqueueErr) {

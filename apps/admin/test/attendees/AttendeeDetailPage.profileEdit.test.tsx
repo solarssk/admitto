@@ -148,6 +148,7 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     mockLoad(
       baseDetail({
         wallet_pass: { status: "active", apple_active_registrations: 1, google_active_registrations: 0 },
+        wallet_field_mapping: { org: "company" },
       }),
     );
     renderPage();
@@ -158,6 +159,21 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
 
     fireEvent.change(screen.getByLabelText("Company"), { target: { value: "Acme Corp" } });
     expect(screen.getByText("This will also update their installed wallet pass.")).toBeTruthy();
+  });
+
+  it("does not show the wallet-push notice when the changed field's placeholder isn't mapped to a PassCreator field", async () => {
+    mockLoad(
+      baseDetail({
+        wallet_pass: { status: "active", apple_active_registrations: 1, google_active_registrations: 0 },
+        wallet_field_mapping: { other: "department" },
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Company"), { target: { value: "Acme Corp" } });
+    expect(screen.queryByText("This will also update their installed wallet pass.")).toBeNull();
   });
 
   it("does not show the wallet-push notice when the attendee has no installed wallet pass", async () => {

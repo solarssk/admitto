@@ -1217,9 +1217,19 @@ describe("PATCH /api/admin/events/:eventId", () => {
           title: "Wallet Push Gala",
           slug: "wallet-push-gala",
           date: new Date("2026-09-01"),
+          // A start time, so wallet_apple_enabled has something to gate: relevantDate only exists
+          // when both wallet_apple_enabled AND event_hours_start are set (isRelevantDateAffected) -
+          // without this, toggling wallet_apple_enabled below would be a genuine no-op.
+          event_hours_start: "18:00",
           organization_id: ORG_SET,
           wallet_template_id: "tmpl-push",
           wallet_api_key_enc: encryptToString("push-api-key"),
+          // Maps title -> event_name and event_type -> event_type so this describe block's many
+          // title/event_type-change tests below stay true-positive under the new
+          // isWalletFieldMappingRelevant gate (a wallet-relevant field only actually pushes once
+          // an admin has mapped its placeholder to a PassCreator field) - see the dedicated
+          // "not mapped" tests further down for the negative case this gate exists for.
+          wallet_field_mapping: { name: "event_name", kind: "event_type" },
         },
       });
       await prisma.attendee.create({
@@ -1314,6 +1324,125 @@ describe("PATCH /api/admin/events/:eventId", () => {
         listSpy.mockRestore();
         subscribeSpy.mockRestore();
         await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_apple_enabled: true } });
+      }
+    });
+
+    it("does not enqueue a job when wallet_apple_enabled is toggled on an event with no start time (relevantDate absent on both sides)", async () => {
+      await prisma.event.update({ where: { id: PUSH_EVENT }, data: { event_hours_start: null } });
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_apple_enabled: false }),
+        });
+
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(0);
+      } finally {
+        await prisma.event.update({
+          where: { id: PUSH_EVENT },
+          data: { wallet_apple_enabled: true, event_hours_start: "18:00" },
+        });
+      }
+    });
+
+    it("does not enqueue a job when the event date changes but it has no start time and no event_date/event_hours mapping (relevantDate absent, and unmapped)", async () => {
+      await prisma.event.update({
+        where: { id: PUSH_EVENT },
+        data: { event_hours_start: null, wallet_field_mapping: { kind: "event_type" } },
+      });
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ date: "2026-09-02" }),
+        });
+
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(0);
+      } finally {
+        await prisma.event.update({
+          where: { id: PUSH_EVENT },
+          data: {
+            date: new Date("2026-09-01"),
+            event_hours_start: "18:00",
+            wallet_field_mapping: { name: "event_name", kind: "event_type" },
+          },
+        });
+      }
+    });
+
+    it("does not enqueue a job when title changes but wallet_field_mapping has no event_name entry mapped", async () => {
+      await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_field_mapping: { kind: "event_type" } } });
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (unmapped title)" }),
+        });
+
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(0);
+      } finally {
+        await prisma.event.update({
+          where: { id: PUSH_EVENT },
+          data: { wallet_field_mapping: { name: "event_name", kind: "event_type" } },
+        });
+      }
+    });
+
+    it("does not enqueue a job for a wallet-relevant field change when wallet_field_mapping is empty (no default mapping)", async () => {
+      await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_field_mapping: Prisma.JsonNull } });
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ event_type: "workshop" }),
+        });
+
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(0);
+      } finally {
+        await prisma.event.update({
+          where: { id: PUSH_EVENT },
+          data: { wallet_field_mapping: { name: "event_name", kind: "event_type" }, event_type: null },
+        });
+      }
+    });
+
+    // Regression (bot review): date isn't just event_date/event_date_short - it's the day every
+    // venue access-point time placeholder is anchored to (zonedDateTimeToIso), so a template
+    // mapping only venue_open_time still needs a reschedule pushed. wallet_apple_enabled is
+    // disabled here so relevantDate itself can't also explain the push - isolates the
+    // mapping-table path this test actually targets.
+    it("enqueues a job when the event date changes and only venue_open_time (not event_date) is mapped", async () => {
+      await prisma.event.update({
+        where: { id: PUSH_EVENT },
+        data: { wallet_apple_enabled: false, wallet_field_mapping: { open: "venue_open_time" } },
+      });
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ date: "2026-09-03" }),
+        });
+
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(1);
+      } finally {
+        await prisma.event.update({
+          where: { id: PUSH_EVENT },
+          data: {
+            date: new Date("2026-09-01"),
+            wallet_apple_enabled: true,
+            wallet_field_mapping: { name: "event_name", kind: "event_type" },
+          },
+        });
       }
     });
 

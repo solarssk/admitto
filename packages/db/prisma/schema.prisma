@@ -62,7 +62,9 @@ model Event {
   // Reports' platform breakdown) is already in place for whenever PassCreator adds it.
   wallet_samsung_enabled       Boolean                    @default(true)
   // Admin-defined PassCreator field key -> Admitto placeholder token (e.g. {"name": "full_name"}).
-  // Null/empty = the built-in default mapping (name, eventDate, eventHours, eventPlace, ticketType).
+  // Null/empty = no custom placeholder is sent at all (toPassCreatorData, packages/wallet/src/
+  // passcreator-mapper.ts) - PassCreator templates don't share a common field-name vocabulary, so
+  // there is no built-in default mapping to fall back to.
   wallet_field_mapping         Json?
   timezone                     String                     @default("UTC")
   capacity                     Int?

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
 import { WALLET_RELEVANT_ATTENDEE_FIELDS, enabledWalletPlatforms, type EnabledWalletPlatforms } from "@admitto/shared";
+import { ATTENDEE_FIELD_PLACEHOLDERS, isWalletFieldMappingRelevant } from "@admitto/wallet/passcreator-mapper";
 import {
   Avatar,
   Badge,
@@ -1464,8 +1465,10 @@ function computeWalletPushNoticeVisible(
     ((detail.wallet_pass.apple_active_registrations ?? 0) > 0 ||
       (detail.wallet_pass.google_active_registrations ?? 0) > 0);
   if (!hasConfirmedWalletRegistration) return false;
-  return Object.keys(buildAttendeePatch(form, detail, attributeFields)).some((key) =>
-    (WALLET_RELEVANT_ATTENDEE_FIELDS as readonly string[]).includes(key),
+  return Object.keys(buildAttendeePatch(form, detail, attributeFields)).some(
+    (key) =>
+      (WALLET_RELEVANT_ATTENDEE_FIELDS as readonly string[]).includes(key) &&
+      isWalletFieldMappingRelevant(key, ATTENDEE_FIELD_PLACEHOLDERS, detail.wallet_field_mapping),
   );
 }
 

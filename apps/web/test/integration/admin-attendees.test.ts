@@ -4879,6 +4879,11 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
           organization_id: ORG_A,
           wallet_template_id: "tmpl-attendee-push",
           wallet_api_key_enc: encryptToString("attendee-push-api-key"),
+          // Maps first_name -> first_name so this describe block's first_name-change tests below
+          // stay true-positive under the new isWalletFieldMappingRelevant gate in
+          // pushWalletUpdateOnAttendeeChangeBestEffort (a wallet-relevant field only actually
+          // pushes once an admin has mapped its placeholder to a PassCreator field).
+          wallet_field_mapping: { fn: "first_name" },
         },
       });
       await prisma.attendee.create({
@@ -4961,6 +4966,27 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       }
     });
 
+    // Regression (bot review): Attendee.name (fed into the full_name placeholder) is rebuilt from
+    // first_name/last_name on every split-name edit - a template mapping only full_name (the
+    // common case) must still see a first_name-only edit as relevant, not just one that maps
+    // first_name itself.
+    it("pushes when first_name changes even though only full_name (not first_name) is mapped", async () => {
+      await prisma.event.update({ where: { id: WP_EVENT }, data: { wallet_field_mapping: { n: "full_name" } } });
+      const updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({
+        providerPassId: WP_PROVIDER_PASS_ID,
+        appleUrl: "https://pc.test/apple/full-name-only",
+        androidUrl: "https://pc.test/android/full-name-only",
+      });
+      try {
+        const res = await patchWpAttendee({ first_name: "Renamed Again" });
+        expect(res.status).toBe(200);
+        expect(updateSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        updateSpy.mockRestore();
+        await prisma.event.update({ where: { id: WP_EVENT }, data: { wallet_field_mapping: { fn: "first_name" } } });
+      }
+    });
+
     it("still pushes the content change when the same PATCH also revokes the pass (bot review, Codex)", async () => {
       // Regression for a race Codex flagged: the status cascade (revoke) runs before the
       // content-push guard, so a plain active-only check would see the pass as already voided by
@@ -5002,6 +5028,21 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       });
       try {
         const res = await patchWpAttendee({ rsvp_status: "confirmed" });
+        expect(res.status).toBe(200);
+        expect(updateSpy).not.toHaveBeenCalled();
+      } finally {
+        updateSpy.mockRestore();
+      }
+    });
+
+    it("does not push when a wallet-relevant field changes but its placeholder isn't mapped (department, only first_name mapped)", async () => {
+      const updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({
+        providerPassId: WP_PROVIDER_PASS_ID,
+        appleUrl: "https://pc.test/apple/unexpected",
+        androidUrl: "https://pc.test/android/unexpected",
+      });
+      try {
+        const res = await patchWpAttendee({ department: "Ops" });
         expect(res.status).toBe(200);
         expect(updateSpy).not.toHaveBeenCalled();
       } finally {
@@ -7424,7 +7465,17 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
   // fix, PR3).
   beforeEach(() => rateLimitStore.reset());
 
+  // Maps ticket_type -> ticket_type on EVENT_A for the lifetime of this block only (restored in
+  // afterAll below) so its many "enqueues a wallet_push job" assertions stay true-positive under
+  // isWalletFieldMappingRelevant (a wallet-relevant field only actually pushes once an admin has
+  // mapped its placeholder to a PassCreator field) - scoped rather than a permanent fixture change
+  // since EVENT_A is shared across this whole file.
+  beforeAll(async () => {
+    await prisma.event.update({ where: { id: EVENT_A }, data: { wallet_field_mapping: { tt: "ticket_type" } } });
+  });
+
   afterAll(async () => {
+    await prisma.event.update({ where: { id: EVENT_A }, data: { wallet_field_mapping: Prisma.JsonNull } });
     await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-tt-" } } });
     await prisma.attendee.deleteMany({ where: { id: { startsWith: "att-bulk-tt-" } } });
   });
@@ -7485,6 +7536,23 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-ticket-type", () => {
       fields: ["ticket_type"],
       field_changes: { ticket_type: { from: null, to: "vip" } },
     });
+  });
+
+  it("returns a null walletPushJobId when ticket_type isn't mapped to any PassCreator field", async () => {
+    await prisma.event.update({ where: { id: EVENT_A }, data: { wallet_field_mapping: Prisma.JsonNull } });
+    try {
+      const id = "att-bulk-tt-unmapped";
+      await seedTyped([id], "standard");
+
+      const res = await postBulkType(EVENT_A, { attendeeIds: [id], ticket_type: "vip" });
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { updatedCount: number; walletPushJobId: string | null };
+      expect(body.updatedCount).toBe(1);
+      expect(body.walletPushJobId).toBeNull();
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_A }, data: { wallet_field_mapping: { tt: "ticket_type" } } });
+    }
   });
 
   it("leaves rows that already have the type untouched — no update, no log, no updated_at bump", async () => {
@@ -8665,7 +8733,19 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-set-field", () => {
   // bulk-rsvp block above.
   beforeEach(() => rateLimitStore.reset());
 
+  // Maps company/department -> company/department on EVENT_A for the lifetime of this block only
+  // (restored in afterAll below) so its many "enqueues a wallet_push job" assertions stay
+  // true-positive under isWalletFieldMappingRelevant - same reasoning as the bulk-ticket-type
+  // block above.
+  beforeAll(async () => {
+    await prisma.event.update({
+      where: { id: EVENT_A },
+      data: { wallet_field_mapping: { org: "company", dept: "department" } },
+    });
+  });
+
   afterAll(async () => {
+    await prisma.event.update({ where: { id: EVENT_A }, data: { wallet_field_mapping: Prisma.JsonNull } });
     await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-setfield-" } } });
     await prisma.attendee.deleteMany({ where: { id: { startsWith: "att-bulk-setfield-" } } });
   });
@@ -8872,6 +8952,31 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-set-field", () => {
 
     await prisma.adminJob.deleteMany({ where: { id: body.walletPushJobId! } });
     await prisma.walletPass.deleteMany({ where: { attendee_id: withPass } });
+  });
+
+  it("returns a null walletPushJobId when the bulk-set field isn't mapped to any PassCreator field", async () => {
+    await prisma.event.update({ where: { id: EVENT_A }, data: { wallet_field_mapping: { dept: "department" } } });
+    try {
+      const withPass = "att-bulk-setfield-unmapped";
+      await seedSetField(withPass, { company: null });
+      await prisma.walletPass.create({
+        data: { attendee_id: withPass, provider: "passcreator", provider_pass_id: `pc-${withPass}`, status: "active" },
+      });
+
+      const res = await postBulkSetField(EVENT_A, { attendeeIds: [withPass], field: "company", value: "Acme Inc." });
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { updatedCount: number; walletPushJobId: string | null };
+      expect(body.updatedCount).toBe(1);
+      expect(body.walletPushJobId).toBeNull();
+
+      await prisma.walletPass.deleteMany({ where: { attendee_id: withPass } });
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_A },
+        data: { wallet_field_mapping: { org: "company", dept: "department" } },
+      });
+    }
   });
 
   it("returns a null walletPushJobId, without enqueuing, when nothing actually changed", async () => {

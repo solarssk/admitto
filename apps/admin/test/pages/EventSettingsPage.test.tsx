@@ -615,6 +615,7 @@ describe("EventSettingsPage tabs", () => {
       wallet_enabled: true,
       wallet_template_id: "tmpl-1",
       wallet_api_key: { configured: true },
+      wallet_field_mapping: { hours: "event_hours" },
     });
     vi.mocked(fetchEventLocation).mockResolvedValueOnce({
       ...emptyLocation,
@@ -659,6 +660,7 @@ describe("EventSettingsPage tabs", () => {
       wallet_enabled: true,
       wallet_template_id: "tmpl-1",
       wallet_api_key: { configured: true },
+      wallet_field_mapping: { hours: "event_hours" },
     });
     vi.mocked(fetchEventLocation).mockResolvedValueOnce({
       ...emptyLocation,
@@ -699,6 +701,7 @@ describe("EventSettingsPage tabs", () => {
       wallet_enabled: true,
       wallet_template_id: "tmpl-1",
       wallet_api_key: { configured: true },
+      wallet_field_mapping: { hours: "event_hours" },
     });
     vi.mocked(fetchEventLocation).mockResolvedValueOnce({
       ...emptyLocation,
@@ -2341,6 +2344,7 @@ describe("EventSettingsPage — wallet push confirm dialog before save", () => {
       wallet_enabled: true,
       wallet_template_id: "tmpl-1",
       wallet_api_key: { configured: true },
+      wallet_field_mapping: { name: "event_name" },
     });
     renderSettings();
     await screen.findByLabelText("Event title");
@@ -2355,6 +2359,57 @@ describe("EventSettingsPage — wallet push confirm dialog before save", () => {
     expect(patchEvent).not.toHaveBeenCalled();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Save and push" }));
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { title: "Summit 2027" });
+    });
+  });
+
+  // Regression coverage: exercises the relevantDate path (isRelevantDateAffected), not the
+  // fieldMapping path the "title" tests above cover - event_hours_start reaches an installed pass
+  // via relevantDate whenever Apple Wallet is on and a start time is set, regardless of any
+  // wallet_field_mapping (no event_hours entry mapped here at all).
+  it("confirms before saving event_hours_start when Apple Wallet is on and installed passes exist (relevantDate path)", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 2,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+      wallet_apple_enabled: true,
+      event_hours_start: "18:00",
+    });
+    renderSettings();
+    await screen.findByLabelText("Event hours (start)");
+
+    fireEvent.change(screen.getByLabelText("Event hours (start)"), { target: { value: "19:00" } });
+    fireEvent.blur(screen.getByLabelText("Event hours (start)"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Push this update to installed wallet passes?",
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save and push" }));
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { event_hours_start: "19:00" });
+    });
+  });
+
+  it("saves directly, without confirming, when the changed field's placeholder isn't mapped to a PassCreator field", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 3,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+      wallet_field_mapping: { other: "event_type" },
+    });
+    renderSettings();
+    await screen.findByLabelText("Event title");
+
+    fireEvent.change(screen.getByLabelText("Event title"), { target: { value: "Summit 2027" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => {
       expect(patchEvent).toHaveBeenCalledWith("evt-1", { title: "Summit 2027" });
     });
@@ -2397,6 +2452,7 @@ describe("EventSettingsPage — wallet push confirm dialog before save", () => {
       wallet_enabled: true,
       wallet_template_id: "tmpl-1",
       wallet_api_key: { configured: true },
+      wallet_field_mapping: { name: "event_name" },
     });
     renderSettings();
     await screen.findByLabelText("Event title");
@@ -2417,6 +2473,7 @@ describe("EventSettingsPage — wallet push confirm dialog before save", () => {
       wallet_enabled: true,
       wallet_template_id: "tmpl-1",
       wallet_api_key: { configured: true },
+      wallet_field_mapping: { name: "event_name" },
     });
     renderSettings();
     await screen.findByLabelText("Event title");
@@ -2505,6 +2562,7 @@ describe("EventSettingsPage — wallet push confirm dialog before save", () => {
       wallet_enabled: true,
       wallet_template_id: "tmpl-1",
       wallet_api_key: { configured: false },
+      wallet_field_mapping: { name: "event_name" },
     });
     renderSettings("/admin/events/evt-1/settings?tab=wallet");
     await waitFor(() => {

@@ -790,6 +790,12 @@ describe("PUT /api/admin/events/:eventId/location — auto-push to already-issue
         organization_id: ORG_LOC,
         wallet_template_id: "tmpl-location-push",
         wallet_api_key_enc: encryptToString("location-push-api-key"),
+        // Maps formatted_address/venue_name -> event_location, venue_room -> venue_room, and
+        // doors_open_time -> doors_open_time so this describe block's field-change tests below
+        // stay true-positive under the new isWalletFieldMappingRelevant gate (a wallet-relevant
+        // field only actually pushes once an admin has mapped its placeholder to a PassCreator
+        // field) - see the dedicated "not mapped" test further down for the negative case.
+        wallet_field_mapping: { place: "google_maps_url", room: "venue_room", doors: "doors_open_time" },
       },
     });
     await prisma.attendee.create({
@@ -849,12 +855,41 @@ describe("PUT /api/admin/events/:eventId/location — auto-push to already-issue
     });
   });
 
+  it("enqueues an event-wide wallet_push job when latitude/longitude changes and a maps-url placeholder is mapped", async () => {
+    const res = await putLocation(WALLET_LOC_EVENT, adminCookie, { latitude: 50.07, longitude: 19.95 });
+
+    expect(res.status).toBe(200);
+    const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+    expect(jobs).toHaveLength(1);
+  });
+
   it("enqueues an event-wide wallet_push job when doors_open_time changes", async () => {
     const res = await putLocation(WALLET_LOC_EVENT, adminCookie, { doors_open_time: "08:30" });
 
     expect(res.status).toBe(200);
     const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
     expect(jobs).toHaveLength(1);
+  });
+
+  it("does not enqueue a job when a wallet-relevant field changes but its placeholder isn't mapped", async () => {
+    await prisma.event.update({
+      where: { id: WALLET_LOC_EVENT },
+      data: { wallet_field_mapping: { room: "venue_room" } },
+    });
+    try {
+      const res = await putLocation(WALLET_LOC_EVENT, adminCookie, {
+        formatted_address: "1 Unmapped Street, Example City",
+      });
+
+      expect(res.status).toBe(200);
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(0);
+    } finally {
+      await prisma.event.update({
+        where: { id: WALLET_LOC_EVENT },
+        data: { wallet_field_mapping: { place: "google_maps_url", room: "venue_room", doors: "doors_open_time" } },
+      });
+    }
   });
 
   it("does not enqueue a job when only map_zoom (UI-only, not on the pass) changes", async () => {
@@ -963,5 +998,105 @@ describe("PUT /api/admin/events/:eventId/location — auto-push to already-issue
     expect(res.status).toBe(200);
     const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
     expect(jobs).toHaveLength(0);
+  });
+
+  // Regression (bot review): address_components.country feeds formatDate/formatDateShort/
+  // formatEventHours (wallet-pass-input.ts) for country-dependent formatting, so a country change
+  // can alter event_date/event_date_short/event_hours even though none of the address placeholders
+  // themselves are mapped - a mapping that only covers event_date (an EVENT placeholder) must still
+  // treat an address_components change on the Location tab as relevant.
+  it("enqueues a job when address_components changes and event_date is mapped, even with no address placeholder mapped", async () => {
+    await prisma.event.update({
+      where: { id: WALLET_LOC_EVENT },
+      data: { wallet_field_mapping: { d: "event_date" } },
+    });
+    try {
+      const res = await putLocation(WALLET_LOC_EVENT, adminCookie, {
+        address_components: { object_name: null, street: null, postcode: null, city: null, region: null, country: "Germany" },
+      });
+
+      expect(res.status).toBe(200);
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(1);
+    } finally {
+      await prisma.event.update({
+        where: { id: WALLET_LOC_EVENT },
+        data: { wallet_field_mapping: { place: "google_maps_url", room: "venue_room", doors: "doors_open_time" } },
+      });
+    }
+  });
+
+  // Regression (bot review): venue_open_time isn't just its own placeholder - wallet-pass-input.ts
+  // compares it against venue_close_time to decide whether closing lands on the following calendar
+  // day (an overnight venue), so an opening-time edit can shift the rendered closing timestamp even
+  // when only venue_close_time (not venue_open_time itself) is mapped.
+  it("enqueues a job when venue_open_time changes and only venue_close_time (not venue_open_time) is mapped", async () => {
+    await prisma.event.update({
+      where: { id: WALLET_LOC_EVENT },
+      data: { wallet_field_mapping: { close: "venue_close_time" } },
+    });
+    try {
+      const res = await putLocation(WALLET_LOC_EVENT, adminCookie, { venue_open_time: "20:00" });
+
+      expect(res.status).toBe(200);
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(1);
+    } finally {
+      await prisma.event.update({
+        where: { id: WALLET_LOC_EVENT },
+        data: { wallet_field_mapping: { place: "google_maps_url", room: "venue_room", doors: "doors_open_time" } },
+      });
+    }
+  });
+
+  // Regression (bot review): resolveGoogleMapsUrl/resolveAppleMapsUrl skip the generated label
+  // entirely once that platform's own URL override is set - editing venue_name while an override
+  // is active can't change the rendered google_maps_url, so it must not warn/push for a mapping
+  // that only covers google_maps_url.
+  it("does not enqueue a job when venue_name changes but google_maps_url_override is set (override bypasses the label)", async () => {
+    await prisma.eventLocation.create({
+      data: { event_id: WALLET_LOC_EVENT, google_maps_url_override: "https://maps.example/pinned" },
+    });
+    await prisma.event.update({
+      where: { id: WALLET_LOC_EVENT },
+      data: { wallet_field_mapping: { g: "google_maps_url" } },
+    });
+    try {
+      const res = await putLocation(WALLET_LOC_EVENT, adminCookie, { venue_name: "New Arena Name" });
+
+      expect(res.status).toBe(200);
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(0);
+    } finally {
+      await prisma.event.update({
+        where: { id: WALLET_LOC_EVENT },
+        data: { wallet_field_mapping: { place: "google_maps_url", room: "venue_room", doors: "doors_open_time" } },
+      });
+    }
+  });
+
+  // Regression (bot review): wallet-pass-input.ts's mapLabel is event.location ?? event.
+  // formattedAddress - formatted_address is only ever read as a fallback when venue_name is empty,
+  // so editing it while venue_name is set can't change the rendered google_maps_url.
+  it("does not enqueue a job when formatted_address changes but venue_name is currently set (venue_name wins the map label)", async () => {
+    await prisma.eventLocation.create({
+      data: { event_id: WALLET_LOC_EVENT, venue_name: "ICE Kraków Congress Centre" },
+    });
+    await prisma.event.update({
+      where: { id: WALLET_LOC_EVENT },
+      data: { wallet_field_mapping: { g: "google_maps_url" } },
+    });
+    try {
+      const res = await putLocation(WALLET_LOC_EVENT, adminCookie, { formatted_address: "1 Different Street" });
+
+      expect(res.status).toBe(200);
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(0);
+    } finally {
+      await prisma.event.update({
+        where: { id: WALLET_LOC_EVENT },
+        data: { wallet_field_mapping: { place: "google_maps_url", room: "venue_room", doors: "doors_open_time" } },
+      });
+    }
   });
 });
