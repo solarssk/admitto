@@ -295,7 +295,7 @@ function patchTouchesWalletRelevantField(patch: SettingsPatch, event: EventSetti
   const relevantDateAffected = isRelevantDateAffected(
     { walletAppleEnabled: event.wallet_apple_enabled, eventHoursStart: event.event_hours_start },
     {
-      walletAppleEnabled: patch.wallet_apple_enabled !== undefined ? patch.wallet_apple_enabled : event.wallet_apple_enabled,
+      walletAppleEnabled: patch.wallet_apple_enabled ?? event.wallet_apple_enabled,
       eventHoursStart: patch.event_hours_start !== undefined ? patch.event_hours_start : event.event_hours_start,
     },
   );
