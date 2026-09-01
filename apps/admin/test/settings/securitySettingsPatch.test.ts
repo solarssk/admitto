@@ -19,6 +19,7 @@ const baseSettings: SystemSettingsDto = {
   csp_trusted_origins: { value: [], source: "default" },
   webauthn_enabled: { value: true, source: "default" },
   passkey_login_enabled: { value: false, source: "default" },
+  passkey_conditional_ui_enabled: { value: false, source: "default" },
 };
 
 const baseDraft = {
@@ -31,6 +32,7 @@ const baseDraft = {
   cspTrustedOriginsRaw: "",
   webauthnEnabled: true,
   passkeyLoginEnabled: false,
+  passkeyConditionalUiEnabled: false,
 };
 
 function fieldLocked(source: "env" | "db" | "default") {
@@ -190,6 +192,31 @@ describe("buildSecurityPatchBody", () => {
       webauthn_enabled: false,
       passkey_login_enabled: true,
     });
+  });
+
+  it("includes passkey_conditional_ui_enabled when toggled", () => {
+    const result = buildSecurityPatchBody(
+      baseSettings,
+      { ...baseDraft, passkeyConditionalUiEnabled: true },
+      fieldLocked,
+    );
+    expect(result.hasChanges).toBe(true);
+    expect(result.body).toEqual({
+      passkey_conditional_ui_enabled: true,
+    });
+  });
+
+  it("skips passkey_conditional_ui_enabled when env-locked", () => {
+    const result = buildSecurityPatchBody(
+      {
+        ...baseSettings,
+        passkey_conditional_ui_enabled: { value: false, source: "env" },
+      },
+      { ...baseDraft, passkeyConditionalUiEnabled: true },
+      fieldLocked,
+    );
+    expect(result.hasChanges).toBe(false);
+    expect(result.body).toEqual({});
   });
 
   it("skips webauthn_enabled and passkey_login_enabled when env-locked", () => {

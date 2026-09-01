@@ -27,6 +27,7 @@ const emptySettings = {
   csp_trusted_origins: { value: [] as string[], source: "default" as const },
   webauthn_enabled: { value: true, source: "default" as const },
   passkey_login_enabled: { value: false, source: "default" as const },
+  passkey_conditional_ui_enabled: { value: false, source: "default" as const },
 };
 
 const sampleEvent = {

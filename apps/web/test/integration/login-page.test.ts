@@ -3,7 +3,13 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { hashPassword, createSession, SETTING_WEBAUTHN_ENABLED, SETTING_PASSKEY_LOGIN_ENABLED } from "@admitto/auth";
+import {
+  hashPassword,
+  createSession,
+  SETTING_WEBAUTHN_ENABLED,
+  SETTING_PASSKEY_LOGIN_ENABLED,
+  SETTING_PASSKEY_CONDITIONAL_UI_ENABLED,
+} from "@admitto/auth";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { sessionCookie } from "../helpers/session-cookie.js";
@@ -188,6 +194,65 @@ describe("GET /login", () => {
     } finally {
       await prisma.systemSettings.deleteMany({
         where: { key: { in: [SETTING_PASSKEY_LOGIN_ENABLED, SETTING_WEBAUTHN_ENABLED] } },
+      });
+    }
+  });
+
+  it("keeps autocomplete=\"username\" (no conditional UI) by default, even with passkey login on", async () => {
+    await prisma.systemSettings.upsert({
+      where: { key: SETTING_PASSKEY_LOGIN_ENABLED },
+      create: { key: SETTING_PASSKEY_LOGIN_ENABLED, value_json: "true" },
+      update: { value_json: "true" },
+    });
+    try {
+      const res = await app.request("/login");
+      const html = await res.text();
+      expect(html).toContain('id="email"');
+      expect(html).toContain('autocomplete="username"');
+      expect(html).not.toContain("isConditionalMediationAvailable");
+    } finally {
+      await prisma.systemSettings.deleteMany({ where: { key: SETTING_PASSKEY_LOGIN_ENABLED } });
+    }
+  });
+
+  it("adds the webauthn autofill hint and conditional-mediation script once all three settings are on", async () => {
+    await prisma.systemSettings.upsert({
+      where: { key: SETTING_PASSKEY_LOGIN_ENABLED },
+      create: { key: SETTING_PASSKEY_LOGIN_ENABLED, value_json: "true" },
+      update: { value_json: "true" },
+    });
+    await prisma.systemSettings.upsert({
+      where: { key: SETTING_PASSKEY_CONDITIONAL_UI_ENABLED },
+      create: { key: SETTING_PASSKEY_CONDITIONAL_UI_ENABLED, value_json: "true" },
+      update: { value_json: "true" },
+    });
+    try {
+      const res = await app.request("/login");
+      const html = await res.text();
+      expect(html).toContain('autocomplete="username webauthn"');
+      expect(html).toContain("isConditionalMediationAvailable");
+    } finally {
+      await prisma.systemSettings.deleteMany({
+        where: { key: { in: [SETTING_PASSKEY_LOGIN_ENABLED, SETTING_PASSKEY_CONDITIONAL_UI_ENABLED] } },
+      });
+    }
+  });
+
+  it("does not enable conditional UI when passkey_login_enabled is off, even if the flag itself is on", async () => {
+    await prisma.systemSettings.upsert({
+      where: { key: SETTING_PASSKEY_CONDITIONAL_UI_ENABLED },
+      create: { key: SETTING_PASSKEY_CONDITIONAL_UI_ENABLED, value_json: "true" },
+      update: { value_json: "true" },
+    });
+    try {
+      const res = await app.request("/login");
+      const html = await res.text();
+      expect(html).toContain('autocomplete="username"');
+      expect(html).not.toContain('autocomplete="username webauthn"');
+      expect(html).not.toContain("isConditionalMediationAvailable");
+    } finally {
+      await prisma.systemSettings.deleteMany({
+        where: { key: SETTING_PASSKEY_CONDITIONAL_UI_ENABLED },
       });
     }
   });

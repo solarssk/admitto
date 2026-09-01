@@ -148,6 +148,19 @@ export async function getPasskeyLoginEnabled(
   return typeof v === "boolean" ? v : (SETTING_DEFAULTS.get("passkey_login_enabled") as boolean);
 }
 
+/** Whether the login page also runs the passkey ceremony via WebAuthn conditional mediation
+ * (autofill suggestion in the email field), from SystemSettings (`passkey_conditional_ui_enabled`,
+ * default disabled). Callers must still gate on `getPasskeyLoginEnabled`/`getWebauthnEnabled` -
+ * this flag alone does not mean passkey sign-in is available. */
+export async function getPasskeyConditionalUiEnabled(
+  prisma: PrismaClient | Prisma.TransactionClient,
+): Promise<boolean> {
+  const v = await getSetting<boolean>(prisma, "passkey_conditional_ui_enabled");
+  return typeof v === "boolean"
+    ? v
+    : (SETTING_DEFAULTS.get("passkey_conditional_ui_enabled") as boolean);
+}
+
 /** Role names that require MFA (from SystemSettings `mfa_required_roles`, JSON array or CSV). */
 export async function getMfaRequiredRoles(
   prisma: PrismaClient | Prisma.TransactionClient,

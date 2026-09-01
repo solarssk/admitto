@@ -74,6 +74,7 @@ import {
   handleGetFaviconSvg,
 } from "./favicon.js";
 import { handleGetRobotsTxt } from "./robots.js";
+import { handleGetChangePasswordWellKnown } from "./well-known.js";
 import {
   createCheckinPreAuth,
   createCheckinSessionCsrfGuard,
@@ -1138,6 +1139,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get("/healthz", healthzRateLimit, (c) => handleHealthz(c, db));
   app.get("/robots.txt", handleGetRobotsTxt);
+  app.get("/.well-known/change-password", handleGetChangePasswordWellKnown);
   app.get("/favicon.svg", handleGetFaviconSvg);
   app.get("/favicon-32.png", handleGetFavicon32Png);
   app.get("/favicon.ico", handleGetFaviconIco);
