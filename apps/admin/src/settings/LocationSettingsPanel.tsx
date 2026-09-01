@@ -7,7 +7,11 @@ import {
   resolveGoogleMapsUrl,
 } from "@admitto/location";
 import { WALLET_RELEVANT_LOCATION_FIELDS } from "@admitto/shared";
-import { LOCATION_FIELD_PLACEHOLDERS, isWalletFieldMappingRelevant } from "@admitto/wallet/passcreator-mapper";
+import {
+  LOCATION_FIELD_PLACEHOLDERS,
+  isWalletFieldMappingRelevant,
+  isVenueOrAddressFieldRelevant,
+} from "@admitto/wallet/passcreator-mapper";
 import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, useToast } from "@admitto/ui";
 import {
   fetchEventLocation,
@@ -226,14 +230,21 @@ export function LocationSettingsPanel({
     // Only worth confirming when the save would actually push to a real, currently-installed
     // wallet pass - matching EventSettingsPage.tsx's own General/Wallet-tab confirm (same "don't
     // overuse confirmation dialogs" reasoning, NN/g).
+    const mapLabelState = {
+      venueName: draft.venue_name.trim() || null,
+      googleMapsUrlOverride: draft.google_maps_url_override.trim() || null,
+      appleMapsUrlOverride: draft.apple_maps_url_override.trim() || null,
+    };
     if (
       installedWalletPassCount > 0 &&
       walletConfiguredForPush &&
-      Object.keys(body).some(
-        (key) =>
-          (WALLET_RELEVANT_LOCATION_FIELDS as readonly string[]).includes(key) &&
-          isWalletFieldMappingRelevant(key, LOCATION_FIELD_PLACEHOLDERS, walletFieldMapping),
-      )
+      Object.keys(body).some((key) => {
+        if (!(WALLET_RELEVANT_LOCATION_FIELDS as readonly string[]).includes(key)) return false;
+        if (key === "venue_name" || key === "formatted_address") {
+          return isVenueOrAddressFieldRelevant(key, walletFieldMapping, mapLabelState);
+        }
+        return isWalletFieldMappingRelevant(key, LOCATION_FIELD_PLACEHOLDERS, walletFieldMapping);
+      })
     ) {
       setWalletPushConfirmOpen(true);
       return;

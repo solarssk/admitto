@@ -19,6 +19,8 @@ export {
   isWalletFieldMappingRelevant,
   isRelevantDateAffected,
   type RelevantDateState,
+  isVenueOrAddressFieldRelevant,
+  type MapLabelState,
 } from "./passcreator-mapper.js";
 export { resolveWalletProvider } from "./resolve-provider.js";
 export type { WalletPassRegistrationStatus } from "./types.js";

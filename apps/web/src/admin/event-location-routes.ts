@@ -12,7 +12,7 @@
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { writeAdminAuditLog, parseWalletFieldMapping } from "@admitto/tickets";
-import { LOCATION_FIELD_PLACEHOLDERS, isWalletFieldMappingRelevant } from "@admitto/wallet";
+import { LOCATION_FIELD_PLACEHOLDERS, isWalletFieldMappingRelevant, isVenueOrAddressFieldRelevant } from "@admitto/wallet";
 import {
   assertCoordinatePairing,
   LOCATION_LIMITS,
@@ -417,14 +417,27 @@ const WALLET_RELEVANT_LOCATION_TEXT_FIELDS = [
  * placeholders are sent at all) - see isWalletFieldMappingRelevant/LOCATION_FIELD_PLACEHOLDERS
  * (@admitto/wallet), same reasoning as event-settings-routes.ts's own
  * walletRelevantEventFieldsChanged. Editing a location field with no template Additional Property
- * pointed at it cannot change any issued pass, so it must not enqueue a no-op push. */
+ * pointed at it cannot change any issued pass, so it must not enqueue a no-op push. `venue_name`/
+ * `formatted_address` go through isVenueOrAddressFieldRelevant instead - their relevance to
+ * google_maps_url/apple_maps_url depends on live state (venue_name's precedence over
+ * formatted_address, and either platform's own URL override bypassing both), not just on whether
+ * the placeholder is mapped, checked against `updated` (the post-write row, since that's the state
+ * the pass will actually be refreshed against). */
 function walletRelevantLocationFieldsChanged(
   existing: WalletRelevantLocationSnapshot | null,
   updated: WalletRelevantLocationSnapshot,
   walletFieldMapping: Record<string, string> | null,
 ): boolean {
   const before = existing ?? EMPTY_WALLET_LOCATION_SNAPSHOT;
-  const relevant = (field: string) => isWalletFieldMappingRelevant(field, LOCATION_FIELD_PLACEHOLDERS, walletFieldMapping);
+  const mapLabelState = {
+    venueName: updated.venue_name,
+    googleMapsUrlOverride: updated.google_maps_url_override,
+    appleMapsUrlOverride: updated.apple_maps_url_override,
+  };
+  const relevant = (field: string) =>
+    field === "venue_name" || field === "formatted_address"
+      ? isVenueOrAddressFieldRelevant(field, walletFieldMapping, mapLabelState)
+      : isWalletFieldMappingRelevant(field, LOCATION_FIELD_PLACEHOLDERS, walletFieldMapping);
   if (
     (before.latitude !== updated.latitude || before.longitude !== updated.longitude) &&
     (relevant("latitude") || relevant("longitude"))

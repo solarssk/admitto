@@ -1414,6 +1414,38 @@ describe("PATCH /api/admin/events/:eventId", () => {
       }
     });
 
+    // Regression (bot review): date isn't just event_date/event_date_short - it's the day every
+    // venue access-point time placeholder is anchored to (zonedDateTimeToIso), so a template
+    // mapping only venue_open_time still needs a reschedule pushed. wallet_apple_enabled is
+    // disabled here so relevantDate itself can't also explain the push - isolates the
+    // mapping-table path this test actually targets.
+    it("enqueues a job when the event date changes and only venue_open_time (not event_date) is mapped", async () => {
+      await prisma.event.update({
+        where: { id: PUSH_EVENT },
+        data: { wallet_apple_enabled: false, wallet_field_mapping: { open: "venue_open_time" } },
+      });
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ date: "2026-09-03" }),
+        });
+
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(1);
+      } finally {
+        await prisma.event.update({
+          where: { id: PUSH_EVENT },
+          data: {
+            date: new Date("2026-09-01"),
+            wallet_apple_enabled: true,
+            wallet_field_mapping: { name: "event_name", kind: "event_type" },
+          },
+        });
+      }
+    });
+
     it("does not enqueue a job when only an unrelated field (capacity) changes", async () => {
       const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
         method: "PATCH",

@@ -163,11 +163,26 @@ export function toPassCreatorData(
  * start time), not on fieldMapping. `wallet_apple_enabled` has no placeholder of its own at all -
  * relevantDate is its only channel to an issued pass. `timezone` has no placeholder of its own but
  * changes what `event_hours`/the venue access-point time placeholders render, since
- * wallet-pass-input.ts reads `event.timezone` when formatting all of them.
+ * wallet-pass-input.ts reads `event.timezone` when formatting all of them. `date` shares that same
+ * list (plus its own event_date/event_date_short) - it's the day every one of those is anchored to
+ * (`formatEventHours`'s own date param, and `zonedDateTimeToIso(event.date, ...)` for every venue
+ * access-point time), so a reschedule can shift all of them even when a template only maps one
+ * venue time placeholder and neither event_date placeholder (bot review).
  */
 export const EVENT_FIELD_PLACEHOLDERS: Record<string, readonly string[]> = {
   title: ["event_name"],
-  date: ["event_date", "event_date_short"],
+  date: [
+    "event_date",
+    "event_date_short",
+    "event_hours",
+    "venue_open_time",
+    "venue_close_time",
+    "doors_open_time",
+    "gates_open_time",
+    "box_office_open_time",
+    "parking_lots_open_time",
+    "fan_zone_open_time",
+  ],
   timezone: [
     "event_hours",
     "venue_open_time",
@@ -185,22 +200,24 @@ export const EVENT_FIELD_PLACEHOLDERS: Record<string, readonly string[]> = {
 };
 
 /** Location counterpart of {@link EVENT_FIELD_PLACEHOLDERS}. `venue_name` feeds `event_location`
- * directly (`eventLocationLabel: event.location || undefined`) and also feeds both maps-URL
- * placeholders, since wallet-pass-input.ts's own `mapLabel` (the text label baked into both
- * generated map URLs) is `event.location ?? event.formattedAddress` - venue_name preferred,
- * formatted_address only as a fallback when venue_name is empty. `formatted_address` therefore
- * feeds *only* the maps-URL placeholders, never `event_location` itself (bot review: the previous
- * version had this backwards - formatted_address claimed event_location it doesn't feed, and
- * venue_name was missing the maps-URL placeholders it does). `latitude`/`longitude` together gate
- * whether either maps-URL placeholder is populated at all (`isMapReady`), so both feed both.
- * `address_components` also feeds `event_date`/`event_date_short`/`event_hours` (EVENT
- * placeholders) alongside its own address placeholders - wallet-pass-input.ts passes
- * `addressComponents.country` into `formatDate`/`formatDateShort`/`formatEventHours` for
- * country-dependent formatting, so a country change can alter all three even though it's a
- * Location-tab field (bot review). */
+ * directly (`eventLocationLabel: event.location || undefined`) - its relevance to `google_maps_url`/
+ * `apple_maps_url` is dynamic (whether it's actually the live map label right now, and whether an
+ * override bypasses it entirely) and handled separately by {@link isVenueOrAddressFieldRelevant},
+ * same as `formatted_address` (which never feeds `event_location` at all - only ever a maps-URL
+ * fallback). `latitude`/`longitude` together gate whether either maps-URL placeholder is populated
+ * at all (`isMapReady`), so both feed both, unconditionally (a template that has ever needed a
+ * generated map link needs a coordinate change refreshed regardless of the label/override state).
+ * `venue_open_time` also feeds `venue_close_time`'s own placeholder: wallet-pass-input.ts compares
+ * the two to decide whether the closing timestamp lands on the following calendar day (an
+ * overnight venue), so an opening-time edit can shift the rendered closing time even when its own
+ * raw value is unchanged (bot review). `address_components` also feeds
+ * `event_date`/`event_date_short`/`event_hours` (EVENT placeholders) alongside its own address
+ * placeholders - wallet-pass-input.ts passes `addressComponents.country` into
+ * `formatDate`/`formatDateShort`/`formatEventHours` for country-dependent formatting, so a country
+ * change can alter all three even though it's a Location-tab field (bot review). */
 export const LOCATION_FIELD_PLACEHOLDERS: Record<string, readonly string[]> = {
-  venue_name: ["event_location", "google_maps_url", "apple_maps_url"],
-  formatted_address: ["google_maps_url", "apple_maps_url"],
+  venue_name: ["event_location"],
+  formatted_address: [],
   latitude: ["google_maps_url", "apple_maps_url"],
   longitude: ["google_maps_url", "apple_maps_url"],
   directions_text: ["directions_text"],
@@ -225,7 +242,7 @@ export const LOCATION_FIELD_PLACEHOLDERS: Record<string, readonly string[]> = {
   venue_entrance_portal: ["venue_entrance_portal"],
   venue_phone_number: ["venue_phone_number"],
   venue_place_id: ["venue_place_id"],
-  venue_open_time: ["venue_open_time"],
+  venue_open_time: ["venue_open_time", "venue_close_time"],
   venue_close_time: ["venue_close_time"],
   doors_open_time: ["doors_open_time"],
   gates_open_time: ["gates_open_time"],
@@ -233,6 +250,52 @@ export const LOCATION_FIELD_PLACEHOLDERS: Record<string, readonly string[]> = {
   parking_lots_open_time: ["parking_lots_open_time"],
   fan_zone_open_time: ["fan_zone_open_time"],
 };
+
+/** Current (post-write) location state wallet-pass-input.ts's own map-label precedence and
+ * per-platform override logic depends on - see {@link isVenueOrAddressFieldRelevant}. Empty string
+ * from a cleared form field behaves the same as `null` here (both falsy). */
+export type MapLabelState = {
+  venueName: string | null;
+  googleMapsUrlOverride: string | null;
+  appleMapsUrlOverride: string | null;
+};
+
+/**
+ * True when editing `field` (`venue_name` or `formatted_address`) could actually change the
+ * rendered `google_maps_url`/`apple_maps_url` placeholder, given `state` (the location's state
+ * *after* this save) and the event's current `fieldMapping`. wallet-pass-input.ts's own `mapLabel`
+ * is `event.location ?? event.formattedAddress` - `venue_name` wins outright whenever it's
+ * non-empty, so `formatted_address` only ever reaches the pass as a fallback when `venue_name` is
+ * empty; either generated URL is skipped in favor of its override when one is set
+ * (`resolveGoogleMapsUrl`/`resolveAppleMapsUrl`), regardless of either field (bot review: the
+ * previous version ignored both the override and this precedence, over-warning whenever a
+ * maps-URL placeholder was mapped at all). A post-write-only check is enough here (unlike
+ * {@link isRelevantDateAffected}'s before-and-after check) - whether the *final* state actually
+ * reads this field at all is a pure function of that final state; the field's own value having
+ * changed is already established by the caller before this is consulted. `venue_name` also always
+ * counts as relevant when `event_location` itself is mapped (checked via
+ * {@link isWalletFieldMappingRelevant} against {@link LOCATION_FIELD_PLACEHOLDERS} - unaffected by
+ * any of this, since `event_location` has no override concept).
+ */
+export function isVenueOrAddressFieldRelevant(
+  field: "venue_name" | "formatted_address",
+  fieldMapping: Record<string, string> | null | undefined,
+  state: MapLabelState,
+): boolean {
+  if (field === "venue_name" && isWalletFieldMappingRelevant("venue_name", LOCATION_FIELD_PLACEHOLDERS, fieldMapping)) {
+    return true;
+  }
+  if (!fieldMapping) return false;
+  const mapped = new Set(Object.values(fieldMapping));
+  const platforms = [
+    { placeholder: "google_maps_url", override: state.googleMapsUrlOverride },
+    { placeholder: "apple_maps_url", override: state.appleMapsUrlOverride },
+  ] as const;
+  return platforms.some(({ placeholder, override }) => {
+    if (!mapped.has(placeholder) || override) return false;
+    return field === "venue_name" || !state.venueName;
+  });
+}
 
 /** Attendee counterpart of {@link EVENT_FIELD_PLACEHOLDERS}. `first_name`/`last_name` also feed
  * `full_name`: `applyNamePatchFields` rebuilds `Attendee.name` from the pair whenever either

@@ -3,6 +3,7 @@ import {
   ATTENDEE_FIELD_PLACEHOLDERS,
   EVENT_FIELD_PLACEHOLDERS,
   isRelevantDateAffected,
+  isVenueOrAddressFieldRelevant,
   isWalletFieldMappingRelevant,
   LOCATION_FIELD_PLACEHOLDERS,
   toPassCreatorData,
@@ -278,6 +279,18 @@ describe("isWalletFieldMappingRelevant", () => {
     expect(isWalletFieldMappingRelevant("event_hours_start", EVENT_FIELD_PLACEHOLDERS, { h: "event_hours" })).toBe(true);
   });
 
+  it("date shares timezone's own event_hours/venue-access-time dependencies - it's the day every one of them is anchored to", () => {
+    expect(isWalletFieldMappingRelevant("date", EVENT_FIELD_PLACEHOLDERS, { h: "event_hours" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("date", EVENT_FIELD_PLACEHOLDERS, { o: "venue_open_time" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("date", EVENT_FIELD_PLACEHOLDERS, { c: "venue_close_time" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("date", EVENT_FIELD_PLACEHOLDERS, { d: "doors_open_time" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("date", EVENT_FIELD_PLACEHOLDERS, { g: "gates_open_time" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("date", EVENT_FIELD_PLACEHOLDERS, { b: "box_office_open_time" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("date", EVENT_FIELD_PLACEHOLDERS, { p: "parking_lots_open_time" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("date", EVENT_FIELD_PLACEHOLDERS, { f: "fan_zone_open_time" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("date", EVENT_FIELD_PLACEHOLDERS, { n: "event_name" })).toBe(false);
+  });
+
   it("is relevant once the field's placeholder is actually mapped", () => {
     expect(isWalletFieldMappingRelevant("event_type", EVENT_FIELD_PLACEHOLDERS, { kind: "event_type" })).toBe(true);
     expect(isWalletFieldMappingRelevant("title", EVENT_FIELD_PLACEHOLDERS, { name: "event_name" })).toBe(true);
@@ -292,20 +305,25 @@ describe("isWalletFieldMappingRelevant", () => {
     expect(isWalletFieldMappingRelevant("timezone", EVENT_FIELD_PLACEHOLDERS, { name: "event_name" })).toBe(false);
   });
 
-  it("venue_name feeds event_location and both maps-url placeholders (it's the preferred map label)", () => {
+  it("venue_name feeds event_location via the static table - google_maps_url/apple_maps_url are handled dynamically by isVenueOrAddressFieldRelevant instead", () => {
     expect(isWalletFieldMappingRelevant("venue_name", LOCATION_FIELD_PLACEHOLDERS, { place: "event_location" })).toBe(true);
-    expect(isWalletFieldMappingRelevant("venue_name", LOCATION_FIELD_PLACEHOLDERS, { g: "google_maps_url" })).toBe(true);
-    expect(isWalletFieldMappingRelevant("venue_name", LOCATION_FIELD_PLACEHOLDERS, { a: "apple_maps_url" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("venue_name", LOCATION_FIELD_PLACEHOLDERS, { g: "google_maps_url" })).toBe(false);
   });
 
-  it("formatted_address feeds only the maps-url placeholders (fallback map label), never event_location directly", () => {
-    expect(isWalletFieldMappingRelevant("formatted_address", LOCATION_FIELD_PLACEHOLDERS, { g: "google_maps_url" })).toBe(true);
+  it("formatted_address has no static placeholder at all - its google_maps_url/apple_maps_url relevance is entirely dynamic (isVenueOrAddressFieldRelevant)", () => {
+    expect(isWalletFieldMappingRelevant("formatted_address", LOCATION_FIELD_PLACEHOLDERS, { g: "google_maps_url" })).toBe(false);
     expect(isWalletFieldMappingRelevant("formatted_address", LOCATION_FIELD_PLACEHOLDERS, { place: "event_location" })).toBe(false);
   });
 
   it("latitude/longitude are relevant only once a maps-url placeholder is mapped", () => {
     expect(isWalletFieldMappingRelevant("latitude", LOCATION_FIELD_PLACEHOLDERS, null)).toBe(false);
     expect(isWalletFieldMappingRelevant("latitude", LOCATION_FIELD_PLACEHOLDERS, { g: "google_maps_url" })).toBe(true);
+  });
+
+  it("venue_open_time also feeds venue_close_time's own placeholder (its value flips whether closing time lands on the next calendar day)", () => {
+    expect(isWalletFieldMappingRelevant("venue_open_time", LOCATION_FIELD_PLACEHOLDERS, { o: "venue_open_time" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("venue_open_time", LOCATION_FIELD_PLACEHOLDERS, { c: "venue_close_time" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("venue_close_time", LOCATION_FIELD_PLACEHOLDERS, { o: "venue_open_time" })).toBe(false);
   });
 
   it("address_components also feeds event_date/event_date_short/event_hours (country-dependent formatting), alongside its own address placeholders", () => {
@@ -388,5 +406,49 @@ describe("isRelevantDateAffected", () => {
         { walletAppleEnabled: false, eventHoursStart: "18:00" },
       ),
     ).toBe(true);
+  });
+});
+
+describe("isVenueOrAddressFieldRelevant", () => {
+  const noOverride = { venueName: null, googleMapsUrlOverride: null, appleMapsUrlOverride: null };
+
+  it("venue_name is relevant whenever event_location is mapped, independent of any map state", () => {
+    expect(isVenueOrAddressFieldRelevant("venue_name", { place: "event_location" }, noOverride)).toBe(true);
+  });
+
+  it("venue_name is relevant to a mapped, non-overridden maps-url placeholder", () => {
+    expect(isVenueOrAddressFieldRelevant("venue_name", { g: "google_maps_url" }, noOverride)).toBe(true);
+    expect(isVenueOrAddressFieldRelevant("venue_name", { a: "apple_maps_url" }, noOverride)).toBe(true);
+  });
+
+  it("venue_name is not relevant to a maps-url placeholder once that platform has an override set (bot review)", () => {
+    expect(
+      isVenueOrAddressFieldRelevant("venue_name", { g: "google_maps_url" }, { ...noOverride, googleMapsUrlOverride: "https://maps.example/pinned" }),
+    ).toBe(false);
+  });
+
+  it("venue_name relevance to google/apple maps-url is checked per platform, not all-or-nothing", () => {
+    const state = { venueName: null, googleMapsUrlOverride: "https://maps.example/pinned", appleMapsUrlOverride: null };
+    expect(isVenueOrAddressFieldRelevant("venue_name", { g: "google_maps_url" }, state)).toBe(false);
+    expect(isVenueOrAddressFieldRelevant("venue_name", { a: "apple_maps_url" }, state)).toBe(true);
+  });
+
+  it("formatted_address is not relevant to a maps-url placeholder while venue_name is currently set (it's never read - venue_name wins)", () => {
+    expect(
+      isVenueOrAddressFieldRelevant("formatted_address", { g: "google_maps_url" }, { ...noOverride, venueName: "ICE Kraków" }),
+    ).toBe(false);
+  });
+
+  it("formatted_address is relevant to a mapped, non-overridden maps-url placeholder once venue_name is empty", () => {
+    expect(isVenueOrAddressFieldRelevant("formatted_address", { g: "google_maps_url" }, noOverride)).toBe(true);
+  });
+
+  it("formatted_address is never relevant to event_location (venue_name-only placeholder)", () => {
+    expect(isVenueOrAddressFieldRelevant("formatted_address", { place: "event_location" }, noOverride)).toBe(false);
+  });
+
+  it("is not relevant at all when fieldMapping is null/empty", () => {
+    expect(isVenueOrAddressFieldRelevant("venue_name", null, noOverride)).toBe(false);
+    expect(isVenueOrAddressFieldRelevant("formatted_address", {}, noOverride)).toBe(false);
   });
 });
