@@ -84,6 +84,12 @@ function passkeyLoginScript(scriptNonce: string, conditionalUiEnabled: boolean):
   }
   btn.hidden = false;
   var navigated = false;
+  // Set only for the auto-started conditional ceremony (never the explicit click) - lets the
+  // click handler cancel a still-pending conditional /begin fetch or credentials.get() before
+  // starting its own, so the two never race. Without this, whichever WebAuthn call reaches the
+  // browser second can abort or get rejected behind the first, making the explicit button
+  // intermittently fail on a slow connection.
+  var conditionalAbort = null;
 
   function b64urlToBuffer(b64url) {
     var b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
@@ -107,15 +113,27 @@ function passkeyLoginScript(scriptNonce: string, conditionalUiEnabled: boolean):
   }
 
   function runCeremony(conditional) {
-    if (!conditional) {
+    var abortController = null;
+    if (conditional) {
+      abortController = new AbortController();
+      conditionalAbort = abortController;
+    } else {
       btn.disabled = true;
       if (errorBox) errorBox.hidden = true;
+      // Never let a still-pending auto-started attempt reach the browser after this deliberate
+      // click - cancels its /begin fetch if still in flight, or its credentials.get() prompt if
+      // already showing, instead of leaving two WebAuthn requests to race each other.
+      if (conditionalAbort) {
+        conditionalAbort.abort();
+        conditionalAbort = null;
+      }
     }
 
     fetch("/api/auth/login/webauthn/begin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
+      signal: abortController ? abortController.signal : undefined,
     })
       .then(function (res) { return res.json().then(function (data) { return { res: res, data: data }; }); })
       .then(function (begin) {
@@ -127,7 +145,10 @@ function passkeyLoginScript(scriptNonce: string, conditionalUiEnabled: boolean):
           return { id: b64urlToBuffer(cred.id), type: cred.type, transports: cred.transports };
         });
         var getOptions = { publicKey: publicKey };
-        if (conditional) getOptions.mediation = "conditional";
+        if (conditional) {
+          getOptions.mediation = "conditional";
+          getOptions.signal = abortController.signal;
+        }
         return navigator.credentials.get(getOptions).then(function (assertion) {
           return { ceremony: ceremony, assertion: assertion };
         });
@@ -164,6 +185,7 @@ function passkeyLoginScript(scriptNonce: string, conditionalUiEnabled: boolean):
       })
       .then(function (res) { return res.json().then(function (data) { return { res: res, data: data }; }); })
       .then(function (finish) {
+        if (conditional && conditionalAbort === abortController) conditionalAbort = null;
         if (navigated) return;
         if (finish.res.ok && finish.data.ok) {
           navigated = true;
@@ -173,11 +195,12 @@ function passkeyLoginScript(scriptNonce: string, conditionalUiEnabled: boolean):
         if (!conditional) showError();
       })
       .catch(function () {
+        if (conditional && conditionalAbort === abortController) conditionalAbort = null;
         // Includes NotAllowedError (user cancelled, timed out, or has no passkey on this
-        // device/browser) and, for the conditional ceremony, AbortError (the browser cancels it
-        // automatically once the explicit button starts a competing request) - stay on the page,
-        // the password form below remains usable either way. Only the ceremony the user actually
-        // clicked for reports failure.
+        // device/browser) and, for the conditional ceremony, AbortError (either the browser's own
+        // arbitration or the explicit click cancelling it above) - stay on the page, the password
+        // form below remains usable either way. Only the ceremony the user actually clicked for
+        // reports failure.
         if (!conditional) showError();
       });
   }
