@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ATTENDEE_FIELD_PLACEHOLDERS,
   EVENT_FIELD_PLACEHOLDERS,
+  isRelevantDateAffected,
   isWalletFieldMappingRelevant,
   LOCATION_FIELD_PLACEHOLDERS,
   toPassCreatorData,
@@ -259,15 +260,22 @@ describe("isWalletFieldMappingRelevant", () => {
     for (const field of WALLET_RELEVANT_ATTENDEE_FIELDS) expect(ATTENDEE_FIELD_PLACEHOLDERS).toHaveProperty(field);
   });
 
-  it("is always relevant for a field marked \"always\" (date/event_hours_start/wallet_apple_enabled feed relevantDate unconditionally)", () => {
-    expect(isWalletFieldMappingRelevant("date", EVENT_FIELD_PLACEHOLDERS, null)).toBe(true);
-    expect(isWalletFieldMappingRelevant("event_hours_start", EVENT_FIELD_PLACEHOLDERS, {})).toBe(true);
-    expect(isWalletFieldMappingRelevant("wallet_apple_enabled", EVENT_FIELD_PLACEHOLDERS, undefined)).toBe(true);
+  it("wallet_apple_enabled has no placeholder of its own - isWalletFieldMappingRelevant alone is always false for it, regardless of mapping", () => {
+    expect(isWalletFieldMappingRelevant("wallet_apple_enabled", EVENT_FIELD_PLACEHOLDERS, null)).toBe(false);
+    expect(isWalletFieldMappingRelevant("wallet_apple_enabled", EVENT_FIELD_PLACEHOLDERS, { any: "event_name" })).toBe(false);
   });
 
   it("is not relevant for a mapped-only field when fieldMapping is null/empty (e.g. event_type with no template field pointed at it)", () => {
     expect(isWalletFieldMappingRelevant("event_type", EVENT_FIELD_PLACEHOLDERS, null)).toBe(false);
     expect(isWalletFieldMappingRelevant("title", EVENT_FIELD_PLACEHOLDERS, {})).toBe(false);
+    expect(isWalletFieldMappingRelevant("date", EVENT_FIELD_PLACEHOLDERS, null)).toBe(false);
+    expect(isWalletFieldMappingRelevant("event_hours_start", EVENT_FIELD_PLACEHOLDERS, null)).toBe(false);
+  });
+
+  it("date and event_hours_start are relevant once event_date/event_hours is actually mapped", () => {
+    expect(isWalletFieldMappingRelevant("date", EVENT_FIELD_PLACEHOLDERS, { d: "event_date" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("date", EVENT_FIELD_PLACEHOLDERS, { d: "event_date_short" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("event_hours_start", EVENT_FIELD_PLACEHOLDERS, { h: "event_hours" })).toBe(true);
   });
 
   it("is relevant once the field's placeholder is actually mapped", () => {
@@ -284,9 +292,15 @@ describe("isWalletFieldMappingRelevant", () => {
     expect(isWalletFieldMappingRelevant("timezone", EVENT_FIELD_PLACEHOLDERS, { name: "event_name" })).toBe(false);
   });
 
-  it("venue_name and formatted_address both feed event_location", () => {
+  it("venue_name feeds event_location and both maps-url placeholders (it's the preferred map label)", () => {
     expect(isWalletFieldMappingRelevant("venue_name", LOCATION_FIELD_PLACEHOLDERS, { place: "event_location" })).toBe(true);
-    expect(isWalletFieldMappingRelevant("formatted_address", LOCATION_FIELD_PLACEHOLDERS, { place: "event_location" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("venue_name", LOCATION_FIELD_PLACEHOLDERS, { g: "google_maps_url" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("venue_name", LOCATION_FIELD_PLACEHOLDERS, { a: "apple_maps_url" })).toBe(true);
+  });
+
+  it("formatted_address feeds only the maps-url placeholders (fallback map label), never event_location directly", () => {
+    expect(isWalletFieldMappingRelevant("formatted_address", LOCATION_FIELD_PLACEHOLDERS, { g: "google_maps_url" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("formatted_address", LOCATION_FIELD_PLACEHOLDERS, { place: "event_location" })).toBe(false);
   });
 
   it("latitude/longitude are relevant only once a maps-url placeholder is mapped", () => {
@@ -294,12 +308,85 @@ describe("isWalletFieldMappingRelevant", () => {
     expect(isWalletFieldMappingRelevant("latitude", LOCATION_FIELD_PLACEHOLDERS, { g: "google_maps_url" })).toBe(true);
   });
 
-  it("attendee fields are a clean 1:1 mapping", () => {
+  it("address_components also feeds event_date/event_date_short/event_hours (country-dependent formatting), alongside its own address placeholders", () => {
+    expect(isWalletFieldMappingRelevant("address_components", LOCATION_FIELD_PLACEHOLDERS, { c: "country" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("address_components", LOCATION_FIELD_PLACEHOLDERS, { d: "event_date" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("address_components", LOCATION_FIELD_PLACEHOLDERS, { h: "event_hours" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("address_components", LOCATION_FIELD_PLACEHOLDERS, { n: "event_name" })).toBe(false);
+  });
+
+  it("email/company/department/ticket_type are a clean 1:1 mapping", () => {
+    expect(isWalletFieldMappingRelevant("company", ATTENDEE_FIELD_PLACEHOLDERS, { c: "company" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("company", ATTENDEE_FIELD_PLACEHOLDERS, { d: "department" })).toBe(false);
+  });
+
+  it("first_name/last_name also feed full_name (Attendee.name is rebuilt from the pair on every split-name edit)", () => {
     expect(isWalletFieldMappingRelevant("first_name", ATTENDEE_FIELD_PLACEHOLDERS, { fn: "first_name" })).toBe(true);
-    expect(isWalletFieldMappingRelevant("first_name", ATTENDEE_FIELD_PLACEHOLDERS, { ln: "last_name" })).toBe(false);
+    expect(isWalletFieldMappingRelevant("first_name", ATTENDEE_FIELD_PLACEHOLDERS, { n: "full_name" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("last_name", ATTENDEE_FIELD_PLACEHOLDERS, { n: "full_name" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("first_name", ATTENDEE_FIELD_PLACEHOLDERS, { d: "department" })).toBe(false);
   });
 
   it("fails open (relevant) for a field missing from the table entirely", () => {
     expect(isWalletFieldMappingRelevant("some_future_field", EVENT_FIELD_PLACEHOLDERS, null)).toBe(true);
+  });
+});
+
+describe("isRelevantDateAffected", () => {
+  it("is false when relevantDate is absent on both sides (no start time, mapping-independent false-positive this gate removes)", () => {
+    expect(
+      isRelevantDateAffected(
+        { walletAppleEnabled: true, eventHoursStart: null },
+        { walletAppleEnabled: true, eventHoursStart: null },
+      ),
+    ).toBe(false);
+  });
+
+  it("is false when Apple Wallet is off on both sides, even with a start time set", () => {
+    expect(
+      isRelevantDateAffected(
+        { walletAppleEnabled: false, eventHoursStart: "18:00" },
+        { walletAppleEnabled: false, eventHoursStart: "18:00" },
+      ),
+    ).toBe(false);
+  });
+
+  it("is true when relevantDate is present on both sides (a genuine content change, e.g. a new event date)", () => {
+    expect(
+      isRelevantDateAffected(
+        { walletAppleEnabled: true, eventHoursStart: "18:00" },
+        { walletAppleEnabled: true, eventHoursStart: "18:00" },
+      ),
+    ).toBe(true);
+  });
+
+  it("is true when relevantDate newly appears (start time added, or Apple Wallet newly enabled)", () => {
+    expect(
+      isRelevantDateAffected(
+        { walletAppleEnabled: true, eventHoursStart: null },
+        { walletAppleEnabled: true, eventHoursStart: "18:00" },
+      ),
+    ).toBe(true);
+    expect(
+      isRelevantDateAffected(
+        { walletAppleEnabled: false, eventHoursStart: "18:00" },
+        { walletAppleEnabled: true, eventHoursStart: "18:00" },
+      ),
+    ).toBe(true);
+  });
+
+  it("is true when relevantDate disappears (start time cleared, or Apple Wallet turned off)", () => {
+    expect(
+      isRelevantDateAffected(
+        { walletAppleEnabled: true, eventHoursStart: "18:00" },
+        { walletAppleEnabled: true, eventHoursStart: null },
+      ),
+    ).toBe(true);
+    expect(
+      isRelevantDateAffected(
+        { walletAppleEnabled: true, eventHoursStart: "18:00" },
+        { walletAppleEnabled: false, eventHoursStart: "18:00" },
+      ),
+    ).toBe(true);
   });
 });

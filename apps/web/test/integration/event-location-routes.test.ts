@@ -795,7 +795,7 @@ describe("PUT /api/admin/events/:eventId/location — auto-push to already-issue
         // stay true-positive under the new isWalletFieldMappingRelevant gate (a wallet-relevant
         // field only actually pushes once an admin has mapped its placeholder to a PassCreator
         // field) - see the dedicated "not mapped" test further down for the negative case.
-        wallet_field_mapping: { place: "event_location", room: "venue_room", doors: "doors_open_time" },
+        wallet_field_mapping: { place: "google_maps_url", room: "venue_room", doors: "doors_open_time" },
       },
     });
     await prisma.attendee.create({
@@ -879,7 +879,7 @@ describe("PUT /api/admin/events/:eventId/location — auto-push to already-issue
     } finally {
       await prisma.event.update({
         where: { id: WALLET_LOC_EVENT },
-        data: { wallet_field_mapping: { place: "event_location", room: "venue_room", doors: "doors_open_time" } },
+        data: { wallet_field_mapping: { place: "google_maps_url", room: "venue_room", doors: "doors_open_time" } },
       });
     }
   });
@@ -990,5 +990,31 @@ describe("PUT /api/admin/events/:eventId/location — auto-push to already-issue
     expect(res.status).toBe(200);
     const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
     expect(jobs).toHaveLength(0);
+  });
+
+  // Regression (bot review): address_components.country feeds formatDate/formatDateShort/
+  // formatEventHours (wallet-pass-input.ts) for country-dependent formatting, so a country change
+  // can alter event_date/event_date_short/event_hours even though none of the address placeholders
+  // themselves are mapped - a mapping that only covers event_date (an EVENT placeholder) must still
+  // treat an address_components change on the Location tab as relevant.
+  it("enqueues a job when address_components changes and event_date is mapped, even with no address placeholder mapped", async () => {
+    await prisma.event.update({
+      where: { id: WALLET_LOC_EVENT },
+      data: { wallet_field_mapping: { d: "event_date" } },
+    });
+    try {
+      const res = await putLocation(WALLET_LOC_EVENT, adminCookie, {
+        address_components: { object_name: null, street: null, postcode: null, city: null, region: null, country: "Germany" },
+      });
+
+      expect(res.status).toBe(200);
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(1);
+    } finally {
+      await prisma.event.update({
+        where: { id: WALLET_LOC_EVENT },
+        data: { wallet_field_mapping: { place: "google_maps_url", room: "venue_room", doors: "doors_open_time" } },
+      });
+    }
   });
 });

@@ -4966,6 +4966,27 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       }
     });
 
+    // Regression (bot review): Attendee.name (fed into the full_name placeholder) is rebuilt from
+    // first_name/last_name on every split-name edit - a template mapping only full_name (the
+    // common case) must still see a first_name-only edit as relevant, not just one that maps
+    // first_name itself.
+    it("pushes when first_name changes even though only full_name (not first_name) is mapped", async () => {
+      await prisma.event.update({ where: { id: WP_EVENT }, data: { wallet_field_mapping: { n: "full_name" } } });
+      const updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({
+        providerPassId: WP_PROVIDER_PASS_ID,
+        appleUrl: "https://pc.test/apple/full-name-only",
+        androidUrl: "https://pc.test/android/full-name-only",
+      });
+      try {
+        const res = await patchWpAttendee({ first_name: "Renamed Again" });
+        expect(res.status).toBe(200);
+        expect(updateSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        updateSpy.mockRestore();
+        await prisma.event.update({ where: { id: WP_EVENT }, data: { wallet_field_mapping: { fn: "first_name" } } });
+      }
+    });
+
     it("still pushes the content change when the same PATCH also revokes the pass (bot review, Codex)", async () => {
       // Regression for a race Codex flagged: the status cascade (revoke) runs before the
       // content-push guard, so a plain active-only check would see the pass as already voided by

@@ -17,6 +17,8 @@ export {
   LOCATION_FIELD_PLACEHOLDERS,
   ATTENDEE_FIELD_PLACEHOLDERS,
   isWalletFieldMappingRelevant,
+  isRelevantDateAffected,
+  type RelevantDateState,
 } from "./passcreator-mapper.js";
 export { resolveWalletProvider } from "./resolve-provider.js";
 export type { WalletPassRegistrationStatus } from "./types.js";

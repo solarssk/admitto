@@ -32,6 +32,7 @@ import {
   WALLET_MAPPING_PLACEHOLDERS,
   EVENT_FIELD_PLACEHOLDERS,
   isWalletFieldMappingRelevant,
+  isRelevantDateAffected,
   type PassCreatorWebhookEventType,
 } from "@admitto/wallet";
 import { z } from "zod";
@@ -667,22 +668,32 @@ type WalletRelevantEventSnapshot = {
  * change (bot review: an unconditional key-presence check would let a resubmit loop repeatedly
  * enqueue pushes for no real change once each prior job finishes). Dates compare via getTime() -
  * both sides come from the same Postgres column, so this only ever differs on a genuine write.
- * Also requires the changed field to actually be capable of reaching an already-issued pass given
+ * Also requires the changed field to actually be capable of reaching an already-issued pass:
+ * `date`/`event_hours_start`/`wallet_apple_enabled` go through isRelevantDateAffected (their only
+ * channel is relevantDate, gated on live event state rather than fieldMapping - a static
+ * EVENT_FIELD_PLACEHOLDERS entry can't express "only when the event actually has a start time and
+ * Apple Wallet is on"); every other field goes through isWalletFieldMappingRelevant against
  * `updatedWalletFieldMapping` (the post-write mapping, so a save that both edits a field and maps
- * it in the same request still counts) - see isWalletFieldMappingRelevant/EVENT_FIELD_PLACEHOLDERS
- * (@admitto/wallet). Editing an event field with no template Additional Property pointed at it
- * (e.g. `event_type` on a template that doesn't map it) cannot change any issued pass, so it must
- * not enqueue a no-op push. */
+ * it in the same request still counts) - see @admitto/wallet. Editing an event field with no
+ * template Additional Property pointed at it (e.g. `event_type` on a template that doesn't map it)
+ * cannot change any issued pass, so it must not enqueue a no-op push. */
 function walletRelevantEventFieldsChanged(
   existing: WalletRelevantEventSnapshot,
   updated: WalletRelevantEventSnapshot,
   updatedWalletFieldMapping: Record<string, string> | null,
 ): boolean {
+  const relevantDateAffected = isRelevantDateAffected(
+    { walletAppleEnabled: existing.wallet_apple_enabled, eventHoursStart: existing.event_hours_start },
+    { walletAppleEnabled: updated.wallet_apple_enabled, eventHoursStart: updated.event_hours_start },
+  );
   return WALLET_RELEVANT_EVENT_FIELDS.some((field) => {
     const a = existing[field];
     const b = updated[field];
     const changed = a instanceof Date && b instanceof Date ? a.getTime() !== b.getTime() : a !== b;
     if (!changed) return false;
+    if ((field === "date" || field === "event_hours_start" || field === "wallet_apple_enabled") && relevantDateAffected) {
+      return true;
+    }
     return isWalletFieldMappingRelevant(field, EVENT_FIELD_PLACEHOLDERS, updatedWalletFieldMapping);
   });
 }
