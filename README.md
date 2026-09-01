@@ -36,11 +36,13 @@
 
 ---
 
-> Treat personal data carefully until your organisation's data protection review is complete.
-> See [DATA-PROTECTION.md](DATA-PROTECTION.md) and [SECURITY.md](SECURITY.md) before deploying.
->
-> This repository contains only generic code and synthetic data (`@example.com`).
-> No secrets and no real personal data are ever committed here.
+## What is Admitto?
+
+Admitto covers everything between "we have a guest list" and "the event is over and we know who showed up": import attendees, issue each one a secure QR ticket, deliver it by email (and optionally to Apple/Google Wallet), check people in at the door, and export who actually attended. It exists so that running an internal company event doesn't mean paying recurring fees for a general-purpose ticketing SaaS, or handing attendee data to one.
+
+The idea it's built around: **Admitto is the single source of truth** for who's invited, who confirmed, and who showed up. The ticket email, the ticket page, and a wallet pass are just delivery layers that reflect that state - none of them hold their own copy of the truth.
+
+**Who uses it day to day:** an Admin sets up the event, imports attendees, and sends tickets; an Operator (staff at the door) runs check-in on a tablet or scanner; a Superadmin configures the instance itself (mail, integrations, sign-in). Attendees never sign in at all - they receive a ticket and show it.
 
 ## Documentation map
 
@@ -170,9 +172,7 @@ See [deploy/README.md](deploy/README.md).
 
 ## Roadmap
 
-[VERSIONING.md](VERSIONING.md) is the **only** place the release line, what's shipped, and what's
-next are tracked - intentionally not duplicated here, so this README can't drift out of sync with
-it the way a second copy eventually would.
+[VERSIONING.md](VERSIONING.md) is the **only** place the release line, what's shipped, and what's next are tracked - intentionally not duplicated here, so this README can't drift out of sync with it the way a second copy eventually would.
 
 ## Licence
 
