@@ -8,11 +8,25 @@
   &nbsp;
   <a href="https://github.com/solarssk/admitto/releases"><img src="https://img.shields.io/github/v/tag/solarssk/admitto?sort=semver&label=release&color=066fd1" alt="release"></a>
   &nbsp;
-  <img src="https://img.shields.io/badge/node-24-brightgreen" alt="Node 24">
-  &nbsp;
-  <img src="https://img.shields.io/badge/prisma-7-2D3748" alt="Prisma 7">
+  <a href="https://github.com/solarssk/admitto/pkgs/container/admitto"><img src="https://img.shields.io/badge/docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white" alt="Docker: amd64 and arm64"></a>
   &nbsp;
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="Apache 2.0"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white" alt="Node.js 24">
+  &nbsp;
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
+  &nbsp;
+  <img src="https://img.shields.io/badge/Hono-4-E36002?logo=hono&logoColor=white" alt="Hono 4">
+  &nbsp;
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React 19">
+  &nbsp;
+  <img src="https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL">
+  &nbsp;
+  <img src="https://img.shields.io/badge/Prisma-7-2D3748?logo=prisma&logoColor=white" alt="Prisma 7">
+  &nbsp;
+  <img src="https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white" alt="Redis">
 </p>
 
 <p align="center">
@@ -82,7 +96,7 @@ Unfamiliar term below (TOTP, OIDC, …)? Check the [Glossary](docs/wiki/Glossary
 
 | | Layer | Technologies |
 |---|-------|-------------|
-| 🟢 | **Runtime** | Node.js 24, TypeScript, Docker |
+| 🟢 | **Runtime** | Node.js 24, TypeScript, Docker (multi-arch: `linux/amd64` + `linux/arm64`) |
 | 🔌 | **Backend** | Hono 4, PostgreSQL (Prisma 7), Redis |
 | 🎨 | **Frontend** | React 19, react-router 7, Vite, Tabler design tokens |
 | 📬 | **Mail** | M365 Graph · SMTP · Power Automate · IMAP bounce ingest |
@@ -138,7 +152,7 @@ More detail: [infra/README.md](infra/README.md) · [apps/web/README.md](apps/web
 
 ## Production deployment
 
-Self-hosted **Docker Compose** only. Images are published to `ghcr.io/solarssk/admitto` on each `vX.Y.Z` git tag.
+Self-hosted **Docker Compose** only. Images are published to `ghcr.io/solarssk/admitto` on each `vX.Y.Z` git tag, as a **multi-arch manifest** (`linux/amd64` + `linux/arm64`) - Docker pulls the right one automatically, whether you're on a standard x86 VPS or arm64 hardware (AWS Graviton, Oracle Cloud's free arm tier, Raspberry Pi-class devices, Apple Silicon via Docker Desktop). Both platforms pass the same Trivy CRITICAL-vulnerability gate before either is pushed.
 Compose runs **`app`**, **`migrate`**, and a single **`worker`** (mail drain, import/export, bounce, retention).
 See [deploy/README.md](deploy/README.md).
 
