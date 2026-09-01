@@ -2473,15 +2473,14 @@ const bulkSetFieldBodySchema = z
 /** One selected attendee's computed bulk company/department write - mirrors
  * applyMirroredScalarPatchField's own custom_data handling (used by the single-attendee PATCH,
  * see computePatchChanges above) so the two paths can't silently diverge on how company/department
- * are mirrored into custom_data. Unlike applyBulkAttendeeChanges's shared single-batched-UPDATE
- * helper above, this can't reuse that helper: the custom_data JSON payload to write is different
- * per row (each row's own existing custom_data, with just one key touched), not one shared SET
- * clause for the whole selection. */
+ * are mirrored into custom_data. `customData` is always populated when a change is returned -
+ * applyMirroredScalarPatchField touches it unconditionally whenever the field itself changes (its
+ * own `next === current` short-circuit already handled by the early return below). */
 function computeBulkFieldChange(
   row: { id: string; company: string | null; department: string | null; custom_data: unknown },
   field: "company" | "department",
   target: string | null,
-): { data: Prisma.AttendeeUncheckedUpdateInput; from: string | null; to: string | null } | null {
+): { to: string | null; from: string | null; customData: Record<string, unknown> } | null {
   const resolved = resolveCompanyDepartment(row);
   const current = field === "company" ? resolved.company : resolved.department;
   if (current === target) return null;
@@ -2490,9 +2489,6 @@ function computeBulkFieldChange(
   const fields: string[] = [];
   let from: string | null = null;
   let to: string | null = null;
-  // Memoized via this closure (not a fresh clone per call) - applyMirroredScalarPatchField
-  // mutates the object touchCustomData() returns in place, so the mutation must land on the same
-  // reference read back below, exactly matching computePatchChanges's own touchCustomData above.
   let customData: Record<string, unknown> | null = null;
   const touchCustomData = (): Record<string, unknown> => {
     customData ??= cloneCustomData(row.custom_data);
@@ -2510,10 +2506,15 @@ function computeBulkFieldChange(
       to = logTo;
     },
   );
-  if (customData) {
-    data.custom_data = customData as Prisma.InputJsonValue;
-  }
-  return { data, from, to };
+  // customData is always set by the call above once next !== current (guaranteed by the early
+  // return above) - the `?? {}` only satisfies the type checker, never actually taken.
+  return { to, from, customData: customData ?? {} };
+}
+
+/** company/department's own quoted column identifier for the batched UPDATE below - the only
+ * per-field difference in an otherwise field-agnostic write. */
+function bulkSetFieldColumn(field: "company" | "department"): Prisma.Sql {
+  return field === "company" ? Prisma.raw('"company"') : Prisma.raw('"department"');
 }
 
 /** POST /api/admin/events/:eventId/attendees/bulk-set-field - set one profile field (company or
@@ -2522,6 +2523,15 @@ function computeBulkFieldChange(
  * other bulk action. Rows already at the target value are left untouched (no updated_at bump, no
  * log entry) and reported back as alreadySetCount; rows that lost the race against a concurrent
  * write are also left untouched and reported back as conflictCount.
+ *
+ * One conditional `UPDATE ... FROM (VALUES ...)` statement, not a per-row loop of individual
+ * updateMany calls (bot review: up to BULK_SEND_LIMIT sequential round trips inside one
+ * transaction held every earlier row's locks until the last one finished) - same shape as
+ * applyBulkAttendeeChanges's own single-batched-UPDATE above, just carrying each row's own
+ * custom_data JSON (cast via ::jsonb on a stringified parameter, the standard raw-SQL approach for
+ * a per-row JSON payload the Prisma template-tag driver doesn't serialize for you) instead of one
+ * shared SET clause for the whole selection - that's the one reason this couldn't just call
+ * applyBulkAttendeeChanges directly.
  *
  * The per-row CAS is keyed on the whole row's `updated_at` (read alongside company/department/
  * custom_data below, in the same transaction), not just the target field's own prior value like
@@ -2559,44 +2569,60 @@ export async function handleBulkSetAttendeeField(c: Context, db: PrismaClient): 
         select: { id: true, company: true, department: true, custom_data: true, updated_at: true },
       });
 
-      let updatedCount = 0;
-      let alreadySetCount = 0;
-      let conflictCount = 0;
-      const updatedIds: string[] = [];
-      const logEntries: { attendee_id: string; metadata: Record<string, unknown> }[] = [];
-
+      const changes: Array<{
+        id: string;
+        to: string | null;
+        from: string | null;
+        customData: Record<string, unknown>;
+        expectedUpdatedAt: Date;
+      }> = [];
       for (const row of owned) {
         const change = computeBulkFieldChange(row, field, target);
-        if (!change) {
-          alreadySetCount += 1;
-          continue;
-        }
-        const { count } = await tx.attendee.updateMany({
-          where: { id: row.id, updated_at: row.updated_at },
-          data: { ...change.data, updated_at: new Date() },
-        });
-        if (count === 0) {
-          conflictCount += 1;
-          continue;
-        }
-        updatedCount += 1;
-        updatedIds.push(row.id);
-        logEntries.push({
-          attendee_id: row.id,
-          metadata: { fields: [field], field_changes: { [field]: { from: change.from, to: change.to } } },
-        });
+        if (change) changes.push({ id: row.id, ...change, expectedUpdatedAt: row.updated_at });
       }
 
-      if (logEntries.length > 0) {
+      if (changes.length === 0) {
+        return { updatedCount: 0, alreadySetCount: owned.length, conflictCount: 0, updatedIds: [] as string[] };
+      }
+
+      const column = bulkSetFieldColumn(field);
+      const values = Prisma.join(
+        changes.map(
+          (x) =>
+            Prisma.sql`(${x.id}::text, ${x.to}::text, ${JSON.stringify(x.customData)}::jsonb, ${x.expectedUpdatedAt}::timestamp)`,
+        ),
+      );
+      const updated = await tx.$queryRaw<{ id: string }[]>`
+        UPDATE "Attendee" AS t
+        SET ${column} = v.new_value, custom_data = v.new_custom_data, updated_at = NOW()
+        FROM (VALUES ${values}) AS v(id, new_value, new_custom_data, expected_updated_at)
+        WHERE t.id = v.id AND t.event_id = ${eventId} AND t.updated_at = v.expected_updated_at
+        RETURNING t.id
+      `;
+      const updatedIdSet = new Set(updated.map((r) => r.id));
+      const succeeded = changes.filter((x) => updatedIdSet.has(x.id));
+
+      // Only for rows the CAS above actually touched - a row that lost the race never got this
+      // write, so logging it here would fabricate a "from" value the row didn't hold at write
+      // time (same reasoning as applyBulkAttendeeChanges's own log-only-succeeded above).
+      if (succeeded.length > 0) {
         await writeActionLogMany(tx, {
           event_id: eventId,
           action_type: "attendee_edited",
           audit: adminAuditFromContext(c),
-          entries: logEntries,
+          entries: succeeded.map((x) => ({
+            attendee_id: x.id,
+            metadata: { fields: [field], field_changes: { [field]: { from: x.from, to: x.to } } },
+          })),
         });
       }
 
-      return { updatedCount, alreadySetCount, conflictCount, updatedIds };
+      return {
+        updatedCount: succeeded.length,
+        alreadySetCount: owned.length - changes.length,
+        conflictCount: changes.length - succeeded.length,
+        updatedIds: succeeded.map((x) => x.id),
+      };
     });
 
     // Best-effort, outside the transaction - company/department are both wallet-content-relevant

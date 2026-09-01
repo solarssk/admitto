@@ -1227,6 +1227,13 @@ export async function bulkChangeRsvpStatus(
 
 export type BulkSetFieldResponse = BulkTicketTypeResponse;
 
+/** company/department are both wallet-content-relevant, so a successful bulk change enqueues a
+ * wallet_push job for whichever rows actually changed - null when nothing changed (job would
+ * have been a no-op). Same shape as BulkTicketTypeResult above. */
+export interface BulkSetFieldResult extends BulkSetFieldResponse {
+  walletPushJobId: string | null;
+}
+
 /** Set one profile field (company or department) to the same value for every selected attendee
  * at once. Ids outside the event are silently ignored server-side; rows already carrying the
  * value are counted separately. */
@@ -1235,12 +1242,12 @@ export async function bulkSetAttendeeField(
   attendeeIds: string[],
   field: "company" | "department",
   value: string,
-): Promise<BulkSetFieldResponse> {
+): Promise<BulkSetFieldResult> {
   const res = await fetch(
     `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-set-field`,
     jsonPostInit({ attendeeIds, field, value }),
   );
-  return parseJson<BulkSetFieldResponse>(res);
+  return parseJson<BulkSetFieldResult>(res);
 }
 
 /** Manually check in a selection of attendees at once (no QR scan), from the Attendees list's

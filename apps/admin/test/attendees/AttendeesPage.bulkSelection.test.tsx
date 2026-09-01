@@ -2336,6 +2336,69 @@ describe("AttendeesPage bulk Set company / Set department", () => {
     });
   });
 
+  it("polls wallet push completion when the response includes a job id (bot review)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkSetAttendeeField.mockResolvedValue({
+      updatedCount: 2,
+      alreadySetCount: 0,
+      conflictCount: 0,
+      walletPushJobId: "job-set-field",
+    });
+    pollWalletPushCompletion.mockResolvedValue(undefined);
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Set company/, "Set company");
+    fireEvent.change(within(dialog).getByLabelText("Company"), { target: { value: "Acme Inc." } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(pollWalletPushCompletion).toHaveBeenCalledWith(
+        "evt-1",
+        "job-set-field",
+        addToast,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+  });
+
+  it("toasts a fallback message when the wallet push poll itself fails to run", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkSetAttendeeField.mockResolvedValue({
+      updatedCount: 2,
+      alreadySetCount: 0,
+      conflictCount: 0,
+      walletPushJobId: "job-set-field",
+    });
+    pollWalletPushCompletion.mockRejectedValue(new Error("network down"));
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Set department/, "Set department");
+    fireEvent.change(within(dialog).getByLabelText("Department"), { target: { value: "Sales" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Could not refresh wallet push status.", "info");
+    });
+  });
+
+  it("does not poll wallet push completion when nothing actually changed (no job enqueued)", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkSetAttendeeField.mockResolvedValue({
+      updatedCount: 0,
+      alreadySetCount: 2,
+      conflictCount: 0,
+      walletPushJobId: null,
+    });
+
+    await selectTwoRowsAndOpenMenu();
+    const dialog = clickMenuItemAndArmDialog(/Set company/, "Set company");
+    fireEvent.change(within(dialog).getByLabelText("Company"), { target: { value: "Acme Inc." } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => expect(bulkSetAttendeeField).toHaveBeenCalledOnce());
+    expect(pollWalletPushCompletion).not.toHaveBeenCalled();
+  });
+
   it("keeps Apply disabled until a non-empty, non-whitespace value is typed", async () => {
     await selectTwoRowsAndOpenMenu();
     const dialog = clickMenuItemAndArmDialog(/Set company/, "Set company");

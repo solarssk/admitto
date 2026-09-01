@@ -1524,6 +1524,20 @@ export function AttendeesPage() {
         setSetCompanyOpen(false);
         clearSelection();
         setReloadToken((n) => n + 1);
+        // company is always wallet-content-relevant - a second, later toast reports the
+        // wallet-side effect once the background job finishes, same as
+        // handleBulkChangeTicketTypeConfirm's own wallet push poll.
+        if (eventId && result.walletPushJobId) {
+          walletPushPollRef.current?.abort();
+          const ac = new AbortController();
+          walletPushPollRef.current = ac;
+          void pollWalletPushCompletion(eventId, result.walletPushJobId, addToast, {
+            signal: ac.signal,
+          }).catch(() => {
+            if (ac.signal.aborted) return;
+            addToast("Could not refresh wallet push status.", "info");
+          });
+        }
       },
     });
   };
@@ -1553,6 +1567,19 @@ export function AttendeesPage() {
         setSetDepartmentOpen(false);
         clearSelection();
         setReloadToken((n) => n + 1);
+        // department is always wallet-content-relevant - same wallet push poll as
+        // handleBulkSetCompanyConfirm above.
+        if (eventId && result.walletPushJobId) {
+          walletPushPollRef.current?.abort();
+          const ac = new AbortController();
+          walletPushPollRef.current = ac;
+          void pollWalletPushCompletion(eventId, result.walletPushJobId, addToast, {
+            signal: ac.signal,
+          }).catch(() => {
+            if (ac.signal.aborted) return;
+            addToast("Could not refresh wallet push status.", "info");
+          });
+        }
       },
     });
   };
