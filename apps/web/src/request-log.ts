@@ -22,6 +22,22 @@ function pathRemainderRef(remainder: string): string {
   return createHash("sha256").update(remainder).digest("hex").slice(0, 8);
 }
 
+const WALLET_SUFFIX_RE = /\/wallet\/(apple|google)$/;
+
+/**
+ * The same participant's link takes several shapes across ticket/QR/wallet routes — `/t/:token`,
+ * `/t/:token/wallet/:platform`, `/q/:token.png`, and their `/t/:eventSlug/a/:ref` agency
+ * equivalents — so the raw path remainder differs even though it's the same token/ref
+ * underneath. Strip the `.png` suffix (`/q/*`) and the `/wallet/apple`|`/wallet/google` suffix
+ * (`/t/*`) before hashing, so every route shape for one participant yields the same `ref`. For
+ * Mode A this also makes `ref` the first 8 hex chars of the DB's own `token_hash` column (same
+ * SHA-256 hash `hashToken()` computes), directly correlatable to `Attendee.token_hash`.
+ */
+function normalizeTokenRemainder(prefix: (typeof TOKEN_PATH_PREFIXES)[number], remainder: string): string {
+  if (prefix === "/q/") return remainder.endsWith(".png") ? remainder.slice(0, -4) : remainder;
+  return remainder.replace(WALLET_SUFFIX_RE, "");
+}
+
 /** Health probes fire every ~10s from Docker/proxies; only log them on failure. */
 const HEALTH_PROBE_PATHS = new Set(["/healthz", "/readyz"]);
 
@@ -47,7 +63,9 @@ export function redactRequestPath(pathname: string): string {
  */
 export function requestPathRef(pathname: string): string | undefined {
   for (const prefix of TOKEN_PATH_PREFIXES) {
-    if (pathname.startsWith(prefix)) return pathRemainderRef(pathname.slice(prefix.length));
+    if (pathname.startsWith(prefix)) {
+      return pathRemainderRef(normalizeTokenRemainder(prefix, pathname.slice(prefix.length)));
+    }
   }
   return undefined;
 }

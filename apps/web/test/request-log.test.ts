@@ -71,6 +71,19 @@ describe("requestPathRef", () => {
     expect(requestPathRef("/login")).toBeUndefined();
     expect(requestPathRef("/api/admin/events")).toBeUndefined();
   });
+
+  it("matches the same Mode A token across the ticket, wallet, and QR route shapes", () => {
+    const ticketRef = requestPathRef("/t/secret-qr-token-value");
+    expect(requestPathRef("/t/secret-qr-token-value/wallet/apple")).toBe(ticketRef);
+    expect(requestPathRef("/t/secret-qr-token-value/wallet/google")).toBe(ticketRef);
+    expect(requestPathRef("/q/secret-qr-token-value.png")).toBe(ticketRef);
+  });
+
+  it("matches the same Mode B agency ref across the ticket, wallet, and QR route shapes", () => {
+    const ticketRef = requestPathRef("/t/summit/a/agency-ref-1");
+    expect(requestPathRef("/t/summit/a/agency-ref-1/wallet/apple")).toBe(ticketRef);
+    expect(requestPathRef("/q/summit/a/agency-ref-1.png")).toBe(ticketRef);
+  });
 });
 
 describe("resolveLogHttpRequests", () => {
