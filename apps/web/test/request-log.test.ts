@@ -8,6 +8,7 @@ import { createRateLimitStore } from "../src/rate-limit/index.js";
 import {
   createRequestLogMiddleware,
   redactRequestPath,
+  requestPathRef,
   resolveLogHttpRequests,
 } from "../src/request-log.js";
 
@@ -53,6 +54,38 @@ describe("redactRequestPath", () => {
   });
 });
 
+describe("requestPathRef", () => {
+  it("is a stable 8-char hex ref for the same token path, without ever containing the token", () => {
+    const ref = requestPathRef("/t/secret-qr-token-value");
+    expect(ref).toMatch(/^[0-9a-f]{8}$/);
+    expect(ref).toBe(requestPathRef("/t/secret-qr-token-value"));
+    expect(ref).not.toContain("secret-qr-token-value");
+  });
+
+  it("differs for different tokens/paths", () => {
+    expect(requestPathRef("/t/token-a")).not.toBe(requestPathRef("/t/token-b"));
+    expect(requestPathRef("/t/summit/a/agency-ref-1")).not.toBe(requestPathRef("/t/summit/a/agency-ref-2"));
+  });
+
+  it("is undefined for token-free paths", () => {
+    expect(requestPathRef("/login")).toBeUndefined();
+    expect(requestPathRef("/api/admin/events")).toBeUndefined();
+  });
+
+  it("matches the same Mode A token across the ticket, wallet, and QR route shapes", () => {
+    const ticketRef = requestPathRef("/t/secret-qr-token-value");
+    expect(requestPathRef("/t/secret-qr-token-value/wallet/apple")).toBe(ticketRef);
+    expect(requestPathRef("/t/secret-qr-token-value/wallet/google")).toBe(ticketRef);
+    expect(requestPathRef("/q/secret-qr-token-value.png")).toBe(ticketRef);
+  });
+
+  it("matches the same Mode B agency ref across the ticket, wallet, and QR route shapes", () => {
+    const ticketRef = requestPathRef("/t/summit/a/agency-ref-1");
+    expect(requestPathRef("/t/summit/a/agency-ref-1/wallet/apple")).toBe(ticketRef);
+    expect(requestPathRef("/q/summit/a/agency-ref-1.png")).toBe(ticketRef);
+  });
+});
+
 describe("resolveLogHttpRequests", () => {
   it("is off by default and on for 1/true", () => {
     expect(resolveLogHttpRequests({} as NodeJS.ProcessEnv)).toBe(false);
@@ -74,7 +107,7 @@ describe("createRequestLogMiddleware", () => {
     expect(typeof entry["duration_ms"]).toBe("number");
   });
 
-  it("never logs query strings or token paths", async () => {
+  it("never logs query strings or token paths, but includes a stable ref for token paths", async () => {
     const lines = captureInfoLines();
     const app = appWithLogging();
     app.get("/t/:token", (c) => c.text("ticket"));
@@ -84,8 +117,11 @@ describe("createRequestLogMiddleware", () => {
 
     expect(lines.join("\n")).not.toContain("email");
     expect(lines.join("\n")).not.toContain("secret-qr-token-value");
-    const ticketEntry = JSON.parse(lines[1]!) as { path: string };
+    const okEntry = JSON.parse(lines[0]!) as Record<string, unknown>;
+    expect(okEntry).not.toHaveProperty("ref");
+    const ticketEntry = JSON.parse(lines[1]!) as { path: string; ref: string };
     expect(ticketEntry.path).toBe("/t/[redacted]");
+    expect(ticketEntry.ref).toMatch(/^[0-9a-f]{8}$/);
   });
 
   it("skips successful health probes but logs failing ones", async () => {
@@ -116,11 +152,11 @@ describe("createRequestLogMiddleware", () => {
     expect(JSON.parse(lines[0]!)).toMatchObject({ path: "/api/admin/system-logs", status: 403 });
   });
 
-  it("omits ip for anonymous/unauthenticated requests", async () => {
+  it("includes ip for anonymous/unauthenticated requests too", async () => {
     const lines = captureInfoLines();
     await appWithLogging().request("/ok");
     const entry = JSON.parse(lines[0]!) as Record<string, unknown>;
-    expect(entry).not.toHaveProperty("ip");
+    expect(entry).toHaveProperty("ip");
   });
 
   it("includes ip when the request has an authenticated staff session", async () => {

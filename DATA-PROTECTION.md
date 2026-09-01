@@ -55,10 +55,17 @@ Attendee-facing data — a ticket email's recipient address, import file content
 redacted or minimised in these logs, and database query logs never include the actual query values,
 only the query shape and how long it took.
 
-The per-request access log line (`http_request`, source of the System-logs live tail below) follows
-the same rule for IP address: it's included only when the request carries a verified staff/operator
-session, mirroring an identity provider's actor-attributed activity log. Anonymous, attendee-facing
-requests (ticket views, public check-in) never get their IP logged this way.
+The per-request access log line (`http_request`, source of the System-logs live tail below) includes
+the client IP for every request, staff or anonymous — the app already reads it for every ticket/QR/
+check-in request to key its rate limiter (`rate-limit/policies.ts`), so this surfaces data already
+being processed rather than adding a new category of it, and matches standard access-log practice
+(Apache/nginx, ALB/CloudFront) plus OWASP's guidance to record source IP on security-relevant
+requests — chiefly to spot scanning or brute-forcing of ticket/QR tokens. Ticket/QR paths (`/t/*`,
+`/q/*`) are still logged as `/t/[redacted]`/`/q/[redacted]` — the raw token never reaches stdout —
+alongside a short, one-way `ref` hash of the token so repeated hits on the same participant's link
+are recognizable across log lines without exposing it. Retention for this IP follows the same
+operator-managed convention as the reverse proxy's own access log (see the Retention table below);
+it is not auto-purged like `SecurityAuditLog`.
 
 This does **not** apply to the admin audit trail (`AttendeeActionLog`, `AdminAuditLog`), which is a
 first-class, access-controlled product feature, not an operational log line — see below.
@@ -195,7 +202,7 @@ policy). Different retention periods for different categories are intentional �
 | Login sessions, trusted devices | Product — automatic | Best-effort purge on the worker when expired/revoked |
 | Email bodies (`rendered_html`, `rendered_subject`) | Product — automatic | Nullified **60 days** after terminal delivery (`EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`) |
 | Durable security audit trail (`SecurityAuditLog` — login/MFA/logout/OIDC/access-denied) | Product — automatic | Best-effort purge on the worker (boot + ~24h); default **30 days** (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) |
-| IP addresses in admin audit log | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge. (An IP tied to a check-in-time request only ever appears in the System logs live tail below — in-memory only, not a persisted, purgeable table.) |
+| IP addresses in admin audit log and the `http_request` access log (every request, staff or anonymous) | Operator | **30 days or your corporate log retention policy** (whichever applies); product does not auto-purge. (An IP logged this way is never itself persisted in a purgeable table — it lives in the System logs live tail below (in-memory only) and wherever your container log driver keeps stdout.) |
 | System logs live tail (in-memory only) | Product — automatic | Not persisted anywhere by the product; the last 1000 entries are kept in server memory and gone on the next restart. Long-term retention, if you need it, is whatever your container log driver already does with stdout |
 | Event attendee list (PII) | Operator | Export via admin UI; erasure via **Attendees → attendee detail → More actions → Delete attendee** (single) or the Attendees list's row-selection bulk bar (multiple at once), or the `DELETE` API directly — see [DSAR-PROCEDURE.md](docs/security/DSAR-PROCEDURE.md) |
 
