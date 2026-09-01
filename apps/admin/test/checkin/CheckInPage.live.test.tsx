@@ -15,7 +15,7 @@ const fetchCheckInEvents = vi.fn();
 const submitCheckInScan = vi.fn();
 
 let streamHandler: ((event: StreamCheckinEvent) => void) | null = null;
-let streamStatus: "connecting" | "connected" | "reconnecting" | "auth_error" = "connected";
+let streamStatus: "connecting" | "connected" | "reconnecting" | "auth_error" | "rate_limited" = "connected";
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
   useEventStream: (_eventId: string | undefined, onCheckin: (event: StreamCheckinEvent) => void) => {
@@ -255,6 +255,18 @@ describe("CheckInPage live feed", () => {
       expect(document.querySelector(".ck-connection--degraded")).not.toBeNull();
     });
     expect(screen.queryByText(/Live updates unavailable\. Check access/i)).toBeNull();
+  });
+
+  it("shows a rate_limited banner distinct from auth_error/reconnecting", async () => {
+    streamStatus = "rate_limited";
+    mockPageBootstrap([], 0);
+
+    renderPage();
+
+    await waitFor(() => {
+      const banner = screen.getByText(/Live updates paused briefly/i);
+      expect(banner.closest(".at-notice--warning")).toBeTruthy();
+    });
   });
 
   it("sidebar refresh replaces optimistic count with authoritative server stats", async () => {

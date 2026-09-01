@@ -191,6 +191,11 @@ function CheckInStreamBanners({
           Reconnecting live updates…
         </Notice>
       )}
+      {canAct && streamStatus === "rate_limited" && (
+        <Notice variant="warning" as="output" className="check-in__offline-banner">
+          Live updates paused briefly (too many reconnects) - retrying automatically
+        </Notice>
+      )}
     </>
   );
 }

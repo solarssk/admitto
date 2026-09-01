@@ -141,13 +141,21 @@ function pollingJobStatusPolicy(scope: RateLimitScope, keyHint: string): RatePol
   };
 }
 
+/** "stream" is scoped per event, not just per operator: the SSE stream is one long-lived
+ * connection per event an operator has open (Check-in/Overview/Reports all watch the same
+ * event's stream), unlike "scan"/"history" which are short bursty requests an operator can
+ * fire across many events in a session. A global-per-user budget meant an operator with
+ * check-in open for one event (whose stream reconnects periodically - proxy idle timeouts,
+ * network blips) could exhaust the whole account's stream budget and see 429s on a completely
+ * different event/tab that never itself made excess requests (PO report). */
 function checkinRateLimitKey(c: Context, kind: CheckinRateLimitKind): string {
+  const eventSuffix = kind === "stream" ? `:event:${c.req.param("eventId")}` : "";
   if (c.get("checkinAuth") === "bearer") {
-    return `checkin:${kind}:bearer:ip:${resolveClientIp(c)}`;
+    return `checkin:${kind}:bearer:ip:${resolveClientIp(c)}${eventSuffix}`;
   }
   const userId = c.get("operatorUserId") as string | undefined;
-  if (userId) return `checkin:${kind}:user:${userId}`;
-  return `checkin:${kind}:ip:${resolveClientIp(c)}`;
+  if (userId) return `checkin:${kind}:user:${userId}${eventSuffix}`;
+  return `checkin:${kind}:ip:${resolveClientIp(c)}${eventSuffix}`;
 }
 
 function checkinRateLimitKeyHint(c: Context): "ip" | "user" {

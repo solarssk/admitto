@@ -8,13 +8,17 @@ const CHECKIN_STREAM_SLOT_KEY = "checkinStreamSlotKey";
 
 const activeStreamsByKey = new Map<string, number>();
 
+// Scoped per event, same reasoning as checkinRateLimitKey's own "stream" branch
+// (rate-limit/policies.ts) - a global-per-user slot budget let one event's reconnecting stream
+// starve a completely different event's stream under the same account.
 function streamConcurrencyKey(c: Context): string {
+  const eventId = c.req.param("eventId");
   if (c.get("checkinAuth") === "bearer") {
-    return `checkin:stream:bearer:ip:${resolveClientIp(c)}`;
+    return `checkin:stream:bearer:ip:${resolveClientIp(c)}:event:${eventId}`;
   }
   const userId = c.get("operatorUserId") as string | undefined;
-  if (userId) return `checkin:stream:user:${userId}`;
-  return `checkin:stream:ip:${resolveClientIp(c)}`;
+  if (userId) return `checkin:stream:user:${userId}:event:${eventId}`;
+  return `checkin:stream:ip:${resolveClientIp(c)}:event:${eventId}`;
 }
 
 /** Reserve a stream slot; returns 429 Response when at capacity. */

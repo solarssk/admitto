@@ -23,7 +23,7 @@ describe("check-in stream concurrency limit", () => {
     const app = new Hono();
 
     app.get(
-      "/stream",
+      "/events/:eventId/stream",
       sessionContext("op-stream"),
       createCheckinStreamConcurrencyLimit(),
       (c) =>
@@ -39,22 +39,29 @@ describe("check-in stream concurrency limit", () => {
 
     const readers = [];
     for (let i = 0; i < 3; i++) {
-      const res = await app.request("/stream");
+      const res = await app.request("/events/evt-a/stream");
       expect(res.status).toBe(200);
       readers.push(res.body!.getReader());
     }
 
-    expect(activeCheckinStreamCountForTests("checkin:stream:user:op-stream")).toBe(3);
+    expect(activeCheckinStreamCountForTests("checkin:stream:user:op-stream:event:evt-a")).toBe(3);
 
-    const blocked = await app.request("/stream");
+    const blocked = await app.request("/events/evt-a/stream");
     expect(blocked.status).toBe(429);
     expect(await blocked.json()).toEqual({ error: "too_many_streams" });
 
+    // A stream for a different event under the same account has its own budget, not blocked by
+    // evt-a's already-full 3 slots - the whole point of scoping this key per event.
+    const otherEvent = await app.request("/events/evt-b/stream");
+    expect(otherEvent.status).toBe(200);
+    expect(activeCheckinStreamCountForTests("checkin:stream:user:op-stream:event:evt-b")).toBe(1);
+    await otherEvent.body?.cancel();
+
     await readers[0]!.cancel();
     await new Promise((r) => setTimeout(r, 20));
-    expect(activeCheckinStreamCountForTests("checkin:stream:user:op-stream")).toBe(2);
+    expect(activeCheckinStreamCountForTests("checkin:stream:user:op-stream:event:evt-a")).toBe(2);
 
-    const reopened = await app.request("/stream");
+    const reopened = await app.request("/events/evt-a/stream");
     expect(reopened.status).toBe(200);
     await reopened.body?.cancel();
 
