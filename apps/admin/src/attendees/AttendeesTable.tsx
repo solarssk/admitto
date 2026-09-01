@@ -236,6 +236,8 @@ export interface AttendeesTableProps {
   bulkExportBusy: boolean;
   onBulkChangeTicketType: () => void;
   onBulkChangeRsvpStatus: () => void;
+  onBulkSetCompany: () => void;
+  onBulkSetDepartment: () => void;
   itemCount: number;
   itemsError?: string | null;
   onRetryItems?: () => void;
@@ -462,6 +464,8 @@ function BulkMoreActionsMenu({
   onRetryTicketTypes,
   onChangeTicketType,
   onChangeRsvpStatus,
+  onSetCompany,
+  onSetDepartment,
   itemCount,
   revokableItemsCount,
   canRevokeItems,
@@ -508,6 +512,8 @@ function BulkMoreActionsMenu({
   onRetryTicketTypes?: () => void;
   onChangeTicketType: () => void;
   onChangeRsvpStatus: () => void;
+  onSetCompany: () => void;
+  onSetDepartment: () => void;
   onDelete: () => void;
 } & BulkItemPassWalletActions>) {
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
@@ -593,6 +599,28 @@ function BulkMoreActionsMenu({
             onClick={() => {
               setOpen(false);
               onChangeRsvpStatus();
+            }}
+          />
+          <MoreActionsMenuItem
+            icon="building"
+            label="Set company"
+            hint={`Set for ${attendeeCount(selectedCount)}`}
+            disabled={archived}
+            tooltip={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
+            onClick={() => {
+              setOpen(false);
+              onSetCompany();
+            }}
+          />
+          <MoreActionsMenuItem
+            icon="sitemap"
+            label="Set department"
+            hint={`Set for ${attendeeCount(selectedCount)}`}
+            disabled={archived}
+            tooltip={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
+            onClick={() => {
+              setOpen(false);
+              onSetDepartment();
             }}
           />
           <hr className="more-actions-menu__divider" />
@@ -786,6 +814,8 @@ function BulkBar({
   onRetryTicketTypes,
   onBulkChangeTicketType,
   onBulkChangeRsvpStatus,
+  onBulkSetCompany,
+  onBulkSetDepartment,
   itemCount,
   revokableItemsCount,
   canRevokeItems,
@@ -834,6 +864,8 @@ function BulkBar({
   onRetryTicketTypes?: () => void;
   onBulkChangeTicketType: () => void;
   onBulkChangeRsvpStatus: () => void;
+  onBulkSetCompany: () => void;
+  onBulkSetDepartment: () => void;
   onBulkDelete: () => void;
 } & BulkItemPassWalletActions>) {
   const archived = event.archived_at != null;
@@ -921,6 +953,8 @@ function BulkBar({
           onRetryTicketTypes={onRetryTicketTypes}
           onChangeTicketType={onBulkChangeTicketType}
           onChangeRsvpStatus={onBulkChangeRsvpStatus}
+          onSetCompany={onBulkSetCompany}
+          onSetDepartment={onBulkSetDepartment}
           itemCount={itemCount}
           revokableItemsCount={revokableItemsCount}
           canRevokeItems={canRevokeItems}
@@ -1362,6 +1396,8 @@ export function AttendeesTable({
   bulkExportBusy,
   onBulkChangeTicketType,
   onBulkChangeRsvpStatus,
+  onBulkSetCompany,
+  onBulkSetDepartment,
   itemCount,
   itemsError,
   onRetryItems,
@@ -1472,6 +1508,8 @@ export function AttendeesTable({
           onRetryTicketTypes={onRetryTicketTypes}
           onBulkChangeTicketType={onBulkChangeTicketType}
           onBulkChangeRsvpStatus={onBulkChangeRsvpStatus}
+          onBulkSetCompany={onBulkSetCompany}
+          onBulkSetDepartment={onBulkSetDepartment}
           itemCount={itemCount}
           revokableItemsCount={revokableItemsCount}
           canRevokeItems={canRevokeItems}

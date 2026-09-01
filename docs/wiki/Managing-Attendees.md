@@ -36,7 +36,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
    - **Check in** without scanning (asks for confirmation first, same as the other bulk actions below; can normally be undone afterward with **Revoke check-in**)
    - **Revoke check-in**, **Revoke items**, or **Revoke pass**
    - **Void wallet pass**, **Push updates**, **Refresh status**, or **Delete wallet pass** (only enabled when the selection includes at least one attendee who added a pass)
-   - **Change ticket type** (also pushes the new type to any already-issued wallet passes in the selection, in the background) or **Change attendance status**
+   - **Change ticket type** (also pushes the new type to any already-issued wallet passes in the selection, in the background), **Change attendance status**, **Set company**, or **Set department** (types one value and applies it to every selected attendee)
    - **Export** the selection as CSV
    - **Delete** selected attendees (GDPR erasure; confirmation with a delay)
 3. Confirm when Admitto asks, then verify the list and a sample detail page.
