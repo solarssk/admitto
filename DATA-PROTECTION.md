@@ -85,14 +85,7 @@ provider) operations, and outbound calls to external services (weather, maps/geo
 
 ## Durable security audit trail (`SecurityAuditLog`)
 
-A superadmin-only screen (Settings → **Logs & audit** → **Security audit log**, next to the
-existing admin **Audit log** panel) shows a durable, database-backed history of fifteen auth/security
-event types: login success/failure, repeated-login-failure alerts, MFA success/failure, MFA
-break-glass override, MFA recovery code use, repeated-MFA-failure alerts, superadmin bootstrap,
-logout, OIDC login success, OIDC superadmin-revoke-blocked, access-denied, and trusted-device
-creation/use (including when a "remember this device" cookie skips the two-factor step). Unlike the
-System-logs live tail above, this table is not in-memory — it survives a container restart, so it
-is the reliable source for reconstructing login/MFA/OIDC history during an incident review.
+A superadmin-only screen (Settings → **Logs & audit** → **Security audit log**, next to the existing admin **Audit log** panel) shows a durable, database-backed history of fifteen auth/security event types: login success/failure, repeated-login-failure alerts, MFA success/failure, MFA break-glass override, MFA recovery code use, repeated-MFA-failure alerts, superadmin bootstrap, logout, OIDC login success, OIDC superadmin-revoke-blocked, access-denied, and trusted-device creation/use (including when a "remember this device" cookie skips the two-factor step). Unlike the System-logs live tail above, this table is not in-memory — it survives a container restart, so it is the reliable source for reconstructing login/MFA/OIDC history during an incident review.
 
 - **Why:** before this, the same fifteen events only reached stdout (durability depends entirely on
   your own log shipping/rotation setup) and the 1000-entry live tail (wiped on every restart). This

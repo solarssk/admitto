@@ -2,12 +2,7 @@
 
 **Audience:** All staff · **Required role:** Any staff role (Superadmin-only sections are marked) · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.4
 
-Every field-level and cross-field rule Admitto enforces, organised by screen. Use this page when a
-save is rejected and you want to know exactly why, or when you're preparing data or configuration
-and want to check the limits up front. A rule marked **frontend only** blocks the Save button before
-a request is even sent; **backend** means the server re-checks it regardless of what the browser
-already validated (so scripted or API access can't skip it); **both** means the same rule is
-enforced twice, once for immediate feedback and once for real.
+Every field-level and cross-field rule Admitto enforces, organised by screen. Use this page when a save is rejected and you want to know exactly why, or when you're preparing data or configuration and want to check the limits up front. A rule marked **frontend only** blocks the Save button before a request is even sent; **backend** means the server re-checks it regardless of what the browser already validated (so scripted or API access can't skip it); **both** means the same rule is enforced twice, once for immediate feedback and once for real.
 
 ## Sign-in and account security
 
@@ -70,11 +65,7 @@ enforced twice, once for immediate feedback and once for real.
 | Sign-in button label | Optional, up to 120 characters |
 | Group → role mapping row | Group name required; role required; the scope type is fixed by the role (Superadmin→instance, Admin→organisation, Operator→event) and a matching scope ID is required for the latter two |
 
-Beyond the form itself: every URL Admitto actually calls (issuer, discovery, JWKS, endpoints) must
-use HTTPS and must not point at a private, loopback, or internal address - unless your Superadmin
-has explicitly allow-listed that host for a LAN identity provider. Saving a provider's role mappings
-always replaces the full list; the request is rejected outright rather than silently deleting your
-mappings if that list is missing. Two identity providers can't share the same issuer.
+Beyond the form itself: every URL Admitto actually calls (issuer, discovery, JWKS, endpoints) must use HTTPS and must not point at a private, loopback, or internal address - unless your Superadmin has explicitly allow-listed that host for a LAN identity provider. Saving a provider's role mappings always replaces the full list; the request is rejected outright rather than silently deleting your mappings if that list is missing. Two identity providers can't share the same issuer.
 
 ### Cloudflare Access setup
 
@@ -124,11 +115,7 @@ See [Identity and SSO](Identity-and-SSO) and [Cloudflare Access - Identity Linki
 | Company, department | Optional, up to 200 characters each |
 | Ticket type | Must exist in the event's current ticket-type catalog - checked again at the moment you save, in case it was deleted in the meantime |
 
-An attendee's email must be unique within the event - a second attendee with the same address is
-rejected ("This email is already registered for this event."). If two staff members edit the same
-attendee at once, the second save is rejected with "Someone else changed this record. Reload and
-try again." rather than silently overwriting the first change. Restoring a revoked attendee
-re-checks the event's capacity limit, the same as adding a brand-new one.
+An attendee's email must be unique within the event - a second attendee with the same address is rejected ("This email is already registered for this event."). If two staff members edit the same attendee at once, the second save is rejected with "Someone else changed this record. Reload and try again." rather than silently overwriting the first change. Restoring a revoked attendee re-checks the event's capacity limit, the same as adding a brand-new one.
 
 ### CSV/XLSX import
 
@@ -144,8 +131,7 @@ re-checks the event's capacity limit, the same as adding a brand-new one.
 | Overwriting only ever updates name, ticket type, company, department, and custom fields - never status, QR code, or token | n/a - by design |
 | The whole import is still capped by the event's capacity, the same as adding attendees one at a time (a Superadmin can override it) | "Import would exceed capacity. {current} existing + {incoming} new = {projected} &gt; {capacity}." |
 
-Every row gets its own pass/fail reason in the preview before you commit - nothing is guessed or
-silently dropped. See [Import File Reference](Import-File-Reference) for the full column reference.
+Every row gets its own pass/fail reason in the preview before you commit - nothing is guessed or silently dropped. See [Import File Reference](Import-File-Reference) for the full column reference.
 
 ### Custom attendee fields (Requirements page)
 
@@ -157,28 +143,15 @@ silently dropped. See [Import File Reference](Import-File-Reference) for the ful
 | Type | Text, select, or yes/no |
 | Select options | At least one required for a select field; up to 20 options, each up to 60 characters |
 
-An event can have up to 20 custom fields. A field currently used as a hint on an Event item can't be
-deleted until you remove it there first. Renaming or removing a select option that attendees have
-already chosen asks you to confirm, naming how many attendees are affected, rather than silently
-changing what they see or blocking you outright. An attendee's answer to a required field can't be
-left blank; a select answer must be one of the configured options; a yes/no answer accepts
-Yes/No/true/false (case-insensitive).
+An event can have up to 20 custom fields. A field currently used as a hint on an Event item can't be deleted until you remove it there first. Renaming or removing a select option that attendees have already chosen asks you to confirm, naming how many attendees are affected, rather than silently changing what they see or blocking you outright. An attendee's answer to a required field can't be left blank; a select answer must be one of the configured options; a yes/no answer accepts Yes/No/true/false (case-insensitive).
 
 ### Event items (Requirements page)
 
-An item's name is required (up to 100 characters); its internal key is derived automatically and
-kept unique. An item currently issued to any attendee (and not yet returned) can't be disabled or
-deleted - return it first. The built-in "Badge" item can never be deleted, only disabled. Turning on
-"Issue badge at entry" (Check-in behaviour tab) is blocked unless the Badge item itself is active
-and set to issue on check-in.
+An item's name is required (up to 100 characters); its internal key is derived automatically and kept unique. An item currently issued to any attendee (and not yet returned) can't be disabled or deleted - return it first. The built-in "Badge" item can never be deleted, only disabled. Turning on "Issue badge at entry" (Check-in behaviour tab) is blocked unless the Badge item itself is active and set to issue on check-in.
 
 ### Bulk attendee operations
 
-Every bulk action (change RSVP status, change ticket type, set company/department) accepts 1 to 500
-attendees at a time. If someone else changes one of the selected attendees at the very same moment,
-that one row is quietly left alone and reported back separately (e.g. "12 attendees set to X (2
-already had it) (1 skipped, changed by someone else just now)") rather than overwriting their change
-or failing the whole batch.
+Every bulk action (change RSVP status, change ticket type, set company/department) accepts 1 to 500 attendees at a time. If someone else changes one of the selected attendees at the very same moment, that one row is quietly left alone and reported back separately (e.g. "12 attendees set to X (2 already had it) (1 skipped, changed by someone else just now)") rather than overwriting their change or failing the whole batch.
 
 ## Event settings
 
@@ -193,21 +166,11 @@ or failing the whole batch.
 | Event hours | 24-hour `HH:MM` format |
 | Event type | One of a fixed list (Conference, Concert, Sports, etc.), or none |
 
-**Capacity is not re-checked when you lower it** - if you reduce an event's capacity below its
-current attendee count, Admitto lets the save go through with no warning. The limit is enforced
-later, when someone tries to *add* a new attendee or commit an import that would exceed it ("Event
-has reached its capacity limit." / "Import would exceed capacity."). Every field on this tab is
-locked once the event is archived ("This event is archived.").
+**Capacity is not re-checked when you lower it** - if you reduce an event's capacity below its current attendee count, Admitto lets the save go through with no warning. The limit is enforced later, when someone tries to *add* a new attendee or commit an import that would exceed it ("Event has reached its capacity limit." / "Import would exceed capacity."). Every field on this tab is locked once the event is archived ("This event is archived.").
 
 ### Wallet (Superadmin only)
 
-Editing anything under Wallet requires Superadmin access, even though an Administrator can edit
-every other Event Settings tab. A field-mapping row needs both a PassCreator field key (letters,
-numbers, underscore, starting with a letter) and a value chosen from a fixed list of attendee/event
-tokens - the editor won't let you pick the same source value on two different rows, and warns before
-saving a row that has one but not the other. **Test connection** translates PassCreator's own
-rejection reasons into plain text (wrong API key, template not found, PassCreator rate-limiting
-you, or a timeout).
+Editing anything under Wallet requires Superadmin access, even though an Administrator can edit every other Event Settings tab. A field-mapping row needs both a PassCreator field key (letters, numbers, underscore, starting with a letter) and a value chosen from a fixed list of attendee/event tokens - the editor won't let you pick the same source value on two different rows, and warns before saving a row that has one but not the other. **Test connection** translates PassCreator's own rejection reasons into plain text (wrong API key, template not found, PassCreator rate-limiting you, or a timeout).
 
 ### Location
 
@@ -233,10 +196,7 @@ If the event already has installed wallet passes, changing a wallet-relevant loc
 
 ### Check-in behaviour
 
-Turning on "Issue badge at entry" is rejected unless the event's badge item actually exists, is
-enabled, and has "Issue on check-in" turned on - fixed with a clear tooltip explaining which of the
-three is missing. Turning off manual lookup for an event takes effect immediately at check-in, not
-just in settings.
+Turning on "Issue badge at entry" is rejected unless the event's badge item actually exists, is enabled, and has "Issue on check-in" turned on - fixed with a clear tooltip explaining which of the three is missing. Turning off manual lookup for an event takes effect immediately at check-in, not just in settings.
 
 ## Communication
 
@@ -249,21 +209,13 @@ just in settings.
 | Template label (when creating one) | Required |
 | Icon / description (template metadata) | Optional, short limits |
 
-Beyond length limits, the template editor checks the actual content as you type (re-validating
-about half a second after you stop):
+Beyond length limits, the template editor checks the actual content as you type (re-validating about half a second after you stop):
 
-- **Only known placeholders** (`{{first_name}}`, `{{ticket_url}}`, and about 20 others, plus that
-  event's own branding-image tokens) are allowed - an unrecognised one is flagged by name.
-- **`{{ticket_url}}` and `{{qr_image_url}}` must both appear somewhere** in the subject or body
-  combined - a template that never actually shows the ticket link or QR code is rejected, even if
-  every placeholder it does use is individually valid.
-- A placeholder written inside an HTML comment, or used unquoted inside an HTML attribute, is
-  rejected - both would silently fail to work in a real mail client.
-- An MJML-format template is compiled and checked for structural errors (invalid attribute, unknown
-  element, wrong nesting, missing title) with a plain-language explanation and the line number.
-  HTML-format templates skip this check.
-- An event can have **up to 10 saved templates**; a new one's internal name must be unique within
-  the event (handled automatically from the label you type).
+- **Only known placeholders** (`{{first_name}}`, `{{ticket_url}}`, and about 20 others, plus that event's own branding-image tokens) are allowed - an unrecognised one is flagged by name.
+- **`{{ticket_url}}` and `{{qr_image_url}}` must both appear somewhere** in the subject or body combined - a template that never actually shows the ticket link or QR code is rejected, even if every placeholder it does use is individually valid.
+- A placeholder written inside an HTML comment, or used unquoted inside an HTML attribute, is rejected - both would silently fail to work in a real mail client.
+- An MJML-format template is compiled and checked for structural errors (invalid attribute, unknown element, wrong nesting, missing title) with a plain-language explanation and the line number. HTML-format templates skip this check.
+- An event can have **up to 10 saved templates**; a new one's internal name must be unique within the event (handled automatically from the label you type).
 
 ### Sending (Communication → Send)
 
@@ -288,45 +240,23 @@ about half a second after you stop):
 | Code not recognised | "This code is not valid for this event. Check the QR or use manual lookup." |
 | Event requires confirmation before admitting | "Attendee found. Confirm check-in below." (not checked in until you explicitly confirm) |
 
-Two near-simultaneous scans of the same ticket can never both succeed - the loser is reported as
-"already checked in", never a duplicate admission. Manual lookup only searches name and email
-(never company or department), is capped at 20 results, and does nothing on an empty search. If
-manual lookup is turned off for an event, both the button and the underlying request are blocked:
-"Manual lookup is disabled for this event. Use QR scan only." All check-in actions from one
-device/session share a combined limit of 120 requests per minute.
+Two near-simultaneous scans of the same ticket can never both succeed - the loser is reported as "already checked in", never a duplicate admission. Manual lookup only searches name and email (never company or department), is capped at 20 results, and does nothing on an empty search. If manual lookup is turned off for an event, both the button and the underlying request are blocked: "Manual lookup is disabled for this event. Use QR scan only." All check-in actions from one device/session share a combined limit of 120 requests per minute.
 
 ### Public ticket page
 
-An invalid or unrecognised ticket link shows "This link is invalid or the page no longer exists."
-A revoked or cancelled ticket shows "This ticket is no longer valid for entry" rather than the
-QR/wallet content. Every response - including error pages - is served with strict caching (never
-cached by a shared computer) and no search-engine indexing.
+An invalid or unrecognised ticket link shows "This link is invalid or the page no longer exists." A revoked or cancelled ticket shows "This ticket is no longer valid for entry" rather than the QR/wallet content. Every response - including error pages - is served with strict caching (never cached by a shared computer) and no search-engine indexing.
 
 ## Wallet actions (Attendee Detail and bulk)
 
-Void, Restore, Push updates, Refresh status, and Delete all require Wallet to actually be configured
-for the event and, except Delete's target existing, a wallet pass to exist on that attendee - each
-gives a specific reason otherwise ("This attendee has no wallet pass to act on.", "Wallet isn't
-configured for this event."). Void, Restore, Push updates, and Delete each require an explicit
-confirmation dialog first; Delete's warns that the action is permanent and that Apple/Google Wallet
-gives no way to remove a pass from someone's phone - only they can do that.
+Void, Restore, Push updates, Refresh status, and Delete all require Wallet to actually be configured for the event and, except Delete's target existing, a wallet pass to exist on that attendee - each gives a specific reason otherwise ("This attendee has no wallet pass to act on.", "Wallet isn't configured for this event."). Void, Restore, Push updates, and Delete each require an explicit confirmation dialog first; Delete's warns that the action is permanent and that Apple/Google Wallet gives no way to remove a pass from someone's phone - only they can do that.
 
-A provider (PassCreator) rejection is always translated to a specific reason - a wrong API key, the
-pass not found, PassCreator rate-limiting the instance, or a timeout - never a bare error. Revoking
-or restoring an attendee's admission status automatically voids or restores their wallet pass to
-match, best-effort, without blocking the attendee save itself if that sync fails. Single-attendee
-wallet actions are limited to 10 per minute per admin/event; bulk wallet actions accept up to 100
-attendees per request, one bulk action at a time per admin/event, and silently skip (not error)
-anyone who has no pass or is already in the target state - reported back as a count, e.g. "3 had no
-pass, or it was already voided."
+A provider (PassCreator) rejection is always translated to a specific reason - a wrong API key, the pass not found, PassCreator rate-limiting the instance, or a timeout - never a bare error. Revoking or restoring an attendee's admission status automatically voids or restores their wallet pass to match, best-effort, without blocking the attendee save itself if that sync fails. Single-attendee wallet actions are limited to 10 per minute per admin/event; bulk wallet actions accept up to 100 attendees per request, one bulk action at a time per admin/event, and silently skip (not error) anyone who has no pass or is already in the target state - reported back as a count, e.g. "3 had no pass, or it was already voided."
 
 ## Organisation settings (Superadmin)
 
 ### Mail transport
 
-The active provider (Microsoft 365 Graph, SMTP, or Power Automate) determines which fields are
-required - for example SMTP needs a host and port, Graph needs a tenant and client ID. Across all
-providers:
+The active provider (Microsoft 365 Graph, SMTP, or Power Automate) determines which fields are required - for example SMTP needs a host and port, Graph needs a tenant and client ID. Across all providers:
 
 | Rule | What you'll see |
 |---|---|
@@ -350,20 +280,11 @@ providers:
 
 ### External services (Weather and Maps)
 
-Every base URL you configure (Open-Meteo, Nominatim, a custom map tile server) is checked the same
-way mail server hosts are: it must be a real, publicly-resolvable address, not a private or internal
-one. An Open-Meteo API key is only required if you're using their paid customer API - the free tier
-doesn't need one. Both the weather provider (MET Norway) and the geocoding provider (Nominatim)
-require a **Support contact email** to be set under General settings before they'll actually work -
-without one, you'll see a banner explaining exactly that.
+Every base URL you configure (Open-Meteo, Nominatim, a custom map tile server) is checked the same way mail server hosts are: it must be a real, publicly-resolvable address, not a private or internal one. An Open-Meteo API key is only required if you're using their paid customer API - the free tier doesn't need one. Both the weather provider (MET Norway) and the geocoding provider (Nominatim) require a **Support contact email** to be set under General settings before they'll actually work - without one, you'll see a banner explaining exactly that.
 
 ### General / Instance URL
 
-The Instance URL must be a real `https://` address with no trailing slash, no query string, and no
-embedded credentials. If it's set by the `BASE_URL` environment variable, the field becomes
-read-only in the UI. If neither the environment variable nor this setting is configured, sending a
-ticket email (or anything else needing an absolute link) fails outright rather than guessing at one:
-"Set the Instance URL in Settings → General before sending ticket emails."
+The Instance URL must be a real `https://` address with no trailing slash, no query string, and no embedded credentials. If it's set by the `BASE_URL` environment variable, the field becomes read-only in the UI. If neither the environment variable nor this setting is configured, sending a ticket email (or anything else needing an absolute link) fails outright rather than guessing at one: "Set the Instance URL in Settings → General before sending ticket emails."
 
 ## Related pages
 

@@ -82,20 +82,14 @@ flowchart LR
   Ingest[External registration source\nplanned, not built] -.-> Core
 ```
 
-**Today:** import, mail delivery, wallet passes, check-in, and export/reporting are all shipped and
-in production use. A self-service external registration/ingest API (a form or third-party system
-submitting attendees directly into Admitto without staff re-keying them) is a roadmap item, not a
-deployed control - mention it to auditors as **planned**, not as existing.
+**Today:** import, mail delivery, wallet passes, check-in, and export/reporting are all shipped and in production use. A self-service external registration/ingest API (a form or third-party system submitting attendees directly into Admitto without staff re-keying them) is a roadmap item, not a deployed control - mention it to auditors as **planned**, not as existing.
 
 Admitto is intended as the **system of record for attendance** after guests are registered in the
 customer process (today, via staff-driven CSV/XLSX import).
 
 ### 3.1 Triggers, actions, and processes
 
-The table below lists every event that causes Admitto to do something, for a reviewer who needs to
-trace cause and effect rather than just the end-to-end shape above. "Automatic" means it runs on a
-schedule or as a direct side effect with no staff action in the moment; every attendee-facing send
-today is staff-triggered, not automatic.
+The table below lists every event that causes Admitto to do something, for a reviewer who needs to trace cause and effect rather than just the end-to-end shape above. "Automatic" means it runs on a schedule or as a direct side effect with no staff action in the moment; every attendee-facing send today is staff-triggered, not automatic.
 
 | Trigger | Actor | Process | Result |
 |---|---|---|---|
@@ -108,9 +102,7 @@ today is staff-triggered, not automatic.
 | Retention window elapses (sessions, trusted devices, security audit log, mail-body snapshots) | Automatic - the worker, on a fixed interval | Purge or nullify the expired rows | Reduces what's retained without staff action; see the Retention table in [DATA-PROTECTION.md](../../DATA-PROTECTION.md) |
 | Export attendees / reports | Staff | Query the database, render CSV/XLSX/PDF | File download; no data leaves the customer's own instance |
 
-There is currently **no date-triggered automation** (for example, an automatic reminder email sent
-N days before an event, or an automatic waitlist promotion) - every attendee-facing action above is
-either a direct staff action or an immediate side effect of one.
+There is currently **no date-triggered automation** (for example, an automatic reminder email sent N days before an event, or an automatic waitlist promotion) - every attendee-facing action above is either a direct staff action or an immediate side effect of one.
 
 ---
 

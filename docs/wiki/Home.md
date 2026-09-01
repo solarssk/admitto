@@ -32,9 +32,7 @@ flowchart TD
     live --> close[Review reports, export, and archive]
 ```
 
-The diagram is a quick overview. The numbered list below describes the same journey in text, and
-who normally does each step - see [Roles and Permissions](Roles-and-Permissions) for exactly what
-each role can and cannot do.
+The diagram is a quick overview. The numbered list below describes the same journey in text, and who normally does each step - see [Roles and Permissions](Roles-and-Permissions) for exactly what each role can and cannot do.
 
 1. **Create the event and check its basic details** (name, date, timezone, venue). *Administrator or Superadmin.*
 2. **Configure ticket types, requirements, and (optionally) Wallet.** Wallet setup itself is Superadmin-only; everything else here is Administrator or Superadmin.
@@ -44,9 +42,7 @@ each role can and cannot do.
 6. **Run check-in on event day.** An Operator scans tickets (or looks an attendee up by name, if manual lookup is allowed for that event) at the door; an Administrator or Superadmin can watch admissions update live from the Overview page without being at the door themselves.
 7. **Review attendance, export reports, and archive the event** once it's over. *Administrator or Superadmin.*
 
-Attendees never sign in to Admitto. They receive a ticket by email, present it (as a QR code, a
-wallet pass, or their name at manual lookup) at the door, and that's their entire interaction with
-the system.
+Attendees never sign in to Admitto. They receive a ticket by email, present it (as a QR code, a wallet pass, or their name at manual lookup) at the door, and that's their entire interaction with the system.
 
 Use the [Reference Hub](Reference-and-Troubleshooting) for file columns, template variables, delivery statuses, and product terms. Use [Help and Troubleshooting](Help-and-Troubleshooting) when a task does not produce the expected result.
 
