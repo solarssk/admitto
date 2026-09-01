@@ -12,8 +12,7 @@ const MAX_CONCURRENT_CHECKIN_STREAMS_PER_EVENT = 3;
  * same as the plain per-actor cap this used before per-event scoping (bot review). */
 const MAX_CONCURRENT_CHECKIN_STREAMS_PER_ACTOR = 12;
 
-const CHECKIN_STREAM_EVENT_SLOT_KEY = "checkinStreamEventSlotKey";
-const CHECKIN_STREAM_ACTOR_SLOT_KEY = "checkinStreamActorSlotKey";
+const CHECKIN_STREAM_SLOT_KEY = "checkinStreamSlotKey";
 
 const activeStreamsByEvent = new Map<string, number>();
 const activeStreamsByActor = new Map<string, number>();
@@ -67,21 +66,20 @@ export function tryAcquireCheckinStreamSlot(c: Context): Response | null {
     return c.json({ error: "too_many_streams" }, 429);
   }
 
-  c.set(CHECKIN_STREAM_EVENT_SLOT_KEY, eventKey);
-  c.set(CHECKIN_STREAM_ACTOR_SLOT_KEY, actorKey);
+  c.set(CHECKIN_STREAM_SLOT_KEY, { eventKey, actorKey });
   return null;
 }
 
-/** Release slot(s) acquired by {@link tryAcquireCheckinStreamSlot} (call on SSE disconnect). */
+/** Release the slot pair acquired by {@link tryAcquireCheckinStreamSlot} (call on SSE disconnect).
+ * Always stored/released as one pair, not two independently-nullable keys - the two are only ever
+ * set together above, so there's no real "only one acquired" state to branch on separately. */
 export function releaseCheckinStreamSlot(c: Context): void {
-  const eventKey = c.get(CHECKIN_STREAM_EVENT_SLOT_KEY) as string | undefined;
-  const actorKey = c.get(CHECKIN_STREAM_ACTOR_SLOT_KEY) as string | undefined;
-  if (!eventKey && !actorKey) return;
+  const slot = c.get(CHECKIN_STREAM_SLOT_KEY) as { eventKey: string; actorKey: string } | undefined;
+  if (!slot) return;
 
-  c.set(CHECKIN_STREAM_EVENT_SLOT_KEY, undefined);
-  c.set(CHECKIN_STREAM_ACTOR_SLOT_KEY, undefined);
-  if (eventKey) releaseSlot(activeStreamsByEvent, eventKey);
-  if (actorKey) releaseSlot(activeStreamsByActor, actorKey);
+  c.set(CHECKIN_STREAM_SLOT_KEY, undefined);
+  releaseSlot(activeStreamsByEvent, slot.eventKey);
+  releaseSlot(activeStreamsByActor, slot.actorKey);
 }
 
 /** Limit parallel long-lived check-in SSE connections per operator. */

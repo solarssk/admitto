@@ -18,6 +18,20 @@ function sessionContext(userId: string) {
   };
 }
 
+function bearerContext() {
+  return async (c: Context, next: Next): Promise<void> => {
+    c.set("checkinAuth", "bearer");
+    await next();
+  };
+}
+
+function anonymousIpContext() {
+  return async (c: Context, next: Next): Promise<void> => {
+    // Neither bearer nor a resolved operator user - the IP-only fallback branch.
+    await next();
+  };
+}
+
 describe("check-in stream concurrency limit", () => {
   it("holds slots until SSE disconnect and blocks a fourth parallel stream", async () => {
     resetCheckinStreamLimitsForTests();
@@ -116,5 +130,70 @@ describe("check-in stream concurrency limit", () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(activeCheckinStreamActorCountForTests("checkin:stream:user:op-actor-cap")).toBe(0);
     resetCheckinStreamLimitsForTests();
+  });
+
+  it("keys a bearer-authenticated stream by IP, not by operator user id", async () => {
+    resetCheckinStreamLimitsForTests();
+    const app = new Hono();
+    app.get(
+      "/events/:eventId/stream",
+      bearerContext(),
+      createCheckinStreamConcurrencyLimit(),
+      (c) =>
+        streamSSE(c, async (stream) => {
+          await new Promise<void>((resolve) => stream.onAbort(resolve));
+        }),
+    );
+
+    const res = await app.request("/events/evt-bearer/stream");
+    expect(res.status).toBe(200);
+    expect(activeCheckinStreamCountForTests("checkin:stream:bearer:ip:unknown:event:evt-bearer")).toBe(1);
+    expect(activeCheckinStreamActorCountForTests("checkin:stream:bearer:ip:unknown")).toBe(1);
+    await res.body?.cancel();
+    resetCheckinStreamLimitsForTests();
+  });
+
+  it("falls back to a plain IP key when neither bearer auth nor an operator user id is present", async () => {
+    resetCheckinStreamLimitsForTests();
+    const app = new Hono();
+    app.get(
+      "/events/:eventId/stream",
+      anonymousIpContext(),
+      createCheckinStreamConcurrencyLimit(),
+      (c) =>
+        streamSSE(c, async (stream) => {
+          await new Promise<void>((resolve) => stream.onAbort(resolve));
+        }),
+    );
+
+    const res = await app.request("/events/evt-anon/stream");
+    expect(res.status).toBe(200);
+    expect(activeCheckinStreamCountForTests("checkin:stream:ip:unknown:event:evt-anon")).toBe(1);
+    expect(activeCheckinStreamActorCountForTests("checkin:stream:ip:unknown")).toBe(1);
+    await res.body?.cancel();
+    resetCheckinStreamLimitsForTests();
+  });
+
+  it("releaseCheckinStreamSlot is a no-op when no slot was ever acquired on this context", async () => {
+    resetCheckinStreamLimitsForTests();
+    const app = new Hono();
+    let releaseThrew = false;
+    app.get("/events/:eventId/noop-release", sessionContext("op-noop"), (c) => {
+      try {
+        // Never went through createCheckinStreamConcurrencyLimit()/tryAcquireCheckinStreamSlot -
+        // e.g. a request that errors out before reaching the limiter. Must not throw or touch
+        // any counters.
+        releaseCheckinStreamSlot(c);
+      } catch {
+        releaseThrew = true;
+      }
+      return c.text("ok");
+    });
+
+    await app.request("/events/evt-noop/noop-release");
+
+    expect(releaseThrew).toBe(false);
+    expect(activeCheckinStreamCountForTests("checkin:stream:user:op-noop:event:evt-noop")).toBe(0);
+    expect(activeCheckinStreamActorCountForTests("checkin:stream:user:op-noop")).toBe(0);
   });
 });

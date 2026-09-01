@@ -63,6 +63,11 @@ describe("probeStreamAuth", () => {
     expect(await probeStreamAuth("evt-1", fetchFn)).toBe("rate_limited");
   });
 
+  it("returns unknown when the fetch itself rejects (network error)", async () => {
+    const fetchFn = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    expect(await probeStreamAuth("evt-1", fetchFn)).toBe("unknown");
+  });
+
   it("still classifies as rate_limited even when cancelling the body after abort rejects (real Response behavior)", async () => {
     // A real (non-mocked) ReadableStream's cancel() can reject with AbortError once the same
     // signal that aborted the fetch is what triggers the cancel - the status must already be
