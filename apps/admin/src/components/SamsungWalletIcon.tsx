@@ -46,21 +46,29 @@ export function SamsungWalletIcon(): React.JSX.Element {
  * Source is a rounded-square app-icon tile (white background + a fixed-blue mark) - only the mark
  * itself is kept here (no background, no fixed color) so it behaves like a monochrome glyph, not
  * a two-tone icon that can't be tinted muted/active/dark-mode the way its Apple/Google neighbors
- * are. Unlike SamsungWalletIcon's own wordmark above, the source's full 512x512 viewBox is kept
- * as-is (not cropped to the mark's bounds) - an app-icon tile is already centered with sensible
- * built-in padding, and a first attempt at tightly cropping it (matching the wordmark's own fix)
- * measurably overcorrected: rendered at the same 1em box, the tight crop filled ~40% of the box
- * with ink versus Tabler's own ti-brand-apple glyph's ~26% (measured via canvas pixel sampling in
- * a real browser, not eyeballed) - it read visibly bolder/larger than its Apple/Google neighbors
- * (PO screenshot, 2026-08-28). The uncropped 512x512 box measures ~26% too, matching Apple's own
- * glyph almost exactly. */
+ * are.
+ *
+ * viewBox is cropped to the mark's own bounding box (getBBox() in a real browser: x:127-385,
+ * y:65-447 of the source 512x512) plus even padding, NOT left at the full uncropped 512x512 box -
+ * an earlier version kept the full box on the theory that its ink-pixel-density (~26% of the box
+ * filled) matched Tabler's own ti-brand-apple glyph (~26% too). That theory turned out wrong: ink
+ * density isn't what a viewer perceives as "size" - bounding-box extent is. Measured the same way
+ * (getBBox() on the real Tabler glyph paths, not eyeballed): ti-brand-apple fills ~71% width / 88%
+ * height of its 24x24 box, ti-brand-google ~83%/83%, but the uncropped Samsung mark only ~50%/74%
+ * of its 512x512 box - visibly smaller than its neighbors despite the matching ink density (PO
+ * screenshot, 2026-09-01). The current crop targets ~83% height-fill (matching Google almost
+ * exactly, close to Apple) - width-fill lands lower (~56%) since the "S" mark itself is narrower
+ * than a full icon shape, same as how a single letterform is narrower than a square icon glyph. A
+ * yet-tighter crop was tried previously (matching the wordmark's own fix) and read visibly bolder
+ * than Apple/Google (PO screenshot, 2026-08-28) - this crop is deliberately short of the mark's
+ * true bounds, not a mistake to tighten further. */
 export function SamsungGlyphIcon({
   className,
   "aria-label": ariaLabel,
 }: Readonly<{ className?: string; "aria-label": string }>): React.JSX.Element {
   return (
     <svg
-      viewBox="0 0 512 512"
+      viewBox="88 26 336 459"
       width="1em"
       height="1em"
       xmlns="http://www.w3.org/2000/svg"

@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from "react";
-import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton } from "@admitto/ui";
+import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton, Tooltip } from "@admitto/ui";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
 import type {
   AttendeeMailStatusFilter,
@@ -269,6 +269,26 @@ interface AttendeeCardProps {
   walletPlatforms: EnabledWalletPlatforms;
 }
 
+/** Icon standing in for a card badge-row's field name (Pass/Attendance/Mail) - a word label at
+ * that width pushed the row's total content past the card's available width often enough that
+ * the last field wrapped to its own line (PO review, 2026-09-01: "Mail" dropping below
+ * "Attendance" on an iPhone-width card). An icon is ~19% narrower than the words it replaces
+ * (measured: 356px text-label total vs 289px icon total for the same three fields) and, as a
+ * bonus, never reads as a continuation of the colored badge text next to it (the "Pass Active"
+ * this replaces) the way same-weight label text could. Same Tooltip+role="img"+aria-label
+ * pattern as WalletColumnCell's own PlatformIcon just above in this file's sibling module. */
+function FieldIcon({ iconClass, label }: Readonly<{ iconClass: string; label: string }>) {
+  return (
+    <Tooltip content={label}>
+      <i // NOSONAR — no native tag conveys "img" semantics for a font-glyph icon
+        role="img"
+        className={`ti ${iconClass} attendees-card__field-icon`}
+        aria-label={label}
+      />
+    </Tooltip>
+  );
+}
+
 /** One attendee as a card — the < 768px equivalent of a table row: same data, same actions. */
 function AttendeeCard({
   row,
@@ -299,15 +319,15 @@ function AttendeeCard({
       )}
       <div className="attendees-card__badges">
         <span className="attendees-card__badge-item">
-          <span className="attendees-card__badge-label">Pass</span>
+          <FieldIcon iconClass="ti-ticket" label="Pass" />
           <PassStatusBadge status={row.status} />
         </span>
         <span className="attendees-card__badge-item">
-          <span className="attendees-card__badge-label">Attendance</span>
+          <FieldIcon iconClass="ti-calendar-event" label="Attendance" />
           <RsvpStatusBadge status={row.rsvp_status} />
         </span>
         <span className="attendees-card__badge-item">
-          <span className="attendees-card__badge-label">Mail</span>
+          <FieldIcon iconClass="ti-mail" label="Mail" />
           <MailStatusBadge status={row.last_mail_status} />
         </span>
       </div>
