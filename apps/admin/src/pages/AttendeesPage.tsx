@@ -366,6 +366,28 @@ async function runBulkAction<T>({
   }
 }
 
+/** Starts (or restarts) polling a wallet_push job for completion, sharing one poll slot via
+ * walletPushPollRef - aborts any previous poll before starting a new one. No-op when jobId is
+ * null (the write didn't actually enqueue anything, e.g. every row was already at the target
+ * value). Shared by every bulk action whose field is wallet-content-relevant (ticket_type,
+ * company, department) - each caller's own poll/toast wiring was otherwise identical enough to
+ * trip SonarCloud's new-code duplication gate (bot review). */
+function startWalletPushPoll(
+  eventId: string,
+  jobId: string | null,
+  walletPushPollRef: RefObject<AbortController | null>,
+  addToast: (message: string, variant?: ToastVariant) => void,
+): void {
+  if (!jobId) return;
+  walletPushPollRef.current?.abort();
+  const ac = new AbortController();
+  walletPushPollRef.current = ac;
+  void pollWalletPushCompletion(eventId, jobId, addToast, { signal: ac.signal }).catch(() => {
+    if (ac.signal.aborted) return;
+    addToast("Could not refresh wallet push status.", "info");
+  });
+}
+
 interface SendTicketsDialogProps {
   open: boolean;
   busy: boolean;
@@ -1451,17 +1473,7 @@ export function AttendeesPage() {
         // wallet-side effect once the background job finishes (never blocks this action; the
         // job can genuinely take minutes for a large selection, rate-limited by PassCreator
         // itself, not by anything Admitto controls).
-        if (eventId && result.walletPushJobId) {
-          walletPushPollRef.current?.abort();
-          const ac = new AbortController();
-          walletPushPollRef.current = ac;
-          void pollWalletPushCompletion(eventId, result.walletPushJobId, addToast, {
-            signal: ac.signal,
-          }).catch(() => {
-            if (ac.signal.aborted) return;
-            addToast("Could not refresh wallet push status.", "info");
-          });
-        }
+        if (eventId) startWalletPushPoll(eventId, result.walletPushJobId, walletPushPollRef, addToast);
       },
     });
   };
@@ -1502,8 +1514,9 @@ export function AttendeesPage() {
    * whose company came from a custom field picks up the new value the same way a single edit
    * would. */
   const handleBulkSetCompanyConfirm = () => {
+    // No `!value` guard here: the Apply button that invokes this is disabled whenever the
+    // trimmed value is empty (BulkTextFieldDialog), so this can never run with an empty value.
     const value = setCompanyValue.trim();
-    if (!value) return;
     return runBulkAction({
       eventId,
       eventIdRef,
@@ -1527,17 +1540,7 @@ export function AttendeesPage() {
         // company is always wallet-content-relevant - a second, later toast reports the
         // wallet-side effect once the background job finishes, same as
         // handleBulkChangeTicketTypeConfirm's own wallet push poll.
-        if (eventId && result.walletPushJobId) {
-          walletPushPollRef.current?.abort();
-          const ac = new AbortController();
-          walletPushPollRef.current = ac;
-          void pollWalletPushCompletion(eventId, result.walletPushJobId, addToast, {
-            signal: ac.signal,
-          }).catch(() => {
-            if (ac.signal.aborted) return;
-            addToast("Could not refresh wallet push status.", "info");
-          });
-        }
+        if (eventId) startWalletPushPoll(eventId, result.walletPushJobId, walletPushPollRef, addToast);
       },
     });
   };
@@ -1545,8 +1548,9 @@ export function AttendeesPage() {
   /** Bulk "Set department" for an explicit subset of selected attendees - same shape as
    * handleBulkSetCompanyConfirm above, for the Department field. */
   const handleBulkSetDepartmentConfirm = () => {
+    // No `!value` guard here: the Apply button that invokes this is disabled whenever the
+    // trimmed value is empty (BulkTextFieldDialog), so this can never run with an empty value.
     const value = setDepartmentValue.trim();
-    if (!value) return;
     return runBulkAction({
       eventId,
       eventIdRef,
@@ -1569,17 +1573,7 @@ export function AttendeesPage() {
         setReloadToken((n) => n + 1);
         // department is always wallet-content-relevant - same wallet push poll as
         // handleBulkSetCompanyConfirm above.
-        if (eventId && result.walletPushJobId) {
-          walletPushPollRef.current?.abort();
-          const ac = new AbortController();
-          walletPushPollRef.current = ac;
-          void pollWalletPushCompletion(eventId, result.walletPushJobId, addToast, {
-            signal: ac.signal,
-          }).catch(() => {
-            if (ac.signal.aborted) return;
-            addToast("Could not refresh wallet push status.", "info");
-          });
-        }
+        if (eventId) startWalletPushPoll(eventId, result.walletPushJobId, walletPushPollRef, addToast);
       },
     });
   };

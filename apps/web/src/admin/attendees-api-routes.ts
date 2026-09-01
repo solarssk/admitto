@@ -2506,9 +2506,11 @@ function computeBulkFieldChange(
       to = logTo;
     },
   );
-  // customData is always set by the call above once next !== current (guaranteed by the early
-  // return above) - the `?? {}` only satisfies the type checker, never actually taken.
-  return { to, from, customData: customData ?? {} };
+  // Non-null assertion, not a `?? {}` fallback: applyMirroredScalarPatchField always calls
+  // touchCustomData() once next !== current, and the early return above already guarantees that
+  // (target !== current, so next can never equal current inside the call) - a fallback here would
+  // be dead code for a state this function can't actually reach.
+  return { to, from, customData: customData! };
 }
 
 /** company/department's own quoted column identifier for the batched UPDATE below - the only

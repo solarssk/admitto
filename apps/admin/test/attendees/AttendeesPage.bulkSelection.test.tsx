@@ -2399,6 +2399,51 @@ describe("AttendeesPage bulk Set company / Set department", () => {
     expect(pollWalletPushCompletion).not.toHaveBeenCalled();
   });
 
+  it("does not toast a wallet push poll failure once the operator has navigated to a different event mid-poll", async () => {
+    let rejectPoll!: (err: unknown) => void;
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    bulkSetAttendeeField.mockResolvedValue({
+      updatedCount: 2,
+      alreadySetCount: 0,
+      conflictCount: 0,
+      walletPushJobId: "job-set-field",
+    });
+    pollWalletPushCompletion.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectPoll = reject;
+      }),
+    );
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
+    await waitFor(() => expect(bulkBar().getByText("2")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+    const dialog = clickMenuItemAndArmDialog(/Set company/, "Set company");
+    fireEvent.change(within(dialog).getByLabelText("Company"), { target: { value: "Acme Inc." } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => expect(pollWalletPushCompletion).toHaveBeenCalled());
+
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+
+    await act(async () => {
+      rejectPoll(new Error("network down"));
+      await Promise.resolve();
+    });
+
+    expect(addToast).not.toHaveBeenCalledWith("Could not refresh wallet push status.", "info");
+  });
+
   it("keeps Apply disabled until a non-empty, non-whitespace value is typed", async () => {
     await selectTwoRowsAndOpenMenu();
     const dialog = clickMenuItemAndArmDialog(/Set company/, "Set company");
