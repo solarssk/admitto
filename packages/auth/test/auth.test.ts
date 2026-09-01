@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { encryptToString } from "@admitto/crypto";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { hashPassword, verifyPassword } from "../src/password.js";
@@ -502,6 +503,46 @@ describe("authorization", () => {
     expect(fullPin?.map_zoom).toBe(14);
 
     await prisma.eventLocation.deleteMany({ where: { event_id: EVENT_A } });
+  });
+
+  it("listAdminEvents — wallet_configured reflects template id + a decryptable API key, never the raw values", async () => {
+    const unconfigured = (await listAdminEvents(prisma, USER_SUPER)).find((e) => e.id === EVENT_A);
+    expect(unconfigured?.wallet_configured).toBe(false);
+
+    await prisma.event.update({
+      where: { id: EVENT_A },
+      data: { wallet_template_id: "tmpl-auth-test", wallet_api_key_enc: encryptToString("real-api-key") },
+    });
+    try {
+      const configured = (await listAdminEvents(prisma, USER_SUPER)).find((e) => e.id === EVENT_A);
+      expect(configured?.wallet_configured).toBe(true);
+      expect(configured).not.toHaveProperty("wallet_template_id");
+      expect(configured).not.toHaveProperty("wallet_api_key_enc");
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_A },
+        data: { wallet_template_id: null, wallet_api_key_enc: null },
+      });
+    }
+  });
+
+  it("listAdminEvents — wallet_configured is false when wallet_api_key_enc can't be decrypted (bot review)", async () => {
+    // A non-empty template id + a non-empty wallet_api_key_enc string aren't enough on their own -
+    // this simulates the ciphertext surviving a lost/rotated ENCRYPTION_KEY, the same undecryptable
+    // state resolveEventWalletProvider would deterministically 409 on for any real wallet action.
+    await prisma.event.update({
+      where: { id: EVENT_A },
+      data: { wallet_template_id: "tmpl-auth-test", wallet_api_key_enc: "not-real-ciphertext" },
+    });
+    try {
+      const undecryptable = (await listAdminEvents(prisma, USER_SUPER)).find((e) => e.id === EVENT_A);
+      expect(undecryptable?.wallet_configured).toBe(false);
+    } finally {
+      await prisma.event.update({
+        where: { id: EVENT_A },
+        data: { wallet_template_id: null, wallet_api_key_enc: null },
+      });
+    }
   });
 });
 

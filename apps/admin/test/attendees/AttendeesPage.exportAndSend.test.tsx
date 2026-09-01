@@ -3,9 +3,10 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
-import { mockMatchMedia } from "../test-utils.js";
+import { getTooltipText, mockMatchMedia } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
+import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 
 const fetchEventAttendees = vi.fn();
 const exportAttendees = vi.fn();
@@ -138,21 +139,31 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   sendEventBulk: vi.fn(),
 }));
 
+// Wallet fields default to unset below (walletPlatforms.any resolves false), hiding every
+// wallet-scoped header item without per-test setup - the "Push updates" hidden-when-misconfigured
+// test below is the sole exception and overrides this default for itself, restored in beforeEach
+// (this file's own afterEach doesn't clear mock implementations). vi.hoisted so the factory below
+// (itself hoisted above this file's imports) can reference it.
+const { useOutletContextMock, defaultOutletContext } = vi.hoisted(() => {
+  const defaultOutletContext = {
+    event: {
+      id: "evt-1",
+      title: "Demo",
+      timezone: "UTC",
+      date: "2026-07-01",
+      location: null,
+      attendee_count: 1,
+      archived_at: null,
+    },
+  };
+  return { useOutletContextMock: vi.fn(() => defaultOutletContext), defaultOutletContext };
+});
+
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
   return {
     ...actual,
-    useOutletContext: () => ({
-      event: {
-        id: "evt-1",
-        title: "Demo",
-        timezone: "UTC",
-        date: "2026-07-01",
-        location: null,
-        attendee_count: 1,
-        archived_at: null,
-      },
-    }),
+    useOutletContext: () => useOutletContextMock(),
   };
 });
 
@@ -186,6 +197,7 @@ beforeEach(() => {
   setListItems([sampleRow]);
   mockFetchEventAttendees();
   mockMatchMedia(true);
+  useOutletContextMock.mockReturnValue(defaultOutletContext);
 });
 
 afterEach(() => {
@@ -398,6 +410,44 @@ describe("AttendeesPage export and header Send tickets", () => {
     await waitFor(() => {
       expect(within(dialog).getByText(/Send failed/)).toBeTruthy();
     });
+  });
+
+  it("hides the header 'Push updates' item when wallet platforms are enabled but not configured (bot review)", async () => {
+    useOutletContextMock.mockReturnValue({
+      event: {
+        ...defaultOutletContext.event,
+        wallet_enabled: true,
+        wallet_apple_enabled: true,
+        wallet_google_enabled: true,
+        wallet_configured: false,
+      },
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "More actions" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(screen.queryByRole("menuitem", { name: /^Push updates/ })).toBeNull();
+  });
+
+  it("shows the archived tooltip on the header 'Push updates' item for an archived, wallet-configured event", async () => {
+    useOutletContextMock.mockReturnValue({
+      event: {
+        ...defaultOutletContext.event,
+        archived_at: "2026-01-01T00:00:00.000Z",
+        wallet_enabled: true,
+        wallet_apple_enabled: true,
+        wallet_google_enabled: true,
+        wallet_configured: true,
+      },
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "More actions" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    const pushUpdatesItem = screen.getByRole("menuitem", { name: /^Push updates/ });
+    expect(getTooltipText(pushUpdatesItem)).toBe(ARCHIVED_ACTION_TOOLTIP);
   });
 
   it("hides the header 'Refresh status' wallet item when the event has no wallet platform configured", async () => {

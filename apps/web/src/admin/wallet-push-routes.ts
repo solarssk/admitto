@@ -6,7 +6,7 @@
  */
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
-import { readWalletPushRequest, type WalletPushRequest } from "@admitto/tickets";
+import { readWalletPushRequest, resolveEventWalletProvider, type WalletPushRequest } from "@admitto/tickets";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
@@ -35,7 +35,7 @@ type WalletPushResultJson = {
  * WalletPushRequest - the history row still renders, just without this detail. */
 export type WalletPushHistoryScope =
   | { kind: "attendee_ids"; count: number }
-  | { kind: "event_wide"; reason: "location" | "settings" | null };
+  | { kind: "event_wide"; reason: "location" | "settings" | "manual" | null };
 
 /** Re-validates the stored request via the same parser the drain worker itself trusts
  * (packages/tickets), rather than the loose WalletPushResultJson cast below - a single
@@ -92,8 +92,16 @@ export async function enqueueWalletPushJob(
  * that one request kind (via a JSON-path filter on result_json.request.kind) so an
  * attendee_ids-kind job (e.g. from a bulk ticket-type change, covering only its own selection)
  * never gets mistaken for coverage of an event-wide push and suppresses one that's actually
- * needed (bot review). */
-async function findPendingEventWideWalletPushJob(db: PrismaClient, eventId: string): Promise<string | null> {
+ * needed (bot review). Returns status alongside the id - enqueueEventWideWalletPushJob's callers
+ * need to tell a job that hasn't started yet (safe to coalesce with; the worker will still read
+ * current data) from one already running (may have already read its target set, so a manual
+ * click coalescing with it silently would refresh nothing the operator's click asked for). Also
+ * returns the job's own currently-stored reason, so a manual click that coalesces with a still-
+ * pending automatic job can upgrade it (bot review: see enqueueEventWideWalletPushJob below). */
+async function findPendingEventWideWalletPushJob(
+  db: PrismaClient,
+  eventId: string,
+): Promise<{ id: string; status: string; reason: "location" | "settings" | "manual" | null } | null> {
   const job = await db.adminJob.findFirst({
     where: {
       event_id: eventId,
@@ -101,9 +109,12 @@ async function findPendingEventWideWalletPushJob(db: PrismaClient, eventId: stri
       status: { in: ["pending", "running"] },
       result_json: { path: ["request", "kind"], equals: "event_wide" },
     },
-    select: { id: true },
+    select: { id: true, status: true, result_json: true },
   });
-  return job?.id ?? null;
+  if (!job) return null;
+  const request = readWalletPushRequest(job);
+  const reason = request?.kind === "event_wide" ? (request.reason ?? null) : null;
+  return { id: job.id, status: job.status, reason };
 }
 
 /** Enqueues a wallet_push job for every already-issued active pass under the event - event
@@ -127,26 +138,84 @@ async function findPendingEventWideWalletPushJob(db: PrismaClient, eventId: stri
  * (type=wallet_push, kind=event_wide, status pending/running) - see the migration named for it.
  * A P2002 from that index means this call lost the race; fetch and return whichever job won it
  * instead of failing the caller's save over what is, from the caller's perspective, already a
- * queued push. */
+ * queued push.
+ *
+ * alreadyRunning tells the caller whether the returned job was already running (vs. merely
+ * pending, or freshly created) at the moment this resolved - the automatic settings/location
+ * triggers ignore it (self-heals on the next qualifying save either way), but the manual header
+ * trigger uses it to tell the operator their click didn't queue a fresh push, instead of silently
+ * reporting success for a job that may already be past reading their latest change (bot review).
+ *
+ * A manual click that coalesces with a still-*pending* automatic (settings/location) job would
+ * otherwise vanish from the operator's perspective: the click reports success, but the job's own
+ * stored reason keeps showing whichever save queued it first, so the history list never reflects
+ * that a manual push was ever requested (bot review). `reason` is display-only (see
+ * WalletPushRequest's own docstring in packages/tickets - the drain worker never reads it and
+ * both event_wide triggers resolve the same target set regardless), so upgrading it in place is
+ * safe - best-effort and scoped to status still being "pending" at write time (not just at the
+ * read above) so a worker that claims the job in between isn't racing this write and having its
+ * own final result_json (reissued/skipped/errored) clobbered; losing that race just leaves the
+ * job's reason as-is, same self-heals-on-next-occurrence tradeoff already accepted elsewhere in
+ * this file. Only upgrades toward "manual", never away from it - an automatic save coalescing
+ * with an existing manual pending job doesn't call this branch at all (reason !== "manual"). */
 export async function enqueueEventWideWalletPushJob(
   db: PrismaClient,
   c: Context,
   eventId: string,
   organizationId: string,
-  reason?: "location" | "settings",
-): Promise<string> {
-  const alreadyQueued = await findPendingEventWideWalletPushJob(db, eventId);
-  if (alreadyQueued) return alreadyQueued;
+  reason?: "location" | "settings" | "manual",
+): Promise<{ jobId: string; alreadyRunning: boolean }> {
+  const existing = await findPendingEventWideWalletPushJob(db, eventId);
+  if (existing) {
+    if (reason === "manual" && existing.status === "pending" && existing.reason !== "manual") {
+      await db.adminJob.updateMany({
+        where: { id: existing.id, status: "pending" },
+        data: { result_json: { request: { kind: "event_wide", eventId, reason: "manual" } } },
+      });
+    }
+    return { jobId: existing.id, alreadyRunning: existing.status === "running" };
+  }
 
   try {
-    return await createWalletPushJob(db, c, eventId, organizationId, { kind: "event_wide", eventId, reason });
+    const jobId = await createWalletPushJob(db, c, eventId, organizationId, { kind: "event_wide", eventId, reason });
+    return { jobId, alreadyRunning: false };
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       const winner = await findPendingEventWideWalletPushJob(db, eventId);
-      if (winner) return winner;
+      if (winner) return { jobId: winner.id, alreadyRunning: winner.status === "running" };
     }
     throw err;
   }
+}
+
+/** POST /api/admin/events/:eventId/wallet-push - manual, operator-triggered event-wide push, from
+ * the Attendees header's "More actions" menu. Same target set and job as the automatic
+ * settings/location-save triggers (enqueueEventWideWalletPushJob above), just with an explicit
+ * click instead of a wallet-relevant field actually changing - reason: "manual" distinguishes it
+ * in the history list. Guarded on the event actually having wallet configured (unlike the
+ * automatic triggers, which are only ever called after already checking wallet_enabled/
+ * template_id/api_key themselves) - same resolveEventWalletProvider check the bulk wallet-action
+ * routes already use. */
+export async function handleTriggerEventWideWalletPush(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const event = await db.event.findUnique({ where: { id: eventId }, select: { organization_id: true } });
+  if (!event) return c.json({ error: "not_found" }, 404);
+
+  const provider = await resolveEventWalletProvider(db, eventId);
+  if (!provider) return c.json({ error: "wallet_not_configured" }, 409);
+
+  const result = await enqueueEventWideWalletPushJob(db, c, eventId, event.organization_id, "manual");
+  c.header("Cache-Control", "no-store");
+  if (result.alreadyRunning) {
+    return c.json({ error: "wallet_push_already_running", jobId: result.jobId }, 409);
+  }
+  return c.json({ jobId: result.jobId });
 }
 
 /** GET /api/admin/events/:eventId/wallet-push/jobs/:jobId */

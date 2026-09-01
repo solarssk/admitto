@@ -54,7 +54,7 @@ export type DrainWalletPushJobsResult = {
  * triggers resolve targets identically regardless of which field actually changed. */
 export type WalletPushRequest =
   | { kind: "attendee_ids"; eventId: string; attendeeIds: string[] }
-  | { kind: "event_wide"; eventId: string; reason?: "location" | "settings" };
+  | { kind: "event_wide"; eventId: string; reason?: "location" | "settings" | "manual" };
 
 type ClaimedWalletPushJob = NonNullable<Awaited<ReturnType<typeof claimNextAdminJob>>>;
 
@@ -74,7 +74,8 @@ export function readWalletPushRequest(job: { result_json: unknown }): WalletPush
   const req = request as Record<string, unknown>;
   if (typeof req.eventId !== "string" || !req.eventId) return null;
   if (req.kind === "event_wide") {
-    const reason = req.reason === "location" || req.reason === "settings" ? req.reason : undefined;
+    const reason =
+      req.reason === "location" || req.reason === "settings" || req.reason === "manual" ? req.reason : undefined;
     return { kind: "event_wide", eventId: req.eventId, reason };
   }
   if (req.kind !== "attendee_ids") return null;

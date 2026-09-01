@@ -32,6 +32,7 @@ import {
   fetchEventItems,
   fetchTicketTypes,
   sendEventBulk,
+  triggerEventWideWalletPush,
   triggerEventWideWalletRefreshStatus,
 } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -739,6 +740,13 @@ interface HeaderMoreMenuProps {
   exportingFormat: ExportFormat | null;
   onExport: (format: ExportFormat) => void;
   walletPlatforms: EnabledWalletPlatforms;
+  /** Whether the event actually has a wallet template + decryptable API key - distinct from
+   * walletPlatforms.any (the platform toggles), which can be true with nothing configured yet.
+   * Gates "Push updates" alongside walletPlatforms.any so the item isn't offered when every click
+   * would deterministically 409 wallet_not_configured (bot review). */
+  walletConfigured: boolean;
+  onTriggerEventWidePush: () => void;
+  eventWidePushBusy: boolean;
   onTriggerEventWideRefreshStatus: () => void;
   eventWideRefreshStatusBusy: boolean;
 }
@@ -763,6 +771,9 @@ function HeaderMoreMenu({
   exportingFormat,
   onExport,
   walletPlatforms,
+  walletConfigured,
+  onTriggerEventWidePush,
+  eventWidePushBusy,
   onTriggerEventWideRefreshStatus,
   eventWideRefreshStatusBusy,
 }: Readonly<HeaderMoreMenuProps>) {
@@ -809,6 +820,22 @@ function HeaderMoreMenu({
               onSendTickets();
             }}
           />
+          {walletPlatforms.any && walletConfigured && (
+            <>
+              <hr className="more-actions-menu__divider" />
+              <MoreActionsMenuItem
+                icon="refresh-dot"
+                label={eventWidePushBusy ? "Pushing updates…" : "Push updates"}
+                hint="Push the latest details to every installed wallet pass"
+                disabled={archived || eventWidePushBusy}
+                tooltip={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
+                onClick={() => {
+                  setOpen(false);
+                  onTriggerEventWidePush();
+                }}
+              />
+            </>
+          )}
           {walletPlatforms.any && (
             <>
               <hr className="more-actions-menu__divider" />
@@ -1051,6 +1078,9 @@ export function AttendeesPage() {
   const [bulkDeleteWalletBusy, setBulkDeleteWalletBusy] = useState(false);
   const [bulkDeleteWalletConfirmOpen, setBulkDeleteWalletConfirmOpen] = useState(false);
   const [bulkDeleteWalletError, setBulkDeleteWalletError] = useState<string | null>(null);
+  const [eventWidePushBusy, setEventWidePushBusy] = useState(false);
+  const [eventWidePushConfirmOpen, setEventWidePushConfirmOpen] = useState(false);
+  const [eventWidePushError, setEventWidePushError] = useState<string | null>(null);
   const [eventWideRefreshStatusBusy, setEventWideRefreshStatusBusy] = useState(false);
   const [eventWideRefreshStatusConfirmOpen, setEventWideRefreshStatusConfirmOpen] = useState(false);
   const [eventWideRefreshStatusError, setEventWideRefreshStatusError] = useState<string | null>(null);
@@ -1253,6 +1283,46 @@ export function AttendeesPage() {
       }
     } finally {
       setSendBusy(false);
+    }
+  };
+
+  /** Header "Push updates" (More actions) - enqueues the same async wallet_push job the
+   * automatic settings/location-save triggers use, but for an explicit operator click
+   * (reason: "manual"). Not selection-scoped, unlike the bulk bar's own "Push updates" - every
+   * already-issued active pass under the event is a target, resolved by the job itself. Guards
+   * its success/error side effects against the operator navigating to a different event before
+   * the request resolves, same isStillOnEvent pattern as handleTriggerEventWideRefreshStatus
+   * (CodeRabbit review) - busy cleanup stays unconditional. */
+  const handleTriggerEventWidePush = async () => {
+    if (!eventId) return;
+    const initiatingEventId = eventId;
+    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
+    setEventWidePushBusy(true);
+    setEventWidePushError(null);
+    try {
+      const result = await triggerEventWideWalletPush(initiatingEventId);
+      if (!isStillOnEvent()) return;
+      setEventWidePushConfirmOpen(false);
+      addToast("Push queued - you'll see a summary once it finishes.", "info");
+      walletPushPollRef.current?.abort();
+      const ac = new AbortController();
+      walletPushPollRef.current = ac;
+      void pollWalletPushCompletion(initiatingEventId, result.jobId, addToast, { signal: ac.signal }).catch(() => {
+        if (ac.signal.aborted) return;
+        addToast("Could not refresh wallet push status.", "info");
+      });
+    } catch (err) {
+      if (isStillOnEvent()) {
+        reportBulkActionError(err, {
+          reportApiError,
+          setError: setEventWidePushError,
+          addToast,
+          apiErrorFallback: "Push failed.",
+          genericFallback: "Failed to push updates.",
+        });
+      }
+    } finally {
+      setEventWidePushBusy(false);
     }
   };
 
@@ -1862,6 +1932,12 @@ export function AttendeesPage() {
               exportingFormat={exportingFormat}
               onExport={handleExport}
               walletPlatforms={walletPlatforms}
+              walletConfigured={event.wallet_configured}
+              onTriggerEventWidePush={() => {
+                setEventWidePushError(null);
+                setEventWidePushConfirmOpen(true);
+              }}
+              eventWidePushBusy={eventWidePushBusy}
               onTriggerEventWideRefreshStatus={() => {
                 setEventWideRefreshStatusError(null);
                 setEventWideRefreshStatusConfirmOpen(true);
@@ -2104,6 +2180,23 @@ export function AttendeesPage() {
         onConfirm={() => void handleSendTicketsConfirm()}
         onClose={() => {
           if (!sendBusy) setSendTicketsOpen(false);
+        }}
+      />
+
+      <ConfirmDialog
+        open={eventWidePushConfirmOpen}
+        title="Push updates to every installed wallet pass?"
+        message="Pushes each attendee's current name, ticket type, and event details to their already-installed wallet pass, across the whole event. Attendees with no pass are left untouched."
+        errorMessage={eventWidePushError}
+        confirmLabel="Push updates"
+        confirmVariant="primary"
+        loading={eventWidePushBusy}
+        onConfirm={() => void handleTriggerEventWidePush()}
+        onCancel={() => {
+          if (!eventWidePushBusy) {
+            setEventWidePushConfirmOpen(false);
+            setEventWidePushError(null);
+          }
         }}
       />
 

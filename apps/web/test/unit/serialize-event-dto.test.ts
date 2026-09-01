@@ -30,6 +30,7 @@ const baseRow = {
   wallet_apple_enabled: true,
   wallet_google_enabled: true,
   wallet_samsung_enabled: true,
+  wallet_configured: true,
 };
 
 function setMaps(tiles: Partial<ReturnType<typeof defaultMapTileConfig>> = {}) {
@@ -92,6 +93,11 @@ describe("serializeEventDto — has_coordinates / map_preview_path", () => {
     expect(dto.wallet_apple_enabled).toBe(false);
     expect(dto.wallet_google_enabled).toBe(true);
     expect(dto.wallet_samsung_enabled).toBe(false);
+  });
+
+  it("passes through wallet_configured", () => {
+    expect(serializeEventDto({ ...baseRow, wallet_configured: true }).wallet_configured).toBe(true);
+    expect(serializeEventDto({ ...baseRow, wallet_configured: false }).wallet_configured).toBe(false);
   });
 
   it("builds a cache-busting list preview path when maps are enabled and a pin exists", () => {
@@ -166,6 +172,7 @@ describe("omitWalletSettings", () => {
     expect(Object.hasOwn(stripped, "wallet_apple_enabled")).toBe(false);
     expect(Object.hasOwn(stripped, "wallet_google_enabled")).toBe(false);
     expect(Object.hasOwn(stripped, "wallet_samsung_enabled")).toBe(false);
+    expect(Object.hasOwn(stripped, "wallet_configured")).toBe(false);
     expect(stripped.id).toBe(dto.id);
     expect(stripped.attendee_count).toBe(3);
   });

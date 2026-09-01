@@ -1,5 +1,6 @@
 import type { PrismaClient, Prisma } from "@admitto/db";
 import { hasScope } from "@admitto/db";
+import { decryptFromString } from "@admitto/crypto";
 
 /** High-level permission names used by HTTP middleware and future admin UI. */
 export type AuthCapability = "checkin" | "manageEvent" | "manageInstance";
@@ -150,6 +151,13 @@ export interface EventSummary {
   wallet_apple_enabled: boolean;
   wallet_google_enabled: boolean;
   wallet_samsung_enabled: boolean;
+  /** True once the event has both a wallet template and a decryptable provider API key - the
+   * same check resolveEventWalletProvider (packages/tickets) makes before any wallet action can
+   * actually succeed. Distinct from wallet_*_enabled above (the platform toggles, which can be on
+   * with nothing configured yet) - admin surfaces that trigger a wallet action need this to avoid
+   * offering a control that's guaranteed to 409 (bot review). Never the raw template id or
+   * encrypted API key themselves - see toEventSummary below. */
+  wallet_configured: boolean;
 }
 
 const eventSelect = {
@@ -174,6 +182,8 @@ const eventSelect = {
   wallet_apple_enabled: true,
   wallet_google_enabled: true,
   wallet_samsung_enabled: true,
+  wallet_template_id: true,
+  wallet_api_key_enc: true,
 } as const;
 
 /** Maps the raw `eventSelect` row (which has `location_details.venue_name`, a relation) to the
@@ -203,11 +213,31 @@ export function locationPinFields(
   };
 }
 
+/** Same decryptability check resolveWalletProvider (packages/wallet) makes before constructing a
+ * provider - a template id and a non-empty ciphertext string aren't enough on their own, since a
+ * lost/rotated ENCRYPTION_KEY leaves wallet_api_key_enc non-empty but permanently undecryptable,
+ * and resolveEventWalletProvider would then deterministically 409 on any wallet action even
+ * though this naive non-emptiness check reported wallet_configured: true (bot review). Doesn't
+ * gate on wallet_enabled - that's already its own separate EventSummary field. */
+function isWalletConfigured(templateId: string | null, apiKeyEnc: string | null): boolean {
+  if (!templateId || !apiKeyEnc) return false;
+  try {
+    decryptFromString(apiKeyEnc);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function toEventSummary(
   row: Prisma.EventGetPayload<{ select: typeof eventSelect }>,
 ): EventSummary {
-  const { location_details, ...rest } = row;
-  return { ...rest, ...locationPinFields(location_details) };
+  const { location_details, wallet_template_id, wallet_api_key_enc, ...rest } = row;
+  return {
+    ...rest,
+    ...locationPinFields(location_details),
+    wallet_configured: isWalletConfigured(wallet_template_id, wallet_api_key_enc),
+  };
 }
 
 /** Events where user has check-in capability (matches canPerformCheckIn). Excludes archived events — archiving an event ends check-in for it, same as admin mutating APIs. */

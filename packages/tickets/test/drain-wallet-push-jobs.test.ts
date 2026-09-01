@@ -428,6 +428,24 @@ describe("drainWalletPushJobs", () => {
       });
     });
 
+    it("also round-trips the 'manual' reason (operator-triggered push from the Attendees header)", async () => {
+      vi.mocked(claimNextAdminJob).mockResolvedValueOnce(
+        baseJob({
+          result_json: { request: { kind: "event_wide", eventId: "evt-1", reason: "manual" } },
+        }) as never,
+      );
+      vi.mocked(reissueOneWalletPass).mockResolvedValueOnce("reissued");
+
+      await drainWalletPushJobs(db as never);
+
+      const finalCall = db.adminJob.update.mock.calls.find(
+        (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "succeeded",
+      );
+      expect(finalCall![0].data.result_json).toMatchObject({
+        request: { kind: "event_wide", eventId: "evt-1", reason: "manual" },
+      });
+    });
+
     it("still succeeds with an all-zero tally when the event has no active wallet passes at all", async () => {
       vi.mocked(claimNextAdminJob).mockResolvedValueOnce(
         baseJob({ result_json: { request: { kind: "event_wide", eventId: "evt-1" } } }) as never,

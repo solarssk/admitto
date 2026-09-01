@@ -23,6 +23,7 @@ import {
   handleRefreshAttendeeWalletStatus,
 } from "../../src/admin/attendees-api-routes.js";
 import { WALLET_MESSAGE_SEND_BODY_MAX_BYTES } from "../../src/admin/wallet-message-routes.js";
+import { handleTriggerEventWideWalletPush } from "../../src/admin/wallet-push-routes.js";
 import { handleTriggerEventWideWalletRefreshStatus } from "../../src/admin/wallet-refresh-status-routes.js";
 import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
@@ -2383,6 +2384,158 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(body).toEqual({ deleted: 1, skipped: 0, errored: 1 });
       const failRow = await prisma.walletPass.findUnique({ where: { attendee_id: failId } });
       expect(failRow).not.toBeNull();
+    });
+  });
+
+  describe("POST /api/admin/events/:eventId/wallet-push (manual event-wide trigger)", () => {
+    afterEach(async () => {
+      await prisma.adminJob.deleteMany({ where: { type: "wallet_push", event_id: WALLET_ACTION_EVENT } });
+    });
+
+    function postManualPush(eventId: string) {
+      return app.request(`/api/admin/events/${eventId}/wallet-push`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: "{}",
+      });
+    }
+
+    it("enqueues an event-wide wallet_push job with reason 'manual' and returns its id", async () => {
+      const res = await postManualPush(WALLET_ACTION_EVENT);
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { jobId: string };
+      expect(body.jobId).toBeTruthy();
+
+      const job = await prisma.adminJob.findUnique({ where: { id: body.jobId } });
+      expect(job?.type).toBe("wallet_push");
+      expect(job?.status).toBe("pending");
+      expect(job?.result_json).toMatchObject({
+        request: { kind: "event_wide", eventId: WALLET_ACTION_EVENT, reason: "manual" },
+      });
+    });
+
+    it("reuses an already-pending event-wide job instead of creating a second one", async () => {
+      const first = await postManualPush(WALLET_ACTION_EVENT);
+      const firstBody = (await first.json()) as { jobId: string };
+
+      const second = await postManualPush(WALLET_ACTION_EVENT);
+      const secondBody = (await second.json()) as { jobId: string };
+
+      expect(second.status).toBe(200);
+      expect(secondBody.jobId).toBe(firstBody.jobId);
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_ACTION_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(1);
+    });
+
+    it("returns 409 without silently coalescing when an event-wide job is already running (bot review)", async () => {
+      const running = await prisma.adminJob.create({
+        data: {
+          type: "wallet_push",
+          status: "running",
+          organization_id: ORG_A,
+          event_id: WALLET_ACTION_EVENT,
+          result_json: { request: { kind: "event_wide", eventId: WALLET_ACTION_EVENT, reason: "settings" } },
+        },
+      });
+
+      const res = await postManualPush(WALLET_ACTION_EVENT);
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "wallet_push_already_running", jobId: running.id });
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_ACTION_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(1);
+      // A running job may have already read its target set (or even be mid-write of its own final
+      // result_json) - the reason-upgrade below only ever applies to a still-pending job, never one
+      // already running, so this one's original reason must survive untouched.
+      const after = await prisma.adminJob.findUniqueOrThrow({ where: { id: running.id } });
+      expect(after.result_json).toMatchObject({
+        request: { kind: "event_wide", eventId: WALLET_ACTION_EVENT, reason: "settings" },
+      });
+    });
+
+    it("upgrades a still-pending automatic job's reason to 'manual' instead of leaving the operator's click invisible in history (bot review)", async () => {
+      const pending = await prisma.adminJob.create({
+        data: {
+          type: "wallet_push",
+          status: "pending",
+          organization_id: ORG_A,
+          event_id: WALLET_ACTION_EVENT,
+          result_json: { request: { kind: "event_wide", eventId: WALLET_ACTION_EVENT, reason: "settings" } },
+        },
+      });
+
+      const res = await postManualPush(WALLET_ACTION_EVENT);
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { jobId: string };
+      expect(body.jobId).toBe(pending.id);
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_ACTION_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(1);
+      const after = await prisma.adminJob.findUniqueOrThrow({ where: { id: pending.id } });
+      expect(after.status).toBe("pending");
+      expect(after.result_json).toMatchObject({
+        request: { kind: "event_wide", eventId: WALLET_ACTION_EVENT, reason: "manual" },
+      });
+    });
+
+    it("does not touch a pending job that's already reason 'manual' from an earlier manual click", async () => {
+      const pending = await prisma.adminJob.create({
+        data: {
+          type: "wallet_push",
+          status: "pending",
+          organization_id: ORG_A,
+          event_id: WALLET_ACTION_EVENT,
+          result_json: { request: { kind: "event_wide", eventId: WALLET_ACTION_EVENT, reason: "manual" } },
+        },
+      });
+      const updateSpy = vi.spyOn(prisma.adminJob, "updateMany");
+
+      const res = await postManualPush(WALLET_ACTION_EVENT);
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { jobId: string };
+      expect(body.jobId).toBe(pending.id);
+      expect(updateSpy).not.toHaveBeenCalled();
+      updateSpy.mockRestore();
+    });
+
+    it("returns 409 without enqueuing when the event's wallet isn't configured", async () => {
+      const res = await postManualPush(WALLET_ACTION_EVENT_UNCONFIGURED);
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "wallet_not_configured" });
+      const jobs = await prisma.adminJob.findMany({
+        where: { event_id: WALLET_ACTION_EVENT_UNCONFIGURED, type: "wallet_push" },
+      });
+      expect(jobs).toHaveLength(0);
+    });
+
+    it("returns 403 when the event is archived", async () => {
+      await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { archived_at: new Date() } });
+      try {
+        const res = await postManualPush(WALLET_ACTION_EVENT);
+        expect(res.status).toBe(403);
+        const body = (await res.json()) as { code: string };
+        expect(body.code).toBe("event_archived");
+      } finally {
+        await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { archived_at: null } });
+      }
+    });
+
+    it("returns 403 for an admin outside the event's organization", async () => {
+      const res = await postManualPush(EVENT_B);
+      expect(res.status).toBe(403);
+    });
+
+    it("returns 400 when the eventId route param is missing", async () => {
+      const miniApp = new Hono();
+      miniApp.post("/wallet-push/:eventId?", (c) => handleTriggerEventWideWalletPush(c, prisma));
+
+      const res = await miniApp.request("/wallet-push", { method: "POST" });
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "eventId required" });
     });
   });
 

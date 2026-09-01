@@ -177,7 +177,11 @@ import {
   handlePatchAttendeeNote,
   handleDeleteAttendeeNote,
 } from "./admin/attendees-api-routes.js";
-import { handleGetWalletPushJob, handleGetWalletPushHistory } from "./admin/wallet-push-routes.js";
+import {
+  handleGetWalletPushJob,
+  handleGetWalletPushHistory,
+  handleTriggerEventWideWalletPush,
+} from "./admin/wallet-push-routes.js";
 import {
   handleTriggerEventWideWalletRefreshStatus,
   handleGetWalletRefreshStatusJob,
@@ -1412,6 +1416,13 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/events/:eventId/wallet-push/history", staffAdminGate, (c) =>
     handleGetWalletPushHistory(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/wallet-push",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminWalletActionBulkRateLimit,
+    guardArchivedEvent((c) => handleTriggerEventWideWalletPush(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/wallet-refresh-status",
