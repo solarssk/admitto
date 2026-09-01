@@ -1,5 +1,6 @@
 import type { PrismaClient, Prisma } from "@admitto/db";
 import { hasScope } from "@admitto/db";
+import { decryptFromString } from "@admitto/crypto";
 
 /** High-level permission names used by HTTP middleware and future admin UI. */
 export type AuthCapability = "checkin" | "manageEvent" | "manageInstance";
@@ -212,6 +213,22 @@ export function locationPinFields(
   };
 }
 
+/** Same decryptability check resolveWalletProvider (packages/wallet) makes before constructing a
+ * provider - a template id and a non-empty ciphertext string aren't enough on their own, since a
+ * lost/rotated ENCRYPTION_KEY leaves wallet_api_key_enc non-empty but permanently undecryptable,
+ * and resolveEventWalletProvider would then deterministically 409 on any wallet action even
+ * though this naive non-emptiness check reported wallet_configured: true (bot review). Doesn't
+ * gate on wallet_enabled - that's already its own separate EventSummary field. */
+function isWalletConfigured(templateId: string | null, apiKeyEnc: string | null): boolean {
+  if (!templateId || !apiKeyEnc) return false;
+  try {
+    decryptFromString(apiKeyEnc);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function toEventSummary(
   row: Prisma.EventGetPayload<{ select: typeof eventSelect }>,
 ): EventSummary {
@@ -219,7 +236,7 @@ function toEventSummary(
   return {
     ...rest,
     ...locationPinFields(location_details),
-    wallet_configured: Boolean(wallet_template_id && wallet_api_key_enc),
+    wallet_configured: isWalletConfigured(wallet_template_id, wallet_api_key_enc),
   };
 }
 

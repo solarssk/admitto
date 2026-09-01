@@ -1168,36 +1168,40 @@ export function AttendeesPage() {
     }
   };
 
-  /** Header "Push updates" (More actions) — enqueues the same async wallet_push job the
+  /** Header "Push updates" (More actions) - enqueues the same async wallet_push job the
    * automatic settings/location-save triggers use, but for an explicit operator click
-   * (reason: "manual"). Not selection-scoped, unlike the bulk bar's own "Push updates" — every
-   * already-issued active pass under the event is a target, resolved by the job itself. */
+   * (reason: "manual"). Not selection-scoped, unlike the bulk bar's own "Push updates" - every
+   * already-issued active pass under the event is a target, resolved by the job itself. Guards
+   * its success/error side effects against the operator navigating to a different event before
+   * the request resolves, same isStillOnEvent pattern as handleTriggerEventWideRefreshStatus
+   * (CodeRabbit review) - busy cleanup stays unconditional. */
   const handleTriggerEventWidePush = async () => {
     if (!eventId) return;
+    const initiatingEventId = eventId;
+    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
     setEventWidePushBusy(true);
     setEventWidePushError(null);
     try {
-      const result = await triggerEventWideWalletPush(eventId);
+      const result = await triggerEventWideWalletPush(initiatingEventId);
+      if (!isStillOnEvent()) return;
       setEventWidePushConfirmOpen(false);
       addToast("Push queued - you'll see a summary once it finishes.", "info");
       walletPushPollRef.current?.abort();
       const ac = new AbortController();
       walletPushPollRef.current = ac;
-      void pollWalletPushCompletion(eventId, result.jobId, addToast, { signal: ac.signal }).catch(() => {
+      void pollWalletPushCompletion(initiatingEventId, result.jobId, addToast, { signal: ac.signal }).catch(() => {
         if (ac.signal.aborted) return;
         addToast("Could not refresh wallet push status.", "info");
       });
     } catch (err) {
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          const next = encodeURIComponent(window.location.pathname);
-          window.location.assign(`/login?next=${next}`);
-          return;
-        }
-        setEventWidePushError(operatorApiErrorMessage(err, "Push failed."));
-      } else {
-        setEventWidePushError("Failed to push updates.");
+      if (isStillOnEvent()) {
+        reportBulkActionError(err, {
+          reportApiError,
+          setError: setEventWidePushError,
+          addToast,
+          apiErrorFallback: "Push failed.",
+          genericFallback: "Failed to push updates.",
+        });
       }
     } finally {
       setEventWidePushBusy(false);

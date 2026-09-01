@@ -2787,6 +2787,82 @@ describe("AttendeesPage header 'Push updates' (event-wide, wallet configured)", 
 
     expect(addToast).not.toHaveBeenCalledWith("Could not refresh wallet push status.", "info");
   });
+
+  it("ignores a stale success (queued toast + poll) after navigating to a different event mid-request (CodeRabbit review)", async () => {
+    let resolveTrigger!: (value: { jobId: string }) => void;
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    triggerEventWideWalletPush.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveTrigger = resolve;
+      }),
+    );
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Push updates/ }));
+    const dialog = screen.getByRole("dialog", { name: "Push updates to every installed wallet pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Push updates" }));
+
+    await waitFor(() => expect(triggerEventWideWalletPush).toHaveBeenCalledWith("evt-1"));
+
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+
+    await act(async () => {
+      resolveTrigger({ jobId: "job-1" });
+      await Promise.resolve();
+    });
+
+    expect(addToast).not.toHaveBeenCalledWith("Push queued - you'll see a summary once it finishes.", "info");
+    expect(pollWalletPushCompletion).not.toHaveBeenCalled();
+    // The stale-event dialog never got its close/success side effects, so it's still showing.
+    expect(screen.getByRole("dialog", { name: "Push updates to every installed wallet pass?" })).toBeTruthy();
+  });
+
+  it("ignores a stale trigger error after navigating to a different event mid-request (CodeRabbit review)", async () => {
+    let rejectTrigger!: (err: unknown) => void;
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+    triggerEventWideWalletPush.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectTrigger = reject;
+      }),
+    );
+
+    const router = createMemoryRouter(
+      [{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }],
+      { initialEntries: ["/admin/events/evt-1/attendees"] },
+    );
+    render(<RouterProvider router={router} />);
+
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Push updates/ }));
+    const dialog = screen.getByRole("dialog", { name: "Push updates to every installed wallet pass?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Push updates" }));
+
+    await waitFor(() => expect(triggerEventWideWalletPush).toHaveBeenCalledWith("evt-1"));
+
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+
+    await act(async () => {
+      rejectTrigger(new Error("network down"));
+      await Promise.resolve();
+    });
+
+    // The stale-event dialog never got an error surfaced onto it.
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+  });
 });
 
 describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)", () => {

@@ -2444,6 +2444,59 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(await res.json()).toEqual({ error: "wallet_push_already_running", jobId: running.id });
       const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_ACTION_EVENT, type: "wallet_push" } });
       expect(jobs).toHaveLength(1);
+      // A running job may have already read its target set (or even be mid-write of its own final
+      // result_json) - the reason-upgrade below only ever applies to a still-pending job, never one
+      // already running, so this one's original reason must survive untouched.
+      const after = await prisma.adminJob.findUniqueOrThrow({ where: { id: running.id } });
+      expect(after.result_json).toMatchObject({
+        request: { kind: "event_wide", eventId: WALLET_ACTION_EVENT, reason: "settings" },
+      });
+    });
+
+    it("upgrades a still-pending automatic job's reason to 'manual' instead of leaving the operator's click invisible in history (bot review)", async () => {
+      const pending = await prisma.adminJob.create({
+        data: {
+          type: "wallet_push",
+          status: "pending",
+          organization_id: ORG_A,
+          event_id: WALLET_ACTION_EVENT,
+          result_json: { request: { kind: "event_wide", eventId: WALLET_ACTION_EVENT, reason: "settings" } },
+        },
+      });
+
+      const res = await postManualPush(WALLET_ACTION_EVENT);
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { jobId: string };
+      expect(body.jobId).toBe(pending.id);
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_ACTION_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(1);
+      const after = await prisma.adminJob.findUniqueOrThrow({ where: { id: pending.id } });
+      expect(after.status).toBe("pending");
+      expect(after.result_json).toMatchObject({
+        request: { kind: "event_wide", eventId: WALLET_ACTION_EVENT, reason: "manual" },
+      });
+    });
+
+    it("does not touch a pending job that's already reason 'manual' from an earlier manual click", async () => {
+      const pending = await prisma.adminJob.create({
+        data: {
+          type: "wallet_push",
+          status: "pending",
+          organization_id: ORG_A,
+          event_id: WALLET_ACTION_EVENT,
+          result_json: { request: { kind: "event_wide", eventId: WALLET_ACTION_EVENT, reason: "manual" } },
+        },
+      });
+      const updateSpy = vi.spyOn(prisma.adminJob, "updateMany");
+
+      const res = await postManualPush(WALLET_ACTION_EVENT);
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { jobId: string };
+      expect(body.jobId).toBe(pending.id);
+      expect(updateSpy).not.toHaveBeenCalled();
+      updateSpy.mockRestore();
     });
 
     it("returns 409 without enqueuing when the event's wallet isn't configured", async () => {
