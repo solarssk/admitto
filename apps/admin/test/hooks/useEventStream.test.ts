@@ -63,6 +63,15 @@ describe("probeStreamAuth", () => {
     expect(await probeStreamAuth("evt-1", fetchFn)).toBe("rate_limited");
   });
 
+  it("still classifies as rate_limited even when cancelling the body after abort rejects (real Response behavior)", async () => {
+    // A real (non-mocked) ReadableStream's cancel() can reject with AbortError once the same
+    // signal that aborted the fetch is what triggers the cancel - the status must already be
+    // captured before that rejection is possible, not read from `res` again afterward.
+    const cancel = vi.fn().mockRejectedValue(new DOMException("aborted", "AbortError"));
+    const fetchFn = vi.fn().mockResolvedValue({ status: 429, body: { cancel } });
+    expect(await probeStreamAuth("evt-1", fetchFn)).toBe("rate_limited");
+  });
+
   it("aborts probe and cancels body after reading status", async () => {
     const cancel = vi.fn().mockResolvedValue(undefined);
     const fetchFn = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {

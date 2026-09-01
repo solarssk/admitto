@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { Context, Next } from "hono";
 import {
+  activeCheckinStreamActorCountForTests,
   activeCheckinStreamCountForTests,
   createCheckinStreamConcurrencyLimit,
   releaseCheckinStreamSlot,
@@ -68,6 +69,52 @@ describe("check-in stream concurrency limit", () => {
     for (const reader of readers.slice(1)) {
       await reader.cancel();
     }
+    resetCheckinStreamLimitsForTests();
+  });
+
+  it("caps total streams per actor across many distinct events, not just per event (bot review: bearer + made-up eventId)", async () => {
+    resetCheckinStreamLimitsForTests();
+    const app = new Hono();
+
+    app.get(
+      "/events/:eventId/stream",
+      sessionContext("op-actor-cap"),
+      createCheckinStreamConcurrencyLimit(),
+      (c) =>
+        streamSSE(c, async (stream) => {
+          await new Promise<void>((resolve) => {
+            stream.onAbort(() => {
+              releaseCheckinStreamSlot(c);
+              resolve();
+            });
+          });
+        }),
+    );
+
+    // 3 slots each across 4 distinct events = 12, the actor-wide ceiling - well under any single
+    // event's own per-event cap of 3, so only the actor-wide check can be what blocks the 13th.
+    const readers = [];
+    for (let e = 0; e < 4; e++) {
+      for (let i = 0; i < 3; i++) {
+        const res = await app.request(`/events/evt-actor-${e}/stream`);
+        expect(res.status).toBe(200);
+        readers.push(res.body!.getReader());
+      }
+    }
+    expect(activeCheckinStreamActorCountForTests("checkin:stream:user:op-actor-cap")).toBe(12);
+
+    // A 5th, completely fresh event id still gets rejected - the actor-wide budget is exhausted
+    // even though this specific event has never been seen before (0 of its own 3 slots used).
+    const blocked = await app.request("/events/evt-actor-fresh/stream");
+    expect(blocked.status).toBe(429);
+    expect(await blocked.json()).toEqual({ error: "too_many_streams" });
+    expect(activeCheckinStreamCountForTests("checkin:stream:user:op-actor-cap:event:evt-actor-fresh")).toBe(0);
+
+    for (const reader of readers) {
+      await reader.cancel();
+    }
+    await new Promise((r) => setTimeout(r, 20));
+    expect(activeCheckinStreamActorCountForTests("checkin:stream:user:op-actor-cap")).toBe(0);
     resetCheckinStreamLimitsForTests();
   });
 });

@@ -162,6 +162,23 @@ function checkinRateLimitKeyHint(c: Context): "ip" | "user" {
   return c.get("checkinAuth") === "bearer" ? "ip" : "user";
 }
 
+/** Actor-wide ceiling alongside "stream"'s own per-event key above - without this, an actor
+ * could mint an unbounded number of fresh per-event budgets simply by varying :eventId, since
+ * under emergency Bearer auth the event-scope gate deliberately allows an unknown/made-up event
+ * id through (assertEventNotArchived has nothing to check against). This keeps the per-event
+ * isolation for the legitimate multi-tab/multi-page case while still bounding one actor's total
+ * stream-request volume overall, same as the plain per-actor key this policy used before event
+ * scoping (bot review). Its own "stream" prefix (not shared with "scan"/"history") keeps this
+ * counter in its own namespace rather than colliding with either of those policies' keys. */
+function checkinStreamActorKey(c: Context): string {
+  if (c.get("checkinAuth") === "bearer") {
+    return `checkin:stream:bearer:ip:${resolveClientIp(c)}`;
+  }
+  const userId = c.get("operatorUserId") as string | undefined;
+  if (userId) return `checkin:stream:user:${userId}`;
+  return `checkin:stream:ip:${resolveClientIp(c)}`;
+}
+
 function healthzRateLimitKey(ip: string, instanceId: string): string {
   return `ops:healthz:${instanceId}:ip:${ip}`;
 }
@@ -771,6 +788,12 @@ export const RATE_POLICIES = {
         keyOf: (c) => checkinRateLimitKey(c, "stream"),
         windowMs: 60_000,
         max: 12,
+        logOnExceeded: { scope: "checkin_stream", keyHint: checkinRateLimitKeyHint },
+      },
+      {
+        keyOf: checkinStreamActorKey,
+        windowMs: 60_000,
+        max: 48,
         logOnExceeded: { scope: "checkin_stream", keyHint: checkinRateLimitKeyHint },
       },
     ],

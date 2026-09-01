@@ -34,10 +34,18 @@ export async function probeStreamAuth(
       headers: { Accept: "text/event-stream" },
       signal: ac.signal,
     });
-    ac.abort();
-    await res.body?.cancel();
-    if (res.status === 401 || res.status === 403) return "denied";
-    if (res.status === 429) return "rate_limited";
+    // Classify from the status before any cleanup - a real (non-mocked) body's cancel() after
+    // aborting the same signal can itself reject with AbortError, which the outer catch would
+    // otherwise mistake for "status unknown" and silently drop a real 429/401/403 (bot review).
+    const status = res.status;
+    try {
+      ac.abort();
+      await res.body?.cancel();
+    } catch {
+      /* cleanup failure doesn't change the classification already read above */
+    }
+    if (status === 401 || status === 403) return "denied";
+    if (status === 429) return "rate_limited";
     return "ok";
   } catch {
     ac.abort();
