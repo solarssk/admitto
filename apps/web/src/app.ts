@@ -157,6 +157,7 @@ import {
   handleBulkRefreshAttendeeWalletStatus,
   handleBulkTicketTypeEventAttendees,
   handleBulkRsvpEventAttendees,
+  handleBulkSetAttendeeField,
   handleResendEventAttendeeTicket,
   handleGetAttendeeTicketLink,
   handleDismissAttendeeBounce,
@@ -1585,6 +1586,14 @@ export function createApp(options: CreateAppOptions = {}) {
     bulkAttendeeIdsBodyLimit,
     adminAttendeeBulkMutationRateLimit,
     guardArchivedEvent((c) => handleBulkRsvpEventAttendees(c, db)),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/bulk-set-field",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminAttendeeBulkMutationRateLimit,
+    guardArchivedEvent((c) => handleBulkSetAttendeeField(c, db)),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/resend",

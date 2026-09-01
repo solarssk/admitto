@@ -17,6 +17,7 @@ import { drainExportJobs } from "@admitto/tickets";
 import { createApp } from "../../src/app.js";
 import {
   handleBulkRevokeAttendeeItems,
+  handleBulkSetAttendeeField,
   handleDeleteAttendeeNote,
   handlePatchAttendeeNote,
   handleRefreshAttendeeWalletStatus,
@@ -8503,5 +8504,385 @@ describe("POST /api/admin/events/:eventId/attendees/bulk-rsvp", () => {
       body: "{not json",
     });
     expect(malformed.status).toBe(400);
+  });
+});
+
+describe("POST /api/admin/events/:eventId/attendees/bulk-set-field", () => {
+  // admin:attendee-bulk-mutation is scoped per user+event (20/min) - same reasoning as the
+  // bulk-rsvp block above.
+  beforeEach(() => rateLimitStore.reset());
+
+  afterAll(async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: { startsWith: "att-bulk-setfield-" } } });
+    await prisma.attendee.deleteMany({ where: { id: { startsWith: "att-bulk-setfield-" } } });
+  });
+
+  async function seedSetField(
+    id: string,
+    opts: { company?: string | null; department?: string | null; custom_data?: Record<string, unknown> } = {},
+  ) {
+    await prisma.attendee.create({
+      data: {
+        id,
+        event_id: EVENT_A,
+        email: `${id}@example.com`,
+        name: `Bulk Set Field ${id}`,
+        company: opts.company ?? null,
+        department: opts.department ?? null,
+        custom_data: (opts.custom_data ?? {}) as Prisma.InputJsonValue,
+        token_hash: hashToken(generateToken()),
+        token_enc: encryptToString(generateToken()),
+      },
+    });
+  }
+
+  function postBulkSetField(eventId: string, body: unknown) {
+    return app.request(`/api/admin/events/${eventId}/attendees/bulk-set-field`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("sets company for every selected attendee and writes per-attendee attendee_edited logs with from→to", async () => {
+    const ids = ["att-bulk-setfield-1", "att-bulk-setfield-2"];
+    await seedSetField(ids[0]!, { company: null });
+    await seedSetField(ids[1]!, { company: "Old Co" });
+
+    const res = await postBulkSetField(EVENT_A, { attendeeIds: ids, field: "company", value: "Acme Inc." });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      updatedCount: 2,
+      alreadySetCount: 0,
+      conflictCount: 0,
+      walletPushJobId: expect.any(String),
+    });
+
+    const after = await prisma.attendee.findMany({ where: { id: { in: ids } }, select: { id: true, company: true } });
+    expect(after.every((a) => a.company === "Acme Inc.")).toBe(true);
+
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: { in: ids }, action_type: "attendee_edited" },
+    });
+    expect(logs).toHaveLength(2);
+    const byId = new Map(logs.map((l) => [l.attendee_id, l.metadata as Record<string, unknown>]));
+    expect(byId.get(ids[0]!)).toEqual({ fields: ["company"], field_changes: { company: { from: null, to: "Acme Inc." } } });
+    expect(byId.get(ids[1]!)).toEqual({
+      fields: ["company"],
+      field_changes: { company: { from: "Old Co", to: "Acme Inc." } },
+    });
+  });
+
+  it("mirrors the new value into custom_data.company, matching the single-attendee PATCH's own behavior", async () => {
+    // This attendee's *effective* company came from a registration-form custom field, not the
+    // legacy column (resolveCompanyDepartment prefers custom_data) - the bulk write must update
+    // both, or the change would silently not show up anywhere that reads the resolved value.
+    const id = "att-bulk-setfield-mirror";
+    await seedSetField(id, { company: null, custom_data: { company: "Old Co From Form", dietary: "vegan" } });
+
+    const res = await postBulkSetField(EVENT_A, { attendeeIds: [id], field: "company", value: "New Co" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      updatedCount: 1,
+      alreadySetCount: 0,
+      conflictCount: 0,
+      walletPushJobId: expect.any(String),
+    });
+
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id } });
+    expect(after.company).toBe("New Co");
+    expect((after.custom_data as Record<string, unknown>).company).toBe("New Co");
+    // Untouched, unrelated custom_data keys must survive the partial write.
+    expect((after.custom_data as Record<string, unknown>).dietary).toBe("vegan");
+  });
+
+  it("leaves rows already at the target value untouched — no update, no log", async () => {
+    const already = "att-bulk-setfield-already";
+    const fresh = "att-bulk-setfield-fresh";
+    await seedSetField(already, { department: "Sales" });
+    await seedSetField(fresh, { department: null });
+    const before = await prisma.attendee.findUniqueOrThrow({ where: { id: already }, select: { updated_at: true } });
+
+    const res = await postBulkSetField(EVENT_A, {
+      attendeeIds: [already, fresh],
+      field: "department",
+      value: "Sales",
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      updatedCount: 1,
+      alreadySetCount: 1,
+      conflictCount: 0,
+      walletPushJobId: expect.any(String),
+    });
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id: already }, select: { updated_at: true } });
+    expect(after.updated_at.toISOString()).toBe(before.updated_at.toISOString());
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: already, action_type: "attendee_edited" },
+    });
+    expect(logs).toHaveLength(0);
+  });
+
+  it("does not clobber a row a concurrent single-attendee PATCH changed mid-transaction (same TOCTOU guard as bulk-rsvp, PR #569)", async () => {
+    const raced = "att-bulk-setfield-race-victim";
+    const safe = "att-bulk-setfield-race-safe";
+    await seedSetField(raced, { company: null });
+    await seedSetField(safe, { company: null });
+
+    let armed = true;
+    onAttendeeFindMany = async () => {
+      armed = false;
+      await prisma.attendee.update({ where: { id: raced }, data: { company: "Raced In First" } });
+    };
+
+    const res = await postBulkSetField(EVENT_A, {
+      attendeeIds: [raced, safe],
+      field: "company",
+      value: "Bulk Target",
+    });
+
+    expect(armed).toBe(false);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      updatedCount: 1,
+      alreadySetCount: 0,
+      conflictCount: 1,
+      walletPushJobId: expect.any(String),
+    });
+
+    const after = await prisma.attendee.findMany({
+      where: { id: { in: [raced, safe] } },
+      select: { id: true, company: true },
+    });
+    const byId = new Map(after.map((a) => [a.id, a.company]));
+    expect(byId.get(raced)).toBe("Raced In First");
+    expect(byId.get(safe)).toBe("Bulk Target");
+  });
+
+  it("does not silently revert a concurrent edit to an unrelated custom_data key (bot review)", async () => {
+    // The concurrent write below touches shirt_size, not company/department at all - the old
+    // per-field CAS (keyed on the legacy company column) would have missed this race entirely,
+    // since that column never changed; this write's own custom_data snapshot (taken before the
+    // race) would then silently overwrite the concurrent shirt_size change when this bulk write
+    // replaces the whole custom_data object. The updated_at-keyed CAS catches it instead, since
+    // any write bumps updated_at regardless of which column it touches.
+    const raced = "att-bulk-setfield-race-json-victim";
+    await seedSetField(raced, { company: null, custom_data: { shirt_size: "M" } });
+
+    let armed = true;
+    onAttendeeFindMany = async () => {
+      armed = false;
+      await prisma.attendee.update({
+        where: { id: raced },
+        data: { custom_data: { shirt_size: "L" } },
+      });
+    };
+
+    const res = await postBulkSetField(EVENT_A, { attendeeIds: [raced], field: "company", value: "Bulk Target" });
+
+    expect(armed).toBe(false);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 0, alreadySetCount: 0, conflictCount: 1, walletPushJobId: null });
+
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id: raced } });
+    expect(after.company).toBeNull();
+    expect((after.custom_data as Record<string, unknown>).shirt_size).toBe("L");
+    const logs = await prisma.attendeeActionLog.findMany({
+      where: { attendee_id: raced, action_type: "attendee_edited" },
+    });
+    expect(logs).toHaveLength(0);
+  });
+
+  it("enqueues a wallet_push job for the rows it actually updated - company/department are wallet-relevant (bot review)", async () => {
+    const withPass = "att-bulk-setfield-wallet-push";
+    await seedSetField(withPass, { company: null });
+    await prisma.walletPass.create({
+      data: { attendee_id: withPass, provider: "passcreator", provider_pass_id: `pc-${withPass}`, status: "active" },
+    });
+
+    const res = await postBulkSetField(EVENT_A, { attendeeIds: [withPass], field: "company", value: "Acme Inc." });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { updatedCount: number; walletPushJobId: string | null };
+    expect(body.updatedCount).toBe(1);
+    expect(body.walletPushJobId).toBeTruthy();
+
+    const job = await prisma.adminJob.findUnique({ where: { id: body.walletPushJobId! } });
+    expect(job?.type).toBe("wallet_push");
+    expect(job?.status).toBe("pending");
+    expect(job?.result_json).toMatchObject({
+      request: { kind: "attendee_ids", eventId: EVENT_A, attendeeIds: [withPass] },
+    });
+
+    await prisma.adminJob.deleteMany({ where: { id: body.walletPushJobId! } });
+    await prisma.walletPass.deleteMany({ where: { attendee_id: withPass } });
+  });
+
+  it("returns a null walletPushJobId, without enqueuing, when nothing actually changed", async () => {
+    const already = "att-bulk-setfield-wallet-push-noop";
+    await seedSetField(already, { company: "Acme Inc." });
+
+    const res = await postBulkSetField(EVENT_A, { attendeeIds: [already], field: "company", value: "Acme Inc." });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { updatedCount: number; alreadySetCount: number; walletPushJobId: string | null };
+    expect(body).toEqual({ updatedCount: 0, alreadySetCount: 1, conflictCount: 0, walletPushJobId: null });
+  });
+
+  it("returns 403 when the event is archived", async () => {
+    const id = "att-bulk-setfield-archived";
+    await seedSetField(id, { company: null });
+    await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: new Date() } });
+    try {
+      const res = await postBulkSetField(EVENT_A, { attendeeIds: [id], field: "company", value: "Acme" });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("event_archived");
+      const after = await prisma.attendee.findUniqueOrThrow({ where: { id } });
+      expect(after.company).toBeNull();
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_A }, data: { archived_at: null } });
+    }
+  });
+
+  it("returns 403 for an admin outside the event's organization", async () => {
+    const res = await postBulkSetField(EVENT_B, { attendeeIds: ["att-does-not-matter"], field: "company", value: "x" });
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects an empty selection, an unknown field, an empty value, and a malformed body", async () => {
+    expect((await postBulkSetField(EVENT_A, { attendeeIds: [], field: "company", value: "x" })).status).toBe(400);
+    expect((await postBulkSetField(EVENT_A, { attendeeIds: ["x"], field: "role", value: "x" })).status).toBe(400);
+    expect((await postBulkSetField(EVENT_A, { attendeeIds: ["x"], field: "company" })).status).toBe(400);
+
+    const malformed = await app.request(`/api/admin/events/${EVENT_A}/attendees/bulk-set-field`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not json",
+    });
+    expect(malformed.status).toBe(400);
+  });
+
+  it("silently ignores an id from a different event instead of failing the whole request", async () => {
+    const ownId = "att-bulk-setfield-own";
+    await seedSetField(ownId, { company: null });
+
+    const res = await postBulkSetField(EVENT_A, { attendeeIds: [ownId, ATT_B1], field: "company", value: "Acme" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      updatedCount: 1,
+      alreadySetCount: 0,
+      conflictCount: 0,
+      walletPushJobId: expect.any(String),
+    });
+    const other = await prisma.attendee.findUniqueOrThrow({ where: { id: ATT_B1 } });
+    expect(other.company).not.toBe("Acme");
+  });
+
+  it("returns 400 when the eventId route param is missing", async () => {
+    // The real route always has :eventId as a required segment, so this can't happen through
+    // the full app - mount the handler on its own optional-param route to exercise
+    // requireEventId's guard directly, same pattern as the refresh-status block above.
+    const miniApp = new Hono();
+    miniApp.post("/bulk-set-field/:eventId?", (c) => handleBulkSetAttendeeField(c, prisma));
+
+    const res = await miniApp.request("/bulk-set-field", { method: "POST" });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "eventId required" });
+  });
+
+  it("clears the field when value is an empty string, normalizing it to null", async () => {
+    const id = "att-bulk-setfield-clear";
+    await seedSetField(id, { company: "Old Co", custom_data: { company: "Old Co", dietary: "vegan" } });
+
+    const res = await postBulkSetField(EVENT_A, { attendeeIds: [id], field: "company", value: "" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      updatedCount: 1,
+      alreadySetCount: 0,
+      conflictCount: 0,
+      walletPushJobId: expect.any(String),
+    });
+    const after = await prisma.attendee.findUniqueOrThrow({ where: { id } });
+    expect(after.company).toBeNull();
+    expect((after.custom_data as Record<string, unknown>).company).toBeUndefined();
+    expect((after.custom_data as Record<string, unknown>).dietary).toBe("vegan");
+  });
+
+  it("still reports the successful field change when the event vanishes between the access check and the wallet-push event lookup", async () => {
+    const id = "att-bulk-setfield-event-vanishes";
+    await seedSetField(id, { company: null });
+    // First calls are guardArchivedEvent's own manage-access + not-archived checks, then the
+    // handler's own redundant manage-access check - only the last (the wallet-push-specific
+    // lookup) returns null, as if the event were deleted in the gap between that check and this
+    // one (same technique as handleBulkTicketTypeEventAttendees's own "event vanishes" test).
+    const realFindUnique = prisma.event.findUnique.bind(prisma.event);
+    let calls = 0;
+    const spy = vi.spyOn(prisma.event, "findUnique").mockImplementation(((...args: unknown[]) => {
+      calls += 1;
+      return calls <= 3
+        ? realFindUnique(...(args as Parameters<typeof realFindUnique>))
+        : Promise.resolve(null);
+    }) as never);
+    try {
+      const res = await postBulkSetField(EVENT_A, { attendeeIds: [id], field: "company", value: "Acme Inc." });
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        updatedCount: 1,
+        alreadySetCount: 0,
+        conflictCount: 0,
+        walletPushJobId: null,
+      });
+      const after = await prisma.attendee.findUniqueOrThrow({ where: { id }, select: { company: true } });
+      expect(after.company).toBe("Acme Inc.");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("still reports the successful field change when wallet push enqueueing fails (bot review)", async () => {
+    const id = "att-bulk-setfield-enqueue-fails";
+    await seedSetField(id, { company: null });
+    const spy = vi.spyOn(prisma.adminJob, "create").mockRejectedValueOnce(new Error("db exploded"));
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const res = await postBulkSetField(EVENT_A, { attendeeIds: [id], field: "company", value: "Acme Inc." });
+
+      // The field write already committed by the time enqueueWalletPushJob runs - a transient
+      // failure there must not turn into a whole-request 500 (same reasoning as
+      // handleBulkTicketTypeEventAttendees's own enqueue-failure test).
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        updatedCount: 1,
+        alreadySetCount: 0,
+        conflictCount: 0,
+        walletPushJobId: null,
+      });
+      const after = await prisma.attendee.findUniqueOrThrow({ where: { id }, select: { company: true } });
+      expect(after.company).toBe("Acme Inc.");
+    } finally {
+      spy.mockRestore();
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it("returns a generic 500 without leaking the underlying error for an unexpected failure", async () => {
+    const id = "att-bulk-setfield-transaction-fails";
+    await seedSetField(id, { company: null });
+    const spy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db exploded"));
+    try {
+      const res = await postBulkSetField(EVENT_A, { attendeeIds: [id], field: "company", value: "Acme Inc." });
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: "server error" });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

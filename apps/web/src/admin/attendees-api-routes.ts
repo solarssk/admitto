@@ -2457,6 +2457,204 @@ export async function handleBulkRsvpEventAttendees(
   }
 }
 
+const bulkSetFieldBodySchema = z
+  .object({
+    attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
+    field: z.enum(["company", "department"]),
+    // Same shape as the single-attendee PATCH's own company/department fields (line ~142) -
+    // trimmed, capped at 200, and nullable so a caller could in principle clear the field. The
+    // frontend dialog itself only offers setting a non-empty value (PO ask was "set", not
+    // "clear") - null stays accepted here so the endpoint's contract doesn't silently diverge
+    // from the single-attendee PATCH it mirrors.
+    value: z.string().trim().max(200).nullable(),
+  })
+  .strict();
+
+/** One selected attendee's computed bulk company/department write - mirrors
+ * applyMirroredScalarPatchField's own custom_data handling (used by the single-attendee PATCH,
+ * see computePatchChanges above) so the two paths can't silently diverge on how company/department
+ * are mirrored into custom_data. `customData` is always populated when a change is returned -
+ * applyMirroredScalarPatchField touches it unconditionally whenever the field itself changes (its
+ * own `next === current` short-circuit already handled by the early return below). */
+function computeBulkFieldChange(
+  row: { id: string; company: string | null; department: string | null; custom_data: unknown },
+  field: "company" | "department",
+  target: string | null,
+): { to: string | null; from: string | null; customData: Record<string, unknown> } | null {
+  const resolved = resolveCompanyDepartment(row);
+  const current = field === "company" ? resolved.company : resolved.department;
+  if (current === target) return null;
+
+  const data: Prisma.AttendeeUncheckedUpdateInput = {};
+  const fields: string[] = [];
+  let from: string | null = null;
+  let to: string | null = null;
+  let customData: Record<string, unknown> | null = null;
+  const touchCustomData = (): Record<string, unknown> => {
+    customData ??= cloneCustomData(row.custom_data);
+    return customData;
+  };
+  applyMirroredScalarPatchField(
+    field,
+    current,
+    target,
+    data,
+    touchCustomData,
+    fields,
+    (_f, logFrom, logTo) => {
+      from = logFrom;
+      to = logTo;
+    },
+  );
+  // Non-null assertion, not a `?? {}` fallback: applyMirroredScalarPatchField always calls
+  // touchCustomData() once next !== current, and the early return above already guarantees that
+  // (target !== current, so next can never equal current inside the call) - a fallback here would
+  // be dead code for a state this function can't actually reach.
+  return { to, from, customData: customData! };
+}
+
+/** company/department's own quoted column identifier for the batched UPDATE below - the only
+ * per-field difference in an otherwise field-agnostic write. */
+function bulkSetFieldColumn(field: "company" | "department"): Prisma.Sql {
+  return field === "company" ? Prisma.raw('"company"') : Prisma.raw('"department"');
+}
+
+/** POST /api/admin/events/:eventId/attendees/bulk-set-field - set one profile field (company or
+ * department) to the same value for every selected attendee at once, from the Attendees list's
+ * row-selection bulk bar. Ids that don't belong to this event are silently ignored, same as every
+ * other bulk action. Rows already at the target value are left untouched (no updated_at bump, no
+ * log entry) and reported back as alreadySetCount; rows that lost the race against a concurrent
+ * write are also left untouched and reported back as conflictCount.
+ *
+ * One conditional `UPDATE ... FROM (VALUES ...)` statement, not a per-row loop of individual
+ * updateMany calls (bot review: up to BULK_SEND_LIMIT sequential round trips inside one
+ * transaction held every earlier row's locks until the last one finished) - same shape as
+ * applyBulkAttendeeChanges's own single-batched-UPDATE above, just carrying each row's own
+ * custom_data JSON (cast via ::jsonb on a stringified parameter, the standard raw-SQL approach for
+ * a per-row JSON payload the Prisma template-tag driver doesn't serialize for you) instead of one
+ * shared SET clause for the whole selection - that's the one reason this couldn't just call
+ * applyBulkAttendeeChanges directly.
+ *
+ * The per-row CAS is keyed on the whole row's `updated_at` (read alongside company/department/
+ * custom_data below, in the same transaction), not just the target field's own prior value like
+ * applyBulkAttendeeChanges's sibling bulk endpoints use - those only ever overwrite the one scalar
+ * column they read, so a stale read of that column is the only thing that can go stale. This
+ * endpoint's write also replaces the *entire* custom_data object with a clone taken at read time,
+ * so a concurrent edit to some other custom-data key (e.g. the single-attendee PATCH editing a
+ * custom field this bulk action never touches) between this findMany and the write below would
+ * otherwise be silently reverted even though the two writes touch different keys - the row's own
+ * updated_at is bumped by any such write, so keying the CAS on it (ADR 0028's same invariant, used
+ * via optimisticAttendeeUpdate for the single-attendee PATCH) catches that case too (bot review). */
+export async function handleBulkSetAttendeeField(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid json" }, 400);
+  }
+  const parsed = bulkSetFieldBodySchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: "validation_failed" }, 400);
+  const { attendeeIds, field, value } = parsed.data;
+  const target = value === "" ? null : value;
+
+  try {
+    const { updatedIds, ...counts } = await db.$transaction(async (tx) => {
+      const owned = await tx.attendee.findMany({
+        where: { id: { in: attendeeIds }, event_id: eventId },
+        select: { id: true, company: true, department: true, custom_data: true, updated_at: true },
+      });
+
+      const changes: Array<{
+        id: string;
+        to: string | null;
+        from: string | null;
+        customData: Record<string, unknown>;
+        expectedUpdatedAt: Date;
+      }> = [];
+      for (const row of owned) {
+        const change = computeBulkFieldChange(row, field, target);
+        if (change) changes.push({ id: row.id, ...change, expectedUpdatedAt: row.updated_at });
+      }
+
+      if (changes.length === 0) {
+        return { updatedCount: 0, alreadySetCount: owned.length, conflictCount: 0, updatedIds: [] as string[] };
+      }
+
+      const column = bulkSetFieldColumn(field);
+      const values = Prisma.join(
+        changes.map(
+          (x) =>
+            Prisma.sql`(${x.id}::text, ${x.to}::text, ${JSON.stringify(x.customData)}::jsonb, ${x.expectedUpdatedAt}::timestamp)`,
+        ),
+      );
+      const updated = await tx.$queryRaw<{ id: string }[]>`
+        UPDATE "Attendee" AS t
+        SET ${column} = v.new_value, custom_data = v.new_custom_data, updated_at = NOW()
+        FROM (VALUES ${values}) AS v(id, new_value, new_custom_data, expected_updated_at)
+        WHERE t.id = v.id AND t.event_id = ${eventId} AND t.updated_at = v.expected_updated_at
+        RETURNING t.id
+      `;
+      const updatedIdSet = new Set(updated.map((r) => r.id));
+      const succeeded = changes.filter((x) => updatedIdSet.has(x.id));
+
+      // Only for rows the CAS above actually touched - a row that lost the race never got this
+      // write, so logging it here would fabricate a "from" value the row didn't hold at write
+      // time (same reasoning as applyBulkAttendeeChanges's own log-only-succeeded above).
+      if (succeeded.length > 0) {
+        await writeActionLogMany(tx, {
+          event_id: eventId,
+          action_type: "attendee_edited",
+          audit: adminAuditFromContext(c),
+          entries: succeeded.map((x) => ({
+            attendee_id: x.id,
+            metadata: { fields: [field], field_changes: { [field]: { from: x.from, to: x.to } } },
+          })),
+        });
+      }
+
+      return {
+        updatedCount: succeeded.length,
+        alreadySetCount: owned.length - changes.length,
+        conflictCount: changes.length - succeeded.length,
+        updatedIds: succeeded.map((x) => x.id),
+      };
+    });
+
+    // Best-effort, outside the transaction - company/department are both wallet-content-relevant
+    // (WALLET_RELEVANT_ATTENDEE_FIELD_SET), so any row this write actually changed is a candidate;
+    // enqueueWalletPushJob itself re-checks which ones still have an active WalletPass and no-ops
+    // entirely when none do. Same reasoning as handleBulkTicketTypeEventAttendees's own enqueue
+    // (bot review): job creation doesn't need atomicity with the field write, and a transient
+    // failure here must not turn an already-committed change into a 500 the operator would retry
+    // into a no-op (every row already at the target value on the retry).
+    let walletPushJobId: string | null = null;
+    if (updatedIds.length > 0) {
+      try {
+        const event = await db.event.findUnique({ where: { id: eventId }, select: { organization_id: true } });
+        if (event) {
+          walletPushJobId = await enqueueWalletPushJob(db, c, eventId, event.organization_id, updatedIds);
+        }
+      } catch (enqueueErr) {
+        console.error("handleBulkSetAttendeeField: wallet push enqueue failed:", enqueueErr);
+      }
+    }
+
+    return c.json({ ...counts, walletPushJobId });
+  } catch (err) {
+    if (err instanceof Response) return err;
+    console.error("handleBulkSetAttendeeField failed:", err);
+    recordBulkAttendeeActionFailure(c, eventId, "set_field", { attendeeCount: attendeeIds.length });
+    return c.json({ error: "server error" }, 500);
+  }
+}
+
 const bulkCheckInAttendeesBodySchema = z
   .object({
     attendeeIds: z.array(z.string().max(128)).min(1).max(BULK_SEND_LIMIT),
@@ -2483,7 +2681,8 @@ type BulkAttendeeAction =
   | "wallet_void"
   | "wallet_reissue"
   | "wallet_delete"
-  | "wallet_refresh_status";
+  | "wallet_refresh_status"
+  | "set_field";
 type BulkFailureTarget = { attendeeId: string } | { attendeeCount: number };
 
 /** Record a bounded failure signal for a staff-triggered bulk operation. The selected attendee

@@ -1225,6 +1225,31 @@ export async function bulkChangeRsvpStatus(
   return parseJson<BulkRsvpResponse>(res);
 }
 
+export type BulkSetFieldResponse = BulkTicketTypeResponse;
+
+/** company/department are both wallet-content-relevant, so a successful bulk change enqueues a
+ * wallet_push job for whichever rows actually changed - null when nothing changed (job would
+ * have been a no-op). Same shape as BulkTicketTypeResult above. */
+export interface BulkSetFieldResult extends BulkSetFieldResponse {
+  walletPushJobId: string | null;
+}
+
+/** Set one profile field (company or department) to the same value for every selected attendee
+ * at once. Ids outside the event are silently ignored server-side; rows already carrying the
+ * value are counted separately. */
+export async function bulkSetAttendeeField(
+  eventId: string,
+  attendeeIds: string[],
+  field: "company" | "department",
+  value: string,
+): Promise<BulkSetFieldResult> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-set-field`,
+    jsonPostInit({ attendeeIds, field, value }),
+  );
+  return parseJson<BulkSetFieldResult>(res);
+}
+
 /** Manually check in a selection of attendees at once (no QR scan), from the Attendees list's
  * row-selection bulk bar. Same single-use CAS admission path as scan check-in. */
 export async function bulkCheckInAttendees(
