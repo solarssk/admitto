@@ -85,7 +85,7 @@ flowchart LR
 **Today:** import, mail delivery, wallet passes, check-in, and export/reporting are all shipped and
 in production use. A self-service external registration/ingest API (a form or third-party system
 submitting attendees directly into Admitto without staff re-keying them) is a roadmap item, not a
-deployed control — mention it to auditors as **planned**, not as existing.
+deployed control - mention it to auditors as **planned**, not as existing.
 
 Admitto is intended as the **system of record for attendance** after guests are registered in the
 customer process (today, via staff-driven CSV/XLSX import).
