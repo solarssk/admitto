@@ -124,7 +124,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `ILA_DATA_DIR` | optional | app | none | no | Directory for the offline geoip dataset cache. |
 | `ILA_AUTO_UPDATE` | optional | app | none | no | Keep false so the process does not fetch dataset updates on its own. |
 | `OPS_HEALTH_TOKEN` | optional | app, worker | none | yes | Bearer/X-Ops-Token (≥32 chars) for /readyz and worker System Logs bridge. Unset = /readyz disabled. |
-| `LOG_HTTP_REQUESTS` | optional | app | none | no | 1 (compose default) writes redacted JSON access lines to app stdout. No cookies or QR tokens; client IP only for an authenticated staff/operator request. |
+| `LOG_HTTP_REQUESTS` | optional | app | none | no | 1 (compose default) writes redacted JSON access lines to app stdout, including client IP for every request. No cookies, query strings, or raw ticket/QR tokens; ticket/QR paths carry a one-way ref hash instead. |
 | `ALLOW_CHECKIN_BEARER` | optional | app | none | no | Emergency: re-enable Bearer check-in auth. Default false; warns outside development. |
 | `CHECKIN_OPERATOR_TOKEN` | optional | app | none | yes | Shared operator token when ALLOW_CHECKIN_BEARER=true. |
 
