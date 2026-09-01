@@ -820,29 +820,28 @@ function HeaderMoreMenu({
               onSendTickets();
             }}
           />
-          {walletPlatforms.any && walletConfigured && (
-            <>
-              <hr className="more-actions-menu__divider" />
-              <MoreActionsMenuItem
-                icon="refresh-dot"
-                label={eventWidePushBusy ? "Pushing updates…" : "Push updates"}
-                hint="Push the latest details to every installed wallet pass"
-                disabled={archived || eventWidePushBusy}
-                tooltip={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
-                onClick={() => {
-                  setOpen(false);
-                  onTriggerEventWidePush();
-                }}
-              />
-            </>
-          )}
+          {/* One divider for both wallet actions, not one each - they're a single group
+           * (same convention as BulkMoreActionsMenu's wallet section, AttendeesTable.tsx). */}
           {walletPlatforms.any && (
             <>
               <hr className="more-actions-menu__divider" />
+              {walletConfigured && (
+                <MoreActionsMenuItem
+                  icon="refresh-dot"
+                  label={eventWidePushBusy ? "Pushing updates…" : "Push updates"}
+                  hint="Push the latest details to every installed wallet pass"
+                  disabled={archived || eventWidePushBusy}
+                  tooltip={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
+                  onClick={() => {
+                    setOpen(false);
+                    onTriggerEventWidePush();
+                  }}
+                />
+              )}
               <MoreActionsMenuItem
                 icon="cloud-download"
                 label={eventWideRefreshStatusBusy ? "Refreshing status…" : "Refresh status"}
-                hint="Pull the latest device-registration status for every wallet pass"
+                hint="Pull the latest device status for every wallet pass"
                 disabled={archived || eventWideRefreshStatusBusy}
                 tooltip={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
                 onClick={() => {
