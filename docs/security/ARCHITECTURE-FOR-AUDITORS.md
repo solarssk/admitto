@@ -19,7 +19,7 @@ Admitto supports **internal corporate events**:
 1. Import attendee lists (spreadsheet or agency identifiers).
 2. Issue opaque ticket / QR tokens (no attendee name or email in the QR payload).
 3. Send ticket email via customer mail infrastructure.
-4. Issue an Apple/Google/Samsung Wallet pass for a ticket, when the deployment configures a wallet provider.
+4. Issue an Apple/Google Wallet pass for a ticket, when the deployment configures a wallet provider.
 5. Check-in on event day (operator UI).
 6. Export lists for reporting.
 
@@ -75,14 +75,14 @@ having to refresh).
 flowchart LR
   Import[Attendee list\nCSV/XLSX or agency import] --> Core[(Admitto database\nsource of truth)]
   Core --> Mail[Ticket email\nQR + optional wallet links]
-  Core --> Wallet[Apple/Google/Samsung\nWallet pass]
+  Core --> Wallet[Apple/Google\nWallet pass]
   Guest[Guest] --> Checkin[Check-in\nscan or manual lookup]
   Checkin --> Core
   Core --> Export[Organizer export\n/ reports]
   Ingest[External registration source\nplanned, not built] -.-> Core
 ```
 
-**Today:** import, mail delivery, wallet passes, check-in, and export/reporting are all shipped and in production use. A self-service external registration/ingest API (a form or third-party system submitting attendees directly into Admitto without staff re-keying them) is a roadmap item, not a deployed control - mention it to auditors as **planned**, not as existing.
+**Today:** import, mail delivery, wallet passes, check-in, and export/reporting have all shipped (see VERSIONING.md and the release tag for maturity status - shipped is not the same as production-ready for a first event). A self-service external registration/ingest API (a form or third-party system submitting attendees directly into Admitto without staff re-keying them) is a roadmap item, not a deployed control - mention it to auditors as **planned**, not as existing.
 
 Admitto is intended as the **system of record for attendance** after guests are registered in the
 customer process (today, via staff-driven CSV/XLSX import).
@@ -95,7 +95,7 @@ The table below lists every event that causes Admitto to do something, for a rev
 |---|---|---|---|
 | Import a CSV/XLSX file | Staff | Parse, validate, dedupe against existing tokens, commit | Attendee rows created; a validation report shows accepted/rejected rows and why |
 | Send or resend a ticket | Staff | Render the event's mail template, queue a delivery row, hand off to the configured mail transport | The worker drains the queue and sends via Graph, SMTP, or Power Automate; delivery status is tracked per attendee |
-| Add to Wallet (attendee action) | Attendee, from the ticket page | Create or reuse a wallet pass via the configured provider (PassCreator) | Attendee receives an Apple/Google/Samsung Wallet pass carrying the same QR token as the ticket |
+| Add to Wallet (attendee action) | Attendee, from the ticket page | Create or reuse a wallet pass via the configured provider (PassCreator) | Attendee receives an Apple/Google Wallet pass carrying the same QR token as the ticket |
 | Scan a QR code, or a manual name lookup | Operator | Validate the token, apply an atomic compare-and-set check-in | Check-in is recorded exactly once; a second scan of the same ticket is reported as already used, never double-counted |
 | A wallet pass is voided, restored, or an attendee's details change | Staff, or automatically as a side effect of revoking/restoring a ticket | Push the updated state to the wallet provider | The attendee's wallet pass reflects the new status/details (a lock-screen update, not a new pass) |
 | Mail bounces | External mail system | The worker's bounce-ingest process reads the bounce mailbox and marks the affected delivery | Delivery status changes to "bounced"; surfaced to staff in-app (no outbound alert is sent - see [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) |

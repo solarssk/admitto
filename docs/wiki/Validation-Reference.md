@@ -170,7 +170,7 @@ Every bulk action (change RSVP status, change ticket type, set company/departmen
 
 ### Wallet (Superadmin only)
 
-Editing anything under Wallet requires Superadmin access, even though an Administrator can edit every other Event Settings tab. A field-mapping row needs both a PassCreator field key (letters, numbers, underscore, starting with a letter) and a value chosen from a fixed list of attendee/event tokens - the editor won't let you pick the same source value on two different rows, and warns before saving a row that has one but not the other. **Test connection** translates PassCreator's own rejection reasons into plain text (wrong API key, template not found, PassCreator rate-limiting you, or a timeout).
+Editing anything under Wallet requires Superadmin access - along with the Mail and Integrations tabs, this is one of three Event Settings tabs an Administrator cannot edit; every other tab is open to Administrators. A field-mapping row needs both a PassCreator field key (letters, numbers, underscore, starting with a letter) and a value chosen from a fixed list of attendee/event tokens - the editor won't let you pick the same source value on two different rows, and warns before saving a row that has one but not the other. **Test connection** translates PassCreator's own rejection reasons into plain text (wrong API key, template not found, PassCreator rate-limiting you, or a timeout).
 
 ### Location
 

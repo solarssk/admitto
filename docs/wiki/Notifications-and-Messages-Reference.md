@@ -12,7 +12,7 @@ Every attendee-facing message is sent by an explicit staff action. Nothing below
 |---|---|---|---|
 | **Ticket email** | Staff sends or resends it (single, bulk, or from Communication → Send) | Editable per event; defaults to "Your ticket for {event name}" | The attendee's email, or a staff-supplied alternate address for a single resend |
 | **Custom email** (up to 10 per event, including anything labelled "Reminder") | Same as ticket email - staff sends or resends it | Fully staff-authored, no default | Same recipient options as the ticket email |
-| **Wallet message** | Staff composes and sends free text from Communication → Wallets | No subject - a single text field, up to 500 characters | Only attendees who currently have an active Apple/Google/Samsung Wallet pass |
+| **Wallet message** | Staff composes and sends free text from Communication → Wallets | No subject - a single text field, up to 500 characters | Only attendees who currently have an active Apple or Google Wallet pass (Samsung Wallet has no working provider integration yet, so no attendee ever holds an active Samsung pass to message) |
 
 ### Ticket email
 

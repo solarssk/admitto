@@ -22,11 +22,11 @@ Admitto helps event teams prepare attendee lists, send tickets, and run check-in
 flowchart TD
     create[Create event] --> configure[Configure event, ticket types, requirements]
     configure --> attendees[Add or import attendees]
-    attendees --> wallet{Wallet configured?}
-    wallet -->|Yes| pass[Attendee adds Apple/Google Wallet pass]
-    wallet -->|No| messages
-    pass --> messages[Prepare, test, and send messages]
-    messages --> monitor[Monitor delivery - resend or correct as needed]
+    attendees --> messages[Prepare, test, and send messages]
+    messages --> wallet{Wallet configured?}
+    wallet -->|Yes| pass[Attendee can add Apple/Google Wallet pass from the ticket page]
+    wallet -->|No| monitor
+    pass --> monitor[Monitor delivery - resend or correct as needed]
     monitor --> checkin[Run check-in - scan or manual lookup]
     checkin --> live[Track admissions live, revoke if needed]
     live --> close[Review reports, export, and archive]
