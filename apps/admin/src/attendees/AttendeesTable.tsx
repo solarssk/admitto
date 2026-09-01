@@ -269,6 +269,30 @@ interface AttendeeCardProps {
   walletPlatforms: EnabledWalletPlatforms;
 }
 
+/** Icon standing in for a card badge-row's field name (Pass/Attendance/Mail) - a word label at
+ * that width pushed the row's total content past the card's available width often enough that
+ * the last field wrapped to its own line (PO review, 2026-09-01: "Mail" dropping below
+ * "Attendance" on an iPhone-width card). An icon is ~19% narrower than the words it replaces
+ * (measured: 356px text-label total vs 289px icon total for the same three fields) and, as a
+ * bonus, never reads as a continuation of the colored badge text next to it (the "Pass Active"
+ * this replaces) the way same-weight label text could.
+ *
+ * Decorative icon (aria-hidden) + a visually-hidden text label, NOT the shared Tooltip component
+ * WalletColumnCell's own PlatformIcon uses for the same idea (bot review, 2026-09-01): Tooltip
+ * makes its own wrapper a real Tab stop whenever its child has no focusable descendant of its
+ * own, which a plain `<i>` glyph never has - three of these per card, at the default 25-row page
+ * size, would have added 75 non-actionable Tab stops a keyboard/switch-device user has to cross
+ * just to get through the list. The field name still reaches assistive tech (as .sr-only text
+ * right next to the icon in reading order), it just doesn't cost a stop of its own to get there. */
+function FieldIcon({ iconClass, label }: Readonly<{ iconClass: string; label: string }>) {
+  return (
+    <>
+      <i className={`ti ${iconClass} attendees-card__field-icon`} aria-hidden="true" />
+      <span className="sr-only">{label}</span>
+    </>
+  );
+}
+
 /** One attendee as a card — the < 768px equivalent of a table row: same data, same actions. */
 function AttendeeCard({
   row,
@@ -299,15 +323,15 @@ function AttendeeCard({
       )}
       <div className="attendees-card__badges">
         <span className="attendees-card__badge-item">
-          <span className="attendees-card__badge-label">Pass</span>
+          <FieldIcon iconClass="ti-ticket" label="Pass" />
           <PassStatusBadge status={row.status} />
         </span>
         <span className="attendees-card__badge-item">
-          <span className="attendees-card__badge-label">Attendance</span>
+          <FieldIcon iconClass="ti-calendar-event" label="Attendance" />
           <RsvpStatusBadge status={row.rsvp_status} />
         </span>
         <span className="attendees-card__badge-item">
-          <span className="attendees-card__badge-label">Mail</span>
+          <FieldIcon iconClass="ti-mail" label="Mail" />
           <MailStatusBadge status={row.last_mail_status} />
         </span>
       </div>

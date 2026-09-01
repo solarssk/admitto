@@ -522,17 +522,22 @@
 
 /* Card-only context: the desktop table gets "Pass status"/"Attendance"/"Mail" for free from its
    column headers, but these three badges have nothing to say what each refers to once they're
-   stacked in a mobile card instead of a labeled column - a short label per badge reuses those
-   same header terms. */
+   stacked in a mobile card instead of a labeled column - a field icon (FieldIcon in
+   AttendeesTable.tsx) stands in for those same header terms, with the full word on hover/focus
+   via Tooltip. A text label was tried first and dropped (PO review, 2026-09-01): at the
+   word-length "Attendance" needs, the three fields' combined width regularly pushed "Mail" onto
+   its own line on an iPhone-width card, and a same-weight label read as a continuation of the
+   colored badge text next to it rather than a separate field name. */
 .attendees-card__badge-item {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: 6px;
 }
 
-.attendees-card__badge-label {
-  font-size: var(--fs-xs);
+.attendees-card__field-icon {
+  font-size: 0.9375rem;
   color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .attendees-card__foot {
