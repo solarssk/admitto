@@ -141,17 +141,42 @@ function pollingJobStatusPolicy(scope: RateLimitScope, keyHint: string): RatePol
   };
 }
 
+/** "stream" is scoped per event, not just per operator: the SSE stream is one long-lived
+ * connection per event an operator has open (Check-in/Overview/Reports all watch the same
+ * event's stream), unlike "scan"/"history" which are short bursty requests an operator can
+ * fire across many events in a session. A global-per-user budget meant an operator with
+ * check-in open for one event (whose stream reconnects periodically - proxy idle timeouts,
+ * network blips) could exhaust the whole account's stream budget and see 429s on a completely
+ * different event/tab that never itself made excess requests (PO report). */
 function checkinRateLimitKey(c: Context, kind: CheckinRateLimitKind): string {
+  const eventSuffix = kind === "stream" ? `:event:${c.req.param("eventId")}` : "";
   if (c.get("checkinAuth") === "bearer") {
-    return `checkin:${kind}:bearer:ip:${resolveClientIp(c)}`;
+    return `checkin:${kind}:bearer:ip:${resolveClientIp(c)}${eventSuffix}`;
   }
   const userId = c.get("operatorUserId") as string | undefined;
-  if (userId) return `checkin:${kind}:user:${userId}`;
-  return `checkin:${kind}:ip:${resolveClientIp(c)}`;
+  if (userId) return `checkin:${kind}:user:${userId}${eventSuffix}`;
+  return `checkin:${kind}:ip:${resolveClientIp(c)}${eventSuffix}`;
 }
 
 function checkinRateLimitKeyHint(c: Context): "ip" | "user" {
   return c.get("checkinAuth") === "bearer" ? "ip" : "user";
+}
+
+/** Actor-wide ceiling alongside "stream"'s own per-event key above - without this, an actor
+ * could mint an unbounded number of fresh per-event budgets simply by varying :eventId, since
+ * under emergency Bearer auth the event-scope gate deliberately allows an unknown/made-up event
+ * id through (assertEventNotArchived has nothing to check against). This keeps the per-event
+ * isolation for the legitimate multi-tab/multi-page case while still bounding one actor's total
+ * stream-request volume overall, same as the plain per-actor key this policy used before event
+ * scoping (bot review). Its own "stream" prefix (not shared with "scan"/"history") keeps this
+ * counter in its own namespace rather than colliding with either of those policies' keys. */
+function checkinStreamActorKey(c: Context): string {
+  if (c.get("checkinAuth") === "bearer") {
+    return `checkin:stream:bearer:ip:${resolveClientIp(c)}`;
+  }
+  const userId = c.get("operatorUserId") as string | undefined;
+  if (userId) return `checkin:stream:user:${userId}`;
+  return `checkin:stream:ip:${resolveClientIp(c)}`;
 }
 
 function healthzRateLimitKey(ip: string, instanceId: string): string {
@@ -763,6 +788,12 @@ export const RATE_POLICIES = {
         keyOf: (c) => checkinRateLimitKey(c, "stream"),
         windowMs: 60_000,
         max: 12,
+        logOnExceeded: { scope: "checkin_stream", keyHint: checkinRateLimitKeyHint },
+      },
+      {
+        keyOf: checkinStreamActorKey,
+        windowMs: 60_000,
+        max: 48,
         logOnExceeded: { scope: "checkin_stream", keyHint: checkinRateLimitKeyHint },
       },
     ],

@@ -3,6 +3,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   probeStreamAuth,
+  RATE_LIMIT_BACKOFF_MS,
   STREAM_BACKOFF_MS,
   useEventStream,
 } from "../../src/hooks/useEventStream.js";
@@ -55,6 +56,25 @@ describe("probeStreamAuth", () => {
   it("returns ok for other statuses", async () => {
     const fetchFn = vi.fn().mockResolvedValue({ status: 503 });
     expect(await probeStreamAuth("evt-1", fetchFn)).toBe("ok");
+  });
+
+  it("returns rate_limited for 429", async () => {
+    const fetchFn = vi.fn().mockResolvedValue({ status: 429 });
+    expect(await probeStreamAuth("evt-1", fetchFn)).toBe("rate_limited");
+  });
+
+  it("returns unknown when the fetch itself rejects (network error)", async () => {
+    const fetchFn = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    expect(await probeStreamAuth("evt-1", fetchFn)).toBe("unknown");
+  });
+
+  it("still classifies as rate_limited even when cancelling the body after abort rejects (real Response behavior)", async () => {
+    // A real (non-mocked) ReadableStream's cancel() can reject with AbortError once the same
+    // signal that aborted the fetch is what triggers the cancel - the status must already be
+    // captured before that rejection is possible, not read from `res` again afterward.
+    const cancel = vi.fn().mockRejectedValue(new DOMException("aborted", "AbortError"));
+    const fetchFn = vi.fn().mockResolvedValue({ status: 429, body: { cancel } });
+    expect(await probeStreamAuth("evt-1", fetchFn)).toBe("rate_limited");
   });
 
   it("aborts probe and cancels body after reading status", async () => {
@@ -180,6 +200,84 @@ describe("useEventStream", () => {
 
     expect(result.current.status).not.toBe("auth_error");
     expect(instances.length).toBeGreaterThan(3);
+  });
+
+  it("sets rate_limited when the probe returns 429, and reconnects after RATE_LIMIT_BACKOFF_MS instead of the normal schedule", async () => {
+    vi.mocked(fetch).mockResolvedValue({ status: 429 } as Response);
+    const { result } = renderHook(() => useEventStream("evt-1", vi.fn()));
+
+    // First two failures don't probe yet (below MAX_CONSECUTIVE_FAILURES) - advance their own
+    // short backoff so each gets a real EventSource instance to fail again on.
+    for (let i = 0; i < 2; i++) {
+      act(() => {
+        instances[i]?.listeners.onerror?.();
+      });
+      await flushErrorHandler();
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+    }
+
+    // Third consecutive failure crosses the threshold and probes, getting 429 back.
+    act(() => {
+      instances[2]?.listeners.onerror?.();
+    });
+    await flushErrorHandler();
+
+    expect(result.current.status).toBe("rate_limited");
+    expect(instances).toHaveLength(3);
+
+    act(() => {
+      vi.advanceTimersByTime(RATE_LIMIT_BACKOFF_MS - 1);
+    });
+    expect(instances).toHaveLength(3);
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(instances).toHaveLength(4);
+  });
+
+  it("re-probes on every failure once rate_limited, and resumes normal reconnecting once the probe recovers", async () => {
+    const { result } = renderHook(() => useEventStream("evt-1", vi.fn()));
+
+    // Connect once first - a real reconnect-storm-into-rate-limit only happens after a stream
+    // that was previously working, not on the very first connection attempt.
+    act(() => {
+      instances[0]?.listeners.onopen?.();
+    });
+    expect(result.current.status).toBe("connected");
+
+    vi.mocked(fetch).mockResolvedValue({ status: 429 } as Response);
+    for (let i = 0; i < 2; i++) {
+      act(() => {
+        instances[i]?.listeners.onerror?.();
+      });
+      await flushErrorHandler();
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+    }
+    act(() => {
+      instances[2]?.listeners.onerror?.();
+    });
+    await flushErrorHandler();
+    expect(result.current.status).toBe("rate_limited");
+
+    act(() => {
+      vi.advanceTimersByTime(RATE_LIMIT_BACKOFF_MS);
+    });
+    expect(instances).toHaveLength(4);
+
+    // A single subsequent failure re-probes immediately (not after 3 more) while still marked
+    // rate_limited, and clears back to a normal reconnecting status once the probe recovers.
+    vi.mocked(fetch).mockResolvedValue({ status: 200 } as Response);
+    act(() => {
+      instances[3]?.listeners.onerror?.();
+    });
+    await flushErrorHandler();
+
+    expect(result.current.status).toBe("reconnecting");
   });
 
   it("backs off reconnect delays after a successful open", async () => {

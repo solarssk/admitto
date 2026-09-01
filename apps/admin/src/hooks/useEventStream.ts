@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 /** Connection state for the admin check-in SSE subscription. */
-export type StreamStatus = "connecting" | "connected" | "reconnecting" | "auth_error";
+export type StreamStatus = "connecting" | "connected" | "reconnecting" | "auth_error" | "rate_limited";
 
 /** Payload for a live `checkin` event on the event stream. */
 export interface StreamCheckinEvent {
@@ -14,15 +14,18 @@ export interface StreamCheckinEvent {
   deviceLabel: string | null;
 }
 
-const MAX_INITIAL_FAILURES = 3;
+const MAX_CONSECUTIVE_FAILURES = 3;
 /** Reconnect backoff schedule (ms) after SSE disconnect. */
 export const STREAM_BACKOFF_MS = [2000, 4000, 8000, 30000] as const;
+/** Backoff after a confirmed 429 (rate/concurrency limited) - longer than the normal schedule's
+ * own 30s ceiling, since retrying at the same pace that caused the limit just prolongs it. */
+export const RATE_LIMIT_BACKOFF_MS = 60_000;
 
 /** Preflight stream access — EventSource.onerror does not expose HTTP status. */
 export async function probeStreamAuth(
   eventId: string,
   fetchFn: typeof fetch = fetch,
-): Promise<"ok" | "denied" | "unknown"> {
+): Promise<"ok" | "denied" | "rate_limited" | "unknown"> {
   const ac = new AbortController();
   try {
     const res = await fetchFn(`/api/checkin/events/${encodeURIComponent(eventId)}/stream`, {
@@ -31,9 +34,18 @@ export async function probeStreamAuth(
       headers: { Accept: "text/event-stream" },
       signal: ac.signal,
     });
-    ac.abort();
-    await res.body?.cancel();
-    if (res.status === 401 || res.status === 403) return "denied";
+    // Classify from the status before any cleanup - a real (non-mocked) body's cancel() after
+    // aborting the same signal can itself reject with AbortError, which the outer catch would
+    // otherwise mistake for "status unknown" and silently drop a real 429/401/403 (bot review).
+    const status = res.status;
+    try {
+      ac.abort();
+      await res.body?.cancel();
+    } catch {
+      /* cleanup failure doesn't change the classification already read above */
+    }
+    if (status === 401 || status === 403) return "denied";
+    if (status === 429) return "rate_limited";
     return "ok";
   } catch {
     ac.abort();
@@ -66,8 +78,9 @@ export function useEventStream(
     let es: EventSource | null = null;
     let retryTimer: number | null = null;
     let reconnectAttempt = 0;
-    let initialFailureCount = 0;
+    let consecutiveFailureCount = 0;
     let everConnected = false;
+    let rateLimited = false;
     let cancelled = false;
 
     const clearRetry = () => {
@@ -78,7 +91,11 @@ export function useEventStream(
     };
 
     const scheduleReconnect = () => {
-      const delay = STREAM_BACKOFF_MS[Math.min(reconnectAttempt - 1, STREAM_BACKOFF_MS.length - 1)];
+      // A confirmed 429 gets its own longer, fixed delay instead of the normal schedule -
+      // retrying at the pace that caused the limit just prolongs it.
+      const delay = rateLimited
+        ? RATE_LIMIT_BACKOFF_MS
+        : STREAM_BACKOFF_MS[Math.min(reconnectAttempt - 1, STREAM_BACKOFF_MS.length - 1)];
       clearRetry();
       retryTimer = window.setTimeout(connect, delay);
     };
@@ -94,7 +111,8 @@ export function useEventStream(
       es.onopen = () => {
         everConnected = true;
         reconnectAttempt = 0;
-        initialFailureCount = 0;
+        consecutiveFailureCount = 0;
+        rateLimited = false;
         setStatus("connected");
       };
 
@@ -118,19 +136,31 @@ export function useEventStream(
         if (cancelled) return;
 
         reconnectAttempt += 1;
+        consecutiveFailureCount += 1;
 
-        if (!everConnected) {
-          initialFailureCount += 1;
-          if (initialFailureCount >= MAX_INITIAL_FAILURES) {
-            const auth = await probeStreamAuth(eventId);
-            if (cancelled) return;
-            // eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret auth probe status string
-            if (auth === "denied") {
-              setStatus("auth_error");
-              return;
-            }
-            initialFailureCount = 0;
+        // Re-probe every Nth consecutive failure to check for a real cause (403 vs 429) rather
+        // than on every single drop - a probe is itself a request, so probing continuously while
+        // rate-limited would just add to the very budget it's trying to detect exhaustion of.
+        // Once already rate-limited, re-probe on every failure instead: the whole point of that
+        // state is to notice recovery quickly rather than staying stuck for MAX_CONSECUTIVE_FAILURES
+        // more silent attempts.
+        if (rateLimited || consecutiveFailureCount >= MAX_CONSECUTIVE_FAILURES) {
+          const probeResult = await probeStreamAuth(eventId);
+          if (cancelled) return;
+          // eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret probe status string
+          if (probeResult === "denied") {
+            setStatus("auth_error");
+            return;
           }
+          // eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret probe status string
+          if (probeResult === "rate_limited") {
+            rateLimited = true;
+            setStatus("rate_limited");
+            scheduleReconnect();
+            return;
+          }
+          rateLimited = false;
+          consecutiveFailureCount = 0;
         }
 
         if (cancelled) return;

@@ -1,47 +1,85 @@
 import type { Context, Next } from "hono";
 import { resolveClientIp } from "./rate-limit/client-ip.js";
 
-/** Max concurrent SSE streams per operator (or bearer IP). */
-const MAX_CONCURRENT_CHECKIN_STREAMS = 3;
+/** Max concurrent SSE streams per event, per operator (or bearer IP). */
+const MAX_CONCURRENT_CHECKIN_STREAMS_PER_EVENT = 3;
+/** Actor-wide ceiling on top of the per-event one above - without it, an actor could mint an
+ * unbounded number of fresh per-event slot budgets simply by varying :eventId, since under
+ * emergency Bearer auth the event-scope gate deliberately allows an unknown/made-up event id
+ * through (assertEventNotArchived has nothing to check against). Generous enough for a handful
+ * of events open at once (Check-in + Overview + Reports all watch the same event, so 3 events'
+ * worth of tabs is already 9), while still bounding one actor's total stream count overall -
+ * same as the plain per-actor cap this used before per-event scoping (bot review). */
+const MAX_CONCURRENT_CHECKIN_STREAMS_PER_ACTOR = 12;
 
 const CHECKIN_STREAM_SLOT_KEY = "checkinStreamSlotKey";
 
-const activeStreamsByKey = new Map<string, number>();
+const activeStreamsByEvent = new Map<string, number>();
+const activeStreamsByActor = new Map<string, number>();
 
-function streamConcurrencyKey(c: Context): string {
-  if (c.get("checkinAuth") === "bearer") {
-    return `checkin:stream:bearer:ip:${resolveClientIp(c)}`;
-  }
+function checkinAuthActorParts(c: Context): { prefix: "bearer:ip" | "user" | "ip"; value: string } {
+  if (c.get("checkinAuth") === "bearer") return { prefix: "bearer:ip", value: resolveClientIp(c) };
   const userId = c.get("operatorUserId") as string | undefined;
-  if (userId) return `checkin:stream:user:${userId}`;
-  return `checkin:stream:ip:${resolveClientIp(c)}`;
+  if (userId) return { prefix: "user", value: userId };
+  return { prefix: "ip", value: resolveClientIp(c) };
 }
 
-/** Reserve a stream slot; returns 429 Response when at capacity. */
+// Scoped per event, same reasoning as checkinRateLimitKey's own "stream" branch
+// (rate-limit/policies.ts) - a global-per-user slot budget let one event's reconnecting stream
+// starve a completely different event's stream under the same account.
+function streamEventKey(c: Context): string {
+  const { prefix, value } = checkinAuthActorParts(c);
+  return `checkin:stream:${prefix}:${value}:event:${c.req.param("eventId")}`;
+}
+
+function streamActorKey(c: Context): string {
+  const { prefix, value } = checkinAuthActorParts(c);
+  return `checkin:stream:${prefix}:${value}`;
+}
+
+function tryAcquireSlot(counters: Map<string, number>, key: string, max: number): boolean {
+  const active = counters.get(key) ?? 0;
+  if (active >= max) return false;
+  counters.set(key, active + 1);
+  return true;
+}
+
+function releaseSlot(counters: Map<string, number>, key: string): void {
+  const current = counters.get(key) ?? 1;
+  if (current <= 1) {
+    counters.delete(key);
+  } else {
+    counters.set(key, current - 1);
+  }
+}
+
+/** Reserve a stream slot; returns 429 Response when at capacity (per-event or actor-wide). */
 export function tryAcquireCheckinStreamSlot(c: Context): Response | null {
-  const key = streamConcurrencyKey(c);
-  const active = activeStreamsByKey.get(key) ?? 0;
-  if (active >= MAX_CONCURRENT_CHECKIN_STREAMS) {
+  const eventKey = streamEventKey(c);
+  const actorKey = streamActorKey(c);
+
+  if (!tryAcquireSlot(activeStreamsByEvent, eventKey, MAX_CONCURRENT_CHECKIN_STREAMS_PER_EVENT)) {
+    return c.json({ error: "too_many_streams" }, 429);
+  }
+  if (!tryAcquireSlot(activeStreamsByActor, actorKey, MAX_CONCURRENT_CHECKIN_STREAMS_PER_ACTOR)) {
+    releaseSlot(activeStreamsByEvent, eventKey);
     return c.json({ error: "too_many_streams" }, 429);
   }
 
-  activeStreamsByKey.set(key, active + 1);
-  c.set(CHECKIN_STREAM_SLOT_KEY, key);
+  c.set(CHECKIN_STREAM_SLOT_KEY, { eventKey, actorKey });
   return null;
 }
 
-/** Release a slot acquired by {@link tryAcquireCheckinStreamSlot} (call on SSE disconnect). */
+/** Release the slot pair acquired by {@link tryAcquireCheckinStreamSlot} (call on SSE disconnect).
+ * Always stored/released as one pair, not two independently-nullable keys - the two are only ever
+ * set together above, so there's no real "only one acquired" state to branch on separately. */
 export function releaseCheckinStreamSlot(c: Context): void {
-  const key = c.get(CHECKIN_STREAM_SLOT_KEY) as string | undefined;
-  if (!key) return;
+  const slot = c.get(CHECKIN_STREAM_SLOT_KEY) as { eventKey: string; actorKey: string } | undefined;
+  if (!slot) return;
 
   c.set(CHECKIN_STREAM_SLOT_KEY, undefined);
-  const current = activeStreamsByKey.get(key) ?? 1;
-  if (current <= 1) {
-    activeStreamsByKey.delete(key);
-  } else {
-    activeStreamsByKey.set(key, current - 1);
-  }
+  releaseSlot(activeStreamsByEvent, slot.eventKey);
+  releaseSlot(activeStreamsByActor, slot.actorKey);
 }
 
 /** Limit parallel long-lived check-in SSE connections per operator. */
@@ -53,12 +91,18 @@ export function createCheckinStreamConcurrencyLimit() {
   };
 }
 
-/** Test-only: active stream count for a concurrency key. */
+/** Test-only: active stream count for a per-event concurrency key. */
 export function activeCheckinStreamCountForTests(key: string): number {
-  return activeStreamsByKey.get(key) ?? 0;
+  return activeStreamsByEvent.get(key) ?? 0;
+}
+
+/** Test-only: active stream count for an actor-wide concurrency key. */
+export function activeCheckinStreamActorCountForTests(key: string): number {
+  return activeStreamsByActor.get(key) ?? 0;
 }
 
 /** Test-only: reset concurrency counters. */
 export function resetCheckinStreamLimitsForTests(): void {
-  activeStreamsByKey.clear();
+  activeStreamsByEvent.clear();
+  activeStreamsByActor.clear();
 }

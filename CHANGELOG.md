@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-09-01
+
 ### Fixed
 
 - Reports' Custom fields tab cards squeezed into three or more illegible columns on wide screens, and a lone trailing card in an incomplete row stretched to fill the whole remaining row width instead of matching its row-mates' size. The grid now caps at two columns per row, same layout as the Wallets tab.
@@ -15,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reports' "Time to wallet tap" card, and the wallet CSV/PDF export's "Ticket email first sent at" column, only recognized a ticket-email delivery that had reached a later "sent" webhook stage that no configured mail provider (Microsoft Graph, SMTP, or otherwise) actually reports - every real send only ever reaches "accepted". Both always showed no data as a result, regardless of how many tickets had actually been sent. They now also recognize an accepted delivery, and only a genuine ticket-email delivery rather than any other Communication campaign send to the same attendee.
 - Reports' Custom fields tab logged a Recharts "width(0) and height(0)" console warning when navigating away from it - its charts are kept mounted in the background for a fast return to the tab, and their internal size observers kept watching after the tab collapsed to zero size. Each chart now unmounts while its tab is hidden and remounts instantly when it's shown again, without needing to refetch data.
 - Attendees' header "More actions" menu split "Push updates" and "Refresh status" - both wallet actions - across two separate dividers instead of grouping them as one section, unlike the per-attendee selection menu's own wallet section. They now share a single divider, and "Refresh status"'s description is shorter.
+- Check-in's live-updates stream shared one rate-limit and concurrency budget across an operator's whole account instead of per event, so a stream reconnecting on one event (a proxy idle timeout, a network blip) could exhaust the account's whole budget and show "too many requests" on a completely different event or browser tab under the same account. The budget is now scoped per event, and the stream also recognizes a "too many requests" response specifically - backing off for longer and showing a distinct notice - instead of retrying at the same pace indefinitely.
 - Editing a field on the wallet-relevant list (Event Settings General/Wallet/Location tabs, an attendee's profile, or a bulk ticket-type/company/department change) always warned "this will push an update to N installed wallet passes" before saving and queued that push, even when the field isn't actually wired into the event's wallet field mapping and so could never change anything on an already-issued pass - e.g. conference type with no PassCreator Additional Property pointed at it. Both the warning and the background push now only fire for a field that's actually mapped.
 
 ## [0.6.4] - 2026-09-01
@@ -1304,7 +1307,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.4...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.5...HEAD
+[0.6.5]: https://github.com/solarssk/admitto/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/solarssk/admitto/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/solarssk/admitto/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/solarssk/admitto/compare/v0.6.1...v0.6.2
