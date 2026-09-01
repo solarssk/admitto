@@ -657,7 +657,6 @@ export function computeTapDays(sentAt: Date | null | undefined, issuedAt: Date |
 
 interface WalletPassAggregates {
   confirmed: number;
-  cancelled: number;
   appleOnly: number;
   googleOnly: number;
   both: number;
@@ -674,8 +673,8 @@ interface WalletPassAggregates {
  * branch here loses a nesting level once it's no longer inside a for loop). `enabledPlatforms`
  * zeroes a disabled platform's active-registration count before classification, so a pass
  * registered only on a platform the event owner has since turned off reads as "not installed"
- * here (and in adoption.confirmed, which not_installed is derived from below) rather than as a
- * still-live confirmation of a platform the Wallets tab no longer offers. */
+ * here (and in adoption.confirmed) rather than as a still-live confirmation of a platform the
+ * Wallets tab no longer offers. */
 function applyWalletPassToAggregates(
   pass: WalletPassAggregateRow,
   enabledPlatforms: { apple: boolean; google: boolean },
@@ -688,7 +687,6 @@ function applyWalletPassToAggregates(
   else if (platform === "apple_only") acc.appleOnly++;
   else if (platform === "google_only") acc.googleOnly++;
   if (platform !== "none") acc.confirmed++;
-  if (pass.status === "voided") acc.cancelled++;
   if (pass.registration_checked_at && (!acc.mostRecentSync || pass.registration_checked_at > acc.mostRecentSync)) {
     acc.mostRecentSync = pass.registration_checked_at;
   }
@@ -713,7 +711,6 @@ export function aggregateWalletPasses(
 ): WalletPassAggregates {
   const acc: WalletPassAggregates = {
     confirmed: 0,
-    cancelled: 0,
     appleOnly: 0,
     googleOnly: 0,
     both: 0,
@@ -896,7 +893,6 @@ async function loadWalletReportsAggregates(
 
   const {
     confirmed,
-    cancelled,
     appleOnly,
     googleOnly,
     both,
@@ -929,13 +925,11 @@ async function loadWalletReportsAggregates(
       got_pass_pct: oneDecimalPct(gotPass, totalAttendees),
       confirmed,
       confirmed_pct: oneDecimalPct(confirmed, gotPass),
-      cancelled,
     },
     platform: {
       apple_only: appleOnly,
       google_only: googleOnly,
       both,
-      not_installed: Math.max(0, gotPass - confirmed),
     },
     by_ticket_type,
     issued_by_day,
@@ -1645,12 +1639,13 @@ async function exportWalletReportsPdf(
   const aggregates = await loadWalletReportsAggregates(db, eventId, timeZone, event.date, enabledPlatforms);
   const eventDate = event.date.toISOString().slice(0, 10);
 
-  // Same buckets-always-populated issue as tapRows below: these 4 rows exist even with zero
-  // passes issued (every count would just read 0), so the "No passes issued" fallback a few
-  // lines down was unreachable dead code - branch on adoption.got_pass instead, matching the
-  // Wallets tab's own whole-page EmptyState condition.
+  // Same buckets-always-populated issue as tapRows below: these rows exist even with zero
+  // installed passes (every count would just read 0), so the "No wallet passes installed"
+  // fallback a few lines down was unreachable dead code - branch on adoption.confirmed instead
+  // (not got_pass: this breakdown is the platform split among installed passes, not issued
+  // ones), matching the Wallets tab's own whole-page EmptyState condition.
   const platformRows =
-    aggregates.adoption.got_pass === 0
+    aggregates.adoption.confirmed === 0
       ? ""
       : [
           enabledPlatforms.apple && { label: "Apple Wallet only", count: aggregates.platform.apple_only },
@@ -1659,12 +1654,11 @@ async function exportWalletReportsPdf(
           // aggregateWalletPasses already zeroes .both to 0 when only one is enabled, but the row
           // label itself would still misleadingly imply the option exists.
           enabledPlatforms.apple && enabledPlatforms.google && { label: "More than one wallet", count: aggregates.platform.both },
-          { label: "No wallet installed", count: aggregates.platform.not_installed },
         ]
           .filter((row): row is { label: string; count: number } => row !== false)
           .map(
             (row) =>
-              `<tr><td>${escapeHtml(row.label)}</td><td>${row.count}</td><td>${oneDecimalPct(row.count, aggregates.adoption.got_pass)}%</td></tr>`,
+              `<tr><td>${escapeHtml(row.label)}</td><td>${row.count}</td><td>${oneDecimalPct(row.count, aggregates.adoption.confirmed)}%</td></tr>`,
           )
           .join("");
 
@@ -1690,9 +1684,8 @@ async function exportWalletReportsPdf(
 
   const statsHtml = [
     { label: "Total attendees", value: String(aggregates.total_attendees) },
-    { label: "Issued", value: `${aggregates.adoption.got_pass} (${aggregates.adoption.got_pass_pct}%)` },
+    { label: "Issued", value: `${aggregates.adoption.got_pass} (${aggregates.adoption.got_pass_pct}% of attendees)` },
     { label: "Installed", value: `${aggregates.adoption.confirmed} (${aggregates.adoption.confirmed_pct}% of issued)` },
-    { label: "Voided", value: String(aggregates.adoption.cancelled) },
   ]
     .map((s) => `<div class="stat"><span>${s.label}</span><strong>${s.value}</strong></div>`)
     .join("");
@@ -1710,8 +1703,8 @@ async function exportWalletReportsPdf(
   ${truncatedWarningHtml}
   <h2>Wallet platform</h2>
   <table>
-    <thead><tr><th>Platform</th><th>Passes</th><th>Share of issued</th></tr></thead>
-    <tbody>${platformRows || '<tr><td colspan="3">No passes issued</td></tr>'}</tbody>
+    <thead><tr><th>Platform</th><th>Passes</th><th>Share of installed</th></tr></thead>
+    <tbody>${platformRows || '<tr><td colspan="3">No wallet passes installed yet</td></tr>'}</tbody>
   </table>
   <h2>Adoption by ticket type</h2>
   <table>

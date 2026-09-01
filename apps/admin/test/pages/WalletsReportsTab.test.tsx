@@ -153,8 +153,8 @@ function fixture(overrides: Partial<EventWalletReportsResponse> = {}): EventWall
     total_attendees: 20,
     synced_at: "2026-08-01T10:00:00.000Z",
     passes_truncated: false,
-    adoption: { got_pass: 15, got_pass_pct: 75, confirmed: 10, confirmed_pct: 66.7, cancelled: 3 },
-    platform: { apple_only: 6, google_only: 3, both: 1, not_installed: 5 },
+    adoption: { got_pass: 15, got_pass_pct: 75, confirmed: 10, confirmed_pct: 66.7 },
+    platform: { apple_only: 6, google_only: 3, both: 1 },
     // got_pass/pct (issued) deliberately differ from confirmed/confirmed_pct (installed) below -
     // the "Adoption by ticket type" card must read the confirmed numbers, not got_pass, since a
     // ticket type can have issued-but-not-installed passes (e.g. VIP: 5 issued, only 4 installed).
@@ -323,27 +323,25 @@ describe("WalletsReportsTab", () => {
     );
     await screen.findByText("Wallet adoption");
 
-    // Adoption gauge: [issuedPct, installedPct, voidedPct] - voidedPct (20) is computed by the
-    // component itself via pctOf(cancelled=3, got_pass=15), not read straight off the fixture.
+    // Adoption gauge: rings are listed [installedPct, issuedPct] (innermost to outermost) so
+    // Issued actually renders as the outer ring - see the AdoptionGauge doc comment.
     const adoptionCard = cardByTitle("Wallet adoption");
-    expect(dataValues(within(adoptionCard).getByTestId("rc-radialbar"))).toEqual([75, 66.7, 20]);
+    expect(dataValues(within(adoptionCard).getByTestId("rc-radialbar"))).toEqual([66.7, 75]);
     expect(breakdownRows(adoptionCard)).toEqual([
-      { name: "Issued", meta: "15 · 75%" },
+      { name: "Issued", meta: "15 · 75% of attendees" },
       { name: "Installed", meta: "10 · 66.7% of issued" },
-      { name: "Voided", meta: "3 · ticket revoked" },
     ]);
 
-    // Platform donut: apple_only, google_only, samsung placeholder (always 0), both, not_installed
-    // - and the breakdown list's own per-platform percentages, each independently computed by
-    // pctOf(count, issued=15).
+    // Platform donut: apple_only, google_only, samsung placeholder (always 0), both - no "not
+    // installed" slice (that's the Wallet adoption card's job) - and the breakdown list's own
+    // per-platform percentages, each independently computed by pctOf(count, installed=10).
     const platformCard = cardByTitle("Wallet platform");
-    expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([6, 3, 0, 1, 5]);
+    expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([6, 3, 0, 1]);
     expect(breakdownRows(platformCard)).toEqual([
-      { name: "Apple Wallet", meta: "6 · 40%" },
-      { name: "Google Wallet", meta: "3 · 20%" },
+      { name: "Apple Wallet", meta: "6 · 60%" },
+      { name: "Google Wallet", meta: "3 · 30%" },
       { name: "Samsung Wallet", meta: "0 · 0%" },
-      { name: "More than one wallet", meta: "1 · 6.7%" },
-      { name: "No wallet installed", meta: "5 · 33.3%" },
+      { name: "More than one wallet", meta: "1 · 10%" },
     ]);
 
     // Ticket-type breakdown: sorted descending by confirmed_pct (installed, not got_pass/pct
@@ -559,13 +557,12 @@ describe("WalletsReportsTab", () => {
     await screen.findByText("Wallet adoption");
 
     const platformCard = cardByTitle("Wallet platform");
-    expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([6, 0, 5]);
+    expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([6, 0]);
     expect(breakdownRows(platformCard)).toEqual([
-      { name: "Apple Wallet", meta: "6 · 40%" },
+      { name: "Apple Wallet", meta: "6 · 60%" },
       { name: "Samsung Wallet", meta: "0 · 0%" },
-      { name: "No wallet installed", meta: "5 · 33.3%" },
     ]);
-    expect(within(platformCard).getByText(/picked it up\.$/)).toBeTruthy();
+    expect(within(platformCard).getByText(/confirmed it\.$/)).toBeTruthy();
     expect(within(platformCard).queryByText(/more than one at once/)).toBeNull();
   });
 
@@ -578,11 +575,10 @@ describe("WalletsReportsTab", () => {
     await screen.findByText("Wallet adoption");
 
     const platformCard = cardByTitle("Wallet platform");
-    expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([3, 0, 5]);
+    expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([3, 0]);
     expect(breakdownRows(platformCard)).toEqual([
-      { name: "Google Wallet", meta: "3 · 20%" },
+      { name: "Google Wallet", meta: "3 · 30%" },
       { name: "Samsung Wallet", meta: "0 · 0%" },
-      { name: "No wallet installed", meta: "5 · 33.3%" },
     ]);
   });
 
@@ -611,13 +607,12 @@ describe("WalletsReportsTab", () => {
     await screen.findByText("Wallet adoption");
 
     const platformCard = cardByTitle("Wallet platform");
-    // Apple, Google, More than one wallet, No wallet installed - no Samsung slice.
-    expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([6, 3, 1, 5]);
+    // Apple, Google, More than one wallet - no Samsung slice.
+    expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([6, 3, 1]);
     expect(breakdownRows(platformCard).map((r) => r.name)).toEqual([
       "Apple Wallet",
       "Google Wallet",
       "More than one wallet",
-      "No wallet installed",
     ]);
   });
 
@@ -633,17 +628,13 @@ describe("WalletsReportsTab", () => {
     await screen.findByText("Wallet adoption");
 
     const platformCard = cardByTitle("Wallet platform");
-    expect(breakdownRows(platformCard).map((r) => r.name)).toEqual([
-      "Apple Wallet",
-      "Samsung Wallet",
-      "No wallet installed",
-    ]);
+    expect(breakdownRows(platformCard).map((r) => r.name)).toEqual(["Apple Wallet", "Samsung Wallet"]);
   });
 
   it("shows the 'No wallet passes yet' EmptyState when nothing has been issued at all", async () => {
     fetchEventWalletReports.mockResolvedValue(
       fixture({
-        adoption: { got_pass: 0, got_pass_pct: 0, confirmed: 0, confirmed_pct: 0, cancelled: 0 },
+        adoption: { got_pass: 0, got_pass_pct: 0, confirmed: 0, confirmed_pct: 0 },
       }),
     );
 
