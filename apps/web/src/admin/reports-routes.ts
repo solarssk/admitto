@@ -570,15 +570,26 @@ const WALLET_PASS_AGGREGATE_SELECT = {
   attendee: {
     select: {
       ticket_type: true,
-      // Every non-bounced delivery across initial and resend attempts, not just "initial" (a
-      // "purpose: initial" filter would keep pointing at one that later hard-bounced -
+      // Every non-bounced TICKET delivery across initial and resend attempts, not just "initial"
+      // (a "purpose: initial" filter would keep pointing at one that later hard-bounced -
       // applyBounceResult retains its sent_at, only status flips to "bounced" - overstating tap
       // time against a since-successful resend). No orderBy/take here (unlike a plain "earliest
       // sent_at" query) - see earliestDeliverySuccessAt's own comment for why: status "accepted"
       // is this codebase's only real terminal-success state today (no mailer adapter ever reports
       // "sent"), and ordering by a column that's always null would silently drop every real send.
+      // template_id: null OR template.name === "ticket" scopes this to genuine ticket-email sends
+      // only - without it, a Communication campaign send using a different template is recorded
+      // with purpose "resend" too (resolveNoDeliveryScopeAndPurpose, bulk-send-routes.ts), so an
+      // attendee who received a reminder/announcement before ever getting a ticket would have that
+      // unrelated email's timestamp picked up here instead (bot review on this PR). Every genuine
+      // ticket send resolves to either no custom template (template_id null, the compiled builtin)
+      // or a MailTemplate row named "ticket" (resolveTemplateForEvent, mail-templates package) -
+      // never any other name - so this mirrors that resolution rather than inventing a new rule.
       email_deliveries: {
-        where: { status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES] as string[] } },
+        where: {
+          status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES] as string[] },
+          OR: [{ template_id: null }, { template: { name: "ticket" } }] as Prisma.EmailDeliveryWhereInput[],
+        },
         select: { accepted_at: true, sent_at: true, delivered_at: true },
       },
     },
@@ -725,7 +736,7 @@ export function aggregateWalletPasses(
  * admissions report's own by_ticket_type (see EventReportsResponse's doc comment above): a
  * "(none)" bucket for attendees with no type set, and a "(not in catalog)" bucket for stored
  * ticket_type values whose catalog row no longer exists. */
-function buildWalletTicketTypeBreakdown(
+export function buildWalletTicketTypeBreakdown(
   catalog: TicketTypeInfo[],
   totalByType: Map<string | null, number>,
   gotPassByType: Map<string | null, number>,
@@ -1469,9 +1480,13 @@ const WALLET_EXPORT_ATTENDEE_SELECT = {
     },
   },
   // Same shape and reasoning as WALLET_PASS_AGGREGATE_SELECT above - fed through
-  // earliestDeliverySuccessAt rather than a plain earliest-sent_at query, see its own comment.
+  // earliestDeliverySuccessAt rather than a plain earliest-sent_at query, see its own comment,
+  // including the template_id/template.name scoping to genuine ticket-email sends only.
   email_deliveries: {
-    where: { status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES] as string[] } },
+    where: {
+      status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES] as string[] },
+      OR: [{ template_id: null }, { template: { name: "ticket" } }] as Prisma.EmailDeliveryWhereInput[],
+    },
     select: { accepted_at: true, sent_at: true, delivered_at: true },
   },
 } as const;
