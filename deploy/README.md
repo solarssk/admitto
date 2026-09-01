@@ -319,13 +319,13 @@ Per-container stdout, by design (SECURITY-CONTROLS: logs are operational — no 
 | Container | What its logs show |
 |-----------|--------------------|
 | `migrate` | Entrypoint boot steps (migration status, backfills) — a one-shot container, exits after logging `migrate: startup tasks complete` |
-| `app` | `Admitto web running at …`, then: JSON access log (one line per request — method, redacted path, status, `duration_ms`) when `LOG_HTTP_REQUESTS=1` (compose default), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
+| `app` | `Admitto web running at …`, then: JSON access log (one line per request — method, redacted path, status, `duration_ms`, client `ip`, plus a `ref` hash for ticket/QR paths) when `LOG_HTTP_REQUESTS=1` (compose default), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
 | `worker` | `[worker] …` lines for heartbeat, mail drain, import/export jobs, bounce ingest, and retention (boot + ~24h) |
 | `proxy` | Nginx access/error log (image default) — includes client IPs; rotate/limit via Docker logging options if kept long-term |
 | `db-backup` | `[db-backup] …` prefixed lines per nightly dump |
 | `db` / `redis` | Image defaults (Postgres startup/checkpoints, Redis notices) |
 
-**Decision (issue #237):** the `app` access log is the supported way to see request activity in Portainer/`docker logs`. It deliberately excludes user agents, cookies, and query strings; the client IP is included only when the request carries a verified staff/operator session, otherwise it's omitted (see [DATA-PROTECTION.md](../DATA-PROTECTION.md) for the exact rule). Ticket/QR paths are logged as `/t/[redacted]` and `/q/[redacted]` so QR tokens never reach stdout. Successful `/healthz`/`/readyz` probes are skipped (Docker healthcheck fires every 10s); failing probes are logged. Request-level *attribution* (who did what) stays in the DB audit log. Disable with `LOG_HTTP_REQUESTS=0` in `deploy/.env`.
+**Decision (issue #237):** the `app` access log is the supported way to see request activity in Portainer/`docker logs`. It deliberately excludes user agents, cookies, and query strings; the client IP is included for every request, staff or anonymous, since the app already reads it to key its rate limiter on the same routes (see [DATA-PROTECTION.md](../DATA-PROTECTION.md) for the exact rule and retention). Ticket/QR paths are logged as `/t/[redacted]` and `/q/[redacted]` so tokens never reach stdout, alongside a short one-way `ref` hash so repeated hits on the same participant's link are recognizable across lines. Successful `/healthz`/`/readyz` probes are skipped (Docker healthcheck fires every 10s); failing probes are logged. Request-level *attribution* (who did what) stays in the DB audit log. Disable with `LOG_HTTP_REQUESTS=0` in `deploy/.env`.
 
 ## First superadmin
 
