@@ -149,3 +149,100 @@ export function toPassCreatorData(
   // controlled identity/QR fields - those decide idempotency and which pass the barcode matches.
   return { ...custom, ...base };
 }
+
+/**
+ * Which WALLET_MAPPING_PLACEHOLDERS token(s) each WALLET_RELEVANT_EVENT_FIELDS /
+ * _LOCATION_FIELDS / _ATTENDEE_FIELDS entry (packages/shared/src/walletPushRelevantFields.ts)
+ * actually feeds, derived from buildWalletPassInput (packages/tickets/src/wallet-pass-input.ts).
+ * `"always"` marks a field that reaches an already-issued pass regardless of fieldMapping -
+ * `date`, `event_hours_start`, and `wallet_apple_enabled` all feed `relevantDate`
+ * (computeRelevantDate in wallet-pass-input.ts), a top-level PassCreator API field sent
+ * unconditionally, never gated on fieldMapping. Every other field only reaches the pass when an
+ * admin has actually mapped one of its placeholders to a PassCreator Additional Property - when
+ * `fieldMapping` is empty, toPassCreatorData above sends nothing beyond `base`, so editing an
+ * unmapped field (e.g. `event_type` with no template field pointed at it) cannot change any
+ * already-issued pass. `timezone` has no placeholder of its own but changes what
+ * `event_hours`/the venue access-point time placeholders render, since wallet-pass-input.ts reads
+ * `event.timezone` when formatting all of them.
+ */
+export const EVENT_FIELD_PLACEHOLDERS: Record<string, readonly string[] | "always"> = {
+  title: ["event_name"],
+  date: "always",
+  timezone: [
+    "event_hours",
+    "venue_open_time",
+    "venue_close_time",
+    "doors_open_time",
+    "gates_open_time",
+    "box_office_open_time",
+    "parking_lots_open_time",
+    "fan_zone_open_time",
+  ],
+  event_hours_start: "always",
+  event_hours_end: ["event_hours"],
+  event_type: ["event_type"],
+  wallet_apple_enabled: "always",
+};
+
+/** Location counterpart of {@link EVENT_FIELD_PLACEHOLDERS}. `venue_name`/`formatted_address`
+ * both feed `event_location` - wallet-pass-input.ts prefers venue_name and falls back to
+ * formatted_address only when it's empty (packages/tickets/src/resolve.ts's `toResolved`: both
+ * are plain passthroughs of the `location_details` row, no computed display string). `latitude`/
+ * `longitude` together gate whether either maps-URL placeholder is populated at all
+ * (`isMapReady`), so both feed both. */
+export const LOCATION_FIELD_PLACEHOLDERS: Record<string, readonly string[]> = {
+  venue_name: ["event_location"],
+  formatted_address: ["event_location"],
+  latitude: ["google_maps_url", "apple_maps_url"],
+  longitude: ["google_maps_url", "apple_maps_url"],
+  directions_text: ["directions_text"],
+  accessibility_text: ["accessibility_text"],
+  address_components: ["object_name", "street", "postcode", "city", "region", "country"],
+  google_maps_url_override: ["google_maps_url"],
+  apple_maps_url_override: ["apple_maps_url"],
+  venue_room: ["venue_room"],
+  venue_entrance: ["venue_entrance"],
+  venue_entrance_door: ["venue_entrance_door"],
+  venue_entrance_gate: ["venue_entrance_gate"],
+  venue_entrance_portal: ["venue_entrance_portal"],
+  venue_phone_number: ["venue_phone_number"],
+  venue_place_id: ["venue_place_id"],
+  venue_open_time: ["venue_open_time"],
+  venue_close_time: ["venue_close_time"],
+  doors_open_time: ["doors_open_time"],
+  gates_open_time: ["gates_open_time"],
+  box_office_open_time: ["box_office_open_time"],
+  parking_lots_open_time: ["parking_lots_open_time"],
+  fan_zone_open_time: ["fan_zone_open_time"],
+};
+
+/** Attendee counterpart of {@link EVENT_FIELD_PLACEHOLDERS} - a clean 1:1 mapping, each field
+ * feeding exactly the identically-named placeholder. */
+export const ATTENDEE_FIELD_PLACEHOLDERS: Record<string, readonly string[]> = {
+  first_name: ["first_name"],
+  last_name: ["last_name"],
+  email: ["email"],
+  company: ["company"],
+  department: ["department"],
+  ticket_type: ["ticket_type"],
+};
+
+/**
+ * True when changing `field` on an event/location/attendee with already-issued wallet passes can
+ * actually alter what's on those passes, given the event's current `fieldMapping`
+ * (`Event.wallet_field_mapping`; null/empty means no custom placeholders are sent at all, see
+ * `toPassCreatorData` above). A field missing from `table` fails open (treated as relevant)
+ * rather than silently under-warning - every WALLET_RELEVANT_*_FIELDS entry is expected to have a
+ * `table` entry, enforced by a coverage test.
+ */
+export function isWalletFieldMappingRelevant(
+  field: string,
+  table: Record<string, readonly string[] | "always">,
+  fieldMapping: Record<string, string> | null | undefined,
+): boolean {
+  const placeholders = table[field];
+  if (placeholders === undefined || placeholders === "always") return true;
+  if (!fieldMapping) return false;
+  const mapped = new Set(Object.values(fieldMapping));
+  return placeholders.some((p) => mapped.has(p));
+}

@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { toPassCreatorData } from "../src/passcreator-mapper.js";
+import {
+  ATTENDEE_FIELD_PLACEHOLDERS,
+  EVENT_FIELD_PLACEHOLDERS,
+  isWalletFieldMappingRelevant,
+  LOCATION_FIELD_PLACEHOLDERS,
+  toPassCreatorData,
+} from "../src/passcreator-mapper.js";
 import type { WalletPassInput } from "../src/types.js";
+import {
+  WALLET_RELEVANT_ATTENDEE_FIELDS,
+  WALLET_RELEVANT_EVENT_FIELDS,
+  WALLET_RELEVANT_LOCATION_FIELDS,
+} from "@admitto/shared";
 
 const baseInput: WalletPassInput = {
   attendeeName: "Alice Admin",
@@ -239,4 +250,56 @@ describe("toPassCreatorData", () => {
     });
   });
 
+});
+
+describe("isWalletFieldMappingRelevant", () => {
+  it("every WALLET_RELEVANT_EVENT_FIELDS/_LOCATION_FIELDS/_ATTENDEE_FIELDS entry has a table entry (no silent drift)", () => {
+    for (const field of WALLET_RELEVANT_EVENT_FIELDS) expect(EVENT_FIELD_PLACEHOLDERS).toHaveProperty(field);
+    for (const field of WALLET_RELEVANT_LOCATION_FIELDS) expect(LOCATION_FIELD_PLACEHOLDERS).toHaveProperty(field);
+    for (const field of WALLET_RELEVANT_ATTENDEE_FIELDS) expect(ATTENDEE_FIELD_PLACEHOLDERS).toHaveProperty(field);
+  });
+
+  it("is always relevant for a field marked \"always\" (date/event_hours_start/wallet_apple_enabled feed relevantDate unconditionally)", () => {
+    expect(isWalletFieldMappingRelevant("date", EVENT_FIELD_PLACEHOLDERS, null)).toBe(true);
+    expect(isWalletFieldMappingRelevant("event_hours_start", EVENT_FIELD_PLACEHOLDERS, {})).toBe(true);
+    expect(isWalletFieldMappingRelevant("wallet_apple_enabled", EVENT_FIELD_PLACEHOLDERS, undefined)).toBe(true);
+  });
+
+  it("is not relevant for a mapped-only field when fieldMapping is null/empty (e.g. event_type with no template field pointed at it)", () => {
+    expect(isWalletFieldMappingRelevant("event_type", EVENT_FIELD_PLACEHOLDERS, null)).toBe(false);
+    expect(isWalletFieldMappingRelevant("title", EVENT_FIELD_PLACEHOLDERS, {})).toBe(false);
+  });
+
+  it("is relevant once the field's placeholder is actually mapped", () => {
+    expect(isWalletFieldMappingRelevant("event_type", EVENT_FIELD_PLACEHOLDERS, { kind: "event_type" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("title", EVENT_FIELD_PLACEHOLDERS, { name: "event_name" })).toBe(true);
+  });
+
+  it("is not relevant when fieldMapping only covers unrelated placeholders", () => {
+    expect(isWalletFieldMappingRelevant("event_type", EVENT_FIELD_PLACEHOLDERS, { name: "event_name" })).toBe(false);
+  });
+
+  it("timezone is relevant when any of its several derived placeholders is mapped", () => {
+    expect(isWalletFieldMappingRelevant("timezone", EVENT_FIELD_PLACEHOLDERS, { close: "venue_close_time" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("timezone", EVENT_FIELD_PLACEHOLDERS, { name: "event_name" })).toBe(false);
+  });
+
+  it("venue_name and formatted_address both feed event_location", () => {
+    expect(isWalletFieldMappingRelevant("venue_name", LOCATION_FIELD_PLACEHOLDERS, { place: "event_location" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("formatted_address", LOCATION_FIELD_PLACEHOLDERS, { place: "event_location" })).toBe(true);
+  });
+
+  it("latitude/longitude are relevant only once a maps-url placeholder is mapped", () => {
+    expect(isWalletFieldMappingRelevant("latitude", LOCATION_FIELD_PLACEHOLDERS, null)).toBe(false);
+    expect(isWalletFieldMappingRelevant("latitude", LOCATION_FIELD_PLACEHOLDERS, { g: "google_maps_url" })).toBe(true);
+  });
+
+  it("attendee fields are a clean 1:1 mapping", () => {
+    expect(isWalletFieldMappingRelevant("first_name", ATTENDEE_FIELD_PLACEHOLDERS, { fn: "first_name" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("first_name", ATTENDEE_FIELD_PLACEHOLDERS, { ln: "last_name" })).toBe(false);
+  });
+
+  it("fails open (relevant) for a field missing from the table entirely", () => {
+    expect(isWalletFieldMappingRelevant("some_future_field", EVENT_FIELD_PLACEHOLDERS, null)).toBe(true);
+  });
 });

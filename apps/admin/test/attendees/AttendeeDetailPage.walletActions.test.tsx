@@ -725,6 +725,7 @@ describe("AttendeeDetailPage — Wallet card gated by the event's platform toggl
     mockLoad(
       baseDetail({
         wallet_pass: walletPass({ apple_active_registrations: 1, google_active_registrations: 0 }),
+        wallet_field_mapping: { org: "company" },
       }),
     );
     renderPage();

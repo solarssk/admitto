@@ -351,6 +351,10 @@ export interface AttendeeDetailDto {
    * whether or not wallet_pass exists yet, null when wallet isn't configured for this event. */
   wallet_apple_link: string | null;
   wallet_google_link: string | null;
+  /** The event's current wallet_field_mapping - null/empty means no custom PassCreator
+   * placeholder is sent at all. Narrows the wallet-push notice below to only a changed field that
+   * actually reaches an already-issued pass. */
+  wallet_field_mapping: Record<string, string> | null;
   custom_data: unknown;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];

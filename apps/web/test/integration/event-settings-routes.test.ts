@@ -1220,6 +1220,12 @@ describe("PATCH /api/admin/events/:eventId", () => {
           organization_id: ORG_SET,
           wallet_template_id: "tmpl-push",
           wallet_api_key_enc: encryptToString("push-api-key"),
+          // Maps title -> event_name and event_type -> event_type so this describe block's many
+          // title/event_type-change tests below stay true-positive under the new
+          // isWalletFieldMappingRelevant gate (a wallet-relevant field only actually pushes once
+          // an admin has mapped its placeholder to a PassCreator field) - see the dedicated
+          // "not mapped" tests further down for the negative case this gate exists for.
+          wallet_field_mapping: { name: "event_name", kind: "event_type" },
         },
       });
       await prisma.attendee.create({
@@ -1314,6 +1320,46 @@ describe("PATCH /api/admin/events/:eventId", () => {
         listSpy.mockRestore();
         subscribeSpy.mockRestore();
         await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_apple_enabled: true } });
+      }
+    });
+
+    it("does not enqueue a job when title changes but wallet_field_mapping has no event_name entry mapped", async () => {
+      await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_field_mapping: { kind: "event_type" } } });
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Wallet Push Gala (unmapped title)" }),
+        });
+
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(0);
+      } finally {
+        await prisma.event.update({
+          where: { id: PUSH_EVENT },
+          data: { wallet_field_mapping: { name: "event_name", kind: "event_type" } },
+        });
+      }
+    });
+
+    it("does not enqueue a job for a wallet-relevant field change when wallet_field_mapping is empty (no default mapping)", async () => {
+      await prisma.event.update({ where: { id: PUSH_EVENT }, data: { wallet_field_mapping: Prisma.JsonNull } });
+      try {
+        const res = await app.request(`/api/admin/events/${PUSH_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ event_type: "workshop" }),
+        });
+
+        expect(res.status).toBe(200);
+        const jobs = await prisma.adminJob.findMany({ where: { event_id: PUSH_EVENT, type: "wallet_push" } });
+        expect(jobs).toHaveLength(0);
+      } finally {
+        await prisma.event.update({
+          where: { id: PUSH_EVENT },
+          data: { wallet_field_mapping: { name: "event_name", kind: "event_type" }, event_type: null },
+        });
       }
     });
 

@@ -7,6 +7,7 @@ import {
   resolveGoogleMapsUrl,
 } from "@admitto/location";
 import { WALLET_RELEVANT_LOCATION_FIELDS } from "@admitto/shared";
+import { LOCATION_FIELD_PLACEHOLDERS, isWalletFieldMappingRelevant } from "@admitto/wallet/passcreator-mapper";
 import { Badge, Button, Card, EmptyState, HintLabel, Input, Notice, useToast } from "@admitto/ui";
 import {
   fetchEventLocation,
@@ -96,6 +97,7 @@ export function LocationSettingsPanel({
   eventTimezone,
   installedWalletPassCount,
   walletConfiguredForPush,
+  walletFieldMapping,
   onDirtyChange,
   onSavingChange,
   onLocationSaved,
@@ -115,6 +117,11 @@ export function LocationSettingsPanel({
    * suppresses the push server-side regardless of installedWalletPassCount, so confirming here
    * would warn about an update that won't actually happen (CodeRabbit review). */
   walletConfiguredForPush: boolean;
+  /** The event's current wallet_field_mapping (EventSettingsDto) - null/empty means no custom
+   * PassCreator placeholder is sent at all. Narrows the confirm below to only the touched
+   * location fields that actually reach an already-issued pass, same as
+   * EventSettingsPage.tsx's own patchTouchesWalletRelevantField. */
+  walletFieldMapping: Record<string, string> | null;
   onDirtyChange?: (dirty: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
   /** Called after a successful location save so the shell can refresh sidebar `event.location`. */
@@ -222,7 +229,11 @@ export function LocationSettingsPanel({
     if (
       installedWalletPassCount > 0 &&
       walletConfiguredForPush &&
-      Object.keys(body).some((key) => (WALLET_RELEVANT_LOCATION_FIELDS as readonly string[]).includes(key))
+      Object.keys(body).some(
+        (key) =>
+          (WALLET_RELEVANT_LOCATION_FIELDS as readonly string[]).includes(key) &&
+          isWalletFieldMappingRelevant(key, LOCATION_FIELD_PLACEHOLDERS, walletFieldMapping),
+      )
     ) {
       setWalletPushConfirmOpen(true);
       return;

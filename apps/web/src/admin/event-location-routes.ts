@@ -11,7 +11,8 @@
  */
 import type { Context } from "hono";
 import { Prisma, type PrismaClient } from "@admitto/db";
-import { writeAdminAuditLog } from "@admitto/tickets";
+import { writeAdminAuditLog, parseWalletFieldMapping } from "@admitto/tickets";
+import { LOCATION_FIELD_PLACEHOLDERS, isWalletFieldMappingRelevant } from "@admitto/wallet";
 import {
   assertCoordinatePairing,
   LOCATION_LIMITS,
@@ -411,16 +412,32 @@ const WALLET_RELEVANT_LOCATION_TEXT_FIELDS = [
   "fan_zone_open_time",
 ] as const satisfies readonly (keyof WalletRelevantLocationSnapshot)[];
 
+/** Also requires the changed field to actually be capable of reaching an already-issued pass
+ * given `walletFieldMapping` (the event's current mapping; null/empty means no custom
+ * placeholders are sent at all) - see isWalletFieldMappingRelevant/LOCATION_FIELD_PLACEHOLDERS
+ * (@admitto/wallet), same reasoning as event-settings-routes.ts's own
+ * walletRelevantEventFieldsChanged. Editing a location field with no template Additional Property
+ * pointed at it cannot change any issued pass, so it must not enqueue a no-op push. */
 function walletRelevantLocationFieldsChanged(
   existing: WalletRelevantLocationSnapshot | null,
   updated: WalletRelevantLocationSnapshot,
+  walletFieldMapping: Record<string, string> | null,
 ): boolean {
   const before = existing ?? EMPTY_WALLET_LOCATION_SNAPSHOT;
-  if (before.latitude !== updated.latitude || before.longitude !== updated.longitude) return true;
-  if (JSON.stringify(before.address_components) !== JSON.stringify(updated.address_components)) {
+  const relevant = (field: string) => isWalletFieldMappingRelevant(field, LOCATION_FIELD_PLACEHOLDERS, walletFieldMapping);
+  if (
+    (before.latitude !== updated.latitude || before.longitude !== updated.longitude) &&
+    (relevant("latitude") || relevant("longitude"))
+  ) {
     return true;
   }
-  return WALLET_RELEVANT_LOCATION_TEXT_FIELDS.some((field) => before[field] !== updated[field]);
+  if (
+    JSON.stringify(before.address_components) !== JSON.stringify(updated.address_components) &&
+    relevant("address_components")
+  ) {
+    return true;
+  }
+  return WALLET_RELEVANT_LOCATION_TEXT_FIELDS.some((field) => before[field] !== updated[field] && relevant(field));
 }
 
 /** Best-effort: enqueues a wallet_push job to refresh every already-issued active wallet pass
@@ -439,9 +456,18 @@ async function pushWalletUpdatesBestEffort(
     wallet_enabled: boolean;
     wallet_template_id: string | null;
     wallet_api_key_enc: string | null;
+    wallet_field_mapping: unknown;
   },
 ): Promise<void> {
-  if (!walletRelevantLocationFieldsChanged(existingLocation, updatedLocation)) return;
+  if (
+    !walletRelevantLocationFieldsChanged(
+      existingLocation,
+      updatedLocation,
+      parseWalletFieldMapping(event.wallet_field_mapping),
+    )
+  ) {
+    return;
+  }
   if (!event.wallet_enabled || !event.wallet_template_id || !event.wallet_api_key_enc) return;
 
   await enqueueEventWideWalletPushJob(db, c, eventId, event.organization_id, "location");
@@ -464,6 +490,7 @@ async function pushWalletUpdatesBestEffortSafely(
     wallet_enabled: boolean;
     wallet_template_id: string | null;
     wallet_api_key_enc: string | null;
+    wallet_field_mapping: unknown;
   },
 ): Promise<void> {
   try {
@@ -520,6 +547,7 @@ export async function handlePutEventLocation(c: Context, db: PrismaClient): Prom
       wallet_enabled: true,
       wallet_template_id: true,
       wallet_api_key_enc: true,
+      wallet_field_mapping: true,
     },
   });
   if (!event) return c.json({ error: "not_found" }, 404);

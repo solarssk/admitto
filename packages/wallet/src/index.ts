@@ -11,7 +11,13 @@ export {
   type PassCreatorWebhookEventType,
 } from "./passcreator-client.js";
 export { PASSCREATOR_DEFAULT_BASE_URL, type PassCreatorConfig } from "./passcreator-config.js";
-export { WALLET_MAPPING_PLACEHOLDERS } from "./passcreator-mapper.js";
+export {
+  WALLET_MAPPING_PLACEHOLDERS,
+  EVENT_FIELD_PLACEHOLDERS,
+  LOCATION_FIELD_PLACEHOLDERS,
+  ATTENDEE_FIELD_PLACEHOLDERS,
+  isWalletFieldMappingRelevant,
+} from "./passcreator-mapper.js";
 export { resolveWalletProvider } from "./resolve-provider.js";
 export type { WalletPassRegistrationStatus } from "./types.js";
 export {

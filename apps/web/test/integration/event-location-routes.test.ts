@@ -790,6 +790,12 @@ describe("PUT /api/admin/events/:eventId/location — auto-push to already-issue
         organization_id: ORG_LOC,
         wallet_template_id: "tmpl-location-push",
         wallet_api_key_enc: encryptToString("location-push-api-key"),
+        // Maps formatted_address/venue_name -> event_location, venue_room -> venue_room, and
+        // doors_open_time -> doors_open_time so this describe block's field-change tests below
+        // stay true-positive under the new isWalletFieldMappingRelevant gate (a wallet-relevant
+        // field only actually pushes once an admin has mapped its placeholder to a PassCreator
+        // field) - see the dedicated "not mapped" test further down for the negative case.
+        wallet_field_mapping: { place: "event_location", room: "venue_room", doors: "doors_open_time" },
       },
     });
     await prisma.attendee.create({
@@ -855,6 +861,27 @@ describe("PUT /api/admin/events/:eventId/location — auto-push to already-issue
     expect(res.status).toBe(200);
     const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
     expect(jobs).toHaveLength(1);
+  });
+
+  it("does not enqueue a job when a wallet-relevant field changes but its placeholder isn't mapped", async () => {
+    await prisma.event.update({
+      where: { id: WALLET_LOC_EVENT },
+      data: { wallet_field_mapping: { room: "venue_room" } },
+    });
+    try {
+      const res = await putLocation(WALLET_LOC_EVENT, adminCookie, {
+        formatted_address: "1 Unmapped Street, Example City",
+      });
+
+      expect(res.status).toBe(200);
+      const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+      expect(jobs).toHaveLength(0);
+    } finally {
+      await prisma.event.update({
+        where: { id: WALLET_LOC_EVENT },
+        data: { wallet_field_mapping: { place: "event_location", room: "venue_room", doors: "doors_open_time" } },
+      });
+    }
   });
 
   it("does not enqueue a job when only map_zoom (UI-only, not on the pass) changes", async () => {
