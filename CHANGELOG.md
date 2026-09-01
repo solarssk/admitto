@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Attendees' header "More actions" menu split "Push updates" and "Refresh status" - both wallet actions - across two separate dividers instead of grouping them as one section, unlike the per-attendee selection menu's own wallet section. They now share a single divider, and "Refresh status"'s description is shorter.
+
 ## [0.6.4] - 2026-09-01
 
 ### Added
