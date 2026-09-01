@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from "react";
-import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton, Tooltip } from "@admitto/ui";
+import { Button, Card, Checkbox, EmptyState, IconButton, Input, Skeleton } from "@admitto/ui";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
 import type {
   AttendeeMailStatusFilter,
@@ -275,17 +275,21 @@ interface AttendeeCardProps {
  * "Attendance" on an iPhone-width card). An icon is ~19% narrower than the words it replaces
  * (measured: 356px text-label total vs 289px icon total for the same three fields) and, as a
  * bonus, never reads as a continuation of the colored badge text next to it (the "Pass Active"
- * this replaces) the way same-weight label text could. Same Tooltip+role="img"+aria-label
- * pattern as WalletColumnCell's own PlatformIcon just above in this file's sibling module. */
+ * this replaces) the way same-weight label text could.
+ *
+ * Decorative icon (aria-hidden) + a visually-hidden text label, NOT the shared Tooltip component
+ * WalletColumnCell's own PlatformIcon uses for the same idea (bot review, 2026-09-01): Tooltip
+ * makes its own wrapper a real Tab stop whenever its child has no focusable descendant of its
+ * own, which a plain `<i>` glyph never has - three of these per card, at the default 25-row page
+ * size, would have added 75 non-actionable Tab stops a keyboard/switch-device user has to cross
+ * just to get through the list. The field name still reaches assistive tech (as .sr-only text
+ * right next to the icon in reading order), it just doesn't cost a stop of its own to get there. */
 function FieldIcon({ iconClass, label }: Readonly<{ iconClass: string; label: string }>) {
   return (
-    <Tooltip content={label}>
-      <i // NOSONAR — no native tag conveys "img" semantics for a font-glyph icon
-        role="img"
-        className={`ti ${iconClass} attendees-card__field-icon`}
-        aria-label={label}
-      />
-    </Tooltip>
+    <>
+      <i className={`ti ${iconClass} attendees-card__field-icon`} aria-hidden="true" />
+      <span className="sr-only">{label}</span>
+    </>
   );
 }
 

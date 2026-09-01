@@ -13,9 +13,11 @@
  * Apple/Google glyphs) to fit inside the 40px circle without overflowing it.
  *
  * Only used in Event Settings' own Wallet row (a wide, short slot next to the Apple/Google
- * icon-font glyphs there). Everywhere else a Samsung glyph sits alongside Apple/Google's square
- * Tabler icons (Attendees' Wallet column, Attendee Detail's Wallet card) - see
- * {@link SamsungGlyphIcon} below for that square-shaped mark instead. */
+ * icon-font glyphs there). The other place a Samsung glyph sits alongside Apple/Google's square
+ * Tabler icons is Attendees' Wallet column (walletColumnCell.tsx, its only caller) - see
+ * {@link SamsungGlyphIcon} below for that square-shaped mark instead. Attendee Detail's own
+ * Wallet card is text-only rows ("Apple Wallet" / "Google Wallet" / "Samsung Wallet") with no
+ * icon of either shape - do not describe a fix here as also touching that card. */
 export function SamsungWalletIcon(): React.JSX.Element {
   return (
     <svg
@@ -36,9 +38,9 @@ export function SamsungWalletIcon(): React.JSX.Element {
 
 /**
  * Samsung's own "S" ribbon mark (SVG Repo, CC0: https://www.svgrepo.com - "Samsung S"), square
- * like the Apple/Google Tabler glyphs it sits beside (Attendees' Wallet column, Attendee Detail's
- * Wallet card) - unlike {@link SamsungWalletIcon} above, which is wordmark-shaped for Event
- * Settings' own wide row. `width`/`height` in `em` (not a fixed px size) so it scales with the
+ * like the Apple/Google Tabler glyphs it sits beside in Attendees' Wallet column (its only
+ * caller, walletColumnCell.tsx) - unlike {@link SamsungWalletIcon} above, which is wordmark-shaped
+ * for Event Settings' own wide row. `width`/`height` in `em` (not a fixed px size) so it scales with the
  * caller's own `font-size`, the same trick an icon font glyph gets for free - callers pass the
  * exact same `attendees-table-v2__wallet-icon[--active]` classes the `<i className="ti ...">`
  * Apple/Google glyphs use, so `currentColor` picks up that class's `color`/`opacity` identically.
