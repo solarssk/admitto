@@ -5035,6 +5035,21 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       }
     });
 
+    it("does not push when a wallet-relevant field changes but its placeholder isn't mapped (department, only first_name mapped)", async () => {
+      const updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({
+        providerPassId: WP_PROVIDER_PASS_ID,
+        appleUrl: "https://pc.test/apple/unexpected",
+        androidUrl: "https://pc.test/android/unexpected",
+      });
+      try {
+        const res = await patchWpAttendee({ department: "Ops" });
+        expect(res.status).toBe(200);
+        expect(updateSpy).not.toHaveBeenCalled();
+      } finally {
+        updateSpy.mockRestore();
+      }
+    });
+
     it("does not push when the wallet pass is voided", async () => {
       await prisma.walletPass.update({ where: { attendee_id: WP_ATTENDEE }, data: { status: "voided" } });
       const updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({

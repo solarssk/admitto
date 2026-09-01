@@ -855,6 +855,14 @@ describe("PUT /api/admin/events/:eventId/location — auto-push to already-issue
     });
   });
 
+  it("enqueues an event-wide wallet_push job when latitude/longitude changes and a maps-url placeholder is mapped", async () => {
+    const res = await putLocation(WALLET_LOC_EVENT, adminCookie, { latitude: 50.07, longitude: 19.95 });
+
+    expect(res.status).toBe(200);
+    const jobs = await prisma.adminJob.findMany({ where: { event_id: WALLET_LOC_EVENT, type: "wallet_push" } });
+    expect(jobs).toHaveLength(1);
+  });
+
   it("enqueues an event-wide wallet_push job when doors_open_time changes", async () => {
     const res = await putLocation(WALLET_LOC_EVENT, adminCookie, { doors_open_time: "08:30" });
 
