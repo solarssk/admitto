@@ -187,6 +187,12 @@ describe("typed settings fallbacks", () => {
     await expect(getPasskeyConditionalUiEnabled(prisma)).resolves.toBe(true);
   });
 
+  it("resolves an explicit persisted false for passkey_conditional_ui_enabled (not just the unset fallback)", async () => {
+    const prisma = settingsMockPrisma({ passkey_conditional_ui_enabled: false });
+
+    await expect(getPasskeyConditionalUiEnabled(prisma)).resolves.toBe(false);
+  });
+
   it("falls back to the default (disabled) for passkey_conditional_ui_enabled when nothing is persisted", async () => {
     await expect(getPasskeyConditionalUiEnabled(envOnlyMockPrisma)).resolves.toBe(false);
   });
