@@ -46,9 +46,9 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
       EMERGENCY_EXPORT_DIR: /app/emergency-exports
       UPLOAD_DIR: /app/uploads
-      # JSON access log on app stdout (method, redacted path, status, duration -
-      # no tokens or query strings; client IP is included only when the request carries a
-      # verified staff/operator session, see DATA-PROTECTION.md). Set LOG_HTTP_REQUESTS=0 in
+      # JSON access log on app stdout (method, redacted path, status, duration, client IP for
+      # every request - see DATA-PROTECTION.md). No cookies, query strings, or raw ticket/QR
+      # tokens; ticket/QR paths carry a one-way ref hash instead. Set LOG_HTTP_REQUESTS=0 in
       # .env to disable.
       LOG_HTTP_REQUESTS: ${LOG_HTTP_REQUESTS:-1}
     volumes:

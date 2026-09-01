@@ -591,7 +591,7 @@
       "consumers": ["app"],
       "secret": false,
       "ui": "none",
-      "summary": "1 (compose default) writes redacted JSON access lines to app stdout. No cookies or QR tokens; client IP only for an authenticated staff/operator request."
+      "summary": "1 (compose default) writes redacted JSON access lines to app stdout, including client IP for every request. No cookies, query strings, or raw ticket/QR tokens; ticket/QR paths carry a one-way ref hash instead."
     },
     {
       "name": "ALLOW_CHECKIN_BEARER",
