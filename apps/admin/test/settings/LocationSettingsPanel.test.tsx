@@ -170,6 +170,7 @@ function renderPanel(
     eventTimezone: string;
     installedWalletPassCount: number;
     walletConfiguredForPush: boolean;
+    walletFieldMapping: Record<string, string> | null;
     onDirtyChange: (d: boolean) => void;
     onSavingChange: (s: boolean) => void;
     onLocationSaved: () => Promise<void> | void;
@@ -184,6 +185,7 @@ function renderPanel(
         eventTimezone="Europe/Warsaw"
         installedWalletPassCount={0}
         walletConfiguredForPush
+        walletFieldMapping={{ room: "venue_room" }}
         {...props}
       />
     </MemoryRouter>,
@@ -204,6 +206,7 @@ function renderPanelWithRoutes() {
               eventTimezone="Europe/Warsaw"
               installedWalletPassCount={0}
               walletConfiguredForPush={false}
+              walletFieldMapping={null}
             />
           }
         />
@@ -1358,6 +1361,29 @@ describe("LocationSettingsPanel — editable fields", () => {
     );
   });
 
+  // Regression coverage: exercises the isVenueOrAddressFieldRelevant branch (venue_name/
+  // formatted_address), not the plain isWalletFieldMappingRelevant branch the "Venue room" test
+  // above covers.
+  it("confirms before saving venue_name when a maps-url placeholder is mapped and no override is set", async () => {
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    mockSaveLocation.mockResolvedValue({ ...SAVED_LOCATION, venue_name: "New Hall" });
+    renderPanel({ installedWalletPassCount: 4, walletFieldMapping: { g: "google_maps_url" } });
+
+    const input = await screen.findByDisplayValue("Springfield Hall");
+    fireEvent.change(input, { target: { value: "New Hall" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Push this update to installed wallet passes?",
+    });
+    expect(mockSaveLocation).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save and push" }));
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", expect.objectContaining({ venue_name: "New Hall" })),
+    );
+  });
+
   it("cancelling the wallet push confirm does not save the location", async () => {
     mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
     renderPanel({ installedWalletPassCount: 2 });
@@ -1371,6 +1397,20 @@ describe("LocationSettingsPanel — editable fields", () => {
 
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(mockSaveLocation).not.toHaveBeenCalled();
+  });
+
+  it("saves directly, without confirming, when the changed field's placeholder isn't mapped to a PassCreator field", async () => {
+    mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
+    mockSaveLocation.mockResolvedValue({ ...EMPTY_LOCATION, venue_room: "Hall B" });
+    renderPanel({ installedWalletPassCount: 4, walletFieldMapping: { other: "directions_text" } });
+
+    fireEvent.change(await screen.findByLabelText("Venue room"), { target: { value: "Hall B" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", { venue_room: "Hall B" }),
+    );
   });
 
   it("saves directly, without confirming, when the event has no installed wallet passes", async () => {

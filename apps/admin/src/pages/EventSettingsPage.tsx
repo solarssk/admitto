@@ -33,6 +33,11 @@ import {
   type WalletPushHistoryEntry,
 } from "../api/client.js";
 import { WALLET_RELEVANT_EVENT_FIELDS } from "@admitto/shared";
+import {
+  EVENT_FIELD_PLACEHOLDERS,
+  isWalletFieldMappingRelevant,
+  isRelevantDateAffected,
+} from "@admitto/wallet/passcreator-mapper";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { EventLocationDto, EventSettingsDto, EventType, LogoCropMeta } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
@@ -276,11 +281,31 @@ function appendUnsavedWarning(message: string, pageDirty: boolean): string {
 /** True when `patch` touches a field that would trigger an automatic wallet-pass-refresh push to
  * every already-issued active pass (event-settings-routes.ts's pushWalletUpdatesBestEffort) - the
  * same WALLET_RELEVANT_EVENT_FIELDS list the server itself checks, shared so this can't drift out
- * of sync with what actually triggers the push. */
-function patchTouchesWalletRelevantField(patch: SettingsPatch): boolean {
-  return Object.keys(patch).some((key) =>
-    (WALLET_RELEVANT_EVENT_FIELDS as readonly string[]).includes(key),
+ * of sync with what actually triggers the push. Also requires the touched field to actually be
+ * capable of reaching an already-issued pass: `date`/`event_hours_start`/`wallet_apple_enabled` go
+ * through isRelevantDateAffected (their only channel is relevantDate, gated on live event state -
+ * an event with no start time, on either side of the save, can't have its relevantDate changed by
+ * any of the three); every other field goes through isWalletFieldMappingRelevant against the
+ * *effective* wallet_field_mapping (this same patch's own new mapping if it changes one, else the
+ * event's current mapping) - matching the server's own gate exactly so this warning never fires
+ * for a field with no template Additional Property pointed at it (e.g. `event_type` on a template
+ * that doesn't map it). */
+function patchTouchesWalletRelevantField(patch: SettingsPatch, event: EventSettingsDto): boolean {
+  const effectiveMapping = patch.wallet_field_mapping !== undefined ? patch.wallet_field_mapping : event.wallet_field_mapping;
+  const relevantDateAffected = isRelevantDateAffected(
+    { walletAppleEnabled: event.wallet_apple_enabled, eventHoursStart: event.event_hours_start },
+    {
+      walletAppleEnabled: patch.wallet_apple_enabled ?? event.wallet_apple_enabled,
+      eventHoursStart: patch.event_hours_start !== undefined ? patch.event_hours_start : event.event_hours_start,
+    },
   );
+  return Object.keys(patch).some((key) => {
+    if (!(WALLET_RELEVANT_EVENT_FIELDS as readonly string[]).includes(key)) return false;
+    if ((key === "date" || key === "event_hours_start" || key === "wallet_apple_enabled") && relevantDateAffected) {
+      return true;
+    }
+    return isWalletFieldMappingRelevant(key, EVENT_FIELD_PLACEHOLDERS, effectiveMapping);
+  });
 }
 
 /** True when the wallet feature will still be fully configured (master switch on, template ID
@@ -955,7 +980,7 @@ export function EventSettingsPage() {
         event &&
         event.installed_wallet_pass_count > 0 &&
         willWalletBeConfiguredForPush(form, event) &&
-        patchTouchesWalletRelevantField(buildSettingsPatch(form, original))
+        patchTouchesWalletRelevantField(buildSettingsPatch(form, original), event)
       ) {
         pendingWalletPushActionRef.current = commitSave;
         setWalletPushConfirmOpen(true);
@@ -1167,6 +1192,7 @@ export function EventSettingsPage() {
           eventTimezone={form.timezone}
           installedWalletPassCount={event.installed_wallet_pass_count}
           walletConfiguredForPush={eventWalletConfiguredForPush}
+          walletFieldMapping={event.wallet_field_mapping}
           onDirtyChange={setLocationDirty}
           onSavingChange={setLocationSaving}
           onLocationSaved={async () => {
@@ -1190,7 +1216,13 @@ export function EventSettingsPage() {
             // timezone is unconditionally in WALLET_RELEVANT_EVENT_FIELDS - this shortcut patches
             // straight past handleSave's own confirm gate otherwise, silently pushing to every
             // installed pass the same way a regular General-tab save would (CodeRabbit review).
-            if (event.installed_wallet_pass_count > 0 && eventWalletConfiguredForPush) {
+            // Still gated on isWalletFieldMappingRelevant though: timezone only actually changes a
+            // pass when event_hours or one of the venue access-point time placeholders is mapped.
+            if (
+              event.installed_wallet_pass_count > 0 &&
+              eventWalletConfiguredForPush &&
+              isWalletFieldMappingRelevant("timezone", EVENT_FIELD_PLACEHOLDERS, event.wallet_field_mapping)
+            ) {
               // Caller (LocationSettingsPanel.handleApplyTimezone) awaits this promise before
               // showing its own "Event timezone set…" success toast - it must stay pending until
               // the operator actually confirms or cancels, not resolve the instant the dialog

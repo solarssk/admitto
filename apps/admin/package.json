@@ -26,6 +26,7 @@
     "@simplewebauthn/browser": "^13.3.0",
     "@tabler/icons-webfont": "3.46.0",
     "@zxing/browser": "^0.2.0",
+    "@zxing/library": "^0.23.0",
     "countries-list": "^3.4.1",
     "country-flag-emoji-polyfill": "^0.1.10",
     "leaflet": "^1.9.4",
@@ -40,6 +41,7 @@
   "devDependencies": {
     "@admitto/auth": "*",
     "@playwright/test": "^1.62.1",
+    "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.3",
     "@types/leaflet": "^1.9.22",
     "@types/qrcode": "^1.5.6",
