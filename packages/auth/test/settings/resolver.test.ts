@@ -193,6 +193,17 @@ describe("typed settings fallbacks", () => {
     await expect(getPasskeyConditionalUiEnabled(prisma)).resolves.toBe(false);
   });
 
+  // getSetting() itself already falls back to SETTING_DEFAULTS (a real boolean) whenever the row
+  // is absent, so the "unset" case above never actually reaches this function's own `typeof v ===
+  // "boolean"` guard - only a persisted value that deserializes to something other than a boolean
+  // (e.g. a row edited outside the app, or a future schema change) does. Exercises that branch
+  // directly instead of leaving it looking covered by a test that never actually hits it.
+  it("falls back to the default (disabled) for passkey_conditional_ui_enabled when the persisted value is not a boolean", async () => {
+    const prisma = settingsMockPrisma({ passkey_conditional_ui_enabled: "not-a-boolean" });
+
+    await expect(getPasskeyConditionalUiEnabled(prisma)).resolves.toBe(false);
+  });
+
   it("falls back to the default (disabled) for passkey_conditional_ui_enabled when nothing is persisted", async () => {
     await expect(getPasskeyConditionalUiEnabled(envOnlyMockPrisma)).resolves.toBe(false);
   });
