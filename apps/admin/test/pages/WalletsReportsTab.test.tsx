@@ -324,9 +324,11 @@ describe("WalletsReportsTab", () => {
     await screen.findByText("Wallet adoption");
 
     // Adoption gauge: rings are listed [installedPct, issuedPct] (innermost to outermost) so
-    // Issued actually renders as the outer ring - see the AdoptionGauge doc comment.
+    // Issued actually renders as the outer ring - see the AdoptionGauge doc comment. Both rings
+    // share the same base (total_attendees=20): installed is 10/20=50%, not confirmed_pct's own
+    // 66.7% (which is a share of issued=15, kept in the breakdown row's text only - bot review).
     const adoptionCard = cardByTitle("Wallet adoption");
-    expect(dataValues(within(adoptionCard).getByTestId("rc-radialbar"))).toEqual([66.7, 75]);
+    expect(dataValues(within(adoptionCard).getByTestId("rc-radialbar"))).toEqual([50, 75]);
     expect(breakdownRows(adoptionCard)).toEqual([
       { name: "Issued", meta: "15 · 75% of attendees" },
       { name: "Installed", meta: "10 · 66.7% of issued" },

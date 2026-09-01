@@ -97,12 +97,15 @@ function syncedHint(syncedAt: string | null): string {
 }
 
 /** Two-stage funnel as one radialBar with two series, outer to inner: share of attendees the pass
- * was issued to, then share of those issued passes actually installed on a phone. `installedPct`
- * is already a share of `issuedPct`'s own base (issued passes, not total attendees), so the inner
- * ring reads as literally nested "progress within" the outer one - unlike a since-removed third
- * "Voided" ring this card used to carry (PO review: a voided pass gets pulled from the device the
- * same moment it's revoked, so it's not a wallet-adoption outcome worth a stat here - the
- * attendee/ticket status elsewhere already tracks the revoke itself). */
+ * was issued to, then share of attendees who actually installed it on a phone. Both `issuedPct`
+ * and `installedPct` are shares of the same base - total attendees - so the inner ring reads as
+ * literally nested "progress within" the outer one; the breakdown rows beside this gauge still
+ * describe Installed as "% of issued" in their own text, a different (and separately useful)
+ * number, but the ring itself needs the shared base or a high issued-to-installed conversion on a
+ * low issued count renders as a full inner ring inside a mostly-empty outer one (bot review).
+ * Unlike a since-removed third "Voided" ring this card used to carry (PO review: a voided pass
+ * gets pulled from the device the same moment it's revoked, so it's not a wallet-adoption outcome
+ * worth a stat here - the attendee/ticket status elsewhere already tracks the revoke itself). */
 function AdoptionGauge({
   issuedPct,
   installedPct,
@@ -640,6 +643,13 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
     );
   }
 
+  // adoption.confirmed_pct is a share of issued passes (see its own DTO doc comment), not of
+  // total attendees like adoption.got_pass_pct - fine for the breakdown row's own "% of issued"
+  // text, but AdoptionGauge's two rings need the same base or a high issued-to-installed
+  // conversion on a low issued count renders as a full inner ring inside a mostly-empty outer one
+  // (bot review on #1202).
+  const installedPctOfAttendees = pctOf(data.adoption.confirmed, data.total_attendees);
+
   return (
     <>
       {data.passes_truncated && (
@@ -658,7 +668,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
           <div className="wallets-adoption">
             <AdoptionGauge
               issuedPct={data.adoption.got_pass_pct}
-              installedPct={data.adoption.confirmed_pct}
+              installedPct={installedPctOfAttendees}
               installedCount={data.adoption.confirmed}
             />
             <div className="wallets-adoption__breakdown">
@@ -671,7 +681,12 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
                   // ring, which stays correct because it already uses the literal PRIMARY hex
                   // (see the comment on that constant above).
                   { id: "issued", label: "Issued", meta: `${data.adoption.got_pass} · ${data.adoption.got_pass_pct}% of attendees`, pct: data.adoption.got_pass_pct, color: PRIMARY },
-                  { id: "installed", label: "Installed", meta: `${data.adoption.confirmed} · ${data.adoption.confirmed_pct}% of issued`, pct: data.adoption.confirmed_pct, color: STATUS_OK },
+                  // meta text keeps "% of issued" (confirmed_pct, a different and separately
+                  // useful base) - the row's own pct bar uses installedPctOfAttendees instead, so
+                  // it stays visually nested under Issued's bar rather than reading "more
+                  // installed than issued" whenever conversion is high but issued count is low
+                  // (bot review, same root cause as AdoptionGauge's own ring above).
+                  { id: "installed", label: "Installed", meta: `${data.adoption.confirmed} · ${data.adoption.confirmed_pct}% of issued`, pct: installedPctOfAttendees, color: STATUS_OK },
                 ]}
               />
             </div>
