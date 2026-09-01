@@ -12,6 +12,7 @@ import {
   resolveOidcEndSessionRedirect,
   getWebauthnEnabled,
   getPasskeyLoginEnabled,
+  getPasskeyConditionalUiEnabled,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
@@ -83,10 +84,13 @@ export async function handleGetLogin(c: Context, db: PrismaClient): Promise<Resp
   const sso = await loadLoginSsoProviders(db);
   const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
   const passkeyLoginEnabled = (await getWebauthnEnabled(db)) && (await getPasskeyLoginEnabled(db));
+  // UX layer on top of the same ceremony passkeyLoginEnabled already gates - never on without it.
+  const passkeyConditionalUiEnabled =
+    passkeyLoginEnabled && (await getPasskeyConditionalUiEnabled(db));
   const scriptNonce = createAuthPageScriptNonce();
   return htmlResponse(
     c,
-    renderLoginForm(scriptNonce, errorParam, next, sso, passkeyLoginEnabled),
+    renderLoginForm(scriptNonce, errorParam, next, sso, passkeyLoginEnabled, passkeyConditionalUiEnabled),
     scriptNonce,
     200,
     trustedOrigins,
@@ -123,12 +127,14 @@ export async function handlePostLogin(
   const sso = await loadLoginSsoProviders(db);
   const trustedOrigins = await resolveCspTrustedOriginsSafe(db);
   const passkeyLoginEnabled = (await getWebauthnEnabled(db)) && (await getPasskeyLoginEnabled(db));
+  const passkeyConditionalUiEnabled =
+    passkeyLoginEnabled && (await getPasskeyConditionalUiEnabled(db));
 
   if (!email || !password) {
     const scriptNonce = createAuthPageScriptNonce();
     return htmlResponse(
       c,
-      renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso, passkeyLoginEnabled),
+      renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso, passkeyLoginEnabled, passkeyConditionalUiEnabled),
       scriptNonce,
       401,
       trustedOrigins,
@@ -151,7 +157,7 @@ export async function handlePostLogin(
     const scriptNonce = createAuthPageScriptNonce();
     return htmlResponse(
       c,
-      renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso, passkeyLoginEnabled),
+      renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso, passkeyLoginEnabled, passkeyConditionalUiEnabled),
       scriptNonce,
       401,
       trustedOrigins,

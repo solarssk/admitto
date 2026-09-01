@@ -33,6 +33,13 @@ export const SETTING_WEBAUTHN_ENABLED = "webauthn_enabled";
  *  when SETTING_WEBAUTHN_ENABLED is also on. */
 export const SETTING_PASSKEY_LOGIN_ENABLED = "passkey_login_enabled";
 
+/** Whether the login page also runs the passkey ceremony automatically via WebAuthn conditional
+ *  mediation - the browser offers a saved passkey as an autofill suggestion directly in the
+ *  email field, instead of requiring a click on "Sign in with a passkey" first. Only takes
+ *  effect when SETTING_PASSKEY_LOGIN_ENABLED (and therefore SETTING_WEBAUTHN_ENABLED) is also
+ *  on - it is a UX layer on top of that same ceremony, not a separate sign-in method. */
+export const SETTING_PASSKEY_CONDITIONAL_UI_ENABLED = "passkey_conditional_ui_enabled";
+
 /** Extra https:// origins trusted to run script / send data on the staff SPA and auth pages
  *  (e.g. an analytics beacon or a Turnstile-style login challenge widget). */
 export const SETTING_CSP_TRUSTED_ORIGINS = "csp_trusted_origins";
@@ -54,5 +61,6 @@ export const SYSTEM_SETTING_KEYS = [
   SETTING_INSTANCE_URL,
   SETTING_WEBAUTHN_ENABLED,
   SETTING_PASSKEY_LOGIN_ENABLED,
+  SETTING_PASSKEY_CONDITIONAL_UI_ENABLED,
   SETTING_CSP_TRUSTED_ORIGINS,
 ] as const;

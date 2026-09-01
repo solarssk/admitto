@@ -239,6 +239,7 @@ export function SecurityPanel() {
   const cspTrustedOriginsLocked = fieldLocked(settings.csp_trusted_origins.source);
   const webauthnLocked = fieldLocked(settings.webauthn_enabled.source);
   const passkeyLoginLocked = fieldLocked(settings.passkey_login_enabled.source);
+  const passkeyConditionalUiLocked = fieldLocked(settings.passkey_conditional_ui_enabled.source);
   const cspTrustedOrigins = parseListInput(draft.cspTrustedOriginsRaw);
   const cspOriginErrors = cspTrustedOriginsErrors(draft.cspTrustedOriginsRaw);
   const hasUnsavedChanges = securityDraftHasChanges(settings, draft);
@@ -400,6 +401,35 @@ export function SecurityPanel() {
                   disabled={passkeyLoginLocked || !draft.webauthnEnabled}
                   onChange={() =>
                     setDraft({ ...draft, passkeyLoginEnabled: !draft.passkeyLoginEnabled })
+                  }
+                />
+              </div>
+            </div>
+            <div className="security-settings-row-divider" aria-hidden="true" />
+
+            <div className="security-settings-item">
+              <div className="settings-row__text">
+                <strong>Autofill passkey suggestions</strong>
+                <p>
+                  Offer a registered passkey directly in the email field's browser autofill
+                  (WebAuthn conditional UI), so signing in doesn't require clicking "Sign in with
+                  a passkey" first. Requires Passkey sign-in on the login page turned on above.
+                </p>
+              </div>
+              <div className="security-settings-row__control">
+                <Switch
+                  id="security-passkey-conditional-ui-enabled"
+                  aria-label="Autofill passkey suggestions"
+                  label={draft.passkeyConditionalUiEnabled ? "On" : "Off"}
+                  checked={draft.passkeyConditionalUiEnabled}
+                  disabled={
+                    passkeyConditionalUiLocked || !draft.webauthnEnabled || !draft.passkeyLoginEnabled
+                  }
+                  onChange={() =>
+                    setDraft({
+                      ...draft,
+                      passkeyConditionalUiEnabled: !draft.passkeyConditionalUiEnabled,
+                    })
                   }
                 />
               </div>

@@ -15,6 +15,7 @@ import {
   getCspTrustedOrigins,
   getWebauthnEnabled,
   getPasskeyLoginEnabled,
+  getPasskeyConditionalUiEnabled,
   validateCspTrustedOrigins,
   CspTrustedOriginsError,
   MAX_CSP_TRUSTED_ORIGINS,
@@ -28,6 +29,7 @@ import {
   SETTING_CSP_TRUSTED_ORIGINS,
   SETTING_WEBAUTHN_ENABLED,
   SETTING_PASSKEY_LOGIN_ENABLED,
+  SETTING_PASSKEY_CONDITIONAL_UI_ENABLED,
 } from "@admitto/auth";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog } from "@admitto/shared/system-log";
@@ -62,6 +64,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     cspTrustedOrigins,
     webauthnEnabled,
     passkeyLoginEnabled,
+    passkeyConditionalUiEnabled,
     adminTtlSrc,
     opTtlSrc,
     adminIdleSrc,
@@ -72,6 +75,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     cspTrustedOriginsSrc,
     webauthnEnabledSrc,
     passkeyLoginEnabledSrc,
+    passkeyConditionalUiEnabledSrc,
   ] = await Promise.all([
     getSessionTtlAdminMs(db),
     getSessionTtlOperatorMs(db),
@@ -83,6 +87,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     getCspTrustedOrigins(db),
     getWebauthnEnabled(db),
     getPasskeyLoginEnabled(db),
+    getPasskeyConditionalUiEnabled(db),
     getSettingSource(db, SETTING_SESSION_TTL),
     getSettingSource(db, SETTING_OPERATOR_SESSION_TTL),
     getSettingSource(db, SETTING_SESSION_IDLE_TIMEOUT),
@@ -93,6 +98,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     getSettingSource(db, SETTING_CSP_TRUSTED_ORIGINS),
     getSettingSource(db, SETTING_WEBAUTHN_ENABLED),
     getSettingSource(db, SETTING_PASSKEY_LOGIN_ENABLED),
+    getSettingSource(db, SETTING_PASSKEY_CONDITIONAL_UI_ENABLED),
   ]);
 
   return {
@@ -106,6 +112,10 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     csp_trusted_origins: { value: cspTrustedOrigins, source: cspTrustedOriginsSrc },
     webauthn_enabled: { value: webauthnEnabled, source: webauthnEnabledSrc },
     passkey_login_enabled: { value: passkeyLoginEnabled, source: passkeyLoginEnabledSrc },
+    passkey_conditional_ui_enabled: {
+      value: passkeyConditionalUiEnabled,
+      source: passkeyConditionalUiEnabledSrc,
+    },
   };
 }
 
@@ -174,6 +184,7 @@ const patchSchema = z
     csp_trusted_origins: cspTrustedOriginsSchema.nullable().optional(),
     webauthn_enabled: z.boolean().nullable().optional(),
     passkey_login_enabled: z.boolean().nullable().optional(),
+    passkey_conditional_ui_enabled: z.boolean().nullable().optional(),
   })
   .strict();
 
@@ -188,6 +199,7 @@ const KEY_MAP = {
   csp_trusted_origins: SETTING_CSP_TRUSTED_ORIGINS,
   webauthn_enabled: SETTING_WEBAUTHN_ENABLED,
   passkey_login_enabled: SETTING_PASSKEY_LOGIN_ENABLED,
+  passkey_conditional_ui_enabled: SETTING_PASSKEY_CONDITIONAL_UI_ENABLED,
 } as const satisfies Record<string, string>;
 
 /** Idle-timeout field paired with the absolute-lifetime field it must not exceed. */

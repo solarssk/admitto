@@ -15,6 +15,7 @@ export interface SecuritySettingsDraft {
   cspTrustedOriginsRaw: string;
   webauthnEnabled: boolean;
   passkeyLoginEnabled: boolean;
+  passkeyConditionalUiEnabled: boolean;
 }
 
 /** Parse a draft text field, clamp to bounds, and fall back when empty or non-numeric. */
@@ -45,6 +46,7 @@ export function draftFromSettings(s: SystemSettingsDto): SecuritySettingsDraft {
     cspTrustedOriginsRaw: joinListInput(s.csp_trusted_origins.value),
     webauthnEnabled: s.webauthn_enabled.value,
     passkeyLoginEnabled: s.passkey_login_enabled.value,
+    passkeyConditionalUiEnabled: s.passkey_conditional_ui_enabled.value,
   };
 }
 
@@ -160,6 +162,13 @@ export function buildSecurityPatchBody(
     draft.passkeyLoginEnabled !== settings.passkey_login_enabled.value,
     () => {
       body.passkey_login_enabled = draft.passkeyLoginEnabled;
+    },
+  );
+  applyIfEditable(
+    fieldLocked(settings.passkey_conditional_ui_enabled.source),
+    draft.passkeyConditionalUiEnabled !== settings.passkey_conditional_ui_enabled.value,
+    () => {
+      body.passkey_conditional_ui_enabled = draft.passkeyConditionalUiEnabled;
     },
   );
 

@@ -1356,6 +1356,7 @@ export interface SystemSettingsDto {
   csp_trusted_origins: SecuritySettingField<string[]>;
   webauthn_enabled: SecuritySettingField<boolean>;
   passkey_login_enabled: SecuritySettingField<boolean>;
+  passkey_conditional_ui_enabled: SecuritySettingField<boolean>;
 }
 
 export interface PatchSystemSettingsBody {
@@ -1369,6 +1370,7 @@ export interface PatchSystemSettingsBody {
   csp_trusted_origins?: string[] | null;
   webauthn_enabled?: boolean | null;
   passkey_login_enabled?: boolean | null;
+  passkey_conditional_ui_enabled?: boolean | null;
 }
 
 export interface RoleAssignmentDto {

@@ -56,8 +56,15 @@ function loginAutofillClearScript(scriptNonce: string): string {
  * self-contained rather than importing a shared helper module). The one real difference from that
  * MFA ceremony: begin's response carries an opaque `ceremony` token (there is no session yet to
  * key the stashed challenge by) that must be echoed back verbatim to finish.
+ *
+ * `conditionalUiEnabled` also starts the same ceremony with WebAuthn conditional mediation as
+ * soon as the browser confirms support - the email field (autocomplete="username webauthn" on
+ * this same page) then offers a saved passkey directly in its autofill dropdown, no click on the
+ * button required. Errors from that silent, unrequested attempt are never surfaced (including
+ * the AbortError the browser raises when the explicit button starts a competing request) - only
+ * a ceremony the user actually clicked "Sign in with a passkey" for shows the error box.
  */
-function passkeyLoginScript(scriptNonce: string): string {
+function passkeyLoginScript(scriptNonce: string, conditionalUiEnabled: boolean): string {
   return String.raw`<script nonce="${scriptNonce}">
 (function () {
   var btn = document.getElementById("passkey-login-btn");
@@ -76,6 +83,13 @@ function passkeyLoginScript(scriptNonce: string): string {
     return;
   }
   btn.hidden = false;
+  var navigated = false;
+  // Set only for the auto-started conditional ceremony (never the explicit click) - lets the
+  // click handler cancel a still-pending conditional /begin fetch or credentials.get() before
+  // starting its own, so the two never race. Without this, whichever WebAuthn call reaches the
+  // browser second can abort or get rejected behind the first, making the explicit button
+  // intermittently fail on a slow connection.
+  var conditionalAbort = null;
 
   function b64urlToBuffer(b64url) {
     var b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
@@ -98,14 +112,28 @@ function passkeyLoginScript(scriptNonce: string): string {
     if (errorBox) errorBox.hidden = false;
   }
 
-  function runCeremony() {
-    btn.disabled = true;
-    if (errorBox) errorBox.hidden = true;
+  function runCeremony(conditional) {
+    var abortController = null;
+    if (conditional) {
+      abortController = new AbortController();
+      conditionalAbort = abortController;
+    } else {
+      btn.disabled = true;
+      if (errorBox) errorBox.hidden = true;
+      // Never let a still-pending auto-started attempt reach the browser after this deliberate
+      // click - cancels its /begin fetch if still in flight, or its credentials.get() prompt if
+      // already showing, instead of leaving two WebAuthn requests to race each other.
+      if (conditionalAbort) {
+        conditionalAbort.abort();
+        conditionalAbort = null;
+      }
+    }
 
     fetch("/api/auth/login/webauthn/begin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
+      signal: abortController ? abortController.signal : undefined,
     })
       .then(function (res) { return res.json().then(function (data) { return { res: res, data: data }; }); })
       .then(function (begin) {
@@ -116,7 +144,12 @@ function passkeyLoginScript(scriptNonce: string): string {
         publicKey.allowCredentials = (publicKey.allowCredentials || []).map(function (cred) {
           return { id: b64urlToBuffer(cred.id), type: cred.type, transports: cred.transports };
         });
-        return navigator.credentials.get({ publicKey: publicKey }).then(function (assertion) {
+        var getOptions = { publicKey: publicKey };
+        if (conditional) {
+          getOptions.mediation = "conditional";
+          getOptions.signal = abortController.signal;
+        }
+        return navigator.credentials.get(getOptions).then(function (assertion) {
           return { ceremony: ceremony, assertion: assertion };
         });
       })
@@ -152,20 +185,38 @@ function passkeyLoginScript(scriptNonce: string): string {
       })
       .then(function (res) { return res.json().then(function (data) { return { res: res, data: data }; }); })
       .then(function (finish) {
+        if (conditional && conditionalAbort === abortController) conditionalAbort = null;
+        if (navigated) return;
         if (finish.res.ok && finish.data.ok) {
+          navigated = true;
           window.location.href = finish.data.next;
           return;
         }
-        showError();
+        if (!conditional) showError();
       })
       .catch(function () {
+        if (conditional && conditionalAbort === abortController) conditionalAbort = null;
         // Includes NotAllowedError (user cancelled, timed out, or has no passkey on this
-        // device/browser) - stay on the page, the password form below remains usable.
-        showError();
+        // device/browser) and, for the conditional ceremony, AbortError (either the browser's own
+        // arbitration or the explicit click cancelling it above) - stay on the page, the password
+        // form below remains usable either way. Only the ceremony the user actually clicked for
+        // reports failure.
+        if (!conditional) showError();
       });
   }
 
-  btn.addEventListener("click", runCeremony);
+  btn.addEventListener("click", function () { runCeremony(false); });
+  ${
+    conditionalUiEnabled
+      ? `if (window.PublicKeyCredential.isConditionalMediationAvailable) {
+    window.PublicKeyCredential.isConditionalMediationAvailable()
+      .then(function (available) {
+        if (available) runCeremony(true);
+      })
+      .catch(function () {});
+  }`
+      : ""
+  }
 })();
 </script>`;
 }
@@ -236,13 +287,17 @@ function renderAltSignInBlock(passkeyLoginEnabled: boolean, ssoProviders: LoginS
 
 /** Render the operator sign-in form HTML (optional uniform error message). `passkeyLoginEnabled`
  * shows the "Sign in with a passkey" button - callers gate this on both the webauthn_enabled and
- * passkey_login_enabled instance settings (see handleGetLogin), not just one. */
+ * passkey_login_enabled instance settings (see handleGetLogin), not just one. `passkeyConditionalUiEnabled`
+ * additionally runs that same ceremony via WebAuthn conditional mediation as soon as the page
+ * loads (offering a passkey directly in the email field's autofill dropdown) - callers gate this
+ * on passkeyLoginEnabled already being true, it is never on by itself. */
 export function renderLoginForm(
   scriptNonce: string,
   error?: string,
   next?: string,
   ssoProviders: LoginSsoProvider[] = [],
   passkeyLoginEnabled = false,
+  passkeyConditionalUiEnabled = false,
 ): string {
   const ssoFailed = error === "oidc_failed";
   const loginError = !ssoFailed ? loginErrorMessage(error) : undefined;
@@ -278,7 +333,7 @@ export function renderLoginForm(
       <input type="hidden" name="timezone" value="" autocomplete="off">
       <div class="auth-field">
         <label class="auth-label" for="email">Email</label>
-        <input class="auth-input" id="email" type="email" name="email" placeholder="you@example.com" required autocomplete="username">
+        <input class="auth-input" id="email" type="email" name="email" placeholder="you@example.com" required autocomplete="${passkeyConditionalUiEnabled ? "username webauthn" : "username"}">
       </div>
       <div class="auth-field">
         <label class="auth-label" for="password">Password</label>
@@ -288,7 +343,9 @@ export function renderLoginForm(
     </form>
     <p class="auth-footer">Admitto is an internal tool.<br>Access is managed by your IT administrator.</p>`;
 
-  const passkeyScript = passkeyLoginEnabled ? `\n${passkeyLoginScript(scriptNonce)}` : "";
+  const passkeyScript = passkeyLoginEnabled
+    ? `\n${passkeyLoginScript(scriptNonce, passkeyConditionalUiEnabled)}`
+    : "";
   return renderAuthDocument({
     step: "Sign in",
     body: renderAuthPage(card),
