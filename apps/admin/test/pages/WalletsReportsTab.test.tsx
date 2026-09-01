@@ -155,10 +155,13 @@ function fixture(overrides: Partial<EventWalletReportsResponse> = {}): EventWall
     passes_truncated: false,
     adoption: { got_pass: 15, got_pass_pct: 75, confirmed: 10, confirmed_pct: 66.7, cancelled: 3 },
     platform: { apple_only: 6, google_only: 3, both: 1, not_installed: 5 },
+    // got_pass/pct (issued) deliberately differ from confirmed/confirmed_pct (installed) below -
+    // the "Adoption by ticket type" card must read the confirmed numbers, not got_pass, since a
+    // ticket type can have issued-but-not-installed passes (e.g. VIP: 5 issued, only 4 installed).
     by_ticket_type: [
-      { key: "vip", type: "VIP", color: "purple", total: 5, got_pass: 4, pct: 80 },
-      { key: "standard", type: "Standard", color: "gray", total: 10, got_pass: 6, pct: 60 },
-      { key: null, type: "Unknown", color: "gray", total: 2, got_pass: 0, pct: 0 },
+      { key: "vip", type: "VIP", color: "purple", total: 5, got_pass: 5, pct: 100, confirmed: 4, confirmed_pct: 80 },
+      { key: "standard", type: "Standard", color: "gray", total: 10, got_pass: 8, pct: 80, confirmed: 6, confirmed_pct: 60 },
+      { key: null, type: "Unknown", color: "gray", total: 2, got_pass: 1, pct: 50, confirmed: 0, confirmed_pct: 0 },
     ],
     issued_by_day: [
       { date: "2026-06-01", count: 2, cumulative: 2 },
@@ -343,8 +346,9 @@ describe("WalletsReportsTab", () => {
       { name: "No wallet installed", meta: "5 · 33.3%" },
     ]);
 
-    // Ticket-type breakdown: sorted descending by pct, and the null-key row relabeled "No ticket
-    // type" instead of showing its raw `type` string.
+    // Ticket-type breakdown: sorted descending by confirmed_pct (installed, not got_pass/pct
+    // which are issued), and the null-key row relabeled "No ticket type" instead of showing its
+    // raw `type` string.
     const ticketCard = cardByTitle("Adoption by ticket type");
     expect(breakdownRows(ticketCard)).toEqual([
       { name: "VIP", meta: "4 of 5 · 80%" },

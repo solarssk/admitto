@@ -389,12 +389,15 @@ function CumulativeChart({ data }: Readonly<{ data: EventWalletReportsResponse["
 
 function ticketTypeAdoptionRows(rows: EventWalletReportsResponse["by_ticket_type"]): BreakdownRow[] {
   return [...rows]
-    .sort((a, b) => b.pct - a.pct)
+    .sort((a, b) => b.confirmed_pct - a.confirmed_pct)
     .map((row) => ({
       id: row.key ?? "__none__",
       label: row.key === null ? "No ticket type" : row.type,
-      meta: `${row.got_pass} of ${row.total} · ${row.pct}%`,
-      pct: row.pct,
+      // Installed count, not got_pass (issued) - this card's own copy already says "who
+      // installed a wallet pass"; got_pass/pct stay on the DTO for the CSV/PDF export's "Got
+      // pass" column, which intentionally reports issued rather than installed.
+      meta: `${row.confirmed} of ${row.total} · ${row.confirmed_pct}%`,
+      pct: row.confirmed_pct,
       // "gray" is an assignable ticket-type color (an admin can pick it for a real type, as this
       // event's own "Standard" type does), so reusing ticketTypeChartColor's gray for "no ticket
       // type" too can make the two rows collide - a step lighter keeps this row visibly distinct
@@ -662,9 +665,15 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
             <div className="wallets-adoption__breakdown">
               <BreakdownRows
                 rows={[
-                  { id: "issued", label: "Issued", meta: `${data.adoption.got_pass} · ${data.adoption.got_pass_pct}%`, pct: data.adoption.got_pass_pct, color: "var(--primary)" },
-                  { id: "installed", label: "Installed", meta: `${data.adoption.confirmed} · ${data.adoption.confirmed_pct}% of issued`, pct: data.adoption.confirmed_pct, color: "var(--status-ok)" },
-                  { id: "voided", label: "Voided", meta: `${data.adoption.cancelled} · ticket revoked`, pct: voidedPct, color: "var(--status-error)" },
+                  // Literal hex constants, not var(--primary)/var(--status-ok)/var(--status-error):
+                  // this row's dot/bar color must always match AdoptionGauge's own ring for the
+                  // same series, and --primary is the tenant's branding color (Organisation
+                  // settings), not a fixed design token - a non-default brand color made this row
+                  // drift from the ring, which stays correct because it already uses the literal
+                  // PRIMARY hex (see the comment on that constant above).
+                  { id: "issued", label: "Issued", meta: `${data.adoption.got_pass} · ${data.adoption.got_pass_pct}%`, pct: data.adoption.got_pass_pct, color: PRIMARY },
+                  { id: "installed", label: "Installed", meta: `${data.adoption.confirmed} · ${data.adoption.confirmed_pct}% of issued`, pct: data.adoption.confirmed_pct, color: STATUS_OK },
+                  { id: "voided", label: "Voided", meta: `${data.adoption.cancelled} · ticket revoked`, pct: voidedPct, color: STATUS_ERROR },
                 ]}
               />
             </div>

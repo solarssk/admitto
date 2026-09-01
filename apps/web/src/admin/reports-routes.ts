@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { Prisma } from "@admitto/db";
+import { EMAIL_DELIVERY_SUCCESS_STATUSES, Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import {
   CUSTOM_FIELD_NOT_ANSWERED_KEY,
@@ -570,21 +570,42 @@ const WALLET_PASS_AGGREGATE_SELECT = {
   attendee: {
     select: {
       ticket_type: true,
-      // Earliest non-bounced send across initial and resend attempts - a "purpose: initial" filter
-      // would keep pointing at an initial that later hard-bounced (applyBounceResult retains its
-      // sent_at, only status flips to "bounced"), overstating tap time against a since-successful
-      // resend, or dropping the attendee entirely if the initial send never got a sent_at at all.
+      // Every non-bounced delivery across initial and resend attempts, not just "initial" (a
+      // "purpose: initial" filter would keep pointing at one that later hard-bounced -
+      // applyBounceResult retains its sent_at, only status flips to "bounced" - overstating tap
+      // time against a since-successful resend). No orderBy/take here (unlike a plain "earliest
+      // sent_at" query) - see earliestDeliverySuccessAt's own comment for why: status "accepted"
+      // is this codebase's only real terminal-success state today (no mailer adapter ever reports
+      // "sent"), and ordering by a column that's always null would silently drop every real send.
       email_deliveries: {
-        where: { sent_at: { not: null }, status: { not: "bounced" } },
-        orderBy: { sent_at: "asc" },
-        take: 1,
-        select: { sent_at: true },
+        where: { status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES] as string[] } },
+        select: { accepted_at: true, sent_at: true, delivered_at: true },
       },
     },
   },
 } as const;
 
 type WalletPassAggregateRow = Prisma.WalletPassGetPayload<{ select: typeof WALLET_PASS_AGGREGATE_SELECT }>;
+
+/** Earliest moment any of an attendee's non-bounced ticket-email deliveries left our system,
+ * across every delivery attempt - the anchor for "time to wallet tap" and the wallet export's
+ * "Ticket email first sent at" column. Reads accepted_at ahead of sent_at/delivered_at because
+ * "accepted" is the only status any configured mailer adapter (graph/smtp/mock/exportOnly/
+ * powerAutomate - see mapSendResult.ts) ever actually reports; sent_at/delivered_at exist in the
+ * schema for a future webhook-driven pipeline stage and are read here too so this doesn't need to
+ * change again once one exists. Within one delivery the three are chronologically ordered
+ * (accepted -> sent -> delivered), so the first non-null of the three is that delivery's own
+ * earliest known milestone; the overall result is the minimum of that across every delivery. */
+export function earliestDeliverySuccessAt(
+  deliveries: ReadonlyArray<{ accepted_at: Date | null; sent_at: Date | null; delivered_at: Date | null }>,
+): Date | null {
+  let earliest: Date | null = null;
+  for (const delivery of deliveries) {
+    const at = delivery.accepted_at ?? delivery.sent_at ?? delivery.delivered_at;
+    if (at && (!earliest || at < earliest)) earliest = at;
+  }
+  return earliest;
+}
 
 /** Which wallet platform(s) a pass is actively registered on - "none" covers issued-but-never-
  * installed passes, kept distinct from "both" (registered on two devices) for the platform mix
@@ -631,6 +652,7 @@ interface WalletPassAggregates {
   both: number;
   mostRecentSync: Date | null;
   gotPassByType: Map<string | null, number>;
+  confirmedByType: Map<string | null, number>;
   bucketCounts: Record<TimeToTapBucketKey, number>;
   tapDaySum: number;
   tapDayCount: number;
@@ -662,8 +684,9 @@ function applyWalletPassToAggregates(
 
   const typeKey = pass.attendee.ticket_type;
   acc.gotPassByType.set(typeKey, (acc.gotPassByType.get(typeKey) ?? 0) + 1);
+  if (platform !== "none") acc.confirmedByType.set(typeKey, (acc.confirmedByType.get(typeKey) ?? 0) + 1);
 
-  const tapDays = computeTapDays(pass.attendee.email_deliveries[0]?.sent_at, pass.issued_at);
+  const tapDays = computeTapDays(earliestDeliverySuccessAt(pass.attendee.email_deliveries), pass.issued_at);
   if (tapDays !== null) {
     acc.tapDaySum += tapDays;
     acc.tapDayCount++;
@@ -685,6 +708,7 @@ export function aggregateWalletPasses(
     both: 0,
     mostRecentSync: null,
     gotPassByType: new Map<string | null, number>(),
+    confirmedByType: new Map<string | null, number>(),
     bucketCounts: { same_day: 0, "1_3": 0, "4_7": 0, "8_plus": 0 },
     tapDaySum: 0,
     tapDayCount: 0,
@@ -705,16 +729,28 @@ function buildWalletTicketTypeBreakdown(
   catalog: TicketTypeInfo[],
   totalByType: Map<string | null, number>,
   gotPassByType: Map<string | null, number>,
+  confirmedByType: Map<string | null, number>,
 ): EventWalletReportsResponse["by_ticket_type"] {
   const by_ticket_type: EventWalletReportsResponse["by_ticket_type"] = catalog.map((t) => {
     const total = totalByType.get(t.key) ?? 0;
     const typeGotPass = gotPassByType.get(t.key) ?? 0;
-    return { key: t.key, type: t.label, color: t.color, total, got_pass: typeGotPass, pct: oneDecimalPct(typeGotPass, total) };
+    const typeConfirmed = confirmedByType.get(t.key) ?? 0;
+    return {
+      key: t.key,
+      type: t.label,
+      color: t.color,
+      total,
+      got_pass: typeGotPass,
+      pct: oneDecimalPct(typeGotPass, total),
+      confirmed: typeConfirmed,
+      confirmed_pct: oneDecimalPct(typeConfirmed, total),
+    };
   });
 
   const noneTotal = (totalByType.get(null) ?? 0) + (totalByType.get("") ?? 0);
   if (noneTotal > 0) {
     const noneGotPass = (gotPassByType.get(null) ?? 0) + (gotPassByType.get("") ?? 0);
+    const noneConfirmed = (confirmedByType.get(null) ?? 0) + (confirmedByType.get("") ?? 0);
     by_ticket_type.push({
       key: null,
       type: "(none)",
@@ -722,6 +758,8 @@ function buildWalletTicketTypeBreakdown(
       total: noneTotal,
       got_pass: noneGotPass,
       pct: oneDecimalPct(noneGotPass, noneTotal),
+      confirmed: noneConfirmed,
+      confirmed_pct: oneDecimalPct(noneConfirmed, noneTotal),
     });
   }
 
@@ -729,6 +767,7 @@ function buildWalletTicketTypeBreakdown(
   for (const [key, total] of totalByType) {
     if (key === null || key === "" || catalogKeys.has(key)) continue;
     const typeGotPass = gotPassByType.get(key) ?? 0;
+    const typeConfirmed = confirmedByType.get(key) ?? 0;
     by_ticket_type.push({
       key,
       type: "(not in catalog)",
@@ -736,6 +775,8 @@ function buildWalletTicketTypeBreakdown(
       total,
       got_pass: typeGotPass,
       pct: oneDecimalPct(typeGotPass, total),
+      confirmed: typeConfirmed,
+      confirmed_pct: oneDecimalPct(typeConfirmed, total),
     });
   }
 
@@ -842,12 +883,23 @@ async function loadWalletReportsAggregates(
     }),
   ]);
 
-  const { confirmed, cancelled, appleOnly, googleOnly, both, mostRecentSync, gotPassByType, bucketCounts, tapDaySum, tapDayCount } =
-    aggregateWalletPasses(passes, enabledPlatforms);
+  const {
+    confirmed,
+    cancelled,
+    appleOnly,
+    googleOnly,
+    both,
+    mostRecentSync,
+    gotPassByType,
+    confirmedByType,
+    bucketCounts,
+    tapDaySum,
+    tapDayCount,
+  } = aggregateWalletPasses(passes, enabledPlatforms);
 
   const gotPass = passes.length;
   const totalByType = mergeTicketTypeCounts(byTypeTotalRaw);
-  const by_ticket_type = buildWalletTicketTypeBreakdown(catalog, totalByType, gotPassByType);
+  const by_ticket_type = buildWalletTicketTypeBreakdown(catalog, totalByType, gotPassByType, confirmedByType);
   const issued_by_day = buildIssuedByDay(issuedByDayRaw, timeZone, eventDate);
 
   const bucketOrder: TimeToTapBucketKey[] = ["same_day", "1_3", "4_7", "8_plus"];
@@ -1416,13 +1468,11 @@ const WALLET_EXPORT_ATTENDEE_SELECT = {
       registration_checked_at: true,
     },
   },
-  // See the identical comment on WALLET_PASS_AGGREGATE_SELECT above - earliest non-bounced send
-  // across initial and resend attempts, not just "initial".
+  // Same shape and reasoning as WALLET_PASS_AGGREGATE_SELECT above - fed through
+  // earliestDeliverySuccessAt rather than a plain earliest-sent_at query, see its own comment.
   email_deliveries: {
-    where: { sent_at: { not: null }, status: { not: "bounced" } },
-    orderBy: { sent_at: "asc" },
-    take: 1,
-    select: { sent_at: true },
+    where: { status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES] as string[] } },
+    select: { accepted_at: true, sent_at: true, delivered_at: true },
   },
 } as const;
 
@@ -1441,7 +1491,7 @@ export function buildWalletExportCsvRow(
   const pass = row.wallet_pass;
   const appleActive = pass?.apple_active_registrations ?? 0;
   const googleActive = pass?.google_active_registrations ?? 0;
-  const emailSentAt = row.email_deliveries[0]?.sent_at ?? null;
+  const emailFirstSentAt = earliestDeliverySuccessAt(row.email_deliveries);
   // registration_checked_at null means the pass has never completed a sync - the active/inactive
   // counts and confirmed-platform label below are all derived from that sync, so leave them blank
   // (unknown) rather than exporting 0/"None", which would misrepresent "never synced" as the
@@ -1471,7 +1521,7 @@ export function buildWalletExportCsvRow(
     confirmedPlatform,
     pass?.voided_at ? formatAdmittedAtExport(pass.voided_at, timeZone) : "",
     pass?.registration_checked_at ? formatAdmittedAtExport(pass.registration_checked_at, timeZone) : "",
-    emailSentAt ? formatAdmittedAtExport(emailSentAt, timeZone) : "",
+    emailFirstSentAt ? formatAdmittedAtExport(emailFirstSentAt, timeZone) : "",
     row.admitted_at ? "Yes" : "No",
     row.admitted_at ? formatAdmittedAtExport(row.admitted_at, timeZone) : "",
     resolveOperatorLabel(resolveOperatorFields(row.admitted_by, operatorDisplayMap)),

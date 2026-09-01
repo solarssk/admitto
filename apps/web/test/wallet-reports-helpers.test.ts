@@ -6,6 +6,7 @@ import {
   classifyPassPlatform,
   confirmedPlatformLabel,
   computeTapDays,
+  earliestDeliverySuccessAt,
 } from "../src/admin/reports-routes.js";
 
 const BOTH_ENABLED = { apple: true, google: true };
@@ -80,6 +81,42 @@ describe("computeTapDays", () => {
 
   it("returns null instead of a negative value when the pass predates the email (clock skew or bad data)", () => {
     expect(computeTapDays(sentAt, new Date("2025-12-31T00:00:00.000Z"))).toBeNull();
+  });
+});
+
+describe("earliestDeliverySuccessAt", () => {
+  const accepted = new Date("2026-01-01T00:00:00.000Z");
+  const sent = new Date("2026-01-02T00:00:00.000Z");
+  const delivered = new Date("2026-01-03T00:00:00.000Z");
+
+  it("returns null with no deliveries", () => {
+    expect(earliestDeliverySuccessAt([])).toBeNull();
+  });
+
+  it("reads accepted_at ahead of sent_at/delivered_at - the only timestamp any configured mailer adapter actually sets", () => {
+    expect(earliestDeliverySuccessAt([{ accepted_at: accepted, sent_at: sent, delivered_at: delivered }])).toEqual(
+      accepted,
+    );
+  });
+
+  it("falls back to sent_at when accepted_at is missing on that delivery", () => {
+    expect(earliestDeliverySuccessAt([{ accepted_at: null, sent_at: sent, delivered_at: delivered }])).toEqual(sent);
+  });
+
+  it("falls back to delivered_at when neither accepted_at nor sent_at is set", () => {
+    expect(earliestDeliverySuccessAt([{ accepted_at: null, sent_at: null, delivered_at: delivered }])).toEqual(
+      delivered,
+    );
+  });
+
+  it("returns null when a delivery has no timestamp at all", () => {
+    expect(earliestDeliverySuccessAt([{ accepted_at: null, sent_at: null, delivered_at: null }])).toBeNull();
+  });
+
+  it("takes the minimum across multiple deliveries (initial + resend), not just the first array entry", () => {
+    const laterResend = { accepted_at: new Date("2026-01-10T00:00:00.000Z"), sent_at: null, delivered_at: null };
+    const earlierInitial = { accepted_at: accepted, sent_at: null, delivered_at: null };
+    expect(earliestDeliverySuccessAt([laterResend, earlierInitial])).toEqual(accepted);
   });
 });
 

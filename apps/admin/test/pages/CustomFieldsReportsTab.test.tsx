@@ -150,7 +150,7 @@ describe("CustomFieldsReportsTab", () => {
       }),
     );
     try {
-      renderWithToast(<CustomFieldsReportsTab eventId="evt-1" />);
+      renderWithToast(<CustomFieldsReportsTab eventId="evt-1" isActive />);
 
       expect(screen.queryByText("Loading custom field report…")).toBeNull();
 
@@ -171,7 +171,7 @@ describe("CustomFieldsReportsTab", () => {
     fetchEventCustomFieldReports.mockRejectedValueOnce(new ApiError(500, "Internal server problem"));
     fetchEventCustomFieldReports.mockResolvedValueOnce(fixture());
 
-    renderWithToast(<CustomFieldsReportsTab eventId="evt-1" />);
+    renderWithToast(<CustomFieldsReportsTab eventId="evt-1" isActive />);
 
     await screen.findByText("Could not load custom field report");
     expect(screen.getByText("Internal server problem")).toBeTruthy();
@@ -189,7 +189,7 @@ describe("CustomFieldsReportsTab", () => {
   it("shows a generic message for a non-ApiError failure (e.g. a network error)", async () => {
     fetchEventCustomFieldReports.mockRejectedValueOnce(new TypeError("Failed to fetch"));
 
-    renderWithToast(<CustomFieldsReportsTab eventId="evt-1" />);
+    renderWithToast(<CustomFieldsReportsTab eventId="evt-1" isActive />);
 
     await screen.findByText("Could not load custom field report");
     expect(screen.getByText("Could not load custom field report.")).toBeTruthy();
@@ -199,7 +199,7 @@ describe("CustomFieldsReportsTab", () => {
   it("shows the 403-specific access message instead of the server's own error text", async () => {
     fetchEventCustomFieldReports.mockRejectedValueOnce(new ApiError(403, "forbidden", "forbidden"));
 
-    renderWithToast(<CustomFieldsReportsTab eventId="evt-1" />);
+    renderWithToast(<CustomFieldsReportsTab eventId="evt-1" isActive />);
 
     await screen.findByText("Could not load custom field report");
     expect(screen.getByText("You do not have access to this event.")).toBeTruthy();
@@ -209,7 +209,7 @@ describe("CustomFieldsReportsTab", () => {
   it("shows an EmptyState when the event has no custom fields configured", async () => {
     fetchEventCustomFieldReports.mockResolvedValue(fixture({ fields: [] }));
 
-    renderWithToast(<CustomFieldsReportsTab eventId="evt-1" />);
+    renderWithToast(<CustomFieldsReportsTab eventId="evt-1" isActive />);
 
     expect(await screen.findByText("No custom fields yet")).toBeTruthy();
   });
@@ -217,7 +217,7 @@ describe("CustomFieldsReportsTab", () => {
   it("renders a fill-rate gauge for a text field, and a category donut + breakdown list (with a trailing not-answered bucket) for select/boolean fields", async () => {
     fetchEventCustomFieldReports.mockResolvedValue(fixture());
 
-    renderWithToast(<CustomFieldsReportsTab eventId="evt-1" />);
+    renderWithToast(<CustomFieldsReportsTab eventId="evt-1" isActive />);
     await screen.findByText("Dietary requirements");
 
     // text field: single ring at response_rate.pct, no category donut. Description shows the
@@ -259,6 +259,29 @@ describe("CustomFieldsReportsTab", () => {
     expect(breakdownRows(vegCard)).toEqual([
       { name: "Yes", meta: "2 · 40%" },
       { name: "No", meta: "1 · 20%" },
+      { name: "Not answered", meta: "2 · 40%" },
+    ]);
+  });
+
+  it("skips mounting ResponsiveContainer's charts while the tab is hidden (isActive=false), keeping titles and breakdown lists rendered", async () => {
+    fetchEventCustomFieldReports.mockResolvedValue(fixture());
+
+    renderWithToast(<CustomFieldsReportsTab eventId="evt-1" isActive={false} />);
+    await screen.findByText("Dietary requirements");
+
+    // ReportsPage keeps this tab mounted with display:none instead of unmounting it on tab
+    // switch (to avoid refetching) - isActive gates only the actual chart mount, since a
+    // ResponsiveContainer left alive underneath a display:none ancestor is what produces
+    // Recharts' own "width(0) and height(0)" console warning the moment the wrapper collapses.
+    const dietaryCard = cardByTitle("Dietary requirements");
+    expect(dietaryCard.querySelector('[data-testid="rc-radialbar"]')).toBeNull();
+    expect(dietaryCard.textContent).toContain("3 of 5 attendees have filled this in.");
+
+    const shirtCard = cardByTitle("Shirt size");
+    expect(shirtCard.querySelector('[data-testid="rc-pie"]')).toBeNull();
+    expect(breakdownRows(shirtCard)).toEqual([
+      { name: "M", meta: "2 · 40%" },
+      { name: "L", meta: "1 · 20%" },
       { name: "Not answered", meta: "2 · 40%" },
     ]);
   });
