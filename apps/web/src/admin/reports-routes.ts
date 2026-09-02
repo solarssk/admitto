@@ -576,6 +576,47 @@ function addDaysToIsoDate(isoDate: string, days: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
+// Every non-bounced delivery across initial and resend attempts, not just "initial" (a "purpose:
+// initial" filter would keep pointing at one that later hard-bounced - applyBounceResult retains
+// its sent_at, only status flips to "bounced" - overstating tap time against a since-successful
+// resend). No orderBy/take here (unlike a plain "earliest sent_at" query) - see
+// earliestDeliverySuccessAt's own comment for why: status "accepted" is this codebase's only real
+// terminal-success state today (no mailer adapter ever reports "sent"), and ordering by a column
+// that's always null would silently drop every real send. The OR covers two independent
+// populations, told apart in application code (see isTicketScopedDelivery/isWalletReminderDelivery
+// below), not two separate relation loads (Prisma can't select the same relation twice with
+// different filters): a genuine ticket-email send (template_id null - the compiled builtin - or a
+// live MailTemplate row still named "ticket", never any other name - resolveTemplateForEvent,
+// mail-templates package) OR any other template's delivery that carried a wallet-add-link
+// placeholder at send time (had_wallet_cta - see that column's own schema comment; it's a
+// send-time snapshot, unaffected by a later template edit/delete, unlike template_id itself).
+// template_id null alone isn't enough for the ticket branch: it's SetNull'd (the relation's own
+// onDelete rule) when an admin later deletes a non-ticket Communication template, which would
+// otherwise make that deleted template's send indistinguishable from a genuine builtin one.
+// template_label_snapshot survives that deletion (captured at send time for exactly this reason -
+// see its own schema comment) and stays null only for a real builtin send, so the null-template_id
+// branch also requires a null snapshot. Shared by WALLET_PASS_AGGREGATE_SELECT and
+// WALLET_EXPORT_ATTENDEE_SELECT below so the two definitions can't drift apart (AGENTS.md's
+// duplication-gate note is why this is one constant instead of two near-identical inline copies).
+const WALLET_RELEVANT_EMAIL_DELIVERIES_SELECT = {
+  where: {
+    status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES] as string[] },
+    OR: [
+      { template_id: null, template_label_snapshot: null },
+      { template: { name: "ticket" } },
+      { had_wallet_cta: true },
+    ] as Prisma.EmailDeliveryWhereInput[],
+  },
+  select: {
+    accepted_at: true,
+    sent_at: true,
+    delivered_at: true,
+    template_id: true,
+    had_wallet_cta: true,
+    template: { select: { name: true } },
+  },
+} as const;
+
 const WALLET_PASS_AGGREGATE_SELECT = {
   issued_at: true,
   first_confirmed_at: true,
@@ -590,44 +631,7 @@ const WALLET_PASS_AGGREGATE_SELECT = {
   attendee: {
     select: {
       ticket_type: true,
-      // Every non-bounced delivery across initial and resend attempts, not just "initial" (a
-      // "purpose: initial" filter would keep pointing at one that later hard-bounced -
-      // applyBounceResult retains its sent_at, only status flips to "bounced" - overstating tap
-      // time against a since-successful resend). No orderBy/take here (unlike a plain "earliest
-      // sent_at" query) - see earliestDeliverySuccessAt's own comment for why: status "accepted"
-      // is this codebase's only real terminal-success state today (no mailer adapter ever reports
-      // "sent"), and ordering by a column that's always null would silently drop every real send.
-      // The OR covers two independent populations, told apart in application code (see
-      // isTicketScopedDelivery/isWalletReminderDelivery below), not two separate relation loads
-      // (Prisma can't select the same relation twice with different filters): template_id: null OR
-      // template.name === "ticket" scopes to genuine ticket-email sends, same reasoning as before -
-      // without it, a Communication campaign send using a different template is recorded with
-      // purpose "resend" too (resolveNoDeliveryScopeAndPurpose, bulk-send-routes.ts), so an
-      // attendee who received a reminder/announcement before ever getting a ticket would have that
-      // unrelated email's timestamp picked up here instead (bot review on this PR). Every genuine
-      // ticket send resolves to either no custom template (template_id null, the compiled builtin)
-      // or a MailTemplate row named "ticket" (resolveTemplateForEvent, mail-templates package) -
-      // never any other name. had_wallet_cta: true additionally pulls in every OTHER template's
-      // delivery that referenced a wallet-add-link placeholder at send time - the population
-      // "Time to install after reminder" anchors on (see latestWalletReminderDeliverySuccessBefore).
-      email_deliveries: {
-        where: {
-          status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES] as string[] },
-          OR: [
-            { template_id: null },
-            { template: { name: "ticket" } },
-            { had_wallet_cta: true },
-          ] as Prisma.EmailDeliveryWhereInput[],
-        },
-        select: {
-          accepted_at: true,
-          sent_at: true,
-          delivered_at: true,
-          template_id: true,
-          had_wallet_cta: true,
-          template: { select: { name: true } },
-        },
-      },
+      email_deliveries: WALLET_RELEVANT_EMAIL_DELIVERIES_SELECT,
     },
   },
 } as const;
@@ -1922,27 +1926,10 @@ const WALLET_EXPORT_ATTENDEE_SELECT = {
       registration_checked_at: true,
     },
   },
-  // Same shape and reasoning as WALLET_PASS_AGGREGATE_SELECT above - fed through
+  // Same shape and reasoning as WALLET_RELEVANT_EMAIL_DELIVERIES_SELECT above - fed through
   // earliestDeliverySuccessAt/latestDeliverySuccessAt rather than a plain min/max-sent_at query,
-  // see its own comment, including the template_id/template.name/had_wallet_cta scoping.
-  email_deliveries: {
-    where: {
-      status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES] as string[] },
-      OR: [
-        { template_id: null },
-        { template: { name: "ticket" } },
-        { had_wallet_cta: true },
-      ] as Prisma.EmailDeliveryWhereInput[],
-    },
-    select: {
-      accepted_at: true,
-      sent_at: true,
-      delivered_at: true,
-      template_id: true,
-      had_wallet_cta: true,
-      template: { select: { name: true } },
-    },
-  },
+  // see its own comment for the full template_id/template.name/had_wallet_cta scoping.
+  email_deliveries: WALLET_RELEVANT_EMAIL_DELIVERIES_SELECT,
 } as const;
 
 type WalletExportAttendeeRow = Prisma.AttendeeGetPayload<{ select: typeof WALLET_EXPORT_ATTENDEE_SELECT }>;
