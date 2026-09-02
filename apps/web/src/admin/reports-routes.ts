@@ -1664,14 +1664,18 @@ const WALLET_EXPORT_ATTENDEE_SELECT = {
 
 type WalletExportAttendeeRow = Prisma.AttendeeGetPayload<{ select: typeof WALLET_EXPORT_ATTENDEE_SELECT }>;
 
-/** One platform's own two CSV columns (active, inactive) - blank for both when `blank` (unsynced,
- * or the event has since disabled this platform - see buildWalletExportCsvRow's own comment on
- * why those two reasons share one blanking rule). Split out of buildWalletExportCsvRow below
- * (SonarCloud S3776) - Apple/Google/Samsung each repeated this exact two-ternary pattern verbatim,
- * so a third platform was the difference between that function fitting under Sonar's limit and
- * not; a fourth would just repeat the same shape again rather than adding new complexity here. */
-function walletPlatformCsvColumns(active: number, inactive: number, blank: boolean): [active: string, inactive: string] {
-  return blank ? ["", ""] : [String(active), String(inactive)];
+/** One platform's own two CSV columns (active, inactive) - blank for both when `counts` is null
+ * (unsynced, or the event has since disabled this platform - see buildWalletExportCsvRow's own
+ * comment on why those two reasons share one blanking rule; the caller resolves that into a
+ * counts-or-null value rather than this function taking a boolean flag - SonarCloud S2301 prefers
+ * that over a control-flag parameter). Split out of buildWalletExportCsvRow below (SonarCloud
+ * S3776) - Apple/Google/Samsung each repeated this exact two-ternary pattern verbatim, so a third
+ * platform was the difference between that function fitting under Sonar's limit and not; a fourth
+ * would just repeat the same shape again rather than adding new complexity here. */
+function walletPlatformCsvColumns(
+  counts: { active: number; inactive: number } | null,
+): [active: string, inactive: string] {
+  return counts ? [String(counts.active), String(counts.inactive)] : ["", ""];
 }
 
 /** One CSV row for exportWalletReportsCsv below - pulled out of the row-mapping callback since
@@ -1700,19 +1704,13 @@ export function buildWalletExportCsvRow(
   // longer a relevant "confirmed" signal; matches the same platform toggles the Wallets tab and
   // PDF are gated by (WalletsReportsTab.tsx, exportWalletReportsPdf below).
   const [appleActiveCol, appleInactiveCol] = walletPlatformCsvColumns(
-    appleActive,
-    pass?.apple_inactive_registrations ?? 0,
-    !synced || !enabledPlatforms.apple,
+    synced && enabledPlatforms.apple ? { active: appleActive, inactive: pass?.apple_inactive_registrations ?? 0 } : null,
   );
   const [googleActiveCol, googleInactiveCol] = walletPlatformCsvColumns(
-    googleActive,
-    pass?.google_inactive_registrations ?? 0,
-    !synced || !enabledPlatforms.google,
+    synced && enabledPlatforms.google ? { active: googleActive, inactive: pass?.google_inactive_registrations ?? 0 } : null,
   );
   const [samsungActiveCol, samsungInactiveCol] = walletPlatformCsvColumns(
-    samsungActive,
-    pass?.samsung_inactive_registrations ?? 0,
-    !synced || !enabledPlatforms.samsung,
+    synced && enabledPlatforms.samsung ? { active: samsungActive, inactive: pass?.samsung_inactive_registrations ?? 0 } : null,
   );
   const confirmedAppleActive = enabledPlatforms.apple ? appleActive : 0;
   const confirmedGoogleActive = enabledPlatforms.google ? googleActive : 0;
