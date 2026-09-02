@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Event Settings → Wallet's Template ID field now locks once any wallet pass has been issued for the event - the wallet provider scopes a pass lookup to the template it was created under, permanently, so changing the Template ID afterwards silently made every issued pass unmanageable (sync, void/restore, push) without any warning. The API key stays editable at any time (rotating a leaked key must still work), but saving a new one for an event with issued passes now live-verifies it against the currently configured template first and rejects it if it can't reach that template, so a key for the wrong PassCreator account can't silently take over an event's real wallet passes.
+- Event Settings → Wallet's Template ID field now locks once any wallet pass has been issued for the event - the wallet provider scopes a pass lookup to the template it was created under, permanently, so changing the Template ID afterwards silently made every issued pass unmanageable (sync, void/restore, push) without any warning. The API key remains editable at any time (rotating a leaked key must still work), but saving a new one for an event with issued passes now live-verifies it against the currently configured template first and rejects it if it can't reach that template, so a key for the wrong PassCreator account can't silently take over an event's real wallet passes. Clearing the API key entirely (rather than replacing it) now also asks for confirmation once passes have been issued, since it silently stops all syncing, voiding, restoring, and pushing for them until a working key is set again.
 
 ### Fixed
 

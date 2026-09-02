@@ -68,7 +68,7 @@ import {
   type EventSettingsTab,
 } from "../settings/eventSettingsTabs.js";
 import { pluralSuffix } from "../utils/pluralize.js";
-import { describeWalletPushConfirm } from "../utils/walletPushConfirm.js";
+import { describeWalletKeyClearConfirm, describeWalletPushConfirm } from "../utils/walletPushConfirm.js";
 import "./event-settings-page.css";
 
 export type SettingsForm = {
@@ -745,6 +745,12 @@ export function EventSettingsPage() {
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
   const [walletPushConfirmOpen, setWalletPushConfirmOpen] = useState(false);
+  // Which copy walletPushConfirmOpen's dialog shows - "push" (the original, default scenario:
+  // this save will push an update to already-installed passes) or "clear_key" (handleSave's own
+  // new check below: this save clears the API key on an event with issued passes, which stops
+  // managing them silently otherwise - CodeRabbit review). Both share the same open/pending-action
+  // plumbing since confirming either just runs the same commitSave.
+  const [walletConfirmKind, setWalletConfirmKind] = useState<"push" | "clear_key">("push");
   // Which save this confirm dialog is gating - the regular form save (handleSave), or the
   // Location tab's own "apply suggested timezone" shortcut (onApplyTimezone below), which
   // otherwise patches straight past this confirm entirely (CodeRabbit review).
@@ -971,6 +977,17 @@ export function EventSettingsPage() {
 
   async function handleSave() {
     if (!eventId || !form || !original || !dirty) return;
+    // Clearing the API key doesn't corrupt an issued pass the way changing the Template ID does
+    // (see describeWalletKeyClearConfirm's own doc comment), but it does silently stop managing
+    // every one of them - worth its own confirmation, checked before the push-confirm below since
+    // willWalletBeConfiguredForPush already returns false once the key is being cleared (that
+    // check exists to avoid a false "will push" warning here, not to skip warning altogether).
+    if (event && event.issued_wallet_pass_count > 0 && form.walletApiKeyEdit.mode === "clear") {
+      pendingWalletPushActionRef.current = commitSave;
+      setWalletConfirmKind("clear_key");
+      setWalletPushConfirmOpen(true);
+      return;
+    }
     // Only worth confirming when the save would actually push to a real, currently-installed
     // wallet pass - an event with none yet (or a save that doesn't touch a wallet-relevant field,
     // or one whose own edits leave Wallet unconfigured) goes straight through, matching the
@@ -983,6 +1000,7 @@ export function EventSettingsPage() {
         patchTouchesWalletRelevantField(buildSettingsPatch(form, original), event)
       ) {
         pendingWalletPushActionRef.current = commitSave;
+        setWalletConfirmKind("push");
         setWalletPushConfirmOpen(true);
         return;
       }
@@ -1239,6 +1257,7 @@ export function EventSettingsPage() {
                   }
                 };
                 pendingWalletPushCancelRef.current = () => reject(new Error("wallet_push_cancelled"));
+                setWalletConfirmKind("push");
                 setWalletPushConfirmOpen(true);
               });
             }
@@ -1411,9 +1430,17 @@ export function EventSettingsPage() {
 
       <ConfirmDialog
         open={walletPushConfirmOpen}
-        title="Push this update to installed wallet passes?"
-        message={describeWalletPushConfirm(event.installed_wallet_pass_count)}
-        confirmLabel="Save and push"
+        title={
+          walletConfirmKind === "clear_key"
+            ? "Clear the wallet API key?"
+            : "Push this update to installed wallet passes?"
+        }
+        message={
+          walletConfirmKind === "clear_key"
+            ? describeWalletKeyClearConfirm(event.issued_wallet_pass_count)
+            : describeWalletPushConfirm(event.installed_wallet_pass_count)
+        }
+        confirmLabel={walletConfirmKind === "clear_key" ? "Save and clear" : "Save and push"}
         loading={saving}
         onConfirm={() => void handleWalletPushConfirm()}
         onCancel={handleWalletPushCancel}
