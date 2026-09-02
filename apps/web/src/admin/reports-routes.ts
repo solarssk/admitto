@@ -1665,17 +1665,58 @@ const WALLET_EXPORT_ATTENDEE_SELECT = {
 type WalletExportAttendeeRow = Prisma.AttendeeGetPayload<{ select: typeof WALLET_EXPORT_ATTENDEE_SELECT }>;
 
 /** One platform's own two CSV columns (active, inactive) - blank for both when `counts` is null
- * (unsynced, or the event has since disabled this platform - see buildWalletExportCsvRow's own
+ * (unsynced, or the event has since disabled this platform - see walletCsvPlatformFields' own
  * comment on why those two reasons share one blanking rule; the caller resolves that into a
  * counts-or-null value rather than this function taking a boolean flag - SonarCloud S2301 prefers
- * that over a control-flag parameter). Split out of buildWalletExportCsvRow below (SonarCloud
- * S3776) - Apple/Google/Samsung each repeated this exact two-ternary pattern verbatim, so a third
- * platform was the difference between that function fitting under Sonar's limit and not; a fourth
- * would just repeat the same shape again rather than adding new complexity here. */
+ * that over a control-flag parameter). */
 function walletPlatformCsvColumns(
   counts: { active: number; inactive: number } | null,
 ): [active: string, inactive: string] {
   return counts ? [String(counts.active), String(counts.inactive)] : ["", ""];
+}
+
+/** Every wallet-platform-derived CSV field buildWalletExportCsvRow's row needs: each platform's
+ * own two columns plus the "Confirmed platform" column - split out of buildWalletExportCsvRow
+ * below (SonarCloud S3776) so a future platform only needs to touch this one function, not that
+ * one's own body too. A disabled platform's columns go blank the same way an unsynced pass's do -
+ * the event owner turned that platform off, so a stale registration from before it was disabled is
+ * no longer a relevant "confirmed" signal; matches the same platform toggles the Wallets tab and
+ * PDF are gated by (WalletsReportsTab.tsx, exportWalletReportsPdf below). registration_checked_at
+ * null means the pass has never completed a sync - every field here leaves its columns blank
+ * (unknown) rather than exporting 0/"None", which would misrepresent "never synced" as the
+ * affirmative "confirmed not installed" result and corrupt any downstream recompute from this
+ * archive (bot review). */
+function walletCsvPlatformFields(
+  pass: WalletExportAttendeeRow["wallet_pass"],
+  enabledPlatforms: EnabledWalletPlatforms,
+): {
+  apple: [active: string, inactive: string];
+  google: [active: string, inactive: string];
+  samsung: [active: string, inactive: string];
+  confirmedPlatform: string;
+} {
+  const synced = pass?.registration_checked_at != null;
+  const appleActive = pass?.apple_active_registrations ?? 0;
+  const googleActive = pass?.google_active_registrations ?? 0;
+  const samsungActive = pass?.samsung_active_registrations ?? 0;
+  return {
+    apple: walletPlatformCsvColumns(
+      synced && enabledPlatforms.apple ? { active: appleActive, inactive: pass?.apple_inactive_registrations ?? 0 } : null,
+    ),
+    google: walletPlatformCsvColumns(
+      synced && enabledPlatforms.google ? { active: googleActive, inactive: pass?.google_inactive_registrations ?? 0 } : null,
+    ),
+    samsung: walletPlatformCsvColumns(
+      synced && enabledPlatforms.samsung ? { active: samsungActive, inactive: pass?.samsung_inactive_registrations ?? 0 } : null,
+    ),
+    confirmedPlatform: synced
+      ? confirmedPlatformLabel(
+          enabledPlatforms.apple ? appleActive : 0,
+          enabledPlatforms.google ? googleActive : 0,
+          enabledPlatforms.samsung ? samsungActive : 0,
+        )
+      : "",
+  };
 }
 
 /** One CSV row for exportWalletReportsCsv below - pulled out of the row-mapping callback since
@@ -1689,35 +1730,8 @@ export function buildWalletExportCsvRow(
   enabledPlatforms: EnabledWalletPlatforms,
 ): string {
   const pass = row.wallet_pass;
-  const appleActive = pass?.apple_active_registrations ?? 0;
-  const googleActive = pass?.google_active_registrations ?? 0;
-  const samsungActive = pass?.samsung_active_registrations ?? 0;
   const emailFirstSentAt = earliestDeliverySuccessAt(row.email_deliveries);
-  // registration_checked_at null means the pass has never completed a sync - the active/inactive
-  // counts and confirmed-platform label below are all derived from that sync, so leave them blank
-  // (unknown) rather than exporting 0/"None", which would misrepresent "never synced" as the
-  // affirmative "confirmed not installed" result and corrupt any downstream recompute from this
-  // archive (bot review).
-  const synced = pass?.registration_checked_at != null;
-  // A disabled platform's own two columns go blank the same way an unsynced pass's do - the event
-  // owner turned that platform off, so a stale registration from before it was disabled is no
-  // longer a relevant "confirmed" signal; matches the same platform toggles the Wallets tab and
-  // PDF are gated by (WalletsReportsTab.tsx, exportWalletReportsPdf below).
-  const [appleActiveCol, appleInactiveCol] = walletPlatformCsvColumns(
-    synced && enabledPlatforms.apple ? { active: appleActive, inactive: pass?.apple_inactive_registrations ?? 0 } : null,
-  );
-  const [googleActiveCol, googleInactiveCol] = walletPlatformCsvColumns(
-    synced && enabledPlatforms.google ? { active: googleActive, inactive: pass?.google_inactive_registrations ?? 0 } : null,
-  );
-  const [samsungActiveCol, samsungInactiveCol] = walletPlatformCsvColumns(
-    synced && enabledPlatforms.samsung ? { active: samsungActive, inactive: pass?.samsung_inactive_registrations ?? 0 } : null,
-  );
-  const confirmedAppleActive = enabledPlatforms.apple ? appleActive : 0;
-  const confirmedGoogleActive = enabledPlatforms.google ? googleActive : 0;
-  const confirmedSamsungActive = enabledPlatforms.samsung ? samsungActive : 0;
-  const confirmedPlatform = synced
-    ? confirmedPlatformLabel(confirmedAppleActive, confirmedGoogleActive, confirmedSamsungActive)
-    : "";
+  const platformFields = walletCsvPlatformFields(pass, enabledPlatforms);
 
   return [
     row.name,
@@ -1725,13 +1739,10 @@ export function buildWalletExportCsvRow(
     resolveTicketTypeLabel(catalog, row.ticket_type),
     pass?.status ?? "No pass",
     pass?.issued_at ? formatAdmittedAtExport(pass.issued_at, timeZone) : "",
-    appleActiveCol,
-    appleInactiveCol,
-    googleActiveCol,
-    googleInactiveCol,
-    samsungActiveCol,
-    samsungInactiveCol,
-    confirmedPlatform,
+    ...platformFields.apple,
+    ...platformFields.google,
+    ...platformFields.samsung,
+    platformFields.confirmedPlatform,
     pass?.voided_at ? formatAdmittedAtExport(pass.voided_at, timeZone) : "",
     pass?.registration_checked_at ? formatAdmittedAtExport(pass.registration_checked_at, timeZone) : "",
     emailFirstSentAt ? formatAdmittedAtExport(emailFirstSentAt, timeZone) : "",
