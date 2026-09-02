@@ -293,7 +293,11 @@ async function loadInstalledWalletPassCount(db: PrismaClient, eventId: string): 
     where: {
       status: "active",
       attendee: { event_id: eventId },
-      OR: [{ apple_active_registrations: { gt: 0 } }, { google_active_registrations: { gt: 0 } }],
+      OR: [
+        { apple_active_registrations: { gt: 0 } },
+        { google_active_registrations: { gt: 0 } },
+        { samsung_active_registrations: { gt: 0 } },
+      ],
     },
   });
 }

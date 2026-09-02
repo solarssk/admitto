@@ -1488,7 +1488,8 @@ function computeWalletPushNoticeVisible(
     !!detail.wallet_pass &&
     detail.wallet_pass.status === "active" &&
     ((detail.wallet_pass.apple_active_registrations ?? 0) > 0 ||
-      (detail.wallet_pass.google_active_registrations ?? 0) > 0);
+      (detail.wallet_pass.google_active_registrations ?? 0) > 0 ||
+      (detail.wallet_pass.samsung_active_registrations ?? 0) > 0);
   if (!hasConfirmedWalletRegistration) return false;
   return Object.keys(buildAttendeePatch(form, detail, attributeFields)).some(
     (key) =>
@@ -2416,7 +2417,11 @@ export function AttendeeDetailPage() {
             )}
           </div>
         </div>
-        {walletPlatforms.any && (
+        {/* Deliberately not walletPlatforms.any (Apple/Google only, see its own doc comment) - this
+         * status chip reads real per-attendee Samsung registration data the same way it already
+         * does for Apple/Google (isWalletPassInstalled below), so a Samsung-only event must still
+         * get a chip. */}
+        {(walletPlatforms.apple || walletPlatforms.google || walletPlatforms.samsung) && (
           <div className="attendee-status-chip">
             <span className={`attendee-status-chip__icon attendee-status-chip__icon--${walletTone(detail.wallet_pass)}`}>
               <i className="ti ti-wallet" aria-hidden="true" />

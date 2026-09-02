@@ -589,6 +589,24 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(screen.getByText("Sent")).toBeTruthy();
       expect(screen.queryByText("Added")).toBeNull();
     });
+
+    // Regression (CodeRabbit review): this chip was gated by walletPlatforms.any (Apple/Google
+    // only), hiding it entirely for a Samsung-only event even once isWalletPassInstalled below
+    // read a real confirmed registration.
+    it("shows Added for a confirmed Samsung-only registration on a Samsung-only event", async () => {
+      mockWalletAppleEnabled = false;
+      mockWalletGoogleEnabled = false;
+      mockWalletSamsungEnabled = true;
+      mockLoad(
+        baseDetail({
+          wallet_pass: walletPass({ status: "active", samsung_active_registrations: 1 }),
+        }),
+      );
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      expect(screen.getByText("Added")).toBeTruthy();
+    });
   });
 
   describe("First downloaded (formatFirstDownloadedAt)", () => {
@@ -762,6 +780,29 @@ describe("AttendeeDetailPage — Wallet card gated by the event's platform toggl
     mockLoad(
       baseDetail({
         wallet_pass: walletPass({ apple_active_registrations: 1, google_active_registrations: 0 }),
+        wallet_field_mapping: { org: "company" },
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.queryByText("This will also update their installed wallet pass.")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Company"), { target: { value: "Acme Corp" } });
+    expect(screen.getByText("This will also update their installed wallet pass.")).toBeTruthy();
+  });
+
+  // Regression (CodeRabbit review): computeWalletPushNoticeVisible only checked apple/google
+  // registration counts, so a Samsung-only confirmed registration would under-warn even though
+  // pushWalletUpdateOnAttendeeChangeBestEffort pushes to it the same as any other active pass.
+  it("shows the wallet-push notice while editing, for a Samsung-only confirmed registration", async () => {
+    mockWalletAppleEnabled = false;
+    mockWalletGoogleEnabled = false;
+    mockWalletSamsungEnabled = true;
+    mockLoad(
+      baseDetail({
+        wallet_pass: walletPass({ status: "active", samsung_active_registrations: 1 }),
         wallet_field_mapping: { org: "company" },
       }),
     );

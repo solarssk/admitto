@@ -356,6 +356,9 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     const voidedInstalledAttendee = await prisma.attendee.create({
       data: { event_id: EVENT_SET, email: "voided-guest@example.com", name: "Voided Guest", status: "registered" },
     });
+    const samsungInstalledAttendee = await prisma.attendee.create({
+      data: { event_id: EVENT_SET, email: "samsung-guest@example.com", name: "Samsung Guest", status: "registered" },
+    });
     await prisma.walletPass.create({
       data: {
         attendee_id: installedAttendee.id,
@@ -382,6 +385,18 @@ describe("GET /api/admin/events/:eventId/settings", () => {
         apple_active_registrations: 1,
       },
     });
+    // Regression (bot review): a pass installed only on Samsung must count too, not just
+    // apple/google - otherwise an event with Samsung-only installs would report zero and skip
+    // the "Save and push" confirmation dialog on a wallet-relevant Event Settings change.
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: samsungInstalledAttendee.id,
+        provider: "passcreator",
+        provider_pass_id: `pc-${samsungInstalledAttendee.id}`,
+        status: "active",
+        samsung_active_registrations: 1,
+      },
+    });
 
     try {
       const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, {
@@ -389,14 +404,16 @@ describe("GET /api/admin/events/:eventId/settings", () => {
       });
       expect(res.status).toBe(200);
       const body = (await res.json()) as { installed_wallet_pass_count: number };
-      expect(body.installed_wallet_pass_count).toBe(1);
+      expect(body.installed_wallet_pass_count).toBe(2);
     } finally {
-      await prisma.walletPass.deleteMany({
-        where: { attendee_id: { in: [installedAttendee.id, issuedNotInstalledAttendee.id, voidedInstalledAttendee.id] } },
-      });
-      await prisma.attendee.deleteMany({
-        where: { id: { in: [installedAttendee.id, issuedNotInstalledAttendee.id, voidedInstalledAttendee.id] } },
-      });
+      const ids = [
+        installedAttendee.id,
+        issuedNotInstalledAttendee.id,
+        voidedInstalledAttendee.id,
+        samsungInstalledAttendee.id,
+      ];
+      await prisma.walletPass.deleteMany({ where: { attendee_id: { in: ids } } });
+      await prisma.attendee.deleteMany({ where: { id: { in: ids } } });
     }
   });
 

@@ -84,7 +84,10 @@ works; Admitto never signs or hosts pass files itself.
   switch alongside Apple/Google, and an attendee's ticket page shows an Add to Samsung Wallet
   button when it's on - but PassCreator hasn't finished activating Samsung Wallet support on any
   template yet, so the button isn't tappable and no attendee can actually get a Samsung pass. Once
-  PassCreator finishes that activation, no further setup is needed here.
+  PassCreator finishes that activation, a follow-up Admitto change is still needed before the
+  button becomes tappable (reading the real install-link field PassCreator returns once activated
+  and wiring it into the ticket page); registration-status display (Attendees table, an
+  attendee's Wallet card) already reads real PassCreator data and needs no further changes.
 
 ## Related pages
 

@@ -45,34 +45,52 @@ describe("WALLET_LIFECYCLE_STATUS_LABELS", () => {
 });
 
 describe("isWalletPassInstalled", () => {
-  const bothEnabled = { apple: true, google: true };
+  const allEnabled = { apple: true, google: true, samsung: true };
 
-  it("is false when registration counts are both null (never synced)", () => {
+  it("is false when registration counts are all null (never synced)", () => {
     expect(
-      isWalletPassInstalled({ apple_active_registrations: null, google_active_registrations: null }, bothEnabled),
+      isWalletPassInstalled(
+        { apple_active_registrations: null, google_active_registrations: null, samsung_active_registrations: null },
+        allEnabled,
+      ),
     ).toBe(false);
   });
 
   it("is false when registration counts are confirmed zero", () => {
     expect(
-      isWalletPassInstalled({ apple_active_registrations: 0, google_active_registrations: 0 }, bothEnabled),
+      isWalletPassInstalled(
+        { apple_active_registrations: 0, google_active_registrations: 0, samsung_active_registrations: 0 },
+        allEnabled,
+      ),
     ).toBe(false);
   });
 
-  it("is true when either platform has a confirmed active registration", () => {
+  it("is true when any platform has a confirmed active registration", () => {
     expect(
-      isWalletPassInstalled({ apple_active_registrations: 1, google_active_registrations: 0 }, bothEnabled),
+      isWalletPassInstalled(
+        { apple_active_registrations: 1, google_active_registrations: 0, samsung_active_registrations: 0 },
+        allEnabled,
+      ),
     ).toBe(true);
     expect(
-      isWalletPassInstalled({ apple_active_registrations: 0, google_active_registrations: 2 }, bothEnabled),
+      isWalletPassInstalled(
+        { apple_active_registrations: 0, google_active_registrations: 2, samsung_active_registrations: 0 },
+        allEnabled,
+      ),
+    ).toBe(true);
+    expect(
+      isWalletPassInstalled(
+        { apple_active_registrations: 0, google_active_registrations: 0, samsung_active_registrations: 1 },
+        allEnabled,
+      ),
     ).toBe(true);
   });
 
   it("ignores a registration on a platform the event no longer offers", () => {
     expect(
       isWalletPassInstalled(
-        { apple_active_registrations: 1, google_active_registrations: 0 },
-        { apple: false, google: true },
+        { apple_active_registrations: 1, google_active_registrations: 0, samsung_active_registrations: 3 },
+        { apple: false, google: true, samsung: false },
       ),
     ).toBe(false);
   });
