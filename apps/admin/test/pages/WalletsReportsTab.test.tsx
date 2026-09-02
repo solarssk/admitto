@@ -26,6 +26,7 @@ let capturedCumulative:
       points: Array<{ date: number; value: number }>;
       yTickFormatter?: (v: number) => string;
       yTicks?: number[];
+      yWidth?: number;
       labelFormatter?: (label: number) => string;
     }
   | undefined;
@@ -33,6 +34,7 @@ let capturedTap:
   | {
       rows: Array<{ label: string; pct: number; count: number }>;
       yTickFormatter?: (v: number) => string;
+      yWidth?: number;
       tooltipFormatter?: (
         value: number,
         name: string,
@@ -105,6 +107,7 @@ vi.mock("recharts", () => {
       points: data,
       yTickFormatter: yAxis?.tickFormatter,
       yTicks: yAxis?.ticks,
+      yWidth: yAxis?.width,
       labelFormatter: tooltip?.labelFormatter,
     };
     return <div data-testid="rc-area" data-points={JSON.stringify(data)} />;
@@ -123,6 +126,7 @@ vi.mock("recharts", () => {
     capturedTap = {
       rows: data,
       yTickFormatter: yAxis?.tickFormatter,
+      yWidth: yAxis?.width,
       tooltipFormatter: tooltip?.formatter,
       barShape: bar?.shape,
     };
@@ -378,11 +382,17 @@ describe("WalletsReportsTab", () => {
     expect(cumulativePoints).toHaveLength(3);
     expect(cumulativePoints[0]!.value).toBe(0);
     expect(cumulativePoints.at(-1)).toEqual({ date: Date.parse("2026-06-02T12:00:00Z"), value: 5 });
+    // axisMax=5 (1 digit) here - see the dedicated Y-axis-width tests below for how this scales
+    // with the actual digit count instead of Recharts' own flat 60px default gutter.
+    expect(capturedCumulative?.yWidth).toBe(23);
 
     // Time-to-tap bar chart: one bar per bucket, each row carrying its own bucket's own pct.
     const tapCard = cardByTitle("Time to wallet install");
     const tapRows = dataRows(within(tapCard).getByTestId("rc-bar"));
     expect(tapRows.map((r) => r.pct)).toEqual([50, 30, 10, 10]);
+    // Percentage axes share one fixed width (PERCENT_Y_AXIS_WIDTH) regardless of the actual
+    // values, since their domain is always [0, 100] - "100%" is always the longest possible label.
+    expect(capturedTap?.yWidth).toBe(46);
 
     // Admission-by-wallet compare: two independent gauges (their own percentage rendered as
     // plain text now, not a chart-native label) plus the delta pill between them.
@@ -586,6 +596,29 @@ describe("WalletsReportsTab", () => {
     await screen.findByText("Wallet adoption");
 
     expect(capturedCumulative?.yTicks).toEqual([0, 1, 2]);
+  });
+
+  it("widens the cumulative chart's Y-axis gutter for a wider axis max, instead of Recharts' own flat default", async () => {
+    // axisMax=2 (1 digit, from the headroom test above) vs axisMax=1000 (4 digits) - real digit
+    // counts an event's actual pass total can produce, not two arbitrary numbers.
+    const cases: Array<{ finalCumulative: number; width: number }> = [
+      { finalCumulative: 1, width: 23 },
+      { finalCumulative: 999, width: 42 },
+    ];
+
+    for (const { finalCumulative, width } of cases) {
+      fetchEventWalletReports.mockResolvedValue(
+        fixture({ issued_by_day: [{ date: "2026-06-01", count: finalCumulative, cumulative: finalCumulative }] }),
+      );
+
+      renderWithToast(
+        <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+      );
+      await screen.findByText("Wallet adoption");
+
+      expect(capturedCumulative?.yWidth).toBe(width);
+      cleanup();
+    }
   });
 
   it("formats the cumulative chart's tooltip label as a full date", async () => {

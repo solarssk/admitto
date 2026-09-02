@@ -321,6 +321,22 @@ function niceStepMultiplier(normalized: number): number {
  * (round(8)->8), but max<=1 always lands exactly on 1 with none, which reads as the line pinned to
  * the axis's own ceiling with nowhere left to grow (PO review) - this one small-count case is
  * common enough (a new/small event) to fix explicitly rather than leaving to chance. */
+/** Recharts' own YAxis default width (60px) reserves a fixed gutter for tick labels regardless of
+ * how narrow they actually are, leaving a visibly empty band to the axis's own left - measured
+ * directly (Canvas measureText at 11px, the same size these ticks render at, not assumed): a
+ * single digit is ~7px wide, three digits ~19px, four ~26px - genuinely different gutters for a
+ * small event's "2" versus a large one's "1000", so this computes from the real axis max's own
+ * digit count rather than picking one flat guess. +16 covers the tick mark plus Recharts' own
+ * internal label padding on top of the measured text width itself. */
+function yAxisWidthForCount(axisMax: number): number {
+  return Math.ceil(String(Math.round(axisMax)).length * 6.5) + 16;
+}
+
+// Percentage axes (Time to wallet install, Devices per attendee) share a fixed [0, 100] domain, so
+// unlike yAxisWidthForCount above their longest possible label is always the same one value -
+// "100%", measured the same way (Canvas measureText, 11px): ~29px + the same +16 buffer.
+const PERCENT_Y_AXIS_WIDTH = 46;
+
 function niceCountAxis(max: number): { axisMax: number; tickAmount: number } {
   if (max <= 1) return { axisMax: 2, tickAmount: 2 };
   const roughStep = max / 5;
@@ -386,6 +402,7 @@ function CumulativeChart({ data }: Readonly<{ data: EventWalletReportsResponse["
           ticks={yTicks}
           tickFormatter={(v) => Math.round(Number(v)).toString()}
           tick={{ fontSize: 11, fill: TEXT_MUTED }}
+          width={yAxisWidthForCount(axisMax)}
         />
         <Tooltip
           labelFormatter={(label) =>
@@ -527,6 +544,7 @@ function TimeToTapChart({ buckets }: Readonly<{ buckets: EventWalletReportsRespo
           domain={[0, 100]}
           tickFormatter={(v) => `${Math.round(Number(v))}%`}
           tick={{ fontSize: 11, fill: TEXT_MUTED }}
+          width={PERCENT_Y_AXIS_WIDTH}
         />
         <Tooltip
           formatter={(value, _name, props) => {
@@ -576,6 +594,7 @@ function RegistrationsPerAttendeeChart({
           domain={[0, 100]}
           tickFormatter={(v) => `${Math.round(Number(v))}%`}
           tick={{ fontSize: 11, fill: TEXT_MUTED }}
+          width={PERCENT_Y_AXIS_WIDTH}
         />
         <Tooltip
           formatter={(value, _name, props) => {
