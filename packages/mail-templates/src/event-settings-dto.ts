@@ -69,7 +69,7 @@ export type EventSettingsDto = {
    * WALLET_RELEVANT_EVENT_FIELDS field. */
   installed_wallet_pass_count: number;
   /** Every WalletPass ever issued for this event (PassCreator has actually created it, regardless
-   * of install/registration status) — broader than installed_wallet_pass_count above. Drives
+   * of install/registration status) - broader than installed_wallet_pass_count above. Drives
    * locking the Template ID field: PassCreator scopes pass lookups to one template, so a pass
    * issued under the current template becomes permanently unmanageable (sync, void/restore, push)
    * the moment the template ID changes, even if nobody ever installed it on a device. */

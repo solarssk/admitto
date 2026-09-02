@@ -869,11 +869,37 @@ export function createApp(options: CreateAppOptions = {}) {
     }
 
     /** Returns null (after logging) instead of throwing - a database error here must still land
-     * on the retry redirect below, not escape to app.onError as a bare JSON 500. */
+     * on the retry redirect below, not escape to app.onError as a bare JSON 500. Also guards
+     * against a narrow but real race with Event Settings' wallet-credential change guard
+     * (event-settings-routes.ts's guardWalletCredentialChange): that guard checks "has any pass
+     * been issued yet" before letting an admin change the event's Template ID, but `provider`
+     * above was already resolved from the event snapshot `resolveTicket` read at the top of this
+     * request - an admin's Template ID change landing in the window between that snapshot and
+     * this function's own write would otherwise let a pass just created under the *old* template
+     * persist as "active" under a template Admitto no longer records using anywhere, permanently
+     * orphaning it (sync, void/restore, push would all target the wrong template from then on -
+     * CodeRabbit review). Re-reads the event's current Template ID right here, the last point
+     * before this pass becomes unrecoverable: a mismatch means saving it as active would already
+     * be too late, so it's marked failed instead - the attendee's next tap re-resolves the event
+     * fresh and creates a new pass under the now-current template instead of silently keeping the
+     * stale one. */
     async function markActive(
       userProvidedId: string,
       result: WalletPassResult,
     ): Promise<{ apple_url: string | null; android_url: string | null } | null> {
+      const currentEvent = await db.event.findUnique({
+        where: { id: event.id },
+        select: { wallet_template_id: true },
+      });
+      if (currentEvent?.wallet_template_id !== event.walletTemplateId) {
+        recordSystemLog({
+          level: "error",
+          source: "api",
+          message: "wallet_pass_template_changed_mid_issuance",
+          fields: { eventId: event.id, attendeeId: attendee.id },
+        });
+        return markFailed("wallet_credential_changed");
+      }
       try {
         await db.walletPass.upsert({
           where: { attendee_id: attendee.id },
@@ -915,8 +941,12 @@ export function createApp(options: CreateAppOptions = {}) {
 
     /** Marks the pass "failed" after an unrecoverable createPass error - split out of
      * createOrRecoverPass to keep its cognitive complexity under the SonarCloud threshold
-     * (S3776). Never throws: a DB error here must still land on the retry redirect below. */
-    async function markFailed(code: WalletProviderErrorCode): Promise<null> {
+     * (S3776). Never throws: a DB error here must still land on the retry redirect below.
+     * "wallet_credential_changed" (markActive's own mid-request Template ID race guard above) is
+     * not a real WalletProviderErrorCode - PassCreator never rejected anything, Admitto is the
+     * one refusing to keep this result - but it's stored in the same last_error_code column and
+     * shown the same way, so accepting it here avoids a second, near-identical write path. */
+    async function markFailed(code: WalletProviderErrorCode | "wallet_credential_changed"): Promise<null> {
       try {
         await db.walletPass.upsert({
           where: { attendee_id: attendee.id },

@@ -818,9 +818,16 @@ async function guardWalletCredentialChange(
   try {
     await client.describeTemplate();
     return null;
-  } catch (err) {
-    const code = err instanceof WalletProviderError ? err.code : "wallet_provider_rejected";
-    return c.json({ error: code }, 409);
+  } catch {
+    // Deliberately not the caught WalletProviderError's own .code (wallet_provider_not_found,
+    // wallet_provider_unauthorized, ...) - those codes' CODE_MESSAGES entries are worded for a
+    // real pass lookup (void/restore/refresh-status failures elsewhere in the app), e.g.
+    // wallet_provider_not_found reads "couldn't find this pass. It may have been removed there" -
+    // actively misleading here, where no pass is being looked up at all, only this event's own
+    // Template ID (CodeRabbit review). One dedicated code covers every describeTemplate() failure
+    // reason instead, pointing the admin at the granular Test connection diagnosis rather than
+    // trying to duplicate PassCreator's own error taxonomy a second time in this one save path.
+    return c.json({ error: "wallet_key_verification_failed" }, 409);
   }
 }
 

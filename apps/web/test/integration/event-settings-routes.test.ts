@@ -2447,11 +2447,21 @@ describe("PATCH /api/admin/events/:eventId", () => {
       }
     });
 
-    it("rejects a new API key with 409 when it can't reach the event's current template (wrong account)", async () => {
+    // Regression (CodeRabbit review): this used to forward the caught WalletProviderError's own
+    // .code (e.g. wallet_provider_not_found) straight through - CODE_MESSAGES' entry for that
+    // code is worded for a real pass lookup ("couldn't find this pass. It may have been removed
+    // there"), misleading here where no pass is being looked up, only the event's own Template
+    // ID. One dedicated code covers every describeTemplate() failure reason now, regardless of
+    // which WalletProviderErrorCode PassCreator actually returned.
+    it.each([
+      ["wallet_provider_unauthorized" as const, "wrong key"],
+      ["wallet_provider_not_found" as const, "wrong template"],
+      ["wallet_provider_timeout" as const, "provider unreachable"],
+    ])("rejects a new API key with 409 wallet_key_verification_failed on a %s failure (%s)", async (code, _reason) => {
       await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_template_id: "tmpl-guard" } });
       const { cleanup } = await seedIssuedWalletPass();
       vi.spyOn(PassCreatorClient.prototype, "describeTemplate").mockRejectedValueOnce(
-        new WalletProviderError("wallet_provider_unauthorized", "rejected"),
+        new WalletProviderError(code, "rejected"),
       );
 
       try {
@@ -2462,7 +2472,7 @@ describe("PATCH /api/admin/events/:eventId", () => {
         });
         expect(res.status).toBe(409);
         const body = (await res.json()) as { error: string };
-        expect(body.error).toBe("wallet_provider_unauthorized");
+        expect(body.error).toBe("wallet_key_verification_failed");
 
         const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
         expect(row.wallet_api_key_enc).toBeNull();

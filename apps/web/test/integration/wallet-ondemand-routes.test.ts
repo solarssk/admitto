@@ -446,6 +446,44 @@ describe("On-demand wallet routes", () => {
     expect(saved?.provider_pass_id).toBe("pc-winner-delayed");
   });
 
+  // Regression (CodeRabbit review, P1): Event Settings' wallet-credential guard
+  // (event-settings-routes.ts's guardWalletCredentialChange) checks "has any pass been issued
+  // yet" before letting an admin change the event's Template ID - but this handler resolves its
+  // wallet provider from a snapshot taken at the top of the request, so an admin's Template ID
+  // change landing in the window between that snapshot and this pass actually persisting would
+  // otherwise let it save as "active" under a template the event no longer points at, permanently
+  // orphaning it (sync, void/restore, push would all target the wrong template from then on).
+  it("marks failed, not active, when the event's Template ID changes while this request's own createPass call is in flight", async () => {
+    const provider = stubProvider();
+    provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
+      // Simulates an admin's Event Settings save landing in the exact window between this
+      // request resolving its wallet provider and its own createPass call returning.
+      await prisma.event.update({
+        where: { id: EVENT_ID },
+        data: { wallet_template_id: "tmpl-changed-mid-request" },
+      });
+      return {
+        providerPassId: `pc-${input.userProvidedId}`,
+        downloadUrl: "https://pc.test/p/x",
+        appleUrl: "https://pc.test/apple/x",
+        androidUrl: "https://pc.test/android/x",
+      };
+    });
+    const app = makeApp(provider);
+
+    try {
+      const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+      const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+      expect(saved?.status).toBe("failed");
+      expect(saved?.last_error_code).toBe("wallet_credential_changed");
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_template_id: "tmpl-wallet-gala" } });
+    }
+  });
+
   it("marks failed when a duplicate error can't be recovered (findByUserProvidedId finds nothing)", async () => {
     const provider = stubProvider();
     provider.createPass.mockRejectedValueOnce(
