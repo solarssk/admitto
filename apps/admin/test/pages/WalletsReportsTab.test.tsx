@@ -509,7 +509,7 @@ describe("WalletsReportsTab", () => {
     expect(tapRows.map((r) => r.pct)).toEqual([0, 0, 0, 0]);
   });
 
-  it("shows the 'nothing yet' copy for Time to install after reminder when eligible_count is 0, not an all-zero chart", async () => {
+  it("still renders the Time to install after reminder chart, all-zero, when eligible_count is 0 - same as Time to wallet install, never a text-only fallback", async () => {
     fetchEventWalletReports.mockResolvedValue(fixture());
 
     renderWithToast(
@@ -518,11 +518,11 @@ describe("WalletsReportsTab", () => {
     await screen.findByText("Wallet adoption");
 
     const reminderCard = cardByTitle("Time to install after reminder");
-    expect(within(reminderCard).getByText("No installs are attributable to a follow-up email yet.")).toBeTruthy();
-    expect(within(reminderCard).queryByTestId("rc-bar")).toBeNull();
+    const reminderRows = dataRows(within(reminderCard).getByTestId("rc-bar"));
+    expect(reminderRows.map((r) => r.pct)).toEqual([0, 0, 0, 0]);
   });
 
-  it("renders the Time to install after reminder chart once eligible_count is non-zero", async () => {
+  it("renders real, non-zero bars for Time to install after reminder once eligible_count is non-zero", async () => {
     fetchEventWalletReports.mockResolvedValue(
       fixture({
         time_to_install_after_reminder: {
@@ -544,7 +544,6 @@ describe("WalletsReportsTab", () => {
     await screen.findByText("Wallet adoption");
 
     const reminderCard = cardByTitle("Time to install after reminder");
-    expect(within(reminderCard).queryByText("No installs are attributable to a follow-up email yet.")).toBeNull();
     const reminderRows = dataRows(within(reminderCard).getByTestId("rc-bar"));
     expect(reminderRows.map((r) => r.pct)).toEqual([75, 25, 0, 0]);
   });

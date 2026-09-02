@@ -705,37 +705,17 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       </div>
 
       <div className="wallets-panels">
-        <Card title="Cumulative passes issued" className="wallets-chart-card">
-          <p className="wallets-description">The running total of tickets added to attendees&rsquo; wallets over time.</p>
-          {data.issued_by_day.length === 0 ? (
-            <p className="wallets-description">No passes issued yet.</p>
-          ) : (
-            <ReportsCumulativeAreaChart
-              data={data.issued_by_day}
-              gradientId="wallets-cumulative-fill"
-              seriesName="Passes issued"
-              isActive={isActive}
-            />
-          )}
-        </Card>
         <Card title="Time to wallet install" className="wallets-chart-card">
           <p className="wallets-description">
             How many days pass between the ticket email landing in an attendee&rsquo;s inbox and their pass being confirmed installed on their wallet app.
           </p>
           <TimeToTapChart buckets={data.time_to_wallet_tap.buckets} isActive={isActive} />
         </Card>
-      </div>
-
-      <div className="wallets-panels">
         <Card title="Time to install after reminder" className="wallets-chart-card">
           <p className="wallets-description">
-            For attendees who got a follow-up email with a wallet button after their ticket - a reminder, or any other campaign - how many days passed between that most recent email and their pass being confirmed installed.
+            How many days pass between the most recent wallet-button email - a reminder, or other campaign - and their pass being confirmed installed.
           </p>
-          {data.time_to_install_after_reminder.eligible_count === 0 ? (
-            <p className="wallets-description">No installs are attributable to a follow-up email yet.</p>
-          ) : (
-            <TimeToTapChart buckets={data.time_to_install_after_reminder.buckets} isActive={isActive} />
-          )}
+          <TimeToTapChart buckets={data.time_to_install_after_reminder.buckets} isActive={isActive} />
         </Card>
       </div>
 
@@ -751,6 +731,22 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
             </div>
           </div>
         </Card>
+        <Card title="Cumulative passes issued" className="wallets-chart-card">
+          <p className="wallets-description">The running total of tickets added to attendees&rsquo; wallets over time.</p>
+          {data.issued_by_day.length === 0 ? (
+            <p className="wallets-description">No passes issued yet.</p>
+          ) : (
+            <ReportsCumulativeAreaChart
+              data={data.issued_by_day}
+              gradientId="wallets-cumulative-fill"
+              seriesName="Passes issued"
+              isActive={isActive}
+            />
+          )}
+        </Card>
+      </div>
+
+      <div className="wallets-panels">
         <Card title="Admission rate by wallet status" className="wallets-card--centered">
           <AdmissionCompare data={data.admission_by_wallet} isActive={isActive} />
         </Card>
