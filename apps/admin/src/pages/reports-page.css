@@ -609,8 +609,8 @@
 
 /* Even 50/50 split, not .reports-panels' 1.2fr/1fr - that ratio exists for Event Day's own
    "Hourly admissions" card specifically (it can show up to 24 hourly bars, see the comment on
-   .reports-chart below), which doesn't apply to any of these three rows: each pairs two equally-
-   weighted cards (gauge+breakdown vs. donut, list vs. chart, list vs. rings). */
+   .reports-chart below), which doesn't apply to any of these rows: each pairs two equally-
+   weighted cards. */
 .wallets-panels {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -664,17 +664,63 @@
   flex: 1;
 }
 
-/* .reports-breakdown-list's shared 258px max-height (reports-page.css) was tuned for its Event
-   day pairing, not this card's own row-mate here ("Cumulative passes issued", a fixed 220px
-   chart) - at 258px a long ticket-type list made this card's own natural height (description +
-   list + padding) exceed that chart card's natural height, so the grid row's default
-   `align-items: stretch` stretched "Cumulative passes issued" to match and left dead air below
-   its chart instead. 165px keeps this card's total at or under the chart card's own 268px body
-   (24px padding + 220px chart + 24px padding), measured directly against this card's own
-   description height, not assumed. */
-.wallets-ticket-breakdown .reports-breakdown-list {
-  max-height: 165px;
+/* Grid's default align-items: stretch matches both cards in a row to the taller one's own
+   height - correct behavior (cards should have consistent, uniform dimensions), but a fixed-
+   pixel-height chart or a short breakdown list doesn't grow to fill that extra height on its
+   own, leaving visible dead space below it. Flexing the body and its one growable child fills
+   that space instead, so the chart/list itself - not just its outer card - actually matches its
+   row-mate.
+   min-height: 230px on .wallets-chart-card__chart, not min-height: 0 - a bare flex: 1 alone can
+   size to 0 on the very first layout pass, before the grid row's own height has resolved, and
+   Recharts' ResponsiveContainer (height="100%" below) then measures that transient 0x0 box via
+   ResizeObserver and logs its own "width(0) and height(0)" console warning - a real incident
+   already hit once in this exact file (PR #1185, see .wallets-gauge-overlay's own comment above
+   for the full explanation). A real, CSS-committed 230px minimum (this card's own natural chart
+   height) gives Recharts a genuine non-zero size to measure immediately, while flex: 1 still lets
+   it grow taller to match an even-taller row-mate. */
+.wallets-chart-card {
+  display: flex;
+  flex-direction: column;
 }
+
+.wallets-chart-card > .at-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.wallets-chart-card__chart {
+  flex: 1;
+  min-height: 230px;
+}
+
+/* Same idea as .wallets-chart-card above, for a breakdown list instead of a chart - but the
+   opposite min-height: a list is plain HTML (no Recharts ResizeObserver to trip up), and a flex
+   item's default min-height: auto refuses to shrink below its own content size, which would
+   otherwise defeat .reports-breakdown-list's own overflow-y: auto (the list would grow the whole
+   card taller instead of scrolling internally). min-height: 0 here restores that scroll
+   behavior - flex: 1 alone grows the list to fill a short row-mate's height, but still needs the
+   shared .reports-breakdown-list max-height (258px) it already inherits as an upper bound: a
+   real ticket-type catalog can have many rows, and dropping that cap entirely (an earlier version
+   of this fix) let the list grow unbounded instead of scrolling once it's genuinely long -
+   pulling its own row-mate (Devices per attendee) taller right along with it via grid's own
+   align-items: stretch, an admin-visible bug the more ticket types an event has. */
+.wallets-list-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.wallets-list-card > .at-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.wallets-list-card .reports-breakdown-list {
+  flex: 1;
+  min-height: 0;
+}
+
 
 /* Card description line - matches .settings-card-intro (event-settings-page.css), the app's
    actual established convention for a card-body intro line under a title ("Set the event

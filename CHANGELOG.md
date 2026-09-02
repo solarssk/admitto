@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Wallet passes now track the moment they're actually confirmed installed on a wallet app (PassCreator's `first_pushnotification_registered` webhook, given its own dedicated subscription URL alongside the existing void/registration ones), not just when a pass is issued. Reports' Wallets tab "Time to wallet install" card (renamed from "Time to wallet tap") now measures from the ticket email to that confirmed install instead of to the earlier "Add to Wallet" tap, which only reflected how fast someone opened the email rather than whether the pass ever actually installed. A one-time ops script backfills this for passes issued before the change, from PassCreator's own record of the pass's first device download.
+- Reports' Wallets tab has a new "Devices per attendee" card: some attendees add their ticket to more than one device (a phone and a smartwatch, say), so the number of active wallet installations can run higher than the number of people who installed one at all. The new card groups confirmed attendees by how many devices/wallet accounts they're actually using (1, 2, 3, or 4+), and the Wallet platform card next to it is now explicitly worded as attendee counts to keep the distinction clear. The Wallet PDF export gets a matching "Devices per attendee" table.
+
 ### Fixed
 
 - Reports' Wallet adoption gauge showed a "Voided" ring alongside Issued and Installed, but a voided pass is pulled from the wallet app the moment it's deactivated - so it never reflects actual adoption and only added noise. It's been removed, along with the ring-order bug that rendered it as the outermost (most prominent) ring instead of innermost. The Issued row's percentage now also shows what it's a share of ("of attendees"), matching the Installed row's existing "of issued" label, and the card's description no longer wrongly claims a pass is issued when the ticket email goes out - it's issued when the attendee first taps Add to Wallet. Reports' Wallet platform donut dropped its "No wallet installed" slice for the same reason - it isn't a platform - and now shows each platform's share of installed passes instead of issued ones. The Wallet PDF export mirrors both changes.

@@ -463,6 +463,11 @@ async function seed(client: PrismaClient) {
         attendee_id: ATT_W_APPLE,
         status: "active",
         issued_at: walletIssuedAt,
+        // time_to_wallet_tap now reads first_confirmed_at, not issued_at (see computeTapDays'
+        // own doc comment) - deliberately 4 days later than issued_at (not equal to it, unlike
+        // ATT_W_GOOGLE below) so a regression back to issued_at changes this attendee's bucket
+        // (1_3 -> 4_7) and the average, not just the value read.
+        first_confirmed_at: new Date("2026-01-19T10:00:00.000Z"),
         apple_active_registrations: 1,
         google_active_registrations: 0,
         registration_checked_at: new Date("2026-01-16T00:00:00.000Z"),
@@ -479,6 +484,7 @@ async function seed(client: PrismaClient) {
         attendee_id: ATT_W_GOOGLE,
         status: "active",
         issued_at: walletIssuedAt,
+        first_confirmed_at: walletIssuedAt,
         apple_active_registrations: 0,
         google_active_registrations: 3,
         registration_checked_at: new Date("2026-01-10T00:00:00.000Z"),
@@ -515,11 +521,14 @@ async function seed(client: PrismaClient) {
     ],
   });
 
-  // 3 whole days before walletIssuedAt - exercises time_to_wallet_tap's "1_3" bucket. No other
-  // wallet attendee besides ATT_W_NOT_INSTALLED (below) gets an EmailDelivery row, so they're
-  // excluded from the average/bucket entirely (earliestDeliverySuccessAt returns null with no
-  // successful delivery). status "accepted" with only accepted_at set (no sent_at) - not "sent" -
-  // is deliberate: it's the only status any configured mailer adapter actually reports (see
+  // 3 whole days before walletIssuedAt (ATT_W_APPLE's own first_confirmed_at) - exercises
+  // time_to_wallet_tap's "1_3" bucket. ATT_W_NOT_INSTALLED deliberately gets no EmailDelivery
+  // here (or first_confirmed_at at all - it's never actually installed, apple/google active
+  // registrations both 0), so it stays excluded from the average/bucket entirely, same as any
+  // other wallet attendee below with no EmailDelivery row (earliestDeliverySuccessAt returns null
+  // with no successful delivery, and computeTapDays returns null with no first_confirmed_at
+  // either way). status "accepted" with only accepted_at set (no sent_at) - not "sent" - is
+  // deliberate: it's the only status any configured mailer adapter actually reports (see
   // earliestDeliverySuccessAt's own comment in reports-routes.ts), so this is the realistic
   // shape a real ticket-email send produces, and is what production data looked like when this
   // whole card was reporting "Not enough data yet." despite thousands of real sends.
@@ -539,15 +548,18 @@ async function seed(client: PrismaClient) {
   // WALLET_PASS_AGGREGATE_SELECT/WALLET_EXPORT_ATTENDEE_SELECT only counting the earliest
   // non-bounced delivery across both purposes, not just "initial" (bot review on PR #1125:
   // applyBounceResult retains sent_at on a hard bounce, so a "purpose: initial" filter alone
-  // would still pick the bounced send's timestamp). The bounced initial is 10 whole days before
-  // walletIssuedAt (would land in the "8_plus" bucket if wrongly used); the resend is 5 whole
-  // days before (lands in "4_7") - a wrong pick here changes both the bucket and the average.
+  // would still pick the bounced send's timestamp). On ATT_W_GOOGLE, not ATT_W_NOT_INSTALLED -
+  // time_to_wallet_tap needs a genuinely confirmed pass (first_confirmed_at) to count this
+  // attendee's delivery at all now, and ATT_W_GOOGLE already has one above. The bounced initial
+  // is 10 whole days before walletIssuedAt (would land in the "8_plus" bucket if wrongly used);
+  // the resend is 5 whole days before (lands in "4_7") - a wrong pick here changes both the
+  // bucket and the average.
   await client.emailDelivery.createMany({
     data: [
       {
         organization_id: ORG_REP,
         event_id: EVENT_WALLETS,
-        attendee_id: ATT_W_NOT_INSTALLED,
+        attendee_id: ATT_W_GOOGLE,
         purpose: "initial",
         provider: "export_only",
         status: "bounced",
@@ -557,7 +569,7 @@ async function seed(client: PrismaClient) {
       {
         organization_id: ORG_REP,
         event_id: EVENT_WALLETS,
-        attendee_id: ATT_W_NOT_INSTALLED,
+        attendee_id: ATT_W_GOOGLE,
         purpose: "resend",
         provider: "export_only",
         status: "sent",
@@ -2210,6 +2222,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     const body = (await res.json()) as {
       adoption: { got_pass: number; confirmed: number };
       platform: { apple_only: number; google_only: number; both: number };
+      registrations_per_attendee: { buckets: Array<{ key: string; count: number; pct: number }> };
       admission_by_wallet: {
         with_wallet: { total: number; admitted: number; pct: number };
         without_wallet: { total: number; admitted: number; pct: number };
@@ -2218,6 +2231,15 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.adoption.got_pass).toBe(2);
     expect(body.adoption.confirmed).toBe(1);
     expect(body.platform).toEqual({ apple_only: 1, google_only: 0, both: 0 });
+    // ATT_W_APPLE_ONLY_EVENT has apple_active_registrations=1, google_active_registrations=1,
+    // but Google is disabled for this event - the same enabledPlatforms-zeroed googleActive=0
+    // classifyPassPlatform already uses feeds this bucket too, so the sum is 1, not 2.
+    expect(body.registrations_per_attendee.buckets).toEqual([
+      { key: "1", count: 1, pct: 100 },
+      { key: "2", count: 0, pct: 0 },
+      { key: "3", count: 0, pct: 0 },
+      { key: "4_plus", count: 0, pct: 0 },
+    ]);
     // ATT_W_GOOGLE_ONLY_EVENT's registration is only on the now-disabled Google platform - without
     // enabledPlatforms gating confirmedWalletFilter too (not just aggregateWalletPasses above),
     // this would still count it as "with wallet" here despite adoption.confirmed already
@@ -2238,6 +2260,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
       passes_truncated: boolean;
       adoption: { got_pass: number; got_pass_pct: number; confirmed: number; confirmed_pct: number };
       platform: { apple_only: number; google_only: number; both: number };
+      registrations_per_attendee: { buckets: Array<{ key: string; count: number; pct: number }> };
       by_ticket_type: Array<{
         key: string | null;
         type: string;
@@ -2270,6 +2293,16 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.adoption.confirmed_pct).toBeCloseTo(71.4);
 
     expect(body.platform).toEqual({ apple_only: 3, google_only: 1, both: 1 });
+
+    // Registrations per attendee: ATT_W_APPLE (1+0=1), ATT_W_NOTYPE (1+0=1), ATT_W_LEGACY_TYPE
+    // (1+0=1) bucket as "1"; ATT_W_BOTH (2+1=3) and ATT_W_GOOGLE (0+3=3) bucket as "3" - sums to
+    // adoption.confirmed=5 above, same as `platform`.
+    expect(body.registrations_per_attendee.buckets).toEqual([
+      { key: "1", count: 3, pct: 60 },
+      { key: "2", count: 0, pct: 0 },
+      { key: "3", count: 2, pct: 40 },
+      { key: "4_plus", count: 0, pct: 0 },
+    ]);
 
     const general = body.by_ticket_type.find((t) => t.key === "General");
     expect(general).toBeDefined();
@@ -2304,19 +2337,22 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.issued_by_day[0]!.cumulative).toBe(7);
     expect(body.issued_by_day.at(-1)!.cumulative).toBe(7);
 
-    // ATT_W_APPLE (sent 3 whole days before its pass was issued) and ATT_W_NOT_INSTALLED (bounced
-    // initial 10 days before, successful resend 5 days before - the resend must win) are the only
-    // two contributors; every other wallet attendee has no successful ticket-email send, so
-    // computeTapDays returns null for them and they're excluded from both the average and every
-    // bucket. A wrong "purpose: initial"-only pick would use ATT_W_NOT_INSTALLED's bounced 10-day
-    // gap instead, landing it in "8_plus" and shifting the average to 6.5.
-    expect(body.time_to_wallet_tap.average_days).toBe(4);
+    // ATT_W_APPLE (sent 7 whole days before its pass's first_confirmed_at - deliberately 4 days
+    // later than issued_at, see the seed comment above) and ATT_W_GOOGLE (bounced initial 10 days
+    // before, successful resend 5 days before - the resend must win) are the only two
+    // contributors; every other wallet attendee either has no successful ticket-email send or
+    // (ATT_W_NOT_INSTALLED) no first_confirmed_at at all, so computeTapDays returns null for them
+    // and they're excluded from both the average and every bucket. A regression reading issued_at
+    // instead of first_confirmed_at would move ATT_W_APPLE into "1_3" (3-day gap) and drop the
+    // average to 4; a wrong "purpose: initial"-only pick for ATT_W_GOOGLE would use its bounced
+    // 10-day gap instead, landing it in "8_plus" and shifting the average to 8.5.
+    expect(body.time_to_wallet_tap.average_days).toBe(6);
     const bucket13 = body.time_to_wallet_tap.buckets.find((b) => b.key === "1_3");
-    expect(bucket13!.count).toBe(1);
-    expect(bucket13!.pct).toBe(50);
+    expect(bucket13!.count).toBe(0);
+    expect(bucket13!.pct).toBe(0);
     const bucket47 = body.time_to_wallet_tap.buckets.find((b) => b.key === "4_7");
-    expect(bucket47!.count).toBe(1);
-    expect(bucket47!.pct).toBe(50);
+    expect(bucket47!.count).toBe(2);
+    expect(bucket47!.pct).toBe(100);
     for (const key of ["same_day", "8_plus"]) {
       expect(body.time_to_wallet_tap.buckets.find((b) => b.key === key)!.count).toBe(0);
     }
@@ -2482,11 +2518,16 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     // would (bot review: a shared PDF can otherwise misleadingly look current).
     expect(html).toContain("Synced ");
     expect(html).not.toContain("Not synced yet");
-    // ATT_W_APPLE and ATT_W_NOT_INSTALLED both contribute a tap-day sample (see the GET aggregate
+    // ATT_W_APPLE and ATT_W_GOOGLE both contribute a tap-day sample (see the GET aggregate
     // test's time_to_wallet_tap assertions above), so average_days isn't null here - the bucket
     // rows should render, not the buckets-always-populated dead-code fallback text.
     expect(html).toContain("1-3 days");
     expect(html).not.toContain("Not enough data yet");
+    // registrations_per_attendee.buckets isn't all-zero (adoption.confirmed=5 above), so the
+    // "Devices per attendee" table's real rows should render, not its own empty fallback.
+    expect(html).toContain("Devices per attendee");
+    expect(html).toContain("1 device");
+    expect(html).not.toContain("No wallet passes installed yet");
     // EVENT_WALLETS has 8 seeded passes, nowhere near WALLET_AGGREGATE_MAX - the partial-sample
     // warning must stay absent (the passes_truncated: true path itself would need 50,001+ seeded
     // passes to exercise directly, impractical for an integration test; this only guards the

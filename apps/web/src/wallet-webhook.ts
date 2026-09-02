@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import {
+  applyFirstConfirmedAt,
   applyWebhookUpdate,
   parseAdmittoUserProvidedId,
   parseWebhookData,
@@ -108,13 +109,18 @@ async function resolveEventWebhookProvider(
  * no `voided` field at all (unlike what PassCreatorWebhookData's optional `voided` field used to
  * assume). subscribeWalletWebhooksBestEffort (event-settings-routes.ts) points `pass_voided` at
  * its own `/voided`-suffixed target URL for exactly this reason, so arriving on that route at all
- * - not any field in the body - is the actual voided signal.
+ * - not any field in the body - is the actual voided signal. `isFirstConfirmedRoute` is the same
+ * idea for `first_pushnotification_registered` (its own `/first-confirmed`-suffixed URL, added
+ * later): a delivery there triggers applyFirstConfirmedAt in addition to the normal
+ * applyWebhookUpdate, rather than instead of it - the delivery still carries real registration-
+ * count data worth applying the usual way.
  */
 export async function handlePassCreatorWebhook(
   c: Context,
   db: PrismaClient,
   injectedProvider?: WalletPassProvider,
   isVoidedRoute = false,
+  isFirstConfirmedRoute = false,
 ): Promise<Response> {
   const eventId = c.req.param("eventId");
   if (!eventId) return c.body(null, 404);
@@ -150,6 +156,7 @@ export async function handlePassCreatorWebhook(
   // delivery arrived but was rejected before this point; neither this nor those appearing at all
   // means PassCreator isn't reaching this URL (subscription/network problem, not a signature one).
   const { matched } = await applyWebhookUpdate(db, data);
+  if (isFirstConfirmedRoute) await applyFirstConfirmedAt(db, data);
   emitSystemLog("wallet", "info", matched ? "wallet_webhook_applied" : "wallet_webhook_unmatched", {
     eventId,
   });

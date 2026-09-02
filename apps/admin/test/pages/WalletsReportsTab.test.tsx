@@ -26,6 +26,7 @@ let capturedCumulative:
       points: Array<{ date: number; value: number }>;
       yTickFormatter?: (v: number) => string;
       yTicks?: number[];
+      yWidth?: number;
       labelFormatter?: (label: number) => string;
     }
   | undefined;
@@ -33,6 +34,7 @@ let capturedTap:
   | {
       rows: Array<{ label: string; pct: number; count: number }>;
       yTickFormatter?: (v: number) => string;
+      yWidth?: number;
       tooltipFormatter?: (
         value: number,
         name: string,
@@ -105,6 +107,7 @@ vi.mock("recharts", () => {
       points: data,
       yTickFormatter: yAxis?.tickFormatter,
       yTicks: yAxis?.ticks,
+      yWidth: yAxis?.width,
       labelFormatter: tooltip?.labelFormatter,
     };
     return <div data-testid="rc-area" data-points={JSON.stringify(data)} />;
@@ -123,6 +126,7 @@ vi.mock("recharts", () => {
     capturedTap = {
       rows: data,
       yTickFormatter: yAxis?.tickFormatter,
+      yWidth: yAxis?.width,
       tooltipFormatter: tooltip?.formatter,
       barShape: bar?.shape,
     };
@@ -155,6 +159,15 @@ function fixture(overrides: Partial<EventWalletReportsResponse> = {}): EventWall
     passes_truncated: false,
     adoption: { got_pass: 15, got_pass_pct: 75, confirmed: 10, confirmed_pct: 66.7 },
     platform: { apple_only: 6, google_only: 3, both: 1 },
+    // Sums to confirmed=10 above (6+3+1+0).
+    registrations_per_attendee: {
+      buckets: [
+        { key: "1", count: 6, pct: 60 },
+        { key: "2", count: 3, pct: 30 },
+        { key: "3", count: 1, pct: 10 },
+        { key: "4_plus", count: 0, pct: 0 },
+      ],
+    },
     // got_pass/pct (issued) deliberately differ from confirmed/confirmed_pct (installed) below -
     // the "Adoption by ticket type" card must read the confirmed numbers, not got_pass, since a
     // ticket type can have issued-but-not-installed passes (e.g. VIP: 5 issued, only 4 installed).
@@ -346,6 +359,12 @@ describe("WalletsReportsTab", () => {
       { name: "More than one wallet", meta: "1 · 10%" },
     ]);
 
+    // Devices per attendee bar chart: one bar per bucket, matching fixture()'s buckets
+    // (6/3/1/0, summing to confirmed=10 above).
+    const devicesCard = cardByTitle("Devices per attendee");
+    const deviceRows = dataRows(within(devicesCard).getByTestId("rc-bar"));
+    expect(deviceRows.map((r) => r.pct)).toEqual([60, 30, 10, 0]);
+
     // Ticket-type breakdown: sorted descending by confirmed_pct (installed, not got_pass/pct
     // which are issued), and the null-key row relabeled "No ticket type" instead of showing its
     // raw `type` string.
@@ -363,11 +382,17 @@ describe("WalletsReportsTab", () => {
     expect(cumulativePoints).toHaveLength(3);
     expect(cumulativePoints[0]!.value).toBe(0);
     expect(cumulativePoints.at(-1)).toEqual({ date: Date.parse("2026-06-02T12:00:00Z"), value: 5 });
+    // axisMax=5 (1 digit) here - see the dedicated Y-axis-width tests below for how this scales
+    // with the actual digit count instead of Recharts' own flat 60px default gutter.
+    expect(capturedCumulative?.yWidth).toBe(23);
 
     // Time-to-tap bar chart: one bar per bucket, each row carrying its own bucket's own pct.
-    const tapCard = cardByTitle("Time to wallet tap");
+    const tapCard = cardByTitle("Time to wallet install");
     const tapRows = dataRows(within(tapCard).getByTestId("rc-bar"));
     expect(tapRows.map((r) => r.pct)).toEqual([50, 30, 10, 10]);
+    // Percentage axes share one fixed width (PERCENT_Y_AXIS_WIDTH) regardless of the actual
+    // values, since their domain is always [0, 100] - "100%" is always the longest possible label.
+    expect(capturedTap?.yWidth).toBe(46);
 
     // Admission-by-wallet compare: two independent gauges (their own percentage rendered as
     // plain text now, not a chart-native label) plus the delta pill between them.
@@ -432,9 +457,19 @@ describe("WalletsReportsTab", () => {
     expect(within(cumulativeCard).queryByTestId("rc-area")).toBeNull();
   });
 
-  it("shows 'Not enough data yet' instead of the time-to-tap chart when there's no average yet", async () => {
+  it("still renders the time-to-tap chart, all-zero, when there's no average yet - buckets are always 4 zero-filled entries from the backend, never truly absent", async () => {
     fetchEventWalletReports.mockResolvedValue(
-      fixture({ time_to_wallet_tap: { average_days: null, buckets: [] } }),
+      fixture({
+        time_to_wallet_tap: {
+          average_days: null,
+          buckets: [
+            { key: "same_day", count: 0, pct: 0 },
+            { key: "1_3", count: 0, pct: 0 },
+            { key: "4_7", count: 0, pct: 0 },
+            { key: "8_plus", count: 0, pct: 0 },
+          ],
+        },
+      }),
     );
 
     renderWithToast(
@@ -442,9 +477,34 @@ describe("WalletsReportsTab", () => {
     );
     await screen.findByText("Wallet adoption");
 
-    const tapCard = cardByTitle("Time to wallet tap");
-    expect(within(tapCard).getByText("Not enough data yet.")).toBeTruthy();
-    expect(within(tapCard).queryByTestId("rc-bar")).toBeNull();
+    const tapCard = cardByTitle("Time to wallet install");
+    const tapRows = dataRows(within(tapCard).getByTestId("rc-bar"));
+    expect(tapRows.map((r) => r.pct)).toEqual([0, 0, 0, 0]);
+  });
+
+  it("still renders the devices-per-attendee chart, all-zero, when nothing is confirmed - buckets are always 4 zero-filled entries from the backend, never truly absent", async () => {
+    fetchEventWalletReports.mockResolvedValue(
+      fixture({
+        adoption: { got_pass: 15, got_pass_pct: 75, confirmed: 0, confirmed_pct: 0 },
+        registrations_per_attendee: {
+          buckets: [
+            { key: "1", count: 0, pct: 0 },
+            { key: "2", count: 0, pct: 0 },
+            { key: "3", count: 0, pct: 0 },
+            { key: "4_plus", count: 0, pct: 0 },
+          ],
+        },
+      }),
+    );
+
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    const devicesCard = cardByTitle("Devices per attendee");
+    const deviceRows = dataRows(within(devicesCard).getByTestId("rc-bar"));
+    expect(deviceRows.map((r) => r.pct)).toEqual([0, 0, 0, 0]);
   });
 
   it("formats chart tooltip/label text with correct singular/plural and rounding", async () => {
@@ -525,6 +585,42 @@ describe("WalletsReportsTab", () => {
     }
   });
 
+  it("gives the cumulative chart's Y-axis one tick of headroom above the max when it's 1, instead of pinning the line to the axis's own ceiling", async () => {
+    fetchEventWalletReports.mockResolvedValue(
+      fixture({ issued_by_day: [{ date: "2026-06-01", count: 1, cumulative: 1 }] }),
+    );
+
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    expect(capturedCumulative?.yTicks).toEqual([0, 1, 2]);
+  });
+
+  it("widens the cumulative chart's Y-axis gutter for a wider axis max, instead of Recharts' own flat default", async () => {
+    // axisMax=2 (1 digit, from the headroom test above) vs axisMax=1000 (4 digits) - real digit
+    // counts an event's actual pass total can produce, not two arbitrary numbers.
+    const cases: Array<{ finalCumulative: number; width: number }> = [
+      { finalCumulative: 1, width: 23 },
+      { finalCumulative: 999, width: 42 },
+    ];
+
+    for (const { finalCumulative, width } of cases) {
+      fetchEventWalletReports.mockResolvedValue(
+        fixture({ issued_by_day: [{ date: "2026-06-01", count: finalCumulative, cumulative: finalCumulative }] }),
+      );
+
+      renderWithToast(
+        <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+      );
+      await screen.findByText("Wallet adoption");
+
+      expect(capturedCumulative?.yWidth).toBe(width);
+      cleanup();
+    }
+  });
+
   it("formats the cumulative chart's tooltip label as a full date", async () => {
     fetchEventWalletReports.mockResolvedValue(fixture());
     renderWithToast(
@@ -564,7 +660,7 @@ describe("WalletsReportsTab", () => {
       { name: "Apple Wallet", meta: "6 · 60%" },
       { name: "Samsung Wallet", meta: "0 · 0%" },
     ]);
-    expect(within(platformCard).getByText(/confirmed it\.$/)).toBeTruthy();
+    expect(within(platformCard).getByText(/they used\.$/)).toBeTruthy();
     expect(within(platformCard).queryByText(/more than one at once/)).toBeNull();
   });
 

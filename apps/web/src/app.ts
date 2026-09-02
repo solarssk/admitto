@@ -2434,8 +2434,9 @@ export function createApp(options: CreateAppOptions = {}) {
     });
   }
 
-  // PassCreator webhook deliveries (registration events: first_pushnotification_registered,
-  // pushnotification_registered, pushnotification_unregistered) - never a browser navigation.
+  // PassCreator webhook deliveries (registration events: pushnotification_registered,
+  // pushnotification_unregistered - first_pushnotification_registered has its own route below)
+  // - never a browser navigation.
   app.post("/api/wallet/webhook/passcreator/:eventId", walletWebhookRateLimit, (c) =>
     handlePassCreatorWebhook(c, db, options.walletPassProvider),
   );
@@ -2443,6 +2444,12 @@ export function createApp(options: CreateAppOptions = {}) {
   // payload never names which event fired - see handlePassCreatorWebhook's doc comment.
   app.post("/api/wallet/webhook/passcreator/:eventId/voided", walletWebhookRateLimit, (c) =>
     handlePassCreatorWebhook(c, db, options.walletPassProvider, true),
+  );
+  // first_pushnotification_registered gets its own target URL too, same reason as pass_voided
+  // above - stamps WalletPass.first_confirmed_at (applyFirstConfirmedAt) the first time a pass is
+  // actually added to a wallet app.
+  app.post("/api/wallet/webhook/passcreator/:eventId/first-confirmed", walletWebhookRateLimit, (c) =>
+    handlePassCreatorWebhook(c, db, options.walletPassProvider, false, true),
   );
 
   // Mode B hosted QR — filename param is "{public_ref}.png"

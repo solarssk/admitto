@@ -15,7 +15,8 @@
     "test:integration": "vitest run --project integration",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "NODE_ENV=development node --import tsx --env-file=.env src/index.ts",
-    "start": "node dist/src/index.js"
+    "start": "node dist/src/index.js",
+    "wallet:backfill-first-confirmed": "node --import tsx --env-file=.env src/scripts/backfill-wallet-first-confirmed.ts"
   },
   "dependencies": {
     "@admitto/auth": "*",

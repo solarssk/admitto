@@ -71,6 +71,22 @@ const BUCKET_COLORS: Record<EventWalletReportsResponse["time_to_wallet_tap"]["bu
   "8_plus": GRAY_400,
 };
 
+const REGISTRATION_COUNT_LABELS: Record<EventWalletReportsResponse["registrations_per_attendee"]["buckets"][number]["key"], string> = {
+  "1": "1 device",
+  "2": "2 devices",
+  "3": "3 devices",
+  "4_plus": "4+ devices",
+};
+// Same four-color "few to more" scale as BUCKET_COLORS above, reused for the same reason (few/
+// simple reads as the reassuring green, a rare high count as the muted gray) - these two charts
+// are the only ones in this file classifying a count into an ordinal "how many" bucket.
+const REGISTRATION_COUNT_COLORS: Record<EventWalletReportsResponse["registrations_per_attendee"]["buckets"][number]["key"], string> = {
+  "1": STATUS_OK,
+  "2": PRIMARY,
+  "3": "#f59f00", // --at-yellow
+  "4_plus": GRAY_400,
+};
+
 /** Recharts gives every chart's root <svg> tabindex="0" and role="application" by default (its
  * own built-in keyboard-accessibility layer), which a plain mouse click also focuses. A
  * `.recharts-surface:focus { outline: none }` rule (reports-page.css) suppresses the resulting
@@ -299,9 +315,30 @@ function niceStepMultiplier(normalized: number): number {
  * a charting library's own default tick generation typically divides min..max into a fixed number
  * of equal ticks regardless of the data's actual units, which for a small pass count (e.g. max 1)
  * can produce fractional labels (0, 0.2, 0.4, 0.6, 0.8, 1) that can never really occur since
- * passes only come in whole units. */
+ * passes only come in whole units. `max <= 1` gets one tick of headroom above the actual max (2,
+ * not 1) rather than matching it exactly - the general step/rounding logic below sometimes ends up
+ * with headroom too as a side effect of rounding to a "nice" step (round(45)->50), sometimes not
+ * (round(8)->8), but max<=1 always lands exactly on 1 with none, which reads as the line pinned to
+ * the axis's own ceiling with nowhere left to grow (PO review) - this one small-count case is
+ * common enough (a new/small event) to fix explicitly rather than leaving to chance. */
+/** Recharts' own YAxis default width (60px) reserves a fixed gutter for tick labels regardless of
+ * how narrow they actually are, leaving a visibly empty band to the axis's own left - measured
+ * directly (Canvas measureText at 11px, the same size these ticks render at, not assumed): a
+ * single digit is ~7px wide, three digits ~19px, four ~26px - genuinely different gutters for a
+ * small event's "2" versus a large one's "1000", so this computes from the real axis max's own
+ * digit count rather than picking one flat guess. +16 covers the tick mark plus Recharts' own
+ * internal label padding on top of the measured text width itself. */
+function yAxisWidthForCount(axisMax: number): number {
+  return Math.ceil(String(Math.round(axisMax)).length * 6.5) + 16;
+}
+
+// Percentage axes (Time to wallet install, Devices per attendee) share a fixed [0, 100] domain, so
+// unlike yAxisWidthForCount above their longest possible label is always the same one value -
+// "100%", measured the same way (Canvas measureText, 11px): ~29px + the same +16 buffer.
+const PERCENT_Y_AXIS_WIDTH = 46;
+
 function niceCountAxis(max: number): { axisMax: number; tickAmount: number } {
-  if (max <= 1) return { axisMax: 1, tickAmount: 1 };
+  if (max <= 1) return { axisMax: 2, tickAmount: 2 };
   const roughStep = max / 5;
   const magnitude = 10 ** Math.floor(Math.log10(roughStep));
   const normalized = roughStep / magnitude;
@@ -336,9 +373,10 @@ function CumulativeChart({ data }: Readonly<{ data: EventWalletReportsResponse["
   return (
     <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
       role="presentation"
+      className="wallets-chart-card__chart"
       onMouseDown={preventFocusRing}
     >
-      <ResponsiveContainer width="100%" height={220}>
+      <ResponsiveContainer width="100%" height="100%" minHeight={230}>
         <AreaChart data={points} style={{ fontFamily: FONT_FAMILY }}>
         <defs>
           <linearGradient id="wallets-cumulative-fill" x1="0" y1="0" x2="0" y2="1">
@@ -364,6 +402,7 @@ function CumulativeChart({ data }: Readonly<{ data: EventWalletReportsResponse["
           ticks={yTicks}
           tickFormatter={(v) => Math.round(Number(v)).toString()}
           tick={{ fontSize: 11, fill: TEXT_MUTED }}
+          width={yAxisWidthForCount(axisMax)}
         />
         <Tooltip
           labelFormatter={(label) =>
@@ -472,6 +511,54 @@ function BarShape({
   );
 }
 
+interface BucketChartRow {
+  key: string;
+  label: string;
+  pct: number;
+  count: number;
+  fill: string;
+}
+
+/** Shared bar-chart body for TimeToTapChart and RegistrationsPerAttendeeChart below - both chart a
+ * small ordinal bucket distribution the same way (bar heights read more naturally than percentage
+ * text for a distribution like this), with only the row labels/colors differing between the two.
+ * Extracted to keep that shared JSX in one place rather than two near-identical copies (SonarCloud
+ * new-code duplication, PR review). */
+function BucketBarChart({ rows }: Readonly<{ rows: BucketChartRow[] }>) {
+  return (
+    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+      role="presentation"
+      className="wallets-chart-card__chart"
+      onMouseDown={preventFocusRing}
+    >
+      <ResponsiveContainer width="100%" height="100%" minHeight={230}>
+        <BarChart data={rows} barCategoryGap="50%" style={{ fontFamily: FONT_FAMILY }}>
+        <CartesianGrid stroke={BORDER} strokeDasharray="3 3" />
+        <XAxis
+          dataKey="label"
+          tick={{ fontSize: 11, fill: TEXT_MUTED }}
+          axisLine={{ stroke: BORDER }}
+          tickLine={{ stroke: BORDER }}
+        />
+        <YAxis
+          domain={[0, 100]}
+          tickFormatter={(v) => `${Math.round(Number(v))}%`}
+          tick={{ fontSize: 11, fill: TEXT_MUTED }}
+          width={PERCENT_Y_AXIS_WIDTH}
+        />
+        <Tooltip
+          formatter={(value, _name, props) => {
+            const count = (props.payload as (typeof rows)[number]).count;
+            return [`${count} attendee${count === 1 ? "" : "s"} (${value}%)`, undefined];
+          }}
+        />
+        <Bar dataKey="pct" shape={BarShape} isAnimationActive={false} barSize={40} />
+      </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 /** Bar chart, not a breakdown list - four short rows of text left this card noticeably shorter
  * than "Admission rate by wallet status" beside it (both stretch to match the taller one), and a
  * distribution across "how many days" reads more naturally as bar heights to compare at a glance
@@ -485,37 +572,25 @@ function TimeToTapChart({ buckets }: Readonly<{ buckets: EventWalletReportsRespo
     count: b.count,
     fill: BUCKET_COLORS[b.key],
   }));
+  return <BucketBarChart rows={rows} />;
+}
 
-  return (
-    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
-      role="presentation"
-      onMouseDown={preventFocusRing}
-    >
-      <ResponsiveContainer width="100%" height={230}>
-        <BarChart data={rows} barCategoryGap="50%" style={{ fontFamily: FONT_FAMILY }}>
-        <CartesianGrid stroke={BORDER} strokeDasharray="3 3" />
-        <XAxis
-          dataKey="label"
-          tick={{ fontSize: 11, fill: TEXT_MUTED }}
-          axisLine={{ stroke: BORDER }}
-          tickLine={{ stroke: BORDER }}
-        />
-        <YAxis
-          domain={[0, 100]}
-          tickFormatter={(v) => `${Math.round(Number(v))}%`}
-          tick={{ fontSize: 11, fill: TEXT_MUTED }}
-        />
-        <Tooltip
-          formatter={(value, _name, props) => {
-            const count = (props.payload as (typeof rows)[number]).count;
-            return [`${count} attendee${count === 1 ? "" : "s"} (${value}%)`, undefined];
-          }}
-        />
-        <Bar dataKey="pct" shape={BarShape} isAnimationActive={false} barSize={40} />
-      </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
+/** Same bar-per-bucket shape as TimeToTapChart above, for the same reason: a distribution across a
+ * small ordinal count reads more naturally as bar heights than as list text. `count` here is
+ * attendees, not registrations - one attendee's single pass can be registered on more than one
+ * device/wallet account (an iPhone and an Apple Watch, say), and this groups attendees by how many
+ * of those they currently have, not the raw registration total. */
+function RegistrationsPerAttendeeChart({
+  buckets,
+}: Readonly<{ buckets: EventWalletReportsResponse["registrations_per_attendee"]["buckets"] }>) {
+  const rows = buckets.map((b) => ({
+    key: b.key,
+    label: REGISTRATION_COUNT_LABELS[b.key],
+    pct: b.pct,
+    count: b.count,
+    fill: REGISTRATION_COUNT_COLORS[b.key],
+  }));
+  return <BucketBarChart rows={rows} />;
 }
 
 /** Two independent radialBar gauges, not a stacked/concentric pair - "has a wallet" and "no
@@ -655,9 +730,10 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       {data.passes_truncated && (
         <Notice variant="warning" className="wallets-truncated-notice">
           This event has more issued wallet passes than a single report can process at once, so
-          platform mix, adoption by ticket type, and time-to-wallet-tap below are based on a
-          partial sample rather than every pass. Cumulative passes issued and admission rate by
-          wallet status are unaffected - both come from a full count, not a sample.
+          platform mix, devices per attendee, adoption by ticket type, and time to wallet install
+          below are based on a partial sample rather than every pass. Cumulative passes issued
+          and admission rate by wallet status are unaffected - both come from a full count, not a
+          sample.
         </Notice>
       )}
       <div className="wallets-panels">
@@ -694,7 +770,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
         </Card>
         <Card title={<HintLabel hint={syncedHint(data.synced_at)}>Wallet platform</HintLabel>}>
           <p className="wallets-description">
-            Installed passes, split by which wallet app confirmed it
+            Attendees with their ticket installed, split by which wallet app they used
             {walletPlatforms.apple && walletPlatforms.google
               ? " - one pass can register on more than one at once."
               : "."}
@@ -709,27 +785,32 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       </div>
 
       <div className="wallets-panels">
-        <Card title="Adoption by ticket type" className="wallets-ticket-breakdown">
+        <Card title="Devices per attendee" className="wallets-chart-card">
+          <p className="wallets-description">
+            Some attendees add their ticket to more than one device, like a phone and a smartwatch. This shows how many devices attendees are actually using, not just how many people have their ticket installed.
+          </p>
+          <RegistrationsPerAttendeeChart buckets={data.registrations_per_attendee.buckets} />
+        </Card>
+        <Card title="Adoption by ticket type" className="wallets-list-card">
           <p className="wallets-description">Percentage of each ticket type&rsquo;s own attendees who installed a wallet pass.</p>
           <BreakdownRows rows={ticketTypeAdoptionRows(data.by_ticket_type)} />
-        </Card>
-        <Card title="Cumulative passes issued">
-          <CumulativeChart data={data.issued_by_day} />
         </Card>
       </div>
 
       <div className="wallets-panels">
-        <Card title="Time to wallet tap">
-          <p className="wallets-description">
-            How many days pass between the ticket email landing in an attendee&rsquo;s inbox and them tapping &ldquo;Add to Wallet&rdquo;.
-          </p>
-          {data.time_to_wallet_tap.average_days === null ? (
-            <p className="wallets-description">Not enough data yet.</p>
-          ) : (
-            <TimeToTapChart buckets={data.time_to_wallet_tap.buckets} />
-          )}
+        <Card title="Cumulative passes issued" className="wallets-chart-card">
+          <p className="wallets-description">The running total of tickets added to attendees&rsquo; wallets over time.</p>
+          <CumulativeChart data={data.issued_by_day} />
         </Card>
+        <Card title="Time to wallet install" className="wallets-chart-card">
+          <p className="wallets-description">
+            How many days pass between the ticket email landing in an attendee&rsquo;s inbox and their pass being confirmed installed on their wallet app.
+          </p>
+          <TimeToTapChart buckets={data.time_to_wallet_tap.buckets} />
+        </Card>
+      </div>
 
+      <div className="wallets-panels">
         <Card title="Admission rate by wallet status" className="wallets-card--centered">
           <AdmissionCompare data={data.admission_by_wallet} />
         </Card>

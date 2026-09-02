@@ -127,6 +127,16 @@ function walletFixture(): import("../../src/api/types.js").EventWalletReportsRes
     passes_truncated: false,
     adoption: { got_pass: 2, got_pass_pct: 50, confirmed: 1, confirmed_pct: 50 },
     platform: { apple_only: 1, google_only: 0, both: 0 },
+    // Real responses always carry all four bucket keys, summing to adoption.confirmed above (1
+    // here) - an empty array would be an impossible response (bot review).
+    registrations_per_attendee: {
+      buckets: [
+        { key: "1", count: 1, pct: 100 },
+        { key: "2", count: 0, pct: 0 },
+        { key: "3", count: 0, pct: 0 },
+        { key: "4_plus", count: 0, pct: 0 },
+      ],
+    },
     by_ticket_type: [],
     issued_by_day: [],
     time_to_wallet_tap: { average_days: null, buckets: [] },

@@ -1848,11 +1848,17 @@ describe("PATCH /api/admin/events/:eventId", () => {
 
         expect(res.status).toBe(200);
         expect(unsubscribeSpy).toHaveBeenCalledExactlyOnceWith(targetUrl);
-        // Only the new /voided subscription for pass_voided is added - the three registration
-        // events, still untouched on the old URL, must not get a duplicate piled on top.
+        // Two legacy entries sit on the shared old URL in this fixture (pass_voided and
+        // first_pushnotification_registered - each migrated to its own dedicated URL at a
+        // different time), so unsubscribe failing leaves both stale and the per-event dedup
+        // fallback (computed before the failed unsubscribe) tops both up with a fresh
+        // subscription on their own new URL - pushnotification_registered/unregistered, still
+        // correctly on the old URL in this fixture, must not get a duplicate piled on top.
         await vi.waitFor(() => {
-          expect(subscribeSpy).toHaveBeenCalledExactlyOnceWith(`${targetUrl}/voided`, "pass_voided");
+          expect(subscribeSpy).toHaveBeenCalledTimes(2);
         });
+        expect(subscribeSpy).toHaveBeenCalledWith(`${targetUrl}/first-confirmed`, "first_pushnotification_registered");
+        expect(subscribeSpy).toHaveBeenCalledWith(`${targetUrl}/voided`, "pass_voided");
       } finally {
         listSpy.mockRestore();
         unsubscribeSpy.mockRestore();
