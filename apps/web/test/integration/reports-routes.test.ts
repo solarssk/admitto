@@ -463,6 +463,10 @@ async function seed(client: PrismaClient) {
         attendee_id: ATT_W_APPLE,
         status: "active",
         issued_at: walletIssuedAt,
+        // time_to_wallet_tap now reads first_confirmed_at, not issued_at (see computeTapDays'
+        // own doc comment) - both confirmed passes below (this one and ATT_W_GOOGLE) get one, the
+        // same value as walletIssuedAt since only the gap to their own EmailDelivery matters.
+        first_confirmed_at: walletIssuedAt,
         apple_active_registrations: 1,
         google_active_registrations: 0,
         registration_checked_at: new Date("2026-01-16T00:00:00.000Z"),
@@ -479,6 +483,7 @@ async function seed(client: PrismaClient) {
         attendee_id: ATT_W_GOOGLE,
         status: "active",
         issued_at: walletIssuedAt,
+        first_confirmed_at: walletIssuedAt,
         apple_active_registrations: 0,
         google_active_registrations: 3,
         registration_checked_at: new Date("2026-01-10T00:00:00.000Z"),
@@ -515,11 +520,14 @@ async function seed(client: PrismaClient) {
     ],
   });
 
-  // 3 whole days before walletIssuedAt - exercises time_to_wallet_tap's "1_3" bucket. No other
-  // wallet attendee besides ATT_W_NOT_INSTALLED (below) gets an EmailDelivery row, so they're
-  // excluded from the average/bucket entirely (earliestDeliverySuccessAt returns null with no
-  // successful delivery). status "accepted" with only accepted_at set (no sent_at) - not "sent" -
-  // is deliberate: it's the only status any configured mailer adapter actually reports (see
+  // 3 whole days before walletIssuedAt (ATT_W_APPLE's own first_confirmed_at) - exercises
+  // time_to_wallet_tap's "1_3" bucket. ATT_W_NOT_INSTALLED deliberately gets no EmailDelivery
+  // here (or first_confirmed_at at all - it's never actually installed, apple/google active
+  // registrations both 0), so it stays excluded from the average/bucket entirely, same as any
+  // other wallet attendee below with no EmailDelivery row (earliestDeliverySuccessAt returns null
+  // with no successful delivery, and computeTapDays returns null with no first_confirmed_at
+  // either way). status "accepted" with only accepted_at set (no sent_at) - not "sent" - is
+  // deliberate: it's the only status any configured mailer adapter actually reports (see
   // earliestDeliverySuccessAt's own comment in reports-routes.ts), so this is the realistic
   // shape a real ticket-email send produces, and is what production data looked like when this
   // whole card was reporting "Not enough data yet." despite thousands of real sends.
@@ -539,15 +547,18 @@ async function seed(client: PrismaClient) {
   // WALLET_PASS_AGGREGATE_SELECT/WALLET_EXPORT_ATTENDEE_SELECT only counting the earliest
   // non-bounced delivery across both purposes, not just "initial" (bot review on PR #1125:
   // applyBounceResult retains sent_at on a hard bounce, so a "purpose: initial" filter alone
-  // would still pick the bounced send's timestamp). The bounced initial is 10 whole days before
-  // walletIssuedAt (would land in the "8_plus" bucket if wrongly used); the resend is 5 whole
-  // days before (lands in "4_7") - a wrong pick here changes both the bucket and the average.
+  // would still pick the bounced send's timestamp). On ATT_W_GOOGLE, not ATT_W_NOT_INSTALLED -
+  // time_to_wallet_tap needs a genuinely confirmed pass (first_confirmed_at) to count this
+  // attendee's delivery at all now, and ATT_W_GOOGLE already has one above. The bounced initial
+  // is 10 whole days before walletIssuedAt (would land in the "8_plus" bucket if wrongly used);
+  // the resend is 5 whole days before (lands in "4_7") - a wrong pick here changes both the
+  // bucket and the average.
   await client.emailDelivery.createMany({
     data: [
       {
         organization_id: ORG_REP,
         event_id: EVENT_WALLETS,
-        attendee_id: ATT_W_NOT_INSTALLED,
+        attendee_id: ATT_W_GOOGLE,
         purpose: "initial",
         provider: "export_only",
         status: "bounced",
@@ -557,7 +568,7 @@ async function seed(client: PrismaClient) {
       {
         organization_id: ORG_REP,
         event_id: EVENT_WALLETS,
-        attendee_id: ATT_W_NOT_INSTALLED,
+        attendee_id: ATT_W_GOOGLE,
         purpose: "resend",
         provider: "export_only",
         status: "sent",
@@ -2306,12 +2317,13 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.issued_by_day[0]!.cumulative).toBe(7);
     expect(body.issued_by_day.at(-1)!.cumulative).toBe(7);
 
-    // ATT_W_APPLE (sent 3 whole days before its pass was issued) and ATT_W_NOT_INSTALLED (bounced
-    // initial 10 days before, successful resend 5 days before - the resend must win) are the only
-    // two contributors; every other wallet attendee has no successful ticket-email send, so
-    // computeTapDays returns null for them and they're excluded from both the average and every
-    // bucket. A wrong "purpose: initial"-only pick would use ATT_W_NOT_INSTALLED's bounced 10-day
-    // gap instead, landing it in "8_plus" and shifting the average to 6.5.
+    // ATT_W_APPLE (sent 3 whole days before its pass's first_confirmed_at) and ATT_W_GOOGLE
+    // (bounced initial 10 days before, successful resend 5 days before - the resend must win) are
+    // the only two contributors; every other wallet attendee either has no successful
+    // ticket-email send or (ATT_W_NOT_INSTALLED) no first_confirmed_at at all, so computeTapDays
+    // returns null for them and they're excluded from both the average and every bucket. A wrong
+    // "purpose: initial"-only pick would use ATT_W_GOOGLE's bounced 10-day gap instead, landing
+    // it in "8_plus" and shifting the average to 6.5.
     expect(body.time_to_wallet_tap.average_days).toBe(4);
     const bucket13 = body.time_to_wallet_tap.buckets.find((b) => b.key === "1_3");
     expect(bucket13!.count).toBe(1);
@@ -2484,7 +2496,7 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     // would (bot review: a shared PDF can otherwise misleadingly look current).
     expect(html).toContain("Synced ");
     expect(html).not.toContain("Not synced yet");
-    // ATT_W_APPLE and ATT_W_NOT_INSTALLED both contribute a tap-day sample (see the GET aggregate
+    // ATT_W_APPLE and ATT_W_GOOGLE both contribute a tap-day sample (see the GET aggregate
     // test's time_to_wallet_tap assertions above), so average_days isn't null here - the bucket
     // rows should render, not the buckets-always-populated dead-code fallback text.
     expect(html).toContain("1-3 days");

@@ -153,6 +153,7 @@ afterEach(async () => {
       apple_inactive_registrations: null,
       first_downloaded_at: null,
       registration_checked_at: null,
+      first_confirmed_at: null,
     },
   });
 });
@@ -437,5 +438,72 @@ describe("POST /api/wallet/webhook/passcreator/:eventId/voided", () => {
     expect(res.status).toBe(401);
     const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
     expect(row?.status).toBe("active");
+  });
+});
+
+describe("POST /api/wallet/webhook/passcreator/:eventId/first-confirmed", () => {
+  it("stamps first_confirmed_at and still applies the delivery's own registration counts", async () => {
+    const provider = stubProvider(keyPair.publicKey);
+    const app = makeApp(provider);
+    const body = signedRequest({
+      identifier: "pc-webhook-1",
+      userProvidedId: USER_PROVIDED_ID,
+      operatingSystem: "iOS",
+      noOfActivePasses: 1,
+    });
+
+    const res = await app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}/first-confirmed`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    expect(res.status).toBe(200);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    expect(row?.first_confirmed_at).not.toBeNull();
+    expect(row?.apple_active_registrations).toBe(1);
+    expect(querySystemLogs({ search: "wallet_webhook_applied" })).toHaveLength(1);
+  });
+
+  it("never overwrites an already-set first_confirmed_at with a later delivery's timestamp", async () => {
+    const originalConfirmedAt = new Date("2026-01-01T00:00:00.000Z");
+    await prisma.walletPass.update({
+      where: { attendee_id: ATTENDEE_ID },
+      data: { first_confirmed_at: originalConfirmedAt },
+    });
+    const provider = stubProvider(keyPair.publicKey);
+    const app = makeApp(provider);
+    const body = signedRequest({ identifier: "pc-webhook-1", userProvidedId: USER_PROVIDED_ID, operatingSystem: "iOS", noOfActivePasses: 1 });
+
+    const res = await app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}/first-confirmed`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    expect(res.status).toBe(200);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    expect(row?.first_confirmed_at).toEqual(originalConfirmedAt);
+  });
+
+  it("still 401s a delivery with a bad signature - the /first-confirmed route isn't a verification shortcut", async () => {
+    const otherPair = generateKeyPairSync("ec", {
+      namedCurve: "P-256",
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    });
+    const provider = stubProvider(keyPair.publicKey);
+    const app = makeApp(provider);
+    const body = signedRequest({ identifier: "pc-webhook-1", userProvidedId: USER_PROVIDED_ID }, otherPair.privateKey);
+
+    const res = await app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}/first-confirmed`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    expect(res.status).toBe(401);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    expect(row?.first_confirmed_at).toBeNull();
   });
 });

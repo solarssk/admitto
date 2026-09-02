@@ -36,8 +36,10 @@ export {
   type WalletStatusRefreshOutcome,
 } from "./refresh-wallet-pass-status.js";
 export {
+  applyFirstConfirmedAt,
   applyWebhookUpdate,
   parseAdmittoUserProvidedId,
+  parseFirstDownloadedAtUtc,
   parseWebhookData,
   parseWebhookEnvelope,
   verifyWebhookSignature,

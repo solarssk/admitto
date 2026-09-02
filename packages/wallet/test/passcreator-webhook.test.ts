@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { generateKeyPairSync, createSign } from "node:crypto";
 import { Prisma } from "@admitto/db";
 import {
+  applyFirstConfirmedAt,
   applyWebhookUpdate,
   parseAdmittoUserProvidedId,
+  parseFirstDownloadedAtUtc,
   parseWebhookData,
   parseWebhookEnvelope,
   verifyWebhookSignature,
@@ -357,5 +359,67 @@ describe("applyWebhookUpdate", () => {
     const [firstCall, secondCall] = db.walletPass.update.mock.calls;
     expect(firstCall?.[0].data.apple_active_registrations).toBe(2);
     expect(secondCall?.[0].data.apple_active_registrations).toBe(2);
+  });
+});
+
+describe("applyFirstConfirmedAt", () => {
+  function makeDb() {
+    return { walletPass: { updateMany: vi.fn() } };
+  }
+
+  it("sets first_confirmed_at, guarded on it currently being null, matched by user_provided_id", async () => {
+    const db = makeDb();
+    db.walletPass.updateMany.mockResolvedValueOnce({ count: 1 });
+    await applyFirstConfirmedAt(db as never, { userProvidedId: "admitto:evt-1:att-1" });
+    // Flat columns, not the { provider_user_provided_id: {...} } compound-unique shorthand
+    // applyWebhookUpdate's plain `update` uses above - that shorthand type-checks here too but
+    // throws "Unknown argument" at runtime inside updateMany's WhereInput (confirmed against a
+    // real Postgres via apps/web/test/integration/wallet-webhook-routes.test.ts's
+    // /first-confirmed route tests, not by tsc alone - see webhookMatchFilter's own comment).
+    expect(db.walletPass.updateMany).toHaveBeenCalledWith({
+      where: {
+        provider: "passcreator",
+        user_provided_id: "admitto:evt-1:att-1",
+        first_confirmed_at: null,
+      },
+      data: { first_confirmed_at: expect.any(Date) },
+    });
+  });
+
+  it("falls back to identifier (provider_pass_id) when userProvidedId is absent", async () => {
+    const db = makeDb();
+    db.walletPass.updateMany.mockResolvedValueOnce({ count: 1 });
+    await applyFirstConfirmedAt(db as never, { identifier: "pc-pass-1" });
+    expect(db.walletPass.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ provider: "passcreator", provider_pass_id: "pc-pass-1" }),
+      }),
+    );
+  });
+
+  it("does nothing when neither identifier is present", async () => {
+    const db = makeDb();
+    await applyFirstConfirmedAt(db as never, {});
+    expect(db.walletPass.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("a second call is a no-op at the DB level - updateMany's own where guard matches zero rows once already set (idempotent by construction, not by re-reading first)", async () => {
+    const db = makeDb();
+    db.walletPass.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    await applyFirstConfirmedAt(db as never, { identifier: "pc-1" });
+    await applyFirstConfirmedAt(db as never, { identifier: "pc-1" });
+    expect(db.walletPass.updateMany).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("parseFirstDownloadedAtUtc", () => {
+  it("parses PassCreator's 'YYYY-MM-DD HH:MM:SS' wire format as UTC", () => {
+    const parsed = parseFirstDownloadedAtUtc("2026-08-13 10:00:00");
+    expect(parsed).toEqual(new Date("2026-08-13T10:00:00.000Z"));
+  });
+
+  it("returns null for a value that doesn't match the expected shape, rather than an Invalid Date", () => {
+    expect(parseFirstDownloadedAtUtc("not a date")).toBeNull();
+    expect(parseFirstDownloadedAtUtc("")).toBeNull();
   });
 });

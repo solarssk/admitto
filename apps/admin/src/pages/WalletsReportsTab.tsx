@@ -706,9 +706,9 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       </div>
 
       <div className="wallets-panels">
-        <Card title="Time to wallet tap">
+        <Card title="Time to wallet install">
           <p className="wallets-description">
-            How many days pass between the ticket email landing in an attendee&rsquo;s inbox and them tapping &ldquo;Add to Wallet&rdquo;.
+            How many days pass between the ticket email landing in an attendee&rsquo;s inbox and their pass being confirmed installed on their wallet app.
           </p>
           {data.time_to_wallet_tap.average_days === null ? (
             <p className="wallets-description">Not enough data yet.</p>

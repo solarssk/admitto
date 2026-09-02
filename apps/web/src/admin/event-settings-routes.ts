@@ -541,8 +541,11 @@ const WALLET_WEBHOOK_EVENT_TYPES: readonly PassCreatorWebhookEventType[] = [
  * type the receiving endpoint handles (wallet-webhook.ts), whenever a save leaves the wallet
  * fully enabled and configured. A PassCreator outage, unreachable instance URL, or bad key here
  * must never fail the settings save - registration/void updates simply keep flowing through the
- * existing periodic sync (registration-sync.ts) until a later save retries this. */
-async function subscribeWalletWebhooksBestEffort(
+ * existing periodic sync (registration-sync.ts) until a later save retries this. Exported so
+ * apps/web/src/scripts/backfill-wallet-first-confirmed.ts can run the same migration proactively
+ * for every already wallet-enabled event, rather than waiting on each one's own next settings
+ * save to pick up first_pushnotification_registered's new dedicated URL. */
+export async function subscribeWalletWebhooksBestEffort(
   db: PrismaClient,
   eventId: string,
   updated: {
@@ -574,12 +577,16 @@ async function subscribeWalletWebhooksBestEffort(
     baseUrl: resolvePassCreatorBaseUrl(),
   });
   const registrationUrl = `${baseUrl}/api/wallet/webhook/passcreator/${eventId}`;
-  // pass_voided gets its own target URL - see handlePassCreatorWebhook's doc comment
-  // (wallet-webhook.ts) for why: PassCreator's payload never names which event fired, and
-  // pass_voided's own payload has no `voided` field either, so the three registration events and
-  // pass_voided can't share one URL the way they used to.
-  const targetUrlFor = (event: PassCreatorWebhookEventType): string =>
-    event === "pass_voided" ? `${registrationUrl}/voided` : registrationUrl;
+  // pass_voided and first_pushnotification_registered each get their own target URL - see
+  // handlePassCreatorWebhook's doc comment (wallet-webhook.ts) for why: PassCreator's payload
+  // never names which event fired, so any event this code needs to tell apart from the other two
+  // (pushnotification_registered/unregistered, which stay on the shared registrationUrl - nothing
+  // here acts on them any differently from each other) needs its own URL instead.
+  const targetUrlFor = (event: PassCreatorWebhookEventType): string => {
+    if (event === "pass_voided") return `${registrationUrl}/voided`;
+    if (event === "first_pushnotification_registered") return `${registrationUrl}/first-confirmed`;
+    return registrationUrl;
+  };
 
   // subscribeWebhook creates a fresh subscription entry every call, even for an identical
   // (template, targetUrl, event) triple - re-checking on every wallet-relevant save (which this
@@ -605,17 +612,21 @@ async function subscribeWalletWebhooksBestEffort(
     return;
   }
 
-  // One-time migration: pass_voided used to share registrationUrl with the three registration
-  // events (before 2026-08-19) - a subscription there is stale now that it has its own URL, and
-  // would otherwise sit there forever, redelivering every void to a route that can't act on it.
-  // PassCreator's unsubscribe API removes every event on a target URL at once (not one event
-  // selectively - see PassCreatorClient.unsubscribeWebhook), so cleaning up that one stale entry
-  // means clearing registrationUrl entirely and resubscribing all four events fresh below.
-  const hasLegacyVoidedSubscription = ownTemplateHooks.some(
-    (hook) => hook.targetUrl === registrationUrl && hook.event === "pass_voided",
+  // One-time migration: pass_voided (before 2026-08-19) and first_pushnotification_registered
+  // (before 2026-09-02) both used to share registrationUrl with the events that are still meant to
+  // stay there - a subscription for either one is stale now that it has its own URL, and would
+  // otherwise sit there forever, redelivering to a route that can't act on it the way its own
+  // dedicated one can. PassCreator's unsubscribe API removes every event on a target URL at once
+  // (not one event selectively - see PassCreatorClient.unsubscribeWebhook), so cleaning up either
+  // stale entry means clearing registrationUrl entirely and resubscribing all four events fresh
+  // below.
+  const hasLegacyEventOnRegistrationUrl = ownTemplateHooks.some(
+    (hook) =>
+      hook.targetUrl === registrationUrl &&
+      (hook.event === "pass_voided" || hook.event === "first_pushnotification_registered"),
   );
   let alreadySubscribed = new Set(ownTemplateHooks.map((hook) => `${hook.targetUrl ?? ""} ${hook.event}`));
-  if (hasLegacyVoidedSubscription) {
+  if (hasLegacyEventOnRegistrationUrl) {
     try {
       await client.unsubscribeWebhook(registrationUrl);
       alreadySubscribed = new Set(); // wiped clean - every event below gets a fresh subscription
@@ -623,7 +634,7 @@ async function subscribeWalletWebhooksBestEffort(
       // Unsubscribe failed: the stale entry is still there untouched, so fall back to the normal
       // dedup (computed above) rather than piling a duplicate registration-event subscription on
       // top of it.
-      console.error("wallet webhook subscribe: legacy pass_voided migration unsubscribe failed:", err);
+      console.error("wallet webhook subscribe: legacy event-URL migration unsubscribe failed:", err);
     }
   }
 

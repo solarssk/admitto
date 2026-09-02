@@ -147,6 +147,22 @@ function webhookMatchWhere(data: PassCreatorWebhookData): Prisma.WalletPassWhere
   return null;
 }
 
+/** Same match as webhookMatchWhere, as flat columns instead of the compound-unique shorthand -
+ * `{ provider_user_provided_id: {...} }` is only valid Prisma syntax inside a WhereUniqueInput
+ * (update/findUnique/delete), not inside the general WhereInput a filtered updateMany's `where`
+ * takes: it type-checks (Prisma's generated types don't distinguish the two contexts) but throws
+ * "Unknown argument" at runtime. applyFirstConfirmedAt below needs updateMany specifically (to
+ * add its own `first_confirmed_at: null` guard atomically), so it needs this flat form. */
+function webhookMatchFilter(data: PassCreatorWebhookData): Prisma.WalletPassWhereInput | null {
+  if (data.userProvidedId) {
+    return { provider: "passcreator", user_provided_id: data.userProvidedId };
+  }
+  if (data.identifier) {
+    return { provider: "passcreator", provider_pass_id: data.identifier };
+  }
+  return null;
+}
+
 // operatingSystem names which platform's counts this delivery carries. Confirmed live 2026-08-13
 // on two separate deliveries: "iOS" (Apple) and "AndroidGooglePay" (Google) - PassCreator's own
 // enum label, not the device's literal OS name (hence not just "Android"). "iPadOS"/"macOS" are
@@ -213,4 +229,43 @@ export async function applyWebhookUpdate(
     }
     throw err;
   }
+}
+
+/**
+ * Stamps WalletPass.first_confirmed_at the first time a pass is confirmed actually added to a
+ * wallet app - called only for a delivery on the dedicated `first_pushnotification_registered`
+ * route (subscribeWalletWebhooksBestEffort points that event at its own target URL, same as
+ * pass_voided's `/voided` - see handlePassCreatorWebhook's doc comment for why a dedicated URL,
+ * not a payload field, is how an event is identified at all).
+ *
+ * `updateMany` with `first_confirmed_at: null` in the where clause (not a plain `update`, and not
+ * a read-then-write) makes "set once, never overwrite" atomic in a single round-trip: a pass that
+ * already has a value simply matches zero rows and this is a no-op, so a PassCreator retry
+ * redelivering the same event (or, in principle, a second device's own first-time registration
+ * once first_pushnotification_registered has already fired once) can never clobber the original
+ * timestamp with a later one.
+ */
+export async function applyFirstConfirmedAt(db: PrismaClient, data: PassCreatorWebhookData): Promise<void> {
+  const where = webhookMatchFilter(data);
+  if (!where) return;
+  await db.walletPass.updateMany({ where: { ...where, first_confirmed_at: null }, data: { first_confirmed_at: new Date() } });
+}
+
+/**
+ * Parses PassCreator's `firstDownloadedAt` ("YYYY-MM-DD HH:MM:SS", no offset) as UTC - confirmed
+ * UTC by cross-checking a live pass's raw value against PassCreator's own dashboard, which shows
+ * the same moment already converted to the viewer's local time (PO review, 2026-08-13; same
+ * parsing this codebase already does for display in
+ * apps/admin/src/pages/AttendeeDetailPage.tsx's formatFirstDownloadedAt). Returns null for
+ * anything that doesn't match the expected shape, rather than an Invalid Date - used by the
+ * one-time first_confirmed_at backfill (apps/web/src/scripts/backfill-wallet-first-confirmed.ts)
+ * for a pass issued before this column existed, where firstDownloadedAt is the closest thing
+ * PassCreator's API exposes to "first confirmed" (no activity-history endpoint exists to backfill
+ * the true first_pushnotification_registered moment - PassCreator's dashboard-only "Pass Activity"
+ * log isn't exposed via their v1/v2/v3 API).
+ */
+export function parseFirstDownloadedAtUtc(raw: string): Date | null {
+  const iso = `${raw.replace(" ", "T")}Z`;
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }

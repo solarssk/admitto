@@ -563,6 +563,7 @@ function addDaysToIsoDate(isoDate: string, days: number): string {
 
 const WALLET_PASS_AGGREGATE_SELECT = {
   issued_at: true,
+  first_confirmed_at: true,
   status: true,
   apple_active_registrations: true,
   google_active_registrations: true,
@@ -646,12 +647,17 @@ export function confirmedPlatformLabel(appleActive: number, googleActive: number
   }
 }
 
-/** Whole days between the attendee's first ticket-link email and this pass being issued, or null
- * when either timestamp is missing or the pass was somehow issued before that email was sent
- * (skipped rather than counted as negative "time to tap"). */
-export function computeTapDays(sentAt: Date | null | undefined, issuedAt: Date | null): number | null {
-  if (!sentAt || !issuedAt) return null;
-  const diffDays = (issuedAt.getTime() - sentAt.getTime()) / 86_400_000;
+/** Whole days between the attendee's first ticket-link email and this pass actually being
+ * confirmed installed on a wallet app (WalletPass.first_confirmed_at, stamped from PassCreator's
+ * `first_pushnotification_registered` webhook - see applyFirstConfirmedAt), or null when either
+ * timestamp is missing (most passes issued before this column existed, until the one-time
+ * backfill and/or a later re-confirmation fill it in) or the pass was somehow confirmed before
+ * that email was sent (skipped rather than counted as negative "time to tap"). Was `issued_at`
+ * (first Add to Wallet tap) before - that measured engagement latency, not actual install; PO
+ * decided the confirmed timestamp answers the question this card is meant to answer. */
+export function computeTapDays(sentAt: Date | null | undefined, confirmedAt: Date | null): number | null {
+  if (!sentAt || !confirmedAt) return null;
+  const diffDays = (confirmedAt.getTime() - sentAt.getTime()) / 86_400_000;
   return diffDays >= 0 ? diffDays : null;
 }
 
@@ -697,7 +703,13 @@ function applyWalletPassToAggregates(
   acc.gotPassByType.set(typeKey, (acc.gotPassByType.get(typeKey) ?? 0) + 1);
   if (platform !== "none") acc.confirmedByType.set(typeKey, (acc.confirmedByType.get(typeKey) ?? 0) + 1);
 
-  const tapDays = computeTapDays(earliestDeliverySuccessAt(pass.attendee.email_deliveries), pass.issued_at);
+  // Gated on platform !== "none" (the same post-enabledPlatforms confirmed check as
+  // confirmed/confirmedByType above), not just first_confirmed_at being set: a pass historically
+  // confirmed on a platform the event has since disabled keeps its first_confirmed_at (it really
+  // did happen), but must not count toward "Time to wallet install" while adoption.confirmed and
+  // every other confirmed-based number in this same report no longer count it either.
+  const tapDays =
+    platform !== "none" ? computeTapDays(earliestDeliverySuccessAt(pass.attendee.email_deliveries), pass.first_confirmed_at) : null;
   if (tapDays !== null) {
     acc.tapDaySum += tapDays;
     acc.tapDayCount++;
@@ -1718,7 +1730,7 @@ async function exportWalletReportsPdf(
     <thead><tr><th>Type</th><th>Got pass</th><th>Total</th><th>Rate</th></tr></thead>
     <tbody>${typeRows || '<tr><td colspan="4">No attendees</td></tr>'}</tbody>
   </table>
-  <h2>Time to wallet tap</h2>
+  <h2>Time to wallet install</h2>
   <table>
     <thead><tr><th>Days after ticket email</th><th>Passes</th><th>Share</th></tr></thead>
     <tbody>${tapRows || '<tr><td colspan="3">Not enough data yet</td></tr>'}</tbody>

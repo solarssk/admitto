@@ -20,6 +20,7 @@ const BOTH_ENABLED = { apple: true, google: true };
 function pass(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     issued_at: new Date("2026-01-01T00:00:00.000Z"),
+    first_confirmed_at: null,
     status: "active",
     apple_active_registrations: 0,
     google_active_registrations: 0,

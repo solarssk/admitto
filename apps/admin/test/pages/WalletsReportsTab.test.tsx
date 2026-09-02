@@ -365,7 +365,7 @@ describe("WalletsReportsTab", () => {
     expect(cumulativePoints.at(-1)).toEqual({ date: Date.parse("2026-06-02T12:00:00Z"), value: 5 });
 
     // Time-to-tap bar chart: one bar per bucket, each row carrying its own bucket's own pct.
-    const tapCard = cardByTitle("Time to wallet tap");
+    const tapCard = cardByTitle("Time to wallet install");
     const tapRows = dataRows(within(tapCard).getByTestId("rc-bar"));
     expect(tapRows.map((r) => r.pct)).toEqual([50, 30, 10, 10]);
 
@@ -442,7 +442,7 @@ describe("WalletsReportsTab", () => {
     );
     await screen.findByText("Wallet adoption");
 
-    const tapCard = cardByTitle("Time to wallet tap");
+    const tapCard = cardByTitle("Time to wallet install");
     expect(within(tapCard).getByText("Not enough data yet.")).toBeTruthy();
     expect(within(tapCard).queryByTestId("rc-bar")).toBeNull();
   });

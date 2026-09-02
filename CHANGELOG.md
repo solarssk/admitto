@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Wallet passes now track the moment they're actually confirmed installed on a wallet app (PassCreator's `first_pushnotification_registered` webhook, given its own dedicated subscription URL alongside the existing void/registration ones), not just when a pass is issued. Reports' Wallets tab "Time to wallet install" card (renamed from "Time to wallet tap") now measures from the ticket email to that confirmed install instead of to the earlier "Add to Wallet" tap, which only reflected how fast someone opened the email rather than whether the pass ever actually installed. A one-time ops script backfills this for passes issued before the change, from PassCreator's own record of the pass's first device download.
+
 ## [0.6.5] - 2026-09-01
 
 ### Fixed

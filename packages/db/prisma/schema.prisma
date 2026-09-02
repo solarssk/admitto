@@ -364,6 +364,16 @@ model WalletPass {
   issued_at DateTime?
   voided_at DateTime?
 
+  // Stamped once, the first time PassCreator's `first_pushnotification_registered` webhook fires
+  // for this pass (applyFirstConfirmedAt, packages/wallet/src/passcreator-webhook.ts) - i.e. the
+  // pass was actually added to a wallet app, not merely issued/downloaded. Never overwritten once
+  // set (a later re-registration on another device is still the SAME first confirmation). Null for
+  // a pass issued before this column existed until the one-time backfill script
+  // (apps/web/src/scripts/backfill-wallet-first-confirmed.ts) or a fresh confirmation fills it in. Reports'
+  // "Time to wallet install" reads this, not issued_at (first Add to Wallet tap - engagement
+  // latency, not actual install).
+  first_confirmed_at DateTime?
+
   // Registration status as PassCreator itself sees it (GET /api/v3/pass?userProvidedId=...),
   // refreshed periodically by the wallet-sync worker job - best-effort, a PassCreator outage or
   // rate limit just leaves these stale rather than blocking anything else. Active/inactive are
@@ -372,9 +382,12 @@ model WalletPass {
   apple_inactive_registrations   Int?
   google_active_registrations    Int?
   google_inactive_registrations  Int?
-  // String, not DateTime: PassCreator's docs don't state which timezone this is in (no UTC
-  // offset/Z in any example) - stored and displayed verbatim rather than parsed, so we never
-  // assert a timezone we don't actually know.
+  // String, not DateTime: kept as PassCreator's own raw "YYYY-MM-DD HH:MM:SS" wire format rather
+  // than a parsed column, even though it's confirmed UTC (cross-checked against PassCreator's own
+  // dashboard, apps/admin/src/pages/AttendeeDetailPage.tsx's formatFirstDownloadedAt) - parsing
+  // happens at read time there and in the backfill script above, not in this schema, so a future
+  // case where PassCreator's own format assumption turns out wrong for some row doesn't need a
+  // migration to fix.
   first_downloaded_at            String?
   // Last genuinely successful check only - a failed/skipped attempt does NOT bump this, so it
   // stays a trustworthy "last known good" for the UI. registration_sync_attempted_at is the
