@@ -347,8 +347,10 @@ function disablingWalletPlatformsWithInstalls(
   );
 }
 
+type WalletConfirmKind = "clear_key" | "push" | "disable_wallet" | "disable_platform";
+
 interface WalletConfirmResolution {
-  kind: "clear_key" | "push" | "disable_wallet" | "disable_platform";
+  kind: WalletConfirmKind;
   platforms: WalletPlatformKey[];
   // Only meaningful for "disable_platform" - see describeWalletPlatformDisableConfirm's own doc
   // comment for why a platform-disable save can still push an update to every installed pass.
@@ -421,7 +423,7 @@ interface WalletConfirmCopy {
  * SonarCloud threshold (S3776) - this component has hit that limit twice already this session
  * from additions far smaller than a four-way branch. */
 function describeWalletConfirmDialog(
-  kind: "push" | "clear_key" | "disable_wallet" | "disable_platform",
+  kind: WalletConfirmKind,
   platforms: readonly WalletPlatformKey[],
   alsoPushes: boolean,
   event: EventSettingsDto,
@@ -954,9 +956,7 @@ export function EventSettingsPage() {
   // an event with issued passes - PO report, 2026-09-02), or "disable_platform" (this save turns
   // off one or more per-platform toggles on a platform with installed passes). All four share the
   // same open/pending-action plumbing since confirming any of them just runs the same commitSave.
-  const [walletConfirmKind, setWalletConfirmKind] = useState<
-    "push" | "clear_key" | "disable_wallet" | "disable_platform"
-  >("push");
+  const [walletConfirmKind, setWalletConfirmKind] = useState<WalletConfirmKind>("push");
   // Only populated for "disable_platform" - which platform(s) resolveWalletConfirmKind found being
   // turned off with installs on them, for describeWalletPlatformDisableConfirm's own message.
   const [walletDisablingPlatforms, setWalletDisablingPlatforms] = useState<readonly WalletPlatformKey[]>(

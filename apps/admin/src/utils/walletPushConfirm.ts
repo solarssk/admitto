@@ -71,8 +71,9 @@ export function describeWalletPlatformDisableConfirm(
   const joined =
     labels.length > 1 ? `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}` : labels[0];
   const plural = platforms.length > 1;
+  const totalPass = totalInstalledCount === 1 ? "pass" : "passes";
   const closing = alsoPushes
-    ? `This save will also push an update to ${totalInstalledCount} installed wallet ${totalInstalledCount === 1 ? "pass" : "passes"} across every platform.`
+    ? `This save will also push an update to ${totalInstalledCount} installed wallet ${totalPass} across every platform.`
     : "Nothing changes on attendees' actual devices.";
   return `${joined} already ${plural ? "have" : "has"} attendees who added ${plural ? "them" : "it"} on their device. Turning ${plural ? "these" : "this"} off hides the Add to Wallet button for anyone who hasn't added it yet, and ${plural ? "their" : "its"} status disappears from the Attendees list and attendee detail pages until you turn ${plural ? "them" : "it"} back on. ${closing}`;
 }
