@@ -92,6 +92,10 @@ export {
 } from './backfill-email-delivery-template-label-snapshot.js';
 
 export {
+  backfillEmailDeliveryHadWalletCta,
+} from './backfill-email-delivery-had-wallet-cta.js';
+
+export {
   isSerializationFailure,
 } from './errors.js';
 

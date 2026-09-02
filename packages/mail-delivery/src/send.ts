@@ -3,6 +3,7 @@ import { EMAIL_DELIVERY_SUCCESS_STATUSES, type PrismaClient } from "@admitto/db"
 import { decryptFromString } from "@admitto/crypto";
 import {
   buildEventLocationTemplateVars,
+  extractPlaceholderNames,
   materializeStoredDeliveryMessage,
   renderTemplateTrustedForStorage,
   resolveBrandingFromEvent,
@@ -169,6 +170,7 @@ interface ProcessAttendeeForSendInput {
   attendee: AttendeeForSend;
   event: EventForSend;
   resolvedTemplate: ResolvedTemplate;
+  hasWalletCta: boolean;
   branding: BrandingUrls;
   customAssets: EventImageAssetPlaceholders;
   ticketTypeLabels: ReadonlyMap<string, string>;
@@ -181,6 +183,21 @@ interface ProcessAttendeeForSendInput {
   prisma: PrismaClient;
 }
 
+const WALLET_CTA_PLACEHOLDERS = new Set(["apple_wallet_url", "google_wallet_url"]);
+
+/** Whether a resolved template's subject or body references either wallet-add-link placeholder
+ * - see EmailDelivery.had_wallet_cta's own doc comment (schema.prisma) for why this is checked
+ * against the template's raw text rather than any per-template "purpose"/category. Same
+ * whitelisted-token extraction every other placeholder consumer uses (extractPlaceholderNames),
+ * not a bare substring search, so this can't be fooled by the token appearing inside an HTML
+ * comment or unrelated text that merely mentions it. */
+function templateHasWalletCta(resolvedTemplate: ResolvedTemplate): boolean {
+  return (
+    extractPlaceholderNames(resolvedTemplate.subjectTemplate).some((name) => WALLET_CTA_PLACEHOLDERS.has(name)) ||
+    extractPlaceholderNames(resolvedTemplate.compiledHtmlTemplate).some((name) => WALLET_CTA_PLACEHOLDERS.has(name))
+  );
+}
+
 /**
  * Process a single attendee: issue the ticket, build links/rendered content, and claim/create
  * the delivery row. Returns a skip outcome (batch continues without this attendee) or a pending
@@ -190,6 +207,7 @@ async function processAttendeeForSend({
   attendee,
   event,
   resolvedTemplate,
+  hasWalletCta,
   branding,
   customAssets,
   ticketTypeLabels,
@@ -283,6 +301,7 @@ async function processAttendeeForSend({
     batchId,
     templateId: resolvedTemplate.templateId,
     templateLabel: resolvedTemplate.templateLabel,
+    hasWalletCta,
     provider,
     recipientEmail:
       purpose === "resend" && options.recipientEmail ? options.recipientEmail : attendee.email,
@@ -476,6 +495,7 @@ export async function sendTicketEmails(
   } else {
     resolvedTemplate = await resolveTemplateForEvent(event, prisma);
   }
+  const hasWalletCta = templateHasWalletCta(resolvedTemplate);
   const branding = resolveBrandingFromEvent(event);
   const customAssets = await resolveEventImageAssetVars(eventId, prisma);
   const ticketTypeLabels = new Map(
@@ -501,6 +521,7 @@ export async function sendTicketEmails(
         attendee,
         event,
         resolvedTemplate,
+        hasWalletCta,
         branding,
         customAssets,
         ticketTypeLabels,

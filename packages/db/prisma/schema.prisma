@@ -444,6 +444,21 @@ model EmailDelivery {
   // backfill-email-delivery-template-label-snapshot.ts) - null here for a pre-existing row means
   // its template was already deleted before the backfill ran, which is unrecoverable.
   template_label_snapshot String?
+  // Whether the resolved template's subject/body referenced apple_wallet_url or
+  // google_wallet_url at send time - snapshotted here for the same reason as
+  // template_label_snapshot above (a template can be edited or deleted after this delivery was
+  // sent, which must not retroactively change whether this specific send counted as carrying a
+  // wallet nudge). Deliberately content-based, not a MailTemplate-level "purpose" flag: these two
+  // placeholders are in the same global whitelist as every other token (ALLOWED_PLACEHOLDERS,
+  // mail-templates/placeholders.ts), so any Communication campaign - not just one specifically
+  // named/tagged "reminder" - can carry a wallet button, and this must recognize all of them.
+  // Computed once per batch in sendTicketEmails() (send.ts), from the same resolvedTemplate every
+  // attendee in that batch shares, not per attendee. Default false for rows predating this column;
+  // backfilled from their still-literal rendered_html (see backfill-email-delivery-wallet-cta.ts -
+  // apple_wallet_url/google_wallet_url are STORAGE_DEFERRED_LINK_PLACEHOLDERS, so rendered_html
+  // keeps the raw {{token}} text forever, never the materialized link, unlike a link that gets
+  // substituted before storage).
+  had_wallet_cta          Boolean       @default(false)
   provider                String
   provider_message_id     String?
   status                  String        @default("queued")

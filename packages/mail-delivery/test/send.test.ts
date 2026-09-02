@@ -338,6 +338,59 @@ describe("sendTicketEmails", () => {
     expect(exported[0]?.message.html).not.toContain("/m/evt-mail-send.png");
   });
 
+  it("stamps EmailDelivery.had_wallet_cta from whether the resolved template referenced a wallet-add-link placeholder, not per attendee", async () => {
+    const walletTemplate = await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT_ID,
+        name: "wallet-cta",
+        label: "Wallet CTA",
+        subject_template: "Add your pass",
+        body_template: '<a href="{{apple_wallet_url}}">Add to Apple Wallet</a>',
+        compiled_html_template: '<a href="{{apple_wallet_url}}">Add to Apple Wallet</a>',
+        template_format: "html",
+      },
+    });
+    const plainTemplate = await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT_ID,
+        name: "plain",
+        label: "Plain",
+        subject_template: "Hello",
+        body_template: "<p>Hello {{first_name}}</p>",
+        compiled_html_template: "<p>Hello {{first_name}}</p>",
+        template_format: "html",
+      },
+    });
+    await prisma.attendee.createMany({
+      data: [
+        { id: "att-wallet-cta", event_id: EVENT_ID, email: "wallet-cta@example.com", name: "Wallet Cta" },
+        { id: "att-plain-cta", event_id: EVENT_ID, email: "plain-cta@example.com", name: "Plain Cta" },
+      ],
+    });
+
+    await sendTicketEmails(
+      EVENT_ID,
+      { deliverImmediately: true, attendeeIds: ["att-wallet-cta"], templateId: walletTemplate.id },
+      prisma,
+      TEST_ENV,
+      TEST_DEPS,
+    );
+    await sendTicketEmails(
+      EVENT_ID,
+      { deliverImmediately: true, attendeeIds: ["att-plain-cta"], templateId: plainTemplate.id },
+      prisma,
+      TEST_ENV,
+      TEST_DEPS,
+    );
+
+    const walletRow = await prisma.emailDelivery.findFirstOrThrow({ where: { attendee_id: "att-wallet-cta" } });
+    expect(walletRow.had_wallet_cta).toBe(true);
+    const plainRow = await prisma.emailDelivery.findFirstOrThrow({ where: { attendee_id: "att-plain-cta" } });
+    expect(plainRow.had_wallet_cta).toBe(false);
+  });
+
   it("second initial send to an already-ticketed attendee resends instead of being skipped", async () => {
     exported.length = 0;
     const result = await sendTicketEmails(

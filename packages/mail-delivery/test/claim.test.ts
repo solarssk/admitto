@@ -17,6 +17,7 @@ const claimInput = {
   recipientEmail: "claim@example.com",
   renderedSubject: "Subject",
   renderedHtml: "<p>Hi</p>",
+  hasWalletCta: false,
 };
 
 beforeAll(async () => {

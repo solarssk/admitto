@@ -631,10 +631,10 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       {data.passes_truncated && (
         <Notice variant="warning" className="wallets-truncated-notice">
           This event has more issued wallet passes than a single report can process at once, so
-          platform mix, devices per attendee, adoption by ticket type, wallet lifecycle, and time
-          to wallet install below are based on a partial sample rather than every pass. Cumulative
-          passes issued and admission rate by wallet status are unaffected - both come from a full
-          count, not a sample.
+          platform mix, devices per attendee, adoption by ticket type, wallet lifecycle, time to
+          wallet install, and time to install after reminder below are based on a partial sample
+          rather than every pass. Cumulative passes issued and admission rate by wallet status are
+          unaffected - both come from a full count, not a sample.
         </Notice>
       )}
       <div className="wallets-panels">
@@ -723,6 +723,19 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
             How many days pass between the ticket email landing in an attendee&rsquo;s inbox and their pass being confirmed installed on their wallet app.
           </p>
           <TimeToTapChart buckets={data.time_to_wallet_tap.buckets} isActive={isActive} />
+        </Card>
+      </div>
+
+      <div className="wallets-panels">
+        <Card title="Time to install after reminder" className="wallets-chart-card">
+          <p className="wallets-description">
+            For attendees who got a follow-up email with a wallet button after their ticket - a reminder, or any other campaign - how many days passed between that most recent email and their pass being confirmed installed.
+          </p>
+          {data.time_to_install_after_reminder.eligible_count === 0 ? (
+            <p className="wallets-description">No installs are attributable to a follow-up email yet.</p>
+          ) : (
+            <TimeToTapChart buckets={data.time_to_install_after_reminder.buckets} isActive={isActive} />
+          )}
         </Card>
       </div>
 

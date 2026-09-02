@@ -364,6 +364,7 @@ describe("drainPendingDeliveries branch coverage", () => {
           recipientEmail: "branch@example.com",
           renderedSubject: "Fresh subject after reclaim",
           renderedHtml: "<p>Fresh body after reclaim</p>",
+          hasWalletCta: false,
         },
         prisma,
       );

@@ -34,6 +34,11 @@ const EVENT_WALLETS_LIFECYCLE = "evt-reports-wallets-lifecycle";
 // -> aggregateWalletPasses -> classifyPassPlatform), on top of aggregateWalletPasses' own unit
 // coverage for the filtering logic itself (wallet-reports-helpers.test.ts).
 const EVENT_WALLETS_SAMSUNG = "evt-reports-wallets-samsung";
+// Minimal, separate event (not EVENT_WALLETS above) dedicated to time_to_install_after_reminder's
+// own last-touch anchor selection - same reasoning as EVENT_WALLETS_LIFECYCLE above, this needs a
+// dataset with a non-ticket, had_wallet_cta template in play, which the main EVENT_WALLETS fixture
+// several other tests already pin exact numbers against doesn't have.
+const EVENT_WALLETS_REMINDER = "evt-reports-wallets-reminder";
 const EVENT_CUSTOM_FIELDS = "evt-reports-custom-fields";
 // Minimal, separate event (not EVENT_CUSTOM_FIELDS above) so this doesn't need to mutate a
 // fixture several other tests in this file already depend on - proves the tie-breaker on its
@@ -65,6 +70,12 @@ const ATT_W_LEGACY_TYPE = "att-reports-w-legacy-type";
 const ATT_W_APPLE_ONLY_EVENT = "att-reports-w-apple-only-event";
 const ATT_W_GOOGLE_ONLY_EVENT = "att-reports-w-google-only-event";
 const ATT_W_SAMSUNG_ONLY_EVENT = "att-reports-w-samsung-only-event";
+
+const ATT_REM_LATEST_WINS = "att-reports-rem-latest-wins";
+const ATT_REM_AFTER_INSTALL_ONLY = "att-reports-rem-after-install-only";
+const ATT_REM_TICKET_HAS_CTA = "att-reports-rem-ticket-has-cta";
+const ATT_REM_NONE = "att-reports-rem-none";
+const ATT_REM_NO_TICKET_LOGGED = "att-reports-rem-no-ticket-logged";
 
 const ATT_LC_ACTIVE_SAME_PLATFORM = "att-reports-lc-active-same-platform";
 const ATT_LC_ACTIVE_CROSS_PLATFORM = "att-reports-lc-active-cross-platform";
@@ -136,6 +147,7 @@ async function seed(client: PrismaClient) {
     EVENT_WALLETS_APPLE_ONLY,
     EVENT_WALLETS_LIFECYCLE,
     EVENT_WALLETS_SAMSUNG,
+    EVENT_WALLETS_REMINDER,
     EVENT_CUSTOM_FIELDS,
     EVENT_CUSTOM_FIELDS_TIE,
     EVENT_MAIL,
@@ -143,6 +155,11 @@ async function seed(client: PrismaClient) {
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.emailDelivery.deleteMany({ where: { event_id: { in: eventIds } } });
+  // scope_id isn't a real FK (MailTemplate.scope_type/scope_id is a loose (type, id) pair covering
+  // both "event" and "organization" scope, not one relation column) - deleting the event above
+  // wouldn't cascade this away on its own, and a re-run would then collide with the
+  // (scope_type, scope_id, name) unique constraint on the reminder template created below.
+  await client.mailTemplate.deleteMany({ where: { scope_type: "event", scope_id: { in: eventIds } } });
   await client.walletPass.deleteMany({ where: { attendee: { event_id: { in: eventIds } } } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.ticketType.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -229,6 +246,13 @@ async function seed(client: PrismaClient) {
         organization_id: ORG_REP,
         wallet_apple_enabled: false,
         wallet_google_enabled: false,
+      },
+      {
+        id: EVENT_WALLETS_REMINDER,
+        title: "Wallet Reminder Event",
+        slug: "reports-wallets-reminder",
+        date: new Date("2027-07-04T12:00:00.000Z"),
+        organization_id: ORG_REP,
       },
       {
         id: EVENT_CUSTOM_FIELDS,
@@ -329,6 +353,77 @@ async function seed(client: PrismaClient) {
       issued_at: new Date("2027-06-15T00:00:00.000Z"),
       samsung_active_registrations: 1,
     },
+  });
+
+  // Dedicated event/fixture for time_to_install_after_reminder - see EVENT_WALLETS_REMINDER's own
+  // doc comment above for why this can't share EVENT_WALLETS' fixture. A real, non-ticket
+  // MailTemplate (had_wallet_cta lives on EmailDelivery, snapshotted per send - see that column's
+  // own doc comment, schema.prisma - not on MailTemplate itself, so a template row is only needed
+  // here to give the deliveries below a template_id that isn't null/"ticket").
+  const reminderTemplate = await client.mailTemplate.create({
+    data: {
+      scope_type: "event",
+      scope_id: EVENT_WALLETS_REMINDER,
+      name: "wallet-nudge",
+      label: "Wallet nudge",
+      subject_template: "Don't forget your pass",
+      body_template: "<p>{{apple_wallet_url}}</p>",
+      template_format: "html",
+      compiled_html_template: "<p>{{apple_wallet_url}}</p>",
+    },
+  });
+
+  const remInstalledAt = new Date("2027-03-10T10:00:00.000Z");
+  await client.attendee.createMany({
+    data: [
+      { id: ATT_REM_LATEST_WINS, event_id: EVENT_WALLETS_REMINDER, email: "rem-latest-wins@example.com", name: "Reminder Latest Wins", ...mkAttendeeToken() },
+      { id: ATT_REM_AFTER_INSTALL_ONLY, event_id: EVENT_WALLETS_REMINDER, email: "rem-after-install-only@example.com", name: "Reminder After Install Only", ...mkAttendeeToken() },
+      { id: ATT_REM_TICKET_HAS_CTA, event_id: EVENT_WALLETS_REMINDER, email: "rem-ticket-has-cta@example.com", name: "Reminder Ticket Has CTA", ...mkAttendeeToken() },
+      { id: ATT_REM_NONE, event_id: EVENT_WALLETS_REMINDER, email: "rem-none@example.com", name: "Reminder None", ...mkAttendeeToken() },
+      { id: ATT_REM_NO_TICKET_LOGGED, event_id: EVENT_WALLETS_REMINDER, email: "rem-no-ticket-logged@example.com", name: "Reminder No Ticket Logged", ...mkAttendeeToken() },
+    ],
+  });
+  await client.walletPass.createMany({
+    data: [
+      { attendee_id: ATT_REM_LATEST_WINS, status: "active", issued_at: remInstalledAt, first_confirmed_at: remInstalledAt, apple_active_registrations: 1 },
+      { attendee_id: ATT_REM_AFTER_INSTALL_ONLY, status: "active", issued_at: remInstalledAt, first_confirmed_at: remInstalledAt, apple_active_registrations: 1 },
+      { attendee_id: ATT_REM_TICKET_HAS_CTA, status: "active", issued_at: remInstalledAt, first_confirmed_at: remInstalledAt, apple_active_registrations: 1 },
+      { attendee_id: ATT_REM_NONE, status: "active", issued_at: remInstalledAt, first_confirmed_at: remInstalledAt, apple_active_registrations: 1 },
+      { attendee_id: ATT_REM_NO_TICKET_LOGGED, status: "active", issued_at: remInstalledAt, first_confirmed_at: remInstalledAt, apple_active_registrations: 1 },
+    ],
+  });
+  await client.emailDelivery.createMany({
+    data: [
+      // The genuine ticket email - excluded from the reminder pool by template scope regardless
+      // of had_wallet_cta (isTicketScopedDelivery wins over isWalletReminderDelivery).
+      { organization_id: ORG_REP, event_id: EVENT_WALLETS_REMINDER, attendee_id: ATT_REM_LATEST_WINS, purpose: "initial", provider: "export_only", status: "accepted", accepted_at: new Date("2027-02-01T10:00:00.000Z"), had_wallet_cta: false },
+      // Earlier reminder - 7 whole days before install (would land "4_7" if wrongly picked as the
+      // anchor instead of the later one below).
+      { organization_id: ORG_REP, event_id: EVENT_WALLETS_REMINDER, attendee_id: ATT_REM_LATEST_WINS, purpose: "resend", template_id: reminderTemplate.id, provider: "export_only", status: "accepted", accepted_at: new Date("2027-03-03T10:00:00.000Z"), had_wallet_cta: true },
+      // Latest reminder before install - 1 hour before, lands "same_day". Proves
+      // latestWalletReminderDeliverySuccessBefore picks the closest-to-install delivery, not the
+      // earliest-overall one (the opposite of earliestDeliverySuccessAt's own tie-break).
+      { organization_id: ORG_REP, event_id: EVENT_WALLETS_REMINDER, attendee_id: ATT_REM_LATEST_WINS, purpose: "resend", template_id: reminderTemplate.id, provider: "export_only", status: "accepted", accepted_at: new Date("2027-03-10T09:00:00.000Z"), had_wallet_cta: true },
+
+      { organization_id: ORG_REP, event_id: EVENT_WALLETS_REMINDER, attendee_id: ATT_REM_AFTER_INSTALL_ONLY, purpose: "initial", provider: "export_only", status: "accepted", accepted_at: new Date("2027-02-01T10:00:00.000Z"), had_wallet_cta: false },
+      // Only reminder is sent AFTER first_confirmed_at - can't be what they reacted to, so this
+      // attendee must not contribute to the metric at all (not "0 days").
+      { organization_id: ORG_REP, event_id: EVENT_WALLETS_REMINDER, attendee_id: ATT_REM_AFTER_INSTALL_ONLY, purpose: "resend", template_id: reminderTemplate.id, provider: "export_only", status: "accepted", accepted_at: new Date("2027-03-12T10:00:00.000Z"), had_wallet_cta: true },
+
+      // The org's own ticket template embeds a wallet button (had_wallet_cta true) but this is
+      // still template_id: null, the genuine ticket send - isTicketScopedDelivery excludes it from
+      // the reminder pool despite had_wallet_cta, same as isWalletReminderDelivery's own doc
+      // comment explains (a first email carrying the button isn't a follow-up nudge).
+      { organization_id: ORG_REP, event_id: EVENT_WALLETS_REMINDER, attendee_id: ATT_REM_TICKET_HAS_CTA, purpose: "initial", provider: "export_only", status: "accepted", accepted_at: new Date("2027-03-05T10:00:00.000Z"), had_wallet_cta: true },
+
+      // Ordinary ticket-only send, no wallet CTA anywhere - the baseline "nothing to report" case.
+      { organization_id: ORG_REP, event_id: EVENT_WALLETS_REMINDER, attendee_id: ATT_REM_NONE, purpose: "initial", provider: "export_only", status: "accepted", accepted_at: new Date("2027-03-01T10:00:00.000Z"), had_wallet_cta: false },
+
+      // No ticket-scoped delivery logged at all for this attendee (e.g. imported directly, ticket
+      // send never recorded) - only a wallet-CTA delivery, 2 whole days before install. Proves the
+      // reminder anchor doesn't depend on a ticket delivery existing first.
+      { organization_id: ORG_REP, event_id: EVENT_WALLETS_REMINDER, attendee_id: ATT_REM_NO_TICKET_LOGGED, purpose: "resend", template_id: reminderTemplate.id, provider: "export_only", status: "accepted", accepted_at: new Date("2027-03-08T10:00:00.000Z"), had_wallet_cta: true },
+    ],
   });
 
   await client.attendee.createMany({
@@ -2703,6 +2798,38 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     // all, so it's outside wallet_lifecycle entirely).
     expect(body.wallet_lifecycle).toEqual({ active: 5, removed: 0, never_installed: 2 });
   });
+
+  it("anchors time_to_install_after_reminder on the latest wallet-CTA delivery before install, excludes reminders sent after install, and excludes the ticket template even when it itself carries a wallet CTA", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS_REMINDER}/reports/wallets`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      adoption: { confirmed: number };
+      time_to_install_after_reminder: {
+        eligible_count: number;
+        average_days: number | null;
+        buckets: Array<{ key: string; count: number; pct: number }>;
+      };
+    };
+
+    // All 5 attendees are confirmed installs - only ATT_REM_LATEST_WINS and
+    // ATT_REM_NO_TICKET_LOGGED are attributable to a wallet-CTA email, so eligible_count must stay
+    // 2, not creep up to include the other 3.
+    expect(body.adoption.confirmed).toBe(5);
+    expect(body.time_to_install_after_reminder.eligible_count).toBe(2);
+    // ATT_REM_LATEST_WINS: ~1 hour before install (its later reminder, ~0.04 days) - would be ~7
+    // days instead if latest-before-install wrongly picked its earlier reminder. Averaged with
+    // ATT_REM_NO_TICKET_LOGGED's exact 2 days: (0.0417 + 2) / 2 rounds to 1.0.
+    expect(body.time_to_install_after_reminder.average_days).toBe(1);
+    const sameDay = body.time_to_install_after_reminder.buckets.find((b) => b.key === "same_day");
+    expect(sameDay).toEqual({ key: "same_day", count: 1, pct: 50 });
+    const bucket13 = body.time_to_install_after_reminder.buckets.find((b) => b.key === "1_3");
+    expect(bucket13).toEqual({ key: "1_3", count: 1, pct: 50 });
+    for (const key of ["4_7", "8_plus"]) {
+      expect(body.time_to_install_after_reminder.buckets.find((b) => b.key === key)!.count).toBe(0);
+    }
+  });
 });
 
 describe("GET /api/admin/events/:eventId/reports/custom-fields", () => {
@@ -2945,6 +3072,46 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     expect(cells.slice(5, 12)).toEqual(["", "", "", "", "", "", ""]);
   });
 
+  it("fills 'Most recent reminder email sent at' from a wallet-CTA delivery, unconditionally (no install-time cutoff, unlike the report card), and leaves it blank for the ticket template even when it itself carries a wallet CTA", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS_REMINDER}/reports/export?format=csv&report=wallets`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    const lines = text.replace(/^﻿/, "").split("\r\n");
+    const header = lines[0]!.split(",").map((c) => c.replace(/^"|"$/g, ""));
+    const ticketColumn = header.findIndex((h) => h.startsWith("Ticket email first sent at"));
+    const reminderColumn = header.findIndex((h) => h.startsWith("Most recent reminder email sent at"));
+    expect(ticketColumn).toBeGreaterThan(-1);
+    expect(reminderColumn).toBeGreaterThan(-1);
+
+    const cellsFor = (name: string) => {
+      const row = lines.find((l) => l.includes(`"${name}"`));
+      expect(row).toBeDefined();
+      return row!.split(",").map((c) => c.replace(/^"|"$/g, ""));
+    };
+
+    // Both its ticket send and its later reminder are populated - two independent columns, not
+    // one overwriting the other.
+    const latestWins = cellsFor("Reminder Latest Wins");
+    expect(latestWins[ticketColumn]).not.toBe("");
+    expect(latestWins[reminderColumn]).not.toBe("");
+
+    // The export has no install-time cutoff (unlike time_to_install_after_reminder above) - its
+    // only reminder was sent after first_confirmed_at, and still belongs in the raw archive.
+    const afterInstallOnly = cellsFor("Reminder After Install Only");
+    expect(afterInstallOnly[reminderColumn]).not.toBe("");
+
+    // The ticket template itself embeds a wallet CTA, but it's still the ticket send - populates
+    // "Ticket email first sent at" only, "Most recent reminder email sent at" stays blank.
+    const ticketHasCta = cellsFor("Reminder Ticket Has CTA");
+    expect(ticketHasCta[ticketColumn]).not.toBe("");
+    expect(ticketHasCta[reminderColumn]).toBe("");
+
+    const none = cellsFor("Reminder None");
+    expect(none[reminderColumn]).toBe("");
+  });
+
   it("returns printable HTML for a wallets pdf export", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/export?format=pdf&report=wallets`, {
       headers: { Cookie: adminWalletsCookie },
@@ -2963,6 +3130,10 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     // rows should render, not the buckets-always-populated dead-code fallback text.
     expect(html).toContain("1-3 days");
     expect(html).not.toContain("Not enough data yet");
+    // EVENT_WALLETS' own fixture has no wallet-reminder delivery, so this section renders its
+    // own "nothing yet" fallback rather than empty bucket rows or a missing heading entirely.
+    expect(html).toContain("Time to install after reminder");
+    expect(html).toContain("No installs are attributable to a follow-up email yet");
     // registrations_per_attendee.buckets isn't all-zero (adoption.confirmed=5 above), so the
     // "Devices per attendee" table's real rows should render, not its own empty fallback.
     expect(html).toContain("Devices per attendee");

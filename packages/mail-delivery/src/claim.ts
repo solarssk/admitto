@@ -20,6 +20,9 @@ export interface ClaimInitialInput {
   /** The resolved template's label, snapshotted onto EmailDelivery.template_label_snapshot so a
    * later template deletion (SetNull on template_id) doesn't erase what it was called. */
   templateLabel?: string;
+  /** Snapshotted onto EmailDelivery.had_wallet_cta - see that column's own doc comment
+   * (schema.prisma) for why this is computed from the template's content, not a stored flag. */
+  hasWalletCta: boolean;
   provider: string;
   recipientEmail: string;
   renderedSubject: string;
@@ -55,6 +58,7 @@ function deliveryCreateData(input: ClaimInitialInput, purpose: "initial" | "rese
     batch_id: input.batchId,
     template_id: input.templateId,
     template_label_snapshot: input.templateLabel ?? null,
+    had_wallet_cta: input.hasWalletCta,
     provider: input.provider,
     status: "queued" as const,
     attempts: 1,
@@ -184,6 +188,7 @@ async function claimReclaimCancelled(
       batch_id: input.batchId,
       template_id: input.templateId,
       template_label_snapshot: input.templateLabel ?? null,
+      had_wallet_cta: input.hasWalletCta,
       provider: input.provider,
       recipient_email: input.recipientEmail.toLowerCase(),
       rendered_subject: input.renderedSubject,

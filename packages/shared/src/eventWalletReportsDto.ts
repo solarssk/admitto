@@ -73,6 +73,21 @@ export interface EventWalletReportsResponse {
     average_days: number | null;
     buckets: Array<{ key: "same_day" | "1_3" | "4_7" | "8_plus"; count: number; pct: number }>;
   };
+  /** First-touch above; this is its last-touch companion, not a replacement - re-anchoring
+   * time_to_wallet_tap itself onto whatever nudge happened to be sent most recently would silently
+   * change what that number has always meant release over release. Counts only the subset of
+   * `adoption.confirmed` who received a wallet-CTA email through a template other than the ticket
+   * one (any Communication campaign whose subject/body referenced apple_wallet_url/
+   * google_wallet_url - EmailDelivery.had_wallet_cta) before they installed, anchored on the most
+   * recent such delivery (see latestWalletReminderDeliverySuccessBefore, reports-routes.ts, for why
+   * latest-before-install rather than earliest-overall). `eligible_count` is how many of
+   * `adoption.confirmed` even qualify - expect 0 until a wallet-CTA campaign has actually gone out,
+   * and even after, most installs still won't be attributable to one. */
+  time_to_install_after_reminder: {
+    eligible_count: number;
+    average_days: number | null;
+    buckets: Array<{ key: "same_day" | "1_3" | "4_7" | "8_plus"; count: number; pct: number }>;
+  };
   /** "with_wallet" means the pass is actively registered on a device (an Apple/Google active
    * registration count > 0) - not merely issued. An attendee who got the ticket-link email but
    * never actually added the pass to a wallet app behaves like the without-wallet group for this
