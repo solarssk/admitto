@@ -7,8 +7,9 @@ const sample: EventWalletReportsResponse = {
   total_attendees: 4,
   synced_at: null,
   passes_truncated: false,
-  adoption: { got_pass: 2, got_pass_pct: 50, confirmed: 1, confirmed_pct: 50, cancelled: 0 },
-  platform: { apple_only: 1, google_only: 0, both: 0, not_installed: 1 },
+  adoption: { got_pass: 2, got_pass_pct: 50, confirmed: 1, confirmed_pct: 50 },
+  platform: { apple_only: 1, google_only: 0, both: 0 },
+  registrations_per_attendee: { buckets: [] },
   by_ticket_type: [],
   issued_by_day: [],
   time_to_wallet_tap: { average_days: null, buckets: [] },
@@ -16,6 +17,7 @@ const sample: EventWalletReportsResponse = {
     with_wallet: { total: 1, admitted: 1, pct: 100 },
     without_wallet: { total: 3, admitted: 0, pct: 0 },
   },
+  wallet_lifecycle: { active: 1, removed: 0, never_installed: 1 },
 };
 
 describe("fetchEventWalletReports (client)", () => {

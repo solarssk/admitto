@@ -21,6 +21,13 @@ const EVENT_EMPTY = "evt-reports-empty";
 const EVENT_MISSING = "evt-reports-missing";
 const EVENT_WALLETS = "evt-reports-wallets";
 const EVENT_WALLETS_APPLE_ONLY = "evt-reports-wallets-apple-only";
+// Minimal, separate event (not EVENT_WALLETS above) dedicated to wallet_lifecycle's own
+// active-vs-removed distinction, same reasoning as EVENT_WALLETS_APPLE_ONLY - EVENT_WALLETS' own
+// fixture has no attendee with any inactive registration at all, so the one correctness risk this
+// feature exists to get right (active on one device, inactive on a different, since-removed one)
+// needs its own dataset rather than mutating a fixture several other tests already pin exact
+// numbers against.
+const EVENT_WALLETS_LIFECYCLE = "evt-reports-wallets-lifecycle";
 const EVENT_CUSTOM_FIELDS = "evt-reports-custom-fields";
 // Minimal, separate event (not EVENT_CUSTOM_FIELDS above) so this doesn't need to mutate a
 // fixture several other tests in this file already depend on - proves the tie-breaker on its
@@ -50,6 +57,12 @@ const ATT_W_NOTYPE = "att-reports-w-notype";
 const ATT_W_LEGACY_TYPE = "att-reports-w-legacy-type";
 const ATT_W_APPLE_ONLY_EVENT = "att-reports-w-apple-only-event";
 const ATT_W_GOOGLE_ONLY_EVENT = "att-reports-w-google-only-event";
+
+const ATT_LC_ACTIVE_SAME_PLATFORM = "att-reports-lc-active-same-platform";
+const ATT_LC_ACTIVE_CROSS_PLATFORM = "att-reports-lc-active-cross-platform";
+const ATT_LC_REMOVED = "att-reports-lc-removed";
+const ATT_LC_REMOVED_BOTH = "att-reports-lc-removed-both";
+const ATT_LC_NEVER_INSTALLED = "att-reports-lc-never-installed";
 
 const ATT_CF_1 = "att-reports-cf-1";
 const ATT_CF_2 = "att-reports-cf-2";
@@ -105,6 +118,7 @@ async function seed(client: PrismaClient) {
     EVENT_EMPTY,
     EVENT_WALLETS,
     EVENT_WALLETS_APPLE_ONLY,
+    EVENT_WALLETS_LIFECYCLE,
     EVENT_CUSTOM_FIELDS,
     EVENT_CUSTOM_FIELDS_TIE,
   ];
@@ -183,6 +197,13 @@ async function seed(client: PrismaClient) {
         wallet_google_enabled: false,
       },
       {
+        id: EVENT_WALLETS_LIFECYCLE,
+        title: "Wallet Lifecycle Event",
+        slug: "reports-wallets-lifecycle",
+        date: new Date("2027-07-02T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+      {
         id: EVENT_CUSTOM_FIELDS,
         title: "Custom Fields Reports Event",
         slug: "reports-custom-fields",
@@ -248,7 +269,99 @@ async function seed(client: PrismaClient) {
       issued_at: new Date("2027-06-15T00:00:00.000Z"),
       apple_active_registrations: 0,
       google_active_registrations: 1,
+      // Also has an inactive Google registration. Google is disabled for this event, so both this
+      // and the active registration above are zeroed for adoption/platform/registrations_per_attendee
+      // (see the assertions below) - but wallet_lifecycle's removed/never_installed boundary reads
+      // real, ungated history, so this attendee still correctly lands in "removed" rather than the
+      // flatly false "never_installed".
+      google_inactive_registrations: 1,
     },
+  });
+
+  await client.attendee.createMany({
+    data: [
+      {
+        id: ATT_LC_ACTIVE_SAME_PLATFORM,
+        event_id: EVENT_WALLETS_LIFECYCLE,
+        email: "lc-active-same-platform@example.com",
+        name: "Lifecycle Active Same Platform",
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_LC_ACTIVE_CROSS_PLATFORM,
+        event_id: EVENT_WALLETS_LIFECYCLE,
+        email: "lc-active-cross-platform@example.com",
+        name: "Lifecycle Active Cross Platform",
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_LC_REMOVED,
+        event_id: EVENT_WALLETS_LIFECYCLE,
+        email: "lc-removed@example.com",
+        name: "Lifecycle Removed",
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_LC_REMOVED_BOTH,
+        event_id: EVENT_WALLETS_LIFECYCLE,
+        email: "lc-removed-both@example.com",
+        name: "Lifecycle Removed Both",
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_LC_NEVER_INSTALLED,
+        event_id: EVENT_WALLETS_LIFECYCLE,
+        email: "lc-never-installed@example.com",
+        name: "Lifecycle Never Installed",
+        ...mkAttendeeToken(),
+      },
+    ],
+  });
+
+  await client.walletPass.createMany({
+    data: [
+      {
+        // Active on Apple, with an inactive registration ALSO on Apple - a second, since-removed
+        // device on the same platform. Must classify as active, not removed.
+        attendee_id: ATT_LC_ACTIVE_SAME_PLATFORM,
+        status: "active",
+        issued_at: new Date("2027-06-15T00:00:00.000Z"),
+        apple_active_registrations: 1,
+        apple_inactive_registrations: 1,
+      },
+      {
+        // Active on Google, with an inactive registration on the OTHER platform (Apple) - the
+        // cross-platform variant of the same correctness risk. Must also classify as active.
+        attendee_id: ATT_LC_ACTIVE_CROSS_PLATFORM,
+        status: "active",
+        issued_at: new Date("2027-06-15T00:00:00.000Z"),
+        apple_inactive_registrations: 1,
+        google_active_registrations: 1,
+      },
+      {
+        // Nothing active anywhere, one inactive registration - confirmed installed once, removed
+        // from the only device it was ever on.
+        attendee_id: ATT_LC_REMOVED,
+        status: "active",
+        issued_at: new Date("2027-06-15T00:00:00.000Z"),
+        apple_inactive_registrations: 1,
+      },
+      {
+        // Nothing active anywhere, inactive registrations on BOTH platforms - still one removed
+        // pass, not two.
+        attendee_id: ATT_LC_REMOVED_BOTH,
+        status: "active",
+        issued_at: new Date("2027-06-15T00:00:00.000Z"),
+        apple_inactive_registrations: 1,
+        google_inactive_registrations: 1,
+      },
+      {
+        // Issued, but zero registrations of any kind - never actually added to a wallet app.
+        attendee_id: ATT_LC_NEVER_INSTALLED,
+        status: "active",
+        issued_at: new Date("2027-06-15T00:00:00.000Z"),
+      },
+    ],
   });
 
   const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
@@ -463,6 +576,11 @@ async function seed(client: PrismaClient) {
         attendee_id: ATT_W_APPLE,
         status: "active",
         issued_at: walletIssuedAt,
+        // time_to_wallet_tap now reads first_confirmed_at, not issued_at (see computeTapDays'
+        // own doc comment) - deliberately 4 days later than issued_at (not equal to it, unlike
+        // ATT_W_GOOGLE below) so a regression back to issued_at changes this attendee's bucket
+        // (1_3 -> 4_7) and the average, not just the value read.
+        first_confirmed_at: new Date("2026-01-19T10:00:00.000Z"),
         apple_active_registrations: 1,
         google_active_registrations: 0,
         registration_checked_at: new Date("2026-01-16T00:00:00.000Z"),
@@ -479,6 +597,7 @@ async function seed(client: PrismaClient) {
         attendee_id: ATT_W_GOOGLE,
         status: "active",
         issued_at: walletIssuedAt,
+        first_confirmed_at: walletIssuedAt,
         apple_active_registrations: 0,
         google_active_registrations: 3,
         registration_checked_at: new Date("2026-01-10T00:00:00.000Z"),
@@ -515,11 +634,14 @@ async function seed(client: PrismaClient) {
     ],
   });
 
-  // 3 whole days before walletIssuedAt - exercises time_to_wallet_tap's "1_3" bucket. No other
-  // wallet attendee besides ATT_W_NOT_INSTALLED (below) gets an EmailDelivery row, so they're
-  // excluded from the average/bucket entirely (earliestDeliverySuccessAt returns null with no
-  // successful delivery). status "accepted" with only accepted_at set (no sent_at) - not "sent" -
-  // is deliberate: it's the only status any configured mailer adapter actually reports (see
+  // 3 whole days before walletIssuedAt (ATT_W_APPLE's own first_confirmed_at) - exercises
+  // time_to_wallet_tap's "1_3" bucket. ATT_W_NOT_INSTALLED deliberately gets no EmailDelivery
+  // here (or first_confirmed_at at all - it's never actually installed, apple/google active
+  // registrations both 0), so it stays excluded from the average/bucket entirely, same as any
+  // other wallet attendee below with no EmailDelivery row (earliestDeliverySuccessAt returns null
+  // with no successful delivery, and computeTapDays returns null with no first_confirmed_at
+  // either way). status "accepted" with only accepted_at set (no sent_at) - not "sent" - is
+  // deliberate: it's the only status any configured mailer adapter actually reports (see
   // earliestDeliverySuccessAt's own comment in reports-routes.ts), so this is the realistic
   // shape a real ticket-email send produces, and is what production data looked like when this
   // whole card was reporting "Not enough data yet." despite thousands of real sends.
@@ -539,15 +661,18 @@ async function seed(client: PrismaClient) {
   // WALLET_PASS_AGGREGATE_SELECT/WALLET_EXPORT_ATTENDEE_SELECT only counting the earliest
   // non-bounced delivery across both purposes, not just "initial" (bot review on PR #1125:
   // applyBounceResult retains sent_at on a hard bounce, so a "purpose: initial" filter alone
-  // would still pick the bounced send's timestamp). The bounced initial is 10 whole days before
-  // walletIssuedAt (would land in the "8_plus" bucket if wrongly used); the resend is 5 whole
-  // days before (lands in "4_7") - a wrong pick here changes both the bucket and the average.
+  // would still pick the bounced send's timestamp). On ATT_W_GOOGLE, not ATT_W_NOT_INSTALLED -
+  // time_to_wallet_tap needs a genuinely confirmed pass (first_confirmed_at) to count this
+  // attendee's delivery at all now, and ATT_W_GOOGLE already has one above. The bounced initial
+  // is 10 whole days before walletIssuedAt (would land in the "8_plus" bucket if wrongly used);
+  // the resend is 5 whole days before (lands in "4_7") - a wrong pick here changes both the
+  // bucket and the average.
   await client.emailDelivery.createMany({
     data: [
       {
         organization_id: ORG_REP,
         event_id: EVENT_WALLETS,
-        attendee_id: ATT_W_NOT_INSTALLED,
+        attendee_id: ATT_W_GOOGLE,
         purpose: "initial",
         provider: "export_only",
         status: "bounced",
@@ -557,7 +682,7 @@ async function seed(client: PrismaClient) {
       {
         organization_id: ORG_REP,
         event_id: EVENT_WALLETS,
-        attendee_id: ATT_W_NOT_INSTALLED,
+        attendee_id: ATT_W_GOOGLE,
         purpose: "resend",
         provider: "export_only",
         status: "sent",
@@ -2188,16 +2313,17 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
       total_attendees: number;
       synced_at: string | null;
       passes_truncated: boolean;
-      adoption: { got_pass: number; confirmed: number; cancelled: number };
+      adoption: { got_pass: number; confirmed: number };
       issued_by_day: unknown[];
+      wallet_lifecycle: { active: number; removed: number; never_installed: number };
     };
     expect(body.total_attendees).toBe(0);
     expect(body.synced_at).toBeNull();
     expect(body.passes_truncated).toBe(false);
     expect(body.adoption.got_pass).toBe(0);
     expect(body.adoption.confirmed).toBe(0);
-    expect(body.adoption.cancelled).toBe(0);
     expect(body.issued_by_day).toEqual([]);
+    expect(body.wallet_lifecycle).toEqual({ active: 0, removed: 0, never_installed: 0 });
   });
 
   // End-to-end wiring check (event.wallet_apple_enabled/wallet_google_enabled -> route handler ->
@@ -2210,21 +2336,59 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       adoption: { got_pass: number; confirmed: number };
-      platform: { apple_only: number; google_only: number; both: number; not_installed: number };
+      platform: { apple_only: number; google_only: number; both: number };
+      registrations_per_attendee: { buckets: Array<{ key: string; count: number; pct: number }> };
       admission_by_wallet: {
         with_wallet: { total: number; admitted: number; pct: number };
         without_wallet: { total: number; admitted: number; pct: number };
       };
+      wallet_lifecycle: { active: number; removed: number; never_installed: number };
     };
     expect(body.adoption.got_pass).toBe(2);
     expect(body.adoption.confirmed).toBe(1);
-    expect(body.platform).toEqual({ apple_only: 1, google_only: 0, both: 0, not_installed: 1 });
+    expect(body.platform).toEqual({ apple_only: 1, google_only: 0, both: 0 });
+    // ATT_W_APPLE_ONLY_EVENT: active (its Apple registration stays live regardless of Google
+    // being disabled). ATT_W_GOOGLE_ONLY_EVENT: removed, not never_installed - its Google
+    // registrations are zeroed for the `active`/`platform`/`registrations_per_attendee` checks
+    // above (Google is disabled), but wallet_lifecycle's removed/never_installed boundary reads
+    // the real, ungated history instead - this attendee genuinely does have a real Google
+    // registration on record, so calling it never_installed would be flatly false, even though the
+    // event's current settings mean it doesn't count as `active` here.
+    expect(body.wallet_lifecycle).toEqual({ active: 1, removed: 1, never_installed: 0 });
+    // ATT_W_APPLE_ONLY_EVENT has apple_active_registrations=1, google_active_registrations=1,
+    // but Google is disabled for this event - the same enabledPlatforms-zeroed googleActive=0
+    // classifyPassPlatform already uses feeds this bucket too, so the sum is 1, not 2.
+    expect(body.registrations_per_attendee.buckets).toEqual([
+      { key: "1", count: 1, pct: 100 },
+      { key: "2", count: 0, pct: 0 },
+      { key: "3", count: 0, pct: 0 },
+      { key: "4_plus", count: 0, pct: 0 },
+    ]);
     // ATT_W_GOOGLE_ONLY_EVENT's registration is only on the now-disabled Google platform - without
     // enabledPlatforms gating confirmedWalletFilter too (not just aggregateWalletPasses above),
-    // this would still count it as "with wallet" here despite `platform.not_installed` already
-    // reporting it as not installed (CodeRabbit review).
+    // this would still count it as "with wallet" here despite adoption.confirmed already
+    // excluding it as not installed (CodeRabbit review).
     expect(body.admission_by_wallet.with_wallet.total).toBe(1);
     expect(body.admission_by_wallet.without_wallet.total).toBe(1);
+  });
+
+  it("classifies wallet_lifecycle correctly, including active-on-one-device-inactive-on-another for both the same and a different platform", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS_LIFECYCLE}/reports/wallets`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      adoption: { got_pass: number };
+      wallet_lifecycle: { active: number; removed: number; never_installed: number };
+    };
+    expect(body.adoption.got_pass).toBe(5);
+    // ATT_LC_ACTIVE_SAME_PLATFORM and ATT_LC_ACTIVE_CROSS_PLATFORM are both active despite each
+    // having an inactive registration too (on the same platform and a different one,
+    // respectively) - classifyPassPlatform's own "confirmed" check wins regardless of any inactive
+    // count. ATT_LC_REMOVED and ATT_LC_REMOVED_BOTH have nothing active anywhere, so their
+    // inactive registration(s) make them removed. ATT_LC_NEVER_INSTALLED has neither. Sums to
+    // adoption.got_pass=5 above.
+    expect(body.wallet_lifecycle).toEqual({ active: 2, removed: 2, never_installed: 1 });
   });
 
   it("aggregates adoption, platform mix, ticket-type breakdown, time-to-tap, and admission-by-wallet-status", async () => {
@@ -2237,8 +2401,9 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
       total_attendees: number;
       synced_at: string | null;
       passes_truncated: boolean;
-      adoption: { got_pass: number; got_pass_pct: number; confirmed: number; confirmed_pct: number; cancelled: number };
-      platform: { apple_only: number; google_only: number; both: number; not_installed: number };
+      adoption: { got_pass: number; got_pass_pct: number; confirmed: number; confirmed_pct: number };
+      platform: { apple_only: number; google_only: number; both: number };
+      registrations_per_attendee: { buckets: Array<{ key: string; count: number; pct: number }> };
       by_ticket_type: Array<{
         key: string | null;
         type: string;
@@ -2257,6 +2422,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
         with_wallet: { total: number; admitted: number; pct: number };
         without_wallet: { total: number; admitted: number; pct: number };
       };
+      wallet_lifecycle: { active: number; removed: number; never_installed: number };
     };
 
     expect(body.total_attendees).toBe(8);
@@ -2267,11 +2433,20 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
 
     expect(body.adoption.got_pass).toBe(7); // every wallet attendee except ATT_W_NOPASS
     expect(body.adoption.got_pass_pct).toBeCloseTo(87.5);
-    expect(body.adoption.confirmed).toBe(5); // apple/google/both/notype/legacy - not_installed and voided excluded
+    expect(body.adoption.confirmed).toBe(5); // apple/google/both/notype/legacy - not-installed and voided excluded
     expect(body.adoption.confirmed_pct).toBeCloseTo(71.4);
-    expect(body.adoption.cancelled).toBe(1); // ATT_W_VOIDED
 
-    expect(body.platform).toEqual({ apple_only: 3, google_only: 1, both: 1, not_installed: 2 });
+    expect(body.platform).toEqual({ apple_only: 3, google_only: 1, both: 1 });
+
+    // Registrations per attendee: ATT_W_APPLE (1+0=1), ATT_W_NOTYPE (1+0=1), ATT_W_LEGACY_TYPE
+    // (1+0=1) bucket as "1"; ATT_W_BOTH (2+1=3) and ATT_W_GOOGLE (0+3=3) bucket as "3" - sums to
+    // adoption.confirmed=5 above, same as `platform`.
+    expect(body.registrations_per_attendee.buckets).toEqual([
+      { key: "1", count: 3, pct: 60 },
+      { key: "2", count: 0, pct: 0 },
+      { key: "3", count: 2, pct: 40 },
+      { key: "4_plus", count: 0, pct: 0 },
+    ]);
 
     const general = body.by_ticket_type.find((t) => t.key === "General");
     expect(general).toBeDefined();
@@ -2306,19 +2481,22 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.issued_by_day[0]!.cumulative).toBe(7);
     expect(body.issued_by_day.at(-1)!.cumulative).toBe(7);
 
-    // ATT_W_APPLE (sent 3 whole days before its pass was issued) and ATT_W_NOT_INSTALLED (bounced
-    // initial 10 days before, successful resend 5 days before - the resend must win) are the only
-    // two contributors; every other wallet attendee has no successful ticket-email send, so
-    // computeTapDays returns null for them and they're excluded from both the average and every
-    // bucket. A wrong "purpose: initial"-only pick would use ATT_W_NOT_INSTALLED's bounced 10-day
-    // gap instead, landing it in "8_plus" and shifting the average to 6.5.
-    expect(body.time_to_wallet_tap.average_days).toBe(4);
+    // ATT_W_APPLE (sent 7 whole days before its pass's first_confirmed_at - deliberately 4 days
+    // later than issued_at, see the seed comment above) and ATT_W_GOOGLE (bounced initial 10 days
+    // before, successful resend 5 days before - the resend must win) are the only two
+    // contributors; every other wallet attendee either has no successful ticket-email send or
+    // (ATT_W_NOT_INSTALLED) no first_confirmed_at at all, so computeTapDays returns null for them
+    // and they're excluded from both the average and every bucket. A regression reading issued_at
+    // instead of first_confirmed_at would move ATT_W_APPLE into "1_3" (3-day gap) and drop the
+    // average to 4; a wrong "purpose: initial"-only pick for ATT_W_GOOGLE would use its bounced
+    // 10-day gap instead, landing it in "8_plus" and shifting the average to 8.5.
+    expect(body.time_to_wallet_tap.average_days).toBe(6);
     const bucket13 = body.time_to_wallet_tap.buckets.find((b) => b.key === "1_3");
-    expect(bucket13!.count).toBe(1);
-    expect(bucket13!.pct).toBe(50);
+    expect(bucket13!.count).toBe(0);
+    expect(bucket13!.pct).toBe(0);
     const bucket47 = body.time_to_wallet_tap.buckets.find((b) => b.key === "4_7");
-    expect(bucket47!.count).toBe(1);
-    expect(bucket47!.pct).toBe(50);
+    expect(bucket47!.count).toBe(2);
+    expect(bucket47!.pct).toBe(100);
     for (const key of ["same_day", "8_plus"]) {
       expect(body.time_to_wallet_tap.buckets.find((b) => b.key === key)!.count).toBe(0);
     }
@@ -2326,6 +2504,14 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.admission_by_wallet.with_wallet).toEqual({ total: 5, admitted: 3, pct: 60 });
     expect(body.admission_by_wallet.without_wallet.total).toBe(3);
     expect(body.admission_by_wallet.without_wallet.admitted).toBe(2);
+
+    // wallet_lifecycle: active is the same 5 passes as adoption.confirmed above (APPLE, BOTH,
+    // GOOGLE, NOTYPE, LEGACY_TYPE); NOT_INSTALLED and VOIDED both have zero registrations of any
+    // kind, so they're never_installed rather than removed (none of this fixture's passes have an
+    // inactive registration - that gets its own dedicated fixture/event below). Sums to
+    // adoption.got_pass=7 above, not total_attendees=8 (ATT_W_NOPASS was never issued a pass at
+    // all, so it's outside wallet_lifecycle entirely).
+    expect(body.wallet_lifecycle).toEqual({ active: 5, removed: 0, never_installed: 2 });
   });
 });
 
@@ -2484,11 +2670,22 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     // would (bot review: a shared PDF can otherwise misleadingly look current).
     expect(html).toContain("Synced ");
     expect(html).not.toContain("Not synced yet");
-    // ATT_W_APPLE and ATT_W_NOT_INSTALLED both contribute a tap-day sample (see the GET aggregate
+    // ATT_W_APPLE and ATT_W_GOOGLE both contribute a tap-day sample (see the GET aggregate
     // test's time_to_wallet_tap assertions above), so average_days isn't null here - the bucket
     // rows should render, not the buckets-always-populated dead-code fallback text.
     expect(html).toContain("1-3 days");
     expect(html).not.toContain("Not enough data yet");
+    // registrations_per_attendee.buckets isn't all-zero (adoption.confirmed=5 above), so the
+    // "Devices per attendee" table's real rows should render, not its own empty fallback.
+    expect(html).toContain("Devices per attendee");
+    expect(html).toContain("1 device");
+    expect(html).not.toContain("No wallet passes installed yet");
+    // wallet_lifecycle: active=5, removed=0, never_installed=2 (same fixture as the GET aggregate
+    // test's own wallet_lifecycle assertion above) - the real rows should render, not the "No
+    // wallet passes issued yet" empty fallback.
+    expect(html).toContain("Wallet lifecycle");
+    expect(html).toContain("Never installed");
+    expect(html).not.toContain("No wallet passes issued yet");
     // EVENT_WALLETS has 8 seeded passes, nowhere near WALLET_AGGREGATE_MAX - the partial-sample
     // warning must stay absent (the passes_truncated: true path itself would need 50,001+ seeded
     // passes to exercise directly, impractical for an integration test; this only guards the
@@ -2510,9 +2707,10 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     // buckets-or-list-always-populated ternaries at once, plus the never-synced meta line.
     expect(html).toContain("Not synced yet");
     expect(html).not.toContain("Synced ");
-    expect(html).toContain("No passes issued");
+    expect(html).toContain("No wallet passes installed yet");
     expect(html).toContain("No attendees");
     expect(html).toContain("Not enough data yet");
+    expect(html).toContain("No wallet passes issued yet");
   });
 
   it("audit: reports_exported records report=wallets, not the admissions default", async () => {

@@ -38,7 +38,7 @@ import "./reports-page.css";
 // the rest of this app.
 const PRIMARY = "#066fd1"; // --primary / --at-blue
 const STATUS_OK = "#2fb344"; // --status-ok / --at-green
-const STATUS_ERROR = "#d63939"; // --status-error / --at-red
+const DANGER_RED = "#d63939"; // --at-red / --status-error - the "Removed" slice of Wallet lifecycle, the one outcome of the three worth calling out as a concern
 const GRAY_400 = "#94a3b8"; // --at-gray-400
 const GRAY_100 = "#f1f5f9"; // --at-gray-100, radial/donut track background
 const TEXT_PRIMARY = "#1d273b"; // --text-primary / --at-ink
@@ -72,6 +72,37 @@ const BUCKET_COLORS: Record<EventWalletReportsResponse["time_to_wallet_tap"]["bu
   "8_plus": GRAY_400,
 };
 
+const REGISTRATION_COUNT_LABELS: Record<EventWalletReportsResponse["registrations_per_attendee"]["buckets"][number]["key"], string> = {
+  "1": "1 device",
+  "2": "2 devices",
+  "3": "3 devices",
+  "4_plus": "4+ devices",
+};
+// Same four-color "few to more" scale as BUCKET_COLORS above, reused for the same reason (few/
+// simple reads as the reassuring green, a rare high count as the muted gray) - these two charts
+// are the only ones in this file classifying a count into an ordinal "how many" bucket.
+const REGISTRATION_COUNT_COLORS: Record<EventWalletReportsResponse["registrations_per_attendee"]["buckets"][number]["key"], string> = {
+  "1": STATUS_OK,
+  "2": PRIMARY,
+  "3": "#f59f00", // --at-yellow
+  "4_plus": GRAY_400,
+};
+
+type WalletLifecycleKey = keyof EventWalletReportsResponse["wallet_lifecycle"];
+const LIFECYCLE_LABELS: Record<WalletLifecycleKey, string> = {
+  active: "Active",
+  removed: "Removed",
+  never_installed: "Never installed",
+};
+// Same green/gray-for-neutral convention as every other chart in this file - the one departure is
+// DANGER_RED for "removed", the sole outcome of these three actually worth calling out (this
+// card's whole reason for existing, per its own doc comment on EventWalletReportsResponse).
+const LIFECYCLE_COLORS: Record<WalletLifecycleKey, string> = {
+  active: STATUS_OK,
+  removed: DANGER_RED,
+  never_installed: GRAY_400,
+};
+
 /** Recharts gives every chart's root <svg> tabindex="0" and role="application" by default (its
  * own built-in keyboard-accessibility layer), which a plain mouse click also focuses. A
  * `.recharts-surface:focus { outline: none }` rule (reports-page.css) suppresses the resulting
@@ -97,20 +128,21 @@ function syncedHint(syncedAt: string | null): string {
   return `${label}. Reflects Apple/Google's last registration check for this event - refreshes each time the wallet-sync job runs, not on every page load.`;
 }
 
-/** Three-stage funnel as one radialBar with three series, outer to inner: share of attendees the
- * pass was issued to, share of those installed on a phone, share of those later voided (a ticket
- * revoke). Installed and Voided share the same base (issued passes, not total attendees) - they're
- * two different outcomes for an issued pass, not nested within each other, but concentric rings
- * are still the clearest way to show all three alongside the breakdown rows without a second
- * chart engine. "Voided" matches the same term WalletPassStatus and the rest of the admin SPA
- * (walletStatusBadge.tsx) already use - never "revoked", which is reserved for the ticket/attendee
- * action that causes it. */
+/** Two-stage funnel as one radialBar with two series, outer to inner: share of attendees the pass
+ * was issued to, then share of attendees who actually installed it on a phone. Both `issuedPct`
+ * and `installedPct` are shares of the same base - total attendees - so the inner ring reads as
+ * literally nested "progress within" the outer one; the breakdown rows beside this gauge still
+ * describe Installed as "% of issued" in their own text, a different (and separately useful)
+ * number, but the ring itself needs the shared base or a high issued-to-installed conversion on a
+ * low issued count renders as a full inner ring inside a mostly-empty outer one (bot review).
+ * Unlike a since-removed third "Voided" ring this card used to carry (PO review: a voided pass
+ * gets pulled from the device the same moment it's revoked, so it's not a wallet-adoption outcome
+ * worth a stat here - the attendee/ticket status elsewhere already tracks the revoke itself). */
 function AdoptionGauge({
   issuedPct,
   installedPct,
-  voidedPct,
   installedCount,
-}: Readonly<{ issuedPct: number; installedPct: number; voidedPct: number; installedCount: number }>) {
+}: Readonly<{ issuedPct: number; installedPct: number; installedCount: number }>) {
   // Recharts has no built-in "total" center label for a multi-ring RadialBarChart (its label
   // support is per-ring, not an aggregate across rings) - an absolutely-positioned HTML overlay
   // draws the center text instead, same as PlatformDonut and AdmissionGauge below for the same
@@ -121,10 +153,13 @@ function AdoptionGauge({
   // getting stuck at its zero-size starting frame indefinitely - see TimeToTapChart's BarShape
   // comment below for how this was diagnosed. None of these five charts benefit from animating in
   // on every load anyway (same reasoning CumulativeChart's Area already had this for).
+  // Recharts' RadialBarChart maps a data array's first entry to the band nearest innerRadius and
+  // the last entry nearest outerRadius - listed Installed-then-Issued (not doc-comment reading
+  // order) so Issued actually renders as the outer ring, matching "outer to inner: issued, then
+  // installed" above.
   const rings = [
-    { name: "Issued", value: issuedPct, fill: PRIMARY },
     { name: "Installed", value: installedPct, fill: STATUS_OK },
-    { name: "Voided", value: voidedPct, fill: STATUS_ERROR },
+    { name: "Issued", value: issuedPct, fill: PRIMARY },
   ];
   return (
     <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
@@ -158,15 +193,18 @@ function AdoptionGauge({
 
 /** Donut, not one ring per platform - a pass can be actively registered on more than one
  * platform at once (the same attendee opening the ticket link on an iPhone and an Android
- * device, say), so the five slices here are mutually exclusive (apple-only / google-only /
- * samsung / multiple / not installed) and always sum to the issued total, instead of two
- * independent "% with Apple" and "% with Google" numbers that could each look high while
- * double-counting the same passes. Samsung has no PassCreator signal yet - its slice's count is
- * always 0, reserving the legend entry without a fake percentage, once its own toggle offers it at
- * all. Ordered single-platform-first (Apple,
- * Google, Samsung), then the two "doesn't map to one platform" buckets (multiple, none) - not
- * alphabetical, not by expected size, but grouping like with like reads clearest in a legend a
- * viewer scans top to bottom (PO review). */
+ * device, say), so the four slices here are mutually exclusive (apple-only / google-only /
+ * samsung / multiple) and always sum to the installed total, instead of two independent
+ * "% with Apple" and "% with Google" numbers that could each look high while double-counting the
+ * same passes. There's deliberately no "not installed" slice here - this card is a platform split
+ * among installed passes specifically (the Wallet adoption card next to it already covers
+ * installed-vs-not), so mixing that back in here would both duplicate that number and dilute the
+ * one thing this donut exists to show (PO review). Samsung has no PassCreator signal yet - its
+ * slice's count is always 0, reserving the legend entry without a fake percentage, once its own
+ * toggle offers it at all. Ordered single-platform-first (Apple,
+ * Google, Samsung), then the "doesn't map to one platform" bucket (multiple) - not alphabetical,
+ * not by expected size, but grouping like with like reads clearest in a legend a viewer scans top
+ * to bottom (PO review). */
 interface PlatformSlice {
   label: string;
   color: string;
@@ -197,7 +235,6 @@ function platformSlices(
     enabledPlatforms.samsung && { label: "Samsung Wallet", color: SAMSUNG_TEAL, count: 0 },
     enabledPlatforms.apple &&
       enabledPlatforms.google && { label: "More than one wallet", color: MULTI_PURPLE, count: platform.both },
-    { label: "No wallet installed", color: GRAY_400, count: platform.not_installed },
   ].filter((slice): slice is PlatformSlice => slice !== false);
 }
 
@@ -207,17 +244,14 @@ function platformSlices(
  * AdoptionGauge's ring beside it (a different chart type with a different internal layout wasn't
  * a coincidence, it was the actual cause). Both cards now build the same "fixed circle | flexible
  * list" row, so the two circles size and center identically at every breakpoint instead of two
- * unrelated layouts happening to look similar at one specific width. */
-function PlatformDonut({
-  platform,
-  issued,
-  enabledPlatforms,
-}: Readonly<{
-  platform: EventWalletReportsResponse["platform"];
-  issued: number;
-  enabledPlatforms: EnabledWalletPlatforms;
-}>) {
-  const slices = platformSlices(platform, enabledPlatforms);
+ * unrelated layouts happening to look similar at one specific width. Shared by PlatformDonut and
+ * WalletLifecycleDonut below - both chart a set of mutually-exclusive slices the same way, only
+ * the slices themselves and the center value/label differ (SonarCloud new-code duplication). */
+function DonutChart({
+  slices,
+  centerValue,
+  centerLabel,
+}: Readonly<{ slices: PlatformSlice[]; centerValue: number; centerLabel: string }>) {
   return (
     <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
       className="wallets-gauge-overlay"
@@ -260,23 +294,69 @@ function PlatformDonut({
         </PieChart>
       </ResponsiveContainer>
       <div className="wallets-gauge-overlay__center">
-        <span className="wallets-gauge-overlay__value">{issued}</span>
-        <span className="wallets-gauge-overlay__label">issued</span>
+        <span className="wallets-gauge-overlay__value">{centerValue}</span>
+        <span className="wallets-gauge-overlay__label">{centerLabel}</span>
       </div>
     </div>
   );
 }
 
+function PlatformDonut({
+  platform,
+  installed,
+  enabledPlatforms,
+}: Readonly<{
+  platform: EventWalletReportsResponse["platform"];
+  installed: number;
+  enabledPlatforms: EnabledWalletPlatforms;
+}>) {
+  return <DonutChart slices={platformSlices(platform, enabledPlatforms)} centerValue={installed} centerLabel="installed" />;
+}
+
 function platformBreakdownRows(
   platform: EventWalletReportsResponse["platform"],
-  issued: number,
+  installed: number,
   enabledPlatforms: EnabledWalletPlatforms,
 ): BreakdownRow[] {
   return platformSlices(platform, enabledPlatforms).map((slice) => ({
     id: slice.label,
     label: slice.label,
-    meta: `${slice.count} · ${pctOf(slice.count, issued)}%`,
-    pct: pctOf(slice.count, issued),
+    meta: `${slice.count} · ${pctOf(slice.count, installed)}%`,
+    pct: pctOf(slice.count, installed),
+    color: slice.color,
+  }));
+}
+
+/** Same donut-plus-breakdown shape as PlatformDonut above, for wallet_lifecycle's own three
+ * mutually-exclusive outcomes (always summing to `adoption.got_pass`, unlike platform's slices
+ * which sum to `adoption.confirmed`) - one visual language for "here's how a whole equals the sum
+ * of its parts" across this tab, rather than a second one-off chart shape for a card that's
+ * conceptually the same kind of breakdown. Centers on `removed` (not the `active` count
+ * AdoptionGauge/PlatformDonut center on) - the removal count is the one number this card exists to
+ * surface that no other card on this tab can show at all (see the DTO's own doc comment). */
+function walletLifecycleSlices(lifecycle: EventWalletReportsResponse["wallet_lifecycle"]): PlatformSlice[] {
+  return (Object.keys(LIFECYCLE_LABELS) as WalletLifecycleKey[]).map((key) => ({
+    label: LIFECYCLE_LABELS[key],
+    color: LIFECYCLE_COLORS[key],
+    count: lifecycle[key],
+  }));
+}
+
+function WalletLifecycleDonut({
+  lifecycle,
+}: Readonly<{ lifecycle: EventWalletReportsResponse["wallet_lifecycle"] }>) {
+  return <DonutChart slices={walletLifecycleSlices(lifecycle)} centerValue={lifecycle.removed} centerLabel="removed" />;
+}
+
+function walletLifecycleBreakdownRows(
+  lifecycle: EventWalletReportsResponse["wallet_lifecycle"],
+  gotPass: number,
+): BreakdownRow[] {
+  return walletLifecycleSlices(lifecycle).map((slice) => ({
+    id: slice.label,
+    label: slice.label,
+    meta: `${slice.count} · ${pctOf(slice.count, gotPass)}%`,
+    pct: pctOf(slice.count, gotPass),
     color: slice.color,
   }));
 }
@@ -294,9 +374,30 @@ function niceStepMultiplier(normalized: number): number {
  * a charting library's own default tick generation typically divides min..max into a fixed number
  * of equal ticks regardless of the data's actual units, which for a small pass count (e.g. max 1)
  * can produce fractional labels (0, 0.2, 0.4, 0.6, 0.8, 1) that can never really occur since
- * passes only come in whole units. */
+ * passes only come in whole units. `max <= 1` gets one tick of headroom above the actual max (2,
+ * not 1) rather than matching it exactly - the general step/rounding logic below sometimes ends up
+ * with headroom too as a side effect of rounding to a "nice" step (round(45)->50), sometimes not
+ * (round(8)->8), but max<=1 always lands exactly on 1 with none, which reads as the line pinned to
+ * the axis's own ceiling with nowhere left to grow (PO review) - this one small-count case is
+ * common enough (a new/small event) to fix explicitly rather than leaving to chance. */
+/** Recharts' own YAxis default width (60px) reserves a fixed gutter for tick labels regardless of
+ * how narrow they actually are, leaving a visibly empty band to the axis's own left - measured
+ * directly (Canvas measureText at 11px, the same size these ticks render at, not assumed): a
+ * single digit is ~7px wide, three digits ~19px, four ~26px - genuinely different gutters for a
+ * small event's "2" versus a large one's "1000", so this computes from the real axis max's own
+ * digit count rather than picking one flat guess. +16 covers the tick mark plus Recharts' own
+ * internal label padding on top of the measured text width itself. */
+function yAxisWidthForCount(axisMax: number): number {
+  return Math.ceil(String(Math.round(axisMax)).length * 6.5) + 16;
+}
+
+// Percentage axes (Time to wallet install, Devices per attendee) share a fixed [0, 100] domain, so
+// unlike yAxisWidthForCount above their longest possible label is always the same one value -
+// "100%", measured the same way (Canvas measureText, 11px): ~29px + the same +16 buffer.
+const PERCENT_Y_AXIS_WIDTH = 46;
+
 function niceCountAxis(max: number): { axisMax: number; tickAmount: number } {
-  if (max <= 1) return { axisMax: 1, tickAmount: 1 };
+  if (max <= 1) return { axisMax: 2, tickAmount: 2 };
   const roughStep = max / 5;
   const magnitude = 10 ** Math.floor(Math.log10(roughStep));
   const normalized = roughStep / magnitude;
@@ -331,9 +432,10 @@ function CumulativeChart({ data }: Readonly<{ data: EventWalletReportsResponse["
   return (
     <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
       role="presentation"
+      className="wallets-chart-card__chart"
       onMouseDown={preventFocusRing}
     >
-      <ResponsiveContainer width="100%" height={220}>
+      <ResponsiveContainer width="100%" height="100%" minHeight={230}>
         <AreaChart data={points} style={{ fontFamily: FONT_FAMILY }}>
         <defs>
           <linearGradient id="wallets-cumulative-fill" x1="0" y1="0" x2="0" y2="1">
@@ -359,6 +461,7 @@ function CumulativeChart({ data }: Readonly<{ data: EventWalletReportsResponse["
           ticks={yTicks}
           tickFormatter={(v) => Math.round(Number(v)).toString()}
           tick={{ fontSize: 11, fill: TEXT_MUTED }}
+          width={yAxisWidthForCount(axisMax)}
         />
         <Tooltip
           labelFormatter={(label) =>
@@ -467,6 +570,54 @@ function BarShape({
   );
 }
 
+interface BucketChartRow {
+  key: string;
+  label: string;
+  pct: number;
+  count: number;
+  fill: string;
+}
+
+/** Shared bar-chart body for TimeToTapChart and RegistrationsPerAttendeeChart below - both chart a
+ * small ordinal bucket distribution the same way (bar heights read more naturally than percentage
+ * text for a distribution like this), with only the row labels/colors differing between the two.
+ * Extracted to keep that shared JSX in one place rather than two near-identical copies (SonarCloud
+ * new-code duplication, PR review). */
+function BucketBarChart({ rows }: Readonly<{ rows: BucketChartRow[] }>) {
+  return (
+    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+      role="presentation"
+      className="wallets-chart-card__chart"
+      onMouseDown={preventFocusRing}
+    >
+      <ResponsiveContainer width="100%" height="100%" minHeight={230}>
+        <BarChart data={rows} barCategoryGap="50%" style={{ fontFamily: FONT_FAMILY }}>
+        <CartesianGrid stroke={BORDER} strokeDasharray="3 3" />
+        <XAxis
+          dataKey="label"
+          tick={{ fontSize: 11, fill: TEXT_MUTED }}
+          axisLine={{ stroke: BORDER }}
+          tickLine={{ stroke: BORDER }}
+        />
+        <YAxis
+          domain={[0, 100]}
+          tickFormatter={(v) => `${Math.round(Number(v))}%`}
+          tick={{ fontSize: 11, fill: TEXT_MUTED }}
+          width={PERCENT_Y_AXIS_WIDTH}
+        />
+        <Tooltip
+          formatter={(value, _name, props) => {
+            const count = (props.payload as (typeof rows)[number]).count;
+            return [`${count} attendee${count === 1 ? "" : "s"} (${value}%)`, undefined];
+          }}
+        />
+        <Bar dataKey="pct" shape={BarShape} isAnimationActive={false} barSize={40} />
+      </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 /** Bar chart, not a breakdown list - four short rows of text left this card noticeably shorter
  * than "Admission rate by wallet status" beside it (both stretch to match the taller one), and a
  * distribution across "how many days" reads more naturally as bar heights to compare at a glance
@@ -480,37 +631,25 @@ function TimeToTapChart({ buckets }: Readonly<{ buckets: EventWalletReportsRespo
     count: b.count,
     fill: BUCKET_COLORS[b.key],
   }));
+  return <BucketBarChart rows={rows} />;
+}
 
-  return (
-    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
-      role="presentation"
-      onMouseDown={preventFocusRing}
-    >
-      <ResponsiveContainer width="100%" height={230}>
-        <BarChart data={rows} barCategoryGap="50%" style={{ fontFamily: FONT_FAMILY }}>
-        <CartesianGrid stroke={BORDER} strokeDasharray="3 3" />
-        <XAxis
-          dataKey="label"
-          tick={{ fontSize: 11, fill: TEXT_MUTED }}
-          axisLine={{ stroke: BORDER }}
-          tickLine={{ stroke: BORDER }}
-        />
-        <YAxis
-          domain={[0, 100]}
-          tickFormatter={(v) => `${Math.round(Number(v))}%`}
-          tick={{ fontSize: 11, fill: TEXT_MUTED }}
-        />
-        <Tooltip
-          formatter={(value, _name, props) => {
-            const count = (props.payload as (typeof rows)[number]).count;
-            return [`${count} attendee${count === 1 ? "" : "s"} (${value}%)`, undefined];
-          }}
-        />
-        <Bar dataKey="pct" shape={BarShape} isAnimationActive={false} barSize={40} />
-      </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
+/** Same bar-per-bucket shape as TimeToTapChart above, for the same reason: a distribution across a
+ * small ordinal count reads more naturally as bar heights than as list text. `count` here is
+ * attendees, not registrations - one attendee's single pass can be registered on more than one
+ * device/wallet account (an iPhone and an Apple Watch, say), and this groups attendees by how many
+ * of those they currently have, not the raw registration total. */
+function RegistrationsPerAttendeeChart({
+  buckets,
+}: Readonly<{ buckets: EventWalletReportsResponse["registrations_per_attendee"]["buckets"] }>) {
+  const rows = buckets.map((b) => ({
+    key: b.key,
+    label: REGISTRATION_COUNT_LABELS[b.key],
+    pct: b.pct,
+    count: b.count,
+    fill: REGISTRATION_COUNT_COLORS[b.key],
+  }));
+  return <BucketBarChart rows={rows} />;
 }
 
 /** Two independent radialBar gauges, not a stacked/concentric pair - "has a wallet" and "no
@@ -638,42 +777,51 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
     );
   }
 
-  const voidedPct = pctOf(data.adoption.cancelled, data.adoption.got_pass);
+  // adoption.confirmed_pct is a share of issued passes (see its own DTO doc comment), not of
+  // total attendees like adoption.got_pass_pct - fine for the breakdown row's own "% of issued"
+  // text, but AdoptionGauge's two rings need the same base or a high issued-to-installed
+  // conversion on a low issued count renders as a full inner ring inside a mostly-empty outer one
+  // (bot review on #1202).
+  const installedPctOfAttendees = pctOf(data.adoption.confirmed, data.total_attendees);
 
   return (
     <>
       {data.passes_truncated && (
         <Notice variant="warning" className="wallets-truncated-notice">
           This event has more issued wallet passes than a single report can process at once, so
-          platform mix, adoption by ticket type, and time-to-wallet-tap below are based on a
-          partial sample rather than every pass. Cumulative passes issued and admission rate by
-          wallet status are unaffected - both come from a full count, not a sample.
+          platform mix, devices per attendee, adoption by ticket type, wallet lifecycle, and time
+          to wallet install below are based on a partial sample rather than every pass. Cumulative
+          passes issued and admission rate by wallet status are unaffected - both come from a full
+          count, not a sample.
         </Notice>
       )}
       <div className="wallets-panels">
         <Card title={<HintLabel hint={syncedHint(data.synced_at)}>Wallet adoption</HintLabel>}>
           <p className="wallets-description">
-            One pass per attendee: issued when the ticket email goes out, installed once it&rsquo;s confirmed on their wallet app, voided if the ticket is later revoked.
+            One pass per attendee: issued when the attendee first taps Add to Wallet, installed once it&rsquo;s confirmed on their wallet app.
           </p>
           <div className="wallets-adoption">
             <AdoptionGauge
               issuedPct={data.adoption.got_pass_pct}
-              installedPct={data.adoption.confirmed_pct}
-              voidedPct={voidedPct}
+              installedPct={installedPctOfAttendees}
               installedCount={data.adoption.confirmed}
             />
             <div className="wallets-adoption__breakdown">
               <BreakdownRows
                 rows={[
-                  // Literal hex constants, not var(--primary)/var(--status-ok)/var(--status-error):
-                  // this row's dot/bar color must always match AdoptionGauge's own ring for the
-                  // same series, and --primary is the tenant's branding color (Organisation
-                  // settings), not a fixed design token - a non-default brand color made this row
-                  // drift from the ring, which stays correct because it already uses the literal
-                  // PRIMARY hex (see the comment on that constant above).
-                  { id: "issued", label: "Issued", meta: `${data.adoption.got_pass} · ${data.adoption.got_pass_pct}%`, pct: data.adoption.got_pass_pct, color: PRIMARY },
-                  { id: "installed", label: "Installed", meta: `${data.adoption.confirmed} · ${data.adoption.confirmed_pct}% of issued`, pct: data.adoption.confirmed_pct, color: STATUS_OK },
-                  { id: "voided", label: "Voided", meta: `${data.adoption.cancelled} · ticket revoked`, pct: voidedPct, color: STATUS_ERROR },
+                  // Literal hex constants, not var(--primary)/var(--status-ok): this row's
+                  // dot/bar color must always match AdoptionGauge's own ring for the same series,
+                  // and --primary is the tenant's branding color (Organisation settings), not a
+                  // fixed design token - a non-default brand color made this row drift from the
+                  // ring, which stays correct because it already uses the literal PRIMARY hex
+                  // (see the comment on that constant above).
+                  { id: "issued", label: "Issued", meta: `${data.adoption.got_pass} · ${data.adoption.got_pass_pct}% of attendees`, pct: data.adoption.got_pass_pct, color: PRIMARY },
+                  // meta text keeps "% of issued" (confirmed_pct, a different and separately
+                  // useful base) - the row's own pct bar uses installedPctOfAttendees instead, so
+                  // it stays visually nested under Issued's bar rather than reading "more
+                  // installed than issued" whenever conversion is high but issued count is low
+                  // (bot review, same root cause as AdoptionGauge's own ring above).
+                  { id: "installed", label: "Installed", meta: `${data.adoption.confirmed} · ${data.adoption.confirmed_pct}% of issued`, pct: installedPctOfAttendees, color: STATUS_OK },
                 ]}
               />
             </div>
@@ -681,42 +829,58 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
         </Card>
         <Card title={<HintLabel hint={syncedHint(data.synced_at)}>Wallet platform</HintLabel>}>
           <p className="wallets-description">
-            Attendees who already have a pass issued, split by which wallet app picked it up
+            Attendees with their ticket installed, split by which wallet app they used
             {walletPlatforms.apple && walletPlatforms.google
               ? " - one pass can register on more than one at once."
               : "."}
           </p>
           <div className="wallets-adoption">
-            <PlatformDonut platform={data.platform} issued={data.adoption.got_pass} enabledPlatforms={walletPlatforms} />
+            <PlatformDonut platform={data.platform} installed={data.adoption.confirmed} enabledPlatforms={walletPlatforms} />
             <div className="wallets-adoption__breakdown">
-              <BreakdownRows rows={platformBreakdownRows(data.platform, data.adoption.got_pass, walletPlatforms)} />
+              <BreakdownRows rows={platformBreakdownRows(data.platform, data.adoption.confirmed, walletPlatforms)} />
             </div>
           </div>
         </Card>
       </div>
 
       <div className="wallets-panels">
-        <Card title="Adoption by ticket type" className="wallets-ticket-breakdown">
+        <Card title="Devices per attendee" className="wallets-chart-card">
+          <p className="wallets-description">
+            Some attendees add their ticket to more than one device, like a phone and a smartwatch. This shows how many devices attendees are actually using, not just how many people have their ticket installed.
+          </p>
+          <RegistrationsPerAttendeeChart buckets={data.registrations_per_attendee.buckets} />
+        </Card>
+        <Card title="Adoption by ticket type" className="wallets-list-card">
           <p className="wallets-description">Percentage of each ticket type&rsquo;s own attendees who installed a wallet pass.</p>
           <BreakdownRows rows={ticketTypeAdoptionRows(data.by_ticket_type)} />
-        </Card>
-        <Card title="Cumulative passes issued">
-          <CumulativeChart data={data.issued_by_day} />
         </Card>
       </div>
 
       <div className="wallets-panels">
-        <Card title="Time to wallet tap">
-          <p className="wallets-description">
-            How many days pass between the ticket email landing in an attendee&rsquo;s inbox and them tapping &ldquo;Add to Wallet&rdquo;.
-          </p>
-          {data.time_to_wallet_tap.average_days === null ? (
-            <p className="wallets-description">Not enough data yet.</p>
-          ) : (
-            <TimeToTapChart buckets={data.time_to_wallet_tap.buckets} />
-          )}
+        <Card title="Cumulative passes issued" className="wallets-chart-card">
+          <p className="wallets-description">The running total of tickets added to attendees&rsquo; wallets over time.</p>
+          <CumulativeChart data={data.issued_by_day} />
         </Card>
+        <Card title="Time to wallet install" className="wallets-chart-card">
+          <p className="wallets-description">
+            How many days pass between the ticket email landing in an attendee&rsquo;s inbox and their pass being confirmed installed on their wallet app.
+          </p>
+          <TimeToTapChart buckets={data.time_to_wallet_tap.buckets} />
+        </Card>
+      </div>
 
+      <div className="wallets-panels">
+        <Card title="Wallet lifecycle">
+          <p className="wallets-description">
+            Every issued pass, grouped by whether it&rsquo;s still installed, was removed from every device, or was never installed at all.
+          </p>
+          <div className="wallets-adoption">
+            <WalletLifecycleDonut lifecycle={data.wallet_lifecycle} />
+            <div className="wallets-adoption__breakdown">
+              <BreakdownRows rows={walletLifecycleBreakdownRows(data.wallet_lifecycle, data.adoption.got_pass)} />
+            </div>
+          </div>
+        </Card>
         <Card title="Admission rate by wallet status" className="wallets-card--centered">
           <AdmissionCompare data={data.admission_by_wallet} />
         </Card>

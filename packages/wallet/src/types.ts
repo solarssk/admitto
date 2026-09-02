@@ -89,9 +89,11 @@ export interface WalletPassRegistrationStatus {
    * already-populated fields (0 pre-launch), unlike samsungUrl above. */
   samsungActiveRegistrations: number;
   samsungInactiveRegistrations: number;
-  /** When the pass file was first downloaded - provider-reported, timezone unconfirmed (not
-   * documented as UTC or otherwise), so callers must treat this as an opaque instant rather than
-   * converting it to a specific zone. */
+  /** When the pass file was first downloaded - provider-reported, "YYYY-MM-DD HH:MM:SS" with no
+   * offset in the wire payload. Not documented as UTC by PassCreator, but confirmed UTC by
+   * cross-checking a live pass's raw value against PassCreator's own dashboard (PO review,
+   * 2026-08-13) - parse with parseFirstDownloadedAtUtc (passcreator-webhook.ts), don't treat as an
+   * opaque unparseable string. */
   firstDownloadedAt: string | null;
 }
 
