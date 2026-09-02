@@ -323,6 +323,40 @@ function willWalletBeConfiguredForPush(form: SettingsForm, event: EventSettingsD
   return event.wallet_api_key.configured;
 }
 
+/** Which wallet confirm dialog (if any) handleSave below should show before committing a save -
+ * extracted out of handleSave itself to keep EventSettingsPage's own cognitive complexity under
+ * the SonarCloud threshold (S3776), the same reason willWalletBeConfiguredForPush/
+ * patchTouchesWalletRelevantField above are already module-scope rather than nested in the
+ * component. Checked in this order: clearing the API key on an event with issued passes (own
+ * confirmation - see describeWalletKeyClearConfirm's own doc comment) takes priority over the
+ * "will push to installed passes" check below it, since willWalletBeConfiguredForPush already
+ * returns false once the key is being cleared (that check exists to avoid a false "will push"
+ * warning, not to skip warning altogether). */
+function resolveWalletConfirmKind(
+  form: SettingsForm,
+  original: SettingsForm,
+  event: EventSettingsDto,
+): "clear_key" | "push" | null {
+  if (event.issued_wallet_pass_count > 0 && form.walletApiKeyEdit.mode === "clear") {
+    return "clear_key";
+  }
+  try {
+    if (
+      event.installed_wallet_pass_count > 0 &&
+      willWalletBeConfiguredForPush(form, event) &&
+      patchTouchesWalletRelevantField(buildSettingsPatch(form, original), event)
+    ) {
+      return "push";
+    }
+  } catch {
+    // buildSettingsPatch can throw (e.g. invalid capacity) - fall through to null, so handleSave
+    // proceeds straight to commitSave, which rebuilds the same patch inside its own try/catch and
+    // shows the right validation toast, rather than this check's own throw becoming an unhandled
+    // rejection (CodeRabbit review).
+  }
+  return null;
+}
+
 
 interface ArchiveDialogCopy {
   title: string;
@@ -977,37 +1011,16 @@ export function EventSettingsPage() {
 
   async function handleSave() {
     if (!eventId || !form || !original || !dirty) return;
-    // Clearing the API key doesn't corrupt an issued pass the way changing the Template ID does
-    // (see describeWalletKeyClearConfirm's own doc comment), but it does silently stop managing
-    // every one of them - worth its own confirmation, checked before the push-confirm below since
-    // willWalletBeConfiguredForPush already returns false once the key is being cleared (that
-    // check exists to avoid a false "will push" warning here, not to skip warning altogether).
-    if (event && event.issued_wallet_pass_count > 0 && form.walletApiKeyEdit.mode === "clear") {
+    // Only worth confirming when the save would actually change something an already-issued pass
+    // depends on - an event with none yet, or a save resolveWalletConfirmKind doesn't flag for
+    // either reason, goes straight through, matching the "don't overuse confirmation dialogs"
+    // guidance this pattern is otherwise at risk of (NN/g).
+    const confirmKind = event ? resolveWalletConfirmKind(form, original, event) : null;
+    if (confirmKind) {
       pendingWalletPushActionRef.current = commitSave;
-      setWalletConfirmKind("clear_key");
+      setWalletConfirmKind(confirmKind);
       setWalletPushConfirmOpen(true);
       return;
-    }
-    // Only worth confirming when the save would actually push to a real, currently-installed
-    // wallet pass - an event with none yet (or a save that doesn't touch a wallet-relevant field,
-    // or one whose own edits leave Wallet unconfigured) goes straight through, matching the
-    // "don't overuse confirmation dialogs" guidance this pattern is otherwise at risk of (NN/g).
-    try {
-      if (
-        event &&
-        event.installed_wallet_pass_count > 0 &&
-        willWalletBeConfiguredForPush(form, event) &&
-        patchTouchesWalletRelevantField(buildSettingsPatch(form, original), event)
-      ) {
-        pendingWalletPushActionRef.current = commitSave;
-        setWalletConfirmKind("push");
-        setWalletPushConfirmOpen(true);
-        return;
-      }
-    } catch {
-      // buildSettingsPatch can throw (e.g. invalid capacity) - fall through to commitSave, which
-      // rebuilds the same patch inside its own try/catch and shows the right validation toast,
-      // rather than this check's own throw becoming an unhandled rejection (CodeRabbit review).
     }
     await commitSave();
   }
