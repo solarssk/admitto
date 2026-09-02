@@ -42,11 +42,22 @@ export function describeWalletDisableConfirm(issuedCount: number): string {
  * wallet_google_enabled / wallet_samsung_enabled) on a platform that already has installed
  * passes. Narrower than describeWalletDisableConfirm above - a platform toggle doesn't touch
  * sync/void/restore/push (those are gated on wallet_enabled alone, see resolveWalletProvider), it
- * only hides that platform's Add to Wallet button for new attendees and makes the admin UI show
- * already-installed passes on that platform as "not added" until it's turned back on. */
+ * only hides that platform's Add to Wallet button for new attendees. The admin UI doesn't relabel
+ * already-installed passes on that platform as "not added" - WalletColumnCell (Attendees list) and
+ * AttendeeDetailPage's own registration rows both gate on `enabledPlatforms.<platform> && (...)`,
+ * so a disabled platform's icon/row disappears from both surfaces entirely instead (CodeRabbit
+ * review - the previous wording claimed the former). `alsoPushes` covers a second, easy-to-miss
+ * case: wallet_apple_enabled is itself one of WALLET_RELEVANT_EVENT_FIELDS (its own relevantDate
+ * side effect - see that constant's own doc comment), so a save that turns off Apple Wallet on an
+ * event with a start time can *also* trigger an event-wide push to every installed pass regardless
+ * of platform - resolveWalletConfirmKind computes this the same way the standalone "push" case
+ * does and passes it through, so this message doesn't claim "nothing changes on attendees' actual
+ * devices" when a push is, in fact, about to happen (CodeRabbit review). */
 export function describeWalletPlatformDisableConfirm(
   platforms: readonly WalletPlatformKey[],
   installedCounts: Readonly<Record<WalletPlatformKey, number>>,
+  alsoPushes: boolean,
+  totalInstalledCount: number,
 ): string {
   const names: Record<WalletPlatformKey, string> = {
     apple: "Apple Wallet",
@@ -60,5 +71,8 @@ export function describeWalletPlatformDisableConfirm(
   const joined =
     labels.length > 1 ? `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}` : labels[0];
   const plural = platforms.length > 1;
-  return `${joined} already ${plural ? "have" : "has"} attendees who added ${plural ? "them" : "it"} on their device. Turning ${plural ? "these" : "this"} off hides the Add to Wallet button for anyone who hasn't added it yet, and the admin UI will show already-installed passes as "not added" until you turn ${plural ? "them" : "it"} back on - nothing changes on attendees' actual devices.`;
+  const closing = alsoPushes
+    ? `This save will also push an update to ${totalInstalledCount} installed wallet ${totalInstalledCount === 1 ? "pass" : "passes"} across every platform.`
+    : "Nothing changes on attendees' actual devices.";
+  return `${joined} already ${plural ? "have" : "has"} attendees who added ${plural ? "them" : "it"} on their device. Turning ${plural ? "these" : "this"} off hides the Add to Wallet button for anyone who hasn't added it yet, and ${plural ? "their" : "its"} status disappears from the Attendees list and attendee detail pages until you turn ${plural ? "them" : "it"} back on. ${closing}`;
 }

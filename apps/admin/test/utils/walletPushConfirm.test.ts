@@ -50,22 +50,37 @@ describe("describeWalletDisableConfirm", () => {
 
 describe("describeWalletPlatformDisableConfirm", () => {
   it("uses singular wording for one platform", () => {
-    expect(describeWalletPlatformDisableConfirm(["apple"], { apple: 1, google: 0, samsung: 0 })).toBe(
-      'Apple Wallet (1 installed pass) already has attendees who added it on their device. Turning this off hides the Add to Wallet button for anyone who hasn\'t added it yet, and the admin UI will show already-installed passes as "not added" until you turn it back on - nothing changes on attendees\' actual devices.',
+    expect(
+      describeWalletPlatformDisableConfirm(["apple"], { apple: 1, google: 0, samsung: 0 }, false, 1),
+    ).toBe(
+      "Apple Wallet (1 installed pass) already has attendees who added it on their device. Turning this off hides the Add to Wallet button for anyone who hasn't added it yet, and its status disappears from the Attendees list and attendee detail pages until you turn it back on. Nothing changes on attendees' actual devices.",
     );
   });
 
   it("uses plural wording for one platform with more than one installed pass", () => {
-    expect(describeWalletPlatformDisableConfirm(["samsung"], { apple: 0, google: 0, samsung: 3 })).toBe(
-      'Samsung Wallet (3 installed passes) already has attendees who added it on their device. Turning this off hides the Add to Wallet button for anyone who hasn\'t added it yet, and the admin UI will show already-installed passes as "not added" until you turn it back on - nothing changes on attendees\' actual devices.',
+    expect(
+      describeWalletPlatformDisableConfirm(["samsung"], { apple: 0, google: 0, samsung: 3 }, false, 3),
+    ).toBe(
+      "Samsung Wallet (3 installed passes) already has attendees who added it on their device. Turning this off hides the Add to Wallet button for anyone who hasn't added it yet, and its status disappears from the Attendees list and attendee detail pages until you turn it back on. Nothing changes on attendees' actual devices.",
     );
   });
 
   it("joins and pluralizes for more than one platform", () => {
     expect(
-      describeWalletPlatformDisableConfirm(["apple", "google"], { apple: 2, google: 5, samsung: 0 }),
+      describeWalletPlatformDisableConfirm(["apple", "google"], { apple: 2, google: 5, samsung: 0 }, false, 7),
     ).toBe(
-      'Apple Wallet (2 installed passes) and Google Wallet (5 installed passes) already have attendees who added them on their device. Turning these off hides the Add to Wallet button for anyone who hasn\'t added it yet, and the admin UI will show already-installed passes as "not added" until you turn them back on - nothing changes on attendees\' actual devices.',
+      "Apple Wallet (2 installed passes) and Google Wallet (5 installed passes) already have attendees who added them on their device. Turning these off hides the Add to Wallet button for anyone who hasn't added it yet, and their status disappears from the Attendees list and attendee detail pages until you turn them back on. Nothing changes on attendees' actual devices.",
+    );
+  });
+
+  // Regression (CodeRabbit review): wallet_apple_enabled's own relevantDate side effect can queue
+  // an event-wide push in the same save that disables it - the message must not claim nothing
+  // changes on devices when something, in fact, will.
+  it("mentions the event-wide push instead of claiming nothing changes on devices, when alsoPushes is true", () => {
+    expect(
+      describeWalletPlatformDisableConfirm(["apple"], { apple: 2, google: 0, samsung: 0 }, true, 6),
+    ).toBe(
+      "Apple Wallet (2 installed passes) already has attendees who added it on their device. Turning this off hides the Add to Wallet button for anyone who hasn't added it yet, and its status disappears from the Attendees list and attendee detail pages until you turn it back on. This save will also push an update to 6 installed wallet passes across every platform.",
     );
   });
 });

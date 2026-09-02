@@ -350,48 +350,61 @@ function disablingWalletPlatformsWithInstalls(
 interface WalletConfirmResolution {
   kind: "clear_key" | "push" | "disable_wallet" | "disable_platform";
   platforms: WalletPlatformKey[];
+  // Only meaningful for "disable_platform" - see describeWalletPlatformDisableConfirm's own doc
+  // comment for why a platform-disable save can still push an update to every installed pass.
+  alsoPushes: boolean;
 }
 
 /** Which wallet confirm dialog (if any) handleSave below should show before committing a save -
  * extracted out of handleSave itself to keep EventSettingsPage's own cognitive complexity under
  * the SonarCloud threshold (S3776), the same reason willWalletBeConfiguredForPush/
  * patchTouchesWalletRelevantField above are already module-scope rather than nested in the
- * component. Checked in this order, most consequential first: clearing the API key, then turning
- * off the wallet_enabled master switch (both stop managing every already-issued pass silently -
- * CodeRabbit review / PO report 2026-09-02), then turning off a single platform toggle (narrower -
- * see describeWalletPlatformDisableConfirm's own doc comment), then the original "will push to
- * installed passes" check, since willWalletBeConfiguredForPush already returns false once the key
- * is being cleared or the master switch turned off (those checks exist to avoid a false "will
- * push" warning, not to skip warning altogether). */
+ * component. Checked in this order, most consequential first: turning off the wallet_enabled
+ * master switch, then clearing the API key (both stop managing every already-issued pass silently
+ * - CodeRabbit review / PO report 2026-09-02) - master-switch checked first so a save that does
+ * both isn't reduced to only the narrower key-clearing warning (CodeRabbit review: that warning
+ * doesn't mention the master switch also dropping incoming PassCreator webhook updates outright).
+ * Then a single platform toggle (narrower still - see describeWalletPlatformDisableConfirm's own
+ * doc comment), then the original "will push to installed passes" check, since
+ * willWalletBeConfiguredForPush already returns false once the key is being cleared or the master
+ * switch turned off (those checks exist to avoid a false "will push" warning, not to skip warning
+ * altogether) - computed once as `wouldPush` and reused for both the platform-disable case (which
+ * folds it in as `alsoPushes` rather than losing it entirely, since wallet_apple_enabled's own
+ * relevantDate side effect - see WALLET_RELEVANT_EVENT_FIELDS's own doc comment - can trigger an
+ * event-wide push in the same save that disables Apple Wallet: CodeRabbit review) and the
+ * standalone "push" case below it. */
 function resolveWalletConfirmKind(
   form: SettingsForm,
   original: SettingsForm,
   event: EventSettingsDto,
 ): WalletConfirmResolution | null {
-  if (event.issued_wallet_pass_count > 0 && form.walletApiKeyEdit.mode === "clear") {
-    return { kind: "clear_key", platforms: [] };
-  }
+  const clearingKey = event.issued_wallet_pass_count > 0 && form.walletApiKeyEdit.mode === "clear";
   try {
     const patch = buildSettingsPatch(form, original);
     if (patch.wallet_enabled === false && event.issued_wallet_pass_count > 0) {
-      return { kind: "disable_wallet", platforms: [] };
+      return { kind: "disable_wallet", platforms: [], alsoPushes: false };
     }
-    const disablingPlatforms = form.walletEnabled ? disablingWalletPlatformsWithInstalls(patch, event) : [];
-    if (disablingPlatforms.length > 0) {
-      return { kind: "disable_platform", platforms: disablingPlatforms };
+    if (clearingKey) {
+      return { kind: "clear_key", platforms: [], alsoPushes: false };
     }
-    if (
+    const wouldPush =
       event.installed_wallet_pass_count > 0 &&
       willWalletBeConfiguredForPush(form, event) &&
-      patchTouchesWalletRelevantField(patch, event)
-    ) {
-      return { kind: "push", platforms: [] };
+      patchTouchesWalletRelevantField(patch, event);
+    const disablingPlatforms = form.walletEnabled ? disablingWalletPlatformsWithInstalls(patch, event) : [];
+    if (disablingPlatforms.length > 0) {
+      return { kind: "disable_platform", platforms: disablingPlatforms, alsoPushes: wouldPush };
+    }
+    if (wouldPush) {
+      return { kind: "push", platforms: [], alsoPushes: false };
     }
   } catch {
     // buildSettingsPatch can throw (e.g. invalid capacity) - fall through to null, so handleSave
     // proceeds straight to commitSave, which rebuilds the same patch inside its own try/catch and
     // shows the right validation toast, rather than this check's own throw becoming an unhandled
-    // rejection (CodeRabbit review).
+    // rejection (CodeRabbit review). clearingKey doesn't depend on the patch, so it still warns
+    // even when the throw comes from an unrelated invalid field (e.g. capacity).
+    if (clearingKey) return { kind: "clear_key", platforms: [], alsoPushes: false };
   }
   return null;
 }
@@ -410,6 +423,7 @@ interface WalletConfirmCopy {
 function describeWalletConfirmDialog(
   kind: "push" | "clear_key" | "disable_wallet" | "disable_platform",
   platforms: readonly WalletPlatformKey[],
+  alsoPushes: boolean,
   event: EventSettingsDto,
 ): WalletConfirmCopy {
   if (kind === "clear_key") {
@@ -429,7 +443,12 @@ function describeWalletConfirmDialog(
   if (kind === "disable_platform") {
     return {
       title: "Turn off this wallet platform?",
-      message: describeWalletPlatformDisableConfirm(platforms, event.installed_wallet_pass_count_by_platform),
+      message: describeWalletPlatformDisableConfirm(
+        platforms,
+        event.installed_wallet_pass_count_by_platform,
+        alsoPushes,
+        event.installed_wallet_pass_count,
+      ),
       confirmLabel: "Save and turn off",
     };
   }
@@ -943,6 +962,12 @@ export function EventSettingsPage() {
   const [walletDisablingPlatforms, setWalletDisablingPlatforms] = useState<readonly WalletPlatformKey[]>(
     [],
   );
+  // Only meaningful alongside "disable_platform" - true when this same save will also push an
+  // event-wide update to every installed pass (wallet_apple_enabled's own relevantDate side
+  // effect - see WALLET_RELEVANT_EVENT_FIELDS's own doc comment), so
+  // describeWalletPlatformDisableConfirm's "nothing changes on attendees' devices" claim doesn't
+  // become false in that combination (CodeRabbit review).
+  const [walletDisableAlsoPushes, setWalletDisableAlsoPushes] = useState(false);
   // Which save this confirm dialog is gating - the regular form save (handleSave), or the
   // Location tab's own "apply suggested timezone" shortcut (onApplyTimezone below), which
   // otherwise patches straight past this confirm entirely (CodeRabbit review).
@@ -1119,6 +1144,7 @@ export function EventSettingsPage() {
       pendingWalletPushActionRef.current = commitSave;
       setWalletConfirmKind(confirmResolution.kind);
       setWalletDisablingPlatforms(confirmResolution.platforms);
+      setWalletDisableAlsoPushes(confirmResolution.alsoPushes);
       setWalletPushConfirmOpen(true);
       return;
     }
@@ -1223,7 +1249,12 @@ export function EventSettingsPage() {
     event.wallet_enabled && !!event.wallet_template_id && event.wallet_api_key.configured;
 
   const archiveDialogCopy = getArchiveDialogCopy(archiveMode);
-  const walletConfirmCopy = describeWalletConfirmDialog(walletConfirmKind, walletDisablingPlatforms, event);
+  const walletConfirmCopy = describeWalletConfirmDialog(
+    walletConfirmKind,
+    walletDisablingPlatforms,
+    walletDisableAlsoPushes,
+    event,
+  );
 
   const archiveToggleButton = isArchived ? (
     <Button
@@ -1350,6 +1381,7 @@ export function EventSettingsPage() {
                 pendingWalletPushCancelRef.current = () => reject(new Error("wallet_push_cancelled"));
                 setWalletConfirmKind("push");
                 setWalletDisablingPlatforms([]);
+                setWalletDisableAlsoPushes(false);
                 setWalletPushConfirmOpen(true);
               });
             }
