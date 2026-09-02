@@ -120,11 +120,27 @@ describe("WalletColumnCell", () => {
     expect(screen.queryByLabelText(/Samsung Wallet/)).toBeNull();
   });
 
-  it("renders nothing at all when only Samsung Wallet is enabled - Apple/Google being off still hides the whole column", () => {
-    const { container } = render(
+  it("still shows the Samsung icon when it's the only platform enabled - Apple/Google being off must not hide it too", () => {
+    // `any` stays false (EnabledWalletPlatforms.any is deliberately Apple/Google only - real
+    // pass-lifecycle actions elsewhere in the admin can't apply to Samsung), but this cell reads
+    // real Samsung registration data the same way it does Apple/Google's, so it must not depend
+    // on `any` to decide whether to render.
+    render(
       <WalletColumnCell
         status={null}
         enabledPlatforms={{ apple: false, google: false, samsung: true, any: false }}
+      />,
+    );
+    expect(screen.getByLabelText("Samsung Wallet: Not added")).toBeTruthy();
+    expect(screen.queryByLabelText(/Apple Wallet/)).toBeNull();
+    expect(screen.queryByLabelText(/Google Wallet/)).toBeNull();
+  });
+
+  it("renders nothing at all when no platform is enabled", () => {
+    const { container } = render(
+      <WalletColumnCell
+        status={null}
+        enabledPlatforms={{ apple: false, google: false, samsung: false, any: false }}
       />,
     );
     expect(container.firstChild).toBeNull();

@@ -581,6 +581,8 @@ type AttendeeWalletStatus = Pick<
   | "apple_inactive_registrations"
   | "google_active_registrations"
   | "google_inactive_registrations"
+  | "samsung_active_registrations"
+  | "samsung_inactive_registrations"
 >;
 
 /** Registration status per attendee (within the given set) that has a WalletPass row at all -
@@ -600,6 +602,8 @@ async function walletStatusByAttendee(
       apple_inactive_registrations: true,
       google_active_registrations: true,
       google_inactive_registrations: true,
+      samsung_active_registrations: true,
+      samsung_inactive_registrations: true,
     },
   });
   return new Map(
@@ -610,6 +614,8 @@ async function walletStatusByAttendee(
         apple_inactive_registrations: row.apple_inactive_registrations,
         google_active_registrations: row.google_active_registrations,
         google_inactive_registrations: row.google_inactive_registrations,
+        samsung_active_registrations: row.samsung_active_registrations,
+        samsung_inactive_registrations: row.samsung_inactive_registrations,
       },
     ]),
   );

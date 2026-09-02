@@ -54,17 +54,19 @@ function SamsungPlatformIcon({ active, label }: Readonly<{ active: boolean; labe
  * less scannable than icons that are just always there). Shares its label vocabulary with the
  * attendee detail page's own wallet section (walletRegistrationLabel) so both surfaces describe
  * the exact same state the same way. `enabledPlatforms` (Event Settings -> Wallet) drops whichever
- * icon(s) the event doesn't offer, and the whole cell renders nothing when neither Apple nor
- * Google is enabled (Samsung alone is never enough - see EnabledWalletPlatforms.any's own doc
- * comment: every attendee's Samsung status reads "Not added" today regardless of real activity,
- * since PassCreator hasn't finished activating Samsung Wallet on any template yet, so showing the
- * column for Samsung alone would be a permanently-empty-looking column) - the caller is expected
- * to skip the column entirely (header and cell) in that case, not render an empty one. */
+ * icon(s) the event doesn't offer, and the whole cell renders nothing when no platform at all is
+ * enabled - deliberately checked here (not EnabledWalletPlatforms.any, which stays Apple/Google
+ * only for other, real-pass-lifecycle purposes) so an event that enables Samsung alone still gets
+ * a column, reading real (if 0 pre-activation) Samsung registration data the same way it already
+ * does for Apple/Google - the desktop table's own header/cell wrapper (AttendeesTable.tsx) must
+ * use the identical apple-or-google-or-samsung check, not just this component's own guard, or the
+ * column header would stay hidden while this cell tries to render into a column that doesn't
+ * exist. */
 export function WalletColumnCell({
   status,
   enabledPlatforms,
 }: Readonly<{ status: AttendeeRowDto["wallet_status"]; enabledPlatforms: EnabledWalletPlatforms }>) {
-  if (!enabledPlatforms.any) return null;
+  if (!enabledPlatforms.apple && !enabledPlatforms.google && !enabledPlatforms.samsung) return null;
   const appleActive = (status?.apple_active_registrations ?? 0) > 0;
   const googleActive = (status?.google_active_registrations ?? 0) > 0;
   const samsungActive = (status?.samsung_active_registrations ?? 0) > 0;

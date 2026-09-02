@@ -1206,6 +1206,11 @@ function AttendeesListContent({
   eventTimezone: string;
   walletPlatforms: EnabledWalletPlatforms;
 }>): ReactNode {
+  // Deliberately not walletPlatforms.any (Apple/Google only, see its own doc comment) - this
+  // column's own cell (WalletColumnCell) already reads real Samsung registration data the same
+  // way it does Apple/Google's, so the column itself must still appear for an event that enables
+  // Samsung alone.
+  const walletColumnVisible = walletPlatforms.apple || walletPlatforms.google || walletPlatforms.samsung;
   // Only the very first load ever (never-loaded, items always [] at that point) gets the
   // shimmer skeleton. A later filter/search that also lands on zero matches reuses the same
   // dim-in-place treatment as a non-empty refetch instead of flashing the skeleton again.
@@ -1217,7 +1222,7 @@ function AttendeesListContent({
     return whenShown(
       showLoadingSkeleton,
       isDesktop ? (
-        <AttendeesTableSkeleton walletColumnVisible={walletPlatforms.any} />
+        <AttendeesTableSkeleton walletColumnVisible={walletColumnVisible} />
       ) : (
         <AttendeesCardsSkeleton />
       ),
@@ -1299,7 +1304,7 @@ function AttendeesListContent({
               sortDir={sortDir}
               onSortChange={onSortChange}
             />
-            {walletPlatforms.any && <th>Wallet</th>}
+            {walletColumnVisible && <th>Wallet</th>}
           </tr>
         </thead>
         <tbody>
@@ -1350,7 +1355,7 @@ function AttendeesListContent({
               <td>
                 <CheckInCell admittedAt={row.admitted_at} eventTimezone={eventTimezone} />
               </td>
-              {walletPlatforms.any && (
+              {walletColumnVisible && (
                 <td>
                   <WalletColumnCell status={row.wallet_status} enabledPlatforms={walletPlatforms} />
                 </td>

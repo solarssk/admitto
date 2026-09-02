@@ -11,6 +11,8 @@ const STATUS = {
   appleInactiveRegistrations: 0,
   googleActiveRegistrations: 2,
   googleInactiveRegistrations: 0,
+  samsungActiveRegistrations: 0,
+  samsungInactiveRegistrations: 0,
   firstDownloadedAt: "2026-08-25 09:00",
 };
 
@@ -48,6 +50,8 @@ describe("refreshOneWalletPassStatus", () => {
         apple_inactive_registrations: STATUS.appleInactiveRegistrations,
         google_active_registrations: STATUS.googleActiveRegistrations,
         google_inactive_registrations: STATUS.googleInactiveRegistrations,
+        samsung_active_registrations: STATUS.samsungActiveRegistrations,
+        samsung_inactive_registrations: STATUS.samsungInactiveRegistrations,
         first_downloaded_at: STATUS.firstDownloadedAt,
         registration_checked_at: expect.any(Date),
         registration_sync_attempted_at: expect.any(Date),

@@ -901,7 +901,12 @@ function AttendeeOverviewTab({
           )}
         </Card>
 
-        {walletPlatforms.any && (
+        {/* Deliberately not walletPlatforms.any (Apple/Google only, see its own doc comment) -
+            unlike the pass-lifecycle menu items further up this file (real actions on a real
+            pass, which can only exist for Apple/Google), this card's own Samsung row reads real
+            registration data the same way Apple/Google's do, so it must still show for an event
+            that enables Samsung alone. */}
+        {(walletPlatforms.apple || walletPlatforms.google || walletPlatforms.samsung) && (
           <Card
             title="Wallet"
             actions={

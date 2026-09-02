@@ -2985,6 +2985,8 @@ describe("attendee wallet actions — void/restore/reissue", () => {
           apple_inactive_registrations: 0,
           google_active_registrations: 0,
           google_inactive_registrations: 2,
+          samsung_active_registrations: 3,
+          samsung_inactive_registrations: 0,
         },
       });
 
@@ -3001,6 +3003,8 @@ describe("attendee wallet actions — void/restore/reissue", () => {
             apple_inactive_registrations: number | null;
             google_active_registrations: number | null;
             google_inactive_registrations: number | null;
+            samsung_active_registrations: number | null;
+            samsung_inactive_registrations: number | null;
           } | null;
         }[];
       };
@@ -3010,6 +3014,8 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         apple_inactive_registrations: 0,
         google_active_registrations: 0,
         google_inactive_registrations: 2,
+        samsung_active_registrations: 3,
+        samsung_inactive_registrations: 0,
       });
     });
   });

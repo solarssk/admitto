@@ -302,6 +302,46 @@ describe("renderTicket", () => {
     expect(html).not.toContain('href="/t/token/wallet/samsung"');
   });
 
+  it("does not instruct tapping Apple/Google buttons that don't exist when Samsung is the only wallet offered", () => {
+    const html = renderTicket(
+      {
+        mode: "internal",
+        attendee: {
+          id: "attendee-1",
+          event_id: "event-1",
+          email: "x@example.com",
+          name: "Example User",
+          status: "confirmed",
+          first_name: null,
+          last_name: null,
+          company: null,
+          department: null,
+          token_hash: null,
+          qr_payload: null,
+          external_uuid: null,
+          ticket_type: "Standard",
+        },
+        event: {
+          id: "event-1",
+          title: "Launch Event",
+          slug: "launch-event",
+          date: new Date("2026-09-01T09:00:00Z"),
+          timezone: "UTC",
+          location: null,
+          logoUrl: null,
+          ...EMPTY_EVENT_LOCATION,
+        },
+      },
+      "data:image/png;base64,abc",
+      undefined,
+      { walletSamsungBadge: true },
+    );
+
+    expect(html).not.toContain("Apple Wallet");
+    expect(html).not.toContain("Google Wallet");
+    expect(html).toContain("The Samsung Wallet button is for Samsung Galaxy phones.");
+  });
+
   it("omits the Samsung Wallet badge when walletSamsungBadge is not set", () => {
     const html = renderTicket(
       {

@@ -775,9 +775,10 @@ describe("AttendeeDetailPage — Wallet card gated by the event's platform toggl
     expect(screen.getByText("This will also update their installed wallet pass.")).toBeTruthy();
   });
 
-  it("hides the Wallet card when the master switch is on but both individual platforms are off", async () => {
+  it("hides the Wallet card when the master switch is on but every individual platform is off", async () => {
     mockWalletAppleEnabled = false;
     mockWalletGoogleEnabled = false;
+    mockWalletSamsungEnabled = false;
     mockLoad(baseDetail({ wallet_pass: walletPass() }));
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
@@ -865,5 +866,17 @@ describe("AttendeeDetailPage — Wallet card gated by the event's platform toggl
 
     expect(screen.getByText("Wallet", { selector: ".at-card__title" })).toBeTruthy();
     expect(screen.queryByText("Samsung Wallet")).toBeNull();
+  });
+
+  it("still shows the Wallet card with just the Samsung row when Apple/Google are both disabled", async () => {
+    mockWalletAppleEnabled = false;
+    mockWalletGoogleEnabled = false;
+    mockWalletSamsungEnabled = true;
+    mockLoad(baseDetail({ wallet_pass: null }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.getByText("Wallet", { selector: ".at-card__title" })).toBeTruthy();
+    expect(screen.getByText("Not added to a wallet")).toBeTruthy();
   });
 });

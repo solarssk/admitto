@@ -375,6 +375,20 @@ function renderWalletSection(options: TicketPageOptions): string {
     ? `<span class="wallet-badge-frame"><img class="wallet-badge wallet-badge--disabled" src="/assets/samsung-wallet-badge.png" srcset="/assets/samsung-wallet-badge.png 1x, /assets/samsung-wallet-badge.svg 2x" alt="Add to Samsung Wallet" aria-disabled="true" title="Unavailable"></span>`
     : "";
 
+  // Built from the buttons actually present, not a fixed "Apple or Google" sentence - an event
+  // that only offers Samsung (Apple/Google both off) would otherwise tell the attendee to tap
+  // buttons that don't exist on the page at all.
+  let tapInstruction = "";
+  if (options.walletAppleHref && options.walletGoogleHref) {
+    tapInstruction = "Tap Add to Apple Wallet or Add to Google Wallet above. You will find this ticket later in that app.";
+  } else if (options.walletAppleHref) {
+    tapInstruction = "Tap Add to Apple Wallet above. You will find this ticket later in that app.";
+  } else if (options.walletGoogleHref) {
+    tapInstruction = "Tap Add to Google Wallet above. You will find this ticket later in that app.";
+  }
+  const samsungInstruction = options.walletSamsungBadge ? "The Samsung Wallet button is for Samsung Galaxy phones." : "";
+  const helpText = [tapInstruction, samsungInstruction].filter(Boolean).join(" ");
+
   return `${errorHtml}
     <div class="ticket__wallets">
       ${appleBadgeHtml}
@@ -383,7 +397,7 @@ function renderWalletSection(options: TicketPageOptions): string {
     </div>
     <details class="ticket__wallet-help">
       <summary>How do I add this to my phone?</summary>
-      <p>Tap Add to Apple Wallet or Add to Google Wallet above. You will find this ticket later in that app.${options.walletSamsungBadge ? " The Samsung Wallet button is for Samsung Galaxy phones." : ""}</p>
+      <p>${helpText}</p>
     </details>`;
 }
 
