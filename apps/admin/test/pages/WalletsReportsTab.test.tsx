@@ -193,6 +193,10 @@ function fixture(overrides: Partial<EventWalletReportsResponse> = {}): EventWall
       with_wallet: { total: 12, admitted: 9, pct: 75 },
       without_wallet: { total: 8, admitted: 2, pct: 25 },
     },
+    // Sums to adoption.got_pass=15 above, not adoption.confirmed=10 (unlike `platform` and
+    // `registrations_per_attendee` above) - never_installed passes were issued but never
+    // confirmed installed at all, so they're outside `confirmed` while still counting here.
+    wallet_lifecycle: { active: 6, removed: 3, never_installed: 6 },
     ...overrides,
   };
 }
@@ -405,6 +409,19 @@ describe("WalletsReportsTab", () => {
     expect(subs[0]?.textContent).toBe("9 of 12 attendees");
     expect(subs[1]?.textContent).toBe("2 of 8 attendees");
     expect(compareCard.querySelector(".wallets-compare-delta__pill")?.textContent).toBe("▲ +50 pts");
+
+    // Wallet lifecycle donut: active, removed, never_installed (fixture's 6/3/6, summing to
+    // adoption.got_pass=15, not adoption.confirmed=10) - and the breakdown list's own percentages,
+    // each independently computed against got_pass (not confirmed, unlike the platform card).
+    const lifecycleCard = cardByTitle("Wallet lifecycle");
+    expect(dataValues(within(lifecycleCard).getByTestId("rc-pie"))).toEqual([6, 3, 6]);
+    expect(breakdownRows(lifecycleCard)).toEqual([
+      { name: "Active", meta: "6 · 40%" },
+      { name: "Removed", meta: "3 · 20%" },
+      { name: "Never installed", meta: "6 · 40%" },
+    ]);
+    expect(lifecycleCard.querySelector(".wallets-gauge-overlay__value")?.textContent).toBe("3");
+    expect(lifecycleCard.querySelector(".wallets-gauge-overlay__label")?.textContent).toBe("removed");
 
     // No truncation notice for this (default) fixture.
     expect(document.querySelector(".wallets-truncated-notice")).toBeNull();

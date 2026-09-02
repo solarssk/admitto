@@ -77,4 +77,30 @@ export interface EventWalletReportsResponse {
     with_wallet: { total: number; admitted: number; pct: number };
     without_wallet: { total: number; admitted: number; pct: number };
   };
+  /** What became of every issued pass - mutually exclusive, always summing to exactly
+   * `adoption.got_pass`. Every other number on this DTO answers "how many have a wallet pass
+   * installed right now" (adoption, platform, registrations_per_attendee); this is the only one
+   * that also surfaces passes that were confirmed installed and have since been removed from every
+   * device - a retention/removal signal the rest of the tab has no way to show (PO review: "80
+   * installed, 25 removed before the event" points at a UX/communication problem the adoption
+   * number alone hides). */
+  wallet_lifecycle: {
+    /** At least one active registration on any platform the event still offers - the same
+     * definition `classifyPassPlatform` uses for "confirmed" (platform !== "none"). */
+    active: number;
+    /** Not `active` above, but has real installation history somewhere: an inactive registration
+     * on an enabled platform, a live registration on a platform the event has since disabled, or a
+     * `first_confirmed_at` timestamp surviving a registration sync that came back with no current
+     * match. Deliberately not "any inactive registration count > 0 on an enabled platform" alone:
+     * an attendee can have an active registration on one device and an unrelated inactive
+     * registration left over from a different, since-removed device (or a different platform
+     * entirely) - that pass is still genuinely in active use, so it counts as `active` above, not
+     * here. Unlike `active`, this history isn't re-evaluated against the event's *current* platform
+     * toggles - a pass that installed and was removed (or is still live) on a platform since
+     * disabled keeps that real history rather than reading as though it never happened. */
+    removed: number;
+    /** Issued, but with no installation history at all - no active or inactive registration ever
+     * recorded on any platform (including one since disabled), and no `first_confirmed_at`. */
+    never_installed: number;
+  };
 }

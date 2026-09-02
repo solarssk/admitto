@@ -6,6 +6,7 @@ import {
   bucketForRegistrationCount,
   buildWalletExportCsvRow,
   buildWalletTicketTypeBreakdown,
+  classifyPassLifecycle,
   classifyPassPlatform,
   confirmedPlatformLabel,
   computeTapDays,
@@ -25,6 +26,8 @@ function pass(overrides: Partial<Record<string, unknown>> = {}) {
     status: "active",
     apple_active_registrations: 0,
     google_active_registrations: 0,
+    apple_inactive_registrations: 0,
+    google_inactive_registrations: 0,
     registration_checked_at: null,
     attendee: { ticket_type: "General", email_deliveries: [] },
     ...overrides,
@@ -51,6 +54,64 @@ describe("classifyPassPlatform", () => {
   it("treats any positive count as active, not just 1", () => {
     expect(classifyPassPlatform(3, 0)).toBe("apple_only");
     expect(classifyPassPlatform(0, 5)).toBe("google_only");
+  });
+});
+
+describe("classifyPassLifecycle", () => {
+  it("classifies an apple-active pass as active", () => {
+    expect(classifyPassLifecycle(1, 0, 0, 0, false)).toBe("active");
+  });
+
+  it("classifies a google-active pass as active", () => {
+    expect(classifyPassLifecycle(0, 1, 0, 0, false)).toBe("active");
+  });
+
+  it("classifies a pass with an inactive registration on apple and nothing active as removed", () => {
+    expect(classifyPassLifecycle(0, 0, 1, 0, false)).toBe("removed");
+  });
+
+  it("classifies a pass with an inactive registration on google and nothing active as removed", () => {
+    expect(classifyPassLifecycle(0, 0, 0, 1, false)).toBe("removed");
+  });
+
+  it("classifies a pass with inactive registrations on both platforms and nothing active as removed", () => {
+    expect(classifyPassLifecycle(0, 0, 1, 1, false)).toBe("removed");
+  });
+
+  it("classifies a pass with no registration of any kind and no installation history as never_installed", () => {
+    expect(classifyPassLifecycle(0, 0, 0, 0, false)).toBe("never_installed");
+  });
+
+  // The one correctness risk this function exists to get right: an attendee can have an active
+  // registration on one device and an unrelated inactive registration left over from a different,
+  // since-removed device - that pass is still genuinely in use, not "removed".
+  it("classifies a pass active on apple with an inactive registration on the SAME platform (a second, removed device) as active, not removed", () => {
+    expect(classifyPassLifecycle(1, 0, 1, 0, false)).toBe("active");
+  });
+
+  it("classifies a pass active on apple with an inactive registration on the OTHER platform (google) as active, not removed", () => {
+    expect(classifyPassLifecycle(1, 0, 0, 1, false)).toBe("active");
+  });
+
+  it("classifies a pass active on google with an inactive registration on apple as active, not removed", () => {
+    expect(classifyPassLifecycle(0, 1, 1, 0, false)).toBe("active");
+  });
+
+  it("classifies a pass active on both platforms with inactive registrations on both as active, not removed", () => {
+    expect(classifyPassLifecycle(1, 1, 1, 1, false)).toBe("active");
+  });
+
+  // `everInstalled` is the caller-computed "was this pass ever on a device, on any platform,
+  // ever" - unlike the gated active/inactive counts above, the caller derives it from raw,
+  // ungated data (a disabled platform's own real history, or a first_confirmed_at surviving a
+  // no-match registration sync) so a real installation history can't be forgotten just because
+  // the event's current settings, or a stale sync, no longer show it (CodeRabbit review).
+  it("classifies a pass with zero registrations everywhere but everInstalled true as removed, not never_installed", () => {
+    expect(classifyPassLifecycle(0, 0, 0, 0, true)).toBe("removed");
+  });
+
+  it("still classifies an active pass as active even when everInstalled is true too", () => {
+    expect(classifyPassLifecycle(1, 0, 0, 0, true)).toBe("active");
   });
 });
 
@@ -281,6 +342,63 @@ describe("aggregateWalletPasses — registrationCountBuckets", () => {
       { apple: true, google: false },
     );
     expect(result.registrationCountBuckets).toEqual({ "1": 0, "2": 1, "3": 0, "4_plus": 0 });
+  });
+});
+
+describe("aggregateWalletPasses — lifecycleCounts", () => {
+  it("splits a mixed batch into active/removed/never_installed, summing to the pass count", () => {
+    const result = aggregateWalletPasses(
+      [
+        pass({ apple_active_registrations: 1 }), // active
+        pass({ apple_inactive_registrations: 1 }), // removed
+        pass({}), // never_installed
+        // The one correctness risk: active on apple, but has a since-removed device's leftover
+        // inactive registration on google - still active overall, not removed.
+        pass({ apple_active_registrations: 1, google_inactive_registrations: 1 }),
+      ],
+      BOTH_ENABLED,
+    );
+    expect(result.lifecycleCounts).toEqual({ active: 2, removed: 1, never_installed: 1 });
+  });
+
+  it("still counts a disabled platform's own inactive registration as removed, not never_installed - unlike `active`, this history isn't re-evaluated against current platform toggles", () => {
+    const result = aggregateWalletPasses(
+      [pass({ apple_active_registrations: 0, google_active_registrations: 0, google_inactive_registrations: 1 })],
+      { apple: true, google: false },
+    );
+    expect(result.lifecycleCounts).toEqual({ active: 0, removed: 1, never_installed: 0 });
+  });
+
+  it("still counts a pass live only on a since-disabled platform as removed (the closest honest bucket once it's excluded from active), not never_installed", () => {
+    const result = aggregateWalletPasses(
+      [pass({ apple_active_registrations: 0, google_active_registrations: 1 })],
+      { apple: true, google: false },
+    );
+    expect(result.lifecycleCounts).toEqual({ active: 0, removed: 1, never_installed: 0 });
+  });
+
+  it("still counts a disabled platform's inactive registration as removed once it's re-evaluated on the enabled platform alone", () => {
+    const result = aggregateWalletPasses(
+      [pass({ apple_active_registrations: 0, apple_inactive_registrations: 1, google_active_registrations: 0, google_inactive_registrations: 1 })],
+      { apple: true, google: false },
+    );
+    expect(result.lifecycleCounts).toEqual({ active: 0, removed: 1, never_installed: 0 });
+  });
+
+  it("counts a pass as removed, not never_installed, when a no-match registration sync nulled every count but first_confirmed_at is still set", () => {
+    const result = aggregateWalletPasses(
+      [
+        pass({
+          first_confirmed_at: new Date("2026-01-01T00:00:00.000Z"),
+          apple_active_registrations: null,
+          google_active_registrations: null,
+          apple_inactive_registrations: null,
+          google_inactive_registrations: null,
+        }),
+      ],
+      BOTH_ENABLED,
+    );
+    expect(result.lifecycleCounts).toEqual({ active: 0, removed: 1, never_installed: 0 });
   });
 });
 

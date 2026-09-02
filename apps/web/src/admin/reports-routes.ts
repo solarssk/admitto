@@ -580,6 +580,8 @@ const WALLET_PASS_AGGREGATE_SELECT = {
   status: true,
   apple_active_registrations: true,
   google_active_registrations: true,
+  apple_inactive_registrations: true,
+  google_inactive_registrations: true,
   registration_checked_at: true,
   attendee: {
     select: {
@@ -660,6 +662,40 @@ export function confirmedPlatformLabel(appleActive: number, googleActive: number
   }
 }
 
+/** What became of one issued pass, for the Wallets tab's "Wallet lifecycle" card - mutually
+ * exclusive with the other two outcomes. "active" reuses classifyPassPlatform's own "confirmed"
+ * definition (appleActive/googleActive already zeroed for a disabled platform by the caller, same
+ * as everywhere else in this file) rather than re-deriving it, so the two can't drift - this
+ * intentionally stays gated, keeping `wallet_lifecycle.active` in agreement with
+ * `adoption.confirmed` elsewhere on this same report, rather than the two silently disagreeing on
+ * "how many are active right now" (bot review). "removed" is deliberately not "any inactive
+ * registration count > 0" on its own - an attendee can have an active registration on one device
+ * and an unrelated inactive registration left over from a different, since-removed device (or a
+ * different platform entirely), and that pass is still genuinely in use, so classifyPassPlatform's
+ * check above already routes it to "active" before this ever looks at the inactive counts at all.
+ * `everInstalled` is the caller-computed "was this pass EVER on a device, on any platform, ever" -
+ * unlike appleActive/appleInactive/etc. above it is deliberately NOT re-zeroed for a disabled
+ * platform: unlike "active" (a live-right-now question this event's current settings should gate),
+ * "was it ever installed" is a historical fact a later platform toggle can't retroactively undo -
+ * a pass that installed and was removed on a platform since disabled is still `removed`, not
+ * `never_installed`, and a pass still live only on a since-disabled platform is `removed` too
+ * (the closest honest bucket once it's excluded from `active` by the event's own current settings)
+ * rather than the flatly false claim that it was never installed anywhere (CodeRabbit review). It
+ * also covers registration-sync.ts nulling every registration column on a no-match provider
+ * lookup without touching `first_confirmed_at` - a pass demonstrably confirmed installed at some
+ * point can otherwise reach this function with every count at 0. */
+export function classifyPassLifecycle(
+  appleActive: number,
+  googleActive: number,
+  appleInactive: number,
+  googleInactive: number,
+  everInstalled: boolean,
+): "active" | "removed" | "never_installed" {
+  if (classifyPassPlatform(appleActive, googleActive) !== "none") return "active";
+  if (appleInactive + googleInactive > 0 || everInstalled) return "removed";
+  return "never_installed";
+}
+
 /** Whole days between the attendee's first ticket-link email and this pass actually being
  * confirmed installed on a wallet app (WalletPass.first_confirmed_at, stamped from PassCreator's
  * `first_pushnotification_registered` webhook - see applyFirstConfirmedAt), or null when either
@@ -686,6 +722,7 @@ interface WalletPassAggregates {
   tapDaySum: number;
   tapDayCount: number;
   registrationCountBuckets: Record<RegistrationCountBucketKey, number>;
+  lifecycleCounts: Record<"active" | "removed" | "never_installed", number>;
 }
 
 /** Folds one pass's contribution into the running aggregates - split out of aggregateWalletPasses'
@@ -702,6 +739,12 @@ function applyWalletPassToAggregates(
 ): void {
   const appleActive = enabledPlatforms.apple ? (pass.apple_active_registrations ?? 0) : 0;
   const googleActive = enabledPlatforms.google ? (pass.google_active_registrations ?? 0) : 0;
+  // Gated the same way as appleActive/googleActive above - a disabled platform's inactive count
+  // must drop out of the lifecycle classification below too, or a pass whose only registration
+  // ever was on a since-disabled platform would misread as "removed" (a real past install) instead
+  // of "never installed" (as far as this event's current wallet settings are concerned).
+  const appleInactive = enabledPlatforms.apple ? (pass.apple_inactive_registrations ?? 0) : 0;
+  const googleInactive = enabledPlatforms.google ? (pass.google_inactive_registrations ?? 0) : 0;
   const platform = classifyPassPlatform(appleActive, googleActive);
   if (platform === "both") acc.both++;
   else if (platform === "apple_only") acc.appleOnly++;
@@ -730,6 +773,17 @@ function applyWalletPassToAggregates(
     acc.tapDayCount++;
     acc.bucketCounts[bucketForDays(tapDays)]++;
   }
+
+  // Raw (ungated) - unlike appleActive/appleInactive/etc. above, "was this pass ever installed
+  // anywhere" must not forget a since-disabled platform's own real history (classifyPassLifecycle's
+  // own doc comment above explains why).
+  const everInstalled =
+    pass.first_confirmed_at != null ||
+    (pass.apple_active_registrations ?? 0) > 0 ||
+    (pass.google_active_registrations ?? 0) > 0 ||
+    (pass.apple_inactive_registrations ?? 0) > 0 ||
+    (pass.google_inactive_registrations ?? 0) > 0;
+  acc.lifecycleCounts[classifyPassLifecycle(appleActive, googleActive, appleInactive, googleInactive, everInstalled)]++;
 }
 
 /** Single pass over the (possibly sampled - see WALLET_AGGREGATE_MAX) pass rows, building every
@@ -750,6 +804,7 @@ export function aggregateWalletPasses(
     tapDaySum: 0,
     tapDayCount: 0,
     registrationCountBuckets: { "1": 0, "2": 0, "3": 0, "4_plus": 0 },
+    lifecycleCounts: { active: 0, removed: 0, never_installed: 0 },
   };
 
   for (const pass of passes) {
@@ -933,6 +988,7 @@ async function loadWalletReportsAggregates(
     tapDaySum,
     tapDayCount,
     registrationCountBuckets,
+    lifecycleCounts,
   } = aggregateWalletPasses(passes, enabledPlatforms);
 
   const gotPass = passes.length;
@@ -990,6 +1046,7 @@ async function loadWalletReportsAggregates(
         pct: oneDecimalPct(withoutWalletAdmitted, withoutWalletTotal),
       },
     },
+    wallet_lifecycle: lifecycleCounts,
   };
 }
 
@@ -1739,6 +1796,24 @@ async function exportWalletReportsPdf(
           .map((b) => `<tr><td>${escapeHtml(tapBucketLabels[b.key] ?? b.key)}</td><td>${b.count}</td><td>${b.pct}%</td></tr>`)
           .join("");
 
+  const lifecycleLabels: Record<keyof EventWalletReportsResponse["wallet_lifecycle"], string> = {
+    active: "Active",
+    removed: "Removed",
+    never_installed: "Never installed",
+  };
+  // Guarded on adoption.got_pass (not adoption.confirmed like platformRows/registrationCountRows
+  // above) - this breakdown is of every ISSUED pass, "never_installed" included, unlike those two
+  // which only cover the installed subset.
+  const lifecycleRows =
+    aggregates.adoption.got_pass === 0
+      ? ""
+      : (Object.keys(lifecycleLabels) as Array<keyof EventWalletReportsResponse["wallet_lifecycle"]>)
+          .map((key) => {
+            const count = aggregates.wallet_lifecycle[key];
+            return `<tr><td>${lifecycleLabels[key]}</td><td>${count}</td><td>${oneDecimalPct(count, aggregates.adoption.got_pass)}%</td></tr>`;
+          })
+          .join("");
+
   const statsHtml = [
     { label: "Total attendees", value: String(aggregates.total_attendees) },
     { label: "Issued", value: `${aggregates.adoption.got_pass} (${aggregates.adoption.got_pass_pct}% of attendees)` },
@@ -1753,7 +1828,7 @@ async function exportWalletReportsPdf(
   // sampled (bot review). .print-hint's existing warning-box styling, without no-print, since
   // this needs to survive into the saved/printed PDF, not just the on-screen preview.
   const truncatedWarningHtml = aggregates.passes_truncated
-    ? `<p class="print-hint">This event has more issued wallet passes than a single report can process at once, so platform mix, devices per attendee, adoption by ticket type, and time to wallet install below are based on a partial sample rather than every pass. Cumulative passes issued and admission rate by wallet status are unaffected - both come from a full count, not a sample.</p>`
+    ? `<p class="print-hint">This event has more issued wallet passes than a single report can process at once, so platform mix, devices per attendee, adoption by ticket type, wallet lifecycle, and time to wallet install below are based on a partial sample rather than every pass. Cumulative passes issued and admission rate by wallet status are unaffected - both come from a full count, not a sample.</p>`
     : "";
 
   const sectionsHtml = `
@@ -1777,6 +1852,11 @@ async function exportWalletReportsPdf(
   <table>
     <thead><tr><th>Days after ticket email</th><th>Passes</th><th>Share</th></tr></thead>
     <tbody>${tapRows || '<tr><td colspan="3">Not enough data yet</td></tr>'}</tbody>
+  </table>
+  <h2>Wallet lifecycle</h2>
+  <table>
+    <thead><tr><th>Status</th><th>Passes</th><th>Share of issued</th></tr></thead>
+    <tbody>${lifecycleRows || '<tr><td colspan="3">No wallet passes issued yet</td></tr>'}</tbody>
   </table>
   <h2>Admission rate by wallet status</h2>
   <table>
