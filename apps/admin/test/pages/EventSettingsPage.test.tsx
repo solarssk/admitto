@@ -163,6 +163,7 @@ const activeEvent = {
   issued_items_count: 0,
   installed_wallet_pass_count: 0,
   issued_wallet_pass_count: 0,
+  installed_wallet_pass_count_by_platform: { apple: 0, google: 0, samsung: 0 },
   organization_name: "Org",
   active_items: [] as Array<{ id: string; name: string; enabled: boolean }>,
   logo_url: null,
@@ -2682,6 +2683,226 @@ describe("EventSettingsPage — wallet push confirm dialog before save", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => {
       expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_api_key: null });
+    });
+  });
+
+  // Turning off wallet_enabled silently stops sync/void/restore/push for every issued pass and
+  // drops incoming PassCreator webhooks outright - the same class of "no indication anything
+  // changed" risk clearing the API key already gets a confirm for (PO report, 2026-09-02).
+  it("confirms before turning off wallet passes on an event with issued wallet passes", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      issued_wallet_pass_count: 4,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-enabled")).toBeTruthy();
+    });
+
+    fireEvent.click(document.getElementById("event-wallet-enabled") as HTMLInputElement);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Turn off wallet passes for this event?" });
+    expect(within(dialog).getByText(/This event has 4 issued wallet passes/)).toBeTruthy();
+    expect(patchEvent).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save and turn off" }));
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_enabled: false });
+    });
+  });
+
+  it("turns off wallet passes directly, without confirming, when the event has no issued wallet passes", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      issued_wallet_pass_count: 0,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-enabled")).toBeTruthy();
+    });
+
+    fireEvent.click(document.getElementById("event-wallet-enabled") as HTMLInputElement);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_enabled: false });
+    });
+  });
+
+  // A single platform toggle doesn't touch sync/void/restore/push (those are gated on
+  // wallet_enabled alone) - it hides that platform's Add to Wallet button and makes the admin UI
+  // misreport already-installed passes on it as "not added" (PO report, 2026-09-02).
+  it("confirms before turning off a wallet platform that already has installed passes", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_enabled: true,
+      wallet_apple_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+      installed_wallet_pass_count_by_platform: { apple: 3, google: 0, samsung: 0 },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await screen.findByRole("switch", { name: "Apple Wallet" });
+
+    fireEvent.click(screen.getByRole("switch", { name: "Apple Wallet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Turn off this wallet platform?" });
+    expect(within(dialog).getByText(/Apple Wallet \(3 installed passes\)/)).toBeTruthy();
+    expect(patchEvent).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save and turn off" }));
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_apple_enabled: false });
+    });
+  });
+
+  it("turns off a wallet platform directly, without confirming, when nothing is installed on it", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_enabled: true,
+      wallet_apple_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+      installed_wallet_pass_count_by_platform: { apple: 0, google: 0, samsung: 0 },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await screen.findByRole("switch", { name: "Apple Wallet" });
+
+    fireEvent.click(screen.getByRole("switch", { name: "Apple Wallet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_apple_enabled: false });
+    });
+  });
+
+  it("combines multiple platforms into one confirm dialog when several are turned off in the same save", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      wallet_enabled: true,
+      wallet_apple_enabled: true,
+      wallet_google_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+      installed_wallet_pass_count_by_platform: { apple: 2, google: 5, samsung: 0 },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await screen.findByRole("switch", { name: "Apple Wallet" });
+
+    fireEvent.click(screen.getByRole("switch", { name: "Apple Wallet" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Google Wallet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Turn off this wallet platform?" });
+    expect(
+      within(dialog).getByText(
+        /Apple Wallet \(2 installed passes\) and Google Wallet \(5 installed passes\) already have attendees/,
+      ),
+    ).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save and turn off" }));
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", {
+        wallet_apple_enabled: false,
+        wallet_google_enabled: false,
+      });
+    });
+  });
+
+  // wallet_enabled going off already covers every platform (resolveWalletProvider gates on it
+  // alone) - a redundant per-platform dialog on top would be noise the master-switch one below
+  // doesn't need repeated (NN/g "don't overuse confirmation dialogs").
+  it("shows only the disable_wallet confirm, not a platform one too, when both are turned off in the same save", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      issued_wallet_pass_count: 2,
+      wallet_enabled: true,
+      wallet_apple_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+      installed_wallet_pass_count_by_platform: { apple: 2, google: 0, samsung: 0 },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await waitFor(() => {
+      expect(document.getElementById("event-wallet-enabled")).toBeTruthy();
+    });
+
+    fireEvent.click(document.getElementById("event-wallet-enabled") as HTMLInputElement);
+    fireEvent.click(screen.getByRole("switch", { name: "Apple Wallet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await screen.findByRole("dialog", { name: "Turn off wallet passes for this event?" });
+    expect(screen.queryByRole("dialog", { name: "Turn off this wallet platform?" })).toBeNull();
+  });
+
+  // Regression (CodeRabbit review): the API-key-clear check used to run before the master-switch
+  // one, so a save that does both showed only the narrower "Clear the wallet API key?" dialog -
+  // silent about the master switch also dropping incoming PassCreator webhook updates outright.
+  it("shows the disable_wallet confirm, not clear_key, when a save both clears the API key and turns off wallet passes", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      issued_wallet_pass_count: 3,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await screen.findByRole("button", { name: "Clear" });
+
+    fireEvent.click(document.getElementById("event-wallet-enabled") as HTMLInputElement);
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Turn off wallet passes for this event?" });
+    expect(within(dialog).getByText(/This event has 3 issued wallet passes/)).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Clear the wallet API key?" })).toBeNull();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save and turn off" }));
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_enabled: false, wallet_api_key: null });
+    });
+  });
+
+  // Regression (CodeRabbit review): wallet_apple_enabled is itself in WALLET_RELEVANT_EVENT_FIELDS
+  // (its own relevantDate side effect) - disabling it on an event with a start time can trigger an
+  // event-wide push in the very same save, which the disable_platform dialog must disclose instead
+  // of claiming "nothing changes on attendees' actual devices".
+  it("mentions the event-wide push in the platform-disable confirm when turning off Apple Wallet also triggers one (relevantDate)", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 6,
+      wallet_enabled: true,
+      wallet_apple_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+      event_hours_start: "18:00",
+      installed_wallet_pass_count_by_platform: { apple: 2, google: 0, samsung: 0 },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await screen.findByRole("switch", { name: "Apple Wallet" });
+
+    fireEvent.click(screen.getByRole("switch", { name: "Apple Wallet" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Turn off this wallet platform?" });
+    expect(
+      within(dialog).getByText(/This save will also push an update to 6 installed wallet passes across every platform/),
+    ).toBeTruthy();
+    expect(within(dialog).queryByText(/Nothing changes on attendees' actual devices/)).toBeNull();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save and turn off" }));
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_apple_enabled: false });
     });
   });
 });

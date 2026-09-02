@@ -74,6 +74,11 @@ export type EventSettingsDto = {
    * issued under the current template becomes permanently unmanageable (sync, void/restore, push)
    * the moment the template ID changes, even if nobody ever installed it on a device. */
   issued_wallet_pass_count: number;
+  /** Per-platform breakdown of installed_wallet_pass_count above - drives the confirm dialog
+   * shown before turning off a single platform's wallet_*_enabled toggle: unlike wallet_enabled
+   * (the master switch), a platform toggle only affects that platform's own already-installed
+   * passes and new-attendee button visibility, so the confirm only needs that platform's count. */
+  installed_wallet_pass_count_by_platform: { apple: number; google: number; samsung: number };
   organization_name: string;
   active_items: Array<{ id: string; name: string; enabled: boolean }>;
   /** Event's own branding overrides — null means "inherited from organization". */

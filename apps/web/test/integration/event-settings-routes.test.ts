@@ -417,6 +417,74 @@ describe("GET /api/admin/events/:eventId/settings", () => {
     }
   });
 
+  it("returns installed_wallet_pass_count_by_platform split per platform, same population as the combined total", async () => {
+    const appleAttendee = await prisma.attendee.create({
+      data: { event_id: EVENT_SET, email: "apple-guest@example.com", name: "Apple Guest", status: "registered" },
+    });
+    const googleAttendee = await prisma.attendee.create({
+      data: { event_id: EVENT_SET, email: "google-guest@example.com", name: "Google Guest", status: "registered" },
+    });
+    const bothAttendee = await prisma.attendee.create({
+      data: { event_id: EVENT_SET, email: "both-guest@example.com", name: "Both Guest", status: "registered" },
+    });
+    const voidedSamsungAttendee = await prisma.attendee.create({
+      data: { event_id: EVENT_SET, email: "voided-samsung-guest@example.com", name: "Voided Samsung Guest", status: "registered" },
+    });
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: appleAttendee.id,
+        provider: "passcreator",
+        provider_pass_id: `pc-${appleAttendee.id}`,
+        status: "active",
+        apple_active_registrations: 1,
+      },
+    });
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: googleAttendee.id,
+        provider: "passcreator",
+        provider_pass_id: `pc-${googleAttendee.id}`,
+        status: "active",
+        google_active_registrations: 1,
+      },
+    });
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: bothAttendee.id,
+        provider: "passcreator",
+        provider_pass_id: `pc-${bothAttendee.id}`,
+        status: "active",
+        apple_active_registrations: 1,
+        google_active_registrations: 1,
+      },
+    });
+    // Voided must not count on any platform, even with a registration count still on the row.
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: voidedSamsungAttendee.id,
+        provider: "passcreator",
+        provider_pass_id: `pc-${voidedSamsungAttendee.id}`,
+        status: "voided",
+        samsung_active_registrations: 1,
+      },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}/settings`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        installed_wallet_pass_count_by_platform: { apple: number; google: number; samsung: number };
+      };
+      expect(body.installed_wallet_pass_count_by_platform).toEqual({ apple: 2, google: 2, samsung: 0 });
+    } finally {
+      const ids = [appleAttendee.id, googleAttendee.id, bothAttendee.id, voidedSamsungAttendee.id];
+      await prisma.walletPass.deleteMany({ where: { attendee_id: { in: ids } } });
+      await prisma.attendee.deleteMany({ where: { id: { in: ids } } });
+    }
+  });
+
   // Regression (bot review): revokeAllItemsForEvent skips a blocked-pass attendee's items via
   // the isAdmittable guard, so counting their items here would show/enable "Revoke all items
   // issued" for items the bulk action can never actually revoke, leaving the count stuck nonzero.
