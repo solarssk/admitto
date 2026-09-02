@@ -23,6 +23,7 @@ export {
   type MapLabelState,
 } from "./passcreator-mapper.js";
 export { resolveWalletProvider } from "./resolve-provider.js";
+export { walletTemplateLockKey, acquireWalletTemplateLock } from "./template-lock.js";
 export type { WalletPassRegistrationStatus } from "./types.js";
 export {
   runWalletRegistrationSync,

@@ -39,6 +39,14 @@ const WALLET_CARD_INTRO =
   "Lets attendees add their ticket to Apple Wallet or Google Wallet. The API key and template are specific to this event, nothing is shared with other events.";
 const WALLET_PROVIDER_HINT = "PassCreator is the only supported wallet pass provider today.";
 const WALLET_TEMPLATE_HINT = "Which pass design this event's attendees get.";
+// PassCreator scopes a pass lookup to one template, permanently - once a pass has been issued
+// under the current template, there's no way to move it to a different one, so every issued pass
+// (installed or not) would become unmanageable (sync, void/restore, push) the moment this
+// changed. The server enforces this too (event-settings-routes.ts's guardWalletCredentialChange,
+// 409 wallet_template_locked) - this disables the field proactively so the operator doesn't type
+// a change the save will reject anyway.
+const WALLET_TEMPLATE_LOCKED_HINT =
+  "Can't be changed once wallet passes have been issued for this event - the wallet provider can't move an existing pass to a different template.";
 const WALLET_API_KEY_HINT = "From the PassCreator dashboard, under API Keys.";
 const WALLET_FIELD_MAPPING_HEADER_DESC =
   "Add every field your template's Additional Properties expect. Nothing beyond the QR code is sent to PassCreator until it's mapped here.";
@@ -443,9 +451,9 @@ export function EventWalletPanel({
               id="event-wallet-template-id"
               label="Template ID"
               value={form.walletTemplateId}
-              disabled={isArchived || saving}
+              disabled={isArchived || saving || event.issued_wallet_pass_count > 0}
               placeholder="e.g. aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-              hint={WALLET_TEMPLATE_HINT}
+              hint={event.issued_wallet_pass_count > 0 ? WALLET_TEMPLATE_LOCKED_HINT : WALLET_TEMPLATE_HINT}
               {...NO_AUTOFILL_PROPS}
               onChange={(e) => setForm({ ...form, walletTemplateId: e.target.value })}
             />
