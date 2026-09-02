@@ -546,6 +546,19 @@ export function bucketForDays(days: number): TimeToTapBucketKey {
   return "8_plus";
 }
 
+type RegistrationCountBucketKey = "1" | "2" | "3" | "4_plus";
+
+/** registrationCount is appleActive + googleActive (the same enabledPlatforms-gated values
+ * classifyPassPlatform uses), i.e. how many devices/accounts one attendee's one pass is
+ * currently active on - never 0 here, since callers only bucket a pass once it's already
+ * confirmed (platform !== "none"). */
+export function bucketForRegistrationCount(registrationCount: number): RegistrationCountBucketKey {
+  if (registrationCount <= 1) return "1";
+  if (registrationCount === 2) return "2";
+  if (registrationCount === 3) return "3";
+  return "4_plus";
+}
+
 /** A Date as a YYYY-MM-DD string in the given IANA timezone - sv-SE locale is a well-known trick
  * for getting ISO-ordered digits straight out of Intl.DateTimeFormat (same approach as
  * formatAdmittedAtExport below), without pulling in a date library for one format call. */
@@ -672,6 +685,7 @@ interface WalletPassAggregates {
   bucketCounts: Record<TimeToTapBucketKey, number>;
   tapDaySum: number;
   tapDayCount: number;
+  registrationCountBuckets: Record<RegistrationCountBucketKey, number>;
 }
 
 /** Folds one pass's contribution into the running aggregates - split out of aggregateWalletPasses'
@@ -692,7 +706,10 @@ function applyWalletPassToAggregates(
   if (platform === "both") acc.both++;
   else if (platform === "apple_only") acc.appleOnly++;
   else if (platform === "google_only") acc.googleOnly++;
-  if (platform !== "none") acc.confirmed++;
+  if (platform !== "none") {
+    acc.confirmed++;
+    acc.registrationCountBuckets[bucketForRegistrationCount(appleActive + googleActive)]++;
+  }
   if (pass.registration_checked_at && (!acc.mostRecentSync || pass.registration_checked_at > acc.mostRecentSync)) {
     acc.mostRecentSync = pass.registration_checked_at;
   }
@@ -732,6 +749,7 @@ export function aggregateWalletPasses(
     bucketCounts: { same_day: 0, "1_3": 0, "4_7": 0, "8_plus": 0 },
     tapDaySum: 0,
     tapDayCount: 0,
+    registrationCountBuckets: { "1": 0, "2": 0, "3": 0, "4_plus": 0 },
   };
 
   for (const pass of passes) {
@@ -914,6 +932,7 @@ async function loadWalletReportsAggregates(
     bucketCounts,
     tapDaySum,
     tapDayCount,
+    registrationCountBuckets,
   } = aggregateWalletPasses(passes, enabledPlatforms);
 
   const gotPass = passes.length;
@@ -926,6 +945,13 @@ async function loadWalletReportsAggregates(
     key,
     count: bucketCounts[key],
     pct: oneDecimalPct(bucketCounts[key], tapDayCount),
+  }));
+
+  const registrationCountBucketOrder: RegistrationCountBucketKey[] = ["1", "2", "3", "4_plus"];
+  const registrationCountBucketsList = registrationCountBucketOrder.map((key) => ({
+    key,
+    count: registrationCountBuckets[key],
+    pct: oneDecimalPct(registrationCountBuckets[key], confirmed),
   }));
 
   return {
@@ -942,6 +968,9 @@ async function loadWalletReportsAggregates(
       apple_only: appleOnly,
       google_only: googleOnly,
       both,
+    },
+    registrations_per_attendee: {
+      buckets: registrationCountBucketsList,
     },
     by_ticket_type,
     issued_by_day,
@@ -1678,6 +1707,22 @@ async function exportWalletReportsPdf(
     .map((t) => `<tr><td>${escapeHtml(t.type)}</td><td>${t.got_pass}</td><td>${t.total}</td><td>${t.pct}%</td></tr>`)
     .join("");
 
+  const registrationCountLabels: Record<string, string> = {
+    "1": "1 device",
+    "2": "2 devices",
+    "3": "3 devices",
+    "4_plus": "4+ devices",
+  };
+  // Same buckets-always-populated issue as platformRows/tapRows above - branch on
+  // adoption.confirmed, matching the Wallets tab's own "Not enough data yet." condition for this
+  // card.
+  const registrationCountRows =
+    aggregates.adoption.confirmed === 0
+      ? ""
+      : aggregates.registrations_per_attendee.buckets
+          .map((b) => `<tr><td>${escapeHtml(registrationCountLabels[b.key] ?? b.key)}</td><td>${b.count}</td><td>${b.pct}%</td></tr>`)
+          .join("");
+
   const tapBucketLabels: Record<string, string> = {
     same_day: "Same day",
     "1_3": "1-3 days",
@@ -1708,7 +1753,7 @@ async function exportWalletReportsPdf(
   // sampled (bot review). .print-hint's existing warning-box styling, without no-print, since
   // this needs to survive into the saved/printed PDF, not just the on-screen preview.
   const truncatedWarningHtml = aggregates.passes_truncated
-    ? `<p class="print-hint">This event has more issued wallet passes than a single report can process at once, so platform mix, adoption by ticket type, and time-to-wallet-tap below are based on a partial sample rather than every pass. Cumulative passes issued and admission rate by wallet status are unaffected - both come from a full count, not a sample.</p>`
+    ? `<p class="print-hint">This event has more issued wallet passes than a single report can process at once, so platform mix, devices per attendee, adoption by ticket type, and time-to-wallet-tap below are based on a partial sample rather than every pass. Cumulative passes issued and admission rate by wallet status are unaffected - both come from a full count, not a sample.</p>`
     : "";
 
   const sectionsHtml = `
@@ -1717,6 +1762,11 @@ async function exportWalletReportsPdf(
   <table>
     <thead><tr><th>Platform</th><th>Passes</th><th>Share of installed</th></tr></thead>
     <tbody>${platformRows || '<tr><td colspan="3">No wallet passes installed yet</td></tr>'}</tbody>
+  </table>
+  <h2>Devices per attendee</h2>
+  <table>
+    <thead><tr><th>Devices</th><th>Attendees</th><th>Share</th></tr></thead>
+    <tbody>${registrationCountRows || '<tr><td colspan="3">No wallet passes installed yet</td></tr>'}</tbody>
   </table>
   <h2>Adoption by ticket type</h2>
   <table>

@@ -3,6 +3,7 @@ import type { TicketTypeInfo } from "@admitto/tickets";
 import {
   aggregateWalletPasses,
   bucketForDays,
+  bucketForRegistrationCount,
   buildWalletExportCsvRow,
   buildWalletTicketTypeBreakdown,
   classifyPassPlatform,
@@ -187,6 +188,26 @@ describe("bucketForDays", () => {
   });
 });
 
+describe("bucketForRegistrationCount", () => {
+  it("buckets 1 (and, defensively, 0) as \"1\"", () => {
+    expect(bucketForRegistrationCount(1)).toBe("1");
+    expect(bucketForRegistrationCount(0)).toBe("1");
+  });
+
+  it("buckets 2 as \"2\"", () => {
+    expect(bucketForRegistrationCount(2)).toBe("2");
+  });
+
+  it("buckets 3 as \"3\"", () => {
+    expect(bucketForRegistrationCount(3)).toBe("3");
+  });
+
+  it("buckets anything over 3 as 4_plus", () => {
+    expect(bucketForRegistrationCount(4)).toBe("4_plus");
+    expect(bucketForRegistrationCount(10)).toBe("4_plus");
+  });
+});
+
 describe("aggregateWalletPasses — enabledPlatforms gating", () => {
   it("counts a pass active on both platforms as both when both are enabled", () => {
     const result = aggregateWalletPasses(
@@ -231,6 +252,35 @@ describe("aggregateWalletPasses — enabledPlatforms gating", () => {
     expect(result.appleOnly).toBe(0);
     expect(result.googleOnly).toBe(0);
     expect(result.both).toBe(0);
+  });
+});
+
+describe("aggregateWalletPasses — registrationCountBuckets", () => {
+  it("sums apple + google active registrations per pass into the right bucket", () => {
+    const result = aggregateWalletPasses(
+      [
+        pass({ apple_active_registrations: 1, google_active_registrations: 0 }), // 1
+        pass({ apple_active_registrations: 2, google_active_registrations: 1 }), // 3
+        pass({ apple_active_registrations: 0, google_active_registrations: 2 }), // 2
+        pass({ apple_active_registrations: 3, google_active_registrations: 3 }), // 6 -> 4_plus
+      ],
+      BOTH_ENABLED,
+    );
+    expect(result.registrationCountBuckets).toEqual({ "1": 1, "2": 1, "3": 1, "4_plus": 1 });
+  });
+
+  it("excludes a not-confirmed pass (no active registration on either platform) from every bucket", () => {
+    const result = aggregateWalletPasses([pass({ apple_active_registrations: 0, google_active_registrations: 0 })], BOTH_ENABLED);
+    expect(result.registrationCountBuckets).toEqual({ "1": 0, "2": 0, "3": 0, "4_plus": 0 });
+  });
+
+  it("only counts the enabled platform's own registrations, same gating as confirmed/appleOnly above", () => {
+    // apple=2, google=1 raw, but Google disabled - bucket must reflect 2 (apple only), not 3.
+    const result = aggregateWalletPasses(
+      [pass({ apple_active_registrations: 2, google_active_registrations: 1 })],
+      { apple: true, google: false },
+    );
+    expect(result.registrationCountBuckets).toEqual({ "1": 0, "2": 1, "3": 0, "4_plus": 0 });
   });
 });
 

@@ -155,6 +155,15 @@ function fixture(overrides: Partial<EventWalletReportsResponse> = {}): EventWall
     passes_truncated: false,
     adoption: { got_pass: 15, got_pass_pct: 75, confirmed: 10, confirmed_pct: 66.7 },
     platform: { apple_only: 6, google_only: 3, both: 1 },
+    // Sums to confirmed=10 above (6+3+1+0).
+    registrations_per_attendee: {
+      buckets: [
+        { key: "1", count: 6, pct: 60 },
+        { key: "2", count: 3, pct: 30 },
+        { key: "3", count: 1, pct: 10 },
+        { key: "4_plus", count: 0, pct: 0 },
+      ],
+    },
     // got_pass/pct (issued) deliberately differ from confirmed/confirmed_pct (installed) below -
     // the "Adoption by ticket type" card must read the confirmed numbers, not got_pass, since a
     // ticket type can have issued-but-not-installed passes (e.g. VIP: 5 issued, only 4 installed).
@@ -346,6 +355,12 @@ describe("WalletsReportsTab", () => {
       { name: "More than one wallet", meta: "1 · 10%" },
     ]);
 
+    // Devices per attendee bar chart: one bar per bucket, matching fixture()'s buckets
+    // (6/3/1/0, summing to confirmed=10 above).
+    const devicesCard = cardByTitle("Devices per attendee");
+    const deviceRows = dataRows(within(devicesCard).getByTestId("rc-bar"));
+    expect(deviceRows.map((r) => r.pct)).toEqual([60, 30, 10, 0]);
+
     // Ticket-type breakdown: sorted descending by confirmed_pct (installed, not got_pass/pct
     // which are issued), and the null-key row relabeled "No ticket type" instead of showing its
     // raw `type` string.
@@ -445,6 +460,24 @@ describe("WalletsReportsTab", () => {
     const tapCard = cardByTitle("Time to wallet install");
     expect(within(tapCard).getByText("Not enough data yet.")).toBeTruthy();
     expect(within(tapCard).queryByTestId("rc-bar")).toBeNull();
+  });
+
+  it("shows 'Not enough data yet' instead of the devices-per-attendee chart when nothing is confirmed", async () => {
+    fetchEventWalletReports.mockResolvedValue(
+      fixture({
+        adoption: { got_pass: 15, got_pass_pct: 75, confirmed: 0, confirmed_pct: 0 },
+        registrations_per_attendee: { buckets: [] },
+      }),
+    );
+
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    const devicesCard = cardByTitle("Devices per attendee");
+    expect(within(devicesCard).getByText("Not enough data yet.")).toBeTruthy();
+    expect(within(devicesCard).queryByTestId("rc-bar")).toBeNull();
   });
 
   it("formats chart tooltip/label text with correct singular/plural and rounding", async () => {
@@ -564,7 +597,7 @@ describe("WalletsReportsTab", () => {
       { name: "Apple Wallet", meta: "6 · 60%" },
       { name: "Samsung Wallet", meta: "0 · 0%" },
     ]);
-    expect(within(platformCard).getByText(/confirmed it\.$/)).toBeTruthy();
+    expect(within(platformCard).getByText(/they used\.$/)).toBeTruthy();
     expect(within(platformCard).queryByText(/more than one at once/)).toBeNull();
   });
 

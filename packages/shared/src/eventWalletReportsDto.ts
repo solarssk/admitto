@@ -31,6 +31,17 @@ export interface EventWalletReportsResponse {
     google_only: number;
     both: number;
   };
+  /** How many active device/account registrations each confirmed attendee's single pass has,
+   * bucketed - provider-agnostic (reads WalletPass.apple_active_registrations +
+   * google_active_registrations, generic columns any WalletPassProvider populates the same way,
+   * not anything PassCreator-specific). One WalletPass per attendee (attendee_id is unique), so
+   * this is genuinely "how many attendees have their one pass on N devices/accounts", not a count
+   * of passes. Counts only confirmed attendees (adoption.confirmed) - an attendee with zero
+   * registrations isn't in any bucket here, same reasoning as `platform` above. Buckets always sum
+   * to exactly `adoption.confirmed`. */
+  registrations_per_attendee: {
+    buckets: Array<{ key: "1" | "2" | "3" | "4_plus"; count: number; pct: number }>;
+  };
   by_ticket_type: Array<{
     key: string | null;
     type: string;

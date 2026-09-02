@@ -2221,6 +2221,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     const body = (await res.json()) as {
       adoption: { got_pass: number; confirmed: number };
       platform: { apple_only: number; google_only: number; both: number };
+      registrations_per_attendee: { buckets: Array<{ key: string; count: number; pct: number }> };
       admission_by_wallet: {
         with_wallet: { total: number; admitted: number; pct: number };
         without_wallet: { total: number; admitted: number; pct: number };
@@ -2229,6 +2230,15 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.adoption.got_pass).toBe(2);
     expect(body.adoption.confirmed).toBe(1);
     expect(body.platform).toEqual({ apple_only: 1, google_only: 0, both: 0 });
+    // ATT_W_APPLE_ONLY_EVENT has apple_active_registrations=1, google_active_registrations=1,
+    // but Google is disabled for this event - the same enabledPlatforms-zeroed googleActive=0
+    // classifyPassPlatform already uses feeds this bucket too, so the sum is 1, not 2.
+    expect(body.registrations_per_attendee.buckets).toEqual([
+      { key: "1", count: 1, pct: 100 },
+      { key: "2", count: 0, pct: 0 },
+      { key: "3", count: 0, pct: 0 },
+      { key: "4_plus", count: 0, pct: 0 },
+    ]);
     // ATT_W_GOOGLE_ONLY_EVENT's registration is only on the now-disabled Google platform - without
     // enabledPlatforms gating confirmedWalletFilter too (not just aggregateWalletPasses above),
     // this would still count it as "with wallet" here despite adoption.confirmed already
@@ -2249,6 +2259,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
       passes_truncated: boolean;
       adoption: { got_pass: number; got_pass_pct: number; confirmed: number; confirmed_pct: number };
       platform: { apple_only: number; google_only: number; both: number };
+      registrations_per_attendee: { buckets: Array<{ key: string; count: number; pct: number }> };
       by_ticket_type: Array<{
         key: string | null;
         type: string;
@@ -2281,6 +2292,16 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.adoption.confirmed_pct).toBeCloseTo(71.4);
 
     expect(body.platform).toEqual({ apple_only: 3, google_only: 1, both: 1 });
+
+    // Registrations per attendee: ATT_W_APPLE (1+0=1), ATT_W_NOTYPE (1+0=1), ATT_W_LEGACY_TYPE
+    // (1+0=1) bucket as "1"; ATT_W_BOTH (2+1=3) and ATT_W_GOOGLE (0+3=3) bucket as "3" - sums to
+    // adoption.confirmed=5 above, same as `platform`.
+    expect(body.registrations_per_attendee.buckets).toEqual([
+      { key: "1", count: 3, pct: 60 },
+      { key: "2", count: 0, pct: 0 },
+      { key: "3", count: 2, pct: 40 },
+      { key: "4_plus", count: 0, pct: 0 },
+    ]);
 
     const general = body.by_ticket_type.find((t) => t.key === "General");
     expect(general).toBeDefined();
@@ -2499,6 +2520,11 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     // rows should render, not the buckets-always-populated dead-code fallback text.
     expect(html).toContain("1-3 days");
     expect(html).not.toContain("Not enough data yet");
+    // registrations_per_attendee.buckets isn't all-zero (adoption.confirmed=5 above), so the
+    // "Devices per attendee" table's real rows should render, not its own empty fallback.
+    expect(html).toContain("Devices per attendee");
+    expect(html).toContain("1 device");
+    expect(html).not.toContain("No wallet passes installed yet");
     // EVENT_WALLETS has 8 seeded passes, nowhere near WALLET_AGGREGATE_MAX - the partial-sample
     // warning must stay absent (the passes_truncated: true path itself would need 50,001+ seeded
     // passes to exercise directly, impractical for an integration test; this only guards the

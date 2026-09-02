@@ -9,6 +9,7 @@ const sample: EventWalletReportsResponse = {
   passes_truncated: false,
   adoption: { got_pass: 2, got_pass_pct: 50, confirmed: 1, confirmed_pct: 50 },
   platform: { apple_only: 1, google_only: 0, both: 0 },
+  registrations_per_attendee: { buckets: [] },
   by_ticket_type: [],
   issued_by_day: [],
   time_to_wallet_tap: { average_days: null, buckets: [] },

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Wallet passes now track the moment they're actually confirmed installed on a wallet app (PassCreator's `first_pushnotification_registered` webhook, given its own dedicated subscription URL alongside the existing void/registration ones), not just when a pass is issued. Reports' Wallets tab "Time to wallet install" card (renamed from "Time to wallet tap") now measures from the ticket email to that confirmed install instead of to the earlier "Add to Wallet" tap, which only reflected how fast someone opened the email rather than whether the pass ever actually installed. A one-time ops script backfills this for passes issued before the change, from PassCreator's own record of the pass's first device download.
+- Reports' Wallets tab has a new "Devices per attendee" card: some attendees add their ticket to more than one device (a phone and a smartwatch, say), so the number of active wallet installations can run higher than the number of people who installed one at all. The new card groups confirmed attendees by how many devices/wallet accounts they're actually using (1, 2, 3, or 4+), and the Wallet platform card next to it is now explicitly worded as attendee counts to keep the distinction clear. The Wallet PDF export gets a matching "Devices per attendee" table.
 
 ### Fixed
 
