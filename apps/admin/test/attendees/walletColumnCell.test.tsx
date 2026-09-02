@@ -27,6 +27,8 @@ describe("WalletColumnCell", () => {
           apple_inactive_registrations: 0,
           google_active_registrations: 0,
           google_inactive_registrations: 0,
+          samsung_active_registrations: 0,
+          samsung_inactive_registrations: 0,
         }}
         enabledPlatforms={BOTH_ENABLED}
       />,
@@ -37,6 +39,27 @@ describe("WalletColumnCell", () => {
     expect(google.className).not.toContain("attendees-table-v2__wallet-icon--active");
   });
 
+  it("highlights the Samsung icon too once it has a real active registration", () => {
+    render(
+      <WalletColumnCell
+        status={{
+          apple_active_registrations: 0,
+          apple_inactive_registrations: 0,
+          google_active_registrations: 0,
+          google_inactive_registrations: 0,
+          samsung_active_registrations: 1,
+          samsung_inactive_registrations: 0,
+        }}
+        enabledPlatforms={{ apple: true, google: true, samsung: true, any: true }}
+      />,
+    );
+    const samsung = screen.getByLabelText("Samsung Wallet: Registered");
+    // SVG elements expose a live `.className` as an SVGAnimatedString, not a plain string like
+    // HTML elements (unlike Apple/Google's <i> font-glyph icons above) - read the class attribute
+    // directly instead, which behaves the same for both element types.
+    expect(samsung.getAttribute("class")).toContain("attendees-table-v2__wallet-icon--active");
+  });
+
   it("shows both platforms as inactive when neither has an active registration", () => {
     render(
       <WalletColumnCell
@@ -45,6 +68,8 @@ describe("WalletColumnCell", () => {
           apple_inactive_registrations: null,
           google_active_registrations: 0,
           google_inactive_registrations: 1,
+          samsung_active_registrations: null,
+          samsung_inactive_registrations: null,
         }}
         enabledPlatforms={BOTH_ENABLED}
       />,
@@ -77,18 +102,17 @@ describe("WalletColumnCell", () => {
     expect(screen.queryByLabelText(/Samsung Wallet/)).toBeNull();
   });
 
-  it("shows the Samsung icon, always muted, when Samsung Wallet is enabled alongside a real platform", () => {
+  it("shows the Samsung icon, muted like Apple/Google, when no WalletPass row exists yet", () => {
     render(
       <WalletColumnCell
         status={null}
         enabledPlatforms={{ apple: true, google: true, samsung: true, any: true }}
       />,
     );
-    const samsung = screen.getByLabelText("Samsung Wallet: Not supported yet");
+    const samsung = screen.getByLabelText("Samsung Wallet: Not added");
     expect(samsung).toBeTruthy();
-    // No samsung_active_registrations field exists anywhere (no PassCreator API support yet) -
-    // this can never be "active", unlike Apple/Google above.
-    expect(samsung.className).not.toContain("attendees-table-v2__wallet-icon--active");
+    // SVG className is a live SVGAnimatedString, not a plain string - read the attribute instead.
+    expect(samsung.getAttribute("class")).not.toContain("attendees-table-v2__wallet-icon--active");
   });
 
   it("omits the Samsung icon when Samsung Wallet is disabled, even with Apple/Google both on", () => {

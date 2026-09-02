@@ -1378,9 +1378,8 @@ describe("EventSettingsPage tabs", () => {
     expect(screen.getByText("PassCreator")).toBeTruthy();
     expect(screen.getByLabelText("Apple Wallet")).toBeTruthy();
     expect(screen.getByLabelText("Google Wallet")).toBeTruthy();
-    // Not "not supported" in the sense of being unusable - the toggle is real and saveable (it
-    // gates Reports' platform breakdown), just not yet backed by any PassCreator Samsung API, which
-    // is what the row's own "Not supported yet." copy refers to.
+    // The toggle is real and saveable, same as Apple/Google's own rows - PassCreator just hasn't
+    // finished activating Samsung Wallet on any template yet, so no attendee gets a real pass today.
     expect((screen.getByLabelText("Samsung Wallet") as HTMLInputElement).disabled).toBe(false);
   });
 

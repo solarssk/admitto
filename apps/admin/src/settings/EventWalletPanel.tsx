@@ -489,7 +489,7 @@ export function EventWalletPanel({
               </span>
               <div className="settings-row__text">
                 <strong>Samsung Wallet</strong>
-                <p>Not supported yet.</p>
+                <p>Shows the Add to Samsung Wallet button on this event's tickets.</p>
               </div>
               <Switch
                 id="event-wallet-samsung-enabled"

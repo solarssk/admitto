@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Ticket pages now show an Add to Samsung Wallet button alongside the existing Apple/Google Wallet ones when Samsung Wallet is enabled for the event. It isn't tappable yet since PassCreator hasn't finished activating Samsung Wallet support, but it reads the event's real Wallet settings rather than being hardcoded. The Attendees table, an attendee's own Wallet card, and its wallet-links menu all read real per-attendee Samsung registration status the same way they already do for Apple/Google, replacing the previous fixed "not supported" placeholder text.
+
 ## [0.6.5] - 2026-09-01
 
 ### Fixed

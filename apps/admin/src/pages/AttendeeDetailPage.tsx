@@ -85,6 +85,7 @@ import {
 } from "../components/ArchivedGuard.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
+import { SamsungGlyphIcon } from "../components/SamsungWalletIcon.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
 import { ROLE_BADGE_VARIANT, ROLE_LABELS } from "../auth/role-labels.js";
@@ -571,13 +572,14 @@ function WalletActionMenuItems({
 function WalletLinksMenu({
   appleUrl,
   androidUrl,
-}: Readonly<{ appleUrl: string | null; androidUrl: string | null }>) {
+  samsungEnabled,
+}: Readonly<{ appleUrl: string | null; androidUrl: string | null; samsungEnabled: boolean }>) {
   const { addToast } = useToast();
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
   });
 
-  if (!appleUrl && !androidUrl) return null;
+  if (!appleUrl && !androidUrl && !samsungEnabled) return null;
 
   async function copyLink(url: string, label: string) {
     setOpen(false);
@@ -631,6 +633,17 @@ function WalletLinksMenu({
                 <span className="more-actions-menu__item-hint">Install link for this attendee's pass</span>
               </span>
             </button>
+          )}
+          {samsungEnabled && (
+            <Tooltip content="Unavailable" className="more-actions-menu__item-wrapper" axis="horizontal">
+              <button type="button" role="menuitem" className="more-actions-menu__item" disabled>
+                <SamsungGlyphIcon aria-label="Samsung Wallet" />
+                <span className="more-actions-menu__item-text">
+                  <span>Copy Samsung Wallet link</span>
+                  <span className="more-actions-menu__item-hint">Install link for this attendee's pass</span>
+                </span>
+              </button>
+            </Tooltip>
           )}
         </div>
       )}
@@ -895,6 +908,7 @@ function AttendeeOverviewTab({
               <WalletLinksMenu
                 appleUrl={walletPlatforms.apple ? detail.wallet_apple_link : null}
                 androidUrl={walletPlatforms.google ? detail.wallet_google_link : null}
+                samsungEnabled={walletPlatforms.samsung}
               />
             }
           >
@@ -922,14 +936,20 @@ function AttendeeOverviewTab({
                     </span>
                   </div>
                 )}
-                {/* No samsung_active_registrations field exists (no PassCreator API support yet -
-                    see EnabledWalletPlatforms.samsung's own doc comment), so unlike the Apple/Google
-                    rows above this can never show a real per-attendee status - a reserved row,
-                    same idea as the always-0 Samsung slice in Reports' platform breakdown. */}
+                {/* Same registration-status mechanism as Apple/Google above (confirmed live against
+                    PassCreator's GET /api/v3/pass search response, 2026-09-02) - reads real data,
+                    it just stays 0/null for every attendee today since PassCreator hasn't finished
+                    activating Samsung Wallet for any template yet (walletApps.android.samsung.
+                    templateCreated: false). No code change needed once that flips. */}
                 {walletPlatforms.samsung && (
                   <div className="attendee-detail-row">
                     <span>Samsung Wallet</span>
-                    <span>Not supported yet</span>
+                    <span>
+                      {walletRegistrationLabel(
+                        detail.wallet_pass.samsung_active_registrations,
+                        detail.wallet_pass.samsung_inactive_registrations,
+                      )}
+                    </span>
                   </div>
                 )}
                 {/* None of these timestamps has a captured actor/device timezone (issued_at is the
