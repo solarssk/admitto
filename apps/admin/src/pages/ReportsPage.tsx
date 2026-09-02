@@ -33,13 +33,14 @@ const LOG_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 const LOG_PAGE_SIZE_DEFAULT = 50;
 const REPORT_SUBTITLE = "Admission statistics and event-day analytics";
 
-type ReportsTab = "eventday" | "wallets" | "customfields";
+type ReportsTab = "eventday" | "wallets" | "customfields" | "mail";
 
 /** Resolve the active tab from `?tab=`, same convention as usersTabFromSearch/inPageTabFromSearch. */
 function reportsTabFromSearch(params: URLSearchParams): ReportsTab {
   const tab = params.get("tab");
   if (tab === "wallets") return "wallets";
   if (tab === "customfields") return "customfields";
+  if (tab === "mail") return "mail";
   return "eventday";
 }
 const ATTENDANCE_CONFIRMATION_HINT =
@@ -748,6 +749,9 @@ const WalletsReportsTab = lazy(() =>
 const CustomFieldsReportsTab = lazy(() =>
   import("./CustomFieldsReportsTab.js").then((m) => ({ default: m.CustomFieldsReportsTab })),
 );
+const MailReportsTab = lazy(() =>
+  import("./MailReportsTab.js").then((m) => ({ default: m.MailReportsTab })),
+);
 
 function ReportsTabFallback() {
   return (
@@ -802,6 +806,11 @@ export function ReportsPage() {
   const [customFieldsTabVisited, setCustomFieldsTabVisited] = useState(
     () => reportsTabFromSearch(searchParams) === "customfields",
   );
+  // Sticky like customFieldsTabVisited above - Mail, like Custom fields, has no per-event toggle
+  // (every event that has sent any mail has EmailDelivery rows), so the tab is always offered.
+  const [mailTabVisited, setMailTabVisited] = useState(
+    () => reportsTabFromSearch(searchParams) === "mail",
+  );
 
   // The URL is the source of truth for the active tab, so a reload or a shared link lands back
   // on the same one instead of always resetting to Event day - same pattern as UsersPage/SettingsPage.
@@ -817,6 +826,7 @@ export function ReportsPage() {
     if (target !== activeTab) setActiveTab(target);
     if (target === "wallets") setWalletsTabVisited(true);
     if (target === "customfields") setCustomFieldsTabVisited(true);
+    if (target === "mail") setMailTabVisited(true);
   }, [searchParams, activeTab, walletsTabAvailable, setSearchParams]);
 
   const [data, setData] = useState<EventReportsResponse | null>(null);
@@ -1026,7 +1036,11 @@ export function ReportsPage() {
             // to export. Custom fields has no CSV/PDF export of its own yet, so the button is
             // simply unavailable while that tab is active, rather than falling through to
             // export whichever other tab's data handleExportCsv/handleExportPdf default to.
-            disabled={(activeTab === "eventday" && (loading || !!error)) || activeTab === "customfields"}
+            disabled={
+              (activeTab === "eventday" && (loading || !!error)) ||
+              activeTab === "customfields" ||
+              activeTab === "mail"
+            }
             isDesktop={isDesktop}
             onExport={handleExport}
           />
@@ -1038,6 +1052,7 @@ export function ReportsPage() {
           { id: "eventday", label: "Event day" },
           ...(walletsTabAvailable ? [{ id: "wallets" as const, label: "Wallets" }] : []),
           { id: "customfields", label: "Custom fields" },
+          { id: "mail", label: "Mail" },
         ]}
         value={activeTab}
         onChange={(id) => setSearchParams({ tab: id }, { replace: true })}
@@ -1062,7 +1077,16 @@ export function ReportsPage() {
         // the normal way (contents has no "hidden" state of its own to toggle).
         <div style={{ display: activeTab === "wallets" ? "contents" : "none" }}>
           <Suspense fallback={<ReportsTabFallback />}>
-            <WalletsReportsTab eventId={eventId} walletPlatforms={walletPlatforms} />
+            <WalletsReportsTab eventId={eventId} walletPlatforms={walletPlatforms} isActive={activeTab === "wallets"} />
+          </Suspense>
+        </div>
+      )}
+
+      {mailTabVisited && (
+        // Same display:contents reasoning as the Wallets/Custom fields wrappers above.
+        <div style={{ display: activeTab === "mail" ? "contents" : "none" }}>
+          <Suspense fallback={<ReportsTabFallback />}>
+            <MailReportsTab eventId={eventId} isActive={activeTab === "mail"} />
           </Suspense>
         </div>
       )}
