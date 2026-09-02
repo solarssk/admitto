@@ -37,13 +37,13 @@ describe("describeWalletKeyClearConfirm", () => {
 describe("describeWalletDisableConfirm", () => {
   it("uses singular wording for exactly one issued pass", () => {
     expect(describeWalletDisableConfirm(1)).toBe(
-      "This event has 1 issued wallet pass. Turning off wallet passes stops syncing, voiding, restoring, and pushing updates to it, and any PassCreator update that arrives while it's off (a device registration, a removal) is dropped rather than queued - it won't be picked up once you turn this back on.",
+      "This event has 1 issued wallet pass. Turning off wallet passes stops syncing, voiding, restoring, and pushing updates to it, and drops any PassCreator webhook notification (a device registration, a removal) that arrives while it's off. The periodic background sync still re-checks each pass's real status directly with PassCreator once you turn this back on, so nothing is lost permanently - just delayed until the next sync.",
     );
   });
 
   it("uses plural wording for more than one issued pass", () => {
     expect(describeWalletDisableConfirm(4)).toBe(
-      "This event has 4 issued wallet passes. Turning off wallet passes stops syncing, voiding, restoring, and pushing updates to them, and any PassCreator update that arrives while it's off (a device registration, a removal) is dropped rather than queued - it won't be picked up once you turn this back on.",
+      "This event has 4 issued wallet passes. Turning off wallet passes stops syncing, voiding, restoring, and pushing updates to them, and drops any PassCreator webhook notification (a device registration, a removal) that arrives while it's off. The periodic background sync still re-checks each pass's real status directly with PassCreator once you turn this back on, so nothing is lost permanently - just delayed until the next sync.",
     );
   });
 });

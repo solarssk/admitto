@@ -28,14 +28,18 @@ export function describeWalletKeyClearConfirm(issuedCount: number): string {
 /** Confirm-dialog copy for turning off wallet_enabled (the master switch) on an event with
  * already-issued passes (EventSettingsPage.tsx's own handleSave). Broader than
  * describeWalletKeyClearConfirm above: turning this off also drops every incoming PassCreator
- * webhook for the event outright (a 404, not queued) rather than just pausing them, so a device
- * registration or removal that arrives while it's off is lost, not merely delayed - PO report,
+ * webhook for the event outright (a 404, not queued) rather than just pausing them - PO report,
  * 2026-09-02 ("trzeba zabezpieczyć sytuację w której ktoś mógłby przez przypadek... wyłączyć
- * funkcjonalność walletów"). */
+ * funkcjonalność walletów"). The dropped webhook *delivery* really is gone - PassCreator doesn't
+ * retry a 404 - but the *registration state* it would have carried isn't lost forever: the
+ * periodic wallet_sync worker (runWalletRegistrationSync, registration-sync.ts) re-reads each
+ * pass's real status directly from PassCreator on its own schedule regardless of any webhook, so
+ * it self-corrects once wallet_enabled is back on, typically within its own sync interval rather
+ * than never (CodeRabbit review - the previous wording claimed the change itself was lost). */
 export function describeWalletDisableConfirm(issuedCount: number): string {
   const pass = issuedCount === 1 ? "pass" : "passes";
   const it = issuedCount === 1 ? "it" : "them";
-  return `This event has ${issuedCount} issued wallet ${pass}. Turning off wallet passes stops syncing, voiding, restoring, and pushing updates to ${it}, and any PassCreator update that arrives while it's off (a device registration, a removal) is dropped rather than queued - it won't be picked up once you turn this back on.`;
+  return `This event has ${issuedCount} issued wallet ${pass}. Turning off wallet passes stops syncing, voiding, restoring, and pushing updates to ${it}, and drops any PassCreator webhook notification (a device registration, a removal) that arrives while it's off. The periodic background sync still re-checks each pass's real status directly with PassCreator once you turn this back on, so nothing is lost permanently - just delayed until the next sync.`;
 }
 
 /** Confirm-dialog copy for turning off one or more per-platform toggles (wallet_apple_enabled /
