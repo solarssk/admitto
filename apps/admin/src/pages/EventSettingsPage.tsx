@@ -22,15 +22,12 @@ import {
   archiveEvent,
   deleteEvent,
   exportEventPii,
-  fetchEventLocation,
   fetchEventSettings,
-  fetchWalletPushHistory,
   patchEvent,
   revokeAllCheckIns,
   revokeAllItemsIssued,
   testWalletConnection,
   unarchiveEvent,
-  type WalletPushHistoryEntry,
 } from "../api/client.js";
 import { WALLET_RELEVANT_EVENT_FIELDS } from "@admitto/shared";
 import {
@@ -39,7 +36,7 @@ import {
   isRelevantDateAffected,
 } from "@admitto/wallet/passcreator-mapper";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventLocationDto, EventSettingsDto, EventType, LogoCropMeta } from "../api/types.js";
+import type { EventSettingsDto, EventType, LogoCropMeta } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
 import { EventMailSettingsCard, type EventMailSettingsCardHandle } from "../settings/EventMailSettingsCard.js";
 import {
@@ -50,7 +47,7 @@ import { CheckInBehaviourPanel } from "../settings/CheckInBehaviourPanel.js";
 import { EventDangerZonePanel } from "../settings/EventDangerZonePanel.js";
 import { EventGeneralInfoPanel } from "../settings/EventGeneralInfoPanel.js";
 import { EventImagesPanel } from "../settings/EventImagesPanel.js";
-import { EventWalletPanel, WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT } from "../settings/EventWalletPanel.js";
+import { EventWalletPanel } from "../settings/EventWalletPanel.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
 import { buildWalletFieldMappingPatch, type WalletFieldMappingRow } from "../settings/walletFieldMapping.js";
 import { SettingsFooter } from "../settings/mailTransportFormParts.js";
@@ -60,6 +57,7 @@ import { isSuperadmin } from "../auth/capabilities.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useWalletLocationPreview, useWalletPushHistory } from "../hooks/useEventSettingsWalletTab.js";
 import {
   EVENT_SETTINGS_TABS,
   inPageTabFromSearch,
@@ -848,73 +846,24 @@ export function EventSettingsPage() {
     }
   }, [searchParams, tab, isSa]);
 
-  // Read-only preview data for the Wallet tab's field mapping hint icons (computeWalletPlaceholder
-  // Preview) - the event's own Location tab data, fetched independently of LocationSettingsPanel
-  // (which owns the editable copy) so opening Wallet alone doesn't require visiting Location
-  // first. Fetched once, only once the Wallet tab is actually visited - undefined stays "loading"
-  // rather than a misleading "not set" for the brief window before this resolves.
-  const [walletLocationPreview, setWalletLocationPreview] = useState<EventLocationDto | null | undefined>(
-    undefined,
+  // Wallet-tab-only fetch state (field-mapping location preview, push history) - extracted to
+  // their own hooks (SonarCloud S3776, see that file's own doc comments for why these two
+  // specifically).
+  const { walletLocationPreview, invalidateWalletLocationPreview } = useWalletLocationPreview(
+    eventId,
+    visitedTabs,
   );
-  useEffect(() => {
-    if (!eventId || !visitedTabs.has("wallet") || walletLocationPreview !== undefined) return;
-    const controller = new AbortController();
-    fetchEventLocation(eventId, controller.signal)
-      .then((data) => {
-        if (!controller.signal.aborted) setWalletLocationPreview(data);
-      })
-      .catch(() => {
-        /* preview-only: a failed fetch just leaves hint icons showing "Loading…" */
-      });
-    return () => controller.abort();
-  }, [eventId, visitedTabs, walletLocationPreview]);
-
-  // Wallet push history: re-fetched every time the admin switches to the Wallet tab (not just
-  // once) - unlike walletLocationPreview above (a static reference value), this list reflects
-  // background jobs triggered from elsewhere (currently only the Attendees list's bulk
-  // ticket-type change), so it can go stale while this tab stays mounted between visits.
-  const [walletPushHistory, setWalletPushHistory] = useState<WalletPushHistoryEntry[] | null>(null);
-  const [walletPushHistoryTotal, setWalletPushHistoryTotal] = useState(0);
-  const [walletPushHistoryError, setWalletPushHistoryError] = useState<string | null>(null);
-  const [walletPushHistoryToken, setWalletPushHistoryToken] = useState(0);
-  const [walletPushHistoryLoading, setWalletPushHistoryLoading] = useState(false);
-  const [walletPushHistoryPage, setWalletPushHistoryPage] = useState(1);
-  const [walletPushHistoryPageSize, setWalletPushHistoryPageSize] = useState(WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT);
-  const showWalletPushHistoryLoading = useDelayedLoading(walletPushHistoryLoading);
-  // Navigating from one event to another while the Wallet tab stays mounted must not keep the
-  // outgoing event's rows/total/page - a separate reset effect keyed on eventId alone would still
-  // let this effect run once more with the stale page for the new event first (both effects fire
-  // on the same eventId-change render pass, before the reset effect's setState is applied) -
-  // detecting the event change inline, in this same effect, is what actually avoids that request
-  // (CodeRabbit).
-  const walletPushHistoryEventIdRef = useRef(eventId);
-  useEffect(() => {
-    if (!eventId || tab !== "wallet") return;
-    const isNewEvent = eventId !== walletPushHistoryEventIdRef.current;
-    walletPushHistoryEventIdRef.current = eventId;
-    const page = isNewEvent ? 1 : walletPushHistoryPage;
-    if (isNewEvent) {
-      setWalletPushHistory(null);
-      setWalletPushHistoryTotal(0);
-      if (walletPushHistoryPage !== 1) setWalletPushHistoryPage(1);
-    }
-    const controller = new AbortController();
-    setWalletPushHistoryError(null);
-    setWalletPushHistoryLoading(true);
-    fetchWalletPushHistory(eventId, page, walletPushHistoryPageSize, controller.signal)
-      .then(({ items, total }) => {
-        setWalletPushHistory(items);
-        setWalletPushHistoryTotal(total);
-      })
-      .catch((err) => {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        setWalletPushHistoryError("Could not load wallet push history.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setWalletPushHistoryLoading(false);
-      });
-    return () => controller.abort();
-  }, [eventId, tab, walletPushHistoryToken, walletPushHistoryPage, walletPushHistoryPageSize]);
+  const {
+    walletPushHistory,
+    walletPushHistoryTotal,
+    walletPushHistoryError,
+    showWalletPushHistoryLoading,
+    walletPushHistoryPage,
+    walletPushHistoryPageSize,
+    setWalletPushHistoryPage,
+    setWalletPushHistoryPageSize,
+    retryWalletPushHistory,
+  } = useWalletPushHistory(eventId, tab);
 
   const handleTabChange = useCallback(
     (id: string) => {
@@ -1230,7 +1179,7 @@ export function EventSettingsPage() {
             // Invalidate the Wallet tab's read-only location snapshot so a saved venue-access
             // field (room/entrance/opening hours/...) shows up in its field-mapping preview
             // right away, instead of the value from whenever Wallet was first visited.
-            setWalletLocationPreview(undefined);
+            invalidateWalletLocationPreview();
             await refreshLayoutEvent?.();
           }}
           onApplyTimezone={(timezone) => {
@@ -1397,7 +1346,7 @@ export function EventSettingsPage() {
             walletPushHistory={walletPushHistory}
             walletPushHistoryTotal={walletPushHistoryTotal}
             walletPushHistoryError={walletPushHistoryError}
-            onRetryWalletPushHistory={() => setWalletPushHistoryToken((n) => n + 1)}
+            onRetryWalletPushHistory={retryWalletPushHistory}
             showWalletPushHistoryLoading={showWalletPushHistoryLoading}
             walletPushHistoryPage={walletPushHistoryPage}
             walletPushHistoryPageSize={walletPushHistoryPageSize}
