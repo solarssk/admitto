@@ -244,17 +244,14 @@ function platformSlices(
  * AdoptionGauge's ring beside it (a different chart type with a different internal layout wasn't
  * a coincidence, it was the actual cause). Both cards now build the same "fixed circle | flexible
  * list" row, so the two circles size and center identically at every breakpoint instead of two
- * unrelated layouts happening to look similar at one specific width. */
-function PlatformDonut({
-  platform,
-  installed,
-  enabledPlatforms,
-}: Readonly<{
-  platform: EventWalletReportsResponse["platform"];
-  installed: number;
-  enabledPlatforms: EnabledWalletPlatforms;
-}>) {
-  const slices = platformSlices(platform, enabledPlatforms);
+ * unrelated layouts happening to look similar at one specific width. Shared by PlatformDonut and
+ * WalletLifecycleDonut below - both chart a set of mutually-exclusive slices the same way, only
+ * the slices themselves and the center value/label differ (SonarCloud new-code duplication). */
+function DonutChart({
+  slices,
+  centerValue,
+  centerLabel,
+}: Readonly<{ slices: PlatformSlice[]; centerValue: number; centerLabel: string }>) {
   return (
     <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
       className="wallets-gauge-overlay"
@@ -297,11 +294,23 @@ function PlatformDonut({
         </PieChart>
       </ResponsiveContainer>
       <div className="wallets-gauge-overlay__center">
-        <span className="wallets-gauge-overlay__value">{installed}</span>
-        <span className="wallets-gauge-overlay__label">installed</span>
+        <span className="wallets-gauge-overlay__value">{centerValue}</span>
+        <span className="wallets-gauge-overlay__label">{centerLabel}</span>
       </div>
     </div>
   );
+}
+
+function PlatformDonut({
+  platform,
+  installed,
+  enabledPlatforms,
+}: Readonly<{
+  platform: EventWalletReportsResponse["platform"];
+  installed: number;
+  enabledPlatforms: EnabledWalletPlatforms;
+}>) {
+  return <DonutChart slices={platformSlices(platform, enabledPlatforms)} centerValue={installed} centerLabel="installed" />;
 }
 
 function platformBreakdownRows(
@@ -336,40 +345,7 @@ function walletLifecycleSlices(lifecycle: EventWalletReportsResponse["wallet_lif
 function WalletLifecycleDonut({
   lifecycle,
 }: Readonly<{ lifecycle: EventWalletReportsResponse["wallet_lifecycle"] }>) {
-  const slices = walletLifecycleSlices(lifecycle);
-  return (
-    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
-      className="wallets-gauge-overlay"
-      role="presentation"
-      onMouseDown={preventFocusRing}
-    >
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart style={{ fontFamily: FONT_FAMILY }}>
-          <Pie
-            data={slices}
-            dataKey="count"
-            nameKey="label"
-            innerRadius="58%"
-            outerRadius="90%"
-            stroke="#ffffff"
-            strokeWidth={2}
-            label={false}
-            labelLine={false}
-            isAnimationActive={false}
-          >
-            {slices.map((slice) => (
-              <Cell key={slice.label} fill={slice.color} />
-            ))}
-          </Pie>
-          <Tooltip formatter={(value) => `${value} pass${value === 1 ? "" : "es"}`} position={{ y: 256 }} />
-        </PieChart>
-      </ResponsiveContainer>
-      <div className="wallets-gauge-overlay__center">
-        <span className="wallets-gauge-overlay__value">{lifecycle.removed}</span>
-        <span className="wallets-gauge-overlay__label">removed</span>
-      </div>
-    </div>
-  );
+  return <DonutChart slices={walletLifecycleSlices(lifecycle)} centerValue={lifecycle.removed} centerLabel="removed" />;
 }
 
 function walletLifecycleBreakdownRows(
