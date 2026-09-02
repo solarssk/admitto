@@ -204,6 +204,41 @@ describe("MailReportsTab", () => {
     expect(await screen.findByText("No emails sent yet")).toBeTruthy();
   });
 
+  it("falls back to the raw status string and a neutral color for a status this tab doesn't have a label for", async () => {
+    // Defensive fallback, not a real status EMAIL_DELIVERY_STATUS actually produces today - covers
+    // the frontend and backend status enums drifting apart rather than a real product scenario.
+    fetchEventMailReports.mockResolvedValue(
+      fixture({
+        delivery: { total_attempts: 1, successful: 0, successful_pct: 0, by_status: [{ status: "unknown_status", count: 1 }] },
+      }),
+    );
+
+    renderWithToast(<MailReportsTab eventId="evt-1" isActive />);
+    await screen.findByText("Email delivery");
+
+    const deliveryCard = cardByTitle("Email delivery");
+    expect(breakdownRows(deliveryCard)).toEqual([{ name: "unknown_status", meta: "1 · 100%" }]);
+  });
+
+  it("shows a chart-specific EmptyState when there are delivery attempts but none has succeeded yet", async () => {
+    fetchEventMailReports.mockResolvedValue(
+      fixture({
+        delivery: { total_attempts: 2, successful: 0, successful_pct: 0, by_status: [{ status: "queued", count: 2 }] },
+        sent_by_day: [],
+      }),
+    );
+
+    renderWithToast(<MailReportsTab eventId="evt-1" isActive />);
+
+    // The tab-wide guard only fires on zero attempts (already covered above) - this event has
+    // attempts, just none successful yet, so the rest of the tab still renders normally and only
+    // the "Emails sent over time" card falls back to its own empty state.
+    await screen.findByText("Email delivery");
+    expect(screen.getByText("Nothing sent successfully yet")).toBeTruthy();
+    const chartCard = cardByTitle("Emails sent over time");
+    expect(chartCard.querySelector('[data-testid="rc-area"]')).toBeNull();
+  });
+
   it("renders every card's donut/breakdown from the aggregate response", async () => {
     fetchEventMailReports.mockResolvedValue(fixture());
 

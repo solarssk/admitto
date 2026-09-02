@@ -1307,10 +1307,22 @@ async function loadMailReportsAggregates(
     db.attendee.count({
       where: { event_id: eventId, email_deliveries: { some: { status: { in: successStatuses } } } },
     }),
+    // Two independent EXISTS checks (reached, ever viewed), not one predicate on a single row -
+    // recordTicketViewed stamps viewed_at on whichever delivery was "the latest successful one"
+    // at the moment the attendee actually opened the ticket page, but that same row's status can
+    // still change later (a hard bounce can arrive via the async IMAP bounce-ingest poll after a
+    // genuine view already happened, since applyBounceResult only requires the row to still be
+    // non-terminal - accepted counts). Requiring both conditions on the SAME row missed exactly
+    // that recovery case: initial accepted -> viewed -> bounces -> resend succeeds. The attendee
+    // is correctly "reached" (via the resend) and genuinely did view their ticket (via the
+    // now-bounced initial), but neither single row satisfies both at once (bot review).
     db.attendee.count({
       where: {
         event_id: eventId,
-        email_deliveries: { some: { status: { in: successStatuses }, viewed_at: { not: null } } },
+        AND: [
+          { email_deliveries: { some: { status: { in: successStatuses } } } },
+          { email_deliveries: { some: { viewed_at: { not: null } } } },
+        ],
       },
     }),
     db.emailDelivery.groupBy({

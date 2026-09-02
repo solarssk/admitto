@@ -86,6 +86,7 @@ const ATT_MAIL_FAILED = "att-reports-mail-failed";
 const ATT_MAIL_QUEUED = "att-reports-mail-queued";
 const ATT_MAIL_CANCELLED = "att-reports-mail-cancelled";
 const ATT_MAIL_BOUNCED_AFTER_ACCEPT = "att-reports-mail-bounced-after-accept";
+const ATT_MAIL_VIEWED_RECOVERED = "att-reports-mail-viewed-recovered";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -751,6 +752,7 @@ async function seed(client: PrismaClient) {
       { id: ATT_MAIL_QUEUED, event_id: EVENT_MAIL, email: "mail-queued@example.com", name: "Mail Queued", ...mkAttendeeToken() },
       { id: ATT_MAIL_CANCELLED, event_id: EVENT_MAIL, email: "mail-cancelled@example.com", name: "Mail Cancelled", ...mkAttendeeToken() },
       { id: ATT_MAIL_BOUNCED_AFTER_ACCEPT, event_id: EVENT_MAIL, email: "mail-bounced-after-accept@example.com", name: "Mail Bounced After Accept", ...mkAttendeeToken() },
+      { id: ATT_MAIL_VIEWED_RECOVERED, event_id: EVENT_MAIL, email: "mail-viewed-recovered@example.com", name: "Mail Viewed Recovered", ...mkAttendeeToken() },
     ],
   });
 
@@ -830,6 +832,32 @@ async function seed(client: PrismaClient) {
         // count this row just because a timestamp exists - it also needs status IN successStatuses.
         accepted_at: new Date("2027-08-31T10:00:00.000Z"),
         failed_at: new Date("2027-09-03T08:00:00.000Z"),
+      },
+      // Regression fixture: accepted -> attendee genuinely viewed the ticket page (viewed_at
+      // stamped on THIS row, while it was still a successful delivery) -> only later hard-bounces
+      // (applyBounceResult flips status without clearing viewed_at) -> a resend then succeeds.
+      // "Reached" comes from the resend row; "viewed" must still be true from this now-bounced
+      // row - ticket_viewed must check the two conditions as independent EXISTS, not require them
+      // on the same row (bot review).
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL,
+        attendee_id: ATT_MAIL_VIEWED_RECOVERED,
+        purpose: "initial",
+        provider: "export_only",
+        status: "bounced",
+        accepted_at: new Date("2027-09-03T09:00:00.000Z"),
+        viewed_at: new Date("2027-09-03T10:00:00.000Z"),
+        failed_at: new Date("2027-09-03T12:00:00.000Z"),
+      },
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL,
+        attendee_id: ATT_MAIL_VIEWED_RECOVERED,
+        purpose: "resend",
+        provider: "export_only",
+        status: "accepted",
+        accepted_at: new Date("2027-09-04T10:00:00.000Z"),
       },
     ],
   });
@@ -2824,50 +2852,57 @@ describe("GET /api/admin/events/:eventId/reports/mail", () => {
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     const body = (await res.json()) as EventMailReportsResponse;
 
-    expect(body.total_attendees).toBe(6);
+    expect(body.total_attendees).toBe(7);
 
-    // 7 delivery rows across 6 attendees (ATT_MAIL_RECOVERED has two: a bounced initial and a
-    // successful resend); 2 land in a success status (accepted, sent) - ATT_MAIL_BOUNCED_AFTER_ACCEPT's
-    // row does NOT count despite having accepted_at set, since its current status is "bounced".
-    expect(body.delivery.total_attempts).toBe(7);
-    expect(body.delivery.successful).toBe(2);
-    expect(body.delivery.successful_pct).toBeCloseTo(28.6, 1);
+    // 9 delivery rows across 7 attendees (ATT_MAIL_RECOVERED and ATT_MAIL_VIEWED_RECOVERED each
+    // have two: a bounced/hard-bounced initial and a successful resend); 3 land in a success
+    // status (2 accepted, 1 sent) - ATT_MAIL_BOUNCED_AFTER_ACCEPT's row does NOT count despite
+    // having accepted_at set, since its current status is "bounced".
+    expect(body.delivery.total_attempts).toBe(9);
+    expect(body.delivery.successful).toBe(3);
+    expect(body.delivery.successful_pct).toBeCloseTo(33.3, 1);
     expect(body.delivery.by_status).toEqual([
       { status: "queued", count: 1 },
-      { status: "accepted", count: 1 },
+      { status: "accepted", count: 2 },
       { status: "sent", count: 1 },
       { status: "failed", count: 1 },
-      { status: "bounced", count: 2 },
+      { status: "bounced", count: 3 },
       { status: "cancelled", count: 1 },
     ]);
 
-    // ATT_MAIL_RECOVERED's initial hard-bounced but its resend succeeded - reached exactly once,
-    // not double-counted, and not missed because the *first* attempt failed.
-    // ATT_MAIL_BOUNCED_AFTER_ACCEPT never reads as reached either, despite its row having a real
-    // accepted_at - its current status is "bounced", not a success status.
-    expect(body.attendee_reach).toEqual({ reached: 2, not_reached: 4, reached_pct: 33.3 });
+    // ATT_MAIL_RECOVERED's and ATT_MAIL_VIEWED_RECOVERED's initial sends both hard-bounced, but
+    // each one's resend succeeded - both count as reached exactly once, not double-counted, and
+    // not missed because the *first* attempt failed. ATT_MAIL_BOUNCED_AFTER_ACCEPT never reads as
+    // reached either, despite its row having a real accepted_at - its current status is "bounced".
+    expect(body.attendee_reach).toEqual({ reached: 3, not_reached: 4, reached_pct: 42.9 });
 
-    expect(body.by_purpose).toEqual({ initial: 6, resend: 1 });
+    expect(body.by_purpose).toEqual({ initial: 7, resend: 2 });
 
     expect(body.by_template).toEqual([
-      { template: null, total: 6, successful: 1, successful_pct: 16.7 },
+      { template: null, total: 8, successful: 2, successful_pct: 25 },
       { template: "Reminder", total: 1, successful: 1, successful_pct: 100 },
     ]);
 
     // Same real-calendar-date fragility as issued_by_day's own zero-fill (see that test's
-    // comment above) - assert on the two real days rather than exact array length/equality.
+    // comment above) - assert on the real days rather than exact array length/equality.
     const byDate = new Map(body.sent_by_day.map((row) => [row.date, row]));
     expect(byDate.get("2027-09-01")).toMatchObject({ count: 1, cumulative: 1 });
     // ATT_MAIL_RECOVERED's resend only has sent_at set (no accepted_at) - regression coverage for
     // COALESCE(accepted_at, sent_at, delivered_at) picking it up instead of silently dropping it.
     expect(byDate.get("2027-09-02")).toMatchObject({ count: 1, cumulative: 2 });
-    expect(body.sent_by_day.at(-1)!.cumulative).toBe(2);
-    // ATT_MAIL_BOUNCED_AFTER_ACCEPT's accepted_at falls on 2027-08-31, but its status is "bounced" -
-    // regression coverage for the status filter, not just the COALESCE timestamp.
+    expect(byDate.get("2027-09-04")).toMatchObject({ count: 1, cumulative: 3 });
+    expect(body.sent_by_day.at(-1)!.cumulative).toBe(3);
+    // ATT_MAIL_BOUNCED_AFTER_ACCEPT's accepted_at falls on 2027-08-31, and ATT_MAIL_VIEWED_RECOVERED's
+    // bounced initial falls on 2027-09-03 - both have a real accepted_at but a "bounced" status.
+    // Regression coverage for the status filter, not just the COALESCE timestamp.
     expect(byDate.has("2027-08-31")).toBe(false);
+    expect(byDate.has("2027-09-03")).toBe(false);
 
-    // Only ATT_MAIL_ACCEPTED has viewed_at set, out of the 2 reached attendees.
-    expect(body.ticket_viewed).toEqual({ reached: 2, viewed: 1, viewed_pct: 50 });
+    // reached (3) matches attendee_reach.reached above. viewed (2): ATT_MAIL_ACCEPTED viewed its
+    // one (successful) delivery; ATT_MAIL_VIEWED_RECOVERED viewed its initial delivery before it
+    // later hard-bounced, and only its separate resend is what makes it "reached" - the fix under
+    // test is that viewed doesn't require both facts on the very same delivery row.
+    expect(body.ticket_viewed).toEqual({ reached: 3, viewed: 2, viewed_pct: 66.7 });
   });
 });
 
