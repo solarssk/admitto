@@ -227,6 +227,10 @@ export const CODE_MESSAGES: Record<string, string> = {
   wallet_provider_unauthorized: "The wallet provider rejected the configured API key. Check the wallet configuration.",
   wallet_push_already_running: "A push is already running for this event. Try again once it finishes.",
   wallet_status_check_inconclusive: "Could not confirm the wallet pass status. Try again shortly.",
+  wallet_key_verification_failed:
+    "This API key can't reach the event's currently configured Template ID, so it wasn't saved. If you're rotating a compromised key, make sure the new key belongs to the same PassCreator account - use Test connection to see the exact reason PassCreator gave.",
+  wallet_template_locked:
+    "Can't change the Template ID once wallet passes have been issued for this event - the wallet provider can't move an existing pass to a different template. Voiding a pass doesn't clear this; use each attendee's Delete wallet pass action first if you need to switch templates.",
   already_archived: "This event is already archived.",
   cf_access_jwt_invalid: "Cloudflare Access could not verify this request.",
   cf_access_no_admin_access: "Cloudflare Access is not granting you admin access. Check your Access policy.",

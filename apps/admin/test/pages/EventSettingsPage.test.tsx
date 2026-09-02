@@ -162,6 +162,7 @@ const activeEvent = {
   admitted_count: 0,
   issued_items_count: 0,
   installed_wallet_pass_count: 0,
+  issued_wallet_pass_count: 0,
   organization_name: "Org",
   active_items: [] as Array<{ id: string; name: string; enabled: boolean }>,
   logo_url: null,
@@ -1048,6 +1049,38 @@ describe("EventSettingsPage tabs", () => {
     await waitFor(() => {
       expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
     });
+  });
+
+  // Regression: a pass PassCreator has already issued is permanently bound to its own template
+  // (event-settings-routes.ts's guardWalletCredentialChange) - the field must be locked on the
+  // broader issued_wallet_pass_count, not the narrower installed_wallet_pass_count (a pass nobody
+  // has installed yet is still unmanageable if the template changes underneath it).
+  it("disables the Template ID field once any wallet pass has been issued, even if none is installed yet", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 0,
+      issued_wallet_pass_count: 1,
+      wallet_template_id: "tmpl-1",
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    const input = await screen.findByLabelText("Template ID");
+    expect((input as HTMLInputElement).disabled).toBe(true);
+    expect(
+      screen.getByText(/can't be changed once wallet passes have been issued/i),
+    ).toBeTruthy();
+  });
+
+  it("keeps the Template ID field editable when no wallet pass has been issued yet", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      issued_wallet_pass_count: 0,
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    const input = await screen.findByLabelText("Template ID");
+    expect((input as HTMLInputElement).disabled).toBe(false);
+    expect(screen.getByText("Which pass design this event's attendees get.")).toBeTruthy();
   });
 
   it("shows wallet push history rows once fetched, with scope and status", async () => {
@@ -2600,6 +2633,55 @@ describe("EventSettingsPage — wallet push confirm dialog before save", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => {
       expect(patchEvent).toHaveBeenCalledWith("evt-1", { capacity: 150 });
+    });
+  });
+
+  // Regression (CodeRabbit review): clearing the API key used to skip every confirm dialog -
+  // willWalletBeConfiguredForPush deliberately returns false once the key is being cleared (it
+  // exists to avoid a false "will push" warning, not to skip warning altogether), so nothing else
+  // caught this case. Doesn't corrupt an issued pass the way changing the Template ID does, but it
+  // does silently stop managing every one of them.
+  it("confirms before clearing the API key on an event with issued wallet passes", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      issued_wallet_pass_count: 4,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await screen.findByRole("button", { name: "Clear" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Clear the wallet API key?" });
+    expect(within(dialog).getByText(/This event has 4 issued wallet passes/)).toBeTruthy();
+    expect(patchEvent).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save and clear" }));
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_api_key: null });
+    });
+  });
+
+  it("clears the API key directly, without confirming, when the event has no issued wallet passes", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      issued_wallet_pass_count: 0,
+      wallet_enabled: true,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key: { configured: true },
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+    await screen.findByRole("button", { name: "Clear" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => {
+      expect(patchEvent).toHaveBeenCalledWith("evt-1", { wallet_api_key: null });
     });
   });
 });

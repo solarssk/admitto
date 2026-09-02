@@ -1,6 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma, PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
+import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
+import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
 import type { WalletPassInput, WalletPassProvider } from "@admitto/wallet";
@@ -22,7 +24,13 @@ const EVENT_ID_NO_LOCATION = "evt-wallet-no-location";
 const ATTENDEE_NO_LOCATION_ID = "attendee-wallet-no-location";
 const NO_LOCATION_TOKEN = generateToken();
 
+// Only used by the "lock race" test below, which drives the admin PATCH route on the same app.
+const SUPER_EMAIL = "wallet-race-super@example.com";
+const SUPER_PASSWORD = "wallet-race-super-pass-123";
+const sameOrigin = { Origin: "http://localhost" };
+
 let prisma: PrismaClient;
+let superCookie = "";
 
 function stubProvider(): WalletPassProvider & {
   createPass: ReturnType<typeof vi.fn>;
@@ -144,9 +152,36 @@ async function seedWalletFixture(client: PrismaClient): Promise<void> {
   });
 }
 
+async function seedSuperadmin(client: PrismaClient): Promise<string> {
+  await client.session.deleteMany({ where: { user: { email: SUPER_EMAIL } } });
+  await client.roleAssignment.deleteMany({ where: { user: { email: SUPER_EMAIL } } });
+  await client.user.deleteMany({ where: { email: SUPER_EMAIL } });
+  const superUser = await client.user.create({
+    data: { email: SUPER_EMAIL, password_hash: await hashPassword(SUPER_PASSWORD) },
+  });
+  await client.roleAssignment.create({
+    data: { user_id: superUser.id, role: "superadmin", scope_type: "instance", scope_id: null },
+  });
+  // Superadmin is an MFA-required role - a FULL-stage session for a user with no confirmed
+  // method gets silently downgraded (createSession) / rejected (validateSession), so the PATCH
+  // below would 401 without this.
+  await client.userMfaMethod.create({
+    data: {
+      user_id: superUser.id,
+      type: "totp",
+      secret_enc: encryptTotpSecret(generateTotpSecret()),
+      confirmed_at: new Date(),
+    },
+  });
+  return superUser.id;
+}
+
 beforeAll(async () => {
   prisma = createTestPrismaClient();
   await seedWalletFixture(prisma);
+  const superId = await seedSuperadmin(prisma);
+  const superSession = await createSession(prisma, { userId: superId, stage: SESSION_STAGE.FULL });
+  superCookie = `admitto_session=${superSession.rawToken}`;
 });
 
 beforeEach(() => {
@@ -446,6 +481,90 @@ describe("On-demand wallet routes", () => {
     expect(saved?.provider_pass_id).toBe("pc-winner-delayed");
   });
 
+  // Regression (CodeRabbit review, P1): Event Settings' wallet-credential guard
+  // (event-settings-routes.ts's guardWalletCredentialChange) checks "has any pass been issued
+  // yet" before letting an admin change the event's Template ID - but this handler resolves its
+  // wallet provider from a snapshot taken at the top of the request, so an admin's Template ID
+  // change landing in the window between that snapshot and this pass actually persisting would
+  // otherwise let it save as "active" under a template the event no longer points at, permanently
+  // orphaning it (sync, void/restore, push would all target the wrong template from then on).
+  it("marks failed, not active, when the event's Template ID changes while this request's own createPass call is in flight", async () => {
+    const provider = stubProvider();
+    provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
+      // Simulates an admin's Event Settings save landing in the exact window between this
+      // request resolving its wallet provider and its own createPass call returning.
+      await prisma.event.update({
+        where: { id: EVENT_ID },
+        data: { wallet_template_id: "tmpl-changed-mid-request" },
+      });
+      return {
+        providerPassId: `pc-${input.userProvidedId}`,
+        downloadUrl: "https://pc.test/p/x",
+        appleUrl: "https://pc.test/apple/x",
+        androidUrl: "https://pc.test/android/x",
+      };
+    });
+    const app = makeApp(provider);
+
+    try {
+      const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+      const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+      expect(saved?.status).toBe("failed");
+      expect(saved?.last_error_code).toBe("wallet_credential_changed");
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_template_id: "tmpl-wallet-gala" } });
+    }
+  });
+
+  // Genuinely concurrent requests (no mocking of one side's timing) - issuance's own recheck+
+  // persist and the admin PATCH's own recheck+update each acquire the same per-event
+  // pg_advisory_xact_lock (acquireWalletTemplateLock) before doing either, so whichever request's
+  // transaction reaches Postgres first fully commits before the other's own recheck can run
+  // (mirrors event-custom-fields-routes.test.ts's identical advisory-lock race tests). Whichever
+  // side wins, the pass must never end up "active" while still bound to a template the event no
+  // longer records using anywhere - the exact orphaning this lock exists to prevent (CodeRabbit
+  // review, PR #1207).
+  it("never leaves an active wallet pass under a stale template when issuance races an admin's Template ID change (advisory lock)", async () => {
+    await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_template_id: "tmpl-race-a" } });
+    const provider = stubProvider();
+    const app = makeApp(provider);
+
+    try {
+      const [walletRes, patchRes] = await Promise.all([
+        app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" }),
+        app.request(`/api/admin/events/${EVENT_ID}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-race-b" }),
+        }),
+      ]);
+
+      expect(walletRes.status).toBe(302);
+      const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+      const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_ID } });
+
+      if (patchRes.status === 200) {
+        // The admin's change won the lock race and committed - issuance's own recheck (inside its
+        // own, separately-locked transaction) must then have seen the new template and refused to
+        // persist the pass as active under the old one.
+        expect(row.wallet_template_id).toBe("tmpl-race-b");
+        expect(saved?.status).toBe("failed");
+        expect(saved?.last_error_code).toBe("wallet_credential_changed");
+      } else {
+        // Issuance won the lock race and committed first - the admin's own recheck must then have
+        // seen the freshly-issued pass and refused the Template ID change outright.
+        expect(patchRes.status).toBe(409);
+        expect(row.wallet_template_id).toBe("tmpl-race-a");
+        expect(saved?.status).toBe("active");
+      }
+    } finally {
+      await prisma.event.update({ where: { id: EVENT_ID }, data: { wallet_template_id: "tmpl-wallet-gala" } });
+    }
+  });
+
   it("marks failed when a duplicate error can't be recovered (findByUserProvidedId finds nothing)", async () => {
     const provider = stubProvider();
     provider.createPass.mockRejectedValueOnce(
@@ -511,7 +630,10 @@ describe("On-demand wallet routes", () => {
   it("redirects with walletError=1 and logs when saving the newly-active pass throws", async () => {
     const provider = stubProvider();
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.spyOn(prisma.walletPass, "upsert").mockRejectedValueOnce(new Error("db down"));
+    // markActive's recheck + upsert now run inside one transaction (the Template ID lock race
+    // fix above) - mocking the transaction itself covers a failure anywhere inside it, same as
+    // mocking the upsert directly did before that recheck and this save were made atomic.
+    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db down"));
     const app = makeApp(provider);
 
     const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });

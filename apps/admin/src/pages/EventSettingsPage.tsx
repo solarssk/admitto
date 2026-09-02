@@ -22,15 +22,12 @@ import {
   archiveEvent,
   deleteEvent,
   exportEventPii,
-  fetchEventLocation,
   fetchEventSettings,
-  fetchWalletPushHistory,
   patchEvent,
   revokeAllCheckIns,
   revokeAllItemsIssued,
   testWalletConnection,
   unarchiveEvent,
-  type WalletPushHistoryEntry,
 } from "../api/client.js";
 import { WALLET_RELEVANT_EVENT_FIELDS } from "@admitto/shared";
 import {
@@ -39,7 +36,7 @@ import {
   isRelevantDateAffected,
 } from "@admitto/wallet/passcreator-mapper";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { EventLocationDto, EventSettingsDto, EventType, LogoCropMeta } from "../api/types.js";
+import type { EventSettingsDto, EventType, LogoCropMeta } from "../api/types.js";
 import { TicketTypesCard } from "../settings/TicketTypesCard.js";
 import { EventMailSettingsCard, type EventMailSettingsCardHandle } from "../settings/EventMailSettingsCard.js";
 import {
@@ -50,7 +47,7 @@ import { CheckInBehaviourPanel } from "../settings/CheckInBehaviourPanel.js";
 import { EventDangerZonePanel } from "../settings/EventDangerZonePanel.js";
 import { EventGeneralInfoPanel } from "../settings/EventGeneralInfoPanel.js";
 import { EventImagesPanel } from "../settings/EventImagesPanel.js";
-import { EventWalletPanel, WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT } from "../settings/EventWalletPanel.js";
+import { EventWalletPanel } from "../settings/EventWalletPanel.js";
 import { LocationSettingsPanel } from "../settings/LocationSettingsPanel.js";
 import { buildWalletFieldMappingPatch, type WalletFieldMappingRow } from "../settings/walletFieldMapping.js";
 import { SettingsFooter } from "../settings/mailTransportFormParts.js";
@@ -60,6 +57,7 @@ import { isSuperadmin } from "../auth/capabilities.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useWalletLocationPreview, useWalletPushHistory } from "../hooks/useEventSettingsWalletTab.js";
 import {
   EVENT_SETTINGS_TABS,
   inPageTabFromSearch,
@@ -68,7 +66,7 @@ import {
   type EventSettingsTab,
 } from "../settings/eventSettingsTabs.js";
 import { pluralSuffix } from "../utils/pluralize.js";
-import { describeWalletPushConfirm } from "../utils/walletPushConfirm.js";
+import { describeWalletKeyClearConfirm, describeWalletPushConfirm } from "../utils/walletPushConfirm.js";
 import "./event-settings-page.css";
 
 export type SettingsForm = {
@@ -321,6 +319,40 @@ function willWalletBeConfiguredForPush(form: SettingsForm, event: EventSettingsD
   if (form.walletApiKeyEdit.mode === "clear") return false;
   if (form.walletApiKeyEdit.mode === "replace") return form.walletApiKeyEdit.value.trim().length > 0;
   return event.wallet_api_key.configured;
+}
+
+/** Which wallet confirm dialog (if any) handleSave below should show before committing a save -
+ * extracted out of handleSave itself to keep EventSettingsPage's own cognitive complexity under
+ * the SonarCloud threshold (S3776), the same reason willWalletBeConfiguredForPush/
+ * patchTouchesWalletRelevantField above are already module-scope rather than nested in the
+ * component. Checked in this order: clearing the API key on an event with issued passes (own
+ * confirmation - see describeWalletKeyClearConfirm's own doc comment) takes priority over the
+ * "will push to installed passes" check below it, since willWalletBeConfiguredForPush already
+ * returns false once the key is being cleared (that check exists to avoid a false "will push"
+ * warning, not to skip warning altogether). */
+function resolveWalletConfirmKind(
+  form: SettingsForm,
+  original: SettingsForm,
+  event: EventSettingsDto,
+): "clear_key" | "push" | null {
+  if (event.issued_wallet_pass_count > 0 && form.walletApiKeyEdit.mode === "clear") {
+    return "clear_key";
+  }
+  try {
+    if (
+      event.installed_wallet_pass_count > 0 &&
+      willWalletBeConfiguredForPush(form, event) &&
+      patchTouchesWalletRelevantField(buildSettingsPatch(form, original), event)
+    ) {
+      return "push";
+    }
+  } catch {
+    // buildSettingsPatch can throw (e.g. invalid capacity) - fall through to null, so handleSave
+    // proceeds straight to commitSave, which rebuilds the same patch inside its own try/catch and
+    // shows the right validation toast, rather than this check's own throw becoming an unhandled
+    // rejection (CodeRabbit review).
+  }
+  return null;
 }
 
 
@@ -723,6 +755,72 @@ function EventSettingsTabPanel({ tab, activeTab, visited, label, children }: Eve
   );
 }
 
+/** `buildSettingsPatch` can throw mid-typing (e.g. an invalid capacity value) - this runs on every
+ * render, not just on Save, so a thrown validation error must not crash the page. Fail safe: treat
+ * "couldn't tell" as dirty, same as the raw diff this replaced would have. Extracted out of
+ * EventSettingsPage's own body (SonarCloud S3776) - a self-contained "is there anything to save"
+ * question in its own right, not just complexity relocated for its own sake. */
+function computeSettingsDirty(form: SettingsForm | null, original: SettingsForm | null): boolean {
+  if (form === null || original === null) return false;
+  try {
+    return Object.keys(buildSettingsPatch(form, original)).length > 0;
+  } catch {
+    return true;
+  }
+}
+
+interface EventSettingsEarlyExitParams {
+  readonly eventId: string | undefined;
+  readonly loading: boolean;
+  readonly showLoading: boolean;
+  readonly event: EventSettingsDto | null;
+  readonly notFound: boolean;
+  readonly goBack: () => void;
+}
+
+/** Early-exit states before the real Event Settings UI can render - missing :eventId, the initial
+ * load still in flight, or a 404. Returns `undefined` when none apply and the page should render
+ * normally (the caller still separately checks `!event || !form` afterwards, so TypeScript keeps
+ * narrowing them for the rest of the component - moving that specific check in here too would lose
+ * it). Extracted out of EventSettingsPage's own body (SonarCloud S3776) - this guard-clause chain
+ * was a large share of that component's cognitive complexity on its own, and these are a
+ * self-contained concern in their own right, not just complexity relocated for its own sake. */
+function renderEventSettingsEarlyExit({
+  eventId,
+  loading,
+  showLoading,
+  event,
+  notFound,
+  goBack,
+}: EventSettingsEarlyExitParams): ReactNode | undefined {
+  if (!eventId) return <p>Missing event.</p>;
+  if (loading && !event) {
+    if (!showLoading) return null;
+    return (
+      <div className="event-settings-page screen">
+        <PageHeader title="Event settings" subtitle={EVENT_SETTINGS_SUBTITLE} />
+        <output>Loading event settings…</output>
+      </div>
+    );
+  }
+  if (notFound) {
+    return (
+      <div className="event-settings-page">
+        <EmptyState
+          title="Event not found"
+          description="The event could not be found or you do not have access."
+          action={
+            <Button variant="secondary" onClick={goBack}>
+              Back
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+  return undefined;
+}
+
 /** Event-scoped settings: General / Images / Wallet / Danger zone tabs. */
 export function EventSettingsPage() {
   const { eventId } = useParams();
@@ -745,6 +843,12 @@ export function EventSettingsPage() {
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
   const [walletPushConfirmOpen, setWalletPushConfirmOpen] = useState(false);
+  // Which copy walletPushConfirmOpen's dialog shows - "push" (the original, default scenario:
+  // this save will push an update to already-installed passes) or "clear_key" (handleSave's own
+  // new check below: this save clears the API key on an event with issued passes, which stops
+  // managing them silently otherwise - CodeRabbit review). Both share the same open/pending-action
+  // plumbing since confirming either just runs the same commitSave.
+  const [walletConfirmKind, setWalletConfirmKind] = useState<"push" | "clear_key">("push");
   // Which save this confirm dialog is gating - the regular form save (handleSave), or the
   // Location tab's own "apply suggested timezone" shortcut (onApplyTimezone below), which
   // otherwise patches straight past this confirm entirely (CodeRabbit review).
@@ -808,73 +912,24 @@ export function EventSettingsPage() {
     }
   }, [searchParams, tab, isSa]);
 
-  // Read-only preview data for the Wallet tab's field mapping hint icons (computeWalletPlaceholder
-  // Preview) - the event's own Location tab data, fetched independently of LocationSettingsPanel
-  // (which owns the editable copy) so opening Wallet alone doesn't require visiting Location
-  // first. Fetched once, only once the Wallet tab is actually visited - undefined stays "loading"
-  // rather than a misleading "not set" for the brief window before this resolves.
-  const [walletLocationPreview, setWalletLocationPreview] = useState<EventLocationDto | null | undefined>(
-    undefined,
+  // Wallet-tab-only fetch state (field-mapping location preview, push history) - extracted to
+  // their own hooks (SonarCloud S3776, see that file's own doc comments for why these two
+  // specifically).
+  const { walletLocationPreview, invalidateWalletLocationPreview } = useWalletLocationPreview(
+    eventId,
+    visitedTabs,
   );
-  useEffect(() => {
-    if (!eventId || !visitedTabs.has("wallet") || walletLocationPreview !== undefined) return;
-    const controller = new AbortController();
-    fetchEventLocation(eventId, controller.signal)
-      .then((data) => {
-        if (!controller.signal.aborted) setWalletLocationPreview(data);
-      })
-      .catch(() => {
-        /* preview-only: a failed fetch just leaves hint icons showing "Loading…" */
-      });
-    return () => controller.abort();
-  }, [eventId, visitedTabs, walletLocationPreview]);
-
-  // Wallet push history: re-fetched every time the admin switches to the Wallet tab (not just
-  // once) - unlike walletLocationPreview above (a static reference value), this list reflects
-  // background jobs triggered from elsewhere (currently only the Attendees list's bulk
-  // ticket-type change), so it can go stale while this tab stays mounted between visits.
-  const [walletPushHistory, setWalletPushHistory] = useState<WalletPushHistoryEntry[] | null>(null);
-  const [walletPushHistoryTotal, setWalletPushHistoryTotal] = useState(0);
-  const [walletPushHistoryError, setWalletPushHistoryError] = useState<string | null>(null);
-  const [walletPushHistoryToken, setWalletPushHistoryToken] = useState(0);
-  const [walletPushHistoryLoading, setWalletPushHistoryLoading] = useState(false);
-  const [walletPushHistoryPage, setWalletPushHistoryPage] = useState(1);
-  const [walletPushHistoryPageSize, setWalletPushHistoryPageSize] = useState(WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT);
-  const showWalletPushHistoryLoading = useDelayedLoading(walletPushHistoryLoading);
-  // Navigating from one event to another while the Wallet tab stays mounted must not keep the
-  // outgoing event's rows/total/page - a separate reset effect keyed on eventId alone would still
-  // let this effect run once more with the stale page for the new event first (both effects fire
-  // on the same eventId-change render pass, before the reset effect's setState is applied) -
-  // detecting the event change inline, in this same effect, is what actually avoids that request
-  // (CodeRabbit).
-  const walletPushHistoryEventIdRef = useRef(eventId);
-  useEffect(() => {
-    if (!eventId || tab !== "wallet") return;
-    const isNewEvent = eventId !== walletPushHistoryEventIdRef.current;
-    walletPushHistoryEventIdRef.current = eventId;
-    const page = isNewEvent ? 1 : walletPushHistoryPage;
-    if (isNewEvent) {
-      setWalletPushHistory(null);
-      setWalletPushHistoryTotal(0);
-      if (walletPushHistoryPage !== 1) setWalletPushHistoryPage(1);
-    }
-    const controller = new AbortController();
-    setWalletPushHistoryError(null);
-    setWalletPushHistoryLoading(true);
-    fetchWalletPushHistory(eventId, page, walletPushHistoryPageSize, controller.signal)
-      .then(({ items, total }) => {
-        setWalletPushHistory(items);
-        setWalletPushHistoryTotal(total);
-      })
-      .catch((err) => {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        setWalletPushHistoryError("Could not load wallet push history.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setWalletPushHistoryLoading(false);
-      });
-    return () => controller.abort();
-  }, [eventId, tab, walletPushHistoryToken, walletPushHistoryPage, walletPushHistoryPageSize]);
+  const {
+    walletPushHistory,
+    walletPushHistoryTotal,
+    walletPushHistoryError,
+    showWalletPushHistoryLoading,
+    walletPushHistoryPage,
+    walletPushHistoryPageSize,
+    setWalletPushHistoryPage,
+    setWalletPushHistoryPageSize,
+    retryWalletPushHistory,
+  } = useWalletPushHistory(eventId, tab);
 
   const handleTabChange = useCallback(
     (id: string) => {
@@ -891,17 +946,7 @@ export function EventSettingsPage() {
   // A raw JSON diff flagged the page dirty in that state forever: Save's own "nothing to send"
   // early return (below) never resets form/original, so the unsaved-changes banner, the
   // beforeunload warning, and the navigation blocker never cleared.
-  // buildSettingsPatch can throw mid-typing (e.g. an invalid capacity value) - this runs on every
-  // render, not just on Save, so a thrown validation error must not crash the page. Fail safe:
-  // treat "couldn't tell" as dirty, same as the raw diff this replaced would have.
-  let dirty = false;
-  if (form !== null && original !== null) {
-    try {
-      dirty = Object.keys(buildSettingsPatch(form, original)).length > 0;
-    } catch {
-      dirty = true;
-    }
-  }
+  const dirty = computeSettingsDirty(form, original);
   // Combines the General form's own dirty state with the Mail and Location tabs' — navigating
   // away or running a page action that reloads state (archive, revoke) would otherwise silently
   // discard unsaved mail transport edits, pending secret replacements, or a pending pin move
@@ -971,25 +1016,16 @@ export function EventSettingsPage() {
 
   async function handleSave() {
     if (!eventId || !form || !original || !dirty) return;
-    // Only worth confirming when the save would actually push to a real, currently-installed
-    // wallet pass - an event with none yet (or a save that doesn't touch a wallet-relevant field,
-    // or one whose own edits leave Wallet unconfigured) goes straight through, matching the
-    // "don't overuse confirmation dialogs" guidance this pattern is otherwise at risk of (NN/g).
-    try {
-      if (
-        event &&
-        event.installed_wallet_pass_count > 0 &&
-        willWalletBeConfiguredForPush(form, event) &&
-        patchTouchesWalletRelevantField(buildSettingsPatch(form, original), event)
-      ) {
-        pendingWalletPushActionRef.current = commitSave;
-        setWalletPushConfirmOpen(true);
-        return;
-      }
-    } catch {
-      // buildSettingsPatch can throw (e.g. invalid capacity) - fall through to commitSave, which
-      // rebuilds the same patch inside its own try/catch and shows the right validation toast,
-      // rather than this check's own throw becoming an unhandled rejection (CodeRabbit review).
+    // Only worth confirming when the save would actually change something an already-issued pass
+    // depends on - an event with none yet, or a save resolveWalletConfirmKind doesn't flag for
+    // either reason, goes straight through, matching the "don't overuse confirmation dialogs"
+    // guidance this pattern is otherwise at risk of (NN/g).
+    const confirmKind = event ? resolveWalletConfirmKind(form, original, event) : null;
+    if (confirmKind) {
+      pendingWalletPushActionRef.current = commitSave;
+      setWalletConfirmKind(confirmKind);
+      setWalletPushConfirmOpen(true);
+      return;
     }
     await commitSave();
   }
@@ -1074,35 +1110,12 @@ export function EventSettingsPage() {
     });
   }
 
-  if (!eventId) return <p>Missing event.</p>;
-
-  if (loading && !event) {
-    if (!showLoading) return null;
-    return (
-      <div className="event-settings-page screen">
-        <PageHeader title="Event settings" subtitle={EVENT_SETTINGS_SUBTITLE} />
-        <output>Loading event settings…</output>
-      </div>
-    );
-  }
-
-  if (notFound) {
-    return (
-      <div className="event-settings-page">
-        <EmptyState
-          title="Event not found"
-          description="The event could not be found or you do not have access."
-          action={
-            <Button variant="secondary" onClick={goBack}>
-              Back
-            </Button>
-          }
-        />
-      </div>
-    );
-  }
-
-  if (!event || !form) return null;
+  const earlyExit = renderEventSettingsEarlyExit({ eventId, loading, showLoading, event, notFound, goBack });
+  if (earlyExit !== undefined) return earlyExit;
+  // renderEventSettingsEarlyExit already returned for a missing :eventId above - re-checked here
+  // (not just `!event || !form`) purely so TypeScript keeps narrowing `eventId` to `string` for the
+  // rest of the component; it can't follow that narrowing through the helper's own return.
+  if (!eventId || !event || !form) return null;
 
   // The event's *persisted* wallet configuration, not the (possibly unsaved) Wallet-tab draft in
   // `form` - both the Location tab's own save and the suggested-timezone shortcut below only ever
@@ -1199,7 +1212,7 @@ export function EventSettingsPage() {
             // Invalidate the Wallet tab's read-only location snapshot so a saved venue-access
             // field (room/entrance/opening hours/...) shows up in its field-mapping preview
             // right away, instead of the value from whenever Wallet was first visited.
-            setWalletLocationPreview(undefined);
+            invalidateWalletLocationPreview();
             await refreshLayoutEvent?.();
           }}
           onApplyTimezone={(timezone) => {
@@ -1239,6 +1252,7 @@ export function EventSettingsPage() {
                   }
                 };
                 pendingWalletPushCancelRef.current = () => reject(new Error("wallet_push_cancelled"));
+                setWalletConfirmKind("push");
                 setWalletPushConfirmOpen(true);
               });
             }
@@ -1365,7 +1379,7 @@ export function EventSettingsPage() {
             walletPushHistory={walletPushHistory}
             walletPushHistoryTotal={walletPushHistoryTotal}
             walletPushHistoryError={walletPushHistoryError}
-            onRetryWalletPushHistory={() => setWalletPushHistoryToken((n) => n + 1)}
+            onRetryWalletPushHistory={retryWalletPushHistory}
             showWalletPushHistoryLoading={showWalletPushHistoryLoading}
             walletPushHistoryPage={walletPushHistoryPage}
             walletPushHistoryPageSize={walletPushHistoryPageSize}
@@ -1411,9 +1425,17 @@ export function EventSettingsPage() {
 
       <ConfirmDialog
         open={walletPushConfirmOpen}
-        title="Push this update to installed wallet passes?"
-        message={describeWalletPushConfirm(event.installed_wallet_pass_count)}
-        confirmLabel="Save and push"
+        title={
+          walletConfirmKind === "clear_key"
+            ? "Clear the wallet API key?"
+            : "Push this update to installed wallet passes?"
+        }
+        message={
+          walletConfirmKind === "clear_key"
+            ? describeWalletKeyClearConfirm(event.issued_wallet_pass_count)
+            : describeWalletPushConfirm(event.installed_wallet_pass_count)
+        }
+        confirmLabel={walletConfirmKind === "clear_key" ? "Save and clear" : "Save and push"}
         loading={saving}
         onConfirm={() => void handleWalletPushConfirm()}
         onCancel={handleWalletPushCancel}
