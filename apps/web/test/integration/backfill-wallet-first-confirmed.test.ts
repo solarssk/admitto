@@ -3,7 +3,7 @@ import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { PassCreatorClient } from "@admitto/wallet";
 import { encryptToString } from "@admitto/crypto";
-import { backfillEvent } from "../../src/scripts/backfill-wallet-first-confirmed.js";
+import { arg, backfillEvent, hasFlag } from "../../src/scripts/backfill-wallet-first-confirmed.js";
 
 const ORG_ID = "org-backfill-first-confirmed";
 const EVENT_ID = "evt-backfill-first-confirmed";
@@ -60,6 +60,19 @@ afterAll(async () => {
   await prisma.event.deleteMany({ where: { id: EVENT_ID } });
   await prisma.organization.deleteMany({ where: { id: ORG_ID } });
   await prisma?.$disconnect();
+});
+
+describe("arg/hasFlag", () => {
+  it("arg reads the value following a --name flag, or undefined when absent or trailing with no value", () => {
+    expect(arg("event-id", ["--event-id", "evt-1"])).toBe("evt-1");
+    expect(arg("event-id", ["--dry-run"])).toBeUndefined();
+    expect(arg("event-id", ["--event-id"])).toBeUndefined();
+  });
+
+  it("hasFlag reports whether a bare --name flag is present", () => {
+    expect(hasFlag("dry-run", ["--dry-run"])).toBe(true);
+    expect(hasFlag("dry-run", ["--event-id", "evt-1"])).toBe(false);
+  });
 });
 
 describe("backfillEvent", () => {

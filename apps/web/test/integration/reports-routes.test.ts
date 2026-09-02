@@ -464,9 +464,10 @@ async function seed(client: PrismaClient) {
         status: "active",
         issued_at: walletIssuedAt,
         // time_to_wallet_tap now reads first_confirmed_at, not issued_at (see computeTapDays'
-        // own doc comment) - both confirmed passes below (this one and ATT_W_GOOGLE) get one, the
-        // same value as walletIssuedAt since only the gap to their own EmailDelivery matters.
-        first_confirmed_at: walletIssuedAt,
+        // own doc comment) - deliberately 4 days later than issued_at (not equal to it, unlike
+        // ATT_W_GOOGLE below) so a regression back to issued_at changes this attendee's bucket
+        // (1_3 -> 4_7) and the average, not just the value read.
+        first_confirmed_at: new Date("2026-01-19T10:00:00.000Z"),
         apple_active_registrations: 1,
         google_active_registrations: 0,
         registration_checked_at: new Date("2026-01-16T00:00:00.000Z"),
@@ -2336,20 +2337,22 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.issued_by_day[0]!.cumulative).toBe(7);
     expect(body.issued_by_day.at(-1)!.cumulative).toBe(7);
 
-    // ATT_W_APPLE (sent 3 whole days before its pass's first_confirmed_at) and ATT_W_GOOGLE
-    // (bounced initial 10 days before, successful resend 5 days before - the resend must win) are
-    // the only two contributors; every other wallet attendee either has no successful
-    // ticket-email send or (ATT_W_NOT_INSTALLED) no first_confirmed_at at all, so computeTapDays
-    // returns null for them and they're excluded from both the average and every bucket. A wrong
-    // "purpose: initial"-only pick would use ATT_W_GOOGLE's bounced 10-day gap instead, landing
-    // it in "8_plus" and shifting the average to 6.5.
-    expect(body.time_to_wallet_tap.average_days).toBe(4);
+    // ATT_W_APPLE (sent 7 whole days before its pass's first_confirmed_at - deliberately 4 days
+    // later than issued_at, see the seed comment above) and ATT_W_GOOGLE (bounced initial 10 days
+    // before, successful resend 5 days before - the resend must win) are the only two
+    // contributors; every other wallet attendee either has no successful ticket-email send or
+    // (ATT_W_NOT_INSTALLED) no first_confirmed_at at all, so computeTapDays returns null for them
+    // and they're excluded from both the average and every bucket. A regression reading issued_at
+    // instead of first_confirmed_at would move ATT_W_APPLE into "1_3" (3-day gap) and drop the
+    // average to 4; a wrong "purpose: initial"-only pick for ATT_W_GOOGLE would use its bounced
+    // 10-day gap instead, landing it in "8_plus" and shifting the average to 8.5.
+    expect(body.time_to_wallet_tap.average_days).toBe(6);
     const bucket13 = body.time_to_wallet_tap.buckets.find((b) => b.key === "1_3");
-    expect(bucket13!.count).toBe(1);
-    expect(bucket13!.pct).toBe(50);
+    expect(bucket13!.count).toBe(0);
+    expect(bucket13!.pct).toBe(0);
     const bucket47 = body.time_to_wallet_tap.buckets.find((b) => b.key === "4_7");
-    expect(bucket47!.count).toBe(1);
-    expect(bucket47!.pct).toBe(50);
+    expect(bucket47!.count).toBe(2);
+    expect(bucket47!.pct).toBe(100);
     for (const key of ["same_day", "8_plus"]) {
       expect(body.time_to_wallet_tap.buckets.find((b) => b.key === key)!.count).toBe(0);
     }

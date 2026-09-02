@@ -409,6 +409,9 @@ describe("applyFirstConfirmedAt", () => {
     await applyFirstConfirmedAt(db as never, { identifier: "pc-1" });
     await applyFirstConfirmedAt(db as never, { identifier: "pc-1" });
     expect(db.walletPass.updateMany).toHaveBeenCalledTimes(2);
+    expect(db.walletPass.updateMany.mock.calls[1][0]).toEqual(
+      expect.objectContaining({ where: expect.objectContaining({ first_confirmed_at: null }) }),
+    );
   });
 });
 
@@ -421,5 +424,19 @@ describe("parseFirstDownloadedAtUtc", () => {
   it("returns null for a value that doesn't match the expected shape, rather than an Invalid Date", () => {
     expect(parseFirstDownloadedAtUtc("not a date")).toBeNull();
     expect(parseFirstDownloadedAtUtc("")).toBeNull();
+  });
+
+  it("returns null for an impossible calendar date instead of silently rolling it over", () => {
+    expect(parseFirstDownloadedAtUtc("2026-02-30 10:00:00")).toBeNull();
+    expect(parseFirstDownloadedAtUtc("2026-04-31 10:00:00")).toBeNull();
+    expect(parseFirstDownloadedAtUtc("2026-13-01 10:00:00")).toBeNull();
+  });
+
+  it("returns null for a date-only value with no time component", () => {
+    expect(parseFirstDownloadedAtUtc("2026-08-13")).toBeNull();
+  });
+
+  it("returns null for a value with fractional seconds", () => {
+    expect(parseFirstDownloadedAtUtc("2026-08-13 10:00:00.123")).toBeNull();
   });
 });

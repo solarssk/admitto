@@ -530,13 +530,6 @@ function applyBrandingPatch(
   }
 }
 
-const WALLET_WEBHOOK_EVENT_TYPES: readonly PassCreatorWebhookEventType[] = [
-  "first_pushnotification_registered",
-  "pushnotification_registered",
-  "pushnotification_unregistered",
-  "pass_voided",
-];
-
 /** Best-effort: (re-)registers this event's webhook target URL with PassCreator for every event
  * type the receiving endpoint handles (wallet-webhook.ts), whenever a save leaves the wallet
  * fully enabled and configured. A PassCreator outage, unreachable instance URL, or bad key here
@@ -612,50 +605,74 @@ export async function subscribeWalletWebhooksBestEffort(
     return;
   }
 
+  const alreadySubscribed = new Set(ownTemplateHooks.map((hook) => `${hook.targetUrl ?? ""} ${hook.event}`));
+  const subscribeMissing = async (events: readonly PassCreatorWebhookEventType[]): Promise<boolean> => {
+    const toSubscribe = events.filter((event) => !alreadySubscribed.has(`${targetUrlFor(event)} ${event}`));
+    if (toSubscribe.length === 0) return true;
+    const settled = await Promise.allSettled(toSubscribe.map((event) => client.subscribeWebhook(targetUrlFor(event), event)));
+    let allOk = true;
+    settled.forEach((outcome, index) => {
+      if (outcome.status !== "rejected") return;
+      allOk = false;
+      const event = toSubscribe[index];
+      console.error(`wallet webhook subscribe (${event}) failed:`, outcome.reason);
+      recordSystemLog({
+        level: "error",
+        source: "admin",
+        message: "wallet_webhook_subscribe_failed",
+        fields: { eventId, event },
+      });
+    });
+    return allOk;
+  };
+
+  // Ordered in two passes, dedicated-URL events before the shared one, not one combined batch -
+  // bot review: subscribing the dedicated URLs and only *then* clearing the shared one means
+  // first_pushnotification_registered/pass_voided always have a real, working subscription
+  // somewhere before their legacy shared-URL entry (if any) is ever removed, closing the window
+  // where a delivery for either could otherwise land nowhere at all (neither still on the old
+  // shared URL, since it was just cleared, nor yet on the new dedicated one, since that
+  // subscribe call hadn't been confirmed) - unlike pushnotification_registered/unregistered,
+  // which keep flowing through the periodic sync (registration-sync.ts) as a fallback if this
+  // whole cycle fails, first_pushnotification_registered/pass_voided have no such fallback.
+  const dedicatedOk = await subscribeMissing(["first_pushnotification_registered", "pass_voided"]);
+
   // One-time migration: pass_voided (before 2026-08-19) and first_pushnotification_registered
-  // (before 2026-09-02) both used to share registrationUrl with the events that are still meant to
-  // stay there - a subscription for either one is stale now that it has its own URL, and would
-  // otherwise sit there forever, redelivering to a route that can't act on it the way its own
-  // dedicated one can. PassCreator's unsubscribe API removes every event on a target URL at once
-  // (not one event selectively - see PassCreatorClient.unsubscribeWebhook), so cleaning up either
-  // stale entry means clearing registrationUrl entirely and resubscribing all four events fresh
-  // below.
+  // (before 2026-09-02) both used to share registrationUrl with the two events that are still
+  // meant to stay there - a subscription for either one is stale now that it has its own URL,
+  // and would otherwise sit there forever, redelivering to a route that can't act on it the way
+  // its own dedicated one can. PassCreator's unsubscribe API removes every event on a target URL
+  // at once (not one event selectively - see PassCreatorClient.unsubscribeWebhook), so cleaning
+  // up either stale entry means clearing registrationUrl entirely - gated on dedicatedOk (not
+  // just hasLegacyEventOnRegistrationUrl): unsubscribing here before first_pushnotification_
+  // registered/pass_voided have a *confirmed* working subscription at their own dedicated URL
+  // would leave a delivery for either with nowhere to land at all until some later save repairs
+  // it - unlike pushnotification_registered/unregistered below, which keep flowing through the
+  // periodic sync (registration-sync.ts) as a fallback regardless, first_pushnotification_
+  // registered/pass_voided have no such fallback (bot review).
   const hasLegacyEventOnRegistrationUrl = ownTemplateHooks.some(
     (hook) =>
       hook.targetUrl === registrationUrl &&
       (hook.event === "pass_voided" || hook.event === "first_pushnotification_registered"),
   );
-  let alreadySubscribed = new Set(ownTemplateHooks.map((hook) => `${hook.targetUrl ?? ""} ${hook.event}`));
-  if (hasLegacyEventOnRegistrationUrl) {
+  if (hasLegacyEventOnRegistrationUrl && dedicatedOk) {
     try {
       await client.unsubscribeWebhook(registrationUrl);
-      alreadySubscribed = new Set(); // wiped clean - every event below gets a fresh subscription
+      alreadySubscribed.delete(`${registrationUrl} pushnotification_registered`);
+      alreadySubscribed.delete(`${registrationUrl} pushnotification_unregistered`);
     } catch (err) {
       // Unsubscribe failed: the stale entry is still there untouched, so fall back to the normal
-      // dedup (computed above) rather than piling a duplicate registration-event subscription on
-      // top of it.
+      // dedup (alreadySubscribed, unmodified) rather than piling a duplicate registration-event
+      // subscription on top of it.
       console.error("wallet webhook subscribe: legacy event-URL migration unsubscribe failed:", err);
     }
   }
 
-  const eventTypesToSubscribe = WALLET_WEBHOOK_EVENT_TYPES.filter(
-    (event) => !alreadySubscribed.has(`${targetUrlFor(event)} ${event}`),
-  );
-
-  const settled = await Promise.allSettled(
-    eventTypesToSubscribe.map((event) => client.subscribeWebhook(targetUrlFor(event), event)),
-  );
-  settled.forEach((outcome, index) => {
-    if (outcome.status !== "rejected") return;
-    const event = eventTypesToSubscribe[index];
-    console.error(`wallet webhook subscribe (${event}) failed:`, outcome.reason);
-    recordSystemLog({
-      level: "error",
-      source: "admin",
-      message: "wallet_webhook_subscribe_failed",
-      fields: { eventId, event },
-    });
-  });
+  // Always attempted, regardless of dedicatedOk above - independent of the migration-safety gate
+  // (a brand new event with nothing subscribed yet needs these two subscribed the first time
+  // either way, whether or not the unrelated dedicated-URL subscribe calls above happened to
+  // succeed).
+  await subscribeMissing(["pushnotification_registered", "pushnotification_unregistered"]);
 }
 
 /** Event fields that can appear in a wallet pass via WALLET_MAPPING_PLACEHOLDERS (event name,

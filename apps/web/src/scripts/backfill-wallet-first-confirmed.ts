@@ -4,6 +4,12 @@
  *
  *   npm run wallet:backfill-first-confirmed -w @admitto/web -- [--event-id <id>] [--dry-run]
  *
+ * The production image has no npm/npx (docker-entrypoint.sh rejects both - "npm/npx are not
+ * available in the production image"), so the above only works in a local/dev checkout. Against a
+ * deployed instance, run the built output directly instead:
+ *
+ *   docker compose run --rm app node apps/web/dist/src/scripts/backfill-wallet-first-confirmed.js [--event-id <id>] [--dry-run]
+ *
  * Two things, per wallet-enabled event:
  *
  * 1. Re-subscribes that event's PassCreator webhooks (subscribeWalletWebhooksBestEffort), so
@@ -38,13 +44,13 @@ import { PassCreatorClient, parseFirstDownloadedAtUtc } from "@admitto/wallet";
 import { resolvePassCreatorBaseUrl } from "../config.js";
 import { subscribeWalletWebhooksBestEffort } from "../admin/event-settings-routes.js";
 
-function arg(name: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : undefined;
+export function arg(name: string, argv: readonly string[] = process.argv): string | undefined {
+  const i = argv.indexOf(`--${name}`);
+  return i !== -1 && argv[i + 1] ? argv[i + 1] : undefined;
 }
 
-function hasFlag(name: string): boolean {
-  return process.argv.includes(`--${name}`);
+export function hasFlag(name: string, argv: readonly string[] = process.argv): boolean {
+  return argv.includes(`--${name}`);
 }
 
 export async function backfillEvent(
@@ -124,7 +130,7 @@ export async function backfillEvent(
   console.log(`[${event.title}] ${dryRun ? "would fill" : "filled"} ${filled}, skipped ${skipped}`);
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const dryRun = hasFlag("dry-run");
   const eventId = arg("event-id");
 

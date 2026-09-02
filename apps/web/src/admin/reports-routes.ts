@@ -1753,7 +1753,7 @@ async function exportWalletReportsPdf(
   // sampled (bot review). .print-hint's existing warning-box styling, without no-print, since
   // this needs to survive into the saved/printed PDF, not just the on-screen preview.
   const truncatedWarningHtml = aggregates.passes_truncated
-    ? `<p class="print-hint">This event has more issued wallet passes than a single report can process at once, so platform mix, devices per attendee, adoption by ticket type, and time-to-wallet-tap below are based on a partial sample rather than every pass. Cumulative passes issued and admission rate by wallet status are unaffected - both come from a full count, not a sample.</p>`
+    ? `<p class="print-hint">This event has more issued wallet passes than a single report can process at once, so platform mix, devices per attendee, adoption by ticket type, and time to wallet install below are based on a partial sample rather than every pass. Cumulative passes issued and admission rate by wallet status are unaffected - both come from a full count, not a sample.</p>`
     : "";
 
   const sectionsHtml = `

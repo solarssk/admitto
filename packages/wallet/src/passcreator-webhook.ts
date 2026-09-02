@@ -264,8 +264,26 @@ export async function applyFirstConfirmedAt(db: PrismaClient, data: PassCreatorW
  * the true first_pushnotification_registered moment - PassCreator's dashboard-only "Pass Activity"
  * log isn't exposed via their v1/v2/v3 API).
  */
+const FIRST_DOWNLOADED_AT_RE = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/;
+
 export function parseFirstDownloadedAtUtc(raw: string): Date | null {
-  const iso = `${raw.replace(" ", "T")}Z`;
-  const parsed = new Date(iso);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  const match = FIRST_DOWNLOADED_AT_RE.exec(raw);
+  if (!match) return null;
+  const [, year, month, day, hour, minute, second] = match;
+  const parsed = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  // new Date() silently rolls an impossible calendar date over into the next one (e.g.
+  // "2026-02-30" becomes 2026-03-02) instead of failing - round-trip the parsed UTC fields
+  // against the matched digits to reject those rather than backfilling a wrong day.
+  if (
+    parsed.getUTCFullYear() !== Number(year) ||
+    parsed.getUTCMonth() !== Number(month) - 1 ||
+    parsed.getUTCDate() !== Number(day) ||
+    parsed.getUTCHours() !== Number(hour) ||
+    parsed.getUTCMinutes() !== Number(minute) ||
+    parsed.getUTCSeconds() !== Number(second)
+  ) {
+    return null;
+  }
+  return parsed;
 }
