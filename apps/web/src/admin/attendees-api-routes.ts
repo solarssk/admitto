@@ -133,6 +133,8 @@ const ATTENDEE_DETAIL_SELECT = {
       apple_inactive_registrations: true,
       google_active_registrations: true,
       google_inactive_registrations: true,
+      samsung_active_registrations: true,
+      samsung_inactive_registrations: true,
       first_downloaded_at: true,
       registration_checked_at: true,
     },
@@ -579,6 +581,8 @@ type AttendeeWalletStatus = Pick<
   | "apple_inactive_registrations"
   | "google_active_registrations"
   | "google_inactive_registrations"
+  | "samsung_active_registrations"
+  | "samsung_inactive_registrations"
 >;
 
 /** Registration status per attendee (within the given set) that has a WalletPass row at all -
@@ -598,6 +602,8 @@ async function walletStatusByAttendee(
       apple_inactive_registrations: true,
       google_active_registrations: true,
       google_inactive_registrations: true,
+      samsung_active_registrations: true,
+      samsung_inactive_registrations: true,
     },
   });
   return new Map(
@@ -608,6 +614,8 @@ async function walletStatusByAttendee(
         apple_inactive_registrations: row.apple_inactive_registrations,
         google_active_registrations: row.google_active_registrations,
         google_inactive_registrations: row.google_inactive_registrations,
+        samsung_active_registrations: row.samsung_active_registrations,
+        samsung_inactive_registrations: row.samsung_inactive_registrations,
       },
     ]),
   );
@@ -880,6 +888,8 @@ async function buildAttendeeDetailDto(
       apple_inactive_registrations: number | null;
       google_active_registrations: number | null;
       google_inactive_registrations: number | null;
+      samsung_active_registrations: number | null;
+      samsung_inactive_registrations: number | null;
       first_downloaded_at: string | null;
       registration_checked_at: Date | null;
     } | null;
@@ -3781,6 +3791,8 @@ type WalletPassActionDto = {
   apple_inactive_registrations: number | null;
   google_active_registrations: number | null;
   google_inactive_registrations: number | null;
+  samsung_active_registrations: number | null;
+  samsung_inactive_registrations: number | null;
   /** Provider-reported string, deliberately not parsed to a Date - see the schema comment on
    * WalletPass.first_downloaded_at for why (unconfirmed timezone). */
   first_downloaded_at: string | null;
@@ -3799,6 +3811,8 @@ function serializeWalletPassAction(pass: {
   apple_inactive_registrations: number | null;
   google_active_registrations: number | null;
   google_inactive_registrations: number | null;
+  samsung_active_registrations: number | null;
+  samsung_inactive_registrations: number | null;
   first_downloaded_at: string | null;
   registration_checked_at: Date | null;
 }): WalletPassActionDto {
@@ -3814,6 +3828,8 @@ function serializeWalletPassAction(pass: {
     apple_inactive_registrations: pass.apple_inactive_registrations,
     google_active_registrations: pass.google_active_registrations,
     google_inactive_registrations: pass.google_inactive_registrations,
+    samsung_active_registrations: pass.samsung_active_registrations,
+    samsung_inactive_registrations: pass.samsung_inactive_registrations,
     first_downloaded_at: pass.first_downloaded_at,
     registration_checked_at: pass.registration_checked_at ? pass.registration_checked_at.toISOString() : null,
   };

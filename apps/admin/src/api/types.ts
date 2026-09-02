@@ -257,6 +257,8 @@ export interface WalletPassActionDto {
   apple_inactive_registrations: number | null;
   google_active_registrations: number | null;
   google_inactive_registrations: number | null;
+  samsung_active_registrations: number | null;
+  samsung_inactive_registrations: number | null;
   /** Provider-reported "YYYY-MM-DD HH:MM:SS" string, deliberately not a Date. PassCreator's own
    * docs don't state which timezone this is in; the admin UI treats it as UTC (the attendee's own
    * action, in a timezone we have no way to know) and formats it - see formatFirstDownloadedAt in
@@ -289,6 +291,8 @@ export interface AttendeeRowDto {
     | "apple_inactive_registrations"
     | "google_active_registrations"
     | "google_inactive_registrations"
+    | "samsung_active_registrations"
+    | "samsung_inactive_registrations"
   > | null;
 }
 

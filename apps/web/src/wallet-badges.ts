@@ -11,8 +11,10 @@ const ASSET_NAMES = new Set([
   "admitto-logo.svg",
   "apple-wallet-badge.svg",
   "google-wallet-badge.svg",
+  "samsung-wallet-badge.svg",
   "apple-wallet-badge.png",
   "google-wallet-badge.png",
+  "samsung-wallet-badge.png",
 ]);
 const assetCache = new Map<string, Buffer>();
 
@@ -83,6 +85,12 @@ export function handleGetGoogleWalletBadge(c: Context): Response | Promise<Respo
   return serveTicketAsset(c, "google-wallet-badge.svg");
 }
 
+/** Inert badge only (no working "Add to Samsung Wallet" route exists yet) - see
+ * TicketPageOptions.walletSamsungBadge's own doc comment. */
+export function handleGetSamsungWalletBadge(c: Context): Response | Promise<Response> {
+  return serveTicketAsset(c, "samsung-wallet-badge.svg");
+}
+
 /** PNG variant for email markup - see the `ASSET_NAMES` comment above. */
 export function handleGetAppleWalletBadgePng(c: Context): Response | Promise<Response> {
   return serveTicketAsset(c, "apple-wallet-badge.png");
@@ -90,4 +98,8 @@ export function handleGetAppleWalletBadgePng(c: Context): Response | Promise<Res
 
 export function handleGetGoogleWalletBadgePng(c: Context): Response | Promise<Response> {
   return serveTicketAsset(c, "google-wallet-badge.png");
+}
+
+export function handleGetSamsungWalletBadgePng(c: Context): Response | Promise<Response> {
+  return serveTicketAsset(c, "samsung-wallet-badge.png");
 }

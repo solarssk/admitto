@@ -19,6 +19,7 @@ const EMPTY_EVENT_LOCATION = {
   walletApiKeyEnc: null,
   walletAppleEnabled: true,
   walletGoogleEnabled: true,
+  walletSamsungEnabled: true,
   walletFieldMapping: null,
   eventType: null,
   formattedAddress: null,
@@ -237,7 +238,8 @@ describe("renderTicket", () => {
     expect(html).not.toContain("Registered");
     expect(html).toContain("--primary");
     expect(html).toContain("ticket-page");
-    expect(html).toContain('src="/assets/apple-wallet-badge.svg"');
+    expect(html).toContain('src="/assets/apple-wallet-badge.png"');
+    expect(html).toContain('srcset="/assets/apple-wallet-badge.png 1x, /assets/apple-wallet-badge.svg 2x"');
     expect(html).toContain("wallet-badge-frame");
     expect(html).toContain("wallet-badge--apple");
     expect(html).toContain("How do I add this to my phone?");
@@ -245,6 +247,138 @@ describe("renderTicket", () => {
     expect(html).not.toContain("aria-disabled");
     expect(html).not.toContain("badge-\"><style>boom</style>");
     expect(html).not.toContain("<style>boom</style>");
+  });
+
+  it("renders an inert Samsung Wallet badge (no href) alongside working Apple/Google badges", () => {
+    const html = renderTicket(
+      {
+        mode: "internal",
+        attendee: {
+          id: "attendee-1",
+          event_id: "event-1",
+          email: "x@example.com",
+          name: "Example User",
+          status: "confirmed",
+          first_name: null,
+          last_name: null,
+          company: null,
+          department: null,
+          token_hash: null,
+          qr_payload: null,
+          external_uuid: null,
+          ticket_type: "Standard",
+        },
+        event: {
+          id: "event-1",
+          title: "Launch Event",
+          slug: "launch-event",
+          date: new Date("2026-09-01T09:00:00Z"),
+          timezone: "UTC",
+          location: null,
+          logoUrl: null,
+          ...EMPTY_EVENT_LOCATION,
+        },
+      },
+      "data:image/png;base64,abc",
+      undefined,
+      {
+        walletAppleHref: "/t/token/wallet/apple",
+        walletGoogleHref: "/t/token/wallet/google",
+        walletSamsungBadge: true,
+      },
+    );
+
+    expect(html).toContain('src="/assets/samsung-wallet-badge.png"');
+    expect(html).toContain('srcset="/assets/samsung-wallet-badge.png 1x, /assets/samsung-wallet-badge.svg 2x"');
+    expect(html).toContain('alt="Add to Samsung Wallet"');
+    expect(html).toContain('aria-disabled="true"');
+    expect(html).toContain('title="Unavailable"');
+    expect(html).toContain("The Samsung Wallet button is for Samsung Galaxy phones.");
+    // No "coming soon"/"not supported" copy anywhere visible (PO preference) - the greyed-out
+    // badge plus its title tooltip is the only signal it isn't tappable yet.
+    expect(html).not.toContain("coming soon");
+    expect(html).not.toContain("not supported");
+    // Inert: unlike the Apple/Google badges, never wrapped in a clickable <a href>.
+    expect(html).not.toContain('href="/t/token/wallet/samsung"');
+  });
+
+  it("does not instruct tapping Apple/Google buttons that don't exist when Samsung is the only wallet offered", () => {
+    const html = renderTicket(
+      {
+        mode: "internal",
+        attendee: {
+          id: "attendee-1",
+          event_id: "event-1",
+          email: "x@example.com",
+          name: "Example User",
+          status: "confirmed",
+          first_name: null,
+          last_name: null,
+          company: null,
+          department: null,
+          token_hash: null,
+          qr_payload: null,
+          external_uuid: null,
+          ticket_type: "Standard",
+        },
+        event: {
+          id: "event-1",
+          title: "Launch Event",
+          slug: "launch-event",
+          date: new Date("2026-09-01T09:00:00Z"),
+          timezone: "UTC",
+          location: null,
+          logoUrl: null,
+          ...EMPTY_EVENT_LOCATION,
+        },
+      },
+      "data:image/png;base64,abc",
+      undefined,
+      { walletSamsungBadge: true },
+    );
+
+    expect(html).not.toContain("Apple Wallet");
+    expect(html).not.toContain("Google Wallet");
+    expect(html).toContain("The Samsung Wallet button is for Samsung Galaxy phones.");
+  });
+
+  it("omits the Samsung Wallet badge when walletSamsungBadge is not set", () => {
+    const html = renderTicket(
+      {
+        mode: "internal",
+        attendee: {
+          id: "attendee-1",
+          event_id: "event-1",
+          email: "x@example.com",
+          name: "Example User",
+          status: "confirmed",
+          first_name: null,
+          last_name: null,
+          company: null,
+          department: null,
+          token_hash: null,
+          qr_payload: null,
+          external_uuid: null,
+          ticket_type: "Standard",
+        },
+        event: {
+          id: "event-1",
+          title: "Launch Event",
+          slug: "launch-event",
+          date: new Date("2026-09-01T09:00:00Z"),
+          timezone: "UTC",
+          location: null,
+          logoUrl: null,
+          ...EMPTY_EVENT_LOCATION,
+        },
+      },
+      "data:image/png;base64,abc",
+      undefined,
+      { walletAppleHref: "/t/token/wallet/apple", walletGoogleHref: "/t/token/wallet/google" },
+    );
+
+    expect(html).not.toContain("samsung-wallet-badge");
+    expect(html).not.toContain("Samsung Galaxy");
   });
 
   it("omits the wallet badges and help text entirely when no wallet hrefs are provided", () => {

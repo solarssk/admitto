@@ -630,7 +630,7 @@ describe("On-demand wallet routes", () => {
     expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
   });
 
-  it("real wallet links render on the ticket page", async () => {
+  it("real wallet links render on the ticket page, alongside an inert Samsung Wallet badge (no PassCreator API support yet)", async () => {
     const provider = stubProvider();
     const app = makeApp(provider);
 
@@ -638,8 +638,12 @@ describe("On-demand wallet routes", () => {
     const html = await res.text();
     expect(html).toContain(`href="/t/${MODE_A_TOKEN}/wallet/apple"`);
     expect(html).toContain(`href="/t/${MODE_A_TOKEN}/wallet/google"`);
-    expect(html).not.toContain("coming soon");
-    expect(html).not.toContain("aria-disabled");
+    // Never wrapped in a clickable <a href> - see ticket-page.ts's walletSamsungBadge doc comment.
+    expect(html).not.toContain(`href="/t/${MODE_A_TOKEN}/wallet/samsung"`);
+    expect(html).toContain("Add to Samsung Wallet");
+    expect(html).toContain('aria-disabled="true"');
+    expect(html).toContain('title="Unavailable"');
+    expect(html).toContain("The Samsung Wallet button is for Samsung Galaxy phones.");
   });
 
   it("hides the wallet badges on the ticket page when no API key is saved (real provider resolution, not injected)", async () => {

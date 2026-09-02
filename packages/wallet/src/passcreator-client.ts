@@ -112,6 +112,9 @@ type PassCreatorSearchRow = {
   noOfInactiveRegistrationsAppleWallet?: number;
   noOfActiveRegistrationsGoogleWallet?: number;
   noOfInactiveRegistrationsGoogleWallet?: number;
+  // Undocumented but confirmed live 2026-09-02 (see WalletPassRegistrationStatus's own doc comment).
+  noOfActiveRegistrationsSamsungWallet?: number;
+  noOfInactiveRegistrationsSamsungWallet?: number;
   firstDownloadedAt?: string | null;
 };
 
@@ -399,6 +402,8 @@ export class PassCreatorClient implements WalletPassProvider {
       appleInactiveRegistrations: row.noOfInactiveRegistrationsAppleWallet ?? 0,
       googleActiveRegistrations: row.noOfActiveRegistrationsGoogleWallet ?? 0,
       googleInactiveRegistrations: row.noOfInactiveRegistrationsGoogleWallet ?? 0,
+      samsungActiveRegistrations: row.noOfActiveRegistrationsSamsungWallet ?? 0,
+      samsungInactiveRegistrations: row.noOfInactiveRegistrationsSamsungWallet ?? 0,
       firstDownloadedAt: row.firstDownloadedAt ?? null,
     };
   }

@@ -92,6 +92,8 @@ function walletPass(overrides: Partial<Record<string, unknown>> = {}) {
     apple_inactive_registrations: null,
     google_active_registrations: null,
     google_inactive_registrations: null,
+    samsung_active_registrations: null,
+    samsung_inactive_registrations: null,
     first_downloaded_at: null,
     registration_checked_at: null,
     ...overrides,
@@ -587,6 +589,24 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(screen.getByText("Sent")).toBeTruthy();
       expect(screen.queryByText("Added")).toBeNull();
     });
+
+    // Regression (CodeRabbit review): this chip was gated by walletPlatforms.any (Apple/Google
+    // only), hiding it entirely for a Samsung-only event even once isWalletPassInstalled below
+    // read a real confirmed registration.
+    it("shows Added for a confirmed Samsung-only registration on a Samsung-only event", async () => {
+      mockWalletAppleEnabled = false;
+      mockWalletGoogleEnabled = false;
+      mockWalletSamsungEnabled = true;
+      mockLoad(
+        baseDetail({
+          wallet_pass: walletPass({ status: "active", samsung_active_registrations: 1 }),
+        }),
+      );
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      expect(screen.getByText("Added")).toBeTruthy();
+    });
   });
 
   describe("First downloaded (formatFirstDownloadedAt)", () => {
@@ -610,12 +630,47 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
   });
 
   describe("Wallet pass links menu", () => {
-    it("renders nothing when neither an Apple nor a Google Wallet link exists yet", async () => {
+    it("renders nothing when neither an Apple nor a Google Wallet link exists yet, and Samsung Wallet is off", async () => {
+      mockWalletSamsungEnabled = false;
       mockLoad(baseDetail({ wallet_apple_link: null, wallet_google_link: null }));
       renderPage();
       await screen.findByRole("heading", { name: "Anna" });
 
       expect(screen.queryByRole("button", { name: "Wallet pass links" })).toBeNull();
+    });
+
+    it("shows the menu with only a disabled Copy Samsung Wallet link entry when Samsung Wallet is on but Apple/Google links don't exist yet", async () => {
+      mockWalletSamsungEnabled = true;
+      mockLoad(baseDetail({ wallet_apple_link: null, wallet_google_link: null }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      fireEvent.click(screen.getByRole("button", { name: "Wallet pass links" }));
+      expect(screen.queryByRole("menuitem", { name: /Copy Apple Wallet link/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Copy Google Wallet link/ })).toBeNull();
+      const samsungItem = screen.getByRole("menuitem", { name: /Copy Samsung Wallet link/ });
+      expect((samsungItem as HTMLButtonElement).disabled).toBe(true);
+      // No "not supported"/"coming soon" copy baked into the row itself - only a hover tooltip.
+      expect(samsungItem.textContent).not.toMatch(/not supported|coming soon/i);
+      expect(getTooltipText(samsungItem)).toBe("Unavailable");
+    });
+
+    it("adds a disabled Copy Samsung Wallet link entry alongside working Apple/Google entries when all three are enabled", async () => {
+      mockWalletSamsungEnabled = true;
+      mockLoad(
+        baseDetail({
+          wallet_apple_link: "https://example.com/apple",
+          wallet_google_link: "https://example.com/android",
+        }),
+      );
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      fireEvent.click(screen.getByRole("button", { name: "Wallet pass links" }));
+      expect(screen.getByRole("menuitem", { name: /Copy Apple Wallet link/ })).toBeTruthy();
+      expect(screen.getByRole("menuitem", { name: /Copy Google Wallet link/ })).toBeTruthy();
+      const samsungItem = screen.getByRole("menuitem", { name: /Copy Samsung Wallet link/ });
+      expect((samsungItem as HTMLButtonElement).disabled).toBe(true);
     });
 
     it("copies the Apple Wallet link to the clipboard", async () => {
@@ -738,9 +793,33 @@ describe("AttendeeDetailPage — Wallet card gated by the event's platform toggl
     expect(screen.getByText("This will also update their installed wallet pass.")).toBeTruthy();
   });
 
-  it("hides the Wallet card when the master switch is on but both individual platforms are off", async () => {
+  // Regression (CodeRabbit review): computeWalletPushNoticeVisible only checked apple/google
+  // registration counts, so a Samsung-only confirmed registration would under-warn even though
+  // pushWalletUpdateOnAttendeeChangeBestEffort pushes to it the same as any other active pass.
+  it("shows the wallet-push notice while editing, for a Samsung-only confirmed registration", async () => {
     mockWalletAppleEnabled = false;
     mockWalletGoogleEnabled = false;
+    mockWalletSamsungEnabled = true;
+    mockLoad(
+      baseDetail({
+        wallet_pass: walletPass({ status: "active", samsung_active_registrations: 1 }),
+        wallet_field_mapping: { org: "company" },
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.queryByText("This will also update their installed wallet pass.")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Company"), { target: { value: "Acme Corp" } });
+    expect(screen.getByText("This will also update their installed wallet pass.")).toBeTruthy();
+  });
+
+  it("hides the Wallet card when the master switch is on but every individual platform is off", async () => {
+    mockWalletAppleEnabled = false;
+    mockWalletGoogleEnabled = false;
+    mockWalletSamsungEnabled = false;
     mockLoad(baseDetail({ wallet_pass: walletPass() }));
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
@@ -783,20 +862,41 @@ describe("AttendeeDetailPage — Wallet card gated by the event's platform toggl
     expect(screen.getByRole("menuitem", { name: /Copy Google Wallet link/ })).toBeTruthy();
   });
 
-  it("shows a reserved Samsung Wallet row when Samsung Wallet is enabled, alongside Apple/Google", async () => {
+  it("shows a real Samsung Wallet row (same registration-status mechanism as Apple/Google), alongside them", async () => {
     mockWalletSamsungEnabled = true;
     mockLoad(
       baseDetail({
-        wallet_pass: walletPass({ apple_active_registrations: 1, google_active_registrations: 1 }),
+        wallet_pass: walletPass({
+          apple_active_registrations: 1,
+          google_active_registrations: 1,
+          samsung_active_registrations: 0,
+          samsung_inactive_registrations: 0,
+        }),
       }),
     );
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
     expect(screen.getByText("Samsung Wallet")).toBeTruthy();
-    // No samsung_active_registrations field exists anywhere (no PassCreator API support yet) - the
-    // row can only ever say this, unlike Apple/Google's real registration status above it.
-    expect(screen.getByText("Not supported yet")).toBeTruthy();
+    // 0/0 today (PassCreator hasn't finished activating Samsung Wallet on any template yet), but
+    // read through the same walletRegistrationLabel() as Apple/Google - "Not added", not a
+    // hardcoded apology, and it'll start reflecting real installs the moment that activation lands.
+    const samsungRow = screen.getByText("Samsung Wallet").closest(".attendee-detail-row");
+    expect(samsungRow?.textContent).toContain("Not added");
+  });
+
+  it("shows Registered on the Samsung Wallet row once it has a real active registration", async () => {
+    mockWalletSamsungEnabled = true;
+    mockLoad(
+      baseDetail({
+        wallet_pass: walletPass({ samsung_active_registrations: 1, samsung_inactive_registrations: 0 }),
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    const samsungRow = screen.getByText("Samsung Wallet").closest(".attendee-detail-row");
+    expect(samsungRow?.textContent).toContain("Registered");
   });
 
   it("omits the Samsung Wallet row when Samsung Wallet is disabled, even with Apple/Google both on", async () => {
@@ -807,5 +907,17 @@ describe("AttendeeDetailPage — Wallet card gated by the event's platform toggl
 
     expect(screen.getByText("Wallet", { selector: ".at-card__title" })).toBeTruthy();
     expect(screen.queryByText("Samsung Wallet")).toBeNull();
+  });
+
+  it("still shows the Wallet card with just the Samsung row when Apple/Google are both disabled", async () => {
+    mockWalletAppleEnabled = false;
+    mockWalletGoogleEnabled = false;
+    mockWalletSamsungEnabled = true;
+    mockLoad(baseDetail({ wallet_pass: null }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.getByText("Wallet", { selector: ".at-card__title" })).toBeTruthy();
+    expect(screen.getByText("Not added to a wallet")).toBeTruthy();
   });
 });

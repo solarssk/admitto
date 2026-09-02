@@ -57,6 +57,10 @@ export type TicketPageOptions = {
   walletAppleHref?: string | null;
   /** Href for the on-demand "Add to Google Wallet" route (this ticket's own /wallet/google). */
   walletGoogleHref?: string | null;
+  /** Shows an inert "Add to Samsung Wallet" badge (no href, not tappable) - PassCreator has no
+   * Samsung Wallet API yet (packages/shared/src/walletPlatforms.ts), so unlike walletAppleHref/
+   * walletGoogleHref above there is no working route to link it to. */
+  walletSamsungBadge?: boolean;
   /** Set when a wallet pass creation attempt just failed - shows a retry notice. */
   walletError?: boolean;
 };
@@ -345,26 +349,55 @@ function ticketDocument(options: {
 
 /** Wallet badges and help text, or an empty string when the event has no wallet pass. */
 function renderWalletSection(options: TicketPageOptions): string {
-  if (!options.walletAppleHref && !options.walletGoogleHref) return "";
+  if (!options.walletAppleHref && !options.walletGoogleHref && !options.walletSamsungBadge) return "";
 
   const errorHtml = options.walletError
     ? `<p class="ticket__wallet-error" role="alert">Could not add this ticket to your wallet just now. Please try again.</p>`
     : "";
+  // srcset: PNG for standard-density (1x) screens, SVG for 2x+ (Retina). Pure vector anti-aliasing
+  // on a ~92-110 PPI display makes fine badge detail (small text) look visibly softer than the
+  // same artwork on a Retina panel - a hand-rasterized PNG at the badge's actual on-screen size
+  // is crisper there than the browser's own SVG-to-1x-device-pixel rasterization. No visible size
+  // jump switching densities: every PNG/SVG pair here shares the same aspect ratio.
   const appleBadgeHtml = options.walletAppleHref
-    ? `<span class="wallet-badge-frame"><a href="${esc(options.walletAppleHref)}"><img class="wallet-badge wallet-badge--apple" src="/assets/apple-wallet-badge.svg" alt="Add to Apple Wallet"></a></span>`
+    ? `<span class="wallet-badge-frame"><a href="${esc(options.walletAppleHref)}"><img class="wallet-badge wallet-badge--apple" src="/assets/apple-wallet-badge.png" srcset="/assets/apple-wallet-badge.png 1x, /assets/apple-wallet-badge.svg 2x" alt="Add to Apple Wallet"></a></span>`
     : "";
   const googleBadgeHtml = options.walletGoogleHref
-    ? `<span class="wallet-badge-frame"><a href="${esc(options.walletGoogleHref)}"><img class="wallet-badge" src="/assets/google-wallet-badge.svg" alt="Add to Google Wallet"></a></span>`
+    ? `<span class="wallet-badge-frame"><a href="${esc(options.walletGoogleHref)}"><img class="wallet-badge" src="/assets/google-wallet-badge.png" srcset="/assets/google-wallet-badge.png 1x, /assets/google-wallet-badge.svg 2x" alt="Add to Google Wallet"></a></span>`
     : "";
+  // No href: PassCreator has no Samsung Wallet API yet, so there is no working route to link to
+  // (see TicketPageOptions.walletSamsungBadge's own doc comment). Greyed out (aria-disabled +
+  // wallet-badge--disabled) with a plain `title` tooltip - this page is `script-src 'none'`, so a
+  // native attribute is the only tooltip mechanism available, no JS. Deliberately no "coming
+  // soon"/"not supported" copy anywhere visible - PO preference: read as an ordinary disabled
+  // control, not an apology, so there's nothing to hunt down and reword once it does work.
+  const samsungBadgeHtml = options.walletSamsungBadge
+    ? `<span class="wallet-badge-frame"><img class="wallet-badge wallet-badge--disabled" src="/assets/samsung-wallet-badge.png" srcset="/assets/samsung-wallet-badge.png 1x, /assets/samsung-wallet-badge.svg 2x" alt="Add to Samsung Wallet" aria-disabled="true" title="Unavailable"></span>`
+    : "";
+
+  // Built from the buttons actually present, not a fixed "Apple or Google" sentence - an event
+  // that only offers Samsung (Apple/Google both off) would otherwise tell the attendee to tap
+  // buttons that don't exist on the page at all.
+  let tapInstruction = "";
+  if (options.walletAppleHref && options.walletGoogleHref) {
+    tapInstruction = "Tap Add to Apple Wallet or Add to Google Wallet above. You will find this ticket later in that app.";
+  } else if (options.walletAppleHref) {
+    tapInstruction = "Tap Add to Apple Wallet above. You will find this ticket later in that app.";
+  } else if (options.walletGoogleHref) {
+    tapInstruction = "Tap Add to Google Wallet above. You will find this ticket later in that app.";
+  }
+  const samsungInstruction = options.walletSamsungBadge ? "The Samsung Wallet button is for Samsung Galaxy phones." : "";
+  const helpText = [tapInstruction, samsungInstruction].filter(Boolean).join(" ");
 
   return `${errorHtml}
     <div class="ticket__wallets">
       ${appleBadgeHtml}
       ${googleBadgeHtml}
+      ${samsungBadgeHtml}
     </div>
     <details class="ticket__wallet-help">
       <summary>How do I add this to my phone?</summary>
-      <p>Tap Add to Apple Wallet or Add to Google Wallet above. You will find this ticket later in that app.</p>
+      <p>${helpText}</p>
     </details>`;
 }
 

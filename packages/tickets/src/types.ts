@@ -196,6 +196,10 @@ export type ResolvedTicket = {
     walletApiKeyEnc: string | null;
     walletAppleEnabled: boolean;
     walletGoogleEnabled: boolean;
+    /** No PassCreator API support yet (see EnabledWalletPlatforms.samsung's own doc comment,
+     * packages/shared/src/walletPlatforms.ts) - used only to show an inert "Add to Samsung Wallet"
+     * badge on the ticket page, never a working href. */
+    walletSamsungEnabled: boolean;
     /** PassCreator field key -> Admitto placeholder token; null/empty uses the default mapping. */
     walletFieldMapping: Record<string, string> | null;
     /** Optional event category (Apple PKEventType vocabulary key, e.g. "sports") - a

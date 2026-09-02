@@ -53,6 +53,8 @@ import {
   handleGetAppleWalletBadgePng,
   handleGetGoogleWalletBadge,
   handleGetGoogleWalletBadgePng,
+  handleGetSamsungWalletBadge,
+  handleGetSamsungWalletBadgePng,
 } from "./wallet-badges.js";
 import { handlePassCreatorWebhook } from "./wallet-webhook.js";
 import {
@@ -495,6 +497,38 @@ async function resolveQrPayloadOrRespond(
     return onMissing();
   }
   return buildQrPayload("agency", { agencyPayload });
+}
+
+// No template or API key configured for this event yet (Event settings -> Wallet) - the
+// /wallet/:platform routes would only redirect back with walletError=1 (resolveWalletProvider
+// returns null without both), so don't offer them. The master switch and each platform's own
+// toggle independently gate visibility too. `hasInjectedWalletProvider` is the same test-only
+// injection escape hatch resolveWalletProvider itself checks first. Split out of
+// renderTicketPage (inside createApp) to keep that function's own cognitive complexity under
+// Sonar's threshold (S3776) - pure, no closure state needed, so it lives at module scope rather
+// than being recreated on every createApp() call (SonarCloud S7721).
+function computeWalletPlatformVisibility(
+  event: {
+    walletEnabled: boolean;
+    walletTemplateId: string | null;
+    walletApiKeyEnc: string | null;
+    walletAppleEnabled: boolean;
+    walletGoogleEnabled: boolean;
+    walletSamsungEnabled: boolean;
+  },
+  hasInjectedWalletProvider: boolean,
+): { apple: boolean; google: boolean; samsung: boolean } {
+  const walletConfigured =
+    event.walletEnabled &&
+    event.walletTemplateId !== null &&
+    (hasInjectedWalletProvider || event.walletApiKeyEnc !== null);
+  return {
+    apple: walletConfigured && event.walletAppleEnabled,
+    google: walletConfigured && event.walletGoogleEnabled,
+    // Inert badge only - no createPass route exists for Samsung yet (PassCreator has no API
+    // support), see TicketPageOptions.walletSamsungBadge's own doc comment.
+    samsung: walletConfigured && event.walletSamsungEnabled,
+  };
 }
 
 /** Build the Admitto Hono app (public tickets, auth, check-in API, operator HTML). */
@@ -1110,25 +1144,19 @@ export function createApp(options: CreateAppOptions = {}) {
       route === "/t/:eventSlug/a/:ref"
         ? `/t/${resolvedForDisplay.event.slug}/a/${agencyPublicRef}`
         : `/t/${internalToken}`;
-    // No template or API key configured for this event yet (Event settings -> Wallet) - the
-    // /wallet/:platform routes would only redirect back with walletError=1 (resolveWalletProvider
-    // returns null without both), so don't offer them. The master switch and each platform's own
-    // toggle independently gate visibility too. `options.walletPassProvider` is the same test-only
-    // injection escape hatch resolveWalletProvider itself checks first.
-    const walletConfigured =
-      resolvedForDisplay.event.walletEnabled &&
-      resolvedForDisplay.event.walletTemplateId !== null &&
-      (options.walletPassProvider !== undefined || resolvedForDisplay.event.walletApiKeyEnc !== null);
-    const appleWalletVisible = walletConfigured && resolvedForDisplay.event.walletAppleEnabled;
-    const googleWalletVisible = walletConfigured && resolvedForDisplay.event.walletGoogleEnabled;
+    const walletVisible = computeWalletPlatformVisibility(
+      resolvedForDisplay.event,
+      options.walletPassProvider !== undefined,
+    );
     return htmlWithSecurityHeaders(
       c,
       renderTicket(resolvedForDisplay, qrDataUrl, theme, {
         displayToken,
         staticMapEnabled: mapTiles.enabled,
         weather,
-        ...(appleWalletVisible ? { walletAppleHref: `${walletBase}/wallet/apple` } : {}),
-        ...(googleWalletVisible ? { walletGoogleHref: `${walletBase}/wallet/google` } : {}),
+        ...(walletVisible.apple ? { walletAppleHref: `${walletBase}/wallet/apple` } : {}),
+        ...(walletVisible.google ? { walletGoogleHref: `${walletBase}/wallet/google` } : {}),
+        ...(walletVisible.samsung ? { walletSamsungBadge: true } : {}),
         walletError: c.req.query("walletError") === "1",
       }),
       200,
@@ -1149,8 +1177,10 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/assets/admitto-logo.svg", handleGetAdmittoLogo);
   app.get("/assets/apple-wallet-badge.svg", handleGetAppleWalletBadge);
   app.get("/assets/google-wallet-badge.svg", handleGetGoogleWalletBadge);
+  app.get("/assets/samsung-wallet-badge.svg", handleGetSamsungWalletBadge);
   app.get("/assets/apple-wallet-badge.png", handleGetAppleWalletBadgePng);
   app.get("/assets/google-wallet-badge.png", handleGetGoogleWalletBadgePng);
+  app.get("/assets/samsung-wallet-badge.png", handleGetSamsungWalletBadgePng);
   app.get("/readyz", readyzRateLimit, (c) =>
     handleReadyz(c, {
       db,

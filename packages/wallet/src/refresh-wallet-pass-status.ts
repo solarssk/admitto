@@ -57,6 +57,8 @@ export async function refreshOneWalletPassStatus(
       apple_inactive_registrations: status.appleInactiveRegistrations,
       google_active_registrations: status.googleActiveRegistrations,
       google_inactive_registrations: status.googleInactiveRegistrations,
+      samsung_active_registrations: status.samsungActiveRegistrations,
+      samsung_inactive_registrations: status.samsungInactiveRegistrations,
       first_downloaded_at: status.firstDownloadedAt,
       registration_checked_at: new Date(),
       // Matches syncOne's own success write (registration-sync.ts) - the periodic worker selects

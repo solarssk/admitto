@@ -49,7 +49,12 @@ import {
 } from "../attendees/attendeeDetailForm.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
-import { formatAdmissionDisplayParts, formatEventDateTime, getBrowserTimeZone } from "../utils/event-dates.js";
+import {
+  formatAdmissionDisplayParts,
+  formatEventDateTime,
+  getBrowserTimeZone,
+  type AdmissionDisplayParts,
+} from "../utils/event-dates.js";
 import {
   deriveAttendeeSource,
   getTimelineActor,
@@ -85,6 +90,7 @@ import {
 } from "../components/ArchivedGuard.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
+import { SamsungGlyphIcon } from "../components/SamsungWalletIcon.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
 import { ROLE_BADGE_VARIANT, ROLE_LABELS } from "../auth/role-labels.js";
@@ -571,13 +577,14 @@ function WalletActionMenuItems({
 function WalletLinksMenu({
   appleUrl,
   androidUrl,
-}: Readonly<{ appleUrl: string | null; androidUrl: string | null }>) {
+  samsungEnabled,
+}: Readonly<{ appleUrl: string | null; androidUrl: string | null; samsungEnabled: boolean }>) {
   const { addToast } = useToast();
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
   });
 
-  if (!appleUrl && !androidUrl) return null;
+  if (!appleUrl && !androidUrl && !samsungEnabled) return null;
 
   async function copyLink(url: string, label: string) {
     setOpen(false);
@@ -631,6 +638,17 @@ function WalletLinksMenu({
                 <span className="more-actions-menu__item-hint">Install link for this attendee's pass</span>
               </span>
             </button>
+          )}
+          {samsungEnabled && (
+            <Tooltip content="Unavailable" className="more-actions-menu__item-wrapper" axis="horizontal">
+              <button type="button" role="menuitem" className="more-actions-menu__item" disabled>
+                <SamsungGlyphIcon aria-label="Samsung Wallet" />
+                <span className="more-actions-menu__item-text">
+                  <span>Copy Samsung Wallet link</span>
+                  <span className="more-actions-menu__item-hint">Install link for this attendee's pass</span>
+                </span>
+              </button>
+            </Tooltip>
           )}
         </div>
       )}
@@ -888,13 +906,19 @@ function AttendeeOverviewTab({
           )}
         </Card>
 
-        {walletPlatforms.any && (
+        {/* Deliberately not walletPlatforms.any (Apple/Google only, see its own doc comment) -
+            unlike the pass-lifecycle menu items further up this file (real actions on a real
+            pass, which can only exist for Apple/Google), this card's own Samsung row reads real
+            registration data the same way Apple/Google's do, so it must still show for an event
+            that enables Samsung alone. */}
+        {(walletPlatforms.apple || walletPlatforms.google || walletPlatforms.samsung) && (
           <Card
             title="Wallet"
             actions={
               <WalletLinksMenu
                 appleUrl={walletPlatforms.apple ? detail.wallet_apple_link : null}
                 androidUrl={walletPlatforms.google ? detail.wallet_google_link : null}
+                samsungEnabled={walletPlatforms.samsung}
               />
             }
           >
@@ -922,14 +946,20 @@ function AttendeeOverviewTab({
                     </span>
                   </div>
                 )}
-                {/* No samsung_active_registrations field exists (no PassCreator API support yet -
-                    see EnabledWalletPlatforms.samsung's own doc comment), so unlike the Apple/Google
-                    rows above this can never show a real per-attendee status - a reserved row,
-                    same idea as the always-0 Samsung slice in Reports' platform breakdown. */}
+                {/* Same registration-status mechanism as Apple/Google above (confirmed live against
+                    PassCreator's GET /api/v3/pass search response, 2026-09-02) - reads real data,
+                    it just stays 0/null for every attendee today since PassCreator hasn't finished
+                    activating Samsung Wallet for any template yet (walletApps.android.samsung.
+                    templateCreated: false). No code change needed once that flips. */}
                 {walletPlatforms.samsung && (
                   <div className="attendee-detail-row">
                     <span>Samsung Wallet</span>
-                    <span>Not supported yet</span>
+                    <span>
+                      {walletRegistrationLabel(
+                        detail.wallet_pass.samsung_active_registrations,
+                        detail.wallet_pass.samsung_inactive_registrations,
+                      )}
+                    </span>
                   </div>
                 )}
                 {/* None of these timestamps has a captured actor/device timezone (issued_at is the
@@ -1463,7 +1493,8 @@ function computeWalletPushNoticeVisible(
     !!detail.wallet_pass &&
     detail.wallet_pass.status === "active" &&
     ((detail.wallet_pass.apple_active_registrations ?? 0) > 0 ||
-      (detail.wallet_pass.google_active_registrations ?? 0) > 0);
+      (detail.wallet_pass.google_active_registrations ?? 0) > 0 ||
+      (detail.wallet_pass.samsung_active_registrations ?? 0) > 0);
   if (!hasConfirmedWalletRegistration) return false;
   return Object.keys(buildAttendeePatch(form, detail, attributeFields)).some(
     (key) =>
@@ -1542,6 +1573,90 @@ function classifyPassStatusError(err: unknown): PassStatusErrorOutcome {
     return { kind: "message", message: "Could not update pass status." };
   }
   return { kind: "message", message: operatorApiErrorMessage(err, "Could not update pass status.") };
+}
+
+/** The Pass/Attendance/Ticket delivery/Check-in/Wallet chip strip at the top of the page -
+ * extracted out of AttendeeDetailPage (SonarCloud S3776, and to stop this specific block from
+ * repeatedly tipping the mega-component over the cognitive-complexity budget every time a wallet
+ * platform check here changes - see AttendeeOverviewTab above for the same reasoning applied to a
+ * different part of this same page). Purely presentational - reads props, renders chips, no
+ * handlers or local state of its own. */
+function AttendeeStatusStrip({
+  detail,
+  lastMail,
+  admissionParts,
+  walletPlatforms,
+}: Readonly<{
+  detail: AttendeeDetailDto;
+  lastMail: string | null;
+  admissionParts: AdmissionDisplayParts | null;
+  walletPlatforms: EnabledWalletPlatforms;
+}>) {
+  return (
+    <div className="attendee-status-strip">
+      <div className="attendee-status-chip">
+        <span className={`attendee-status-chip__icon attendee-status-chip__icon--${passStatusTone(detail.status)}`}>
+          <i className="ti ti-user-check" aria-hidden="true" />
+        </span>
+        <div className="attendee-status-chip__body">
+          <strong>Pass</strong>
+          <PassStatusBadge status={detail.status} />
+        </div>
+      </div>
+      <div className="attendee-status-chip">
+        <span className={`attendee-status-chip__icon attendee-status-chip__icon--${rsvpTone(detail.rsvp_status)}`}>
+          <i className="ti ti-calendar-question" aria-hidden="true" />
+        </span>
+        <div className="attendee-status-chip__body">
+          <strong>Attendance</strong>
+          <RsvpStatusBadge status={detail.rsvp_status} />
+        </div>
+      </div>
+      <div className="attendee-status-chip">
+        <span className={`attendee-status-chip__icon attendee-status-chip__icon--${mailTone(lastMail)}`}>
+          <i className="ti ti-mail" aria-hidden="true" />
+        </span>
+        <div className="attendee-status-chip__body">
+          <strong>Ticket delivery</strong>
+          <MailStatusBadge status={lastMail} />
+        </div>
+      </div>
+      <div className="attendee-status-chip">
+        <span className={`attendee-status-chip__icon attendee-status-chip__icon--${detail.admitted_at ? "ok" : "neutral"}`}>
+          <i className="ti ti-qrcode" aria-hidden="true" />
+        </span>
+        <div className="attendee-status-chip__body">
+          <strong>Check-in</strong>
+          {admissionParts ? (
+            <span className="attendee-status-chip__checkin" title={`${admissionParts.day}, ${admissionParts.time}`}>
+              <span className="attendee-status-chip__checkin-day">{admissionParts.day}</span>
+              <span className="attendee-status-chip__checkin-time">{admissionParts.time}</span>
+            </span>
+          ) : (
+            <span>Not yet</span>
+          )}
+        </div>
+      </div>
+      {/* Deliberately not walletPlatforms.any (Apple/Google only, see its own doc comment) - this
+       * status chip reads real per-attendee Samsung registration data the same way it already
+       * does for Apple/Google (isWalletPassInstalled below), so a Samsung-only event must still
+       * get a chip. */}
+      {(walletPlatforms.apple || walletPlatforms.google || walletPlatforms.samsung) && (
+        <div className="attendee-status-chip">
+          <span className={`attendee-status-chip__icon attendee-status-chip__icon--${walletTone(detail.wallet_pass)}`}>
+            <i className="ti ti-wallet" aria-hidden="true" />
+          </span>
+          <div className="attendee-status-chip__body">
+            <strong>Wallet</strong>
+            <WalletStatusBadge
+              status={detail.wallet_pass?.status ?? null}
+              installed={!!detail.wallet_pass && isWalletPassInstalled(detail.wallet_pass, walletPlatforms)}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function AttendeeDetailPage() {
@@ -2347,65 +2462,12 @@ export function AttendeeDetailPage() {
       {error && !editMode && <p className="text-error">{error}</p>}
       {itemsWarning && <Notice variant="warning" className="attendee-form__warn">{itemsWarning}</Notice>}
 
-      <div className="attendee-status-strip">
-        <div className="attendee-status-chip">
-          <span className={`attendee-status-chip__icon attendee-status-chip__icon--${passStatusTone(detail.status)}`}>
-            <i className="ti ti-user-check" aria-hidden="true" />
-          </span>
-          <div className="attendee-status-chip__body">
-            <strong>Pass</strong>
-            <PassStatusBadge status={detail.status} />
-          </div>
-        </div>
-        <div className="attendee-status-chip">
-          <span className={`attendee-status-chip__icon attendee-status-chip__icon--${rsvpTone(detail.rsvp_status)}`}>
-            <i className="ti ti-calendar-question" aria-hidden="true" />
-          </span>
-          <div className="attendee-status-chip__body">
-            <strong>Attendance</strong>
-            <RsvpStatusBadge status={detail.rsvp_status} />
-          </div>
-        </div>
-        <div className="attendee-status-chip">
-          <span className={`attendee-status-chip__icon attendee-status-chip__icon--${mailTone(lastMail)}`}>
-            <i className="ti ti-mail" aria-hidden="true" />
-          </span>
-          <div className="attendee-status-chip__body">
-            <strong>Ticket delivery</strong>
-            <MailStatusBadge status={lastMail} />
-          </div>
-        </div>
-        <div className="attendee-status-chip">
-          <span className={`attendee-status-chip__icon attendee-status-chip__icon--${detail.admitted_at ? "ok" : "neutral"}`}>
-            <i className="ti ti-qrcode" aria-hidden="true" />
-          </span>
-          <div className="attendee-status-chip__body">
-            <strong>Check-in</strong>
-            {admissionParts ? (
-              <span className="attendee-status-chip__checkin" title={`${admissionParts.day}, ${admissionParts.time}`}>
-                <span className="attendee-status-chip__checkin-day">{admissionParts.day}</span>
-                <span className="attendee-status-chip__checkin-time">{admissionParts.time}</span>
-              </span>
-            ) : (
-              <span>Not yet</span>
-            )}
-          </div>
-        </div>
-        {walletPlatforms.any && (
-          <div className="attendee-status-chip">
-            <span className={`attendee-status-chip__icon attendee-status-chip__icon--${walletTone(detail.wallet_pass)}`}>
-              <i className="ti ti-wallet" aria-hidden="true" />
-            </span>
-            <div className="attendee-status-chip__body">
-              <strong>Wallet</strong>
-              <WalletStatusBadge
-                status={detail.wallet_pass?.status ?? null}
-                installed={!!detail.wallet_pass && isWalletPassInstalled(detail.wallet_pass, walletPlatforms)}
-              />
-            </div>
-          </div>
-        )}
-      </div>
+      <AttendeeStatusStrip
+        detail={detail}
+        lastMail={lastMail}
+        admissionParts={admissionParts}
+        walletPlatforms={walletPlatforms}
+      />
 
       <Tabs
         value={tab}
