@@ -69,6 +69,11 @@ export interface WalletPassResult {
   downloadUrl?: string;
   appleUrl: string;
   androidUrl: string;
+  /** Samsung Wallet install link, once PassCreator documents/returns one - no confirmed field name
+   * exists yet (live check 2026-09-02: neither POST/PATCH /api/v3/pass nor the legacy
+   * GET /api/pass/geturis/{uid} return anything Samsung-named, even on a template with
+   * walletApps.android.samsung.active:true but templateCreated:false). No adapter sets this today. */
+  samsungUrl?: string;
 }
 
 /** Device-registration status as the provider itself reports it - not derived locally, and only
@@ -79,6 +84,11 @@ export interface WalletPassRegistrationStatus {
   appleInactiveRegistrations: number;
   googleActiveRegistrations: number;
   googleInactiveRegistrations: number;
+  /** Confirmed live 2026-09-02 (GET /api/v3/pass?query=... on a Samsung-enabled template):
+   * noOfActiveRegistrationsSamsungWallet / noOfInactiveRegistrationsSamsungWallet are real,
+   * already-populated fields (0 pre-launch), unlike samsungUrl above. */
+  samsungActiveRegistrations: number;
+  samsungInactiveRegistrations: number;
   /** When the pass file was first downloaded - provider-reported, timezone unconfirmed (not
    * documented as UTC or otherwise), so callers must treat this as an opaque instant rather than
    * converting it to a specific zone. */

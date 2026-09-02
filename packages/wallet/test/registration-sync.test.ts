@@ -39,6 +39,8 @@ const STATUS = {
   appleInactiveRegistrations: 0,
   googleActiveRegistrations: 0,
   googleInactiveRegistrations: 0,
+  samsungActiveRegistrations: 3,
+  samsungInactiveRegistrations: 1,
   firstDownloadedAt: "2026-08-01 10:00:00",
 };
 
@@ -70,6 +72,8 @@ describe("runWalletRegistrationSync", () => {
       data: {
         apple_active_registrations: 1,
         google_active_registrations: 0,
+        samsung_active_registrations: 3,
+        samsung_inactive_registrations: 1,
         first_downloaded_at: "2026-08-01 10:00:00",
       },
     });
@@ -151,6 +155,7 @@ describe("runWalletRegistrationSync", () => {
 
     const call = db.walletPass.update.mock.calls[0][0];
     expect(call.data.apple_active_registrations).toBeNull();
+    expect(call.data.samsung_active_registrations).toBeNull();
     expect(call.data.first_downloaded_at).toBeNull();
     expect(call.data.registration_checked_at).toBeInstanceOf(Date);
     expect(call.data.registration_sync_attempted_at).toBeInstanceOf(Date);

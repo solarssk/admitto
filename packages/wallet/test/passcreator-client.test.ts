@@ -678,6 +678,8 @@ describe("PassCreatorClient.getRegistrationStatus", () => {
             noOfInactiveRegistrationsAppleWallet: 0,
             noOfActiveRegistrationsGoogleWallet: 0,
             noOfInactiveRegistrationsGoogleWallet: 1,
+            noOfActiveRegistrationsSamsungWallet: 2,
+            noOfInactiveRegistrationsSamsungWallet: 0,
             firstDownloadedAt: "2026-08-01 10:00:00",
           },
         ],
@@ -690,6 +692,8 @@ describe("PassCreatorClient.getRegistrationStatus", () => {
       appleInactiveRegistrations: 0,
       googleActiveRegistrations: 0,
       googleInactiveRegistrations: 1,
+      samsungActiveRegistrations: 2,
+      samsungInactiveRegistrations: 0,
       firstDownloadedAt: "2026-08-01 10:00:00",
     });
   });
@@ -715,6 +719,8 @@ describe("PassCreatorClient.getRegistrationStatus", () => {
       appleInactiveRegistrations: 0,
       googleActiveRegistrations: 0,
       googleInactiveRegistrations: 0,
+      samsungActiveRegistrations: 0,
+      samsungInactiveRegistrations: 0,
       firstDownloadedAt: null,
     });
   });

@@ -65,6 +65,8 @@ async function syncOne(db: PrismaClient, provider: WalletPassProvider, row: Cand
           apple_inactive_registrations: status?.appleInactiveRegistrations ?? null,
           google_active_registrations: status?.googleActiveRegistrations ?? null,
           google_inactive_registrations: status?.googleInactiveRegistrations ?? null,
+          samsung_active_registrations: status?.samsungActiveRegistrations ?? null,
+          samsung_inactive_registrations: status?.samsungInactiveRegistrations ?? null,
           first_downloaded_at: status?.firstDownloadedAt ?? null,
           registration_checked_at: new Date(),
           registration_sync_attempted_at: new Date(),

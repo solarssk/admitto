@@ -354,6 +354,13 @@ model WalletPass {
   download_url String?
   apple_url    String?
   android_url  String?
+  // PassCreator has no documented response field for this yet (confirmed live 2026-09-02: neither
+  // POST/PATCH /api/v3/pass nor the legacy GET /api/pass/geturis/{uid} return anything Samsung-named,
+  // even on a template with walletApps.android.samsung.active:true) - stays unpopulated until
+  // PassCreator finishes Samsung-side template activation (describe's own
+  // walletApps.android.samsung.templateCreated flag, still false as of the same check) and the real
+  // field name is confirmed. Column added now so the eventual client change is additive only.
+  samsung_url  String?
 
   // pending = not yet created (on-demand, first "Add to Wallet" click); active = created;
   // voided/failed/expired per WalletPassStatus (packages/db/src/status.ts).
@@ -372,6 +379,12 @@ model WalletPass {
   apple_inactive_registrations   Int?
   google_active_registrations    Int?
   google_inactive_registrations  Int?
+  // Confirmed live 2026-09-02 against GET /api/v3/pass?query=... on a Samsung-enabled template:
+  // noOfActiveRegistrationsSamsungWallet / noOfInactiveRegistrationsSamsungWallet are real, already-
+  // working fields, undocumented but present and populated (0/0 pre-launch) - unlike samsung_url
+  // above, this half of the contract needs no further spike.
+  samsung_active_registrations   Int?
+  samsung_inactive_registrations Int?
   // String, not DateTime: PassCreator's docs don't state which timezone this is in (no UTC
   // offset/Z in any example) - stored and displayed verbatim rather than parsed, so we never
   // assert a timezone we don't actually know.
