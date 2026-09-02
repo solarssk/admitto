@@ -755,6 +755,72 @@ function EventSettingsTabPanel({ tab, activeTab, visited, label, children }: Eve
   );
 }
 
+/** `buildSettingsPatch` can throw mid-typing (e.g. an invalid capacity value) - this runs on every
+ * render, not just on Save, so a thrown validation error must not crash the page. Fail safe: treat
+ * "couldn't tell" as dirty, same as the raw diff this replaced would have. Extracted out of
+ * EventSettingsPage's own body (SonarCloud S3776) - a self-contained "is there anything to save"
+ * question in its own right, not just complexity relocated for its own sake. */
+function computeSettingsDirty(form: SettingsForm | null, original: SettingsForm | null): boolean {
+  if (form === null || original === null) return false;
+  try {
+    return Object.keys(buildSettingsPatch(form, original)).length > 0;
+  } catch {
+    return true;
+  }
+}
+
+interface EventSettingsEarlyExitParams {
+  readonly eventId: string | undefined;
+  readonly loading: boolean;
+  readonly showLoading: boolean;
+  readonly event: EventSettingsDto | null;
+  readonly notFound: boolean;
+  readonly goBack: () => void;
+}
+
+/** Early-exit states before the real Event Settings UI can render - missing :eventId, the initial
+ * load still in flight, or a 404. Returns `undefined` when none apply and the page should render
+ * normally (the caller still separately checks `!event || !form` afterwards, so TypeScript keeps
+ * narrowing them for the rest of the component - moving that specific check in here too would lose
+ * it). Extracted out of EventSettingsPage's own body (SonarCloud S3776) - this guard-clause chain
+ * was a large share of that component's cognitive complexity on its own, and these are a
+ * self-contained concern in their own right, not just complexity relocated for its own sake. */
+function renderEventSettingsEarlyExit({
+  eventId,
+  loading,
+  showLoading,
+  event,
+  notFound,
+  goBack,
+}: EventSettingsEarlyExitParams): ReactNode | undefined {
+  if (!eventId) return <p>Missing event.</p>;
+  if (loading && !event) {
+    if (!showLoading) return null;
+    return (
+      <div className="event-settings-page screen">
+        <PageHeader title="Event settings" subtitle={EVENT_SETTINGS_SUBTITLE} />
+        <output>Loading event settings…</output>
+      </div>
+    );
+  }
+  if (notFound) {
+    return (
+      <div className="event-settings-page">
+        <EmptyState
+          title="Event not found"
+          description="The event could not be found or you do not have access."
+          action={
+            <Button variant="secondary" onClick={goBack}>
+              Back
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+  return undefined;
+}
+
 /** Event-scoped settings: General / Images / Wallet / Danger zone tabs. */
 export function EventSettingsPage() {
   const { eventId } = useParams();
@@ -880,17 +946,7 @@ export function EventSettingsPage() {
   // A raw JSON diff flagged the page dirty in that state forever: Save's own "nothing to send"
   // early return (below) never resets form/original, so the unsaved-changes banner, the
   // beforeunload warning, and the navigation blocker never cleared.
-  // buildSettingsPatch can throw mid-typing (e.g. an invalid capacity value) - this runs on every
-  // render, not just on Save, so a thrown validation error must not crash the page. Fail safe:
-  // treat "couldn't tell" as dirty, same as the raw diff this replaced would have.
-  let dirty = false;
-  if (form !== null && original !== null) {
-    try {
-      dirty = Object.keys(buildSettingsPatch(form, original)).length > 0;
-    } catch {
-      dirty = true;
-    }
-  }
+  const dirty = computeSettingsDirty(form, original);
   // Combines the General form's own dirty state with the Mail and Location tabs' — navigating
   // away or running a page action that reloads state (archive, revoke) would otherwise silently
   // discard unsaved mail transport edits, pending secret replacements, or a pending pin move
@@ -1054,35 +1110,12 @@ export function EventSettingsPage() {
     });
   }
 
-  if (!eventId) return <p>Missing event.</p>;
-
-  if (loading && !event) {
-    if (!showLoading) return null;
-    return (
-      <div className="event-settings-page screen">
-        <PageHeader title="Event settings" subtitle={EVENT_SETTINGS_SUBTITLE} />
-        <output>Loading event settings…</output>
-      </div>
-    );
-  }
-
-  if (notFound) {
-    return (
-      <div className="event-settings-page">
-        <EmptyState
-          title="Event not found"
-          description="The event could not be found or you do not have access."
-          action={
-            <Button variant="secondary" onClick={goBack}>
-              Back
-            </Button>
-          }
-        />
-      </div>
-    );
-  }
-
-  if (!event || !form) return null;
+  const earlyExit = renderEventSettingsEarlyExit({ eventId, loading, showLoading, event, notFound, goBack });
+  if (earlyExit !== undefined) return earlyExit;
+  // renderEventSettingsEarlyExit already returned for a missing :eventId above - re-checked here
+  // (not just `!event || !form`) purely so TypeScript keeps narrowing `eventId` to `string` for the
+  // rest of the component; it can't follow that narrowing through the helper's own return.
+  if (!eventId || !event || !form) return null;
 
   // The event's *persisted* wallet configuration, not the (possibly unsaved) Wallet-tab draft in
   // `form` - both the Location tab's own save and the suggested-timezone shortcut below only ever
