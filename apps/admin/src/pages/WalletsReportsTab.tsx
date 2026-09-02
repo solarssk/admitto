@@ -315,9 +315,14 @@ function niceStepMultiplier(normalized: number): number {
  * a charting library's own default tick generation typically divides min..max into a fixed number
  * of equal ticks regardless of the data's actual units, which for a small pass count (e.g. max 1)
  * can produce fractional labels (0, 0.2, 0.4, 0.6, 0.8, 1) that can never really occur since
- * passes only come in whole units. */
+ * passes only come in whole units. `max <= 1` gets one tick of headroom above the actual max (2,
+ * not 1) rather than matching it exactly - the general step/rounding logic below sometimes ends up
+ * with headroom too as a side effect of rounding to a "nice" step (round(45)->50), sometimes not
+ * (round(8)->8), but max<=1 always lands exactly on 1 with none, which reads as the line pinned to
+ * the axis's own ceiling with nowhere left to grow (PO review) - this one small-count case is
+ * common enough (a new/small event) to fix explicitly rather than leaving to chance. */
 function niceCountAxis(max: number): { axisMax: number; tickAmount: number } {
-  if (max <= 1) return { axisMax: 1, tickAmount: 1 };
+  if (max <= 1) return { axisMax: 2, tickAmount: 2 };
   const roughStep = max / 5;
   const magnitude = 10 ** Math.floor(Math.log10(roughStep));
   const normalized = roughStep / magnitude;

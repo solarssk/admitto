@@ -575,6 +575,19 @@ describe("WalletsReportsTab", () => {
     }
   });
 
+  it("gives the cumulative chart's Y-axis one tick of headroom above the max when it's 1, instead of pinning the line to the axis's own ceiling", async () => {
+    fetchEventWalletReports.mockResolvedValue(
+      fixture({ issued_by_day: [{ date: "2026-06-01", count: 1, cumulative: 1 }] }),
+    );
+
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    expect(capturedCumulative?.yTicks).toEqual([0, 1, 2]);
+  });
+
   it("formats the cumulative chart's tooltip label as a full date", async () => {
     fetchEventWalletReports.mockResolvedValue(fixture());
     renderWithToast(
