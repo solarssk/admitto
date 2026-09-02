@@ -143,6 +143,11 @@ async function seed(client: PrismaClient) {
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.emailDelivery.deleteMany({ where: { event_id: { in: eventIds } } });
+  // MailTemplate.scope_id is a plain string (polymorphic "organization" | "event" scope, not a
+  // real FK - see the model's own comment), so it doesn't cascade off event.deleteMany below;
+  // must run after emailDelivery.deleteMany above (FK), or a re-run trips the model's own
+  // @@unique([scope_type, scope_id, name]) on the funnel ticket-scoping regression fixture.
+  await client.mailTemplate.deleteMany({ where: { scope_type: "event", scope_id: { in: eventIds } } });
   await client.walletPass.deleteMany({ where: { attendee: { event_id: { in: eventIds } } } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.ticketType.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -744,16 +749,48 @@ async function seed(client: PrismaClient) {
     ],
   });
 
+  const mailAdmittedAt = new Date("2027-09-05T18:00:00.000Z");
   await client.attendee.createMany({
     data: [
-      { id: ATT_MAIL_ACCEPTED, event_id: EVENT_MAIL, email: "mail-accepted@example.com", name: "Mail Accepted", ...mkAttendeeToken() },
+      // Reached and admitted - the ordinary "email worked, they showed up" case.
+      { id: ATT_MAIL_ACCEPTED, event_id: EVENT_MAIL, email: "mail-accepted@example.com", name: "Mail Accepted", admitted_at: mailAdmittedAt, ...mkAttendeeToken() },
+      // Reached but NOT admitted - proves admission_by_email.reached isn't just "== reached_by_email".
       { id: ATT_MAIL_RECOVERED, event_id: EVENT_MAIL, email: "mail-recovered@example.com", name: "Mail Recovered", ...mkAttendeeToken() },
-      { id: ATT_MAIL_FAILED, event_id: EVENT_MAIL, email: "mail-failed@example.com", name: "Mail Failed", ...mkAttendeeToken() },
+      // NOT reached, but admitted anyway (e.g. let in at the door on a name check) - the case
+      // admission_by_email.not_reached.admitted exists to surface.
+      { id: ATT_MAIL_FAILED, event_id: EVENT_MAIL, email: "mail-failed@example.com", name: "Mail Failed", admitted_at: mailAdmittedAt, ...mkAttendeeToken() },
       { id: ATT_MAIL_QUEUED, event_id: EVENT_MAIL, email: "mail-queued@example.com", name: "Mail Queued", ...mkAttendeeToken() },
       { id: ATT_MAIL_CANCELLED, event_id: EVENT_MAIL, email: "mail-cancelled@example.com", name: "Mail Cancelled", ...mkAttendeeToken() },
       { id: ATT_MAIL_BOUNCED_AFTER_ACCEPT, event_id: EVENT_MAIL, email: "mail-bounced-after-accept@example.com", name: "Mail Bounced After Accept", ...mkAttendeeToken() },
-      { id: ATT_MAIL_VIEWED_RECOVERED, event_id: EVENT_MAIL, email: "mail-viewed-recovered@example.com", name: "Mail Viewed Recovered", ...mkAttendeeToken() },
+      { id: ATT_MAIL_VIEWED_RECOVERED, event_id: EVENT_MAIL, email: "mail-viewed-recovered@example.com", name: "Mail Viewed Recovered", admitted_at: mailAdmittedAt, ...mkAttendeeToken() },
     ],
+  });
+
+  // funnel.wallet_installed must be its own independent count, not gated on reach: ATT_MAIL_ACCEPTED
+  // was both reached and installed a pass, but ATT_MAIL_QUEUED never got a working email at all and
+  // still has one - proving the funnel doesn't force a strictly narrowing shape.
+  await client.walletPass.createMany({
+    data: [
+      { attendee_id: ATT_MAIL_ACCEPTED, status: "active", issued_at: mailAdmittedAt, apple_active_registrations: 1 },
+      { attendee_id: ATT_MAIL_QUEUED, status: "active", issued_at: mailAdmittedAt, google_active_registrations: 1 },
+    ],
+  });
+
+  // Regression fixture for funnel.reached_by_email's ticket-only scoping (bot review): a real
+  // non-ticket MailTemplate, not just a template_label_snapshot string, so ATT_MAIL_RECOVERED's
+  // only successful delivery genuinely resolves to a non-ticket template_id rather than the
+  // default null (which the ticket filter's own OR would otherwise still match).
+  const reminderTemplate = await client.mailTemplate.create({
+    data: {
+      scope_type: "event",
+      scope_id: EVENT_MAIL,
+      name: "reminder",
+      label: "Reminder",
+      subject_template: "Reminder",
+      body_template: "<mjml><mj-body></mj-body></mjml>",
+      template_format: "mjml",
+      compiled_html_template: "<html></html>",
+    },
   });
 
   // Attendee-level reach must dedup across purposes: ATT_MAIL_RECOVERED's initial send hard-bounced,
@@ -792,6 +829,7 @@ async function seed(client: PrismaClient) {
         // must still pick this delivery up. Regression coverage: this row was silently dropped from
         // the chart before that fix.
         sent_at: new Date("2027-09-02T10:00:00.000Z"),
+        template_id: reminderTemplate.id,
         template_label_snapshot: "Reminder",
       },
       {
@@ -861,6 +899,14 @@ async function seed(client: PrismaClient) {
       },
     ],
   });
+
+  // Regression fixture for funnel.reached_by_email's ticket-only scoping (bot review, round 2):
+  // deleting the template AFTER it was used SetNull's the delivery's template_id (the relation's
+  // own onDelete rule), but template_label_snapshot survives - a null template_id alone must not
+  // read as "genuine builtin ticket send" here, or a deleted-campaign-template send becomes
+  // indistinguishable from one. ATT_MAIL_RECOVERED's resend must stay excluded from
+  // reached_by_email even after this delete, the same as it was while the template still existed.
+  await client.mailTemplate.delete({ where: { id: reminderTemplate.id } });
 
   // One field of each EventCustomField type - covers the report's generic per-type behavior
   // (select/boolean chart as a distribution, text only gets a fill-rate stat), not any single
@@ -2842,6 +2888,11 @@ describe("GET /api/admin/events/:eventId/reports/mail", () => {
     expect(body.by_template).toEqual([]);
     expect(body.sent_by_day).toEqual([]);
     expect(body.ticket_viewed).toEqual({ reached: 0, viewed: 0, viewed_pct: 0 });
+    expect(body.admission_by_email).toEqual({
+      reached: { total: 0, admitted: 0, pct: 0 },
+      not_reached: { total: 0, admitted: 0, pct: 0 },
+    });
+    expect(body.funnel).toEqual({ total_attendees: 0, reached_by_email: 0, wallet_installed: 0, attended: 0 });
   });
 
   it("aggregates delivery attempts, attendee reach, purpose, template, and ticket-view stats", async () => {
@@ -2903,6 +2954,30 @@ describe("GET /api/admin/events/:eventId/reports/mail", () => {
     // later hard-bounced, and only its separate resend is what makes it "reached" - the fix under
     // test is that viewed doesn't require both facts on the very same delivery row.
     expect(body.ticket_viewed).toEqual({ reached: 3, viewed: 2, viewed_pct: 66.7 });
+
+    // admission_by_email: reached (3) splits into 2 admitted (ATT_MAIL_ACCEPTED, ATT_MAIL_VIEWED_RECOVERED)
+    // and 1 not (ATT_MAIL_RECOVERED) - reached alone doesn't imply admitted. not_reached (4) splits
+    // into 1 admitted (ATT_MAIL_FAILED, let in despite email never reaching them - the case this
+    // stat exists to surface) and 3 not.
+    expect(body.admission_by_email).toEqual({
+      reached: { total: 3, admitted: 2, pct: 66.7 },
+      not_reached: { total: 4, admitted: 1, pct: 25 },
+    });
+
+    // funnel.reached_by_email (2) is narrower than attendee_reach.reached (3) above - ATT_MAIL_RECOVERED
+    // counts as reached generally (its resend succeeded), but that resend used the "Reminder"
+    // MailTemplate, not a genuine ticket send, so it's excluded from this ticket-only stage (bot
+    // review: the funnel's own "got a ticket email" wording would otherwise be misleading here).
+    // Stays excluded even after that template is deleted (this fixture deletes it above) - a bare
+    // null template_id isn't enough to read as "genuine builtin ticket send" once deletion can
+    // produce that same null via SetNull; template_label_snapshot ("Reminder") surviving the
+    // delete is what still correctly excludes it (bot review, round 2).
+    // wallet_installed (2) is its own independent count, not gated on reach - ATT_MAIL_ACCEPTED was
+    // both reached and installed a pass, but ATT_MAIL_QUEUED installed one despite never having a
+    // working email delivery at all, proving the funnel doesn't force a strictly narrowing shape.
+    // attended (3) counts every admitted attendee regardless of reach, including ATT_MAIL_FAILED
+    // from the admission_by_email case above.
+    expect(body.funnel).toEqual({ total_attendees: 7, reached_by_email: 2, wallet_installed: 2, attended: 3 });
   });
 });
 

@@ -11,6 +11,11 @@ const sample: EventMailReportsResponse = {
   by_template: [{ template: null, total: 5, successful: 4, successful_pct: 80 }],
   sent_by_day: [],
   ticket_viewed: { reached: 3, viewed: 1, viewed_pct: 33.3 },
+  admission_by_email: {
+    reached: { total: 3, admitted: 2, pct: 66.7 },
+    not_reached: { total: 1, admitted: 0, pct: 0 },
+  },
+  funnel: { total_attendees: 4, reached_by_email: 3, wallet_installed: 2, attended: 2 },
 };
 
 describe("fetchEventMailReports (client)", () => {

@@ -18,7 +18,13 @@ import type { EventWalletReportsResponse } from "../api/types.js";
 import { useReportFetch } from "../hooks/useReportFetch.js";
 import { viewerLocalTime } from "../utils/event-dates.js";
 import { BreakdownRows, pctOf, type BreakdownRow } from "./ReportsPage.js";
-import { preventFocusRing, ReportsCumulativeAreaChart, ReportsDonutChart, type ReportsDonutSlice } from "./reports-charts.js";
+import {
+  preventFocusRing,
+  ReportsAdmissionCompare,
+  ReportsCumulativeAreaChart,
+  ReportsDonutChart,
+  type ReportsDonutSlice,
+} from "./reports-charts.js";
 // This component's own .wallets-* rules live in reports-page.css alongside ReportsPage's own
 // styles (one card-grid family, not a separate stylesheet) - importing it here too, not just
 // relying on ReportsPage.tsx already having it loaded, matches this app's own convention that
@@ -483,92 +489,6 @@ function RegistrationsPerAttendeeChart({
   return <BucketBarChart rows={rows} isActive={isActive} />;
 }
 
-/** Two independent radialBar gauges, not a stacked/concentric pair - "has a wallet" and "no
- * wallet" are separate groups with their own separate rates, not two shares of one whole (unlike
- * the donut above), so each gets its own fully-independent 0-100% ring. Same gauge style Tabler
- * itself uses for a single rate (its "Active users" card). Always rendered at a fixed 180x180
- * canvas - .wallets-compare-ring (reports-page.css) is the box that actually varies with the
- * container's width, via CSS clamp()/container-query units, and scales this fixed render down to
- * match with transform:scale. Re-rendering the chart itself at a different pixel size on every
- * resize would need a ResizeObserver driving React state for no visual benefit: the chart is SVG,
- * so scaling it in CSS is already lossless. */
-function AdmissionGauge({
-  pct,
-  color,
-  isActive,
-}: Readonly<{ pct: number; color: string; isActive: boolean }>) {
-  return (
-    <div className="wallets-compare-ring">
-      <div // NOSONAR: mousedown-only, see preventFocusRing above; not an interactive element itself
-        className="wallets-admission-gauge"
-        role="presentation"
-        onMouseDown={preventFocusRing}
-      >
-        {/* isActive-gated mount - see AdoptionGauge's own comment above for why. */}
-        {isActive && (
-          <ResponsiveContainer width="100%" height="100%">
-            <RadialBarChart
-              data={[{ name: "pct", value: pct, fill: color }]}
-              innerRadius="55%"
-              outerRadius="90%"
-              startAngle={90}
-              endAngle={-270}
-              style={{ fontFamily: FONT_FAMILY }}
-            >
-              <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
-              <RadialBar dataKey="value" background={{ fill: GRAY_100 }} cornerRadius="50%" isAnimationActive={false} />
-            </RadialBarChart>
-          </ResponsiveContainer>
-        )}
-        {/* Same reasoning as AdoptionGauge's own overlay above: Recharts has no native centered
-           value label for a RadialBarChart, so an HTML overlay draws it instead. It lives inside
-           the same transform:scale()'d wrapper as the ring itself (.wallets-compare-ring > div in
-           reports-page.css), so it shrinks in step with the ring rather than needing its own
-           separate scale calculation. */}
-        <div className="wallets-admission-gauge__value">{pct}%</div>
-      </div>
-    </div>
-  );
-}
-
-/** The delta pill sits between the two rings, not below them - that's the whole point of showing
- * it here at all: it's the difference BETWEEN the two rates on either side of it, not a caption
- * for the pair as a group. Fitting a pill between two rings needs more width than just the two
- * rings alone, so the rings shrink further/sooner (see .wallets-compare-ring's container query in
- * reports-page.css) than they would if the pill sat on its own row - a real tradeoff, made in the
- * pill's favor since "between" is the point. */
-function AdmissionCompare({
-  data,
-  isActive,
-}: Readonly<{ data: EventWalletReportsResponse["admission_by_wallet"]; isActive: boolean }>) {
-  const deltaPts = Math.round((data.with_wallet.pct - data.without_wallet.pct) * 10) / 10;
-  const deltaLabel = deltaPts >= 0 ? `▲ +${deltaPts} pts` : `▼ ${Math.abs(deltaPts)} pts`;
-
-  return (
-    <>
-      <p className="wallets-description">
-        Check-in rate compared between attendees who installed a wallet pass and those who didn&rsquo;t.
-      </p>
-      <div className="wallets-compare">
-        <div className="wallets-compare-group">
-          <AdmissionGauge pct={data.with_wallet.pct} color={STATUS_OK} isActive={isActive} />
-          <span className="wallets-compare-group__label">Has a wallet pass</span>
-          <span className="wallets-compare-group__sub">{data.with_wallet.admitted} of {data.with_wallet.total} attendees</span>
-        </div>
-        <div className="wallets-compare-delta">
-          <span className="wallets-compare-delta__pill">{deltaLabel}</span>
-          <span className="wallets-compare-arrow">→</span>
-        </div>
-        <div className="wallets-compare-group">
-          <AdmissionGauge pct={data.without_wallet.pct} color={GRAY_400} isActive={isActive} />
-          <span className="wallets-compare-group__label">No wallet pass</span>
-          <span className="wallets-compare-group__sub">{data.without_wallet.admitted} of {data.without_wallet.total} attendees</span>
-        </div>
-      </div>
-    </>
-  );
-}
-
 // Memoized: ReportsPage re-renders on every live check-in (Event Day's SSE feed), and this tab
 // stays mounted underneath even while Event Day is the visible one - without memo, each of those
 // unrelated re-renders reconstructed fresh chart data/config objects here and made every chart
@@ -739,7 +659,14 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
           </div>
         </Card>
         <Card title="Admission rate by wallet status" className="wallets-card--centered">
-          <AdmissionCompare data={data.admission_by_wallet} isActive={isActive} />
+          <ReportsAdmissionCompare
+            description="Check-in rate compared between attendees who installed a wallet pass and those who didn’t."
+            withLabel="Has a wallet pass"
+            withGroup={data.admission_by_wallet.with_wallet}
+            withoutLabel="No wallet pass"
+            withoutGroup={data.admission_by_wallet.without_wallet}
+            isActive={isActive}
+          />
         </Card>
       </div>
     </>

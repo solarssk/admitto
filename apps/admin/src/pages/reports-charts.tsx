@@ -6,6 +6,9 @@ import {
   Cell,
   Pie,
   PieChart,
+  PolarAngleAxis,
+  RadialBar,
+  RadialBarChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -19,6 +22,9 @@ import {
 // custom property referenced from an SVG presentation attribute doesn't resolve consistently
 // across browsers - same constraint as every other Reports tab file's own PRIMARY/BORDER/etc.
 const PRIMARY = "#066fd1"; // --primary / --at-blue
+const STATUS_OK = "#2fb344"; // --status-ok / --at-green
+const GRAY_400 = "#94a3b8"; // --at-gray-400
+const GRAY_100 = "#f1f5f9"; // --at-gray-100, radial track background
 const TEXT_MUTED = "#64748b"; // --text-muted / --at-gray-500
 const BORDER = "#e6e7e9"; // --border
 const FONT_FAMILY = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"; // --font-sans
@@ -247,3 +253,103 @@ export function ReportsCumulativeAreaChart({
   );
 }
 
+export interface ReportsAdmissionGroup {
+  total: number;
+  admitted: number;
+  pct: number;
+}
+
+/** Single independent radialBar gauge - "with X" and "without X" are two separate groups with
+ * their own separate rates, not two shares of one whole (unlike ReportsDonutChart above), so each
+ * gets its own fully-independent 0-100% ring. Same gauge style Tabler itself uses for a single
+ * rate (its "Active users" card). Always rendered at a fixed 180x180 canvas - .wallets-compare-ring
+ * (reports-page.css) is the box that actually varies with the container's width, via CSS
+ * clamp()/container-query units, and scales this fixed render down to match with transform:scale.
+ * Re-rendering the chart itself at a different pixel size on every resize would need a
+ * ResizeObserver driving React state for no visual benefit: the chart is SVG, so scaling it in CSS
+ * is already lossless. */
+function AdmissionGauge({
+  pct,
+  color,
+  isActive,
+}: Readonly<{ pct: number; color: string; isActive: boolean }>) {
+  return (
+    <div className="wallets-compare-ring">
+      <div // NOSONAR: mousedown-only, see preventFocusRing above; not an interactive element itself
+        className="wallets-admission-gauge"
+        role="presentation"
+        onMouseDown={preventFocusRing}
+      >
+        {isActive && (
+          <ResponsiveContainer width="100%" height="100%">
+            <RadialBarChart
+              data={[{ name: "pct", value: pct, fill: color }]}
+              innerRadius="55%"
+              outerRadius="90%"
+              startAngle={90}
+              endAngle={-270}
+              style={{ fontFamily: FONT_FAMILY }}
+            >
+              <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
+              <RadialBar dataKey="value" background={{ fill: GRAY_100 }} cornerRadius="50%" isAnimationActive={false} />
+            </RadialBarChart>
+          </ResponsiveContainer>
+        )}
+        {/* Recharts has no native centered value label for a RadialBarChart, so an HTML overlay
+           draws it instead. It lives inside the same transform:scale()'d wrapper as the ring
+           itself (.wallets-compare-ring > div in reports-page.css), so it shrinks in step with
+           the ring rather than needing its own separate scale calculation. */}
+        <div className="wallets-admission-gauge__value">{pct}%</div>
+      </div>
+    </div>
+  );
+}
+
+/** Two independent rate gauges compared side by side, with a delta pill between them - "check-in
+ * rate for attendees with some trait vs. without it" (a wallet pass, a successful email delivery,
+ * ...). The delta pill sits between the two rings, not below them - that's the whole point of
+ * showing it at all: it's the difference BETWEEN the two rates on either side of it, not a caption
+ * for the pair as a group. Fitting a pill between two rings needs more width than just the two
+ * rings alone, so the rings shrink further/sooner (see .wallets-compare-ring's container query in
+ * reports-page.css) than they would if the pill sat on its own row - a real tradeoff, made in the
+ * pill's favor since "between" is the point. */
+export function ReportsAdmissionCompare({
+  description,
+  withLabel,
+  withGroup,
+  withoutLabel,
+  withoutGroup,
+  isActive,
+}: Readonly<{
+  description: string;
+  withLabel: string;
+  withGroup: ReportsAdmissionGroup;
+  withoutLabel: string;
+  withoutGroup: ReportsAdmissionGroup;
+  isActive: boolean;
+}>) {
+  const deltaPts = Math.round((withGroup.pct - withoutGroup.pct) * 10) / 10;
+  const deltaLabel = deltaPts >= 0 ? `▲ +${deltaPts} pts` : `▼ ${Math.abs(deltaPts)} pts`;
+
+  return (
+    <>
+      <p className="wallets-description">{description}</p>
+      <div className="wallets-compare">
+        <div className="wallets-compare-group">
+          <AdmissionGauge pct={withGroup.pct} color={STATUS_OK} isActive={isActive} />
+          <span className="wallets-compare-group__label">{withLabel}</span>
+          <span className="wallets-compare-group__sub">{withGroup.admitted} of {withGroup.total} attendees</span>
+        </div>
+        <div className="wallets-compare-delta">
+          <span className="wallets-compare-delta__pill">{deltaLabel}</span>
+          <span className="wallets-compare-arrow">→</span>
+        </div>
+        <div className="wallets-compare-group">
+          <AdmissionGauge pct={withoutGroup.pct} color={GRAY_400} isActive={isActive} />
+          <span className="wallets-compare-group__label">{withoutLabel}</span>
+          <span className="wallets-compare-group__sub">{withoutGroup.admitted} of {withoutGroup.total} attendees</span>
+        </div>
+      </div>
+    </>
+  );
+}

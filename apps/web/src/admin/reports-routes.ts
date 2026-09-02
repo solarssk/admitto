@@ -971,6 +971,35 @@ export function buildIssuedByDay(
   return issued_by_day;
 }
 
+// "Confirmed" (active on at least one platform the event still offers), not merely issued - see
+// EventWalletReportsResponse.admission_by_wallet's own doc comment for why. Reused as-is by
+// EventMailReportsResponse.funnel's own wallet_installed stage, so the two tabs can't drift onto
+// two different definitions of "installed" (SonarCloud new-code duplication - this exact block
+// was previously inlined a second time for that, see AGENTS.md's compounding rule on this class
+// of copy). Only checks a platform's registrations when the event still offers it, matching
+// aggregateWalletPasses - a stale registration on a platform since disabled would otherwise still
+// count toward "confirmed" here while reading as not installed everywhere else on this page
+// (CodeRabbit review). `id: { in: [] }` (rather than a bare `OR: []`, whose match-everything-or-
+// nothing behavior isn't something to rely on) is the "matches nothing" fallback for the case
+// where no platform is enabled. Each column filter pairs `gt: 0` with an explicit `not: null` -
+// without it, a genuinely never-synced pass (a real, common state pre-sync, not test-only) makes
+// that one column's own SQL comparison evaluate to NULL rather than false; ORed with another
+// platform's real false/true value that's still NULL, not false, and a caller negating this whole
+// filter with `NOT:` gets `NOT NULL`, which is NULL too - the attendee then matches neither side
+// and silently vanishes from a with+without total (found via a real regression: three platform
+// conditions ORed together are far more likely to include an unset column - almost guaranteed for
+// samsung_active_registrations before an event's first sync - than the two-condition apple/google
+// case this file shipped with previously, where every existing test fixture happened to always
+// set an explicit 0).
+function buildConfirmedWalletFilter(enabledPlatforms: EnabledWalletPlatforms): Prisma.AttendeeWhereInput {
+  const conditions = [
+    ...(enabledPlatforms.apple ? [{ wallet_pass: { apple_active_registrations: { gt: 0, not: null } } }] : []),
+    ...(enabledPlatforms.google ? [{ wallet_pass: { google_active_registrations: { gt: 0, not: null } } }] : []),
+    ...(enabledPlatforms.samsung ? [{ wallet_pass: { samsung_active_registrations: { gt: 0, not: null } } }] : []),
+  ];
+  return conditions.length > 0 ? { OR: conditions } : { id: { in: [] as string[] } };
+}
+
 async function loadWalletReportsAggregates(
   db: PrismaClient,
   eventId: string,
@@ -978,32 +1007,7 @@ async function loadWalletReportsAggregates(
   eventDate: Date,
   enabledPlatforms: EnabledWalletPlatforms,
 ): Promise<EventWalletReportsResponse> {
-  // "Confirmed" (active on at least one platform the event still offers), not merely issued - see
-  // EventWalletReportsResponse.admission_by_wallet's own doc comment for why. Built once and
-  // spread/negated below so the with/without-wallet split can't drift out of sync with itself.
-  // Only checks a platform's registrations when the event still offers it, matching
-  // aggregateWalletPasses above - a stale registration on a platform since disabled would
-  // otherwise still count toward "with wallet" here while reading as not installed everywhere
-  // else on this page (CodeRabbit review). `id: { in: [] }` (rather than a bare `OR: []`, whose
-  // match-everything-or-nothing behavior isn't something to rely on) is the "matches nothing"
-  // fallback for the case where neither platform is enabled. Each column filter pairs `gt: 0`
-  // with an explicit `not: null` - without it, a genuinely never-synced pass (a real, common state
-  // pre-sync, not test-only) makes that one column's own SQL comparison evaluate to NULL rather
-  // than false; ORed with another platform's real false/true value that's still NULL, not false,
-  // and `without_wallet` below negates this whole filter with `NOT:`, where `NOT NULL` is NULL
-  // too - the attendee then matches neither `with_wallet` nor `without_wallet` and silently
-  // vanishes from admission_by_wallet's own with+without total (found via a real regression: three
-  // platform conditions ORed together are far more likely to include an unset column - almost
-  // guaranteed for samsung_active_registrations before this event's first sync - than the
-  // two-condition apple/google case this file shipped with previously, where every existing test
-  // fixture happened to always set an explicit 0).
-  const confirmedWalletConditions = [
-    ...(enabledPlatforms.apple ? [{ wallet_pass: { apple_active_registrations: { gt: 0, not: null } } }] : []),
-    ...(enabledPlatforms.google ? [{ wallet_pass: { google_active_registrations: { gt: 0, not: null } } }] : []),
-    ...(enabledPlatforms.samsung ? [{ wallet_pass: { samsung_active_registrations: { gt: 0, not: null } } }] : []),
-  ];
-  const confirmedWalletFilter =
-    confirmedWalletConditions.length > 0 ? { OR: confirmedWalletConditions } : { id: { in: [] as string[] } };
+  const confirmedWalletFilter = buildConfirmedWalletFilter(enabledPlatforms);
 
   const [
     totalAttendees,
@@ -1128,10 +1132,15 @@ async function loadWalletReportsAggregates(
   };
 }
 
-/** GET /api/admin/events/:eventId/reports/wallets — wallet adoption/platform/timing analytics,
- * computed entirely from data already collected (WalletPass, EmailDelivery, Attendee); no new
- * PassCreator API calls. Read-only, no audit, same access gate as the main reports endpoint. */
-export async function handleGetWalletReports(c: Context, db: PrismaClient): Promise<Response> {
+/** Shared eventId/access/event-lookup preamble for the Wallets and Mail reports endpoints - both
+ * need the same event fields (timezone, date, wallet platform toggles) to build their aggregates,
+ * so this is the one place that shape is selected rather than two near-identical copies. */
+async function resolveWalletAwareReportsContext(
+  c: Context,
+  db: PrismaClient,
+): Promise<
+  { eventId: string; timeZone: string; eventDate: Date; platforms: EnabledWalletPlatforms } | Response
+> {
   const eventIdParam = requireEventId(c);
   if (eventIdParam instanceof Response) return eventIdParam;
   const eventId = eventIdParam;
@@ -1152,9 +1161,22 @@ export async function handleGetWalletReports(c: Context, db: PrismaClient): Prom
   });
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const timeZone = resolvePreviewEventTimeZone(event.timezone);
-  const platforms = enabledWalletPlatforms(event);
-  const body = await loadWalletReportsAggregates(db, eventId, timeZone, event.date, platforms);
+  return {
+    eventId,
+    timeZone: resolvePreviewEventTimeZone(event.timezone),
+    eventDate: event.date,
+    platforms: enabledWalletPlatforms(event),
+  };
+}
+
+/** GET /api/admin/events/:eventId/reports/wallets — wallet adoption/platform/timing analytics,
+ * computed entirely from data already collected (WalletPass, EmailDelivery, Attendee); no new
+ * PassCreator API calls. Read-only, no audit, same access gate as the main reports endpoint. */
+export async function handleGetWalletReports(c: Context, db: PrismaClient): Promise<Response> {
+  const ctx = await resolveWalletAwareReportsContext(c, db);
+  if (ctx instanceof Response) return ctx;
+
+  const body = await loadWalletReportsAggregates(db, ctx.eventId, ctx.timeZone, ctx.eventDate, ctx.platforms);
   c.header("Cache-Control", "no-store");
   return c.json(body);
 }
@@ -1280,8 +1302,36 @@ async function loadMailReportsAggregates(
   eventId: string,
   timeZone: string,
   eventDate: Date,
+  enabledPlatforms: EnabledWalletPlatforms,
 ): Promise<EventMailReportsResponse> {
   const successStatuses = [...EMAIL_DELIVERY_SUCCESS_STATUSES] as string[];
+  // Same attendee-level, resend-deduped definition attendee_reach itself uses - built once so
+  // admission_by_email's reached/not_reached split can't drift from attendee_reach's own count.
+  const reachedFilter: Prisma.AttendeeWhereInput = {
+    email_deliveries: { some: { status: { in: successStatuses } } },
+  };
+  // Narrower than reachedFilter above - the funnel's "Reached by email" stage is documented (UI
+  // copy, wiki) as "got a ticket email" specifically, since it's the entry point of a causal
+  // chain toward wallet install and attendance, not attendee_reach's general any-email
+  // reachability metric. template_id: null on its own isn't enough to mean "genuine builtin
+  // ticket send" - template_id is SetNull'd (schema's own onDelete rule) if a custom template is
+  // later deleted, which would otherwise make a deleted-campaign-template send indistinguishable
+  // from a genuine default-template one. template_label_snapshot survives that deletion (it's
+  // captured at send time specifically for this reason - see its own schema comment), so the
+  // null-template_id branch also requires a null snapshot; template.name === "ticket" covers a
+  // live custom template still literally named "ticket" (bot review).
+  const ticketReachedFilter: Prisma.AttendeeWhereInput = {
+    email_deliveries: {
+      some: {
+        status: { in: successStatuses },
+        OR: [
+          { template_id: null, template_label_snapshot: null },
+          { template: { name: "ticket" } },
+        ] as Prisma.EmailDeliveryWhereInput[],
+      },
+    },
+  };
+  const confirmedWalletFilter = buildConfirmedWalletFilter(enabledPlatforms);
 
   const [
     totalAttendees,
@@ -1292,6 +1342,11 @@ async function loadMailReportsAggregates(
     byTemplateTotalRaw,
     byTemplateSuccessfulRaw,
     sentByDayRaw,
+    reachedAdmitted,
+    notReachedAdmitted,
+    walletInstalledCount,
+    attendedCount,
+    ticketReachedAttendees,
   ] = await Promise.all([
     db.attendee.count({ where: { event_id: eventId } }),
     db.emailDelivery.groupBy({
@@ -1304,9 +1359,7 @@ async function loadMailReportsAggregates(
       where: { event_id: eventId },
       _count: { _all: true },
     }),
-    db.attendee.count({
-      where: { event_id: eventId, email_deliveries: { some: { status: { in: successStatuses } } } },
-    }),
+    db.attendee.count({ where: { event_id: eventId, ...reachedFilter } }),
     // Two independent EXISTS checks (reached, ever viewed), not one predicate on a single row -
     // recordTicketViewed stamps viewed_at on whichever delivery was "the latest successful one"
     // at the moment the attendee actually opened the ticket page, but that same row's status can
@@ -1355,6 +1408,15 @@ async function loadMailReportsAggregates(
       GROUP BY 1
       ORDER BY 1
     `,
+    db.attendee.count({
+      where: { event_id: eventId, admitted_at: { not: null }, ...reachedFilter },
+    }),
+    db.attendee.count({
+      where: { event_id: eventId, admitted_at: { not: null }, NOT: reachedFilter },
+    }),
+    db.attendee.count({ where: { event_id: eventId, ...confirmedWalletFilter } }),
+    db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
+    db.attendee.count({ where: { event_id: eventId, ...ticketReachedFilter } }),
   ]);
 
   const totalAttempts = byStatusRaw.reduce((sum, row) => sum + row._count._all, 0);
@@ -1404,6 +1466,20 @@ async function loadMailReportsAggregates(
       viewed: viewedAttendees,
       viewed_pct: oneDecimalPct(viewedAttendees, reachedAttendees),
     },
+    admission_by_email: {
+      reached: { total: reachedAttendees, admitted: reachedAdmitted, pct: oneDecimalPct(reachedAdmitted, reachedAttendees) },
+      not_reached: {
+        total: totalAttendees - reachedAttendees,
+        admitted: notReachedAdmitted,
+        pct: oneDecimalPct(notReachedAdmitted, totalAttendees - reachedAttendees),
+      },
+    },
+    funnel: {
+      total_attendees: totalAttendees,
+      reached_by_email: ticketReachedAttendees,
+      wallet_installed: walletInstalledCount,
+      attended: attendedCount,
+    },
   };
 }
 
@@ -1411,18 +1487,10 @@ async function loadMailReportsAggregates(
  * computed entirely from EmailDelivery rows the mail-delivery pipeline already writes; no new
  * provider calls. Read-only, no audit, same access gate as the other reports endpoints. */
 export async function handleGetMailReports(c: Context, db: PrismaClient): Promise<Response> {
-  const eventIdParam = requireEventId(c);
-  if (eventIdParam instanceof Response) return eventIdParam;
-  const eventId = eventIdParam;
+  const ctx = await resolveWalletAwareReportsContext(c, db);
+  if (ctx instanceof Response) return ctx;
 
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
-  const event = await db.event.findUnique({ where: { id: eventId }, select: { timezone: true, date: true } });
-  if (!event) return c.json({ error: "not_found" }, 404);
-
-  const timeZone = resolvePreviewEventTimeZone(event.timezone);
-  const body = await loadMailReportsAggregates(db, eventId, timeZone, event.date);
+  const body = await loadMailReportsAggregates(db, ctx.eventId, ctx.timeZone, ctx.eventDate, ctx.platforms);
   c.header("Cache-Control", "no-store");
   return c.json(body);
 }
