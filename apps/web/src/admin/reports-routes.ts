@@ -1132,10 +1132,15 @@ async function loadWalletReportsAggregates(
   };
 }
 
-/** GET /api/admin/events/:eventId/reports/wallets — wallet adoption/platform/timing analytics,
- * computed entirely from data already collected (WalletPass, EmailDelivery, Attendee); no new
- * PassCreator API calls. Read-only, no audit, same access gate as the main reports endpoint. */
-export async function handleGetWalletReports(c: Context, db: PrismaClient): Promise<Response> {
+/** Shared eventId/access/event-lookup preamble for the Wallets and Mail reports endpoints - both
+ * need the same event fields (timezone, date, wallet platform toggles) to build their aggregates,
+ * so this is the one place that shape is selected rather than two near-identical copies. */
+async function resolveWalletAwareReportsContext(
+  c: Context,
+  db: PrismaClient,
+): Promise<
+  { eventId: string; timeZone: string; eventDate: Date; platforms: EnabledWalletPlatforms } | Response
+> {
   const eventIdParam = requireEventId(c);
   if (eventIdParam instanceof Response) return eventIdParam;
   const eventId = eventIdParam;
@@ -1156,9 +1161,22 @@ export async function handleGetWalletReports(c: Context, db: PrismaClient): Prom
   });
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const timeZone = resolvePreviewEventTimeZone(event.timezone);
-  const platforms = enabledWalletPlatforms(event);
-  const body = await loadWalletReportsAggregates(db, eventId, timeZone, event.date, platforms);
+  return {
+    eventId,
+    timeZone: resolvePreviewEventTimeZone(event.timezone),
+    eventDate: event.date,
+    platforms: enabledWalletPlatforms(event),
+  };
+}
+
+/** GET /api/admin/events/:eventId/reports/wallets — wallet adoption/platform/timing analytics,
+ * computed entirely from data already collected (WalletPass, EmailDelivery, Attendee); no new
+ * PassCreator API calls. Read-only, no audit, same access gate as the main reports endpoint. */
+export async function handleGetWalletReports(c: Context, db: PrismaClient): Promise<Response> {
+  const ctx = await resolveWalletAwareReportsContext(c, db);
+  if (ctx instanceof Response) return ctx;
+
+  const body = await loadWalletReportsAggregates(db, ctx.eventId, ctx.timeZone, ctx.eventDate, ctx.platforms);
   c.header("Cache-Control", "no-store");
   return c.json(body);
 }
@@ -1446,29 +1464,10 @@ async function loadMailReportsAggregates(
  * computed entirely from EmailDelivery rows the mail-delivery pipeline already writes; no new
  * provider calls. Read-only, no audit, same access gate as the other reports endpoints. */
 export async function handleGetMailReports(c: Context, db: PrismaClient): Promise<Response> {
-  const eventIdParam = requireEventId(c);
-  if (eventIdParam instanceof Response) return eventIdParam;
-  const eventId = eventIdParam;
+  const ctx = await resolveWalletAwareReportsContext(c, db);
+  if (ctx instanceof Response) return ctx;
 
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
-  const event = await db.event.findUnique({
-    where: { id: eventId },
-    select: {
-      timezone: true,
-      date: true,
-      wallet_enabled: true,
-      wallet_apple_enabled: true,
-      wallet_google_enabled: true,
-      wallet_samsung_enabled: true,
-    },
-  });
-  if (!event) return c.json({ error: "not_found" }, 404);
-
-  const timeZone = resolvePreviewEventTimeZone(event.timezone);
-  const platforms = enabledWalletPlatforms(event);
-  const body = await loadMailReportsAggregates(db, eventId, timeZone, event.date, platforms);
+  const body = await loadMailReportsAggregates(db, ctx.eventId, ctx.timeZone, ctx.eventDate, ctx.platforms);
   c.header("Cache-Control", "no-store");
   return c.json(body);
 }
