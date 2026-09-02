@@ -352,9 +352,10 @@ function CumulativeChart({ data }: Readonly<{ data: EventWalletReportsResponse["
   return (
     <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
       role="presentation"
+      className="wallets-chart-card__chart"
       onMouseDown={preventFocusRing}
     >
-      <ResponsiveContainer width="100%" height={230}>
+      <ResponsiveContainer width="100%" height="100%" minHeight={230}>
         <AreaChart data={points} style={{ fontFamily: FONT_FAMILY }}>
         <defs>
           <linearGradient id="wallets-cumulative-fill" x1="0" y1="0" x2="0" y2="1">
@@ -505,9 +506,10 @@ function TimeToTapChart({ buckets }: Readonly<{ buckets: EventWalletReportsRespo
   return (
     <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
       role="presentation"
+      className="wallets-chart-card__chart"
       onMouseDown={preventFocusRing}
     >
-      <ResponsiveContainer width="100%" height={230}>
+      <ResponsiveContainer width="100%" height="100%" minHeight={230}>
         <BarChart data={rows} barCategoryGap="50%" style={{ fontFamily: FONT_FAMILY }}>
         <CartesianGrid stroke={BORDER} strokeDasharray="3 3" />
         <XAxis
@@ -553,9 +555,10 @@ function RegistrationsPerAttendeeChart({
   return (
     <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
       role="presentation"
+      className="wallets-chart-card__chart"
       onMouseDown={preventFocusRing}
     >
-      <ResponsiveContainer width="100%" height={230}>
+      <ResponsiveContainer width="100%" height="100%" minHeight={230}>
         <BarChart data={rows} barCategoryGap="50%" style={{ fontFamily: FONT_FAMILY }}>
         <CartesianGrid stroke={BORDER} strokeDasharray="3 3" />
         <XAxis
@@ -773,25 +776,25 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
         </Card>
       </div>
 
-      <div className="wallets-panels wallets-panels--top-aligned">
-        <Card title="Devices per attendee">
+      <div className="wallets-panels">
+        <Card title="Devices per attendee" className="wallets-chart-card">
           <p className="wallets-description">
             Some attendees add their ticket to more than one device, like a phone and a smartwatch. This shows how many devices attendees are actually using, not just how many people have their ticket installed.
           </p>
           <RegistrationsPerAttendeeChart buckets={data.registrations_per_attendee.buckets} />
         </Card>
-        <Card title="Adoption by ticket type">
+        <Card title="Adoption by ticket type" className="wallets-list-card">
           <p className="wallets-description">Percentage of each ticket type&rsquo;s own attendees who installed a wallet pass.</p>
           <BreakdownRows rows={ticketTypeAdoptionRows(data.by_ticket_type)} />
         </Card>
       </div>
 
-      <div className="wallets-panels wallets-panels--top-aligned">
-        <Card title="Cumulative passes issued">
+      <div className="wallets-panels">
+        <Card title="Cumulative passes issued" className="wallets-chart-card">
           <p className="wallets-description">The running total of tickets added to attendees&rsquo; wallets over time.</p>
           <CumulativeChart data={data.issued_by_day} />
         </Card>
-        <Card title="Time to wallet install">
+        <Card title="Time to wallet install" className="wallets-chart-card">
           <p className="wallets-description">
             How many days pass between the ticket email landing in an attendee&rsquo;s inbox and their pass being confirmed installed on their wallet app.
           </p>

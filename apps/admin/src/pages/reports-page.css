@@ -617,17 +617,6 @@
   gap: var(--space-4);
 }
 
-/* Grid's default align-items: stretch forces both cards in a row to the taller one's height -
-   fine when the shorter card's own content (a fixed-size gauge/donut) already fills that height
-   on its own, but a variable-length description + a short breakdown list (Adoption by ticket
-   type) or a shorter description (Cumulative passes issued) doesn't grow to match, leaving
-   visible dead white space below it instead. Scoped to just the two rows below where each pairs
-   a longer-description chart card against a shorter one - not applied tab-wide, since Wallet
-   adoption/Wallet platform's gauge+donut cards are already naturally matched by stretch. */
-.wallets-panels--top-aligned {
-  align-items: start;
-}
-
 /* Same breakpoint as .reports-panels above - two chart-driven cards (a gauge/donut plus its
    own legend or breakdown list) each need real width to stay legible; below it they were
    squeezing into two ~200px columns with wrapping legend text and near-illegible rings. */
@@ -673,6 +662,60 @@
 
 .wallets-card--centered .wallets-compare {
   flex: 1;
+}
+
+/* Grid's default align-items: stretch matches both cards in a row to the taller one's own
+   height - correct behavior (cards should have consistent, uniform dimensions), but a fixed-
+   pixel-height chart or a short breakdown list doesn't grow to fill that extra height on its
+   own, leaving visible dead space below it. Flexing the body and its one growable child fills
+   that space instead, so the chart/list itself - not just its outer card - actually matches its
+   row-mate.
+   min-height: 230px on .wallets-chart-card__chart, not min-height: 0 - a bare flex: 1 alone can
+   size to 0 on the very first layout pass, before the grid row's own height has resolved, and
+   Recharts' ResponsiveContainer (height="100%" below) then measures that transient 0x0 box via
+   ResizeObserver and logs its own "width(0) and height(0)" console warning - a real incident
+   already hit once in this exact file (PR #1185, see .wallets-gauge-overlay's own comment above
+   for the full explanation). A real, CSS-committed 230px minimum (this card's own natural chart
+   height) gives Recharts a genuine non-zero size to measure immediately, while flex: 1 still lets
+   it grow taller to match an even-taller row-mate. */
+.wallets-chart-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.wallets-chart-card > .at-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.wallets-chart-card__chart {
+  flex: 1;
+  min-height: 230px;
+}
+
+/* Same idea as .wallets-chart-card above, for a breakdown list instead of a chart - but the
+   opposite min-height: a list is plain HTML (no Recharts ResizeObserver to trip up), and a flex
+   item's default min-height: auto refuses to shrink below its own content size, which would
+   otherwise defeat .reports-breakdown-list's own overflow-y: auto (the list would grow the whole
+   card taller instead of scrolling internally). min-height: 0 here restores that scroll
+   behavior; max-height: none removes the old fixed-pixel cap this card's own row-mate no longer
+   needs tuned against it. */
+.wallets-list-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.wallets-list-card > .at-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.wallets-list-card .reports-breakdown-list {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
 }
 
 
