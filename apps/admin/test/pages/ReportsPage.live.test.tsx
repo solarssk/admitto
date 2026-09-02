@@ -710,9 +710,10 @@ describe("ReportsPage — wallet platform gating", () => {
     expect(screen.queryByRole("tab", { name: "Wallets" })).toBeNull();
   });
 
-  it("omits the Wallets tab when both wallet_apple_enabled and wallet_google_enabled are false, even with wallet_enabled=true", async () => {
+  it("omits the Wallets tab when every individual platform (apple/google/samsung) is disabled, even with wallet_enabled=true", async () => {
     mockWalletAppleEnabled = false;
     mockWalletGoogleEnabled = false;
+    mockWalletSamsungEnabled = false;
     fetchEventReports.mockResolvedValue(reportFixture(5));
     renderPage();
 
@@ -721,6 +722,20 @@ describe("ReportsPage — wallet platform gating", () => {
   });
 
   it("keeps the Wallets tab when only one platform is enabled", async () => {
+    mockWalletGoogleEnabled = false;
+    fetchEventReports.mockResolvedValue(reportFixture(5));
+    renderPage();
+
+    await waitFor(() => expect(fetchEventReports).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("tab", { name: "Wallets" })).toBeTruthy();
+  });
+
+  // Regression (CodeRabbit review): this tab used to be gated by walletPlatforms.any, which is
+  // deliberately Apple/Google only (real pass-lifecycle actions elsewhere in the admin can't
+  // apply to Samsung) - that made the tab entirely unreachable for a Samsung-only event even
+  // though it reads real per-attendee Samsung data the same way it already does for Apple/Google.
+  it("keeps the Wallets tab reachable when only Samsung is enabled, even with Apple and Google both off", async () => {
+    mockWalletAppleEnabled = false;
     mockWalletGoogleEnabled = false;
     fetchEventReports.mockResolvedValue(reportFixture(5));
     renderPage();

@@ -125,7 +125,10 @@ function preventFocusRing(event: ReactMouseEvent) {
  * attention with the title on every view. */
 function syncedHint(syncedAt: string | null): string {
   const label = syncedAt ? `Synced at ${viewerLocalTime(syncedAt)}` : "Not synced yet";
-  return `${label}. Reflects Apple/Google's last registration check for this event - refreshes each time the wallet-sync job runs, not on every page load.`;
+  // Generic "each enabled wallet platform", not "Apple/Google" - registration_checked_at is one
+  // shared timestamp covering whichever platforms the event actually offers, Samsung included now
+  // that this tab reads its real registration data too (CodeRabbit review).
+  return `${label}. Reflects each enabled wallet platform's last registration check for this event - refreshes each time the wallet-sync job runs, not on every page load.`;
 }
 
 /** Two-stage funnel as one radialBar with two series, outer to inner: share of attendees the pass
