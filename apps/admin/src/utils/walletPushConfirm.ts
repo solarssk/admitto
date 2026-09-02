@@ -22,3 +22,41 @@ export function describeWalletKeyClearConfirm(issuedCount: number): string {
   const pass = issuedCount === 1 ? "pass" : "passes";
   return `This event has ${issuedCount} issued wallet ${pass}. Clearing the API key stops syncing, voiding, restoring, and pushing updates to ${issuedCount === 1 ? "it" : "them"} until a working key is set again.`;
 }
+
+/** Confirm-dialog copy for turning off wallet_enabled (the master switch) on an event with
+ * already-issued passes (EventSettingsPage.tsx's own handleSave). Broader than
+ * describeWalletKeyClearConfirm above: turning this off also drops every incoming PassCreator
+ * webhook for the event outright (a 404, not queued) rather than just pausing them, so a device
+ * registration or removal that arrives while it's off is lost, not merely delayed - PO report,
+ * 2026-09-02 ("trzeba zabezpieczyć sytuację w której ktoś mógłby przez przypadek... wyłączyć
+ * funkcjonalność walletów"). */
+export function describeWalletDisableConfirm(issuedCount: number): string {
+  const pass = issuedCount === 1 ? "pass" : "passes";
+  const it = issuedCount === 1 ? "it" : "them";
+  return `This event has ${issuedCount} issued wallet ${pass}. Turning off wallet passes stops syncing, voiding, restoring, and pushing updates to ${it}, and any PassCreator update that arrives while it's off (a device registration, a removal) is dropped rather than queued - it won't be picked up once you turn this back on.`;
+}
+
+/** Confirm-dialog copy for turning off one or more per-platform toggles (wallet_apple_enabled /
+ * wallet_google_enabled / wallet_samsung_enabled) on a platform that already has installed
+ * passes. Narrower than describeWalletDisableConfirm above - a platform toggle doesn't touch
+ * sync/void/restore/push (those are gated on wallet_enabled alone, see resolveWalletProvider), it
+ * only hides that platform's Add to Wallet button for new attendees and makes the admin UI show
+ * already-installed passes on that platform as "not added" until it's turned back on. */
+export function describeWalletPlatformDisableConfirm(
+  platforms: readonly ("apple" | "google" | "samsung")[],
+  installedCounts: Readonly<Record<"apple" | "google" | "samsung", number>>,
+): string {
+  const names: Record<"apple" | "google" | "samsung", string> = {
+    apple: "Apple Wallet",
+    google: "Google Wallet",
+    samsung: "Samsung Wallet",
+  };
+  const labels = platforms.map((platform) => {
+    const count = installedCounts[platform];
+    return `${names[platform]} (${count} installed ${count === 1 ? "pass" : "passes"})`;
+  });
+  const joined =
+    labels.length > 1 ? `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}` : labels[0];
+  const plural = platforms.length > 1;
+  return `${joined} already ${plural ? "have" : "has"} attendees who added ${plural ? "them" : "it"} on their device. Turning ${plural ? "these" : "this"} off hides the Add to Wallet button for anyone who hasn't added it yet, and the admin UI will show already-installed passes as "not added" until you turn ${plural ? "them" : "it"} back on - nothing changes on attendees' actual devices.`;
+}

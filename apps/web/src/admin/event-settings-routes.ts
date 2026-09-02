@@ -163,6 +163,7 @@ function serializeEventSettings(
   revokeCounts: { admittedCount: number; issuedItemsCount: number },
   installedWalletPassCount: number,
   issuedWalletPassCount: number,
+  installedWalletPassCountByPlatform: { apple: number; google: number; samsung: number },
 ): EventSettingsDto {
   const normalizeNullableTimeZone = (value: string | null) =>
     value === null ? null : normalizeTimeZone(value) ?? value;
@@ -195,6 +196,7 @@ function serializeEventSettings(
     issued_items_count: revokeCounts.issuedItemsCount,
     installed_wallet_pass_count: installedWalletPassCount,
     issued_wallet_pass_count: issuedWalletPassCount,
+    installed_wallet_pass_count_by_platform: installedWalletPassCountByPlatform,
     organization_name: event.organization.name,
     active_items: event.event_items.map((item) => ({
       id: item.id,
@@ -305,6 +307,31 @@ async function loadInstalledWalletPassCount(db: PrismaClient, eventId: string): 
   });
 }
 
+/** Per-platform breakdown of loadInstalledWalletPassCount above - same "genuinely installed, not
+ * just issued" population, split per platform for the "turning off this platform" confirm dialog:
+ * unlike wallet_enabled (the master switch, gating sync/push/void/restore for every platform at
+ * once - see EventWalletPanel's own disable-confirm doc comment), a single platform toggle only
+ * hides that platform's Add-to-Wallet button for new attendees and makes the admin UI misreport
+ * that platform's already-installed passes as "not added" - so the confirm only needs to warn
+ * about real people on the platform actually being turned off, not the whole event's total. */
+async function loadInstalledWalletPassCountByPlatform(
+  db: PrismaClient,
+  eventId: string,
+): Promise<{ apple: number; google: number; samsung: number }> {
+  const [apple, google, samsung] = await Promise.all([
+    db.walletPass.count({
+      where: { status: "active", attendee: { event_id: eventId }, apple_active_registrations: { gt: 0 } },
+    }),
+    db.walletPass.count({
+      where: { status: "active", attendee: { event_id: eventId }, google_active_registrations: { gt: 0 } },
+    }),
+    db.walletPass.count({
+      where: { status: "active", attendee: { event_id: eventId }, samsung_active_registrations: { gt: 0 } },
+    }),
+  ]);
+  return { apple, google, samsung };
+}
+
 /** Every WalletPass ever issued for this event, regardless of status/install - see
  * EventSettingsDto.issued_wallet_pass_count's own doc comment for why this (not the narrower
  * loadInstalledWalletPassCount above) is the right population for the Template ID lock: a pass
@@ -341,14 +368,23 @@ export async function handleGetEventSettings(c: Context, db: PrismaClient): Prom
   const event = await loadEventSettingsRow(db, eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const [deletability, revokeCounts, installedWalletPassCount, issuedWalletPassCount] = await Promise.all([
-    loadDeletability(db, eventId, event),
-    loadRevokeCounts(db, eventId),
-    loadInstalledWalletPassCount(db, eventId),
-    loadIssuedWalletPassCount(db, eventId),
-  ]);
+  const [deletability, revokeCounts, installedWalletPassCount, issuedWalletPassCount, installedByPlatform] =
+    await Promise.all([
+      loadDeletability(db, eventId, event),
+      loadRevokeCounts(db, eventId),
+      loadInstalledWalletPassCount(db, eventId),
+      loadIssuedWalletPassCount(db, eventId),
+      loadInstalledWalletPassCountByPlatform(db, eventId),
+    ]);
   return c.json(
-    serializeEventSettings(event, deletability, revokeCounts, installedWalletPassCount, issuedWalletPassCount),
+    serializeEventSettings(
+      event,
+      deletability,
+      revokeCounts,
+      installedWalletPassCount,
+      issuedWalletPassCount,
+      installedByPlatform,
+    ),
   );
 }
 
@@ -1032,12 +1068,14 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
       });
     }
 
-    const [deletability, revokeCounts, installedWalletPassCount, issuedWalletPassCount] = await Promise.all([
-      loadDeletability(db, eventId, updated),
-      loadRevokeCounts(db, eventId),
-      loadInstalledWalletPassCount(db, eventId),
-      loadIssuedWalletPassCount(db, eventId),
-    ]);
+    const [deletability, revokeCounts, installedWalletPassCount, issuedWalletPassCount, installedByPlatform] =
+      await Promise.all([
+        loadDeletability(db, eventId, updated),
+        loadRevokeCounts(db, eventId),
+        loadInstalledWalletPassCount(db, eventId),
+        loadIssuedWalletPassCount(db, eventId),
+        loadInstalledWalletPassCountByPlatform(db, eventId),
+      ]);
     return c.json({
       event: serializeEventSettings(
         updated,
@@ -1045,6 +1083,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
         revokeCounts,
         installedWalletPassCount,
         issuedWalletPassCount,
+        installedByPlatform,
       ),
     });
   } catch (err) {
