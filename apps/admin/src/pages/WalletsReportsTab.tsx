@@ -199,10 +199,11 @@ function AdoptionGauge({
  * same passes. There's deliberately no "not installed" slice here - this card is a platform split
  * among installed passes specifically (the Wallet adoption card next to it already covers
  * installed-vs-not), so mixing that back in here would both duplicate that number and dilute the
- * one thing this donut exists to show (PO review). Samsung has no PassCreator signal yet - its
- * slice's count is always 0, reserving the legend entry without a fake percentage, once its own
- * toggle offers it at all. Ordered single-platform-first (Apple,
- * Google, Samsung), then the "doesn't map to one platform" bucket (multiple) - not alphabetical,
+ * one thing this donut exists to show (PO review). Samsung's slice reads the same real
+ * `platform.samsung_only` count Apple/Google's slices read - it's 0 today only because
+ * PassCreator hasn't finished activating Samsung Wallet, not because this chart fakes it. Ordered
+ * single-platform-first (Apple, Google, Samsung), then the "doesn't map to one platform" bucket
+ * (multiple) - not alphabetical,
  * not by expected size, but grouping like with like reads clearest in a legend a viewer scans top
  * to bottom (PO review). */
 interface PlatformSlice {
@@ -213,16 +214,17 @@ interface PlatformSlice {
 
 /** Single source of truth for the donut's slices and the breakdown list's rows - both need the
  * exact same set, in the exact same order, and two independent hand-written copies could silently
- * drift apart later (e.g. if real Samsung data is wired in and only one copy gets updated).
- * Every platform's slice - Apple, Google, and Samsung alike - and "more than one wallet", which
- * only means something once two platforms are both offered, drop out entirely (not just to a 0%
- * slice) when the event's own Wallet settings don't offer that platform, matching the same
- * enabledPlatforms gating the Wallets tab itself, the PDF export, and the CSV export all now
- * share. Samsung's own toggle exists ahead of any real PassCreator support (see its schema
- * comment) purely so this gating is already in place; its count stays 0 either way. "More than one
- * wallet" only ever reflects Apple+Google (the only combination `platform.both` can actually
- * represent) - it stays gated on those two specifically, not on "2+ platforms enabled" in general,
- * since enabling Samsung alongside just one of them proves nothing about any pass having both. */
+ * drift apart later. Every platform's slice - Apple, Google, and Samsung alike - and "more than
+ * one wallet", which only means something once two platforms are both offered, drop out entirely
+ * (not just to a 0% slice) when the event's own Wallet settings don't offer that platform,
+ * matching the same enabledPlatforms gating the Wallets tab itself, the PDF export, and the CSV
+ * export all now share. Samsung's count reads real data (`platform.samsung_only`) the same way
+ * Apple/Google's do - it stays 0 today only because PassCreator hasn't finished activating Samsung
+ * Wallet, not because this chart hardcodes it. "More than one wallet" only ever reflects
+ * Apple+Google (the only combination `platform.both` can actually represent, see
+ * classifyPassPlatform's own doc comment in reports-routes.ts) - it stays gated on those two
+ * specifically, not on "2+ platforms enabled" in general, since enabling Samsung alongside just
+ * one of them proves nothing about any pass having both. */
 function platformSlices(
   platform: EventWalletReportsResponse["platform"],
   enabledPlatforms: EnabledWalletPlatforms,
@@ -232,7 +234,7 @@ function platformSlices(
     enabledPlatforms.google && { label: "Google Wallet", color: GOOGLE_BLUE, count: platform.google_only },
     // Named the same way as a real wallet app, not a bare provider name - "Samsung" alone reads
     // like an unfinished sentence next to "Apple Wallet"/"Google Wallet".
-    enabledPlatforms.samsung && { label: "Samsung Wallet", color: SAMSUNG_TEAL, count: 0 },
+    enabledPlatforms.samsung && { label: "Samsung Wallet", color: SAMSUNG_TEAL, count: platform.samsung_only },
     enabledPlatforms.apple &&
       enabledPlatforms.google && { label: "More than one wallet", color: MULTI_PURPLE, count: platform.both },
   ].filter((slice): slice is PlatformSlice => slice !== false);

@@ -23,12 +23,17 @@ export interface EventWalletReportsResponse {
   };
   /** Mutually exclusive - a pass can be actively registered on more than one platform at once
    * (the same attendee opening their ticket link on both an iPhone and an Android device, say),
-   * so a naive apple-count + google-count double-counts that pass. These three always sum to
+   * so a naive apple-count + google-count double-counts that pass. These four always sum to
    * exactly `adoption.confirmed` - a pass with no active registration on any platform isn't a
-   * "platform" at all, so it has no slice here (see the Wallets tab's own platform-split card). */
+   * "platform" at all, so it has no slice here (see the Wallets tab's own platform-split card).
+   * `samsung_only` only wins when neither Apple nor Google is active - `both` stays Apple+Google
+   * specifically (see classifyPassPlatform's own doc comment, apps/web/src/admin/reports-routes.ts,
+   * for why a full 3-way combinatorial split isn't worth modeling for a state that can't happen
+   * yet). */
   platform: {
     apple_only: number;
     google_only: number;
+    samsung_only: number;
     both: number;
   };
   /** How many active device/account registrations each confirmed attendee's single pass has,

@@ -158,8 +158,8 @@ function fixture(overrides: Partial<EventWalletReportsResponse> = {}): EventWall
     synced_at: "2026-08-01T10:00:00.000Z",
     passes_truncated: false,
     adoption: { got_pass: 15, got_pass_pct: 75, confirmed: 10, confirmed_pct: 66.7 },
-    platform: { apple_only: 6, google_only: 3, both: 1 },
-    // Sums to confirmed=10 above (6+3+1+0).
+    platform: { apple_only: 6, google_only: 3, samsung_only: 0, both: 1 },
+    // Sums to confirmed=10 above (6+3+0+1).
     registrations_per_attendee: {
       buckets: [
         { key: "1", count: 6, pct: 60 },
@@ -351,9 +351,9 @@ describe("WalletsReportsTab", () => {
       { name: "Installed", meta: "10 · 66.7% of issued" },
     ]);
 
-    // Platform donut: apple_only, google_only, samsung placeholder (always 0), both - no "not
-    // installed" slice (that's the Wallet adoption card's job) - and the breakdown list's own
-    // per-platform percentages, each independently computed by pctOf(count, installed=10).
+    // Platform donut: apple_only, google_only, samsung_only (real data, 0 in this fixture), both -
+    // no "not installed" slice (that's the Wallet adoption card's job) - and the breakdown list's
+    // own per-platform percentages, each independently computed by pctOf(count, installed=10).
     const platformCard = cardByTitle("Wallet platform");
     expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([6, 3, 0, 1]);
     expect(breakdownRows(platformCard)).toEqual([
@@ -744,6 +744,27 @@ describe("WalletsReportsTab", () => {
 
     const platformCard = cardByTitle("Wallet platform");
     expect(breakdownRows(platformCard).map((r) => r.name)).toEqual(["Apple Wallet", "Samsung Wallet"]);
+  });
+
+  // Regression: platformSlices() used to hardcode the Samsung slice's count to 0 - proves it now
+  // reads platform.samsung_only from the DTO the same way the Apple/Google slices read their own
+  // counts, not just that it happens to render 0 when the fixture's value is 0.
+  it("renders a real, non-zero Samsung slice from platform.samsung_only", async () => {
+    fetchEventWalletReports.mockResolvedValue(
+      fixture({
+        adoption: { got_pass: 15, got_pass_pct: 75, confirmed: 12, confirmed_pct: 80 },
+        platform: { apple_only: 6, google_only: 3, samsung_only: 2, both: 1 },
+      }),
+    );
+
+    renderWithToast(
+      <WalletsReportsTab eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    const platformCard = cardByTitle("Wallet platform");
+    expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([6, 3, 2, 1]);
+    expect(breakdownRows(platformCard)).toContainEqual({ name: "Samsung Wallet", meta: "2 · 16.7%" });
   });
 
   it("shows the 'No wallet passes yet' EmptyState when nothing has been issued at all", async () => {
