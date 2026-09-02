@@ -71,6 +71,7 @@ import {
   describeWalletKeyClearConfirm,
   describeWalletPlatformDisableConfirm,
   describeWalletPushConfirm,
+  type WalletPlatformKey,
 } from "../utils/walletPushConfirm.js";
 import "./event-settings-page.css";
 
@@ -335,20 +336,20 @@ function willWalletBeConfiguredForPush(form: SettingsForm, event: EventSettingsD
 function disablingWalletPlatformsWithInstalls(
   patch: SettingsPatch,
   event: EventSettingsDto,
-): ("apple" | "google" | "samsung")[] {
+): WalletPlatformKey[] {
   const fields = {
     apple: patch.wallet_apple_enabled,
     google: patch.wallet_google_enabled,
     samsung: patch.wallet_samsung_enabled,
   } as const;
-  return (Object.keys(fields) as ("apple" | "google" | "samsung")[]).filter(
+  return (Object.keys(fields) as WalletPlatformKey[]).filter(
     (platform) => fields[platform] === false && event.installed_wallet_pass_count_by_platform[platform] > 0,
   );
 }
 
 interface WalletConfirmResolution {
   kind: "clear_key" | "push" | "disable_wallet" | "disable_platform";
-  platforms: ("apple" | "google" | "samsung")[];
+  platforms: WalletPlatformKey[];
 }
 
 /** Which wallet confirm dialog (if any) handleSave below should show before committing a save -
@@ -408,7 +409,7 @@ interface WalletConfirmCopy {
  * from additions far smaller than a four-way branch. */
 function describeWalletConfirmDialog(
   kind: "push" | "clear_key" | "disable_wallet" | "disable_platform",
-  platforms: readonly ("apple" | "google" | "samsung")[],
+  platforms: readonly WalletPlatformKey[],
   event: EventSettingsDto,
 ): WalletConfirmCopy {
   if (kind === "clear_key") {
@@ -939,9 +940,9 @@ export function EventSettingsPage() {
   >("push");
   // Only populated for "disable_platform" - which platform(s) resolveWalletConfirmKind found being
   // turned off with installs on them, for describeWalletPlatformDisableConfirm's own message.
-  const [walletDisablingPlatforms, setWalletDisablingPlatforms] = useState<
-    readonly ("apple" | "google" | "samsung")[]
-  >([]);
+  const [walletDisablingPlatforms, setWalletDisablingPlatforms] = useState<readonly WalletPlatformKey[]>(
+    [],
+  );
   // Which save this confirm dialog is gating - the regular form save (handleSave), or the
   // Location tab's own "apply suggested timezone" shortcut (onApplyTimezone below), which
   // otherwise patches straight past this confirm entirely (CodeRabbit review).

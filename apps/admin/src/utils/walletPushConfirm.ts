@@ -1,3 +1,5 @@
+export type WalletPlatformKey = "apple" | "google" | "samsung";
+
 /** Shared copy for the "this will push to N installed wallet passes" confirm dialog shown on
  * Event Settings' General/Wallet tab (EventSettingsPage.tsx) and Location tab
  * (LocationSettingsPanel.tsx) before a save that touches a WALLET_RELEVANT_EVENT_FIELDS or
@@ -43,10 +45,10 @@ export function describeWalletDisableConfirm(issuedCount: number): string {
  * only hides that platform's Add to Wallet button for new attendees and makes the admin UI show
  * already-installed passes on that platform as "not added" until it's turned back on. */
 export function describeWalletPlatformDisableConfirm(
-  platforms: readonly ("apple" | "google" | "samsung")[],
-  installedCounts: Readonly<Record<"apple" | "google" | "samsung", number>>,
+  platforms: readonly WalletPlatformKey[],
+  installedCounts: Readonly<Record<WalletPlatformKey, number>>,
 ): string {
-  const names: Record<"apple" | "google" | "samsung", string> = {
+  const names: Record<WalletPlatformKey, string> = {
     apple: "Apple Wallet",
     google: "Google Wallet",
     samsung: "Samsung Wallet",
@@ -56,7 +58,7 @@ export function describeWalletPlatformDisableConfirm(
     return `${names[platform]} (${count} installed ${count === 1 ? "pass" : "passes"})`;
   });
   const joined =
-    labels.length > 1 ? `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}` : labels[0];
+    labels.length > 1 ? `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}` : labels[0];
   const plural = platforms.length > 1;
   return `${joined} already ${plural ? "have" : "has"} attendees who added ${plural ? "them" : "it"} on their device. Turning ${plural ? "these" : "this"} off hides the Add to Wallet button for anyone who hasn't added it yet, and the admin UI will show already-installed passes as "not added" until you turn ${plural ? "them" : "it"} back on - nothing changes on attendees' actual devices.`;
 }
