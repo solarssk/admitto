@@ -699,8 +699,12 @@
    item's default min-height: auto refuses to shrink below its own content size, which would
    otherwise defeat .reports-breakdown-list's own overflow-y: auto (the list would grow the whole
    card taller instead of scrolling internally). min-height: 0 here restores that scroll
-   behavior; max-height: none removes the old fixed-pixel cap this card's own row-mate no longer
-   needs tuned against it. */
+   behavior - flex: 1 alone grows the list to fill a short row-mate's height, but still needs the
+   shared .reports-breakdown-list max-height (258px) it already inherits as an upper bound: a
+   real ticket-type catalog can have many rows, and dropping that cap entirely (an earlier version
+   of this fix) let the list grow unbounded instead of scrolling once it's genuinely long -
+   pulling its own row-mate (Devices per attendee) taller right along with it via grid's own
+   align-items: stretch, an admin-visible bug the more ticket types an event has. */
 .wallets-list-card {
   display: flex;
   flex-direction: column;
@@ -715,7 +719,6 @@
 .wallets-list-card .reports-breakdown-list {
   flex: 1;
   min-height: 0;
-  max-height: none;
 }
 
 
