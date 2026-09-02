@@ -17,7 +17,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Button, Card, EmptyState, HintLabel, Notice, Skeleton, ticketTypeChartColor } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, Notice, ticketTypeChartColor } from "@admitto/ui";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
 import { fetchEventWalletReports } from "../api/client.js";
 import type { EventWalletReportsResponse } from "../api/types.js";
@@ -354,7 +354,7 @@ function CumulativeChart({ data }: Readonly<{ data: EventWalletReportsResponse["
       role="presentation"
       onMouseDown={preventFocusRing}
     >
-      <ResponsiveContainer width="100%" height={220}>
+      <ResponsiveContainer width="100%" height={230}>
         <AreaChart data={points} style={{ fontFamily: FONT_FAMILY }}>
         <defs>
           <linearGradient id="wallets-cumulative-fill" x1="0" y1="0" x2="0" y2="1">
@@ -773,24 +773,20 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
         </Card>
       </div>
 
-      <div className="wallets-panels">
+      <div className="wallets-panels wallets-panels--top-aligned">
         <Card title="Devices per attendee">
           <p className="wallets-description">
             Some attendees add their ticket to more than one device, like a phone and a smartwatch. This shows how many devices attendees are actually using, not just how many people have their ticket installed.
           </p>
-          {data.adoption.confirmed === 0 ? (
-            <Skeleton variant="rect" height={230} />
-          ) : (
-            <RegistrationsPerAttendeeChart buckets={data.registrations_per_attendee.buckets} />
-          )}
+          <RegistrationsPerAttendeeChart buckets={data.registrations_per_attendee.buckets} />
         </Card>
-        <Card title="Adoption by ticket type" className="wallets-ticket-breakdown">
+        <Card title="Adoption by ticket type">
           <p className="wallets-description">Percentage of each ticket type&rsquo;s own attendees who installed a wallet pass.</p>
           <BreakdownRows rows={ticketTypeAdoptionRows(data.by_ticket_type)} />
         </Card>
       </div>
 
-      <div className="wallets-panels">
+      <div className="wallets-panels wallets-panels--top-aligned">
         <Card title="Cumulative passes issued">
           <p className="wallets-description">The running total of tickets added to attendees&rsquo; wallets over time.</p>
           <CumulativeChart data={data.issued_by_day} />
@@ -799,11 +795,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
           <p className="wallets-description">
             How many days pass between the ticket email landing in an attendee&rsquo;s inbox and their pass being confirmed installed on their wallet app.
           </p>
-          {data.time_to_wallet_tap.average_days === null ? (
-            <Skeleton variant="rect" height={230} />
-          ) : (
-            <TimeToTapChart buckets={data.time_to_wallet_tap.buckets} />
-          )}
+          <TimeToTapChart buckets={data.time_to_wallet_tap.buckets} />
         </Card>
       </div>
 

@@ -447,9 +447,19 @@ describe("WalletsReportsTab", () => {
     expect(within(cumulativeCard).queryByTestId("rc-area")).toBeNull();
   });
 
-  it("shows a chart-shaped skeleton placeholder instead of the time-to-tap chart when there's no average yet", async () => {
+  it("still renders the time-to-tap chart, all-zero, when there's no average yet - buckets are always 4 zero-filled entries from the backend, never truly absent", async () => {
     fetchEventWalletReports.mockResolvedValue(
-      fixture({ time_to_wallet_tap: { average_days: null, buckets: [] } }),
+      fixture({
+        time_to_wallet_tap: {
+          average_days: null,
+          buckets: [
+            { key: "same_day", count: 0, pct: 0 },
+            { key: "1_3", count: 0, pct: 0 },
+            { key: "4_7", count: 0, pct: 0 },
+            { key: "8_plus", count: 0, pct: 0 },
+          ],
+        },
+      }),
     );
 
     renderWithToast(
@@ -458,15 +468,22 @@ describe("WalletsReportsTab", () => {
     await screen.findByText("Wallet adoption");
 
     const tapCard = cardByTitle("Time to wallet install");
-    expect(tapCard.querySelector(".at-skeleton--rect")).toBeTruthy();
-    expect(within(tapCard).queryByTestId("rc-bar")).toBeNull();
+    const tapRows = dataRows(within(tapCard).getByTestId("rc-bar"));
+    expect(tapRows.map((r) => r.pct)).toEqual([0, 0, 0, 0]);
   });
 
-  it("shows a chart-shaped skeleton placeholder instead of the devices-per-attendee chart when nothing is confirmed", async () => {
+  it("still renders the devices-per-attendee chart, all-zero, when nothing is confirmed - buckets are always 4 zero-filled entries from the backend, never truly absent", async () => {
     fetchEventWalletReports.mockResolvedValue(
       fixture({
         adoption: { got_pass: 15, got_pass_pct: 75, confirmed: 0, confirmed_pct: 0 },
-        registrations_per_attendee: { buckets: [] },
+        registrations_per_attendee: {
+          buckets: [
+            { key: "1", count: 0, pct: 0 },
+            { key: "2", count: 0, pct: 0 },
+            { key: "3", count: 0, pct: 0 },
+            { key: "4_plus", count: 0, pct: 0 },
+          ],
+        },
       }),
     );
 
@@ -476,8 +493,8 @@ describe("WalletsReportsTab", () => {
     await screen.findByText("Wallet adoption");
 
     const devicesCard = cardByTitle("Devices per attendee");
-    expect(devicesCard.querySelector(".at-skeleton--rect")).toBeTruthy();
-    expect(within(devicesCard).queryByTestId("rc-bar")).toBeNull();
+    const deviceRows = dataRows(within(devicesCard).getByTestId("rc-bar"));
+    expect(deviceRows.map((r) => r.pct)).toEqual([0, 0, 0, 0]);
   });
 
   it("formats chart tooltip/label text with correct singular/plural and rounding", async () => {

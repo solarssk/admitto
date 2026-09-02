@@ -609,12 +609,23 @@
 
 /* Even 50/50 split, not .reports-panels' 1.2fr/1fr - that ratio exists for Event Day's own
    "Hourly admissions" card specifically (it can show up to 24 hourly bars, see the comment on
-   .reports-chart below), which doesn't apply to any of these three rows: each pairs two equally-
-   weighted cards (gauge+breakdown vs. donut, list vs. chart, list vs. rings). */
+   .reports-chart below), which doesn't apply to any of these rows: each pairs two equally-
+   weighted cards. */
 .wallets-panels {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-4);
+}
+
+/* Grid's default align-items: stretch forces both cards in a row to the taller one's height -
+   fine when the shorter card's own content (a fixed-size gauge/donut) already fills that height
+   on its own, but a variable-length description + a short breakdown list (Adoption by ticket
+   type) or a shorter description (Cumulative passes issued) doesn't grow to match, leaving
+   visible dead white space below it instead. Scoped to just the two rows below where each pairs
+   a longer-description chart card against a shorter one - not applied tab-wide, since Wallet
+   adoption/Wallet platform's gauge+donut cards are already naturally matched by stretch. */
+.wallets-panels--top-aligned {
+  align-items: start;
 }
 
 /* Same breakpoint as .reports-panels above - two chart-driven cards (a gauge/donut plus its
@@ -664,17 +675,6 @@
   flex: 1;
 }
 
-/* .reports-breakdown-list's shared 258px max-height (reports-page.css) was tuned for its Event
-   day pairing, not this card's own row-mate here ("Cumulative passes issued", a fixed 220px
-   chart) - at 258px a long ticket-type list made this card's own natural height (description +
-   list + padding) exceed that chart card's natural height, so the grid row's default
-   `align-items: stretch` stretched "Cumulative passes issued" to match and left dead air below
-   its chart instead. 165px keeps this card's total at or under the chart card's own 268px body
-   (24px padding + 220px chart + 24px padding), measured directly against this card's own
-   description height, not assumed. */
-.wallets-ticket-breakdown .reports-breakdown-list {
-  max-height: 165px;
-}
 
 /* Card description line - matches .settings-card-intro (event-settings-page.css), the app's
    actual established convention for a card-body intro line under a title ("Set the event
