@@ -900,6 +900,14 @@ async function seed(client: PrismaClient) {
     ],
   });
 
+  // Regression fixture for funnel.reached_by_email's ticket-only scoping (bot review, round 2):
+  // deleting the template AFTER it was used SetNull's the delivery's template_id (the relation's
+  // own onDelete rule), but template_label_snapshot survives - a null template_id alone must not
+  // read as "genuine builtin ticket send" here, or a deleted-campaign-template send becomes
+  // indistinguishable from one. ATT_MAIL_RECOVERED's resend must stay excluded from
+  // reached_by_email even after this delete, the same as it was while the template still existed.
+  await client.mailTemplate.delete({ where: { id: reminderTemplate.id } });
+
   // One field of each EventCustomField type - covers the report's generic per-type behavior
   // (select/boolean chart as a distribution, text only gets a fill-rate stat), not any single
   // field's own meaning. EventCustomField.event_id cascades on Event delete (schema.prisma), so
@@ -2960,6 +2968,10 @@ describe("GET /api/admin/events/:eventId/reports/mail", () => {
     // counts as reached generally (its resend succeeded), but that resend used the "Reminder"
     // MailTemplate, not a genuine ticket send, so it's excluded from this ticket-only stage (bot
     // review: the funnel's own "got a ticket email" wording would otherwise be misleading here).
+    // Stays excluded even after that template is deleted (this fixture deletes it above) - a bare
+    // null template_id isn't enough to read as "genuine builtin ticket send" once deletion can
+    // produce that same null via SetNull; template_label_snapshot ("Reminder") surviving the
+    // delete is what still correctly excludes it (bot review, round 2).
     // wallet_installed (2) is its own independent count, not gated on reach - ATT_MAIL_ACCEPTED was
     // both reached and installed a pass, but ATT_MAIL_QUEUED installed one despite never having a
     // working email delivery at all, proving the funnel doesn't force a strictly narrowing shape.

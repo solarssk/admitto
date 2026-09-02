@@ -1313,16 +1313,21 @@ async function loadMailReportsAggregates(
   // Narrower than reachedFilter above - the funnel's "Reached by email" stage is documented (UI
   // copy, wiki) as "got a ticket email" specifically, since it's the entry point of a causal
   // chain toward wallet install and attendance, not attendee_reach's general any-email
-  // reachability metric. template_id: null OR template.name === "ticket" scopes this to genuine
-  // ticket-email sends only, same reasoning and resolution as WALLET_PASS_AGGREGATE_SELECT's own
-  // email_deliveries filter above - without it, an attendee who only ever got a Communication
-  // campaign send using a different template (a reminder/announcement) would count as reached
-  // here even if their actual ticket email bounced or was never sent (bot review).
+  // reachability metric. template_id: null on its own isn't enough to mean "genuine builtin
+  // ticket send" - template_id is SetNull'd (schema's own onDelete rule) if a custom template is
+  // later deleted, which would otherwise make a deleted-campaign-template send indistinguishable
+  // from a genuine default-template one. template_label_snapshot survives that deletion (it's
+  // captured at send time specifically for this reason - see its own schema comment), so the
+  // null-template_id branch also requires a null snapshot; template.name === "ticket" covers a
+  // live custom template still literally named "ticket" (bot review).
   const ticketReachedFilter: Prisma.AttendeeWhereInput = {
     email_deliveries: {
       some: {
         status: { in: successStatuses },
-        OR: [{ template_id: null }, { template: { name: "ticket" } }] as Prisma.EmailDeliveryWhereInput[],
+        OR: [
+          { template_id: null, template_label_snapshot: null },
+          { template: { name: "ticket" } },
+        ] as Prisma.EmailDeliveryWhereInput[],
       },
     },
   };
