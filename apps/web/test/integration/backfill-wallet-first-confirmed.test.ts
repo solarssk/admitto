@@ -107,6 +107,8 @@ describe("backfillEvent", () => {
       appleInactiveRegistrations: 0,
       googleActiveRegistrations: 0,
       googleInactiveRegistrations: 0,
+      samsungActiveRegistrations: 0,
+      samsungInactiveRegistrations: 0,
       firstDownloadedAt: "2026-08-01 10:00:00",
     });
 
@@ -160,6 +162,8 @@ describe("backfillEvent", () => {
       appleInactiveRegistrations: 0,
       googleActiveRegistrations: 0,
       googleInactiveRegistrations: 0,
+      samsungActiveRegistrations: 0,
+      samsungInactiveRegistrations: 0,
       firstDownloadedAt: "2026-08-01 10:00:00",
     });
 
@@ -187,6 +191,8 @@ describe("backfillEvent", () => {
       appleInactiveRegistrations: 0,
       googleActiveRegistrations: 0,
       googleInactiveRegistrations: 0,
+      samsungActiveRegistrations: 0,
+      samsungInactiveRegistrations: 0,
       firstDownloadedAt: null,
     });
 
@@ -223,6 +229,8 @@ describe("backfillEvent", () => {
         appleInactiveRegistrations: 0,
         googleActiveRegistrations: 1,
         googleInactiveRegistrations: 0,
+        samsungActiveRegistrations: 0,
+        samsungInactiveRegistrations: 0,
         firstDownloadedAt: "2026-08-05 09:00:00",
       };
     });
@@ -271,6 +279,8 @@ describe("backfillEvent", () => {
       appleInactiveRegistrations: 0,
       googleActiveRegistrations: 0,
       googleInactiveRegistrations: 0,
+      samsungActiveRegistrations: 0,
+      samsungInactiveRegistrations: 0,
       firstDownloadedAt: "2026-08-01 10:00:00",
     });
 
