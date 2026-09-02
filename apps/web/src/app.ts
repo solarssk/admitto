@@ -499,6 +499,38 @@ async function resolveQrPayloadOrRespond(
   return buildQrPayload("agency", { agencyPayload });
 }
 
+// No template or API key configured for this event yet (Event settings -> Wallet) - the
+// /wallet/:platform routes would only redirect back with walletError=1 (resolveWalletProvider
+// returns null without both), so don't offer them. The master switch and each platform's own
+// toggle independently gate visibility too. `hasInjectedWalletProvider` is the same test-only
+// injection escape hatch resolveWalletProvider itself checks first. Split out of
+// renderTicketPage (inside createApp) to keep that function's own cognitive complexity under
+// Sonar's threshold (S3776) - pure, no closure state needed, so it lives at module scope rather
+// than being recreated on every createApp() call (SonarCloud S7721).
+function computeWalletPlatformVisibility(
+  event: {
+    walletEnabled: boolean;
+    walletTemplateId: string | null;
+    walletApiKeyEnc: string | null;
+    walletAppleEnabled: boolean;
+    walletGoogleEnabled: boolean;
+    walletSamsungEnabled: boolean;
+  },
+  hasInjectedWalletProvider: boolean,
+): { apple: boolean; google: boolean; samsung: boolean } {
+  const walletConfigured =
+    event.walletEnabled &&
+    event.walletTemplateId !== null &&
+    (hasInjectedWalletProvider || event.walletApiKeyEnc !== null);
+  return {
+    apple: walletConfigured && event.walletAppleEnabled,
+    google: walletConfigured && event.walletGoogleEnabled,
+    // Inert badge only - no createPass route exists for Samsung yet (PassCreator has no API
+    // support), see TicketPageOptions.walletSamsungBadge's own doc comment.
+    samsung: walletConfigured && event.walletSamsungEnabled,
+  };
+}
+
 /** Build the Admitto Hono app (public tickets, auth, check-in API, operator HTML). */
 export function createApp(options: CreateAppOptions = {}) {
   const db = options.prisma ?? defaultPrisma;
@@ -1033,37 +1065,6 @@ export function createApp(options: CreateAppOptions = {}) {
       return c.redirect(`${backHref}?walletError=1`, 302);
     }
     return c.redirect(url, 302);
-  }
-
-  // No template or API key configured for this event yet (Event settings -> Wallet) - the
-  // /wallet/:platform routes would only redirect back with walletError=1 (resolveWalletProvider
-  // returns null without both), so don't offer them. The master switch and each platform's own
-  // toggle independently gate visibility too. `hasInjectedWalletProvider` is the same test-only
-  // injection escape hatch resolveWalletProvider itself checks first. Split out of
-  // renderTicketPage below to keep that function's own cognitive complexity under Sonar's
-  // threshold (S3776) - pure, no closure state needed beyond its own params.
-  function computeWalletPlatformVisibility(
-    event: {
-      walletEnabled: boolean;
-      walletTemplateId: string | null;
-      walletApiKeyEnc: string | null;
-      walletAppleEnabled: boolean;
-      walletGoogleEnabled: boolean;
-      walletSamsungEnabled: boolean;
-    },
-    hasInjectedWalletProvider: boolean,
-  ): { apple: boolean; google: boolean; samsung: boolean } {
-    const walletConfigured =
-      event.walletEnabled &&
-      event.walletTemplateId !== null &&
-      (hasInjectedWalletProvider || event.walletApiKeyEnc !== null);
-    return {
-      apple: walletConfigured && event.walletAppleEnabled,
-      google: walletConfigured && event.walletGoogleEnabled,
-      // Inert badge only - no createPass route exists for Samsung yet (PassCreator has no API
-      // support), see TicketPageOptions.walletSamsungBadge's own doc comment.
-      samsung: walletConfigured && event.walletSamsungEnabled,
-    };
   }
 
   async function renderTicketPage(
