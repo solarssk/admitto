@@ -857,15 +857,13 @@ async function guardWalletTemplateChangeInTx(
   if (issuedCount > 0) throw c.json({ error: "wallet_template_locked" }, 409);
 }
 
-/** PATCH /api/admin/events/:eventId - basic fields only (archive guard applied upstream). */
-export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Response> {
-  const eventIdOrRes = requireEventId(c);
-  if (eventIdOrRes instanceof Response) return eventIdOrRes;
-  const eventId = eventIdOrRes;
-
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
+/** Parses and validates a PATCH body, and enforces the wallet-fields superadmin gate - returns
+ * the validated patch plus whether it touches wallet fields, or the Response to short-circuit
+ * with. Extracted out of handlePatchEvent's own body (SonarCloud S3776). */
+async function parsePatchEventRequest(
+  c: Context,
+  db: PrismaClient,
+): Promise<{ patch: PatchEventBody; patchesWallet: boolean } | Response> {
   let body: unknown;
   try {
     body = await c.req.json();
@@ -898,6 +896,43 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
   if (patchesWallet && !(await canManageInstance(db, c.get("auth").userId))) {
     return c.json({ error: "forbidden" }, 403);
   }
+
+  return { patch, patchesWallet };
+}
+
+/** Resolves handlePatchEvent's own transaction failure - the 409 guardWalletTemplateChangeInTx
+ * throws to abort the transaction isn't a real failure and must surface as-is; anything else logs
+ * and returns a generic 500. Extracted out of handlePatchEvent's own body (SonarCloud S3776). */
+function handlePatchEventTransactionError(
+  c: Context,
+  err: unknown,
+  eventId: string,
+  changedFields: string[],
+  actorUserId: string,
+): Response {
+  if (err instanceof Response) return err;
+  console.error("[audit] event_updated transaction failed", err);
+  recordSystemLog({
+    level: "error",
+    source: "admin",
+    message: "event_updated_failed",
+    fields: { eventId, fields: changedFields, actorUserId, errorKind: "transaction" },
+  });
+  return c.json({ error: "audit_failed" }, 500);
+}
+
+/** PATCH /api/admin/events/:eventId - basic fields only (archive guard applied upstream). */
+export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const parsedRequest = await parsePatchEventRequest(c, db);
+  if (parsedRequest instanceof Response) return parsedRequest;
+  const { patch, patchesWallet } = parsedRequest;
 
   const existing = await loadEventSettingsRow(db, eventId);
   if (!existing) return c.json({ error: "not_found" }, 404);
@@ -1013,17 +1048,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
       ),
     });
   } catch (err) {
-    // guardWalletTemplateChangeInTx throws the 409 Response itself to abort the transaction - it's
-    // not a real failure, so it must surface as-is rather than falling into the generic 500 below.
-    if (err instanceof Response) return err;
-    console.error("[audit] event_updated transaction failed", err);
-    recordSystemLog({
-      level: "error",
-      source: "admin",
-      message: "event_updated_failed",
-      fields: { eventId, fields: changedFields, actorUserId, errorKind: "transaction" },
-    });
-    return c.json({ error: "audit_failed" }, 500);
+    return handlePatchEventTransactionError(c, err, eventId, changedFields, actorUserId);
   }
 }
 
