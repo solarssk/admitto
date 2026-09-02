@@ -447,7 +447,7 @@ describe("WalletsReportsTab", () => {
     expect(within(cumulativeCard).queryByTestId("rc-area")).toBeNull();
   });
 
-  it("shows 'Not enough data yet' instead of the time-to-tap chart when there's no average yet", async () => {
+  it("shows a chart-shaped skeleton placeholder instead of the time-to-tap chart when there's no average yet", async () => {
     fetchEventWalletReports.mockResolvedValue(
       fixture({ time_to_wallet_tap: { average_days: null, buckets: [] } }),
     );
@@ -458,11 +458,11 @@ describe("WalletsReportsTab", () => {
     await screen.findByText("Wallet adoption");
 
     const tapCard = cardByTitle("Time to wallet install");
-    expect(within(tapCard).getByText("Not enough data yet.")).toBeTruthy();
+    expect(tapCard.querySelector(".at-skeleton--rect")).toBeTruthy();
     expect(within(tapCard).queryByTestId("rc-bar")).toBeNull();
   });
 
-  it("shows 'Not enough data yet' instead of the devices-per-attendee chart when nothing is confirmed", async () => {
+  it("shows a chart-shaped skeleton placeholder instead of the devices-per-attendee chart when nothing is confirmed", async () => {
     fetchEventWalletReports.mockResolvedValue(
       fixture({
         adoption: { got_pass: 15, got_pass_pct: 75, confirmed: 0, confirmed_pct: 0 },
@@ -476,7 +476,7 @@ describe("WalletsReportsTab", () => {
     await screen.findByText("Wallet adoption");
 
     const devicesCard = cardByTitle("Devices per attendee");
-    expect(within(devicesCard).getByText("Not enough data yet.")).toBeTruthy();
+    expect(devicesCard.querySelector(".at-skeleton--rect")).toBeTruthy();
     expect(within(devicesCard).queryByTestId("rc-bar")).toBeNull();
   });
 

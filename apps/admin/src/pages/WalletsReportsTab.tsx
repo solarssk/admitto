@@ -17,7 +17,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Button, Card, EmptyState, HintLabel, Notice, ticketTypeChartColor } from "@admitto/ui";
+import { Button, Card, EmptyState, HintLabel, Notice, Skeleton, ticketTypeChartColor } from "@admitto/ui";
 import type { EnabledWalletPlatforms } from "@admitto/shared";
 import { fetchEventWalletReports } from "../api/client.js";
 import type { EventWalletReportsResponse } from "../api/types.js";
@@ -779,7 +779,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
             Some attendees add their ticket to more than one device, like a phone and a smartwatch. This shows how many devices attendees are actually using, not just how many people have their ticket installed.
           </p>
           {data.adoption.confirmed === 0 ? (
-            <p className="wallets-description">Not enough data yet.</p>
+            <Skeleton variant="rect" height={230} />
           ) : (
             <RegistrationsPerAttendeeChart buckets={data.registrations_per_attendee.buckets} />
           )}
@@ -800,7 +800,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
             How many days pass between the ticket email landing in an attendee&rsquo;s inbox and their pass being confirmed installed on their wallet app.
           </p>
           {data.time_to_wallet_tap.average_days === null ? (
-            <p className="wallets-description">Not enough data yet.</p>
+            <Skeleton variant="rect" height={230} />
           ) : (
             <TimeToTapChart buckets={data.time_to_wallet_tap.buckets} />
           )}
