@@ -33,6 +33,7 @@ import {
   EVENT_FIELD_PLACEHOLDERS,
   isWalletFieldMappingRelevant,
   isRelevantDateAffected,
+  acquireWalletTemplateLock,
   type PassCreatorWebhookEventType,
 } from "@admitto/wallet";
 import { z } from "zod";
@@ -161,6 +162,7 @@ function serializeEventSettings(
   deletability: { isDeletable: boolean; deletionBlockers: EventDeletionBlocker[] },
   revokeCounts: { admittedCount: number; issuedItemsCount: number },
   installedWalletPassCount: number,
+  issuedWalletPassCount: number,
 ): EventSettingsDto {
   const normalizeNullableTimeZone = (value: string | null) =>
     value === null ? null : normalizeTimeZone(value) ?? value;
@@ -192,6 +194,7 @@ function serializeEventSettings(
     admitted_count: revokeCounts.admittedCount,
     issued_items_count: revokeCounts.issuedItemsCount,
     installed_wallet_pass_count: installedWalletPassCount,
+    issued_wallet_pass_count: issuedWalletPassCount,
     organization_name: event.organization.name,
     active_items: event.event_items.map((item) => ({
       id: item.id,
@@ -302,6 +305,20 @@ async function loadInstalledWalletPassCount(db: PrismaClient, eventId: string): 
   });
 }
 
+/** Every WalletPass ever issued for this event, regardless of status/install - see
+ * EventSettingsDto.issued_wallet_pass_count's own doc comment for why this (not the narrower
+ * loadInstalledWalletPassCount above) is the right population for the Template ID lock: a pass
+ * PassCreator has created is already bound to the current template even if nobody's device has
+ * confirmed it yet. */
+async function loadIssuedWalletPassCount(
+  db: PrismaClient | Prisma.TransactionClient,
+  eventId: string,
+): Promise<number> {
+  return db.walletPass.count({
+    where: { attendee: { event_id: eventId }, issued_at: { not: null } },
+  });
+}
+
 async function loadEventSettingsRow(
   db: PrismaClient,
   eventId: string,
@@ -324,12 +341,15 @@ export async function handleGetEventSettings(c: Context, db: PrismaClient): Prom
   const event = await loadEventSettingsRow(db, eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const [deletability, revokeCounts, installedWalletPassCount] = await Promise.all([
+  const [deletability, revokeCounts, installedWalletPassCount, issuedWalletPassCount] = await Promise.all([
     loadDeletability(db, eventId, event),
     loadRevokeCounts(db, eventId),
     loadInstalledWalletPassCount(db, eventId),
+    loadIssuedWalletPassCount(db, eventId),
   ]);
-  return c.json(serializeEventSettings(event, deletability, revokeCounts, installedWalletPassCount));
+  return c.json(
+    serializeEventSettings(event, deletability, revokeCounts, installedWalletPassCount, issuedWalletPassCount),
+  );
 }
 
 const walletTestSchema = z.object({
@@ -760,15 +780,90 @@ async function pushWalletUpdatesBestEffort(
   await enqueueEventWideWalletPushJob(db, c, eventId, updated.organization_id, "settings");
 }
 
-/** PATCH /api/admin/events/:eventId - basic fields only (archive guard applied upstream). */
-export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Response> {
-  const eventIdOrRes = requireEventId(c);
-  if (eventIdOrRes instanceof Response) return eventIdOrRes;
-  const eventId = eventIdOrRes;
+/** Blocks a wallet credential change that would silently orphan already-issued passes.
+ * PassCreator scopes a pass lookup to one template, permanently - there's no way to migrate an
+ * already-issued pass to a different template, so once any pass has been issued under the current
+ * template, changing wallet_template_id is refused outright (409) rather than warned-and-allowed:
+ * every issued pass (installed or not) would otherwise become unmanageable (sync, void/restore,
+ * push) the moment this saved (PO report, 2026-09-02 - "coś potrzeba z oficjalnej dokumentacji
+ * passcreatora ogarnąć? albo generycznie zrobić?" - resolved generically, no PassCreator-specific
+ * migration path exists to build against). wallet_api_key stays changeable - a leaked key must be
+ * rotatable - but is live-verified against the *unchanged* template ID first (the same
+ * describeTemplate() probe "Test connection" already uses), so a key for the wrong PassCreator
+ * account can't silently take over an event with real issued passes. Returns null when nothing
+ * needs blocking (no issued passes yet, or neither field is actually changing).
+ *
+ * The Template ID change itself is deliberately *not* blocked here - a read here and the actual
+ * event.update happening later in handlePatchEvent's own transaction would still be two separate,
+ * unsynchronized statements an in-flight issuance could land between (CodeRabbit review). That
+ * block is authoritatively enforced by guardWalletTemplateChangeInTx below instead, inside that
+ * transaction, under the same advisory lock issuance's own markActive takes for this event. */
+async function guardWalletCredentialChange(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+  patch: Pick<PatchEventBody, "wallet_template_id" | "wallet_api_key">,
+  existing: Pick<EventSettingsRow, "wallet_template_id">,
+): Promise<Response | null> {
+  const templateChanging =
+    patch.wallet_template_id !== undefined && patch.wallet_template_id !== existing.wallet_template_id;
+  if (!templateChanging && !patch.wallet_api_key) return null;
+  if (templateChanging) return null;
 
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
+  const issuedCount = await loadIssuedWalletPassCount(db, eventId);
+  if (issuedCount === 0) return null;
 
+  // Nothing to verify the new key against if this event never had a template configured at all.
+  if (!existing.wallet_template_id) return null;
+
+  const client = new PassCreatorClient({
+    apiKey: patch.wallet_api_key!,
+    templateId: existing.wallet_template_id,
+    baseUrl: resolvePassCreatorBaseUrl(),
+  });
+  try {
+    await client.describeTemplate();
+    return null;
+  } catch {
+    // Deliberately not the caught WalletProviderError's own .code (wallet_provider_not_found,
+    // wallet_provider_unauthorized, ...) - those codes' CODE_MESSAGES entries are worded for a
+    // real pass lookup (void/restore/refresh-status failures elsewhere in the app), e.g.
+    // wallet_provider_not_found reads "couldn't find this pass. It may have been removed there" -
+    // actively misleading here, where no pass is being looked up at all, only this event's own
+    // Template ID (CodeRabbit review). One dedicated code covers every describeTemplate() failure
+    // reason instead, pointing the admin at the granular Test connection diagnosis rather than
+    // trying to duplicate PassCreator's own error taxonomy a second time in this one save path.
+    return c.json({ error: "wallet_key_verification_failed" }, 409);
+  }
+}
+
+/** Authoritative block for a Template ID change on an event with issued passes - see
+ * guardWalletCredentialChange's own doc comment for why this half moved into
+ * handlePatchEvent's transaction instead of running there. Acquires the same per-event advisory
+ * lock issuance's own markActive (apps/web/src/app.ts) takes before its recheck, so whichever
+ * request - this PATCH or an in-flight issuance - starts first fully commits before the other's
+ * own recheck runs; each then sees the other's result rather than stale state. Throws the 409
+ * Response for the transaction's own catch to surface (same pattern as
+ * attendees-api-routes.ts's guardPatchCapacityRestore). No-op when the template isn't changing. */
+async function guardWalletTemplateChangeInTx(
+  c: Context,
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  templateChanging: boolean,
+): Promise<void> {
+  if (!templateChanging) return;
+  await acquireWalletTemplateLock(tx, eventId);
+  const issuedCount = await loadIssuedWalletPassCount(tx, eventId);
+  if (issuedCount > 0) throw c.json({ error: "wallet_template_locked" }, 409);
+}
+
+/** Parses and validates a PATCH body, and enforces the wallet-fields superadmin gate - returns
+ * the validated patch plus whether it touches wallet fields, or the Response to short-circuit
+ * with. Extracted out of handlePatchEvent's own body (SonarCloud S3776). */
+async function parsePatchEventRequest(
+  c: Context,
+  db: PrismaClient,
+): Promise<{ patch: PatchEventBody; patchesWallet: boolean } | Response> {
   let body: unknown;
   try {
     body = await c.req.json();
@@ -802,8 +897,50 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     return c.json({ error: "forbidden" }, 403);
   }
 
+  return { patch, patchesWallet };
+}
+
+/** Resolves handlePatchEvent's own transaction failure - the 409 guardWalletTemplateChangeInTx
+ * throws to abort the transaction isn't a real failure and must surface as-is; anything else logs
+ * and returns a generic 500. Extracted out of handlePatchEvent's own body (SonarCloud S3776). */
+function handlePatchEventTransactionError(
+  c: Context,
+  err: unknown,
+  eventId: string,
+  changedFields: string[],
+  actorUserId: string,
+): Response {
+  if (err instanceof Response) return err;
+  console.error("[audit] event_updated transaction failed", err);
+  recordSystemLog({
+    level: "error",
+    source: "admin",
+    message: "event_updated_failed",
+    fields: { eventId, fields: changedFields, actorUserId, errorKind: "transaction" },
+  });
+  return c.json({ error: "audit_failed" }, 500);
+}
+
+/** PATCH /api/admin/events/:eventId - basic fields only (archive guard applied upstream). */
+export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdOrRes = requireEventId(c);
+  if (eventIdOrRes instanceof Response) return eventIdOrRes;
+  const eventId = eventIdOrRes;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const parsedRequest = await parsePatchEventRequest(c, db);
+  if (parsedRequest instanceof Response) return parsedRequest;
+  const { patch, patchesWallet } = parsedRequest;
+
   const existing = await loadEventSettingsRow(db, eventId);
   if (!existing) return c.json({ error: "not_found" }, 404);
+
+  if (patchesWallet) {
+    const credentialGuardResponse = await guardWalletCredentialChange(c, db, eventId, patch, existing);
+    if (credentialGuardResponse) return credentialGuardResponse;
+  }
 
   const audit = adminAuditFromContext(c);
   const actorUserId = c.get("auth").userId;
@@ -833,9 +970,13 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
   if (brandingError) return brandingError;
 
   const changedFields = Object.keys(data);
+  const templateChanging =
+    patch.wallet_template_id !== undefined && patch.wallet_template_id !== existing.wallet_template_id;
 
   try {
     const updated = await db.$transaction(async (tx) => {
+      await guardWalletTemplateChangeInTx(c, tx, eventId, templateChanging);
+
       const row = await tx.event.update({
         where: { id: eventId },
         data,
@@ -891,23 +1032,23 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
       });
     }
 
-    const [deletability, revokeCounts, installedWalletPassCount] = await Promise.all([
+    const [deletability, revokeCounts, installedWalletPassCount, issuedWalletPassCount] = await Promise.all([
       loadDeletability(db, eventId, updated),
       loadRevokeCounts(db, eventId),
       loadInstalledWalletPassCount(db, eventId),
+      loadIssuedWalletPassCount(db, eventId),
     ]);
     return c.json({
-      event: serializeEventSettings(updated, deletability, revokeCounts, installedWalletPassCount),
+      event: serializeEventSettings(
+        updated,
+        deletability,
+        revokeCounts,
+        installedWalletPassCount,
+        issuedWalletPassCount,
+      ),
     });
   } catch (err) {
-    console.error("[audit] event_updated transaction failed", err);
-    recordSystemLog({
-      level: "error",
-      source: "admin",
-      message: "event_updated_failed",
-      fields: { eventId, fields: changedFields, actorUserId, errorKind: "transaction" },
-    });
-    return c.json({ error: "audit_failed" }, 500);
+    return handlePatchEventTransactionError(c, err, eventId, changedFields, actorUserId);
   }
 }
 
