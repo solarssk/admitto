@@ -744,15 +744,30 @@ async function seed(client: PrismaClient) {
     ],
   });
 
+  const mailAdmittedAt = new Date("2027-09-05T18:00:00.000Z");
   await client.attendee.createMany({
     data: [
-      { id: ATT_MAIL_ACCEPTED, event_id: EVENT_MAIL, email: "mail-accepted@example.com", name: "Mail Accepted", ...mkAttendeeToken() },
+      // Reached and admitted - the ordinary "email worked, they showed up" case.
+      { id: ATT_MAIL_ACCEPTED, event_id: EVENT_MAIL, email: "mail-accepted@example.com", name: "Mail Accepted", admitted_at: mailAdmittedAt, ...mkAttendeeToken() },
+      // Reached but NOT admitted - proves admission_by_email.reached isn't just "== reached_by_email".
       { id: ATT_MAIL_RECOVERED, event_id: EVENT_MAIL, email: "mail-recovered@example.com", name: "Mail Recovered", ...mkAttendeeToken() },
-      { id: ATT_MAIL_FAILED, event_id: EVENT_MAIL, email: "mail-failed@example.com", name: "Mail Failed", ...mkAttendeeToken() },
+      // NOT reached, but admitted anyway (e.g. let in at the door on a name check) - the case
+      // admission_by_email.not_reached.admitted exists to surface.
+      { id: ATT_MAIL_FAILED, event_id: EVENT_MAIL, email: "mail-failed@example.com", name: "Mail Failed", admitted_at: mailAdmittedAt, ...mkAttendeeToken() },
       { id: ATT_MAIL_QUEUED, event_id: EVENT_MAIL, email: "mail-queued@example.com", name: "Mail Queued", ...mkAttendeeToken() },
       { id: ATT_MAIL_CANCELLED, event_id: EVENT_MAIL, email: "mail-cancelled@example.com", name: "Mail Cancelled", ...mkAttendeeToken() },
       { id: ATT_MAIL_BOUNCED_AFTER_ACCEPT, event_id: EVENT_MAIL, email: "mail-bounced-after-accept@example.com", name: "Mail Bounced After Accept", ...mkAttendeeToken() },
-      { id: ATT_MAIL_VIEWED_RECOVERED, event_id: EVENT_MAIL, email: "mail-viewed-recovered@example.com", name: "Mail Viewed Recovered", ...mkAttendeeToken() },
+      { id: ATT_MAIL_VIEWED_RECOVERED, event_id: EVENT_MAIL, email: "mail-viewed-recovered@example.com", name: "Mail Viewed Recovered", admitted_at: mailAdmittedAt, ...mkAttendeeToken() },
+    ],
+  });
+
+  // funnel.wallet_installed must be its own independent count, not gated on reach: ATT_MAIL_ACCEPTED
+  // was both reached and installed a pass, but ATT_MAIL_QUEUED never got a working email at all and
+  // still has one - proving the funnel doesn't force a strictly narrowing shape.
+  await client.walletPass.createMany({
+    data: [
+      { attendee_id: ATT_MAIL_ACCEPTED, status: "active", issued_at: mailAdmittedAt, apple_active_registrations: 1 },
+      { attendee_id: ATT_MAIL_QUEUED, status: "active", issued_at: mailAdmittedAt, google_active_registrations: 1 },
     ],
   });
 
@@ -2842,6 +2857,11 @@ describe("GET /api/admin/events/:eventId/reports/mail", () => {
     expect(body.by_template).toEqual([]);
     expect(body.sent_by_day).toEqual([]);
     expect(body.ticket_viewed).toEqual({ reached: 0, viewed: 0, viewed_pct: 0 });
+    expect(body.admission_by_email).toEqual({
+      reached: { total: 0, admitted: 0, pct: 0 },
+      not_reached: { total: 0, admitted: 0, pct: 0 },
+    });
+    expect(body.funnel).toEqual({ total_attendees: 0, reached_by_email: 0, wallet_installed: 0, attended: 0 });
   });
 
   it("aggregates delivery attempts, attendee reach, purpose, template, and ticket-view stats", async () => {
@@ -2903,6 +2923,22 @@ describe("GET /api/admin/events/:eventId/reports/mail", () => {
     // later hard-bounced, and only its separate resend is what makes it "reached" - the fix under
     // test is that viewed doesn't require both facts on the very same delivery row.
     expect(body.ticket_viewed).toEqual({ reached: 3, viewed: 2, viewed_pct: 66.7 });
+
+    // admission_by_email: reached (3) splits into 2 admitted (ATT_MAIL_ACCEPTED, ATT_MAIL_VIEWED_RECOVERED)
+    // and 1 not (ATT_MAIL_RECOVERED) - reached alone doesn't imply admitted. not_reached (4) splits
+    // into 1 admitted (ATT_MAIL_FAILED, let in despite email never reaching them - the case this
+    // stat exists to surface) and 3 not.
+    expect(body.admission_by_email).toEqual({
+      reached: { total: 3, admitted: 2, pct: 66.7 },
+      not_reached: { total: 4, admitted: 1, pct: 25 },
+    });
+
+    // funnel: wallet_installed (2) is its own independent count, not gated on reach -
+    // ATT_MAIL_ACCEPTED was both reached and installed a pass, but ATT_MAIL_QUEUED installed one
+    // despite never having a working email delivery at all, proving the funnel doesn't force a
+    // strictly narrowing shape. attended (3) counts every admitted attendee regardless of reach,
+    // including ATT_MAIL_FAILED from the admission_by_email case above.
+    expect(body.funnel).toEqual({ total_attendees: 7, reached_by_email: 3, wallet_installed: 2, attended: 3 });
   });
 });
 

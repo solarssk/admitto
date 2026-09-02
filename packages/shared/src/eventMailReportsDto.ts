@@ -54,4 +54,25 @@ export interface EventMailReportsResponse {
     viewed: number;
     viewed_pct: number;
   };
+  /** Check-in rate compared between attendees email reached and attendees it didn't - same shape
+   * and "with X vs without X" comparison EventWalletReportsResponse.admission_by_wallet already
+   * uses for wallet status, just keyed on reach instead. "Reached" is the same attendee-level,
+   * resend-deduped definition as attendee_reach above, not a raw delivery-row count. */
+  admission_by_email: {
+    reached: { total: number; admitted: number; pct: number };
+    not_reached: { total: number; admitted: number; pct: number };
+  };
+  /** The event journey funnel: every attendee, how many email actually reached, how many of those
+   * (or anyone else) installed a wallet pass, and how many attended. Each stage is an independent
+   * count of the whole attendee list (not "of the previous stage"), so e.g. wallet_installed can
+   * include an attendee email never reached (they could still get the wallet link another way) -
+   * this deliberately mirrors the real, sometimes non-monotonic event journey rather than forcing
+   * a strictly narrowing funnel shape. wallet_installed uses the exact same "confirmed" definition
+   * (active on a platform the event still offers) as EventWalletReportsResponse.adoption.confirmed. */
+  funnel: {
+    total_attendees: number;
+    reached_by_email: number;
+    wallet_installed: number;
+    attended: number;
+  };
 }

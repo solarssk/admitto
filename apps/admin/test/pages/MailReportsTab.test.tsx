@@ -40,6 +40,8 @@ vi.mock("recharts", () => {
   const CartesianGrid = () => null;
   const Tooltip = () => null;
   const Pie = () => null;
+  const RadialBar = () => null;
+  const PolarAngleAxis = () => null;
 
   const ResponsiveContainer = ({ children }: { children: ReactNode }) => <>{children}</>;
 
@@ -61,7 +63,25 @@ vi.mock("recharts", () => {
     <div data-testid="rc-area" data-points={JSON.stringify(data)} />
   );
 
-  return { ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip };
+  const RadialBarChart = ({ data }: { data: Array<{ value: number }> }) => (
+    <div data-testid="rc-radialbar" data-values={JSON.stringify(data.map((d) => d.value))} />
+  );
+
+  return {
+    ResponsiveContainer,
+    PieChart,
+    Pie,
+    Cell,
+    AreaChart,
+    Area,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    RadialBarChart,
+    RadialBar,
+    PolarAngleAxis,
+  };
 });
 
 function fixture(overrides: Partial<EventMailReportsResponse> = {}): EventMailReportsResponse {
@@ -91,6 +111,14 @@ function fixture(overrides: Partial<EventMailReportsResponse> = {}): EventMailRe
       { date: "2027-09-02", count: 1, cumulative: 2 },
     ],
     ticket_viewed: { reached: 2, viewed: 1, viewed_pct: 50 },
+    admission_by_email: {
+      reached: { total: 2, admitted: 1, pct: 50 },
+      not_reached: { total: 3, admitted: 0, pct: 0 },
+    },
+    // wallet_installed (3) deliberately exceeds reached_by_email (2) - the funnel isn't a strictly
+    // narrowing conversion (an attendee can install a wallet pass without email ever reaching
+    // them another way), and the fixture proves the component doesn't assume otherwise.
+    funnel: { total_attendees: 5, reached_by_email: 2, wallet_installed: 3, attended: 1 },
     ...overrides,
   };
 }
@@ -111,9 +139,22 @@ function breakdownRows(container: HTMLElement): Array<{ name: string; meta: stri
   }));
 }
 
+function funnelStageText(container: HTMLElement): Array<{ label: string; value: string; pct: string }> {
+  return Array.from(container.querySelectorAll(".mail-funnel__row")).map((row) => ({
+    label: row.querySelector(".mail-funnel__label")?.textContent ?? "",
+    value: row.querySelector(".mail-funnel__value")?.textContent ?? "",
+    pct: row.querySelector(".mail-funnel__pct")?.textContent ?? "",
+  }));
+}
+
 function pieValues(container: HTMLElement): number[] {
   const el = container.querySelector('[data-testid="rc-pie"]');
   return JSON.parse(el?.getAttribute("data-values") ?? "null");
+}
+
+function radialValues(container: HTMLElement): number[] {
+  const els = container.querySelectorAll('[data-testid="rc-radialbar"]');
+  return Array.from(els).flatMap((el) => JSON.parse(el.getAttribute("data-values") ?? "null") as number[]);
 }
 
 beforeEach(() => {
@@ -296,6 +337,25 @@ describe("MailReportsTab", () => {
       { name: "Opened ticket page", meta: "1 · 50%" },
       { name: "Not opened yet", meta: "1 · 50%" },
     ]);
+
+    // Admission rate by email status - two independent gauges (reached vs not-reached), plus the
+    // delta pill between them.
+    const admissionCard = cardByTitle("Admission rate by email status");
+    expect(radialValues(admissionCard)).toEqual([50, 0]);
+    expect(admissionCard.textContent).toContain("1 of 2 attendees");
+    expect(admissionCard.textContent).toContain("0 of 3 attendees");
+    expect(admissionCard.textContent).toContain("▲ +50 pts");
+
+    // Event journey funnel - each stage is its own share of every attendee (5), not of the
+    // previous stage, so wallet_installed (3, 60%) can legitimately exceed reached_by_email
+    // (2, 40%) without that reading as a data error.
+    const funnelCard = cardByTitle("Event journey");
+    expect(funnelStageText(funnelCard)).toEqual([
+      { label: "Attendees", value: "5", pct: "100% of attendees" },
+      { label: "Reached by email", value: "2", pct: "40% of attendees" },
+      { label: "Wallet installed", value: "3", pct: "60% of attendees" },
+      { label: "Attended", value: "1", pct: "20% of attendees" },
+    ]);
   });
 
   it("skips mounting every ResponsiveContainer chart while the tab is hidden (isActive=false), keeping titles and breakdown lists rendered", async () => {
@@ -321,5 +381,9 @@ describe("MailReportsTab", () => {
 
     const chartCard = cardByTitle("Emails sent over time");
     expect(chartCard.querySelector('[data-testid="rc-area"]')).toBeNull();
+
+    const admissionCard = cardByTitle("Admission rate by email status");
+    expect(admissionCard.querySelectorAll('[data-testid="rc-radialbar"]')).toHaveLength(0);
+    expect(admissionCard.textContent).toContain("1 of 2 attendees");
   });
 });
