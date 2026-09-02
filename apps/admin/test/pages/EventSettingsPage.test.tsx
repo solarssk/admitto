@@ -162,6 +162,7 @@ const activeEvent = {
   admitted_count: 0,
   issued_items_count: 0,
   installed_wallet_pass_count: 0,
+  issued_wallet_pass_count: 0,
   organization_name: "Org",
   active_items: [] as Array<{ id: string; name: string; enabled: boolean }>,
   logo_url: null,
@@ -1048,6 +1049,38 @@ describe("EventSettingsPage tabs", () => {
     await waitFor(() => {
       expect(document.getElementById("event-wallet-template-id")).toBeTruthy();
     });
+  });
+
+  // Regression: a pass PassCreator has already issued is permanently bound to its own template
+  // (event-settings-routes.ts's guardWalletCredentialChange) - the field must be locked on the
+  // broader issued_wallet_pass_count, not the narrower installed_wallet_pass_count (a pass nobody
+  // has installed yet is still unmanageable if the template changes underneath it).
+  it("disables the Template ID field once any wallet pass has been issued, even if none is installed yet", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      installed_wallet_pass_count: 0,
+      issued_wallet_pass_count: 1,
+      wallet_template_id: "tmpl-1",
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    const input = await screen.findByLabelText("Template ID");
+    expect((input as HTMLInputElement).disabled).toBe(true);
+    expect(
+      screen.getByText(/can't be changed once wallet passes have been issued/i),
+    ).toBeTruthy();
+  });
+
+  it("keeps the Template ID field editable when no wallet pass has been issued yet", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({
+      ...activeEvent,
+      issued_wallet_pass_count: 0,
+    });
+    renderSettings("/admin/events/evt-1/settings?tab=wallet");
+
+    const input = await screen.findByLabelText("Template ID");
+    expect((input as HTMLInputElement).disabled).toBe(false);
+    expect(screen.getByText("Which pass design this event's attendees get.")).toBeTruthy();
   });
 
   it("shows wallet push history rows once fetched, with scope and status", async () => {

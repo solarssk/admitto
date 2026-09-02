@@ -161,6 +161,7 @@ function serializeEventSettings(
   deletability: { isDeletable: boolean; deletionBlockers: EventDeletionBlocker[] },
   revokeCounts: { admittedCount: number; issuedItemsCount: number },
   installedWalletPassCount: number,
+  issuedWalletPassCount: number,
 ): EventSettingsDto {
   const normalizeNullableTimeZone = (value: string | null) =>
     value === null ? null : normalizeTimeZone(value) ?? value;
@@ -192,6 +193,7 @@ function serializeEventSettings(
     admitted_count: revokeCounts.admittedCount,
     issued_items_count: revokeCounts.issuedItemsCount,
     installed_wallet_pass_count: installedWalletPassCount,
+    issued_wallet_pass_count: issuedWalletPassCount,
     organization_name: event.organization.name,
     active_items: event.event_items.map((item) => ({
       id: item.id,
@@ -302,6 +304,17 @@ async function loadInstalledWalletPassCount(db: PrismaClient, eventId: string): 
   });
 }
 
+/** Every WalletPass ever issued for this event, regardless of status/install - see
+ * EventSettingsDto.issued_wallet_pass_count's own doc comment for why this (not the narrower
+ * loadInstalledWalletPassCount above) is the right population for the Template ID lock: a pass
+ * PassCreator has created is already bound to the current template even if nobody's device has
+ * confirmed it yet. */
+async function loadIssuedWalletPassCount(db: PrismaClient, eventId: string): Promise<number> {
+  return db.walletPass.count({
+    where: { attendee: { event_id: eventId }, issued_at: { not: null } },
+  });
+}
+
 async function loadEventSettingsRow(
   db: PrismaClient,
   eventId: string,
@@ -324,12 +337,15 @@ export async function handleGetEventSettings(c: Context, db: PrismaClient): Prom
   const event = await loadEventSettingsRow(db, eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const [deletability, revokeCounts, installedWalletPassCount] = await Promise.all([
+  const [deletability, revokeCounts, installedWalletPassCount, issuedWalletPassCount] = await Promise.all([
     loadDeletability(db, eventId, event),
     loadRevokeCounts(db, eventId),
     loadInstalledWalletPassCount(db, eventId),
+    loadIssuedWalletPassCount(db, eventId),
   ]);
-  return c.json(serializeEventSettings(event, deletability, revokeCounts, installedWalletPassCount));
+  return c.json(
+    serializeEventSettings(event, deletability, revokeCounts, installedWalletPassCount, issuedWalletPassCount),
+  );
 }
 
 const walletTestSchema = z.object({
@@ -760,6 +776,54 @@ async function pushWalletUpdatesBestEffort(
   await enqueueEventWideWalletPushJob(db, c, eventId, updated.organization_id, "settings");
 }
 
+/** Blocks a wallet credential change that would silently orphan already-issued passes.
+ * PassCreator scopes a pass lookup to one template, permanently - there's no way to migrate an
+ * already-issued pass to a different template, so once any pass has been issued under the current
+ * template, changing wallet_template_id is refused outright (409) rather than warned-and-allowed:
+ * every issued pass (installed or not) would otherwise become unmanageable (sync, void/restore,
+ * push) the moment this saved (PO report, 2026-09-02 - "coś potrzeba z oficjalnej dokumentacji
+ * passcreatora ogarnąć? albo generycznie zrobić?" - resolved generically, no PassCreator-specific
+ * migration path exists to build against). wallet_api_key stays changeable - a leaked key must be
+ * rotatable - but is live-verified against the *unchanged* template ID first (the same
+ * describeTemplate() probe "Test connection" already uses), so a key for the wrong PassCreator
+ * account can't silently take over an event with real issued passes. Returns null when nothing
+ * needs blocking (no issued passes yet, or neither field is actually changing). */
+async function guardWalletCredentialChange(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+  patch: Pick<PatchEventBody, "wallet_template_id" | "wallet_api_key">,
+  existing: Pick<EventSettingsRow, "wallet_template_id">,
+): Promise<Response | null> {
+  const templateChanging =
+    patch.wallet_template_id !== undefined && patch.wallet_template_id !== existing.wallet_template_id;
+  if (!templateChanging && !patch.wallet_api_key) return null;
+
+  const issuedCount = await loadIssuedWalletPassCount(db, eventId);
+  if (issuedCount === 0) return null;
+
+  if (templateChanging) {
+    return c.json({ error: "wallet_template_locked" }, 409);
+  }
+
+  // Key is changing (template isn't - the branch above already blocked that combination) -
+  // nothing to verify the new key against if this event never had a template configured at all.
+  if (!existing.wallet_template_id) return null;
+
+  const client = new PassCreatorClient({
+    apiKey: patch.wallet_api_key!,
+    templateId: existing.wallet_template_id,
+    baseUrl: resolvePassCreatorBaseUrl(),
+  });
+  try {
+    await client.describeTemplate();
+    return null;
+  } catch (err) {
+    const code = err instanceof WalletProviderError ? err.code : "wallet_provider_rejected";
+    return c.json({ error: code }, 409);
+  }
+}
+
 /** PATCH /api/admin/events/:eventId - basic fields only (archive guard applied upstream). */
 export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
@@ -804,6 +868,11 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
 
   const existing = await loadEventSettingsRow(db, eventId);
   if (!existing) return c.json({ error: "not_found" }, 404);
+
+  if (patchesWallet) {
+    const credentialGuardResponse = await guardWalletCredentialChange(c, db, eventId, patch, existing);
+    if (credentialGuardResponse) return credentialGuardResponse;
+  }
 
   const audit = adminAuditFromContext(c);
   const actorUserId = c.get("auth").userId;
@@ -891,13 +960,20 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
       });
     }
 
-    const [deletability, revokeCounts, installedWalletPassCount] = await Promise.all([
+    const [deletability, revokeCounts, installedWalletPassCount, issuedWalletPassCount] = await Promise.all([
       loadDeletability(db, eventId, updated),
       loadRevokeCounts(db, eventId),
       loadInstalledWalletPassCount(db, eventId),
+      loadIssuedWalletPassCount(db, eventId),
     ]);
     return c.json({
-      event: serializeEventSettings(updated, deletability, revokeCounts, installedWalletPassCount),
+      event: serializeEventSettings(
+        updated,
+        deletability,
+        revokeCounts,
+        installedWalletPassCount,
+        issuedWalletPassCount,
+      ),
     });
   } catch (err) {
     console.error("[audit] event_updated transaction failed", err);

@@ -7,7 +7,7 @@ import { createSession, hashPassword, resolveInstanceBaseUrl, SESSION_STAGE } fr
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
-import { PassCreatorClient } from "@admitto/wallet";
+import { PassCreatorClient, WalletProviderError } from "@admitto/wallet";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -2328,6 +2328,159 @@ describe("PATCH /api/admin/events/:eventId", () => {
     await prisma.event.update({
       where: { id: EVENT_B },
       data: { title: "Settings Event B" },
+    });
+  });
+
+  // guardWalletCredentialChange: PassCreator scopes a pass lookup to one template, permanently -
+  // once any pass has been issued under the current template, changing wallet_template_id must be
+  // refused outright (409), and a changed wallet_api_key must be live-verified against the
+  // *unchanged* template before being accepted.
+  describe("wallet credential change guard", () => {
+    async function seedIssuedWalletPass(): Promise<{ attendeeId: string; cleanup: () => Promise<void> }> {
+      const attendee = await prisma.attendee.create({
+        data: {
+          event_id: EVENT_SET,
+          email: `wallet-guard-${Date.now()}@example.com`,
+          name: "Wallet Guard Attendee",
+          status: "registered",
+        },
+      });
+      await prisma.walletPass.create({
+        data: {
+          attendee_id: attendee.id,
+          provider: "passcreator",
+          provider_pass_id: `pc-${attendee.id}`,
+          status: "active",
+          issued_at: new Date("2026-06-15T00:00:00.000Z"),
+        },
+      });
+      return {
+        attendeeId: attendee.id,
+        cleanup: async () => {
+          await prisma.walletPass.deleteMany({ where: { attendee_id: attendee.id } });
+          await prisma.attendee.delete({ where: { id: attendee.id } });
+        },
+      };
+    }
+
+    it("rejects a Template ID change with 409 once a wallet pass has been issued, even if none is installed", async () => {
+      await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_template_id: "tmpl-original" } });
+      const { cleanup } = await seedIssuedWalletPass();
+
+      try {
+        const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-different" }),
+        });
+        expect(res.status).toBe(409);
+        const body = (await res.json()) as { error: string };
+        expect(body.error).toBe("wallet_template_locked");
+
+        const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+        expect(row.wallet_template_id).toBe("tmpl-original");
+      } finally {
+        await cleanup();
+        await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_template_id: null } });
+      }
+    });
+
+    it("allows a Template ID change when the event has no issued wallet passes", async () => {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_template_id: "tmpl-fresh" }),
+      });
+      expect(res.status).toBe(200);
+
+      await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_template_id: null } });
+    });
+
+    it("allows re-saving the same Template ID value even with issued wallet passes (not a real change)", async () => {
+      await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_template_id: "tmpl-same" } });
+      const { cleanup } = await seedIssuedWalletPass();
+
+      try {
+        const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-same", title: "Settings Event" }),
+        });
+        expect(res.status).toBe(200);
+      } finally {
+        await cleanup();
+        await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_template_id: null } });
+      }
+    });
+
+    it("accepts a new API key once it's live-verified against the event's current template", async () => {
+      await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_template_id: "tmpl-guard" } });
+      const { cleanup } = await seedIssuedWalletPass();
+      // A successful wallet-relevant PATCH also best-effort re-subscribes webhooks
+      // (subscribeWalletWebhooksBestEffort), a second, unrelated fetch call this mock must not
+      // reject - only the describe-template call (this guard's own live check) is asserted here.
+      const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+        if (String(url).includes("/api/v2/pass-template/tmpl-guard/describe")) {
+          expect((init?.headers as Record<string, string>).Authorization).toBe("new-rotated-key");
+        }
+        return new Response(JSON.stringify({ success: true, data: { name: "Gala Pass" } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      try {
+        const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_api_key: "new-rotated-key" }),
+        });
+        expect(res.status).toBe(200);
+        expect(fetchMock).toHaveBeenCalledWith(
+          expect.stringContaining("/api/v2/pass-template/tmpl-guard/describe"),
+          expect.anything(),
+        );
+      } finally {
+        await cleanup();
+        await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_template_id: null, wallet_api_key_enc: null } });
+      }
+    });
+
+    it("rejects a new API key with 409 when it can't reach the event's current template (wrong account)", async () => {
+      await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_template_id: "tmpl-guard" } });
+      const { cleanup } = await seedIssuedWalletPass();
+      vi.spyOn(PassCreatorClient.prototype, "describeTemplate").mockRejectedValueOnce(
+        new WalletProviderError("wallet_provider_unauthorized", "rejected"),
+      );
+
+      try {
+        const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_api_key: "wrong-account-key" }),
+        });
+        expect(res.status).toBe(409);
+        const body = (await res.json()) as { error: string };
+        expect(body.error).toBe("wallet_provider_unauthorized");
+
+        const row = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_SET } });
+        expect(row.wallet_api_key_enc).toBeNull();
+      } finally {
+        await cleanup();
+        await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_template_id: null } });
+      }
+    });
+
+    it("allows a new API key with no live check when the event has no issued wallet passes", async () => {
+      const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+        method: "PATCH",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet_api_key: "fresh-key" }),
+      });
+      expect(res.status).toBe(200);
+
+      await prisma.event.update({ where: { id: EVENT_SET }, data: { wallet_api_key_enc: null } });
     });
   });
 });
