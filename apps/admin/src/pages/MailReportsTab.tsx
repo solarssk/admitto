@@ -194,104 +194,104 @@ export const MailReportsTab = memo(function MailReportsTab({
 
   if (!data) return null;
 
-  if (data.delivery.total_attempts === 0) {
-    return (
-      <EmptyState
-        icon={<i className="ti ti-mail-off" aria-hidden="true" />}
-        title="No emails sent yet"
-        description="This tab fills in once ticket emails start going out for this event."
-      />
-    );
-  }
-
   return (
     <>
-      <div className="wallets-panels">
-        <Card title="Email delivery">
-          <p className="wallets-description">
-            Every attempt to send an email for this event, including resends. A resend counts as a new attempt, so this is attempts, not attendees.
-          </p>
-          <div className="wallets-adoption">
-            <ReportsDonutChart
-              slices={statusSlices(data.delivery.by_status)}
-              centerValue={data.delivery.successful}
-              centerLabel="successful"
-              unit="attempt"
-              isActive={isActive}
-            />
-            <div className="wallets-adoption__breakdown">
-              <BreakdownRows rows={statusBreakdownRows(data.delivery.by_status, data.delivery.total_attempts)} />
-            </div>
+      {data.delivery.total_attempts === 0 ? (
+        <EmptyState
+          icon={<i className="ti ti-mail-off" aria-hidden="true" />}
+          title="No emails sent yet"
+          description="Delivery, reach, and template analytics fill in once ticket emails start going out for this event."
+        />
+      ) : (
+        <>
+          <div className="wallets-panels">
+            <Card title="Email delivery">
+              <p className="wallets-description">
+                Every attempt to send an email for this event, including resends. A resend counts as a new attempt, so this is attempts, not attendees.
+              </p>
+              <div className="wallets-adoption">
+                <ReportsDonutChart
+                  slices={statusSlices(data.delivery.by_status)}
+                  centerValue={data.delivery.successful}
+                  centerLabel="successful"
+                  unit="attempt"
+                  isActive={isActive}
+                />
+                <div className="wallets-adoption__breakdown">
+                  <BreakdownRows rows={statusBreakdownRows(data.delivery.by_status, data.delivery.total_attempts)} />
+                </div>
+              </div>
+            </Card>
+            <Card title="Attendee reach">
+              <p className="wallets-description">
+                Attendees who got at least one email successfully, no matter how many attempts it took.
+              </p>
+              <div className="wallets-adoption">
+                <ReportsDonutChart
+                  slices={reachSlices(data.attendee_reach)}
+                  centerValue={data.attendee_reach.reached}
+                  centerLabel="reached"
+                  unit="attendee"
+                  isActive={isActive}
+                />
+                <div className="wallets-adoption__breakdown">
+                  <BreakdownRows rows={reachBreakdownRows(data.attendee_reach, data.total_attendees)} />
+                </div>
+              </div>
+            </Card>
           </div>
-        </Card>
-        <Card title="Attendee reach">
-          <p className="wallets-description">
-            Attendees who got at least one email successfully, no matter how many attempts it took.
-          </p>
-          <div className="wallets-adoption">
-            <ReportsDonutChart
-              slices={reachSlices(data.attendee_reach)}
-              centerValue={data.attendee_reach.reached}
-              centerLabel="reached"
-              unit="attendee"
-              isActive={isActive}
-            />
-            <div className="wallets-adoption__breakdown">
-              <BreakdownRows rows={reachBreakdownRows(data.attendee_reach, data.total_attendees)} />
-            </div>
-          </div>
-        </Card>
-      </div>
 
-      <div className="wallets-panels">
-        <Card title="Initial vs resend" className="wallets-list-card">
-          <p className="wallets-description">
-            Every delivery attempt for this event, split into first tries and resends.
-          </p>
-          <BreakdownRows rows={purposeRows(data.by_purpose, data.delivery.total_attempts)} />
-        </Card>
-        <Card title="Delivery by template" className="wallets-list-card">
-          <p className="wallets-description">Success rate for each email template sent to this event&rsquo;s attendees.</p>
-          <BreakdownRows rows={templateRows(data.by_template)} />
-        </Card>
-      </div>
-
-      <div className="wallets-panels">
-        <Card title="Emails sent over time" className="wallets-chart-card">
-          <p className="wallets-description">The running total of emails successfully sent over time.</p>
-          {data.sent_by_day.length === 0 ? (
-            <EmptyState
-              icon={<i className="ti ti-chart-line" aria-hidden="true" />}
-              title="Nothing sent successfully yet"
-              description="This chart fills in once at least one email is delivered successfully."
-            />
-          ) : (
-            <ReportsCumulativeAreaChart
-              data={data.sent_by_day}
-              gradientId="mail-cumulative-fill"
-              seriesName="Successful sends"
-              isActive={isActive}
-            />
-          )}
-        </Card>
-        <Card title="Ticket page opened">
-          <p className="wallets-description">
-            How many reached attendees opened their ticket page online. This tracks the ticket link, not whether the email itself was opened.
-          </p>
-          <div className="wallets-adoption">
-            <ReportsDonutChart
-              slices={viewedSlices(data.ticket_viewed)}
-              centerValue={data.ticket_viewed.viewed}
-              centerLabel="opened page"
-              unit="attendee"
-              isActive={isActive}
-            />
-            <div className="wallets-adoption__breakdown">
-              <BreakdownRows rows={viewedBreakdownRows(data.ticket_viewed)} />
-            </div>
+          <div className="wallets-panels">
+            <Card title="Initial vs resend" className="wallets-list-card">
+              <p className="wallets-description">
+                Every delivery attempt for this event, split into first tries and resends.
+              </p>
+              <BreakdownRows rows={purposeRows(data.by_purpose, data.delivery.total_attempts)} />
+            </Card>
+            <Card title="Delivery by template" className="wallets-list-card">
+              <p className="wallets-description">Success rate for each email template sent to this event&rsquo;s attendees.</p>
+              <BreakdownRows rows={templateRows(data.by_template)} />
+            </Card>
           </div>
-        </Card>
-      </div>
+
+          <div className="wallets-panels">
+            <Card title="Emails sent over time" className="wallets-chart-card">
+              <p className="wallets-description">The running total of emails successfully sent over time.</p>
+              {data.sent_by_day.length === 0 ? (
+                <EmptyState
+                  icon={<i className="ti ti-chart-line" aria-hidden="true" />}
+                  title="Nothing sent successfully yet"
+                  description="This chart fills in once at least one email is delivered successfully."
+                />
+              ) : (
+                <ReportsCumulativeAreaChart
+                  data={data.sent_by_day}
+                  gradientId="mail-cumulative-fill"
+                  seriesName="Successful sends"
+                  isActive={isActive}
+                />
+              )}
+            </Card>
+            <Card title="Ticket page opened">
+              <p className="wallets-description">
+                How many reached attendees opened their ticket page online. This tracks the ticket link, not whether the email itself was opened.
+              </p>
+              <div className="wallets-adoption">
+                <ReportsDonutChart
+                  slices={viewedSlices(data.ticket_viewed)}
+                  centerValue={data.ticket_viewed.viewed}
+                  centerLabel="opened page"
+                  unit="attendee"
+                  isActive={isActive}
+                />
+                <div className="wallets-adoption__breakdown">
+                  <BreakdownRows rows={viewedBreakdownRows(data.ticket_viewed)} />
+                </div>
+              </div>
+            </Card>
+          </div>
+        </>
+      )}
 
       <div className="wallets-panels">
         <Card title="Admission rate by email status" className="wallets-card--centered">

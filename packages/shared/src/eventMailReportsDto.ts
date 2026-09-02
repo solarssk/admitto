@@ -62,13 +62,18 @@ export interface EventMailReportsResponse {
     reached: { total: number; admitted: number; pct: number };
     not_reached: { total: number; admitted: number; pct: number };
   };
-  /** The event journey funnel: every attendee, how many email actually reached, how many of those
-   * (or anyone else) installed a wallet pass, and how many attended. Each stage is an independent
-   * count of the whole attendee list (not "of the previous stage"), so e.g. wallet_installed can
-   * include an attendee email never reached (they could still get the wallet link another way) -
-   * this deliberately mirrors the real, sometimes non-monotonic event journey rather than forcing
-   * a strictly narrowing funnel shape. wallet_installed uses the exact same "confirmed" definition
-   * (active on a platform the event still offers) as EventWalletReportsResponse.adoption.confirmed. */
+  /** The event journey funnel: every attendee, how many actually got their ticket email, how many
+   * of those (or anyone else) installed a wallet pass, and how many attended. Each stage is an
+   * independent count of the whole attendee list (not "of the previous stage"), so e.g.
+   * wallet_installed can include an attendee whose ticket email never reached (they could still
+   * get the wallet link another way) - this deliberately mirrors the real, sometimes
+   * non-monotonic event journey rather than forcing a strictly narrowing funnel shape.
+   * reached_by_email is deliberately narrower than attendee_reach/admission_by_email above -
+   * scoped to genuine ticket-email sends only (not any successful email, e.g. a Communication
+   * campaign reminder), since this stage is documented as "got a ticket email" specifically, the
+   * entry point of a causal chain toward wallet install and attendance. wallet_installed uses the
+   * exact same "confirmed" definition (active on a platform the event still offers) as
+   * EventWalletReportsResponse.adoption.confirmed. */
   funnel: {
     total_attendees: number;
     reached_by_email: number;

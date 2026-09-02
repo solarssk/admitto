@@ -1310,6 +1310,22 @@ async function loadMailReportsAggregates(
   const reachedFilter: Prisma.AttendeeWhereInput = {
     email_deliveries: { some: { status: { in: successStatuses } } },
   };
+  // Narrower than reachedFilter above - the funnel's "Reached by email" stage is documented (UI
+  // copy, wiki) as "got a ticket email" specifically, since it's the entry point of a causal
+  // chain toward wallet install and attendance, not attendee_reach's general any-email
+  // reachability metric. template_id: null OR template.name === "ticket" scopes this to genuine
+  // ticket-email sends only, same reasoning and resolution as WALLET_PASS_AGGREGATE_SELECT's own
+  // email_deliveries filter above - without it, an attendee who only ever got a Communication
+  // campaign send using a different template (a reminder/announcement) would count as reached
+  // here even if their actual ticket email bounced or was never sent (bot review).
+  const ticketReachedFilter: Prisma.AttendeeWhereInput = {
+    email_deliveries: {
+      some: {
+        status: { in: successStatuses },
+        OR: [{ template_id: null }, { template: { name: "ticket" } }] as Prisma.EmailDeliveryWhereInput[],
+      },
+    },
+  };
   const confirmedWalletFilter = buildConfirmedWalletFilter(enabledPlatforms);
 
   const [
@@ -1325,6 +1341,7 @@ async function loadMailReportsAggregates(
     notReachedAdmitted,
     walletInstalledCount,
     attendedCount,
+    ticketReachedAttendees,
   ] = await Promise.all([
     db.attendee.count({ where: { event_id: eventId } }),
     db.emailDelivery.groupBy({
@@ -1394,6 +1411,7 @@ async function loadMailReportsAggregates(
     }),
     db.attendee.count({ where: { event_id: eventId, ...confirmedWalletFilter } }),
     db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
+    db.attendee.count({ where: { event_id: eventId, ...ticketReachedFilter } }),
   ]);
 
   const totalAttempts = byStatusRaw.reduce((sum, row) => sum + row._count._all, 0);
@@ -1453,7 +1471,7 @@ async function loadMailReportsAggregates(
     },
     funnel: {
       total_attendees: totalAttendees,
-      reached_by_email: reachedAttendees,
+      reached_by_email: ticketReachedAttendees,
       wallet_installed: walletInstalledCount,
       attended: attendedCount,
     },

@@ -143,6 +143,11 @@ async function seed(client: PrismaClient) {
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.emailDelivery.deleteMany({ where: { event_id: { in: eventIds } } });
+  // MailTemplate.scope_id is a plain string (polymorphic "organization" | "event" scope, not a
+  // real FK - see the model's own comment), so it doesn't cascade off event.deleteMany below;
+  // must run after emailDelivery.deleteMany above (FK), or a re-run trips the model's own
+  // @@unique([scope_type, scope_id, name]) on the funnel ticket-scoping regression fixture.
+  await client.mailTemplate.deleteMany({ where: { scope_type: "event", scope_id: { in: eventIds } } });
   await client.walletPass.deleteMany({ where: { attendee: { event_id: { in: eventIds } } } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.ticketType.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -771,6 +776,23 @@ async function seed(client: PrismaClient) {
     ],
   });
 
+  // Regression fixture for funnel.reached_by_email's ticket-only scoping (bot review): a real
+  // non-ticket MailTemplate, not just a template_label_snapshot string, so ATT_MAIL_RECOVERED's
+  // only successful delivery genuinely resolves to a non-ticket template_id rather than the
+  // default null (which the ticket filter's own OR would otherwise still match).
+  const reminderTemplate = await client.mailTemplate.create({
+    data: {
+      scope_type: "event",
+      scope_id: EVENT_MAIL,
+      name: "reminder",
+      label: "Reminder",
+      subject_template: "Reminder",
+      body_template: "<mjml><mj-body></mj-body></mjml>",
+      template_format: "mjml",
+      compiled_html_template: "<html></html>",
+    },
+  });
+
   // Attendee-level reach must dedup across purposes: ATT_MAIL_RECOVERED's initial send hard-bounced,
   // but its resend succeeded - reads as reached exactly once, matching
   // EventMailReportsResponse.attendee_reach's own doc comment, not per-delivery.
@@ -807,6 +829,7 @@ async function seed(client: PrismaClient) {
         // must still pick this delivery up. Regression coverage: this row was silently dropped from
         // the chart before that fix.
         sent_at: new Date("2027-09-02T10:00:00.000Z"),
+        template_id: reminderTemplate.id,
         template_label_snapshot: "Reminder",
       },
       {
@@ -2933,12 +2956,16 @@ describe("GET /api/admin/events/:eventId/reports/mail", () => {
       not_reached: { total: 4, admitted: 1, pct: 25 },
     });
 
-    // funnel: wallet_installed (2) is its own independent count, not gated on reach -
-    // ATT_MAIL_ACCEPTED was both reached and installed a pass, but ATT_MAIL_QUEUED installed one
-    // despite never having a working email delivery at all, proving the funnel doesn't force a
-    // strictly narrowing shape. attended (3) counts every admitted attendee regardless of reach,
-    // including ATT_MAIL_FAILED from the admission_by_email case above.
-    expect(body.funnel).toEqual({ total_attendees: 7, reached_by_email: 3, wallet_installed: 2, attended: 3 });
+    // funnel.reached_by_email (2) is narrower than attendee_reach.reached (3) above - ATT_MAIL_RECOVERED
+    // counts as reached generally (its resend succeeded), but that resend used the "Reminder"
+    // MailTemplate, not a genuine ticket send, so it's excluded from this ticket-only stage (bot
+    // review: the funnel's own "got a ticket email" wording would otherwise be misleading here).
+    // wallet_installed (2) is its own independent count, not gated on reach - ATT_MAIL_ACCEPTED was
+    // both reached and installed a pass, but ATT_MAIL_QUEUED installed one despite never having a
+    // working email delivery at all, proving the funnel doesn't force a strictly narrowing shape.
+    // attended (3) counts every admitted attendee regardless of reach, including ATT_MAIL_FAILED
+    // from the admission_by_email case above.
+    expect(body.funnel).toEqual({ total_attendees: 7, reached_by_email: 2, wallet_installed: 2, attended: 3 });
   });
 });
 
