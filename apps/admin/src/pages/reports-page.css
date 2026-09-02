@@ -660,7 +660,8 @@
   flex-direction: column;
 }
 
-.wallets-card--centered .wallets-compare {
+.wallets-card--centered .wallets-compare,
+.wallets-card--centered .mail-funnel {
   flex: 1;
 }
 
@@ -963,4 +964,90 @@
 .wallets-compare-arrow {
   font-size: clamp(11px, calc(var(--ring-scale) * 16px), 16px);
   color: var(--border-strong);
+}
+
+/* ---- Mail tab: event journey funnel - four sequential stage counts, deliberately not a
+   strictly narrowing conversion funnel (a later stage can include an attendee who skipped an
+   earlier one - e.g. a wallet pass installed by an attendee email never reached another way), so
+   each stage is its own share of the whole attendee list, not "of the previous stage". A
+   connected vertical stepper (dot + line per stage) rather than the BreakdownRows list every
+   other card here uses - that list reads as a category legend (same shape as "Delivery by
+   template"), which loses the sense of sequence this card exists to show. Vertical by
+   construction, unlike an earlier arrow-row layout that wrapped into a confusing grid once the
+   card narrowed on mobile - a stepper never runs out of horizontal space to begin with. Renders
+   inside a .wallets-card--centered Card (same as "Admission rate by email status" beside it), so
+   `.mail-funnel` gets `flex: 1` there too (see that class's own comment). */
+.mail-funnel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.mail-funnel__row {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.mail-funnel__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 12px;
+  flex: none;
+}
+
+.mail-funnel__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--primary);
+  flex: none;
+  margin-top: 4px;
+}
+
+.mail-funnel__line {
+  width: 2px;
+  flex: 1;
+  background: var(--border-strong);
+  margin: 3px 0;
+}
+
+.mail-funnel__row:last-child .mail-funnel__line {
+  display: none;
+}
+
+.mail-funnel__body {
+  flex: 1;
+  padding-bottom: var(--space-4);
+}
+
+.mail-funnel__row:last-child .mail-funnel__body {
+  padding-bottom: 0;
+}
+
+.mail-funnel__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.mail-funnel__label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.mail-funnel__value {
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.mail-funnel__pct {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-top: 2px;
 }
