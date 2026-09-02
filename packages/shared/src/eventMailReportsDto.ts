@@ -36,9 +36,14 @@ export interface EventMailReportsResponse {
     successful: number;
     successful_pct: number;
   }>;
-  /** Per-day count of successful deliveries (EmailDelivery.accepted_at) in the event's own
-   * timezone, ascending, with a running total - same shape/zero-fill convention as
-   * EventWalletReportsResponse.issued_by_day. */
+  /** Per-day count of successful deliveries, bucketed by whichever of EmailDelivery.accepted_at,
+   * sent_at, or delivered_at is set first (mirrors earliestDeliverySuccessAt's own precedence in
+   * reports-routes.ts - "accepted" is the only status any configured mailer adapter actually
+   * reports today, so sent_at/delivered_at only ever apply once a future pipeline stage sets
+   * them), in the event's own timezone, ascending, with a running total - same shape/zero-fill
+   * convention as EventWalletReportsResponse.issued_by_day. Restricted to rows whose *current*
+   * status is still a success status, so a delivery that was accepted and later hard-bounced
+   * (which does not clear accepted_at) doesn't count here. */
   sent_by_day: Array<{ date: string; count: number; cumulative: number }>;
   /** Of the attendees email actually reached (attendee_reach.reached), how many went on to open
    * the public ticket page at least once (EmailDelivery.viewed_at) - a real engagement signal

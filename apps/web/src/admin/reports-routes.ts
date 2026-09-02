@@ -1329,12 +1329,17 @@ async function loadMailReportsAggregates(
     // yet - see earliestDeliverySuccessAt's own comment above), and those only ever set sent_at/
     // delivered_at, never accepted_at. Same precedence earliestDeliverySuccessAt already uses for
     // the wallet tap-time anchor, so a successful delivery can't silently drop off this chart.
+    // status IN successStatuses (not just a non-null timestamp) - applyBounceResult sets a hard
+    // bounce's status to "bounced" without clearing accepted_at, so a timestamp-only filter would
+    // still count an accepted-then-bounced delivery as a "successful send" here (bot review).
     db.$queryRaw<Array<{ day: string; count: bigint }>>`
       SELECT
         TO_CHAR(DATE_TRUNC('day', (COALESCE(accepted_at, sent_at, delivered_at) AT TIME ZONE 'UTC') AT TIME ZONE ${timeZone}), 'YYYY-MM-DD') AS day,
         COUNT(*)::bigint AS count
       FROM "EmailDelivery"
-      WHERE event_id = ${eventId} AND COALESCE(accepted_at, sent_at, delivered_at) IS NOT NULL
+      WHERE event_id = ${eventId}
+        AND status IN (${Prisma.join(successStatuses)})
+        AND COALESCE(accepted_at, sent_at, delivered_at) IS NOT NULL
       GROUP BY 1
       ORDER BY 1
     `,

@@ -1,14 +1,8 @@
 import { memo } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
   PolarAngleAxis,
   RadialBar,
   RadialBarChart,
@@ -24,6 +18,7 @@ import type { EventWalletReportsResponse } from "../api/types.js";
 import { useReportFetch } from "../hooks/useReportFetch.js";
 import { viewerLocalTime } from "../utils/event-dates.js";
 import { BreakdownRows, pctOf, type BreakdownRow } from "./ReportsPage.js";
+import { preventFocusRing, ReportsCumulativeAreaChart, ReportsDonutChart, type ReportsDonutSlice } from "./reports-charts.js";
 // This component's own .wallets-* rules live in reports-page.css alongside ReportsPage's own
 // styles (one card-grid family, not a separate stylesheet) - importing it here too, not just
 // relying on ReportsPage.tsx already having it loaded, matches this app's own convention that
@@ -103,20 +98,6 @@ const LIFECYCLE_COLORS: Record<WalletLifecycleKey, string> = {
   never_installed: GRAY_400,
 };
 
-/** Recharts gives every chart's root <svg> tabindex="0" and role="application" by default (its
- * own built-in keyboard-accessibility layer), which a plain mouse click also focuses. A
- * `.recharts-surface:focus { outline: none }` rule (reports-page.css) suppresses the resulting
- * outline in most browsers, but :focus-visible's mouse-vs-keyboard heuristic isn't guaranteed
- * consistent for a non-standard interactive element like this across every browser - confirmed
- * still showing a raw focus ring on click in one real-world test despite that CSS rule matching
- * correctly in automated testing. Preventing the mousedown's default action stops the browser
- * from moving focus there at all on a click, at the event level rather than relying on any CSS
- * pseudo-class - a real Tab keypress still focuses and shows the CSS rule's ring normally, since
- * keyboard navigation doesn't fire mousedown. */
-function preventFocusRing(event: ReactMouseEvent) {
-  event.preventDefault();
-}
-
 /** HintLabel next to the card title, not a bare icon in the header's actions slot - the app's
  * own established convention for a card-title info icon (ReportsPage.tsx's "Attendance
  * confirmation" card, EventSettingsPage.tsx, AccountPage.tsx, ...) puts it inline with the title
@@ -166,7 +147,7 @@ function AdoptionGauge({
     { name: "Issued", value: issuedPct, fill: PRIMARY },
   ];
   return (
-    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+    <div // NOSONAR: mousedown-only, see preventFocusRing above; not an interactive element itself
       className="wallets-gauge-overlay"
       role="presentation"
       onMouseDown={preventFocusRing}
@@ -217,12 +198,6 @@ function AdoptionGauge({
  * (multiple) - not alphabetical,
  * not by expected size, but grouping like with like reads clearest in a legend a viewer scans top
  * to bottom (PO review). */
-interface PlatformSlice {
-  label: string;
-  color: string;
-  count: number;
-}
-
 /** Single source of truth for the donut's slices and the breakdown list's rows - both need the
  * exact same set, in the exact same order, and two independent hand-written copies could silently
  * drift apart later. Every platform's slice - Apple, Google, and Samsung alike - and "more than
@@ -239,7 +214,7 @@ interface PlatformSlice {
 function platformSlices(
   platform: EventWalletReportsResponse["platform"],
   enabledPlatforms: EnabledWalletPlatforms,
-): PlatformSlice[] {
+): ReportsDonutSlice[] {
   return [
     enabledPlatforms.apple && { label: "Apple Wallet", color: APPLE_ORANGE, count: platform.apple_only },
     enabledPlatforms.google && { label: "Google Wallet", color: GOOGLE_BLUE, count: platform.google_only },
@@ -248,74 +223,7 @@ function platformSlices(
     enabledPlatforms.samsung && { label: "Samsung Wallet", color: SAMSUNG_TEAL, count: platform.samsung_only },
     enabledPlatforms.apple &&
       enabledPlatforms.google && { label: "More than one wallet", color: MULTI_PURPLE, count: platform.both },
-  ].filter((slice): slice is PlatformSlice => slice !== false);
-}
-
-/** Own legend replaced by the same fixed-circle-plus-BreakdownRows shape as AdoptionGauge, not
- * the chart library's built-in one - a donut's built-in legend claims its own slice of the
- * chart's width, so at the same container width this circle rendered visibly smaller than
- * AdoptionGauge's ring beside it (a different chart type with a different internal layout wasn't
- * a coincidence, it was the actual cause). Both cards now build the same "fixed circle | flexible
- * list" row, so the two circles size and center identically at every breakpoint instead of two
- * unrelated layouts happening to look similar at one specific width. Shared by PlatformDonut and
- * WalletLifecycleDonut below - both chart a set of mutually-exclusive slices the same way, only
- * the slices themselves and the center value/label differ (SonarCloud new-code duplication). */
-function DonutChart({
-  slices,
-  centerValue,
-  centerLabel,
-  isActive,
-}: Readonly<{ slices: PlatformSlice[]; centerValue: number; centerLabel: string; isActive: boolean }>) {
-  return (
-    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
-      className="wallets-gauge-overlay"
-      role="presentation"
-      onMouseDown={preventFocusRing}
-    >
-      {/* isActive-gated mount - see AdoptionGauge's own comment above for why. */}
-      {isActive && (
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart style={{ fontFamily: FONT_FAMILY }}>
-            <Pie
-              data={slices}
-              dataKey="count"
-              nameKey="label"
-              // Same 90% outer radius as AdoptionGauge's own ring above, both within the same 256px
-              // canvas - both charts are the same library now, so matching their own radius
-              // percentages directly keeps the two circles the same outer diameter, without the
-              // cross-chart-type "customScale" fudge factor the old ApexCharts version needed (a
-              // donut and a radialBar filled their own canvases by very different amounts there).
-              innerRadius="58%"
-              outerRadius="90%"
-              stroke="#ffffff"
-              strokeWidth={2}
-              // Both native label paths off - see AdoptionGauge above for why the HTML overlay
-              // exists at all: its center text is a standardized fs-h1/fs-xs pair shared by both
-              // gauge cards, not each chart's own native label at its own ad hoc size. The
-              // per-slice percentage is redundant with the breakdown list's own "<count> · <pct>%"
-              // column anyway.
-              label={false}
-              labelLine={false}
-              isAnimationActive={false}
-            >
-              {slices.map((slice) => (
-                <Cell key={slice.label} fill={slice.color} />
-              ))}
-            </Pie>
-            {/* Recharts' default tooltip position for a Pie tracks the cursor, which for a donut
-               this size lands inside the empty center hole - directly on top of the HTML center
-               label overlay above. Pinned to just below the 256px chart instead (x still follows
-               the hovered slice) so it never competes with that overlay. */}
-            <Tooltip formatter={(value) => `${value} pass${value === 1 ? "" : "es"}`} position={{ y: 256 }} />
-          </PieChart>
-        </ResponsiveContainer>
-      )}
-      <div className="wallets-gauge-overlay__center">
-        <span className="wallets-gauge-overlay__value">{centerValue}</span>
-        <span className="wallets-gauge-overlay__label">{centerLabel}</span>
-      </div>
-    </div>
-  );
+  ].filter((slice): slice is ReportsDonutSlice => slice !== false);
 }
 
 function PlatformDonut({
@@ -330,10 +238,11 @@ function PlatformDonut({
   isActive: boolean;
 }>) {
   return (
-    <DonutChart
+    <ReportsDonutChart
       slices={platformSlices(platform, enabledPlatforms)}
       centerValue={installed}
       centerLabel="installed"
+      unit="pass"
       isActive={isActive}
     />
   );
@@ -360,7 +269,7 @@ function platformBreakdownRows(
  * conceptually the same kind of breakdown. Centers on `removed` (not the `active` count
  * AdoptionGauge/PlatformDonut center on) - the removal count is the one number this card exists to
  * surface that no other card on this tab can show at all (see the DTO's own doc comment). */
-function walletLifecycleSlices(lifecycle: EventWalletReportsResponse["wallet_lifecycle"]): PlatformSlice[] {
+function walletLifecycleSlices(lifecycle: EventWalletReportsResponse["wallet_lifecycle"]): ReportsDonutSlice[] {
   return (Object.keys(LIFECYCLE_LABELS) as WalletLifecycleKey[]).map((key) => ({
     label: LIFECYCLE_LABELS[key],
     color: LIFECYCLE_COLORS[key],
@@ -373,10 +282,11 @@ function WalletLifecycleDonut({
   isActive,
 }: Readonly<{ lifecycle: EventWalletReportsResponse["wallet_lifecycle"]; isActive: boolean }>) {
   return (
-    <DonutChart
+    <ReportsDonutChart
       slices={walletLifecycleSlices(lifecycle)}
       centerValue={lifecycle.removed}
       centerLabel="removed"
+      unit="pass"
       isActive={isActive}
     />
   );
@@ -395,140 +305,11 @@ function walletLifecycleBreakdownRows(
   }));
 }
 
-/** Rounds a normalized step (roughStep / magnitude, so always in [1, 10)) up to the nearest of the
- * classic "nice number" progression 1-2-5-10. */
-function niceStepMultiplier(normalized: number): number {
-  if (normalized <= 1) return 1;
-  if (normalized <= 2) return 2;
-  if (normalized <= 5) return 5;
-  return 10;
-}
-
-/** Picks a "nice" whole-number step/max for a count axis (classic d3-style nice-number scaling) -
- * a charting library's own default tick generation typically divides min..max into a fixed number
- * of equal ticks regardless of the data's actual units, which for a small pass count (e.g. max 1)
- * can produce fractional labels (0, 0.2, 0.4, 0.6, 0.8, 1) that can never really occur since
- * passes only come in whole units. `max <= 1` gets one tick of headroom above the actual max (2,
- * not 1) rather than matching it exactly - the general step/rounding logic below sometimes ends up
- * with headroom too as a side effect of rounding to a "nice" step (round(45)->50), sometimes not
- * (round(8)->8), but max<=1 always lands exactly on 1 with none, which reads as the line pinned to
- * the axis's own ceiling with nowhere left to grow (PO review) - this one small-count case is
- * common enough (a new/small event) to fix explicitly rather than leaving to chance. */
-/** Recharts' own YAxis default width (60px) reserves a fixed gutter for tick labels regardless of
- * how narrow they actually are, leaving a visibly empty band to the axis's own left - measured
- * directly (Canvas measureText at 11px, the same size these ticks render at, not assumed): a
- * single digit is ~7px wide, three digits ~19px, four ~26px - genuinely different gutters for a
- * small event's "2" versus a large one's "1000", so this computes from the real axis max's own
- * digit count rather than picking one flat guess. +16 covers the tick mark plus Recharts' own
- * internal label padding on top of the measured text width itself. */
-export function yAxisWidthForCount(axisMax: number): number {
-  return Math.ceil(String(Math.round(axisMax)).length * 6.5) + 16;
-}
-
 // Percentage axes (Time to wallet install, Devices per attendee) share a fixed [0, 100] domain, so
-// unlike yAxisWidthForCount above their longest possible label is always the same one value -
-// "100%", measured the same way (Canvas measureText, 11px): ~29px + the same +16 buffer.
+// unlike reports-charts.tsx's own yAxisWidthForCount their longest possible label is always the
+// same one value - "100%", measured the same way (Canvas measureText, 11px): ~29px + the same
+// +16 buffer.
 const PERCENT_Y_AXIS_WIDTH = 46;
-
-export function niceCountAxis(max: number): { axisMax: number; tickAmount: number } {
-  if (max <= 1) return { axisMax: 2, tickAmount: 2 };
-  const roughStep = max / 5;
-  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
-  const normalized = roughStep / magnitude;
-  // Counts are always whole numbers - clamp to at least 1 so a small max (e.g. 2 or 3) can't pick
-  // a fractional step like 0.5 the way the raw "nice number" progression otherwise would.
-  const step = Math.max(1, niceStepMultiplier(normalized) * magnitude);
-  const tickAmount = Math.ceil(max / step);
-  return { axisMax: tickAmount * step, tickAmount };
-}
-
-/** Area chart via Recharts, not hand-drawn SVG - an earlier hand-rolled version had two real bugs
- * (a CSS specificity conflict on the last axis label, and axis text distorted by the non-uniform
- * viewBox scaling a hand-built responsive chart needs). A real charting library's datetime axis
- * avoids both classes of bug entirely. */
-function CumulativeChart({
-  data,
-  isActive,
-}: Readonly<{ data: EventWalletReportsResponse["issued_by_day"]; isActive: boolean }>) {
-  if (data.length === 0) {
-    return <p className="wallets-description">No passes issued yet.</p>;
-  }
-
-  // Noon UTC, not midnight - a date-only value pinned to midnight can render as the previous
-  // calendar day once the chart formats it in the viewer's own local timezone.
-  const points = data.map((d) => ({ date: Date.parse(`${d.date}T12:00:00Z`), value: d.cumulative }));
-  // The first real day's cumulative is never 0 (it's already counting that day's own passes), so
-  // without this the line starts flat at that count instead of visibly rising from 0.
-  points.unshift({ date: points[0]!.date - 24 * 60 * 60 * 1000, value: 0 });
-  // "Nice" whole-number axis, not Recharts' own default tick generation - a small pass count
-  // (e.g. max 1) can otherwise produce fractional labels (0, 0.2, 0.4, 0.6, 0.8, 1) that can never
-  // really occur since passes only come in whole units.
-  const { axisMax, tickAmount } = niceCountAxis(data.at(-1)!.cumulative);
-  const yTicks = Array.from({ length: tickAmount + 1 }, (_, i) => (i * axisMax) / tickAmount);
-  const dayFormatter = (ts: number) => new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short" }).format(ts);
-  return (
-    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
-      role="presentation"
-      className="wallets-chart-card__chart"
-      onMouseDown={preventFocusRing}
-    >
-      {/* isActive-gated mount - see AdoptionGauge's own comment above for why. */}
-      {isActive && (
-        <ResponsiveContainer width="100%" height="100%" minHeight={230}>
-          <AreaChart data={points} style={{ fontFamily: FONT_FAMILY }}>
-          <defs>
-            <linearGradient id="wallets-cumulative-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={PRIMARY} stopOpacity={0.3} />
-              <stop offset="100%" stopColor={PRIMARY} stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid stroke={BORDER} strokeDasharray="3 3" />
-          <XAxis
-            dataKey="date"
-            type="number"
-            domain={["dataMin", "dataMax"]}
-            // Explicit day-only format - the data is per calendar day, so a default auto-format
-            // (which shows a time-of-day component on a short date range) would add a meaningless
-            // "12:00".
-            tickFormatter={dayFormatter}
-            tick={{ fontSize: 11, fill: TEXT_MUTED }}
-            axisLine={{ stroke: BORDER }}
-            tickLine={{ stroke: BORDER }}
-          />
-          <YAxis
-            domain={[0, axisMax]}
-            ticks={yTicks}
-            tickFormatter={(v) => Math.round(Number(v)).toString()}
-            tick={{ fontSize: 11, fill: TEXT_MUTED }}
-            width={yAxisWidthForCount(axisMax)}
-          />
-          <Tooltip
-            labelFormatter={(label) =>
-              new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(
-                Number(label),
-              )
-            }
-          />
-          <Area
-            type="monotone"
-            dataKey="value"
-            name="Passes issued"
-            stroke={PRIMARY}
-            strokeWidth={2.5}
-            fill="url(#wallets-cumulative-fill)"
-            dot={false}
-            // Animations off - the entrance animation redraws the line growing left-to-right for no
-            // benefit: the axis ticks here are already fixed by niceCountAxis and the explicit day
-            // format above rather than recomputed as the animation settles, so nothing about this
-            // chart needs the motion.
-            isAnimationActive={false}
-          />
-        </AreaChart>
-        </ResponsiveContainer>
-      )}
-    </div>
-  );
-}
 
 function ticketTypeAdoptionRows(rows: EventWalletReportsResponse["by_ticket_type"]): BreakdownRow[] {
   return [...rows]
@@ -625,7 +406,7 @@ interface BucketChartRow {
  * new-code duplication, PR review). */
 function BucketBarChart({ rows, isActive }: Readonly<{ rows: BucketChartRow[]; isActive: boolean }>) {
   return (
-    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+    <div // NOSONAR: mousedown-only, see preventFocusRing above; not an interactive element itself
       role="presentation"
       className="wallets-chart-card__chart"
       onMouseDown={preventFocusRing}
@@ -718,7 +499,7 @@ function AdmissionGauge({
 }: Readonly<{ pct: number; color: string; isActive: boolean }>) {
   return (
     <div className="wallets-compare-ring">
-      <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+      <div // NOSONAR: mousedown-only, see preventFocusRing above; not an interactive element itself
         className="wallets-admission-gauge"
         role="presentation"
         onMouseDown={preventFocusRing}
@@ -926,7 +707,16 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       <div className="wallets-panels">
         <Card title="Cumulative passes issued" className="wallets-chart-card">
           <p className="wallets-description">The running total of tickets added to attendees&rsquo; wallets over time.</p>
-          <CumulativeChart data={data.issued_by_day} isActive={isActive} />
+          {data.issued_by_day.length === 0 ? (
+            <p className="wallets-description">No passes issued yet.</p>
+          ) : (
+            <ReportsCumulativeAreaChart
+              data={data.issued_by_day}
+              gradientId="wallets-cumulative-fill"
+              seriesName="Passes issued"
+              isActive={isActive}
+            />
+          )}
         </Card>
         <Card title="Time to wallet install" className="wallets-chart-card">
           <p className="wallets-description">
