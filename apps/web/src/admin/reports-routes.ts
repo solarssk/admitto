@@ -1699,6 +1699,12 @@ function walletCsvPlatformFields(
   const appleActive = pass?.apple_active_registrations ?? 0;
   const googleActive = pass?.google_active_registrations ?? 0;
   const samsungActive = pass?.samsung_active_registrations ?? 0;
+  // Independent statements, not inlined as confirmedPlatformLabel's own call arguments below - a
+  // ternary nested inside another ternary's branch there (synced ? confirmedPlatformLabel(a ? b :
+  // c, ...) : "") is exactly what SonarCloud's S3358 flags.
+  const confirmedAppleActive = enabledPlatforms.apple ? appleActive : 0;
+  const confirmedGoogleActive = enabledPlatforms.google ? googleActive : 0;
+  const confirmedSamsungActive = enabledPlatforms.samsung ? samsungActive : 0;
   return {
     apple: walletPlatformCsvColumns(
       synced && enabledPlatforms.apple ? { active: appleActive, inactive: pass?.apple_inactive_registrations ?? 0 } : null,
@@ -1710,11 +1716,7 @@ function walletCsvPlatformFields(
       synced && enabledPlatforms.samsung ? { active: samsungActive, inactive: pass?.samsung_inactive_registrations ?? 0 } : null,
     ),
     confirmedPlatform: synced
-      ? confirmedPlatformLabel(
-          enabledPlatforms.apple ? appleActive : 0,
-          enabledPlatforms.google ? googleActive : 0,
-          enabledPlatforms.samsung ? samsungActive : 0,
-        )
+      ? confirmedPlatformLabel(confirmedAppleActive, confirmedGoogleActive, confirmedSamsungActive)
       : "",
   };
 }
