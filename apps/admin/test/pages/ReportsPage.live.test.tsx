@@ -144,6 +144,7 @@ function walletFixture(): import("../../src/api/types.js").EventWalletReportsRes
       with_wallet: { total: 1, admitted: 1, pct: 100 },
       without_wallet: { total: 3, admitted: 0, pct: 0 },
     },
+    wallet_lifecycle: { active: 1, removed: 0, never_installed: 1 },
   };
 }
 

@@ -77,4 +77,27 @@ export interface EventWalletReportsResponse {
     with_wallet: { total: number; admitted: number; pct: number };
     without_wallet: { total: number; admitted: number; pct: number };
   };
+  /** What became of every issued pass - mutually exclusive, always summing to exactly
+   * `adoption.got_pass`. Every other number on this DTO answers "how many have a wallet pass
+   * installed right now" (adoption, platform, registrations_per_attendee); this is the only one
+   * that also surfaces passes that were confirmed installed and have since been removed from every
+   * device - a retention/removal signal the rest of the tab has no way to show (PO review: "80
+   * installed, 25 removed before the event" points at a UX/communication problem the adoption
+   * number alone hides). */
+  wallet_lifecycle: {
+    /** At least one active registration on any platform the event still offers - the same
+     * definition `classifyPassPlatform` uses for "confirmed" (platform !== "none"). */
+    active: number;
+    /** Zero active registrations on every enabled platform, but at least one inactive
+     * registration on an enabled platform - the pass was confirmed installed at some point and has
+     * since been removed from every device/account it was ever added to. Deliberately not "any
+     * inactive registration count > 0" on its own: an attendee can have an active registration on
+     * one device and an unrelated inactive registration left over from a different, since-removed
+     * device (or a different platform entirely) - that pass is still genuinely in active use, so it
+     * counts as `active` above, not here. */
+    removed: number;
+    /** Issued, but zero registrations - active or inactive - on every enabled platform: the pass
+     * was never added to a wallet app on any platform this event currently offers. */
+    never_installed: number;
+  };
 }

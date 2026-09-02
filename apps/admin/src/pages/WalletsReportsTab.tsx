@@ -38,6 +38,7 @@ import "./reports-page.css";
 // the rest of this app.
 const PRIMARY = "#066fd1"; // --primary / --at-blue
 const STATUS_OK = "#2fb344"; // --status-ok / --at-green
+const DANGER_RED = "#d63939"; // --at-red / --status-error - the "Removed" slice of Wallet lifecycle, the one outcome of the three worth calling out as a concern
 const GRAY_400 = "#94a3b8"; // --at-gray-400
 const GRAY_100 = "#f1f5f9"; // --at-gray-100, radial/donut track background
 const TEXT_PRIMARY = "#1d273b"; // --text-primary / --at-ink
@@ -85,6 +86,21 @@ const REGISTRATION_COUNT_COLORS: Record<EventWalletReportsResponse["registration
   "2": PRIMARY,
   "3": "#f59f00", // --at-yellow
   "4_plus": GRAY_400,
+};
+
+type WalletLifecycleKey = keyof EventWalletReportsResponse["wallet_lifecycle"];
+const LIFECYCLE_LABELS: Record<WalletLifecycleKey, string> = {
+  active: "Active",
+  removed: "Removed",
+  never_installed: "Never installed",
+};
+// Same green/gray-for-neutral convention as every other chart in this file - the one departure is
+// DANGER_RED for "removed", the sole outcome of these three actually worth calling out (this
+// card's whole reason for existing, per its own doc comment on EventWalletReportsResponse).
+const LIFECYCLE_COLORS: Record<WalletLifecycleKey, string> = {
+  active: STATUS_OK,
+  removed: DANGER_RED,
+  never_installed: GRAY_400,
 };
 
 /** Recharts gives every chart's root <svg> tabindex="0" and role="application" by default (its
@@ -298,6 +314,73 @@ function platformBreakdownRows(
     label: slice.label,
     meta: `${slice.count} · ${pctOf(slice.count, installed)}%`,
     pct: pctOf(slice.count, installed),
+    color: slice.color,
+  }));
+}
+
+/** Same donut-plus-breakdown shape as PlatformDonut above, for wallet_lifecycle's own three
+ * mutually-exclusive outcomes (always summing to `adoption.got_pass`, unlike platform's slices
+ * which sum to `adoption.confirmed`) - one visual language for "here's how a whole equals the sum
+ * of its parts" across this tab, rather than a second one-off chart shape for a card that's
+ * conceptually the same kind of breakdown. Centers on `removed` (not the `active` count
+ * AdoptionGauge/PlatformDonut center on) - the removal count is the one number this card exists to
+ * surface that no other card on this tab can show at all (see the DTO's own doc comment). */
+function walletLifecycleSlices(lifecycle: EventWalletReportsResponse["wallet_lifecycle"]): PlatformSlice[] {
+  return (Object.keys(LIFECYCLE_LABELS) as WalletLifecycleKey[]).map((key) => ({
+    label: LIFECYCLE_LABELS[key],
+    color: LIFECYCLE_COLORS[key],
+    count: lifecycle[key],
+  }));
+}
+
+function WalletLifecycleDonut({
+  lifecycle,
+}: Readonly<{ lifecycle: EventWalletReportsResponse["wallet_lifecycle"] }>) {
+  const slices = walletLifecycleSlices(lifecycle);
+  return (
+    <div // NOSONAR — mousedown-only, see preventFocusRing above; not an interactive element itself
+      className="wallets-gauge-overlay"
+      role="presentation"
+      onMouseDown={preventFocusRing}
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart style={{ fontFamily: FONT_FAMILY }}>
+          <Pie
+            data={slices}
+            dataKey="count"
+            nameKey="label"
+            innerRadius="58%"
+            outerRadius="90%"
+            stroke="#ffffff"
+            strokeWidth={2}
+            label={false}
+            labelLine={false}
+            isAnimationActive={false}
+          >
+            {slices.map((slice) => (
+              <Cell key={slice.label} fill={slice.color} />
+            ))}
+          </Pie>
+          <Tooltip formatter={(value) => `${value} pass${value === 1 ? "" : "es"}`} position={{ y: 256 }} />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="wallets-gauge-overlay__center">
+        <span className="wallets-gauge-overlay__value">{lifecycle.removed}</span>
+        <span className="wallets-gauge-overlay__label">removed</span>
+      </div>
+    </div>
+  );
+}
+
+function walletLifecycleBreakdownRows(
+  lifecycle: EventWalletReportsResponse["wallet_lifecycle"],
+  gotPass: number,
+): BreakdownRow[] {
+  return walletLifecycleSlices(lifecycle).map((slice) => ({
+    id: slice.label,
+    label: slice.label,
+    meta: `${slice.count} · ${pctOf(slice.count, gotPass)}%`,
+    pct: pctOf(slice.count, gotPass),
     color: slice.color,
   }));
 }
@@ -730,10 +813,10 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       {data.passes_truncated && (
         <Notice variant="warning" className="wallets-truncated-notice">
           This event has more issued wallet passes than a single report can process at once, so
-          platform mix, devices per attendee, adoption by ticket type, and time to wallet install
-          below are based on a partial sample rather than every pass. Cumulative passes issued
-          and admission rate by wallet status are unaffected - both come from a full count, not a
-          sample.
+          platform mix, devices per attendee, adoption by ticket type, wallet lifecycle, and time
+          to wallet install below are based on a partial sample rather than every pass. Cumulative
+          passes issued and admission rate by wallet status are unaffected - both come from a full
+          count, not a sample.
         </Notice>
       )}
       <div className="wallets-panels">
@@ -811,6 +894,17 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       </div>
 
       <div className="wallets-panels">
+        <Card title="Wallet lifecycle">
+          <p className="wallets-description">
+            Every issued pass, grouped by whether it&rsquo;s still installed, was removed from every device, or was never installed at all.
+          </p>
+          <div className="wallets-adoption">
+            <WalletLifecycleDonut lifecycle={data.wallet_lifecycle} />
+            <div className="wallets-adoption__breakdown">
+              <BreakdownRows rows={walletLifecycleBreakdownRows(data.wallet_lifecycle, data.adoption.got_pass)} />
+            </div>
+          </div>
+        </Card>
         <Card title="Admission rate by wallet status" className="wallets-card--centered">
           <AdmissionCompare data={data.admission_by_wallet} />
         </Card>
