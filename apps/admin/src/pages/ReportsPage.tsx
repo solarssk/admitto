@@ -773,6 +773,12 @@ export function ReportsPage() {
       event.wallet_samsung_enabled,
     ],
   );
+  // Deliberately not walletPlatforms.any (Apple/Google only - see its own doc comment, reserved
+  // for real pass-lifecycle actions elsewhere in the admin that can't apply to Samsung). This tab
+  // reads real per-attendee Samsung data the same way it already does for Apple/Google, so a
+  // Samsung-only event must still be able to reach it - matches the same apple-or-google-or-samsung
+  // check AttendeesTable.tsx's own Wallet column uses for the identical reason.
+  const walletsTabAvailable = walletPlatforms.apple || walletPlatforms.google || walletPlatforms.samsung;
   const { addToast } = useToast();
   const { reportApiError } = useConnectionState();
   const isDesktop = useIsDesktop();
@@ -788,7 +794,7 @@ export function ReportsPage() {
   // several joined queries plus an in-process aggregation pass) from scratch on every switch,
   // even seconds apart with no underlying data change.
   const [walletsTabVisited, setWalletsTabVisited] = useState(
-    () => reportsTabFromSearch(searchParams) === "wallets" && walletPlatforms.any,
+    () => reportsTabFromSearch(searchParams) === "wallets" && walletsTabAvailable,
   );
   // Sticky like walletsTabVisited above, but with no gating flag to fall back from - every event
   // can have custom fields (unlike Wallets, which is a per-event feature toggle), so the tab is
@@ -803,7 +809,7 @@ export function ReportsPage() {
   // Event day instead of landing on a tab the Tabs control below no longer offers.
   useEffect(() => {
     const requested = reportsTabFromSearch(searchParams);
-    const target = requested === "wallets" && !walletPlatforms.any ? "eventday" : requested;
+    const target = requested === "wallets" && !walletsTabAvailable ? "eventday" : requested;
     if (target !== requested) {
       setSearchParams({ tab: target }, { replace: true });
       return;
@@ -811,7 +817,7 @@ export function ReportsPage() {
     if (target !== activeTab) setActiveTab(target);
     if (target === "wallets") setWalletsTabVisited(true);
     if (target === "customfields") setCustomFieldsTabVisited(true);
-  }, [searchParams, activeTab, walletPlatforms.any, setSearchParams]);
+  }, [searchParams, activeTab, walletsTabAvailable, setSearchParams]);
 
   const [data, setData] = useState<EventReportsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1030,7 +1036,7 @@ export function ReportsPage() {
       <Tabs
         tabs={[
           { id: "eventday", label: "Event day" },
-          ...(walletPlatforms.any ? [{ id: "wallets" as const, label: "Wallets" }] : []),
+          ...(walletsTabAvailable ? [{ id: "wallets" as const, label: "Wallets" }] : []),
           { id: "customfields", label: "Custom fields" },
         ]}
         value={activeTab}

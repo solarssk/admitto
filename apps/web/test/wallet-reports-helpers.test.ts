@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TicketTypeInfo } from "@admitto/tickets";
+import type { EnabledWalletPlatforms } from "@admitto/shared";
 import {
   aggregateWalletPasses,
   bucketForDays,
@@ -17,7 +18,11 @@ function ticketType(overrides: Partial<TicketTypeInfo> = {}): TicketTypeInfo {
   return { id: "tt-1", key: "general", label: "General", color: "gray", sort_order: 0, ...overrides };
 }
 
-const BOTH_ENABLED = { apple: true, google: true };
+const BOTH_ENABLED: EnabledWalletPlatforms = { apple: true, google: true, samsung: false, any: true };
+const ALL_ENABLED: EnabledWalletPlatforms = { apple: true, google: true, samsung: true, any: true };
+const APPLE_ONLY_ENABLED: EnabledWalletPlatforms = { apple: true, google: false, samsung: false, any: true };
+const SAMSUNG_ONLY_ENABLED: EnabledWalletPlatforms = { apple: false, google: false, samsung: true, any: false };
+const NEITHER_ENABLED: EnabledWalletPlatforms = { apple: false, google: false, samsung: false, any: false };
 
 function pass(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -26,8 +31,10 @@ function pass(overrides: Partial<Record<string, unknown>> = {}) {
     status: "active",
     apple_active_registrations: 0,
     google_active_registrations: 0,
+    samsung_active_registrations: 0,
     apple_inactive_registrations: 0,
     google_inactive_registrations: 0,
+    samsung_inactive_registrations: 0,
     registration_checked_at: null,
     attendee: { ticket_type: "General", email_deliveries: [] },
     ...overrides,
@@ -36,69 +43,97 @@ function pass(overrides: Partial<Record<string, unknown>> = {}) {
 
 describe("classifyPassPlatform", () => {
   it("classifies an apple-only registration", () => {
-    expect(classifyPassPlatform(1, 0)).toBe("apple_only");
+    expect(classifyPassPlatform(1, 0, 0)).toBe("apple_only");
   });
 
   it("classifies a google-only registration", () => {
-    expect(classifyPassPlatform(0, 1)).toBe("google_only");
+    expect(classifyPassPlatform(0, 1, 0)).toBe("google_only");
   });
 
-  it("classifies a pass active on both platforms as both, not apple_only", () => {
-    expect(classifyPassPlatform(1, 1)).toBe("both");
+  it("classifies a samsung-only registration", () => {
+    expect(classifyPassPlatform(0, 0, 1)).toBe("samsung_only");
   });
 
-  it("classifies a pass with no active registration on either platform as none", () => {
-    expect(classifyPassPlatform(0, 0)).toBe("none");
+  it("classifies a pass active on both apple and google as both, not apple_only", () => {
+    expect(classifyPassPlatform(1, 1, 0)).toBe("both");
+  });
+
+  it("classifies a pass with no active registration on any platform as none", () => {
+    expect(classifyPassPlatform(0, 0, 0)).toBe("none");
   });
 
   it("treats any positive count as active, not just 1", () => {
-    expect(classifyPassPlatform(3, 0)).toBe("apple_only");
-    expect(classifyPassPlatform(0, 5)).toBe("google_only");
+    expect(classifyPassPlatform(3, 0, 0)).toBe("apple_only");
+    expect(classifyPassPlatform(0, 5, 0)).toBe("google_only");
+    expect(classifyPassPlatform(0, 0, 2)).toBe("samsung_only");
+  });
+
+  // Samsung is checked last and only wins when neither Apple nor Google is active - "both" stays
+  // Apple+Google specifically rather than growing into a full 3-way combinatorial set for a state
+  // that can't happen yet (see this function's own doc comment).
+  it("ignores an active samsung registration when apple is also active - reads as apple_only, not a new combined state", () => {
+    expect(classifyPassPlatform(1, 0, 1)).toBe("apple_only");
+  });
+
+  it("ignores an active samsung registration when both apple and google are active - still reads as both", () => {
+    expect(classifyPassPlatform(1, 1, 1)).toBe("both");
   });
 });
 
 describe("classifyPassLifecycle", () => {
   it("classifies an apple-active pass as active", () => {
-    expect(classifyPassLifecycle(1, 0, 0, 0, false)).toBe("active");
+    expect(classifyPassLifecycle(1, 0, 0, 0, 0, 0, false)).toBe("active");
   });
 
   it("classifies a google-active pass as active", () => {
-    expect(classifyPassLifecycle(0, 1, 0, 0, false)).toBe("active");
+    expect(classifyPassLifecycle(0, 1, 0, 0, 0, 0, false)).toBe("active");
+  });
+
+  it("classifies a samsung-active pass as active", () => {
+    expect(classifyPassLifecycle(0, 0, 1, 0, 0, 0, false)).toBe("active");
   });
 
   it("classifies a pass with an inactive registration on apple and nothing active as removed", () => {
-    expect(classifyPassLifecycle(0, 0, 1, 0, false)).toBe("removed");
+    expect(classifyPassLifecycle(0, 0, 0, 1, 0, 0, false)).toBe("removed");
   });
 
   it("classifies a pass with an inactive registration on google and nothing active as removed", () => {
-    expect(classifyPassLifecycle(0, 0, 0, 1, false)).toBe("removed");
+    expect(classifyPassLifecycle(0, 0, 0, 0, 1, 0, false)).toBe("removed");
   });
 
-  it("classifies a pass with inactive registrations on both platforms and nothing active as removed", () => {
-    expect(classifyPassLifecycle(0, 0, 1, 1, false)).toBe("removed");
+  it("classifies a pass with an inactive registration on samsung and nothing active as removed", () => {
+    expect(classifyPassLifecycle(0, 0, 0, 0, 0, 1, false)).toBe("removed");
+  });
+
+  it("classifies a pass with inactive registrations on all three platforms and nothing active as removed", () => {
+    expect(classifyPassLifecycle(0, 0, 0, 1, 1, 1, false)).toBe("removed");
   });
 
   it("classifies a pass with no registration of any kind and no installation history as never_installed", () => {
-    expect(classifyPassLifecycle(0, 0, 0, 0, false)).toBe("never_installed");
+    expect(classifyPassLifecycle(0, 0, 0, 0, 0, 0, false)).toBe("never_installed");
   });
 
   // The one correctness risk this function exists to get right: an attendee can have an active
   // registration on one device and an unrelated inactive registration left over from a different,
   // since-removed device - that pass is still genuinely in use, not "removed".
   it("classifies a pass active on apple with an inactive registration on the SAME platform (a second, removed device) as active, not removed", () => {
-    expect(classifyPassLifecycle(1, 0, 1, 0, false)).toBe("active");
+    expect(classifyPassLifecycle(1, 0, 0, 1, 0, 0, false)).toBe("active");
   });
 
-  it("classifies a pass active on apple with an inactive registration on the OTHER platform (google) as active, not removed", () => {
-    expect(classifyPassLifecycle(1, 0, 0, 1, false)).toBe("active");
+  it("classifies a pass active on apple with an inactive registration on another platform (google) as active, not removed", () => {
+    expect(classifyPassLifecycle(1, 0, 0, 0, 1, 0, false)).toBe("active");
   });
 
   it("classifies a pass active on google with an inactive registration on apple as active, not removed", () => {
-    expect(classifyPassLifecycle(0, 1, 1, 0, false)).toBe("active");
+    expect(classifyPassLifecycle(0, 1, 0, 1, 0, 0, false)).toBe("active");
   });
 
-  it("classifies a pass active on both platforms with inactive registrations on both as active, not removed", () => {
-    expect(classifyPassLifecycle(1, 1, 1, 1, false)).toBe("active");
+  it("classifies a pass active on samsung with an inactive registration on apple as active, not removed", () => {
+    expect(classifyPassLifecycle(0, 0, 1, 1, 0, 0, false)).toBe("active");
+  });
+
+  it("classifies a pass active on all three platforms with inactive registrations on all three as active, not removed", () => {
+    expect(classifyPassLifecycle(1, 1, 1, 1, 1, 1, false)).toBe("active");
   });
 
   // `everInstalled` is the caller-computed "was this pass ever on a device, on any platform,
@@ -107,20 +142,21 @@ describe("classifyPassLifecycle", () => {
   // no-match registration sync) so a real installation history can't be forgotten just because
   // the event's current settings, or a stale sync, no longer show it (CodeRabbit review).
   it("classifies a pass with zero registrations everywhere but everInstalled true as removed, not never_installed", () => {
-    expect(classifyPassLifecycle(0, 0, 0, 0, true)).toBe("removed");
+    expect(classifyPassLifecycle(0, 0, 0, 0, 0, 0, true)).toBe("removed");
   });
 
   it("still classifies an active pass as active even when everInstalled is true too", () => {
-    expect(classifyPassLifecycle(1, 0, 0, 0, true)).toBe("active");
+    expect(classifyPassLifecycle(1, 0, 0, 0, 0, 0, true)).toBe("active");
   });
 });
 
 describe("confirmedPlatformLabel", () => {
-  it("mirrors classifyPassPlatform's four cases with their display labels", () => {
-    expect(confirmedPlatformLabel(1, 0)).toBe("Apple");
-    expect(confirmedPlatformLabel(0, 1)).toBe("Google");
-    expect(confirmedPlatformLabel(1, 1)).toBe("Both");
-    expect(confirmedPlatformLabel(0, 0)).toBe("None");
+  it("mirrors classifyPassPlatform's cases with their display labels", () => {
+    expect(confirmedPlatformLabel(1, 0, 0)).toBe("Apple");
+    expect(confirmedPlatformLabel(0, 1, 0)).toBe("Google");
+    expect(confirmedPlatformLabel(0, 0, 1)).toBe("Samsung");
+    expect(confirmedPlatformLabel(1, 1, 0)).toBe("Both");
+    expect(confirmedPlatformLabel(0, 0, 0)).toBe("None");
   });
 });
 
@@ -278,13 +314,14 @@ describe("aggregateWalletPasses — enabledPlatforms gating", () => {
     expect(result.both).toBe(1);
     expect(result.appleOnly).toBe(0);
     expect(result.googleOnly).toBe(0);
+    expect(result.samsungOnly).toBe(0);
     expect(result.confirmed).toBe(1);
   });
 
   it("reclassifies a both-active pass as apple_only when Google is disabled, not as both or google_only", () => {
     const result = aggregateWalletPasses(
       [pass({ apple_active_registrations: 1, google_active_registrations: 1 })],
-      { apple: true, google: false },
+      APPLE_ONLY_ENABLED,
     );
     expect(result.appleOnly).toBe(1);
     expect(result.googleOnly).toBe(0);
@@ -297,22 +334,54 @@ describe("aggregateWalletPasses — enabledPlatforms gating", () => {
   it("counts a Google-only pass as not confirmed at all when Google is the disabled platform", () => {
     const result = aggregateWalletPasses(
       [pass({ apple_active_registrations: 0, google_active_registrations: 1 })],
-      { apple: true, google: false },
+      APPLE_ONLY_ENABLED,
     );
     expect(result.confirmed).toBe(0);
     expect(result.googleOnly).toBe(0);
     expect(result.appleOnly).toBe(0);
   });
 
-  it("counts nothing as confirmed when neither platform is enabled, regardless of raw registrations", () => {
+  it("counts nothing as confirmed when no platform is enabled, regardless of raw registrations", () => {
     const result = aggregateWalletPasses(
-      [pass({ apple_active_registrations: 1, google_active_registrations: 1 })],
-      { apple: false, google: false },
+      [pass({ apple_active_registrations: 1, google_active_registrations: 1, samsung_active_registrations: 1 })],
+      NEITHER_ENABLED,
     );
     expect(result.confirmed).toBe(0);
     expect(result.appleOnly).toBe(0);
     expect(result.googleOnly).toBe(0);
+    expect(result.samsungOnly).toBe(0);
     expect(result.both).toBe(0);
+  });
+
+  // Regression: a pass registered only on Samsung must still count as confirmed once Samsung is
+  // enabled - the underlying bug this whole follow-up exists to fix (the Reports pipeline was
+  // never wired to the samsung_active_registrations column at all).
+  it("counts a Samsung-only pass as confirmed and samsungOnly when Samsung is enabled", () => {
+    const result = aggregateWalletPasses(
+      [pass({ samsung_active_registrations: 1 })],
+      SAMSUNG_ONLY_ENABLED,
+    );
+    expect(result.samsungOnly).toBe(1);
+    expect(result.confirmed).toBe(1);
+    expect(result.appleOnly).toBe(0);
+    expect(result.googleOnly).toBe(0);
+    expect(result.both).toBe(0);
+  });
+
+  it("counts a Samsung-only registration as not confirmed at all when Samsung is the disabled platform", () => {
+    const result = aggregateWalletPasses([pass({ samsung_active_registrations: 1 })], APPLE_ONLY_ENABLED);
+    expect(result.confirmed).toBe(0);
+    expect(result.samsungOnly).toBe(0);
+  });
+
+  it("ignores a samsung registration alongside an apple one - counts as apple_only, not samsungOnly, matching classifyPassPlatform", () => {
+    const result = aggregateWalletPasses(
+      [pass({ apple_active_registrations: 1, samsung_active_registrations: 1 })],
+      ALL_ENABLED,
+    );
+    expect(result.appleOnly).toBe(1);
+    expect(result.samsungOnly).toBe(0);
+    expect(result.confirmed).toBe(1);
   });
 });
 
@@ -330,7 +399,7 @@ describe("aggregateWalletPasses — registrationCountBuckets", () => {
     expect(result.registrationCountBuckets).toEqual({ "1": 1, "2": 1, "3": 1, "4_plus": 1 });
   });
 
-  it("excludes a not-confirmed pass (no active registration on either platform) from every bucket", () => {
+  it("excludes a not-confirmed pass (no active registration on any platform) from every bucket", () => {
     const result = aggregateWalletPasses([pass({ apple_active_registrations: 0, google_active_registrations: 0 })], BOTH_ENABLED);
     expect(result.registrationCountBuckets).toEqual({ "1": 0, "2": 0, "3": 0, "4_plus": 0 });
   });
@@ -339,9 +408,17 @@ describe("aggregateWalletPasses — registrationCountBuckets", () => {
     // apple=2, google=1 raw, but Google disabled - bucket must reflect 2 (apple only), not 3.
     const result = aggregateWalletPasses(
       [pass({ apple_active_registrations: 2, google_active_registrations: 1 })],
-      { apple: true, google: false },
+      APPLE_ONLY_ENABLED,
     );
     expect(result.registrationCountBuckets).toEqual({ "1": 0, "2": 1, "3": 0, "4_plus": 0 });
+  });
+
+  it("includes samsung's own active registrations in the sum when Samsung is enabled", () => {
+    const result = aggregateWalletPasses(
+      [pass({ apple_active_registrations: 1, samsung_active_registrations: 2 })], // 3
+      ALL_ENABLED,
+    );
+    expect(result.registrationCountBuckets).toEqual({ "1": 0, "2": 0, "3": 1, "4_plus": 0 });
   });
 });
 
@@ -364,7 +441,7 @@ describe("aggregateWalletPasses — lifecycleCounts", () => {
   it("still counts a disabled platform's own inactive registration as removed, not never_installed - unlike `active`, this history isn't re-evaluated against current platform toggles", () => {
     const result = aggregateWalletPasses(
       [pass({ apple_active_registrations: 0, google_active_registrations: 0, google_inactive_registrations: 1 })],
-      { apple: true, google: false },
+      APPLE_ONLY_ENABLED,
     );
     expect(result.lifecycleCounts).toEqual({ active: 0, removed: 1, never_installed: 0 });
   });
@@ -372,7 +449,7 @@ describe("aggregateWalletPasses — lifecycleCounts", () => {
   it("still counts a pass live only on a since-disabled platform as removed (the closest honest bucket once it's excluded from active), not never_installed", () => {
     const result = aggregateWalletPasses(
       [pass({ apple_active_registrations: 0, google_active_registrations: 1 })],
-      { apple: true, google: false },
+      APPLE_ONLY_ENABLED,
     );
     expect(result.lifecycleCounts).toEqual({ active: 0, removed: 1, never_installed: 0 });
   });
@@ -380,7 +457,7 @@ describe("aggregateWalletPasses — lifecycleCounts", () => {
   it("still counts a disabled platform's inactive registration as removed once it's re-evaluated on the enabled platform alone", () => {
     const result = aggregateWalletPasses(
       [pass({ apple_active_registrations: 0, apple_inactive_registrations: 1, google_active_registrations: 0, google_inactive_registrations: 1 })],
-      { apple: true, google: false },
+      APPLE_ONLY_ENABLED,
     );
     expect(result.lifecycleCounts).toEqual({ active: 0, removed: 1, never_installed: 0 });
   });
@@ -392,12 +469,27 @@ describe("aggregateWalletPasses — lifecycleCounts", () => {
           first_confirmed_at: new Date("2026-01-01T00:00:00.000Z"),
           apple_active_registrations: null,
           google_active_registrations: null,
+          samsung_active_registrations: null,
           apple_inactive_registrations: null,
           google_inactive_registrations: null,
+          samsung_inactive_registrations: null,
         }),
       ],
       BOTH_ENABLED,
     );
+    expect(result.lifecycleCounts).toEqual({ active: 0, removed: 1, never_installed: 0 });
+  });
+
+  it("counts a samsung-active pass as active, and a samsung-inactive-only pass as removed", () => {
+    const result = aggregateWalletPasses(
+      [pass({ samsung_active_registrations: 1 }), pass({ samsung_inactive_registrations: 1 })],
+      ALL_ENABLED,
+    );
+    expect(result.lifecycleCounts).toEqual({ active: 1, removed: 1, never_installed: 0 });
+  });
+
+  it("still counts a disabled Samsung platform's own inactive registration as removed, not never_installed", () => {
+    const result = aggregateWalletPasses([pass({ samsung_inactive_registrations: 1 })], APPLE_ONLY_ENABLED);
     expect(result.lifecycleCounts).toEqual({ active: 0, removed: 1, never_installed: 0 });
   });
 });
@@ -406,7 +498,7 @@ describe("buildWalletExportCsvRow — enabledPlatforms gating", () => {
   const catalog: never[] = [];
   const operatorMap = {};
 
-  function exportRow(walletOverrides: Partial<Record<string, unknown>>, enabledPlatforms: { apple: boolean; google: boolean }) {
+  function exportRow(walletOverrides: Partial<Record<string, unknown>>, enabledPlatforms: EnabledWalletPlatforms) {
     const row = {
       name: "Jane Doe",
       email: "jane@example.com",
@@ -422,6 +514,8 @@ describe("buildWalletExportCsvRow — enabledPlatforms gating", () => {
         apple_inactive_registrations: 0,
         google_active_registrations: 1,
         google_inactive_registrations: 0,
+        samsung_active_registrations: 0,
+        samsung_inactive_registrations: 0,
         registration_checked_at: new Date("2026-01-02T00:00:00.000Z"),
         ...walletOverrides,
       },
@@ -431,25 +525,46 @@ describe("buildWalletExportCsvRow — enabledPlatforms gating", () => {
   }
 
   // Columns: Name, Email, Ticket type, Wallet pass status, Pass issued at, Apple active,
-  // Apple inactive, Google active, Google inactive, Confirmed platform, ...
+  // Apple inactive, Google active, Google inactive, Samsung active, Samsung inactive,
+  // Confirmed platform, ...
   it("blanks the Google columns and excludes Google from Confirmed platform when Google is disabled", () => {
-    const row = exportRow({}, { apple: true, google: false });
+    const row = exportRow({}, APPLE_ONLY_ENABLED);
     expect(row[5]).toBe("1"); // Apple active
     expect(row[7]).toBe(""); // Google active - blanked, not "1"
     expect(row[8]).toBe(""); // Google inactive - blanked
-    expect(row[9]).toBe("Apple"); // Confirmed platform - Google's registration doesn't count
+    expect(row[11]).toBe("Apple"); // Confirmed platform - Google's registration doesn't count
   });
 
-  it("keeps both platforms' raw columns and the Both label when both are enabled", () => {
+  it("keeps every enabled platform's raw columns and the Both label when apple and google are both enabled", () => {
     const row = exportRow({}, BOTH_ENABLED);
     expect(row[5]).toBe("1");
     expect(row[7]).toBe("1");
-    expect(row[9]).toBe("Both");
+    expect(row[11]).toBe("Both");
   });
 
   it("still blanks a disabled platform's columns even for a never-synced pass (both reasons for blank stay independent)", () => {
-    const row = exportRow({ registration_checked_at: null }, { apple: true, google: false });
+    const row = exportRow({ registration_checked_at: null }, APPLE_ONLY_ENABLED);
     expect(row[5]).toBe(""); // Apple active - blank because unsynced, not because disabled
-    expect(row[9]).toBe(""); // Confirmed platform - blank, unsynced
+    expect(row[11]).toBe(""); // Confirmed platform - blank, unsynced
+  });
+
+  it("exposes Samsung's own active/inactive columns and Confirmed platform when Samsung is enabled", () => {
+    const row = exportRow(
+      { apple_active_registrations: 0, google_active_registrations: 0, samsung_active_registrations: 1, samsung_inactive_registrations: 2 },
+      ALL_ENABLED,
+    );
+    expect(row[9]).toBe("1"); // Samsung active
+    expect(row[10]).toBe("2"); // Samsung inactive
+    expect(row[11]).toBe("Samsung");
+  });
+
+  it("blanks the Samsung columns and excludes Samsung from Confirmed platform when Samsung is disabled", () => {
+    const row = exportRow(
+      { apple_active_registrations: 0, google_active_registrations: 0, samsung_active_registrations: 1 },
+      BOTH_ENABLED,
+    );
+    expect(row[9]).toBe(""); // Samsung active - blanked, not "1"
+    expect(row[10]).toBe(""); // Samsung inactive - blanked
+    expect(row[11]).toBe("None"); // Samsung's registration doesn't count with it disabled
   });
 });

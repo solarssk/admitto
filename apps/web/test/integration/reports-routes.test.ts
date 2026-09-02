@@ -28,6 +28,12 @@ const EVENT_WALLETS_APPLE_ONLY = "evt-reports-wallets-apple-only";
 // needs its own dataset rather than mutating a fixture several other tests already pin exact
 // numbers against.
 const EVENT_WALLETS_LIFECYCLE = "evt-reports-wallets-lifecycle";
+// Minimal, separate event (not EVENT_WALLETS above), Apple/Google both disabled so its one
+// attendee's confirmed platform can only ever come from Samsung - proves the Reports pipeline
+// actually reads samsung_active_registrations end to end (route handler -> enabledWalletPlatforms
+// -> aggregateWalletPasses -> classifyPassPlatform), on top of aggregateWalletPasses' own unit
+// coverage for the filtering logic itself (wallet-reports-helpers.test.ts).
+const EVENT_WALLETS_SAMSUNG = "evt-reports-wallets-samsung";
 const EVENT_CUSTOM_FIELDS = "evt-reports-custom-fields";
 // Minimal, separate event (not EVENT_CUSTOM_FIELDS above) so this doesn't need to mutate a
 // fixture several other tests in this file already depend on - proves the tie-breaker on its
@@ -57,6 +63,7 @@ const ATT_W_NOTYPE = "att-reports-w-notype";
 const ATT_W_LEGACY_TYPE = "att-reports-w-legacy-type";
 const ATT_W_APPLE_ONLY_EVENT = "att-reports-w-apple-only-event";
 const ATT_W_GOOGLE_ONLY_EVENT = "att-reports-w-google-only-event";
+const ATT_W_SAMSUNG_ONLY_EVENT = "att-reports-w-samsung-only-event";
 
 const ATT_LC_ACTIVE_SAME_PLATFORM = "att-reports-lc-active-same-platform";
 const ATT_LC_ACTIVE_CROSS_PLATFORM = "att-reports-lc-active-cross-platform";
@@ -119,6 +126,7 @@ async function seed(client: PrismaClient) {
     EVENT_WALLETS,
     EVENT_WALLETS_APPLE_ONLY,
     EVENT_WALLETS_LIFECYCLE,
+    EVENT_WALLETS_SAMSUNG,
     EVENT_CUSTOM_FIELDS,
     EVENT_CUSTOM_FIELDS_TIE,
   ];
@@ -204,6 +212,15 @@ async function seed(client: PrismaClient) {
         organization_id: ORG_REP,
       },
       {
+        id: EVENT_WALLETS_SAMSUNG,
+        title: "Samsung-Only Wallets Event",
+        slug: "reports-wallets-samsung",
+        date: new Date("2027-07-03T12:00:00.000Z"),
+        organization_id: ORG_REP,
+        wallet_apple_enabled: false,
+        wallet_google_enabled: false,
+      },
+      {
         id: EVENT_CUSTOM_FIELDS,
         title: "Custom Fields Reports Event",
         slug: "reports-custom-fields",
@@ -275,6 +292,25 @@ async function seed(client: PrismaClient) {
       // real, ungated history, so this attendee still correctly lands in "removed" rather than the
       // flatly false "never_installed".
       google_inactive_registrations: 1,
+    },
+  });
+
+  await createUnvalidatedAttendees(client, [
+    {
+      id: ATT_W_SAMSUNG_ONLY_EVENT,
+      event_id: EVENT_WALLETS_SAMSUNG,
+      name: "Samsung-Only Event Attendee",
+      email: "samsung-only-event@example.com",
+      ticket_type: "General",
+      ...mkAttendeeToken(),
+    },
+  ]);
+  await client.walletPass.create({
+    data: {
+      attendee_id: ATT_W_SAMSUNG_ONLY_EVENT,
+      status: "active",
+      issued_at: new Date("2027-06-15T00:00:00.000Z"),
+      samsung_active_registrations: 1,
     },
   });
 
@@ -2336,7 +2372,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       adoption: { got_pass: number; confirmed: number };
-      platform: { apple_only: number; google_only: number; both: number };
+      platform: { apple_only: number; google_only: number; samsung_only: number; both: number };
       registrations_per_attendee: { buckets: Array<{ key: string; count: number; pct: number }> };
       admission_by_wallet: {
         with_wallet: { total: number; admitted: number; pct: number };
@@ -2346,7 +2382,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     };
     expect(body.adoption.got_pass).toBe(2);
     expect(body.adoption.confirmed).toBe(1);
-    expect(body.platform).toEqual({ apple_only: 1, google_only: 0, both: 0 });
+    expect(body.platform).toEqual({ apple_only: 1, google_only: 0, samsung_only: 0, both: 0 });
     // ATT_W_APPLE_ONLY_EVENT: active (its Apple registration stays live regardless of Google
     // being disabled). ATT_W_GOOGLE_ONLY_EVENT: removed, not never_installed - its Google
     // registrations are zeroed for the `active`/`platform`/`registrations_per_attendee` checks
@@ -2391,6 +2427,25 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.wallet_lifecycle).toEqual({ active: 2, removed: 2, never_installed: 1 });
   });
 
+  it("counts a Samsung-only registration as confirmed, samsung_only, and active - the Reports pipeline reads samsung_active_registrations end to end", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS_SAMSUNG}/reports/wallets`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      adoption: { got_pass: number; confirmed: number };
+      platform: { apple_only: number; google_only: number; samsung_only: number; both: number };
+      wallet_lifecycle: { active: number; removed: number; never_installed: number };
+      admission_by_wallet: { with_wallet: { total: number }; without_wallet: { total: number } };
+    };
+    expect(body.adoption.got_pass).toBe(1);
+    expect(body.adoption.confirmed).toBe(1);
+    expect(body.platform).toEqual({ apple_only: 0, google_only: 0, samsung_only: 1, both: 0 });
+    expect(body.wallet_lifecycle).toEqual({ active: 1, removed: 0, never_installed: 0 });
+    expect(body.admission_by_wallet.with_wallet.total).toBe(1);
+    expect(body.admission_by_wallet.without_wallet.total).toBe(0);
+  });
+
   it("aggregates adoption, platform mix, ticket-type breakdown, time-to-tap, and admission-by-wallet-status", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_WALLETS}/reports/wallets`, {
       headers: { Cookie: adminCookie },
@@ -2402,7 +2457,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
       synced_at: string | null;
       passes_truncated: boolean;
       adoption: { got_pass: number; got_pass_pct: number; confirmed: number; confirmed_pct: number };
-      platform: { apple_only: number; google_only: number; both: number };
+      platform: { apple_only: number; google_only: number; samsung_only: number; both: number };
       registrations_per_attendee: { buckets: Array<{ key: string; count: number; pct: number }> };
       by_ticket_type: Array<{
         key: string | null;
@@ -2436,7 +2491,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.adoption.confirmed).toBe(5); // apple/google/both/notype/legacy - not-installed and voided excluded
     expect(body.adoption.confirmed_pct).toBeCloseTo(71.4);
 
-    expect(body.platform).toEqual({ apple_only: 3, google_only: 1, both: 1 });
+    expect(body.platform).toEqual({ apple_only: 3, google_only: 1, samsung_only: 0, both: 1 });
 
     // Registrations per attendee: ATT_W_APPLE (1+0=1), ATT_W_NOTYPE (1+0=1), ATT_W_LEGACY_TYPE
     // (1+0=1) bucket as "1"; ATT_W_BOTH (2+1=3) and ATT_W_GOOGLE (0+3=3) bucket as "3" - sums to
@@ -2654,7 +2709,8 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     const notInstalledRow = lines.find((l) => l.includes('"Wallets Not Installed"'));
     expect(notInstalledRow).toBeDefined();
     const cells = notInstalledRow!.split(",").map((c) => c.replace(/^"|"$/g, ""));
-    expect(cells.slice(5, 10)).toEqual(["", "", "", "", ""]);
+    // Apple active/inactive, Google active/inactive, Samsung active/inactive, Confirmed platform.
+    expect(cells.slice(5, 12)).toEqual(["", "", "", "", "", "", ""]);
   });
 
   it("returns printable HTML for a wallets pdf export", async () => {

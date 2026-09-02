@@ -4,6 +4,7 @@ import type { PrismaClient } from "@admitto/db";
 import {
   CUSTOM_FIELD_NOT_ANSWERED_KEY,
   enabledWalletPlatforms,
+  type EnabledWalletPlatforms,
   type EventCustomFieldReportsResponse,
   type EventWalletReportsResponse,
 } from "@admitto/shared";
@@ -580,8 +581,10 @@ const WALLET_PASS_AGGREGATE_SELECT = {
   status: true,
   apple_active_registrations: true,
   google_active_registrations: true,
+  samsung_active_registrations: true,
   apple_inactive_registrations: true,
   google_inactive_registrations: true,
+  samsung_inactive_registrations: true,
   registration_checked_at: true,
   attendee: {
     select: {
@@ -636,27 +639,35 @@ export function earliestDeliverySuccessAt(
 
 /** Which wallet platform(s) a pass is actively registered on - "none" covers issued-but-never-
  * installed passes, kept distinct from "both" (registered on two devices) for the platform mix
- * breakdown below. */
+ * breakdown below. "both" only ever means Apple+Google, same as everywhere else this report
+ * treats Samsung (see EventWalletReportsResponse.platform's own doc comment) - Samsung is checked
+ * last and only wins when neither Apple nor Google is active, rather than growing "both" into a
+ * full 3-way combinatorial set for a state (a pass active on Samsung and Apple/Google at once)
+ * that can't happen yet, since PassCreator hasn't finished activating Samsung Wallet at all. */
 export function classifyPassPlatform(
   appleActive: number,
   googleActive: number,
-): "apple_only" | "google_only" | "both" | "none" {
+  samsungActive: number,
+): "apple_only" | "google_only" | "samsung_only" | "both" | "none" {
   if (appleActive > 0 && googleActive > 0) return "both";
   if (appleActive > 0) return "apple_only";
   if (googleActive > 0) return "google_only";
+  if (samsungActive > 0) return "samsung_only";
   return "none";
 }
 
 /** Display label for classifyPassPlatform's result - used by the wallets CSV export's "Confirmed
  * platform" column. */
-export function confirmedPlatformLabel(appleActive: number, googleActive: number): string {
-  switch (classifyPassPlatform(appleActive, googleActive)) {
+export function confirmedPlatformLabel(appleActive: number, googleActive: number, samsungActive: number): string {
+  switch (classifyPassPlatform(appleActive, googleActive, samsungActive)) {
     case "both":
       return "Both";
     case "apple_only":
       return "Apple";
     case "google_only":
       return "Google";
+    case "samsung_only":
+      return "Samsung";
     default:
       return "None";
   }
@@ -687,12 +698,14 @@ export function confirmedPlatformLabel(appleActive: number, googleActive: number
 export function classifyPassLifecycle(
   appleActive: number,
   googleActive: number,
+  samsungActive: number,
   appleInactive: number,
   googleInactive: number,
+  samsungInactive: number,
   everInstalled: boolean,
 ): "active" | "removed" | "never_installed" {
-  if (classifyPassPlatform(appleActive, googleActive) !== "none") return "active";
-  if (appleInactive + googleInactive > 0 || everInstalled) return "removed";
+  if (classifyPassPlatform(appleActive, googleActive, samsungActive) !== "none") return "active";
+  if (appleInactive + googleInactive + samsungInactive > 0 || everInstalled) return "removed";
   return "never_installed";
 }
 
@@ -714,6 +727,7 @@ interface WalletPassAggregates {
   confirmed: number;
   appleOnly: number;
   googleOnly: number;
+  samsungOnly: number;
   both: number;
   mostRecentSync: Date | null;
   gotPassByType: Map<string | null, number>;
@@ -725,33 +739,92 @@ interface WalletPassAggregates {
   lifecycleCounts: Record<"active" | "removed" | "never_installed", number>;
 }
 
+/** Bumps the one platform-mix counter `platform` maps to - split out of
+ * applyWalletPassToAggregates below (SonarCloud S3776) since a 4-way if/else-if chain is cheap on
+ * its own but was the difference between that function fitting under Sonar's limit and not, once
+ * Samsung became a third platform. "none" bumps nothing - a pass with no active registration on
+ * any offered platform isn't a "platform" at all (matches EventWalletReportsResponse.platform's
+ * own doc comment). */
+function incrementPlatformCounter(
+  platform: ReturnType<typeof classifyPassPlatform>,
+  acc: Pick<WalletPassAggregates, "both" | "appleOnly" | "googleOnly" | "samsungOnly">,
+): void {
+  if (platform === "both") acc.both++;
+  else if (platform === "apple_only") acc.appleOnly++;
+  else if (platform === "google_only") acc.googleOnly++;
+  else if (platform === "samsung_only") acc.samsungOnly++;
+}
+
+/** Raw (ungated) - unlike the enabledPlatforms-zeroed appleActive/appleInactive/etc. in
+ * applyWalletPassToAggregates below, "was this pass ever installed anywhere" must not forget a
+ * since-disabled platform's own real history (classifyPassLifecycle's own doc comment explains
+ * why). Split out purely to shorten applyWalletPassToAggregates' own body (SonarCloud S3776) - a
+ * long OR chain like this is cheap on its own, but every additional platform adds two more terms
+ * to it. */
+function everInstalledAnywhere(pass: WalletPassAggregateRow): boolean {
+  return (
+    pass.first_confirmed_at != null ||
+    (pass.apple_active_registrations ?? 0) > 0 ||
+    (pass.google_active_registrations ?? 0) > 0 ||
+    (pass.samsung_active_registrations ?? 0) > 0 ||
+    (pass.apple_inactive_registrations ?? 0) > 0 ||
+    (pass.google_inactive_registrations ?? 0) > 0 ||
+    (pass.samsung_inactive_registrations ?? 0) > 0
+  );
+}
+
+/** Updates the tap-day accumulators for one pass - split out of applyWalletPassToAggregates below
+ * (SonarCloud S3776). Gated on platform !== "none" (the same post-enabledPlatforms confirmed check
+ * as confirmed/confirmedByType there), not just first_confirmed_at being set: a pass historically
+ * confirmed on a platform the event has since disabled keeps its first_confirmed_at (it really did
+ * happen), but must not count toward "Time to wallet install" while adoption.confirmed and every
+ * other confirmed-based number in this same report no longer count it either. */
+function applyTapDayStats(
+  pass: WalletPassAggregateRow,
+  platform: ReturnType<typeof classifyPassPlatform>,
+  acc: Pick<WalletPassAggregates, "tapDaySum" | "tapDayCount" | "bucketCounts">,
+): void {
+  const tapDays =
+    platform !== "none" ? computeTapDays(earliestDeliverySuccessAt(pass.attendee.email_deliveries), pass.first_confirmed_at) : null;
+  if (tapDays !== null) {
+    acc.tapDaySum += tapDays;
+    acc.tapDayCount++;
+    acc.bucketCounts[bucketForDays(tapDays)]++;
+  }
+}
+
 /** Folds one pass's contribution into the running aggregates - split out of aggregateWalletPasses'
  * loop body below so that function's own cognitive complexity stays under Sonar's limit (every
  * branch here loses a nesting level once it's no longer inside a for loop). `enabledPlatforms`
  * zeroes a disabled platform's active-registration count before classification, so a pass
  * registered only on a platform the event owner has since turned off reads as "not installed"
  * here (and in adoption.confirmed) rather than as a still-live confirmation of a platform the
- * Wallets tab no longer offers. */
+ * Wallets tab no longer offers. Delegates the platform-counter bump, tap-day stats, and the
+ * "ever installed anywhere" check to their own small functions above - each independent concern
+ * this function pulls together, not a single flat block, so a future 4th platform (or a new stat)
+ * can extend just the one relevant helper instead of adding more branches straight into this
+ * function's own body and tipping it over the limit again. */
 function applyWalletPassToAggregates(
   pass: WalletPassAggregateRow,
-  enabledPlatforms: { apple: boolean; google: boolean },
+  enabledPlatforms: EnabledWalletPlatforms,
   acc: WalletPassAggregates,
 ): void {
   const appleActive = enabledPlatforms.apple ? (pass.apple_active_registrations ?? 0) : 0;
   const googleActive = enabledPlatforms.google ? (pass.google_active_registrations ?? 0) : 0;
-  // Gated the same way as appleActive/googleActive above - a disabled platform's inactive count
-  // must drop out of the lifecycle classification below too, or a pass whose only registration
-  // ever was on a since-disabled platform would misread as "removed" (a real past install) instead
-  // of "never installed" (as far as this event's current wallet settings are concerned).
+  const samsungActive = enabledPlatforms.samsung ? (pass.samsung_active_registrations ?? 0) : 0;
+  // Gated the same way as appleActive/googleActive/samsungActive above - a disabled platform's
+  // inactive count must drop out of the lifecycle classification below too, or a pass whose only
+  // registration ever was on a since-disabled platform would misread as "removed" (a real past
+  // install) instead of "never installed" (as far as this event's current wallet settings are
+  // concerned).
   const appleInactive = enabledPlatforms.apple ? (pass.apple_inactive_registrations ?? 0) : 0;
   const googleInactive = enabledPlatforms.google ? (pass.google_inactive_registrations ?? 0) : 0;
-  const platform = classifyPassPlatform(appleActive, googleActive);
-  if (platform === "both") acc.both++;
-  else if (platform === "apple_only") acc.appleOnly++;
-  else if (platform === "google_only") acc.googleOnly++;
+  const samsungInactive = enabledPlatforms.samsung ? (pass.samsung_inactive_registrations ?? 0) : 0;
+  const platform = classifyPassPlatform(appleActive, googleActive, samsungActive);
+  incrementPlatformCounter(platform, acc);
   if (platform !== "none") {
     acc.confirmed++;
-    acc.registrationCountBuckets[bucketForRegistrationCount(appleActive + googleActive)]++;
+    acc.registrationCountBuckets[bucketForRegistrationCount(appleActive + googleActive + samsungActive)]++;
   }
   if (pass.registration_checked_at && (!acc.mostRecentSync || pass.registration_checked_at > acc.mostRecentSync)) {
     acc.mostRecentSync = pass.registration_checked_at;
@@ -761,41 +834,32 @@ function applyWalletPassToAggregates(
   acc.gotPassByType.set(typeKey, (acc.gotPassByType.get(typeKey) ?? 0) + 1);
   if (platform !== "none") acc.confirmedByType.set(typeKey, (acc.confirmedByType.get(typeKey) ?? 0) + 1);
 
-  // Gated on platform !== "none" (the same post-enabledPlatforms confirmed check as
-  // confirmed/confirmedByType above), not just first_confirmed_at being set: a pass historically
-  // confirmed on a platform the event has since disabled keeps its first_confirmed_at (it really
-  // did happen), but must not count toward "Time to wallet install" while adoption.confirmed and
-  // every other confirmed-based number in this same report no longer count it either.
-  const tapDays =
-    platform !== "none" ? computeTapDays(earliestDeliverySuccessAt(pass.attendee.email_deliveries), pass.first_confirmed_at) : null;
-  if (tapDays !== null) {
-    acc.tapDaySum += tapDays;
-    acc.tapDayCount++;
-    acc.bucketCounts[bucketForDays(tapDays)]++;
-  }
+  applyTapDayStats(pass, platform, acc);
 
-  // Raw (ungated) - unlike appleActive/appleInactive/etc. above, "was this pass ever installed
-  // anywhere" must not forget a since-disabled platform's own real history (classifyPassLifecycle's
-  // own doc comment above explains why).
-  const everInstalled =
-    pass.first_confirmed_at != null ||
-    (pass.apple_active_registrations ?? 0) > 0 ||
-    (pass.google_active_registrations ?? 0) > 0 ||
-    (pass.apple_inactive_registrations ?? 0) > 0 ||
-    (pass.google_inactive_registrations ?? 0) > 0;
-  acc.lifecycleCounts[classifyPassLifecycle(appleActive, googleActive, appleInactive, googleInactive, everInstalled)]++;
+  acc.lifecycleCounts[
+    classifyPassLifecycle(
+      appleActive,
+      googleActive,
+      samsungActive,
+      appleInactive,
+      googleInactive,
+      samsungInactive,
+      everInstalledAnywhere(pass),
+    )
+  ]++;
 }
 
 /** Single pass over the (possibly sampled - see WALLET_AGGREGATE_MAX) pass rows, building every
  * per-pass-derived number the response needs in one place rather than several separate loops. */
 export function aggregateWalletPasses(
   passes: WalletPassAggregateRow[],
-  enabledPlatforms: { apple: boolean; google: boolean },
+  enabledPlatforms: EnabledWalletPlatforms,
 ): WalletPassAggregates {
   const acc: WalletPassAggregates = {
     confirmed: 0,
     appleOnly: 0,
     googleOnly: 0,
+    samsungOnly: 0,
     both: 0,
     mostRecentSync: null,
     gotPassByType: new Map<string | null, number>(),
@@ -911,7 +975,7 @@ async function loadWalletReportsAggregates(
   eventId: string,
   timeZone: string,
   eventDate: Date,
-  enabledPlatforms: { apple: boolean; google: boolean },
+  enabledPlatforms: EnabledWalletPlatforms,
 ): Promise<EventWalletReportsResponse> {
   // "Confirmed" (active on at least one platform the event still offers), not merely issued - see
   // EventWalletReportsResponse.admission_by_wallet's own doc comment for why. Built once and
@@ -921,10 +985,21 @@ async function loadWalletReportsAggregates(
   // otherwise still count toward "with wallet" here while reading as not installed everywhere
   // else on this page (CodeRabbit review). `id: { in: [] }` (rather than a bare `OR: []`, whose
   // match-everything-or-nothing behavior isn't something to rely on) is the "matches nothing"
-  // fallback for the case where neither platform is enabled.
+  // fallback for the case where neither platform is enabled. Each column filter pairs `gt: 0`
+  // with an explicit `not: null` - without it, a genuinely never-synced pass (a real, common state
+  // pre-sync, not test-only) makes that one column's own SQL comparison evaluate to NULL rather
+  // than false; ORed with another platform's real false/true value that's still NULL, not false,
+  // and `without_wallet` below negates this whole filter with `NOT:`, where `NOT NULL` is NULL
+  // too - the attendee then matches neither `with_wallet` nor `without_wallet` and silently
+  // vanishes from admission_by_wallet's own with+without total (found via a real regression: three
+  // platform conditions ORed together are far more likely to include an unset column - almost
+  // guaranteed for samsung_active_registrations before this event's first sync - than the
+  // two-condition apple/google case this file shipped with previously, where every existing test
+  // fixture happened to always set an explicit 0).
   const confirmedWalletConditions = [
-    ...(enabledPlatforms.apple ? [{ wallet_pass: { apple_active_registrations: { gt: 0 } } }] : []),
-    ...(enabledPlatforms.google ? [{ wallet_pass: { google_active_registrations: { gt: 0 } } }] : []),
+    ...(enabledPlatforms.apple ? [{ wallet_pass: { apple_active_registrations: { gt: 0, not: null } } }] : []),
+    ...(enabledPlatforms.google ? [{ wallet_pass: { google_active_registrations: { gt: 0, not: null } } }] : []),
+    ...(enabledPlatforms.samsung ? [{ wallet_pass: { samsung_active_registrations: { gt: 0, not: null } } }] : []),
   ];
   const confirmedWalletFilter =
     confirmedWalletConditions.length > 0 ? { OR: confirmedWalletConditions } : { id: { in: [] as string[] } };
@@ -980,6 +1055,7 @@ async function loadWalletReportsAggregates(
     confirmed,
     appleOnly,
     googleOnly,
+    samsungOnly,
     both,
     mostRecentSync,
     gotPassByType,
@@ -1023,6 +1099,7 @@ async function loadWalletReportsAggregates(
     platform: {
       apple_only: appleOnly,
       google_only: googleOnly,
+      samsung_only: samsungOnly,
       both,
     },
     registrations_per_attendee: {
@@ -1568,6 +1645,8 @@ const WALLET_EXPORT_ATTENDEE_SELECT = {
       apple_inactive_registrations: true,
       google_active_registrations: true,
       google_inactive_registrations: true,
+      samsung_active_registrations: true,
+      samsung_inactive_registrations: true,
       registration_checked_at: true,
     },
   },
@@ -1585,6 +1664,63 @@ const WALLET_EXPORT_ATTENDEE_SELECT = {
 
 type WalletExportAttendeeRow = Prisma.AttendeeGetPayload<{ select: typeof WALLET_EXPORT_ATTENDEE_SELECT }>;
 
+/** One platform's own two CSV columns (active, inactive) - blank for both when `counts` is null
+ * (unsynced, or the event has since disabled this platform - see walletCsvPlatformFields' own
+ * comment on why those two reasons share one blanking rule; the caller resolves that into a
+ * counts-or-null value rather than this function taking a boolean flag - SonarCloud S2301 prefers
+ * that over a control-flag parameter). */
+function walletPlatformCsvColumns(
+  counts: { active: number; inactive: number } | null,
+): [active: string, inactive: string] {
+  return counts ? [String(counts.active), String(counts.inactive)] : ["", ""];
+}
+
+/** Every wallet-platform-derived CSV field buildWalletExportCsvRow's row needs: each platform's
+ * own two columns plus the "Confirmed platform" column - split out of buildWalletExportCsvRow
+ * below (SonarCloud S3776) so a future platform only needs to touch this one function, not that
+ * one's own body too. A disabled platform's columns go blank the same way an unsynced pass's do -
+ * the event owner turned that platform off, so a stale registration from before it was disabled is
+ * no longer a relevant "confirmed" signal; matches the same platform toggles the Wallets tab and
+ * PDF are gated by (WalletsReportsTab.tsx, exportWalletReportsPdf below). registration_checked_at
+ * null means the pass has never completed a sync - every field here leaves its columns blank
+ * (unknown) rather than exporting 0/"None", which would misrepresent "never synced" as the
+ * affirmative "confirmed not installed" result and corrupt any downstream recompute from this
+ * archive (bot review). */
+function walletCsvPlatformFields(
+  pass: WalletExportAttendeeRow["wallet_pass"],
+  enabledPlatforms: EnabledWalletPlatforms,
+): {
+  apple: [active: string, inactive: string];
+  google: [active: string, inactive: string];
+  samsung: [active: string, inactive: string];
+  confirmedPlatform: string;
+} {
+  const synced = pass?.registration_checked_at != null;
+  const appleActive = pass?.apple_active_registrations ?? 0;
+  const googleActive = pass?.google_active_registrations ?? 0;
+  const samsungActive = pass?.samsung_active_registrations ?? 0;
+  // Independent statements, not inlined as confirmedPlatformLabel's own call arguments below - a
+  // ternary nested inside another ternary's branch there (synced ? confirmedPlatformLabel(a ? b :
+  // c, ...) : "") is exactly what SonarCloud's S3358 flags.
+  const confirmedAppleActive = enabledPlatforms.apple ? appleActive : 0;
+  const confirmedGoogleActive = enabledPlatforms.google ? googleActive : 0;
+  const confirmedSamsungActive = enabledPlatforms.samsung ? samsungActive : 0;
+  return {
+    apple: walletPlatformCsvColumns(
+      synced && enabledPlatforms.apple ? { active: appleActive, inactive: pass?.apple_inactive_registrations ?? 0 } : null,
+    ),
+    google: walletPlatformCsvColumns(
+      synced && enabledPlatforms.google ? { active: googleActive, inactive: pass?.google_inactive_registrations ?? 0 } : null,
+    ),
+    samsung: walletPlatformCsvColumns(
+      synced && enabledPlatforms.samsung ? { active: samsungActive, inactive: pass?.samsung_inactive_registrations ?? 0 } : null,
+    ),
+    confirmedPlatform: synced
+      ? confirmedPlatformLabel(confirmedAppleActive, confirmedGoogleActive, confirmedSamsungActive)
+      : "",
+  };
+}
+
 /** One CSV row for exportWalletReportsCsv below - pulled out of the row-mapping callback since
  * its own branching (a wallet-pass-present/absent check per column, plus the confirmed-platform
  * lookup) pushed that callback's own cognitive complexity over the limit. */
@@ -1593,27 +1729,11 @@ export function buildWalletExportCsvRow(
   catalog: TicketTypeInfo[],
   timeZone: string,
   operatorDisplayMap: Record<string, UserDisplayRow>,
-  enabledPlatforms: { apple: boolean; google: boolean },
+  enabledPlatforms: EnabledWalletPlatforms,
 ): string {
   const pass = row.wallet_pass;
-  const appleActive = pass?.apple_active_registrations ?? 0;
-  const googleActive = pass?.google_active_registrations ?? 0;
   const emailFirstSentAt = earliestDeliverySuccessAt(row.email_deliveries);
-  // registration_checked_at null means the pass has never completed a sync - the active/inactive
-  // counts and confirmed-platform label below are all derived from that sync, so leave them blank
-  // (unknown) rather than exporting 0/"None", which would misrepresent "never synced" as the
-  // affirmative "confirmed not installed" result and corrupt any downstream recompute from this
-  // archive (bot review).
-  const synced = pass?.registration_checked_at != null;
-  // A disabled platform's own two columns go blank the same way an unsynced pass's do - the event
-  // owner turned that platform off, so a stale registration from before it was disabled is no
-  // longer a relevant "confirmed" signal; matches the same platform toggles the Wallets tab and
-  // PDF are gated by (WalletsReportsTab.tsx, exportWalletReportsPdf below).
-  const appleColumnsBlank = !synced || !enabledPlatforms.apple;
-  const googleColumnsBlank = !synced || !enabledPlatforms.google;
-  const confirmedAppleActive = enabledPlatforms.apple ? appleActive : 0;
-  const confirmedGoogleActive = enabledPlatforms.google ? googleActive : 0;
-  const confirmedPlatform = synced ? confirmedPlatformLabel(confirmedAppleActive, confirmedGoogleActive) : "";
+  const platformFields = walletCsvPlatformFields(pass, enabledPlatforms);
 
   return [
     row.name,
@@ -1621,11 +1741,10 @@ export function buildWalletExportCsvRow(
     resolveTicketTypeLabel(catalog, row.ticket_type),
     pass?.status ?? "No pass",
     pass?.issued_at ? formatAdmittedAtExport(pass.issued_at, timeZone) : "",
-    appleColumnsBlank ? "" : String(appleActive),
-    appleColumnsBlank ? "" : String(pass!.apple_inactive_registrations ?? 0),
-    googleColumnsBlank ? "" : String(googleActive),
-    googleColumnsBlank ? "" : String(pass!.google_inactive_registrations ?? 0),
-    confirmedPlatform,
+    ...platformFields.apple,
+    ...platformFields.google,
+    ...platformFields.samsung,
+    platformFields.confirmedPlatform,
     pass?.voided_at ? formatAdmittedAtExport(pass.voided_at, timeZone) : "",
     pass?.registration_checked_at ? formatAdmittedAtExport(pass.registration_checked_at, timeZone) : "",
     emailFirstSentAt ? formatAdmittedAtExport(emailFirstSentAt, timeZone) : "",
@@ -1652,7 +1771,7 @@ async function exportWalletReportsCsv(
   event: { title: string; slug: string },
   timeZone: string,
   dateStamp: string,
-  enabledPlatforms: { apple: boolean; google: boolean },
+  enabledPlatforms: EnabledWalletPlatforms,
 ): Promise<Response> {
   const [totalAttendees, rows, catalog] = await Promise.all([
     db.attendee.count({ where: { event_id: eventId } }),
@@ -1682,6 +1801,8 @@ async function exportWalletReportsCsv(
     "Apple Wallet inactive registrations",
     "Google Wallet active registrations",
     "Google Wallet inactive registrations",
+    "Samsung Wallet active registrations",
+    "Samsung Wallet inactive registrations",
     "Confirmed platform",
     `Pass voided at (${timeZone})`,
     `Registration last checked at (${timeZone})`,
@@ -1732,7 +1853,7 @@ async function exportWalletReportsPdf(
   eventId: string,
   event: { title: string; date: Date },
   timeZone: string,
-  enabledPlatforms: { apple: boolean; google: boolean },
+  enabledPlatforms: EnabledWalletPlatforms,
 ): Promise<Response> {
   const aggregates = await loadWalletReportsAggregates(db, eventId, timeZone, event.date, enabledPlatforms);
   const eventDate = event.date.toISOString().slice(0, 10);
@@ -1748,6 +1869,7 @@ async function exportWalletReportsPdf(
       : [
           enabledPlatforms.apple && { label: "Apple Wallet only", count: aggregates.platform.apple_only },
           enabledPlatforms.google && { label: "Google Wallet only", count: aggregates.platform.google_only },
+          enabledPlatforms.samsung && { label: "Samsung Wallet only", count: aggregates.platform.samsung_only },
           // "More than one wallet" only has a meaning once two platforms are both offered -
           // aggregateWalletPasses already zeroes .both to 0 when only one is enabled, but the row
           // label itself would still misleadingly imply the option exists.
