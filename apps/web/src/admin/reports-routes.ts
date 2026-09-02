@@ -739,13 +739,71 @@ interface WalletPassAggregates {
   lifecycleCounts: Record<"active" | "removed" | "never_installed", number>;
 }
 
+/** Bumps the one platform-mix counter `platform` maps to - split out of
+ * applyWalletPassToAggregates below (SonarCloud S3776) since a 4-way if/else-if chain is cheap on
+ * its own but was the difference between that function fitting under Sonar's limit and not, once
+ * Samsung became a third platform. "none" bumps nothing - a pass with no active registration on
+ * any offered platform isn't a "platform" at all (matches EventWalletReportsResponse.platform's
+ * own doc comment). */
+function incrementPlatformCounter(
+  platform: ReturnType<typeof classifyPassPlatform>,
+  acc: Pick<WalletPassAggregates, "both" | "appleOnly" | "googleOnly" | "samsungOnly">,
+): void {
+  if (platform === "both") acc.both++;
+  else if (platform === "apple_only") acc.appleOnly++;
+  else if (platform === "google_only") acc.googleOnly++;
+  else if (platform === "samsung_only") acc.samsungOnly++;
+}
+
+/** Raw (ungated) - unlike the enabledPlatforms-zeroed appleActive/appleInactive/etc. in
+ * applyWalletPassToAggregates below, "was this pass ever installed anywhere" must not forget a
+ * since-disabled platform's own real history (classifyPassLifecycle's own doc comment explains
+ * why). Split out purely to shorten applyWalletPassToAggregates' own body (SonarCloud S3776) - a
+ * long OR chain like this is cheap on its own, but every additional platform adds two more terms
+ * to it. */
+function everInstalledAnywhere(pass: WalletPassAggregateRow): boolean {
+  return (
+    pass.first_confirmed_at != null ||
+    (pass.apple_active_registrations ?? 0) > 0 ||
+    (pass.google_active_registrations ?? 0) > 0 ||
+    (pass.samsung_active_registrations ?? 0) > 0 ||
+    (pass.apple_inactive_registrations ?? 0) > 0 ||
+    (pass.google_inactive_registrations ?? 0) > 0 ||
+    (pass.samsung_inactive_registrations ?? 0) > 0
+  );
+}
+
+/** Updates the tap-day accumulators for one pass - split out of applyWalletPassToAggregates below
+ * (SonarCloud S3776). Gated on platform !== "none" (the same post-enabledPlatforms confirmed check
+ * as confirmed/confirmedByType there), not just first_confirmed_at being set: a pass historically
+ * confirmed on a platform the event has since disabled keeps its first_confirmed_at (it really did
+ * happen), but must not count toward "Time to wallet install" while adoption.confirmed and every
+ * other confirmed-based number in this same report no longer count it either. */
+function applyTapDayStats(
+  pass: WalletPassAggregateRow,
+  platform: ReturnType<typeof classifyPassPlatform>,
+  acc: Pick<WalletPassAggregates, "tapDaySum" | "tapDayCount" | "bucketCounts">,
+): void {
+  const tapDays =
+    platform !== "none" ? computeTapDays(earliestDeliverySuccessAt(pass.attendee.email_deliveries), pass.first_confirmed_at) : null;
+  if (tapDays !== null) {
+    acc.tapDaySum += tapDays;
+    acc.tapDayCount++;
+    acc.bucketCounts[bucketForDays(tapDays)]++;
+  }
+}
+
 /** Folds one pass's contribution into the running aggregates - split out of aggregateWalletPasses'
  * loop body below so that function's own cognitive complexity stays under Sonar's limit (every
  * branch here loses a nesting level once it's no longer inside a for loop). `enabledPlatforms`
  * zeroes a disabled platform's active-registration count before classification, so a pass
  * registered only on a platform the event owner has since turned off reads as "not installed"
  * here (and in adoption.confirmed) rather than as a still-live confirmation of a platform the
- * Wallets tab no longer offers. */
+ * Wallets tab no longer offers. Delegates the platform-counter bump, tap-day stats, and the
+ * "ever installed anywhere" check to their own small functions above - each independent concern
+ * this function pulls together, not a single flat block, so a future 4th platform (or a new stat)
+ * can extend just the one relevant helper instead of adding more branches straight into this
+ * function's own body and tipping it over the limit again. */
 function applyWalletPassToAggregates(
   pass: WalletPassAggregateRow,
   enabledPlatforms: EnabledWalletPlatforms,
@@ -763,10 +821,7 @@ function applyWalletPassToAggregates(
   const googleInactive = enabledPlatforms.google ? (pass.google_inactive_registrations ?? 0) : 0;
   const samsungInactive = enabledPlatforms.samsung ? (pass.samsung_inactive_registrations ?? 0) : 0;
   const platform = classifyPassPlatform(appleActive, googleActive, samsungActive);
-  if (platform === "both") acc.both++;
-  else if (platform === "apple_only") acc.appleOnly++;
-  else if (platform === "google_only") acc.googleOnly++;
-  else if (platform === "samsung_only") acc.samsungOnly++;
+  incrementPlatformCounter(platform, acc);
   if (platform !== "none") {
     acc.confirmed++;
     acc.registrationCountBuckets[bucketForRegistrationCount(appleActive + googleActive + samsungActive)]++;
@@ -779,32 +834,18 @@ function applyWalletPassToAggregates(
   acc.gotPassByType.set(typeKey, (acc.gotPassByType.get(typeKey) ?? 0) + 1);
   if (platform !== "none") acc.confirmedByType.set(typeKey, (acc.confirmedByType.get(typeKey) ?? 0) + 1);
 
-  // Gated on platform !== "none" (the same post-enabledPlatforms confirmed check as
-  // confirmed/confirmedByType above), not just first_confirmed_at being set: a pass historically
-  // confirmed on a platform the event has since disabled keeps its first_confirmed_at (it really
-  // did happen), but must not count toward "Time to wallet install" while adoption.confirmed and
-  // every other confirmed-based number in this same report no longer count it either.
-  const tapDays =
-    platform !== "none" ? computeTapDays(earliestDeliverySuccessAt(pass.attendee.email_deliveries), pass.first_confirmed_at) : null;
-  if (tapDays !== null) {
-    acc.tapDaySum += tapDays;
-    acc.tapDayCount++;
-    acc.bucketCounts[bucketForDays(tapDays)]++;
-  }
+  applyTapDayStats(pass, platform, acc);
 
-  // Raw (ungated) - unlike appleActive/appleInactive/etc. above, "was this pass ever installed
-  // anywhere" must not forget a since-disabled platform's own real history (classifyPassLifecycle's
-  // own doc comment above explains why).
-  const everInstalled =
-    pass.first_confirmed_at != null ||
-    (pass.apple_active_registrations ?? 0) > 0 ||
-    (pass.google_active_registrations ?? 0) > 0 ||
-    (pass.samsung_active_registrations ?? 0) > 0 ||
-    (pass.apple_inactive_registrations ?? 0) > 0 ||
-    (pass.google_inactive_registrations ?? 0) > 0 ||
-    (pass.samsung_inactive_registrations ?? 0) > 0;
   acc.lifecycleCounts[
-    classifyPassLifecycle(appleActive, googleActive, samsungActive, appleInactive, googleInactive, samsungInactive, everInstalled)
+    classifyPassLifecycle(
+      appleActive,
+      googleActive,
+      samsungActive,
+      appleInactive,
+      googleInactive,
+      samsungInactive,
+      everInstalledAnywhere(pass),
+    )
   ]++;
 }
 
@@ -1623,6 +1664,16 @@ const WALLET_EXPORT_ATTENDEE_SELECT = {
 
 type WalletExportAttendeeRow = Prisma.AttendeeGetPayload<{ select: typeof WALLET_EXPORT_ATTENDEE_SELECT }>;
 
+/** One platform's own two CSV columns (active, inactive) - blank for both when `blank` (unsynced,
+ * or the event has since disabled this platform - see buildWalletExportCsvRow's own comment on
+ * why those two reasons share one blanking rule). Split out of buildWalletExportCsvRow below
+ * (SonarCloud S3776) - Apple/Google/Samsung each repeated this exact two-ternary pattern verbatim,
+ * so a third platform was the difference between that function fitting under Sonar's limit and
+ * not; a fourth would just repeat the same shape again rather than adding new complexity here. */
+function walletPlatformCsvColumns(active: number, inactive: number, blank: boolean): [active: string, inactive: string] {
+  return blank ? ["", ""] : [String(active), String(inactive)];
+}
+
 /** One CSV row for exportWalletReportsCsv below - pulled out of the row-mapping callback since
  * its own branching (a wallet-pass-present/absent check per column, plus the confirmed-platform
  * lookup) pushed that callback's own cognitive complexity over the limit. */
@@ -1648,9 +1699,21 @@ export function buildWalletExportCsvRow(
   // owner turned that platform off, so a stale registration from before it was disabled is no
   // longer a relevant "confirmed" signal; matches the same platform toggles the Wallets tab and
   // PDF are gated by (WalletsReportsTab.tsx, exportWalletReportsPdf below).
-  const appleColumnsBlank = !synced || !enabledPlatforms.apple;
-  const googleColumnsBlank = !synced || !enabledPlatforms.google;
-  const samsungColumnsBlank = !synced || !enabledPlatforms.samsung;
+  const [appleActiveCol, appleInactiveCol] = walletPlatformCsvColumns(
+    appleActive,
+    pass?.apple_inactive_registrations ?? 0,
+    !synced || !enabledPlatforms.apple,
+  );
+  const [googleActiveCol, googleInactiveCol] = walletPlatformCsvColumns(
+    googleActive,
+    pass?.google_inactive_registrations ?? 0,
+    !synced || !enabledPlatforms.google,
+  );
+  const [samsungActiveCol, samsungInactiveCol] = walletPlatformCsvColumns(
+    samsungActive,
+    pass?.samsung_inactive_registrations ?? 0,
+    !synced || !enabledPlatforms.samsung,
+  );
   const confirmedAppleActive = enabledPlatforms.apple ? appleActive : 0;
   const confirmedGoogleActive = enabledPlatforms.google ? googleActive : 0;
   const confirmedSamsungActive = enabledPlatforms.samsung ? samsungActive : 0;
@@ -1664,12 +1727,12 @@ export function buildWalletExportCsvRow(
     resolveTicketTypeLabel(catalog, row.ticket_type),
     pass?.status ?? "No pass",
     pass?.issued_at ? formatAdmittedAtExport(pass.issued_at, timeZone) : "",
-    appleColumnsBlank ? "" : String(appleActive),
-    appleColumnsBlank ? "" : String(pass!.apple_inactive_registrations ?? 0),
-    googleColumnsBlank ? "" : String(googleActive),
-    googleColumnsBlank ? "" : String(pass!.google_inactive_registrations ?? 0),
-    samsungColumnsBlank ? "" : String(samsungActive),
-    samsungColumnsBlank ? "" : String(pass!.samsung_inactive_registrations ?? 0),
+    appleActiveCol,
+    appleInactiveCol,
+    googleActiveCol,
+    googleInactiveCol,
+    samsungActiveCol,
+    samsungInactiveCol,
     confirmedPlatform,
     pass?.voided_at ? formatAdmittedAtExport(pass.voided_at, timeZone) : "",
     pass?.registration_checked_at ? formatAdmittedAtExport(pass.registration_checked_at, timeZone) : "",
