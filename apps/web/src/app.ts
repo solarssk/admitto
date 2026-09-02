@@ -211,6 +211,7 @@ import {
   handleExportReports,
   handleGetWalletReports,
   handleGetCustomFieldReports,
+  handleGetMailReports,
 } from "./admin/reports-routes.js";
 import { handleGetEventOverview } from "./admin/overview-routes.js";
 import {
@@ -1931,6 +1932,9 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.get("/api/admin/events/:eventId/reports/custom-fields", staffAdminGate, (c) =>
     handleGetCustomFieldReports(c, db),
+  );
+  app.get("/api/admin/events/:eventId/reports/mail", staffAdminGate, (c) =>
+    handleGetMailReports(c, db),
   );
   app.get("/api/admin/theme", staffAdminGate, (c) => handleGetStaffTheme(c, db));
   app.put("/api/admin/theme", jsonPostCsrf, staffAdminGate, (c) => handlePutStaffTheme(c, db));

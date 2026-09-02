@@ -112,6 +112,7 @@ import type {
   EventReportsResponse,
   EventWalletReportsResponse,
   EventCustomFieldReportsResponse,
+  EventMailReportsResponse,
   AccountDto,
   PatchAccountProfileBody,
   PatchAccountPasswordBody,
@@ -2964,6 +2965,17 @@ export async function fetchEventCustomFieldReports(
     { credentials: "same-origin", signal },
   );
   return parseJson<EventCustomFieldReportsResponse>(res);
+}
+
+export async function fetchEventMailReports(
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<EventMailReportsResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/reports/mail`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<EventMailReportsResponse>(res);
 }
 
 // --- Identity providers & Cloudflare Access (SPA Settings → Identity, #266) ---
