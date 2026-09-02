@@ -172,6 +172,7 @@ export function toResolved(
       wallet_api_key_enc: string | null;
       wallet_apple_enabled: boolean;
       wallet_google_enabled: boolean;
+      wallet_samsung_enabled: boolean;
       wallet_field_mapping: unknown;
       location_details?: LocationDetailsForTicket;
       logo_url: string | null; header_image_url: string | null;
@@ -211,6 +212,7 @@ export function toResolved(
       walletApiKeyEnc: row.event.wallet_api_key_enc,
       walletAppleEnabled: row.event.wallet_apple_enabled,
       walletGoogleEnabled: row.event.wallet_google_enabled,
+      walletSamsungEnabled: row.event.wallet_samsung_enabled,
       walletFieldMapping: parseWalletFieldMapping(row.event.wallet_field_mapping),
       eventType: row.event.event_type,
       location: loc?.venue_name ?? null,

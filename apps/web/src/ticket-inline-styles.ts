@@ -54,6 +54,9 @@ body.ticket-page { margin: 0; box-sizing: border-box; width: 100%; overflow-x: c
 .wallet-badge-frame { display: block; height: 48px; overflow: hidden; line-height: 0; }
 .wallet-badge { display: block; height: 48px; width: auto; }
 .wallet-badge--apple { height: 49px; }
+/* No working Samsung Wallet route yet (see ticket-page.ts's walletSamsungBadge doc comment) - muted
+ * so it reads as a coming-soon preview, not a broken/missing image. */
+.wallet-badge--disabled { opacity: 0.45; }
 .ticket__wallet-help { margin: 0 20px 14px; color: var(--text-muted, #64748b); font-size: 0.75rem; line-height: 1.45; text-align: center; }
 .ticket__wallet-help summary { cursor: pointer; list-style: none; padding: 0; font-weight: 500; color: var(--text-muted, #64748b); text-decoration: none; }
 .ticket__wallet-help summary::-webkit-details-marker { display: none; }

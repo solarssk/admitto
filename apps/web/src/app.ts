@@ -53,6 +53,8 @@ import {
   handleGetAppleWalletBadgePng,
   handleGetGoogleWalletBadge,
   handleGetGoogleWalletBadgePng,
+  handleGetSamsungWalletBadge,
+  handleGetSamsungWalletBadgePng,
 } from "./wallet-badges.js";
 import { handlePassCreatorWebhook } from "./wallet-webhook.js";
 import {
@@ -1121,6 +1123,9 @@ export function createApp(options: CreateAppOptions = {}) {
       (options.walletPassProvider !== undefined || resolvedForDisplay.event.walletApiKeyEnc !== null);
     const appleWalletVisible = walletConfigured && resolvedForDisplay.event.walletAppleEnabled;
     const googleWalletVisible = walletConfigured && resolvedForDisplay.event.walletGoogleEnabled;
+    // Inert badge only - no createPass route exists for Samsung yet (PassCreator has no API
+    // support), see TicketPageOptions.walletSamsungBadge's own doc comment.
+    const samsungWalletVisible = walletConfigured && resolvedForDisplay.event.walletSamsungEnabled;
     return htmlWithSecurityHeaders(
       c,
       renderTicket(resolvedForDisplay, qrDataUrl, theme, {
@@ -1129,6 +1134,7 @@ export function createApp(options: CreateAppOptions = {}) {
         weather,
         ...(appleWalletVisible ? { walletAppleHref: `${walletBase}/wallet/apple` } : {}),
         ...(googleWalletVisible ? { walletGoogleHref: `${walletBase}/wallet/google` } : {}),
+        ...(samsungWalletVisible ? { walletSamsungBadge: true } : {}),
         walletError: c.req.query("walletError") === "1",
       }),
       200,
@@ -1149,8 +1155,10 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/assets/admitto-logo.svg", handleGetAdmittoLogo);
   app.get("/assets/apple-wallet-badge.svg", handleGetAppleWalletBadge);
   app.get("/assets/google-wallet-badge.svg", handleGetGoogleWalletBadge);
+  app.get("/assets/samsung-wallet-badge.svg", handleGetSamsungWalletBadge);
   app.get("/assets/apple-wallet-badge.png", handleGetAppleWalletBadgePng);
   app.get("/assets/google-wallet-badge.png", handleGetGoogleWalletBadgePng);
+  app.get("/assets/samsung-wallet-badge.png", handleGetSamsungWalletBadgePng);
   app.get("/readyz", readyzRateLimit, (c) =>
     handleReadyz(c, {
       db,

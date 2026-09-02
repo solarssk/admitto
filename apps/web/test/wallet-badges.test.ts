@@ -16,6 +16,7 @@ describe("wallet / ticket mark assets", () => {
       "/assets/admitto-logo.svg",
       "/assets/apple-wallet-badge.svg",
       "/assets/google-wallet-badge.svg",
+      "/assets/samsung-wallet-badge.svg",
     ];
     for (const path of cases) {
       const res = await app.request(path);
@@ -34,7 +35,11 @@ describe("wallet / ticket mark assets", () => {
 
   it("serves PNG wallet badges for email (classic Outlook doesn't render SVG <img> sources)", async () => {
     const app = createApp();
-    for (const path of ["/assets/apple-wallet-badge.png", "/assets/google-wallet-badge.png"]) {
+    for (const path of [
+      "/assets/apple-wallet-badge.png",
+      "/assets/google-wallet-badge.png",
+      "/assets/samsung-wallet-badge.png",
+    ]) {
       const res = await app.request(path);
       expect(res.status, path).toBe(200);
       expect(res.headers.get("content-type"), path).toBe("image/png");
