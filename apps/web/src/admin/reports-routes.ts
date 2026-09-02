@@ -6,6 +6,7 @@ import {
   enabledWalletPlatforms,
   type EnabledWalletPlatforms,
   type EventCustomFieldReportsResponse,
+  type EventMailReportsResponse,
   type EventWalletReportsResponse,
 } from "@admitto/shared";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
@@ -944,7 +945,7 @@ export function buildWalletTicketTypeBreakdown(
  * through today (or the event date, whichever is earlier) so the chart reads as "flat since the
  * last real day" instead of just stopping there - capped at the event date so a long-past event
  * doesn't grow a trailing flat line for every day since. */
-function buildIssuedByDay(
+export function buildIssuedByDay(
   issuedByDayRaw: Array<{ day: string; count: bigint }>,
   timeZone: string,
   eventDate: Date,
@@ -1258,6 +1259,170 @@ export async function handleGetCustomFieldReports(c: Context, db: PrismaClient):
   if (forbidden) return forbidden;
 
   const body = await loadCustomFieldReportsAggregates(db, eventId);
+  c.header("Cache-Control", "no-store");
+  return c.json(body);
+}
+
+// Canonical display order for EventMailReportsResponse.delivery.by_status - EmailDelivery.status
+// is a plain string column (packages/db/src/status.ts is the source of truth, not re-imported
+// here since it's a server-only Prisma-adjacent package apps/admin can't safely pull into its
+// browser bundle - see AGENTS.md), so this file's own literal list stands in for it, same
+// convention as this file's own HOUR_LABELS/BUCKET_LABELS-style constants.
+const MAIL_STATUS_ORDER = ["queued", "accepted", "sent", "delivered", "failed", "bounced", "rejected", "cancelled"];
+
+/** Groups EmailDelivery rows for the event's Mail report tab - delivery-attempt counts (every
+ * row, resends included), attendee-level reach (deduped per attendee, so a bounced initial
+ * followed by a successful resend counts as reached exactly once), the initial/resend split,
+ * a per-template success rate, a day-by-day successful-send trend, and how many reached
+ * attendees went on to actually view their ticket page. */
+async function loadMailReportsAggregates(
+  db: PrismaClient,
+  eventId: string,
+  timeZone: string,
+  eventDate: Date,
+): Promise<EventMailReportsResponse> {
+  const successStatuses = [...EMAIL_DELIVERY_SUCCESS_STATUSES] as string[];
+
+  const [
+    totalAttendees,
+    byStatusRaw,
+    byPurposeRaw,
+    reachedAttendees,
+    viewedAttendees,
+    byTemplateTotalRaw,
+    byTemplateSuccessfulRaw,
+    sentByDayRaw,
+  ] = await Promise.all([
+    db.attendee.count({ where: { event_id: eventId } }),
+    db.emailDelivery.groupBy({
+      by: ["status"],
+      where: { event_id: eventId },
+      _count: { _all: true },
+    }),
+    db.emailDelivery.groupBy({
+      by: ["purpose"],
+      where: { event_id: eventId },
+      _count: { _all: true },
+    }),
+    db.attendee.count({
+      where: { event_id: eventId, email_deliveries: { some: { status: { in: successStatuses } } } },
+    }),
+    // Two independent EXISTS checks (reached, ever viewed), not one predicate on a single row -
+    // recordTicketViewed stamps viewed_at on whichever delivery was "the latest successful one"
+    // at the moment the attendee actually opened the ticket page, but that same row's status can
+    // still change later (a hard bounce can arrive via the async IMAP bounce-ingest poll after a
+    // genuine view already happened, since applyBounceResult only requires the row to still be
+    // non-terminal - accepted counts). Requiring both conditions on the SAME row missed exactly
+    // that recovery case: initial accepted -> viewed -> bounces -> resend succeeds. The attendee
+    // is correctly "reached" (via the resend) and genuinely did view their ticket (via the
+    // now-bounced initial), but neither single row satisfies both at once (bot review).
+    db.attendee.count({
+      where: {
+        event_id: eventId,
+        AND: [
+          { email_deliveries: { some: { status: { in: successStatuses } } } },
+          { email_deliveries: { some: { viewed_at: { not: null } } } },
+        ],
+      },
+    }),
+    db.emailDelivery.groupBy({
+      by: ["template_label_snapshot"],
+      where: { event_id: eventId },
+      _count: { _all: true },
+    }),
+    db.emailDelivery.groupBy({
+      by: ["template_label_snapshot"],
+      where: { event_id: eventId, status: { in: successStatuses } },
+      _count: { _all: true },
+    }),
+    // COALESCE(accepted_at, sent_at, delivered_at), not accepted_at alone - "accepted" is the
+    // only status any configured mailer adapter actually reports today, but a row can still land
+    // as "sent"/"delivered" (schema-present, code-present, just not exercised by any live adapter
+    // yet - see earliestDeliverySuccessAt's own comment above), and those only ever set sent_at/
+    // delivered_at, never accepted_at. Same precedence earliestDeliverySuccessAt already uses for
+    // the wallet tap-time anchor, so a successful delivery can't silently drop off this chart.
+    // status IN successStatuses (not just a non-null timestamp) - applyBounceResult sets a hard
+    // bounce's status to "bounced" without clearing accepted_at, so a timestamp-only filter would
+    // still count an accepted-then-bounced delivery as a "successful send" here (bot review).
+    db.$queryRaw<Array<{ day: string; count: bigint }>>`
+      SELECT
+        TO_CHAR(DATE_TRUNC('day', (COALESCE(accepted_at, sent_at, delivered_at) AT TIME ZONE 'UTC') AT TIME ZONE ${timeZone}), 'YYYY-MM-DD') AS day,
+        COUNT(*)::bigint AS count
+      FROM "EmailDelivery"
+      WHERE event_id = ${eventId}
+        AND status IN (${Prisma.join(successStatuses)})
+        AND COALESCE(accepted_at, sent_at, delivered_at) IS NOT NULL
+      GROUP BY 1
+      ORDER BY 1
+    `,
+  ]);
+
+  const totalAttempts = byStatusRaw.reduce((sum, row) => sum + row._count._all, 0);
+  const successfulAttempts = byStatusRaw
+    .filter((row) => successStatuses.includes(row.status))
+    .reduce((sum, row) => sum + row._count._all, 0);
+  const by_status = byStatusRaw
+    .map((row) => ({ status: row.status, count: row._count._all }))
+    .sort((a, b) => MAIL_STATUS_ORDER.indexOf(a.status) - MAIL_STATUS_ORDER.indexOf(b.status));
+
+  const purposeCounts = new Map(byPurposeRaw.map((row) => [row.purpose, row._count._all]));
+
+  const templateTotal = new Map(byTemplateTotalRaw.map((row) => [row.template_label_snapshot, row._count._all]));
+  const templateSuccessful = new Map(
+    byTemplateSuccessfulRaw.map((row) => [row.template_label_snapshot, row._count._all]),
+  );
+  const by_template = [...templateTotal.entries()]
+    .map(([template, total]) => {
+      const successful = templateSuccessful.get(template) ?? 0;
+      return { template, total, successful, successful_pct: oneDecimalPct(successful, total) };
+    })
+    .sort((a, b) => b.total - a.total);
+
+  const sent_by_day = buildIssuedByDay(sentByDayRaw, timeZone, eventDate);
+
+  return {
+    total_attendees: totalAttendees,
+    delivery: {
+      total_attempts: totalAttempts,
+      successful: successfulAttempts,
+      successful_pct: oneDecimalPct(successfulAttempts, totalAttempts),
+      by_status,
+    },
+    attendee_reach: {
+      reached: reachedAttendees,
+      not_reached: totalAttendees - reachedAttendees,
+      reached_pct: oneDecimalPct(reachedAttendees, totalAttendees),
+    },
+    by_purpose: {
+      initial: purposeCounts.get("initial") ?? 0,
+      resend: purposeCounts.get("resend") ?? 0,
+    },
+    by_template,
+    sent_by_day,
+    ticket_viewed: {
+      reached: reachedAttendees,
+      viewed: viewedAttendees,
+      viewed_pct: oneDecimalPct(viewedAttendees, reachedAttendees),
+    },
+  };
+}
+
+/** GET /api/admin/events/:eventId/reports/mail - email delivery/reach/template analytics,
+ * computed entirely from EmailDelivery rows the mail-delivery pipeline already writes; no new
+ * provider calls. Read-only, no audit, same access gate as the other reports endpoints. */
+export async function handleGetMailReports(c: Context, db: PrismaClient): Promise<Response> {
+  const eventIdParam = requireEventId(c);
+  if (eventIdParam instanceof Response) return eventIdParam;
+  const eventId = eventIdParam;
+
+  const forbidden = await assertEventManageAccess(c, db, eventId);
+  if (forbidden) return forbidden;
+
+  const event = await db.event.findUnique({ where: { id: eventId }, select: { timezone: true, date: true } });
+  if (!event) return c.json({ error: "not_found" }, 404);
+
+  const timeZone = resolvePreviewEventTimeZone(event.timezone);
+  const body = await loadMailReportsAggregates(db, eventId, timeZone, event.date);
   c.header("Cache-Control", "no-store");
   return c.json(body);
 }

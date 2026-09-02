@@ -1925,6 +1925,7 @@ export interface EventWalletReportsResponse extends Omit<EventWalletReportsDto, 
 }
 
 export type { EventCustomFieldReportsResponse } from "@admitto/shared";
+export type { EventMailReportsResponse } from "@admitto/shared";
 
 // --- Identity providers & Cloudflare Access (SPA Settings → Identity, #266) ---
 

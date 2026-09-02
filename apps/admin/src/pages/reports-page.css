@@ -710,10 +710,20 @@
   flex-direction: column;
 }
 
+/* min-height: 230px, same floor as .wallets-chart-card__chart's own 230px - every list card in
+   this feature so far (Adoption by ticket type) has always sat next to a chart card, so grid's
+   align-items: stretch matching the row to that chart already gave it a consistent minimum
+   height for free. A row pairing two list cards together (Mail's Initial vs resend / Delivery by
+   template) has no chart sibling to stretch against, so without this floor a sparse list (a
+   couple of rows) collapses the whole card down around just its own short content - a real
+   inconsistency the more rows-poor the pairing is (Reports feedback, Mail tab). This is a no-op
+   for the ticket-type pairing (its row already exceeds 230px via the chart), so it doesn't change
+   that card's own layout. */
 .wallets-list-card > .at-card__body {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 230px;
 }
 
 .wallets-list-card .reports-breakdown-list {
