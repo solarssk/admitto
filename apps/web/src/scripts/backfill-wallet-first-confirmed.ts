@@ -44,9 +44,14 @@ import { PassCreatorClient, parseFirstDownloadedAtUtc } from "@admitto/wallet";
 import { resolvePassCreatorBaseUrl } from "../config.js";
 import { subscribeWalletWebhooksBestEffort } from "../admin/event-settings-routes.js";
 
+/** Undefined for a missing flag, and also for one given with no value (the next token is itself
+ * another `--flag`, e.g. `--event-id --dry-run` with the id left off by mistake) - without this,
+ * `--dry-run` would silently become the event id, matching no event and processing zero events
+ * with no error (bot review). */
 export function arg(name: string, argv: readonly string[] = process.argv): string | undefined {
   const i = argv.indexOf(`--${name}`);
-  return i !== -1 && argv[i + 1] ? argv[i + 1] : undefined;
+  const value = i !== -1 ? argv[i + 1] : undefined;
+  return value && !value.startsWith("--") ? value : undefined;
 }
 
 export function hasFlag(name: string, argv: readonly string[] = process.argv): boolean {
@@ -133,6 +138,9 @@ export async function backfillEvent(
 export async function main(): Promise<void> {
   const dryRun = hasFlag("dry-run");
   const eventId = arg("event-id");
+  if (hasFlag("event-id") && !eventId) {
+    throw new Error("--event-id requires a value");
+  }
 
   const events = await prisma.event.findMany({
     where: {

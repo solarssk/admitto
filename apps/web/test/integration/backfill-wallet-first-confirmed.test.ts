@@ -69,6 +69,10 @@ describe("arg/hasFlag", () => {
     expect(arg("event-id", ["--event-id"])).toBeUndefined();
   });
 
+  it("arg treats another --flag as a missing value, not as the value itself", () => {
+    expect(arg("event-id", ["--event-id", "--dry-run"])).toBeUndefined();
+  });
+
   it("hasFlag reports whether a bare --name flag is present", () => {
     expect(hasFlag("dry-run", ["--dry-run"])).toBe(true);
     expect(hasFlag("dry-run", ["--event-id", "evt-1"])).toBe(false);

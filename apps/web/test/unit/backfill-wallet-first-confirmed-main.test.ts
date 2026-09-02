@@ -73,4 +73,43 @@ describe("main", () => {
     // assertion for backfillEvent directly.
     expect(subscribeWalletWebhooksBestEffort).not.toHaveBeenCalled();
   });
+
+  it("rejects --event-id given with no value, instead of silently querying zero events", async () => {
+    findManyEvents.mockResolvedValue([]);
+    const originalArgv = process.argv;
+    // --event-id immediately followed by another flag, not a real id - arg() (see its own doc
+    // comment) would otherwise read "--dry-run" itself as the id, matching no event and
+    // processing zero events with no indication anything was wrong (bot review).
+    process.argv = ["node", "backfill-wallet-first-confirmed.js", "--event-id", "--dry-run"];
+    try {
+      const { main } = await import("../../src/scripts/backfill-wallet-first-confirmed.js");
+      await expect(main()).rejects.toThrow("--event-id requires a value");
+    } finally {
+      process.argv = originalArgv;
+    }
+    expect(findManyEvents).not.toHaveBeenCalled();
+  });
+});
+
+describe("backfillEvent", () => {
+  it("continues to the candidate query when subscribeWalletWebhooksBestEffort itself throws, rather than propagating", async () => {
+    // subscribeWalletWebhooksBestEffort (event-settings-routes.ts) swallows its own real failure
+    // modes internally (listWebhooks/decrypt/resolveInstanceBaseUrl are all try/caught there, see
+    // its own doc comment) - unreachable from an integration test's mocks, since none of those
+    // ever actually reject the call. Mocking the imported function itself, here, is the only way
+    // to exercise backfillEvent's own defensive try/catch around it (line 70-71).
+    subscribeWalletWebhooksBestEffort.mockRejectedValueOnce(new Error("unexpected throw"));
+    const { backfillEvent } = await import("../../src/scripts/backfill-wallet-first-confirmed.js");
+    const { prisma } = await import("@admitto/db");
+
+    await expect(
+      backfillEvent(
+        prisma as never,
+        { id: "evt-a", title: "Event A", wallet_template_id: "tmpl-a", wallet_api_key_enc: "enc-a" },
+        false,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(subscribeWalletWebhooksBestEffort).toHaveBeenCalledOnce();
+  });
 });
