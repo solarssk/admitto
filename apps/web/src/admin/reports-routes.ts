@@ -665,22 +665,34 @@ export function confirmedPlatformLabel(appleActive: number, googleActive: number
 /** What became of one issued pass, for the Wallets tab's "Wallet lifecycle" card - mutually
  * exclusive with the other two outcomes. "active" reuses classifyPassPlatform's own "confirmed"
  * definition (appleActive/googleActive already zeroed for a disabled platform by the caller, same
- * as everywhere else in this file) rather than re-deriving it, so the two can't drift. "removed"
- * is deliberately not "any inactive registration count > 0" on its own - an attendee can have an
- * active registration on one device and an unrelated inactive registration left over from a
- * different, since-removed device (or a different platform entirely), and that pass is still
- * genuinely in use, so classifyPassPlatform's check above already routes it to "active" before
- * this ever looks at the inactive counts at all. Only once neither platform has anything active
- * does an inactive registration mean what "removed" claims: confirmed installed at some point,
- * gone from every device it was ever on. */
+ * as everywhere else in this file) rather than re-deriving it, so the two can't drift - this
+ * intentionally stays gated, keeping `wallet_lifecycle.active` in agreement with
+ * `adoption.confirmed` elsewhere on this same report, rather than the two silently disagreeing on
+ * "how many are active right now" (bot review). "removed" is deliberately not "any inactive
+ * registration count > 0" on its own - an attendee can have an active registration on one device
+ * and an unrelated inactive registration left over from a different, since-removed device (or a
+ * different platform entirely), and that pass is still genuinely in use, so classifyPassPlatform's
+ * check above already routes it to "active" before this ever looks at the inactive counts at all.
+ * `everInstalled` is the caller-computed "was this pass EVER on a device, on any platform, ever" -
+ * unlike appleActive/appleInactive/etc. above it is deliberately NOT re-zeroed for a disabled
+ * platform: unlike "active" (a live-right-now question this event's current settings should gate),
+ * "was it ever installed" is a historical fact a later platform toggle can't retroactively undo -
+ * a pass that installed and was removed on a platform since disabled is still `removed`, not
+ * `never_installed`, and a pass still live only on a since-disabled platform is `removed` too
+ * (the closest honest bucket once it's excluded from `active` by the event's own current settings)
+ * rather than the flatly false claim that it was never installed anywhere (CodeRabbit review). It
+ * also covers registration-sync.ts nulling every registration column on a no-match provider
+ * lookup without touching `first_confirmed_at` - a pass demonstrably confirmed installed at some
+ * point can otherwise reach this function with every count at 0. */
 export function classifyPassLifecycle(
   appleActive: number,
   googleActive: number,
   appleInactive: number,
   googleInactive: number,
+  everInstalled: boolean,
 ): "active" | "removed" | "never_installed" {
   if (classifyPassPlatform(appleActive, googleActive) !== "none") return "active";
-  if (appleInactive + googleInactive > 0) return "removed";
+  if (appleInactive + googleInactive > 0 || everInstalled) return "removed";
   return "never_installed";
 }
 
@@ -762,7 +774,16 @@ function applyWalletPassToAggregates(
     acc.bucketCounts[bucketForDays(tapDays)]++;
   }
 
-  acc.lifecycleCounts[classifyPassLifecycle(appleActive, googleActive, appleInactive, googleInactive)]++;
+  // Raw (ungated) - unlike appleActive/appleInactive/etc. above, "was this pass ever installed
+  // anywhere" must not forget a since-disabled platform's own real history (classifyPassLifecycle's
+  // own doc comment above explains why).
+  const everInstalled =
+    pass.first_confirmed_at != null ||
+    (pass.apple_active_registrations ?? 0) > 0 ||
+    (pass.google_active_registrations ?? 0) > 0 ||
+    (pass.apple_inactive_registrations ?? 0) > 0 ||
+    (pass.google_inactive_registrations ?? 0) > 0;
+  acc.lifecycleCounts[classifyPassLifecycle(appleActive, googleActive, appleInactive, googleInactive, everInstalled)]++;
 }
 
 /** Single pass over the (possibly sampled - see WALLET_AGGREGATE_MAX) pass rows, building every

@@ -269,10 +269,11 @@ async function seed(client: PrismaClient) {
       issued_at: new Date("2027-06-15T00:00:00.000Z"),
       apple_active_registrations: 0,
       google_active_registrations: 1,
-      // Also has an inactive Google registration - with Google enabled this alone would still
-      // read as "removed" (the same platform's own history), but the event has Google disabled,
-      // so a correct implementation must zero this the same way it zeroes google_active_registrations
-      // above, landing this attendee in never_installed for wallet_lifecycle below, not removed.
+      // Also has an inactive Google registration. Google is disabled for this event, so both this
+      // and the active registration above are zeroed for adoption/platform/registrations_per_attendee
+      // (see the assertions below) - but wallet_lifecycle's removed/never_installed boundary reads
+      // real, ungated history, so this attendee still correctly lands in "removed" rather than the
+      // flatly false "never_installed".
       google_inactive_registrations: 1,
     },
   });
@@ -2347,10 +2348,13 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.adoption.confirmed).toBe(1);
     expect(body.platform).toEqual({ apple_only: 1, google_only: 0, both: 0 });
     // ATT_W_APPLE_ONLY_EVENT: active (its Apple registration stays live regardless of Google
-    // being disabled). ATT_W_GOOGLE_ONLY_EVENT: never_installed, not removed - its own Google
-    // active AND inactive registrations are both zeroed by the disabled platform (see the seed
-    // comment above), leaving it with nothing on the one platform (Apple) this event still offers.
-    expect(body.wallet_lifecycle).toEqual({ active: 1, removed: 0, never_installed: 1 });
+    // being disabled). ATT_W_GOOGLE_ONLY_EVENT: removed, not never_installed - its Google
+    // registrations are zeroed for the `active`/`platform`/`registrations_per_attendee` checks
+    // above (Google is disabled), but wallet_lifecycle's removed/never_installed boundary reads
+    // the real, ungated history instead - this attendee genuinely does have a real Google
+    // registration on record, so calling it never_installed would be flatly false, even though the
+    // event's current settings mean it doesn't count as `active` here.
+    expect(body.wallet_lifecycle).toEqual({ active: 1, removed: 1, never_installed: 0 });
     // ATT_W_APPLE_ONLY_EVENT has apple_active_registrations=1, google_active_registrations=1,
     // but Google is disabled for this event - the same enabledPlatforms-zeroed googleActive=0
     // classifyPassPlatform already uses feeds this bucket too, so the sum is 1, not 2.
