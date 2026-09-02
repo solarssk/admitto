@@ -2199,7 +2199,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
       total_attendees: number;
       synced_at: string | null;
       passes_truncated: boolean;
-      adoption: { got_pass: number; confirmed: number; cancelled: number };
+      adoption: { got_pass: number; confirmed: number };
       issued_by_day: unknown[];
     };
     expect(body.total_attendees).toBe(0);
@@ -2207,7 +2207,6 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.passes_truncated).toBe(false);
     expect(body.adoption.got_pass).toBe(0);
     expect(body.adoption.confirmed).toBe(0);
-    expect(body.adoption.cancelled).toBe(0);
     expect(body.issued_by_day).toEqual([]);
   });
 
@@ -2221,7 +2220,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       adoption: { got_pass: number; confirmed: number };
-      platform: { apple_only: number; google_only: number; both: number; not_installed: number };
+      platform: { apple_only: number; google_only: number; both: number };
       admission_by_wallet: {
         with_wallet: { total: number; admitted: number; pct: number };
         without_wallet: { total: number; admitted: number; pct: number };
@@ -2229,11 +2228,11 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     };
     expect(body.adoption.got_pass).toBe(2);
     expect(body.adoption.confirmed).toBe(1);
-    expect(body.platform).toEqual({ apple_only: 1, google_only: 0, both: 0, not_installed: 1 });
+    expect(body.platform).toEqual({ apple_only: 1, google_only: 0, both: 0 });
     // ATT_W_GOOGLE_ONLY_EVENT's registration is only on the now-disabled Google platform - without
     // enabledPlatforms gating confirmedWalletFilter too (not just aggregateWalletPasses above),
-    // this would still count it as "with wallet" here despite `platform.not_installed` already
-    // reporting it as not installed (CodeRabbit review).
+    // this would still count it as "with wallet" here despite adoption.confirmed already
+    // excluding it as not installed (CodeRabbit review).
     expect(body.admission_by_wallet.with_wallet.total).toBe(1);
     expect(body.admission_by_wallet.without_wallet.total).toBe(1);
   });
@@ -2248,8 +2247,8 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
       total_attendees: number;
       synced_at: string | null;
       passes_truncated: boolean;
-      adoption: { got_pass: number; got_pass_pct: number; confirmed: number; confirmed_pct: number; cancelled: number };
-      platform: { apple_only: number; google_only: number; both: number; not_installed: number };
+      adoption: { got_pass: number; got_pass_pct: number; confirmed: number; confirmed_pct: number };
+      platform: { apple_only: number; google_only: number; both: number };
       by_ticket_type: Array<{
         key: string | null;
         type: string;
@@ -2278,11 +2277,10 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
 
     expect(body.adoption.got_pass).toBe(7); // every wallet attendee except ATT_W_NOPASS
     expect(body.adoption.got_pass_pct).toBeCloseTo(87.5);
-    expect(body.adoption.confirmed).toBe(5); // apple/google/both/notype/legacy - not_installed and voided excluded
+    expect(body.adoption.confirmed).toBe(5); // apple/google/both/notype/legacy - not-installed and voided excluded
     expect(body.adoption.confirmed_pct).toBeCloseTo(71.4);
-    expect(body.adoption.cancelled).toBe(1); // ATT_W_VOIDED
 
-    expect(body.platform).toEqual({ apple_only: 3, google_only: 1, both: 1, not_installed: 2 });
+    expect(body.platform).toEqual({ apple_only: 3, google_only: 1, both: 1 });
 
     const general = body.by_ticket_type.find((t) => t.key === "General");
     expect(general).toBeDefined();
@@ -2522,7 +2520,7 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     // buckets-or-list-always-populated ternaries at once, plus the never-synced meta line.
     expect(html).toContain("Not synced yet");
     expect(html).not.toContain("Synced ");
-    expect(html).toContain("No passes issued");
+    expect(html).toContain("No wallet passes installed yet");
     expect(html).toContain("No attendees");
     expect(html).toContain("Not enough data yet");
   });

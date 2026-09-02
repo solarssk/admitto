@@ -20,17 +20,16 @@ export interface EventWalletReportsResponse {
     got_pass_pct: number;
     confirmed: number;
     confirmed_pct: number;
-    cancelled: number;
   };
   /** Mutually exclusive - a pass can be actively registered on more than one platform at once
    * (the same attendee opening their ticket link on both an iPhone and an Android device, say),
-   * so a naive apple-count + google-count double-counts that pass. These four always sum to
-   * exactly `adoption.got_pass`. */
+   * so a naive apple-count + google-count double-counts that pass. These three always sum to
+   * exactly `adoption.confirmed` - a pass with no active registration on any platform isn't a
+   * "platform" at all, so it has no slice here (see the Wallets tab's own platform-split card). */
   platform: {
     apple_only: number;
     google_only: number;
     both: number;
-    not_installed: number;
   };
   by_ticket_type: Array<{
     key: string | null;

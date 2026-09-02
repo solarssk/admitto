@@ -150,10 +150,12 @@ async function main(): Promise<void> {
 // CLI-only main(), just inline in one file since this script has no other consumer to share the
 // exported function with.
 if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
-  main()
-    .catch((err) => {
-      console.error("backfill-wallet-first-confirmed failed:", err);
-      process.exitCode = 1;
-    })
-    .finally(() => prisma.$disconnect());
+  try {
+    await main();
+  } catch (err) {
+    console.error("backfill-wallet-first-confirmed failed:", err);
+    process.exitCode = 1;
+  } finally {
+    await prisma.$disconnect();
+  }
 }
