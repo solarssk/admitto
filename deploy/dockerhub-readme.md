@@ -1,9 +1,13 @@
-![Admitto](https://raw.githubusercontent.com/solarssk/admitto/main/docs/assets/admitto-logo.svg)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/solarssk/admitto/main/docs/assets/admitto-logo.svg" alt="Admitto" height="64">
+</p>
 
-[![CI](https://github.com/solarssk/admitto/actions/workflows/ci.yml/badge.svg)](https://github.com/solarssk/admitto/actions/workflows/ci.yml)
-[![release](https://img.shields.io/github/v/tag/solarssk/admitto?sort=semver&label=release&color=066fd1)](https://github.com/solarssk/admitto/releases)
-[![Docker: amd64 and arm64](https://img.shields.io/badge/docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white)](https://github.com/solarssk/admitto/pkgs/container/admitto)
-[![license](https://img.shields.io/badge/license-Apache%202.0-blue)](https://github.com/solarssk/admitto/blob/main/LICENSE)
+<p align="center">
+  <a href="https://github.com/solarssk/admitto/actions/workflows/ci.yml"><img src="https://github.com/solarssk/admitto/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/solarssk/admitto/releases"><img src="https://img.shields.io/github/v/tag/solarssk/admitto?sort=semver&label=release&color=066fd1" alt="release"></a>
+  <a href="https://github.com/solarssk/admitto/pkgs/container/admitto"><img src="https://img.shields.io/badge/docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white" alt="Docker: amd64 and arm64"></a>
+  <a href="https://github.com/solarssk/admitto/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="Apache 2.0"></a>
+</p>
 
 # Admitto
 
