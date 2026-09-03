@@ -97,6 +97,7 @@ export {
   AttendeeExportTooLargeError,
   buildSanitizedExportRows,
   buildExportColumns,
+  buildExportColumnLabels,
   buildExportCsv,
   exportAttendeesCsv,
 } from "./attendees-export.js";

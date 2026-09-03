@@ -10,7 +10,7 @@ import {
   type EventWalletReportsResponse,
 } from "@admitto/shared";
 import { resolvePreviewEventTimeZone } from "@admitto/mail-templates";
-import { loadEventTicketTypes, writeBulkActionLog, type TicketTypeInfo } from "@admitto/tickets";
+import { buildExportColumnLabels, loadEventTicketTypes, writeBulkActionLog, type TicketTypeInfo } from "@admitto/tickets";
 import {
   adminAuditFromContext,
   assertEventManageAccess,
@@ -37,6 +37,17 @@ export const ADMISSION_LOG_LIMIT = 500;
 // `passes_truncated` flag (computed against an unbounded COUNT of the same rows) so the frontend
 // can say so, rather than presenting a sample as if it were the full picture.
 const WALLET_AGGREGATE_MAX = 50_000;
+// A backstop on the Mail CSV export's own per-attendee email_deliveries join
+// (MAIL_EXPORT_ATTENDEE_SELECT below) - unlike WALLET_RELEVANT_EMAIL_DELIVERIES_SELECT (narrowed
+// by its own `where` to successful ticket/wallet-CTA sends), this export deliberately wants every
+// attempt regardless of status, which has no natural upper bound the way a WalletPass's 1:1
+// relation does (CodeRabbit review). A genuinely resend-heavy attendee - dozens of reminder
+// campaigns, say - stays nowhere near this; it exists purely so no single attendee's delivery
+// history can pull an unbounded number of rows into memory. Ordered newest-first so the
+// "Last delivery status"/"Ticket page viewed" columns (which want the attendee's current state)
+// stay accurate if this ever gets hit - "Ticket email first sent at" could in that same rare case
+// miss a genuinely older send that fell outside the cap.
+const MAIL_EXPORT_DELIVERIES_PER_ATTENDEE_MAX = 200;
 
 export interface EventReportsResponse {
   timezone: string;
@@ -1790,7 +1801,13 @@ async function finishCsvExport(
     report: "admissions" | "wallets" | "mail" | "customfields";
   },
 ): Promise<Response> {
-  const header = opts.columns.map((col) => quoteCsvCell(col)).join(",");
+  // sanitizeCsvCell here, not just on data rows below - every other column header is a literal
+  // string this file controls, but the Custom fields export's own columns include
+  // EventCustomField.label, admin-authored free text a spreadsheet app would otherwise evaluate
+  // as a formula if it starts with =/+/-/@ (CSV injection, CWE-1236, CodeRabbit review). A no-op
+  // on the literal headers, so applying it unconditionally here protects every export's header
+  // row instead of only the one caller that currently needs it.
+  const header = opts.columns.map((col) => quoteCsvCell(sanitizeCsvCell(col))).join(",");
   const truncationNotice = opts.truncated
     ? [
         quoteCsvCell(
@@ -2497,7 +2514,24 @@ const MAIL_EXPORT_ATTENDEE_SELECT = {
   // their seven shared fields (same duplication-avoidance reasoning as WalletPassInstalledFields
   // above for everInstalledAnywhere).
   email_deliveries: {
-    select: { ...WALLET_RELEVANT_EMAIL_DELIVERIES_SELECT.select, status: true, viewed_at: true, created_at: true },
+    select: {
+      ...WALLET_RELEVANT_EMAIL_DELIVERIES_SELECT.select,
+      id: true,
+      status: true,
+      viewed_at: true,
+      created_at: true,
+    },
+    // created_at DESC, id DESC - the same latest-delivery tie-break EmailDelivery's own
+    // "Latest-delivery lookup" index documents (schema.prisma), not created_at alone: a batch
+    // send can write several rows with the same created_at, and without a deterministic
+    // secondary key both this cap (which 200 rows come back) and buildMailExportCsvRow's own
+    // "Last delivery status" (which of a tied group counts as latest) would depend on whatever
+    // order Postgres happened to return ties in (CodeRabbit review).
+    // Prisma's orderBy wants a mutable array; the `as` here only overrides the surrounding
+    // `as const` freezing this one array into a readonly tuple, same reasoning as any other
+    // array-valued option nested inside an `as const` select.
+    orderBy: [{ created_at: "desc" }, { id: "desc" }] as Prisma.EmailDeliveryOrderByWithRelationInput[],
+    take: MAIL_EXPORT_DELIVERIES_PER_ATTENDEE_MAX,
   },
 } as const;
 
@@ -2518,10 +2552,17 @@ export function buildMailExportCsvRow(
   // documents (EmailDelivery model, schema.prisma) - accepted_at/sent_at/delivered_at can all be
   // null for a delivery that never got past queued/failed, so created_at is the only field
   // guaranteed present to order the most recent attempt by.
-  const lastDelivery = deliveries.reduce<MailExportAttendeeRow["email_deliveries"][number] | null>(
-    (latest, d) => (!latest || d.created_at > latest.created_at ? d : latest),
-    null,
-  );
+  // created_at DESC, id DESC tie-break, explicit here rather than only in the query's own
+  // orderBy (MAIL_EXPORT_ATTENDEE_SELECT above) - matching EmailDelivery's own documented
+  // latest-delivery convention directly in the comparison itself keeps this correct even if a
+  // future change to that orderBy is missed (CodeRabbit review).
+  const lastDelivery = deliveries.reduce<MailExportAttendeeRow["email_deliveries"][number] | null>((latest, d) => {
+    if (!latest) return d;
+    if (d.created_at.getTime() !== latest.created_at.getTime()) {
+      return d.created_at > latest.created_at ? d : latest;
+    }
+    return d.id > latest.id ? d : latest;
+  }, null);
   const ticketEmailFirstSentAt = earliestDeliverySuccessAt(
     deliveries.filter((d) => successStatuses.includes(d.status) && isTicketScopedDelivery(d)),
   );
@@ -2812,7 +2853,19 @@ async function exportCustomFieldReportsCsv(
 
   const truncated = totalAttendees > CSV_EXPORT_MAX;
 
-  const columns = ["Name", "Email", "Ticket type", ...fields.map((f) => f.label)];
+  // buildExportColumnLabels, not a plain fields.map((f) => f.label) - only source_field is
+  // unique per event (EventCustomField's own schema constraint), so two fields can share a
+  // label; this appends " (source_field)" to disambiguate a duplicate the same way the
+  // attendees list's own CSV/XLSX export already does for its attribute columns (CodeRabbit
+  // review). Also runs each label through sanitizeCsvCell itself - redundant with, not a
+  // replacement for, finishCsvExport's own blanket header-sanitize below, which exists so every
+  // export's headers are covered even where a caller doesn't have its own reason to sanitize.
+  const columns = [
+    "Name",
+    "Email",
+    "Ticket type",
+    ...buildExportColumnLabels(fields.map((f) => ({ label: f.label, source_field: f.source_field }))),
+  ];
   const dataRows = rows.map((row) => buildCustomFieldExportCsvRow(row, catalog, fields));
 
   return finishCsvExport(db, c, eventId, {
