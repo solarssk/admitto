@@ -212,7 +212,7 @@ Turning on "Issue badge at entry" is rejected unless the event's badge item actu
 Beyond length limits, the template editor checks the actual content as you type (re-validating about half a second after you stop):
 
 - **Only known placeholders** (`{{first_name}}`, `{{ticket_url}}`, and about 20 others, plus that event's own branding-image tokens) are allowed - an unrecognised one is flagged by name.
-- **`{{ticket_url}}` and `{{qr_image_url}}` must both appear somewhere** in the subject or body combined - a template that never actually shows the ticket link or QR code is rejected, even if every placeholder it does use is individually valid.
+- **`{{ticket_url}}` and `{{qr_image_url}}` must both appear somewhere** in the subject or body combined, but only for the ticket template - a ticket template that never actually shows the ticket link or QR code is rejected, even if every placeholder it does use is individually valid. Any other named template (a reminder, an announcement) can be saved without either.
 - A placeholder written inside an HTML comment, or used unquoted inside an HTML attribute, is rejected - both would silently fail to work in a real mail client.
 - An MJML-format template is compiled and checked for structural errors (invalid attribute, unknown element, wrong nesting, missing title) with a plain-language explanation and the line number. HTML-format templates skip this check.
 - An event can have **up to 10 saved templates**; a new one's internal name must be unique within the event (handled automatically from the label you type).

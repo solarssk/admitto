@@ -372,6 +372,129 @@ describe("multi-template API", () => {
     );
   });
 
+  it("POST /templates/:id/preview returns subject and html for a custom template without ticket_url or qr_image_url", async () => {
+    const reminder = await postNamedTemplate(app, "Reminder");
+    const res = await app.request(`/api/admin/events/${EVENT_A}/templates/${reminder.id}/preview`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        subject_template: "Add your ticket to Wallet",
+        body_template: "<p>Hi {{first_name}}, add your ticket to Wallet.</p>",
+        template_format: "html",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subject: string; html: string };
+    expect(body.subject).toBe("Add your ticket to Wallet");
+    expect(body.html.length).toBeGreaterThan(0);
+  });
+
+  it("POST /templates/:id/preview on the ticket-named template still requires ticket_url and qr_image_url", async () => {
+    await putTicketTemplate(app);
+    const ticket = await prisma.mailTemplate.findUniqueOrThrow({
+      where: {
+        scope_type_scope_id_name: { scope_type: "event", scope_id: EVENT_A, name: "ticket" },
+      },
+    });
+    const res = await app.request(`/api/admin/events/${EVENT_A}/templates/${ticket.id}/preview`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        subject_template: "Hi {{first_name}}",
+        body_template: "<p>Hi {{first_name}}</p>",
+        template_format: "html",
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; errors: string[] };
+    expect(body.errors).toEqual(
+      expect.arrayContaining([
+        "Missing required placeholder: qr_image_url",
+        "Missing required placeholder: ticket_url",
+      ]),
+    );
+  });
+
+  it("POST /templates rejects a known placeholder sitting inside an HTML comment", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/templates`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        label: "Announcement",
+        template_format: "html",
+        subject_template: "Update on {{event_name}}",
+        body_template: "<p>Hi {{first_name}}</p><!-- {{event_name}} -->",
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; errors: string[] };
+    expect(body.error).toBe("template_validation_failed");
+    expect(body.errors).toContain("Placeholder in HTML comment: event_name");
+  });
+
+  it("POST /templates rejects an unquoted placeholder attribute", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/templates`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        label: "Announcement 2",
+        template_format: "html",
+        subject_template: "Update on {{event_name}}",
+        body_template: "<p>Hi {{first_name}}</p><a href={{ticket_url}}>Ticket</a>",
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; errors: string[] };
+    expect(body.error).toBe("template_validation_failed");
+    expect(body.errors).toContain("Unquoted attribute placeholder: href");
+  });
+
+  it("PUT /templates/:id returns 404 for a template that never existed", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/templates/no-such-template`, {
+      method: "PUT",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ subject_template: "Hi", body_template: "<p>Hi</p>", template_format: "html" }),
+    });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not_found" });
+  });
+
+  it("POST /templates/:id/preview returns 404 for a template that never existed", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/templates/no-such-template/preview`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not_found" });
+  });
+
+  it("PUT /templates/:id without subject/body keeps the template's existing content", async () => {
+    const reminder = await postNamedTemplate(app, "Reminder");
+    const firstSave = await app.request(`/api/admin/events/${EVENT_A}/templates/${reminder.id}`, {
+      method: "PUT",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        subject_template: "Wallet reminder",
+        body_template: "<p>Hi {{first_name}}</p>",
+        template_format: "html",
+      }),
+    });
+    expect(firstSave.status).toBe(200);
+
+    const res = await app.request(`/api/admin/events/${EVENT_A}/templates/${reminder.id}`, {
+      method: "PUT",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({ label: "Reminder (renamed)" }),
+    });
+    expect(res.status).toBe(200);
+
+    const row = await prisma.mailTemplate.findUniqueOrThrow({ where: { id: reminder.id } });
+    expect(row.label).toBe("Reminder (renamed)");
+    expect(row.subject_template).toBe("Wallet reminder");
+    expect(row.body_template).toBe("<p>Hi {{first_name}}</p>");
+  });
+
   it("DELETE blocks ticket template", async () => {
     await putTicketTemplate(app);
     const ticket = await prisma.mailTemplate.findUniqueOrThrow({

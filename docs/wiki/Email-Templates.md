@@ -20,16 +20,16 @@ Confirm the event title, date, timezone, location, attendee data, and effective 
 6. Select **Preview** and resolve all validation messages.
 7. Save the template.
 8. In **Send test**, enter an approved address such as `docs.test@example.com` and select **Send test**.
-9. Check the message in a normal email client, including links, QR image, event details, and responsive layout.
+9. Check the message in a normal email client, including links, event details, and responsive layout - for the ticket template, also check the QR image.
 
 ## Expected result
 
-The saved template previews without errors and the test message contains a working ticket link and rendered QR image.
+The saved template previews without errors. For the ticket template, the test message contains a working ticket link and rendered QR image; for another named template, it reflects whatever content and links you built into it.
 
 ## Important decisions
 
 - Changing the format button does not convert the source body. Switching a non-empty template asks for confirmation first.
-- Required variables are marked by the editor. Ticket messages require valid ticket and QR URLs.
+- Required variables are marked by the editor. Only the ticket template requires valid ticket and QR URLs; other named templates do not.
 - Image and Wallet chips insert ready-to-use markup, an image element or a wallet badge button linking to the placeholder; a bare token does not display a picture or a button by itself.
 - Select the pencil icon next to the template picker to rename the template, change its icon, or edit its description. This does not change the subject or body.
 - Preview uses safe sample values. A template test validates rendering and mail delivery but does not send to attendees.
