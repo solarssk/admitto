@@ -590,6 +590,16 @@ function applyBrandingPatch(
   }
 }
 
+/** Attempts for the post-unsubscribe listWebhooks() re-check inside subscribeWalletWebhooksBestEffort
+ * below, and the delay between them - a transient failure there must not be treated the same as a
+ * confirmed-unchanged state on the first try (bot review, 2026-09-03). */
+const RE_CHECK_ATTEMPTS = 3;
+const RE_CHECK_RETRY_DELAY_MS = 500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** Best-effort: (re-)registers this event's webhook target URL with PassCreator for every event
  * type the receiving endpoint handles (wallet-webhook.ts), whenever a save leaves the wallet
  * fully enabled and configured. A PassCreator outage, unreachable instance URL, or bad key here
@@ -727,13 +737,33 @@ export async function subscribeWalletWebhooksBestEffort(
     // code just deleted these two keys from its own in-memory bookkeeping the moment unsubscribe
     // resolved, then blindly re-subscribed pushnotification_registered/unregistered on top of
     // whatever never actually went away - piling on a fresh duplicate every time this function ran
-    // for that event, since hasLegacyEventOnRegistrationUrl stayed true on every subsequent run. A
-    // failed re-check falls back to the same "skip resubscribing" behavior as a failed unsubscribe
-    // above (alreadySubscribed left as the last known, stale-inclusive state) rather than guessing.
-    try {
-      const freshHooks = (await client.listWebhooks()).filter(
-        (hook) => hook.passTemplate === updated.wallet_template_id,
-      );
+    // for that event, since hasLegacyEventOnRegistrationUrl stayed true on every subsequent run.
+    //
+    // Retried up to RE_CHECK_ATTEMPTS times - this function already runs unawaited in the
+    // background (bot review), so a short delay here costs nothing user-facing, and a transient
+    // failure on this one read must not be conflated with "unsubscribe never took effect": if
+    // unsubscribeWebhook above genuinely cleared the URL and this read then fails outright, giving
+    // up after a single attempt would leave the event with no pushnotification_registered/
+    // unregistered subscription at all - not just a stale duplicate - until an unrelated save
+    // happens to run this function again. Exhausting every retry still falls back to the same "skip
+    // resubscribing" behavior as a failed unsubscribe above (alreadySubscribed left as the last
+    // known, stale-inclusive state) rather than guessing.
+    let freshHooks: { targetUrl: string | null; event: string; passTemplate: string | null }[] | undefined;
+    for (let attempt = 0; attempt < RE_CHECK_ATTEMPTS; attempt++) {
+      try {
+        freshHooks = (await client.listWebhooks()).filter(
+          (hook) => hook.passTemplate === updated.wallet_template_id,
+        );
+        break;
+      } catch (err) {
+        if (attempt < RE_CHECK_ATTEMPTS - 1) {
+          await sleep(RE_CHECK_RETRY_DELAY_MS);
+        } else {
+          console.error("wallet webhook subscribe: post-unsubscribe re-check failed after retries:", err);
+        }
+      }
+    }
+    if (freshHooks) {
       alreadySubscribed.clear();
       freshHooks.forEach((hook) => alreadySubscribed.add(`${hook.targetUrl ?? ""} ${hook.event}`));
       const stillStale = freshHooks.some(
@@ -752,8 +782,6 @@ export async function subscribeWalletWebhooksBestEffort(
           fields: { eventId },
         });
       }
-    } catch (err) {
-      console.error("wallet webhook subscribe: post-unsubscribe re-check failed:", err);
     }
   }
 

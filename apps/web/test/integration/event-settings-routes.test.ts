@@ -1977,6 +1977,101 @@ describe("PATCH /api/admin/events/:eventId", () => {
       }
     });
 
+    it("retries the post-unsubscribe re-check on a transient listWebhooks failure instead of leaving the event with no registration-event subscription at all", async () => {
+      // Bot review, 2026-09-03: unsubscribeWebhook genuinely clearing the shared URL, followed by
+      // a one-off transient failure on the very next listWebhooks() call, must not be treated the
+      // same as "unsubscribe never took effect" - that would skip resubscribing
+      // pushnotification_registered/unregistered even though they are now truly gone, leaving the
+      // event with no subscription for either event type until an unrelated save happens to run
+      // this function again.
+      const baseUrl = await resolveInstanceBaseUrl(prisma);
+      const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
+      const staleHooks = [
+        { targetUrl, event: "pass_voided", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "pushnotification_registered", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "first_pushnotification_registered", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "pushnotification_unregistered", passTemplate: "tmpl-sub" },
+      ];
+      const listSpy = vi
+        .spyOn(PassCreatorClient.prototype, "listWebhooks")
+        // Initial listing (top of the function): stale state.
+        .mockResolvedValueOnce(staleHooks)
+        // First re-check attempt: transient failure.
+        .mockRejectedValueOnce(new Error("transient network error"))
+        // Retry succeeds: unsubscribeWebhook genuinely cleared the URL.
+        .mockResolvedValue([]);
+      const unsubscribeSpy = vi
+        .spyOn(PassCreatorClient.prototype, "unsubscribeWebhook")
+        .mockResolvedValue(undefined);
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(unsubscribeSpy).toHaveBeenCalledExactlyOnceWith(targetUrl);
+        // All 4 events end up subscribed fresh, same as the fully-successful migration above - the
+        // one-off transient failure on the re-check must not change the outcome once the retry
+        // succeeds.
+        await vi.waitFor(
+          () => {
+            expect(subscribeSpy).toHaveBeenCalledTimes(4);
+          },
+          { timeout: 3000 },
+        );
+        expect(listSpy).toHaveBeenCalledTimes(3);
+      } finally {
+        listSpy.mockRestore();
+        unsubscribeSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("gives up after exhausting every re-check retry and falls back to skipping the registration-event resubscribe, same as a failed unsubscribe", async () => {
+      const baseUrl = await resolveInstanceBaseUrl(prisma);
+      const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
+      const staleHooks = [
+        { targetUrl, event: "pass_voided", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "pushnotification_registered", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "first_pushnotification_registered", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "pushnotification_unregistered", passTemplate: "tmpl-sub" },
+      ];
+      const listSpy = vi
+        .spyOn(PassCreatorClient.prototype, "listWebhooks")
+        .mockResolvedValueOnce(staleHooks)
+        .mockRejectedValue(new Error("persistent outage"));
+      const unsubscribeSpy = vi
+        .spyOn(PassCreatorClient.prototype, "unsubscribeWebhook")
+        .mockResolvedValue(undefined);
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        // Only the dedicated-URL events get subscribed - every re-check attempt failed, so
+        // alreadySubscribed is left at its last known (stale-inclusive) state and
+        // pushnotification_registered/unregistered are treated as already present.
+        await vi.waitFor(
+          () => {
+            expect(subscribeSpy).toHaveBeenCalledTimes(2);
+          },
+          { timeout: 3000 },
+        );
+        expect(listSpy).toHaveBeenCalledTimes(4);
+      } finally {
+        listSpy.mockRestore();
+        unsubscribeSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
     it("does not duplicate the registration-event subscriptions when the legacy-pass_voided unsubscribe itself fails", async () => {
       const baseUrl = await resolveInstanceBaseUrl(prisma);
       const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
