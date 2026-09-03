@@ -80,7 +80,7 @@ const RECIPIENT_OPTIONS: ReadonlyArray<{
 
 const WALLET_STATUS_OPTIONS: ReadonlyArray<{ id: WalletLifecycleStatus; label: string; icon: string }> = [
   { id: "active", label: "Active (installed now)", icon: "circle-check" },
-  { id: "removed", label: "Removed (installed, then removed)", icon: "wallet-off" },
+  { id: "removed", label: "Once installed, not active now", icon: "wallet-off" },
   { id: "never_installed", label: "Never added", icon: "minus" },
 ];
 
