@@ -570,7 +570,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       <div className="wallets-panels">
         <Card title={<HintLabel hint={syncedHint(data.synced_at)}>Wallet adoption</HintLabel>}>
           <p className="wallets-description">
-            One pass per attendee: issued when the attendee first taps Add to Wallet, installed once it&rsquo;s confirmed on their wallet app. Counted here even if later removed from the device - see Wallet lifecycle below for who still has it installed right now.
+            One pass per attendee, issued on the first Add to Wallet tap and installed once confirmed - unaffected by later removal (see Wallet lifecycle below).
           </p>
           <div className="wallets-adoption">
             <AdoptionGauge
@@ -624,7 +624,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       <div className="wallets-panels">
         <Card title="Devices per attendee" className="wallets-chart-card">
           <p className="wallets-description">
-            Some attendees add their ticket to more than one device, like a phone and a smartwatch. This shows how many devices attendees are actually using, not just how many people have their ticket installed.
+            Some attendees add their ticket to more than one device - this counts devices actually in use right now, not just who has it installed.
           </p>
           <RegistrationsPerAttendeeChart buckets={data.registrations_per_attendee.buckets} isActive={isActive} />
         </Card>
