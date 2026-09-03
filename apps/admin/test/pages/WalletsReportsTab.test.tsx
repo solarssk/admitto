@@ -363,14 +363,20 @@ describe("WalletsReportsTab", () => {
 
     // Platform donut: apple_only, google_only, samsung_only (real data, 0 in this fixture), both -
     // no "not installed" slice (that's the Wallet adoption card's job) - and the breakdown list's
-    // own per-platform percentages, each independently computed by pctOf(count, installed=10).
+    // own per-platform percentages, each independently computed by pctOf(count,
+    // installed=wallet_lifecycle.active=6). This card reads wallet_lifecycle.active, not
+    // adoption.confirmed=10 - platform stays a live-right-now count, unlike adoption.confirmed
+    // itself (see EventWalletReportsResponse's own doc comment) - so this fixture's own
+    // platform slices (6+3+0+1=10) don't actually sum to the donut's center value (6); a real
+    // server response keeps the two in sync (platform sums to wallet_lifecycle.active by
+    // construction), this hand-written fixture just doesn't bother modeling that.
     const platformCard = cardByTitle("Wallet platform");
     expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([6, 3, 0, 1]);
     expect(breakdownRows(platformCard)).toEqual([
-      { name: "Apple Wallet", meta: "6 · 60%" },
-      { name: "Google Wallet", meta: "3 · 30%" },
+      { name: "Apple Wallet", meta: "6 · 100%" },
+      { name: "Google Wallet", meta: "3 · 50%" },
       { name: "Samsung Wallet", meta: "0 · 0%" },
-      { name: "More than one wallet", meta: "1 · 10%" },
+      { name: "More than one wallet", meta: "1 · 16.7%" },
     ]);
 
     // Devices per attendee bar chart: one bar per bucket, matching fixture()'s buckets
@@ -725,7 +731,7 @@ describe("WalletsReportsTab", () => {
     const platformCard = cardByTitle("Wallet platform");
     expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([6, 0]);
     expect(breakdownRows(platformCard)).toEqual([
-      { name: "Apple Wallet", meta: "6 · 60%" },
+      { name: "Apple Wallet", meta: "6 · 100%" },
       { name: "Samsung Wallet", meta: "0 · 0%" },
     ]);
     expect(within(platformCard).getByText(/they used\.$/)).toBeTruthy();
@@ -743,7 +749,7 @@ describe("WalletsReportsTab", () => {
     const platformCard = cardByTitle("Wallet platform");
     expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([3, 0]);
     expect(breakdownRows(platformCard)).toEqual([
-      { name: "Google Wallet", meta: "3 · 30%" },
+      { name: "Google Wallet", meta: "3 · 50%" },
       { name: "Samsung Wallet", meta: "0 · 0%" },
     ]);
   });
@@ -817,7 +823,9 @@ describe("WalletsReportsTab", () => {
 
     const platformCard = cardByTitle("Wallet platform");
     expect(dataValues(within(platformCard).getByTestId("rc-pie"))).toEqual([6, 3, 2, 1]);
-    expect(breakdownRows(platformCard)).toContainEqual({ name: "Samsung Wallet", meta: "2 · 16.7%" });
+    // Denominator is wallet_lifecycle.active=6 (unchanged by this override, base fixture()'s own
+    // value - it isn't overridden here), not adoption.confirmed=12 as overridden above.
+    expect(breakdownRows(platformCard)).toContainEqual({ name: "Samsung Wallet", meta: "2 · 33.3%" });
   });
 
   it("shows the 'No wallet passes yet' EmptyState when nothing has been issued at all", async () => {
