@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Saving Event Settings with Wallet configured could pile up a fresh duplicate PassCreator registration webhook on every save for an event still migrating off the old shared subscription URL, instead of cleaning it up - the resubscribe logic trusted a non-throwing unsubscribe call as proof PassCreator actually cleared it, then blindly re-subscribed on top when it silently hadn't. It now re-checks PassCreator's own webhook list before resubscribing, and logs a System Log entry if an event is still stuck afterward instead of accumulating duplicates indefinitely.
+
 ## [0.6.6] - 2026-09-03
 
 ### Added
