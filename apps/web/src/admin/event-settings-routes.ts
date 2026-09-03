@@ -1160,7 +1160,18 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
     );
 
     if (patchesWallet) {
-      await subscribeWalletWebhooksBestEffort(db, eventId, updated);
+      // Fire-and-forget, not awaited (bot review, 2026-09-03): the settings write already
+      // committed above, and every PassCreator call this makes has its own 15s timeout - awaiting
+      // it here could hold this request open for tens of seconds during a PassCreator outage
+      // (worse since the post-unsubscribe re-check inside can retry up to RE_CHECK_ATTEMPTS times),
+      // risking an upstream gateway cutting the connection before it settles even though the save
+      // itself already succeeded. Every internal step already swallows its own errors (this
+      // function's own doc comment: "must never fail the settings save"), so nothing here should
+      // ever actually reject - .catch is defensive only, matching this file's other best-effort
+      // background calls (app.ts's refreshMapsConfigCache).
+      void subscribeWalletWebhooksBestEffort(db, eventId, updated).catch((err) => {
+        console.error("wallet webhook subscribe: background best-effort call rejected unexpectedly:", err);
+      });
     }
     // Awaited (unlike the pre-job-system version): enqueueing is now a single fast AdminJob
     // insert, not a fan-out of one PassCreator call per attendee, so there's no client-timeout

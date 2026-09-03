@@ -2055,16 +2055,24 @@ describe("PATCH /api/admin/events/:eventId", () => {
         });
 
         expect(res.status).toBe(200);
-        // Only the dedicated-URL events get subscribed - every re-check attempt failed, so
-        // alreadySubscribed is left at its last known (stale-inclusive) state and
-        // pushnotification_registered/unregistered are treated as already present.
+        // subscribeSpy already reaches its final count (2, from the dedicated-URL events) before
+        // the retry loop below finishes making all 4 listWebhooks calls - now that this whole
+        // best-effort call runs detached from the request (bot review, 2026-09-03), waiting on
+        // subscribeSpy first would resolve too early and race the still-running retries. Wait for
+        // listSpy to reach its own final count first instead - the last thing that happens in this
+        // path - then assert subscribeSpy synchronously, since the final subscribeMissingWalletWebhooks
+        // call for pushnotification_registered/unregistered always runs after the retry loop
+        // settles either way.
         await vi.waitFor(
           () => {
-            expect(subscribeSpy).toHaveBeenCalledTimes(2);
+            expect(listSpy).toHaveBeenCalledTimes(4);
           },
           { timeout: 3000 },
         );
-        expect(listSpy).toHaveBeenCalledTimes(4);
+        // Only the dedicated-URL events get subscribed - every re-check attempt failed, so
+        // alreadySubscribed is left at its last known (stale-inclusive) state and
+        // pushnotification_registered/unregistered are treated as already present.
+        expect(subscribeSpy).toHaveBeenCalledTimes(2);
       } finally {
         listSpy.mockRestore();
         unsubscribeSpy.mockRestore();
