@@ -20,6 +20,7 @@ What you get in `deploy/`:
 | [`ENV.md`](./ENV.md) | Generated env dictionary (boot vs UI, who reads what) — regenerate with `npm run docs:env` |
 | [`env-catalog.json`](./env-catalog.json) | Human summaries for that dictionary (source of truth for descriptions) |
 | **ghcr.io image** | `ghcr.io/solarssk/admitto:X.Y.Z` — published automatically on each git tag `vX.Y.Z` |
+| **docker.io image** | `docker.io/solarssk/admitto:X.Y.Z` — same image, mirrored to Docker Hub on the same tag |
 
 TLS termination and public DNS usually sit **in front** of this stack (e.g. Nginx Proxy Manager, Cloudflare). Prefer forwarding to the compose nginx on port **8080** (Variant A below). Portainer stacks that publish the app port directly are Variant B.
 
@@ -176,6 +177,28 @@ Omit `ADMITTO_IMAGE` or leave the default `ghcr.io/solarssk/admitto:local` — c
 ```bash
 docker compose up -d --build
 ```
+
+## Docker Hub (docker.io) — mirror
+
+The same [`publish-container.yml`](../.github/workflows/publish-container.yml) run also pushes the identical image (same digest, same multi-arch manifest, same Trivy CRITICAL gate) to Docker Hub:
+
+```text
+docker.io/solarssk/admitto:X.Y.Z
+docker.io/solarssk/admitto:X.Y      # minor line (e.g. 0.3)
+```
+
+`ghcr.io` stays the primary/documented registry above; this is an alternative pull source, useful where Docker Hub is easier to reach or already allowlisted (e.g. some `docker login`-free NAS UIs default to it). Pull it the same way, just with the `docker.io` reference:
+
+```bash
+cd deploy
+cp .env.example .env
+# ADMITTO_IMAGE=docker.io/solarssk/admitto:0.4.11
+
+docker compose pull app
+docker compose up -d --no-build
+```
+
+Public repo → no `docker login` needed to pull.
 
 ## Platform and image architecture
 

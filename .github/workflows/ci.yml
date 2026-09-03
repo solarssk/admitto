@@ -113,6 +113,17 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck --workspaces --if-present
 
+  actionlint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lint GitHub Actions workflow files
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667  # 1.7.12
+
   test-web:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -373,13 +384,14 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-    needs: [lint-and-typecheck, test-web, test-admin, test-rest]
+    needs: [lint-and-typecheck, actionlint, test-web, test-admin, test-rest]
     if: always()
     steps:
       - name: Check all shards succeeded
         run: |
           for result in \
             "${{ needs.lint-and-typecheck.result }}" \
+            "${{ needs.actionlint.result }}" \
             "${{ needs.test-web.result }}" \
             "${{ needs.test-admin.result }}" \
             "${{ needs.test-rest.result }}"; do

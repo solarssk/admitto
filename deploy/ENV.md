@@ -37,7 +37,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 
 | Variable | Boot | Consumers | UI | Secret | Summary |
 |----------|------|-----------|----|--------|---------|
-| `ADMITTO_IMAGE` | recommended | compose | none | no | ghcr.io/solarssk/admitto:X.Y.Z image pin (version without leading v). |
+| `ADMITTO_IMAGE` | recommended | compose | none | no | ghcr.io/solarssk/admitto:X.Y.Z image pin (version without leading v); docker.io/solarssk/admitto:X.Y.Z mirror works the same way. |
 
 ## Reverse proxy trust
 
