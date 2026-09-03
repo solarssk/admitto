@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-09-03
+
 ### Added
 
 - Wallet passes now track the moment they're actually confirmed installed on a wallet app (PassCreator's `first_pushnotification_registered` webhook, given its own dedicated subscription URL alongside the existing void/registration ones), not just when a pass is issued. Reports' Wallets tab "Time to wallet install" card (renamed from "Time to wallet tap") now measures from the ticket email to that confirmed install instead of to the earlier "Add to Wallet" tap, which only reflected how fast someone opened the email rather than whether the pass ever actually installed. A one-time ops script backfills this for passes issued before the change, from PassCreator's own record of the pass's first device download.
@@ -1329,7 +1331,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.5...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.6...HEAD
+[0.6.6]: https://github.com/solarssk/admitto/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/solarssk/admitto/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/solarssk/admitto/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/solarssk/admitto/compare/v0.6.2...v0.6.3
