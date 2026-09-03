@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.7] - 2026-09-03
+
 ### Added
 
 - Communication's mail Send screen has a new "By wallet status" recipient filter, alongside the existing ticket type and attendance status ones - send only to attendees whose wallet pass is currently active, was installed and later removed, or was never added at all, the same three-way split Reports' Wallets tab already uses. Useful for a reminder to attendees who haven't added their pass yet, or a follow-up only to those who have.
@@ -1349,7 +1351,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.6...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.7...HEAD
+[0.6.7]: https://github.com/solarssk/admitto/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/solarssk/admitto/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/solarssk/admitto/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/solarssk/admitto/compare/v0.6.3...v0.6.4
