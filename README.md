@@ -154,7 +154,7 @@ More detail: [infra/README.md](infra/README.md) · [apps/web/README.md](apps/web
 
 ## Production deployment
 
-Self-hosted **Docker Compose** only. Images are published to `ghcr.io/solarssk/admitto` on each `vX.Y.Z` git tag, as a **multi-arch manifest** (`linux/amd64` + `linux/arm64`) - Docker pulls the right one automatically, whether you're on a standard x86 VPS or arm64 hardware (AWS Graviton, Oracle Cloud's free arm tier, Raspberry Pi-class devices, Apple Silicon via Docker Desktop). Both platforms pass the same Trivy CRITICAL-vulnerability gate before either is pushed.
+Self-hosted **Docker Compose** only. Images are published to `ghcr.io/solarssk/admitto` on each `vX.Y.Z` git tag, and mirrored to `docker.io/solarssk/admitto`, as a **multi-arch manifest** (`linux/amd64` + `linux/arm64`) - Docker pulls the right one automatically, whether you're on a standard x86 VPS or arm64 hardware (AWS Graviton, Oracle Cloud's free arm tier, Raspberry Pi-class devices, Apple Silicon via Docker Desktop). Both platforms pass the same Trivy CRITICAL-vulnerability gate before either is pushed.
 Compose runs **`app`**, **`migrate`**, and a single **`worker`** (mail drain, import/export, bounce, retention).
 See [deploy/README.md](deploy/README.md).
 

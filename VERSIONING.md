@@ -115,6 +115,6 @@ git cat-file tag v0.0.0-signing-smoke | grep -E -q 'BEGIN (SSH|PGP) SIGNATURE'
 git tag -d v0.0.0-signing-smoke
 ```
 
-**Container image:** pushing git tag `v0.x.y` publishes `ghcr.io/solarssk/admitto:0.x.y` and the rolling minor tag `ghcr.io/solarssk/admitto:0.x` (see `deploy/README.md`).
+**Container image:** pushing git tag `v0.x.y` publishes `ghcr.io/solarssk/admitto:0.x.y` and the rolling minor tag `ghcr.io/solarssk/admitto:0.x`, mirrored to `docker.io/solarssk/admitto` under the same tags (see `deploy/README.md`).
 
 Runtime (`/healthz`, Docker labels) does not expose version yet — by design until we need operator-facing build info.
