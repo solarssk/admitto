@@ -6,22 +6,22 @@ Use these pages when you need an exact field, value, status, or definition.
 
 ## Data and communication
 
-- [Import File Reference](Import-File-Reference) — accepted attendee columns, identifiers, and validation rules.
+- [Import File Reference](Import-File-Reference) - accepted attendee columns, identifiers, and validation rules.
 - [Validation Reference](Validation-Reference) - every field-level and cross-field validation rule across the app, by screen.
 - [Notifications and Messages Reference](Notifications-and-Messages-Reference) - every message Admitto can send: trigger, subject, content, and recipients.
-- [Template Variables](Template-Variables) — supported message variables and placement rules.
-- [Email Delivery Statuses](Email-Delivery-Statuses) — what each recorded delivery result means.
-- [Pass Statuses](Pass-Statuses) — exact pass and wallet-pass status meanings and the void/restore cascade.
+- [Template Variables](Template-Variables) - supported message variables and placement rules.
+- [Email Delivery Statuses](Email-Delivery-Statuses) - what each recorded delivery result means.
+- [Pass Statuses](Pass-Statuses) - exact pass and wallet-pass status meanings and the void/restore cascade.
 
 ## Check-in
 
-- [Scanning Tickets and Results](Scanning-Tickets-and-Results) — exact scan result meanings and operator responses.
-- [Manual Lookup and Corrections](Manual-Lookup-and-Corrections) — safe lookup, undo, and manager corrections.
-- [Check-in Connection Problems](Check-in-Connection-Problems) — Offline and Reconnecting guidance.
+- [Scanning Tickets and Results](Scanning-Tickets-and-Results) - exact scan result meanings and operator responses.
+- [Manual Lookup and Corrections](Manual-Lookup-and-Corrections) - safe lookup, undo, and manager corrections.
+- [Check-in Connection Problems](Check-in-Connection-Problems) - Offline and Reconnecting guidance.
 
 ## Product language and page status
 
-- [Glossary](Glossary) — product roles and event terms.
+- [Glossary](Glossary) - product roles and event terms.
 - **Available** means supported in the current release.
 - **Preview** means usable but still subject to change.
 - **Planned** means not available yet.

@@ -2,6 +2,19 @@
 
 **Audience:** Event Managers · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.5
 
+- [What this page helps you do](#what-this-page-helps-you-do)
+- [Before you start](#before-you-start)
+- [Steps](#steps)
+  - [Add one attendee](#add-one-attendee)
+  - [Find attendees on the list](#find-attendees-on-the-list)
+  - [Bulk actions](#bulk-actions)
+  - [Review or update one attendee](#review-or-update-one-attendee)
+- [Expected result](#expected-result)
+- [Important decisions](#important-decisions)
+- [What changes after this action](#what-changes-after-this-action)
+- [Common problems](#common-problems)
+- [Related pages](#related-pages)
+
 ## What this page helps you do
 
 Add one attendee, find and review attendee records, run bulk actions on a selection, and make supported attendee-level corrections (including GDPR erasure).
