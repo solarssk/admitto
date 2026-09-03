@@ -11,6 +11,15 @@ on:
   # pii-guard, analyze, migration-safety) for every PR in a stack after its first link merged.
   pull_request: {}
 
+# Cancel a still-running CI for the same PR/branch the moment a newer push supersedes it - without
+# this, every push to an open PR queues a brand new set of jobs alongside the previous (now
+# pointless) run instead of replacing it, wasting runner slots and delaying feedback on the latest
+# commit. Not applied to `main`: a push there gates docker-build (image publish) and is rare enough
+# (one per merge) that every commit deserves a full, uncancelled run rather than racing the next.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 env:
   # Shared by every job below (only test-web/test-admin/test-rest actually use these; harmless
   # unused strings in lint-and-typecheck). Defined once at workflow level, not per-job.
@@ -33,6 +42,7 @@ jobs:
       github.event_name != 'pull_request' ||
       github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
@@ -56,6 +66,7 @@ jobs:
   # volume; everything else is bundled into test-rest.
   lint-and-typecheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -66,6 +77,17 @@ jobs:
         with:
           node-version: "24.17.0"
           cache: "npm"
+      # setup-node's cache: npm only caches the ~/.npm download store, not the linked node_modules
+      # tree or the native-binding rebuild below - both still redone from scratch every run. This
+      # cache lets an unchanged lockfile skip `npm ci` + `npm rebuild` entirely across runs.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        id: node-modules-cache
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            apps/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       # Supply-chain hardening (SonarCloud githubactions:S6505): --ignore-scripts skips every
       # dependency's install/postinstall script by default, instead of letting all ~900 of them
       # run silently and automatically. Only the packages this workflow has confirmed it actually
@@ -74,10 +96,12 @@ jobs:
       # packages/auth) via `npm rebuild`, and Prisma's query engine + generated client via its own
       # `prisma generate`. Adding a new dependency that also needs its install script to run means
       # adding it here explicitly, not silently inheriting it.
-      - run: npm ci --ignore-scripts
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
       - name: Verify lockfile resolutions match package.json declarations
         run: python3 scripts/verify-lockfile-resolutions.py
-      - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
       - run: npm run db:generate -w @admitto/db
       - run: npm audit --audit-level=high
       - name: License compliance check (report-only - see scripts/check-licenses.mjs)
@@ -91,6 +115,7 @@ jobs:
 
   test-web:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     services:
@@ -124,10 +149,32 @@ jobs:
         with:
           node-version: "24.17.0"
           cache: "npm"
-      # See lint-and-typecheck's own comment for why these two extra steps exist.
-      - run: npm ci --ignore-scripts
-      - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
+      # See lint-and-typecheck's own comment for why the cache step and the two conditional steps
+      # below exist.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        id: node-modules-cache
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            apps/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
       - run: npm run db:generate -w @admitto/db
+      # Not safe to drop in favor of @admitto/web's own precoverage/pretest hook: that hook (and
+      # several others across the monorepo, e.g. apps/admin's) only lists a subset of its real
+      # transitive @admitto/* dependencies, or lists them in the wrong build order - they were
+      # never designed to be self-sufficient, only to top up a workspace already built by this
+      # root build once (a build with no @admitto/* rebuild needed is a fast no-op for tsc).
+      # Confirmed by removing this step: apps/db's own build failed on a missing @admitto/shared
+      # type (apps/admin's pretest builds @admitto/db before @admitto/shared, the reverse of what
+      # @admitto/db's own build needs), and apps/web's pretest builds @admitto/ui directly without
+      # first building crypto/db/location/wallet/mail-templates/tickets/auth that @admitto/ui
+      # itself depends on. Don't repeat this optimization attempt without first making every
+      # workspace's own pretest/precoverage chain independently, correctly topologically complete.
       - run: npm run build
       - name: Create test databases
         run: bash infra/scripts/create-test-dbs.sh
@@ -160,6 +207,7 @@ jobs:
 
   test-admin:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -170,10 +218,24 @@ jobs:
         with:
           node-version: "24.17.0"
           cache: "npm"
-      # See lint-and-typecheck's own comment for why these two extra steps exist.
-      - run: npm ci --ignore-scripts
-      - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
+      # See lint-and-typecheck's own comment for why the cache step and the two conditional steps
+      # below exist.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        id: node-modules-cache
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            apps/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
       - run: npm run db:generate -w @admitto/db
+      # Not safe to drop in favor of @admitto/admin's own precoverage/pretest hook - see
+      # test-web's own comment on its equivalent build step for why (found the hard way: this
+      # exact job failed on it first).
       - run: npm run build
       - name: Run coverage (also emits JUnit XML for Test Analytics)
         run: npm run coverage -w @admitto/admin --if-present -- --reporter=default --reporter=junit --outputFile.junit=./junit.xml
@@ -204,6 +266,7 @@ jobs:
   # database (or none at all), verified with an Explore agent before this split was written.
   test-rest:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     services:
@@ -237,10 +300,23 @@ jobs:
         with:
           node-version: "24.17.0"
           cache: "npm"
-      # See lint-and-typecheck's own comment for why these two extra steps exist.
-      - run: npm ci --ignore-scripts
-      - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
+      # See lint-and-typecheck's own comment for why the cache step and the two conditional steps
+      # below exist.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        id: node-modules-cache
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            apps/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
       - run: npm run db:generate -w @admitto/db
+      # Not safe to drop in favor of each tested workspace's own precoverage/pretest hook - see
+      # test-web's own comment on its equivalent build step for why.
       - run: npm run build
       - name: Create test databases
         run: bash infra/scripts/create-test-dbs.sh
@@ -294,6 +370,7 @@ jobs:
   # cheap (CodeRabbit review).
   build-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     needs: [lint-and-typecheck, test-web, test-admin, test-rest]
@@ -315,6 +392,7 @@ jobs:
 
   secret-scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -350,6 +428,7 @@ jobs:
 
   pii-guard:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
@@ -406,6 +485,7 @@ jobs:
 
   migration-safety:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: read
@@ -431,9 +511,52 @@ jobs:
       - name: Migrate entrypoint smoke (docker compose)
         run: bash scripts/test-migrate-entrypoint.sh
 
+  # Complements `npm audit --audit-level=high` in lint-and-typecheck: that check re-audits the
+  # whole resolved tree on every run regardless of what changed, while this action diffs the
+  # dependency manifest against the PR's base ref, so it only flags newly introduced vulnerable or
+  # license-incompatible packages - the thing a PR actually did. pull_request-only by design (the
+  # action needs a base ref to diff against; nothing to compare on a push to main).
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
+        with:
+          fail-on-severity: high
+          # `fail-on-severity` alone only gates vulnerabilities - it does nothing for license
+          # compliance, so without `allow-licenses` a newly introduced disallowed-license
+          # dependency would pass this job silently (scripts/check-licenses.mjs's own gate for
+          # that is `continue-on-error: true`, i.e. non-blocking, so nothing else here catches it
+          # either). Mirrors that script's ALLOWLIST of standalone permissive SPDX licenses -
+          # spdx-satisfies (what this action uses) resolves an "X OR Y" compound automatically once
+          # one side is allowed, so the compound entries in ALLOWLIST don't need listing here too,
+          # but an "X AND Y" compound needs every side present (hence adding Zlib alongside MIT for
+          # the one AND-compound package that script allows). Keep in sync with
+          # scripts/check-licenses.mjs's ALLOWLIST by hand; nothing enforces that automatically.
+          #
+          # Deliberately NOT mirroring check-licenses.mjs's REVIEWED_PACKAGE_VERSIONS via this
+          # action's `allow-dependencies-licenses`: that input matches on package name only - this
+          # action's own `purlsMatch()` explicitly ignores the version part of a purl, so a
+          # version-qualified entry would silently exempt every future version too, defeating the
+          # exact thing REVIEWED_PACKAGE_VERSIONS exists for (forcing re-review on a version bump -
+          # see that script's own comment). Confirmed this isn't theoretical: right now
+          # @img/sharp-libvips-darwin-arm64@1.3.3 and @img/sharp-wasm32@0.35.4 are already past
+          # their reviewed 1.3.2/0.35.3 entries and would fail scripts/check-licenses.mjs today if
+          # it were blocking. Leaving these packages off `allow-licenses` means a PR that bumps one
+          # of them will correctly fail this gate until a human re-reviews and updates both this
+          # list and REVIEWED_PACKAGE_VERSIONS - friction that's the point, not a bug.
+          allow-licenses: MIT, ISC, Apache-2.0, BSD-3-Clause, BSD-2-Clause, BlueOak-1.0.0, Unlicense, OFL-1.1, MIT-0, CC0-1.0, 0BSD, CC-BY-4.0, Python-2.0, Zlib
+
   docker-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       security-events: write
