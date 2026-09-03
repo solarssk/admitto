@@ -1768,6 +1768,56 @@ async function auditReportsExported(
   });
 }
 
+/** Shared tail for every CSV report export below (admissions/wallets/mail/customfields) - builds
+ * the truncation-notice row (when the underlying query hit CSV_EXPORT_MAX), assembles the
+ * BOM-prefixed CSV body, writes the reports_exported audit row, and returns the streaming
+ * Response with the standard CSV headers. Each export function only differs in its own columns,
+ * already-built dataRows, and the handful of naming/labeling strings below - pulled out once this
+ * tail was duplicated four ways (SonarCloud new-code duplication gate, PR #1220). */
+async function finishCsvExport(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  opts: {
+    columns: readonly string[];
+    dataRows: readonly string[];
+    totalCount: number;
+    truncated: boolean;
+    truncationNoun: string;
+    filename: string;
+    totalHeaderName: string;
+    truncatedHeaderName: string;
+    report: "admissions" | "wallets" | "mail" | "customfields";
+  },
+): Promise<Response> {
+  const header = opts.columns.map((col) => quoteCsvCell(col)).join(",");
+  const truncationNotice = opts.truncated
+    ? [
+        quoteCsvCell(
+          sanitizeCsvCell(`Export truncated: first ${CSV_EXPORT_MAX} of ${opts.totalCount} ${opts.truncationNoun}.`),
+        ),
+        ...new Array(opts.columns.length - 1).fill(quoteCsvCell("")),
+      ].join(",")
+    : null;
+  const csvBody = [header, ...(truncationNotice ? [truncationNotice] : []), ...opts.dataRows].join("\r\n");
+  const bom = "﻿";
+
+  await auditReportsExported(db, c, eventId, "csv", opts.dataRows.length, opts.truncated, opts.report);
+
+  return new Response(bom + csvBody, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": attachmentContentDisposition(opts.filename),
+      "Cache-Control": "no-store",
+      "Pragma": "no-cache",
+      "X-Content-Type-Options": "nosniff",
+      [opts.totalHeaderName]: String(opts.totalCount),
+      [opts.truncatedHeaderName]: String(opts.truncated),
+    },
+  });
+}
+
 /** GET /api/admin/events/:eventId/reports — aggregated admission stats (read-only, no audit). */
 export async function handleGetReports(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdParam = requireEventId(c);
@@ -1855,10 +1905,6 @@ async function exportAdmissionsReportsCsv(
     resolveUserDisplayMap(db, operatorIds),
   ]);
 
-  const admittedAtHeader = `Admitted at (${timeZone})`;
-  const header = ["Name", "Email", "Ticket type", admittedAtHeader, "Checked in by", "Device", "Items"]
-    .map((col) => quoteCsvCell(col))
-    .join(",");
   const dataRows = rows.map((row) =>
     [
       row.name,
@@ -1873,41 +1919,16 @@ async function exportAdmissionsReportsCsv(
       .join(","),
   );
 
-  const truncationNotice = truncated
-    ? [
-        quoteCsvCell(
-          sanitizeCsvCell(
-            `Export truncated: first ${CSV_EXPORT_MAX} of ${totalAdmitted} admissions.`,
-          ),
-        ),
-        quoteCsvCell(""),
-        quoteCsvCell(""),
-        quoteCsvCell(""),
-        quoteCsvCell(""),
-        quoteCsvCell(""),
-        quoteCsvCell(""),
-      ].join(",")
-    : null;
-
-  const csvBody = [header, ...(truncationNotice ? [truncationNotice] : []), ...dataRows].join(
-    "\r\n",
-  );
-  const bom = "﻿";
-  const filename = `admissions-${event.slug}-${dateStamp}.csv`;
-
-  await auditReportsExported(db, c, eventId, "csv", rows.length, truncated);
-
-  return new Response(bom + csvBody, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": attachmentContentDisposition(filename),
-      "Cache-Control": "no-store",
-      "Pragma": "no-cache",
-      "X-Content-Type-Options": "nosniff",
-      "X-Admission-Log-Total": String(totalAdmitted),
-      "X-Admission-Log-Truncated": String(truncated),
-    },
+  return finishCsvExport(db, c, eventId, {
+    columns: ["Name", "Email", "Ticket type", `Admitted at (${timeZone})`, "Checked in by", "Device", "Items"],
+    dataRows,
+    totalCount: totalAdmitted,
+    truncated,
+    truncationNoun: "admissions",
+    filename: `admissions-${event.slug}-${dateStamp}.csv`,
+    totalHeaderName: "X-Admission-Log-Total",
+    truncatedHeaderName: "X-Admission-Log-Truncated",
+    report: "admissions",
   });
 }
 
@@ -2237,34 +2258,18 @@ async function exportWalletReportsCsv(
     `Admitted at (${timeZone})`,
     "Checked in by",
   ];
-  const header = columns.map((col) => quoteCsvCell(col)).join(",");
-
   const dataRows = rows.map((row) => buildWalletExportCsvRow(row, catalog, timeZone, operatorDisplayMap, enabledPlatforms));
 
-  const truncationNotice = truncated
-    ? [
-        quoteCsvCell(sanitizeCsvCell(`Export truncated: first ${CSV_EXPORT_MAX} of ${totalAttendees} attendees.`)),
-        ...new Array(columns.length - 1).fill(quoteCsvCell("")),
-      ].join(",")
-    : null;
-
-  const csvBody = [header, ...(truncationNotice ? [truncationNotice] : []), ...dataRows].join("\r\n");
-  const bom = "﻿";
-  const filename = `wallets-${event.slug}-${dateStamp}.csv`;
-
-  await auditReportsExported(db, c, eventId, "csv", rows.length, truncated, "wallets");
-
-  return new Response(bom + csvBody, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": attachmentContentDisposition(filename),
-      "Cache-Control": "no-store",
-      "Pragma": "no-cache",
-      "X-Content-Type-Options": "nosniff",
-      "X-Wallets-Export-Total": String(totalAttendees),
-      "X-Wallets-Export-Truncated": String(truncated),
-    },
+  return finishCsvExport(db, c, eventId, {
+    columns,
+    dataRows,
+    totalCount: totalAttendees,
+    truncated,
+    truncationNoun: "attendees",
+    filename: `wallets-${event.slug}-${dateStamp}.csv`,
+    totalHeaderName: "X-Wallets-Export-Total",
+    truncatedHeaderName: "X-Wallets-Export-Truncated",
+    report: "wallets",
   });
 }
 
@@ -2585,34 +2590,18 @@ async function exportMailReportsCsv(
     `Admitted at (${timeZone})`,
     "Checked in by",
   ];
-  const header = columns.map((col) => quoteCsvCell(col)).join(",");
-
   const dataRows = rows.map((row) => buildMailExportCsvRow(row, catalog, timeZone, operatorDisplayMap));
 
-  const truncationNotice = truncated
-    ? [
-        quoteCsvCell(sanitizeCsvCell(`Export truncated: first ${CSV_EXPORT_MAX} of ${totalAttendees} attendees.`)),
-        ...new Array(columns.length - 1).fill(quoteCsvCell("")),
-      ].join(",")
-    : null;
-
-  const csvBody = [header, ...(truncationNotice ? [truncationNotice] : []), ...dataRows].join("\r\n");
-  const bom = "﻿";
-  const filename = `mail-${event.slug}-${dateStamp}.csv`;
-
-  await auditReportsExported(db, c, eventId, "csv", rows.length, truncated, "mail");
-
-  return new Response(bom + csvBody, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": attachmentContentDisposition(filename),
-      "Cache-Control": "no-store",
-      "Pragma": "no-cache",
-      "X-Content-Type-Options": "nosniff",
-      "X-Mail-Export-Total": String(totalAttendees),
-      "X-Mail-Export-Truncated": String(truncated),
-    },
+  return finishCsvExport(db, c, eventId, {
+    columns,
+    dataRows,
+    totalCount: totalAttendees,
+    truncated,
+    truncationNoun: "attendees",
+    filename: `mail-${event.slug}-${dateStamp}.csv`,
+    totalHeaderName: "X-Mail-Export-Total",
+    truncatedHeaderName: "X-Mail-Export-Truncated",
+    report: "mail",
   });
 }
 
@@ -2814,34 +2803,18 @@ async function exportCustomFieldReportsCsv(
   const truncated = totalAttendees > CSV_EXPORT_MAX;
 
   const columns = ["Name", "Email", "Ticket type", ...fields.map((f) => f.label)];
-  const header = columns.map((col) => quoteCsvCell(col)).join(",");
-
   const dataRows = rows.map((row) => buildCustomFieldExportCsvRow(row, catalog, fields));
 
-  const truncationNotice = truncated
-    ? [
-        quoteCsvCell(sanitizeCsvCell(`Export truncated: first ${CSV_EXPORT_MAX} of ${totalAttendees} attendees.`)),
-        ...new Array(columns.length - 1).fill(quoteCsvCell("")),
-      ].join(",")
-    : null;
-
-  const csvBody = [header, ...(truncationNotice ? [truncationNotice] : []), ...dataRows].join("\r\n");
-  const bom = "﻿";
-  const filename = `custom-fields-${event.slug}-${dateStamp}.csv`;
-
-  await auditReportsExported(db, c, eventId, "csv", rows.length, truncated, "customfields");
-
-  return new Response(bom + csvBody, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": attachmentContentDisposition(filename),
-      "Cache-Control": "no-store",
-      "Pragma": "no-cache",
-      "X-Content-Type-Options": "nosniff",
-      "X-Custom-Fields-Export-Total": String(totalAttendees),
-      "X-Custom-Fields-Export-Truncated": String(truncated),
-    },
+  return finishCsvExport(db, c, eventId, {
+    columns,
+    dataRows,
+    totalCount: totalAttendees,
+    truncated,
+    truncationNoun: "attendees",
+    filename: `custom-fields-${event.slug}-${dateStamp}.csv`,
+    totalHeaderName: "X-Custom-Fields-Export-Total",
+    truncatedHeaderName: "X-Custom-Fields-Export-Truncated",
+    report: "customfields",
   });
 }
 
