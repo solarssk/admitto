@@ -42,6 +42,7 @@ What you get in `deploy/`:
 | `.env` (from `.env.example`) | Secrets and config - never committed |
 | [`ENV.md`](./ENV.md) | Generated env dictionary (boot vs UI, who reads what) - regenerate with `npm run docs:env` |
 | [`env-catalog.json`](./env-catalog.json) | Human summaries for that dictionary (source of truth for descriptions) |
+| [`dockerhub-readme.md`](./dockerhub-readme.md) | Synced to the Docker Hub repository description on every release - not GitHub-facing docs |
 | **ghcr.io image** | `ghcr.io/solarssk/admitto:X.Y.Z` - published automatically on each git tag `vX.Y.Z` |
 | **docker.io image** | `docker.io/solarssk/admitto:X.Y.Z` - same image, mirrored to Docker Hub on the same tag |
 
