@@ -529,6 +529,21 @@ jobs:
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
         with:
           fail-on-severity: high
+          # `fail-on-severity` alone only gates vulnerabilities - it does nothing for license
+          # compliance, so without these two inputs a newly introduced disallowed-license
+          # dependency would pass this job silently (scripts/check-licenses.mjs's own gate for
+          # that is `continue-on-error: true`, i.e. non-blocking, so nothing else here catches it
+          # either). Mirrors that script's ALLOWLIST of standalone permissive SPDX licenses -
+          # spdx-satisfies (what this action uses) resolves an "X OR Y" compound automatically once
+          # one side is allowed, so the compound entries in ALLOWLIST don't need listing here too,
+          # but an "X AND Y" compound needs every side present (hence adding Zlib alongside MIT for
+          # the one AND-compound package that script allows). allow-dependencies-licenses mirrors
+          # check-licenses.mjs's REVIEWED_PACKAGE_VERSIONS - copyleft packages already individually
+          # reviewed there - so a routine Dependabot version bump of one of them doesn't newly fail
+          # this gate. Keep both lists in sync with scripts/check-licenses.mjs by hand; nothing
+          # enforces that automatically.
+          allow-licenses: MIT, ISC, Apache-2.0, BSD-3-Clause, BSD-2-Clause, BlueOak-1.0.0, Unlicense, OFL-1.1, MIT-0, CC0-1.0, 0BSD, CC-BY-4.0, Python-2.0, Zlib
+          allow-dependencies-licenses: "pkg:npm/@img/sharp-libvips-darwin-arm64, pkg:npm/@img/sharp-wasm32, pkg:npm/elkjs, pkg:npm/lightningcss, pkg:npm/lightningcss-darwin-arm64"
 
   docker-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
