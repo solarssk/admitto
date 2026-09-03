@@ -39,6 +39,10 @@ const ORG_B = "org-admin-comm-b";
 const EVENT_A = "evt-admin-comm-a";
 const EVENT_B = "evt-admin-comm-b";
 const EVENT_C = "evt-admin-comm-c";
+// Under ORG_A (not a new org) so adminCookie's existing org-level access already covers it -
+// dedicated event with Apple Wallet turned off, Google left on, to prove the two placeholders are
+// gated independently (disallowedWalletPlaceholders, communication-api-routes.ts).
+const EVENT_NO_APPLE_WALLET = "evt-admin-comm-no-apple-wallet";
 
 const EMAIL_ADMIN = "admin-comm-admin@example.com";
 const EMAIL_OP = "admin-comm-op@example.com";
@@ -100,7 +104,7 @@ async function seed(client: PrismaClient) {
     where: { user: { email: { in: [EMAIL_ADMIN] } } },
   });
   await client.user.deleteMany({ where: { email: { in: [EMAIL_ADMIN, EMAIL_OP] } } });
-  await client.event.deleteMany({ where: { id: { in: [EVENT_A, EVENT_B, EVENT_C] } } });
+  await client.event.deleteMany({ where: { id: { in: [EVENT_A, EVENT_B, EVENT_C, EVENT_NO_APPLE_WALLET] } } });
   await client.organization.deleteMany({ where: { id: { in: [ORG_A, ORG_B] } } });
 
   const password_hash = await hashPassword(PASSWORD);
@@ -113,6 +117,16 @@ async function seed(client: PrismaClient) {
       slug: "event-admin-comm-c",
       date: new Date("2026-12-01"),
       organization_id: ORG_A,
+    },
+  });
+  await client.event.create({
+    data: {
+      id: EVENT_NO_APPLE_WALLET,
+      title: "Event No Apple Wallet",
+      slug: "event-admin-comm-no-apple-wallet",
+      date: new Date("2026-12-02"),
+      organization_id: ORG_A,
+      wallet_apple_enabled: false,
     },
   });
 
@@ -469,6 +483,16 @@ describe("GET /api/admin/events/:eventId/template", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it("excludes a wallet placeholder for a platform the event has turned off, but keeps the other", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_NO_APPLE_WALLET}/template`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { allowed_placeholders: string[] };
+    expect(body.allowed_placeholders).not.toContain("apple_wallet_url");
+    expect(body.allowed_placeholders).toContain("google_wallet_url");
+  });
 });
 
 describe("PUT /api/admin/events/:eventId/template", () => {
@@ -507,6 +531,38 @@ describe("PUT /api/admin/events/:eventId/template", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { errors: string[] };
     expect(body.errors.some((e) => e.includes("not_a_real_placeholder"))).toBe(true);
+  });
+
+  it("rejects a wallet placeholder for a platform the event has turned off, the same as any other unknown placeholder", async () => {
+    // Regression coverage: apple_wallet_url is normally in ALLOWED_PLACEHOLDERS, but
+    // EVENT_NO_APPLE_WALLET has wallet_apple_enabled: false - the button couldn't produce a
+    // working link for this event, so saving it is blocked the same way a genuinely unrecognized
+    // token is.
+    const res = await app.request(`/api/admin/events/${EVENT_NO_APPLE_WALLET}/template`, {
+      method: "PUT",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...validTemplate,
+        body_template: '<p><a href="{{apple_wallet_url}}">Add to Apple Wallet</a></p>',
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { errors: string[] };
+    expect(body.errors).toContain("Unknown placeholder: apple_wallet_url");
+  });
+
+  it("allows google_wallet_url for the same event - only the disabled platform is blocked", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_NO_APPLE_WALLET}/template`, {
+      method: "PUT",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subject_template: "Ticket for {{event_name}}",
+        body_template:
+          '<p><a href="{{ticket_url}}">Ticket</a></p><img src="{{qr_image_url}}"><p><a href="{{google_wallet_url}}">Add to Google Wallet</a></p>',
+        template_format: "html",
+      }),
+    });
+    expect(res.status).toBe(200);
   });
 
   it("rejects missing required URL placeholders", async () => {

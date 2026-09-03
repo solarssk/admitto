@@ -31,6 +31,7 @@ import {
   type TemplateFormat,
   type TemplateSource,
 } from "@admitto/mail-templates";
+import { enabledWalletPlatforms, type EventWalletToggles } from "@admitto/shared";
 import {
   listDeliveries,
   getDeliveryWithTimeline,
@@ -137,8 +138,34 @@ const IMAGE_PLACEHOLDER_LIST = [...IMAGE_PLACEHOLDERS].sort((a, b) => a.localeCo
 const ALLOWED_DELIVERY_STATUSES = new Set<string>(EMAIL_DELIVERY_STATUS);
 const ALLOWED_DELIVERY_PURPOSES = new Set<string>(EMAIL_DELIVERY_PURPOSE);
 
+const WALLET_PLACEHOLDER_SELECT = {
+  wallet_enabled: true,
+  wallet_apple_enabled: true,
+  wallet_google_enabled: true,
+  wallet_samsung_enabled: true,
+} as const;
+
+/** apple_wallet_url/google_wallet_url for a platform the event doesn't have turned on
+ * (enabledWalletPlatforms - the same toggle check Reports/Attendees already read) - a template
+ * with one of those buttons can't produce a working link for this event, the same reason a custom
+ * image asset token is only allowed once that asset actually exists (resolveEventImageAssetVars
+ * above). Returned as a set of names to reject, not add - unlike that widening case, this narrows
+ * the base whitelist back down, so findUnknownPlaceholders' own `disallowed` param exists
+ * specifically for this. */
+function disallowedWalletPlaceholders(event: EventWalletToggles): Set<string> {
+  const platforms = enabledWalletPlatforms(event);
+  const disallowed = new Set<string>();
+  if (!platforms.apple) disallowed.add("apple_wallet_url");
+  if (!platforms.google) disallowed.add("google_wallet_url");
+  return disallowed;
+}
+
 /** Collect template source validation errors for API 400 responses. Fetches the event's custom
- * image asset tokens (branding asset library) so a saved {{token}} isn't falsely flagged unknown. */
+ * image asset tokens (branding asset library) so a saved {{token}} isn't falsely flagged unknown,
+ * and its wallet toggles so a wallet-add-link placeholder for a platform this event doesn't offer
+ * reports the same "Unknown placeholder" error as a genuinely unrecognized token - any save
+ * (a first insertion or a re-save of already-stored content) is blocked until it's removed or the
+ * platform is turned back on, not just a new insertion going forward. */
 async function collectTemplateSourceErrors(
   db: PrismaClient,
   eventId: string,
@@ -146,9 +173,13 @@ async function collectTemplateSourceErrors(
   body: string,
 ): Promise<string[]> {
   const errors: string[] = [];
-  const { names: extraAllowed } = await resolveEventImageAssetVars(eventId, db);
+  const [{ names: extraAllowed }, walletToggles] = await Promise.all([
+    resolveEventImageAssetVars(eventId, db),
+    db.event.findUniqueOrThrow({ where: { id: eventId }, select: WALLET_PLACEHOLDER_SELECT }),
+  ]);
+  const disallowed = disallowedWalletPlaceholders(walletToggles);
 
-  for (const unknown of validateTemplate({ subject, body }, extraAllowed)) {
+  for (const unknown of validateTemplate({ subject, body }, extraAllowed, disallowed)) {
     errors.push(`Unknown placeholder: ${unknown}`);
   }
   for (const missing of findMissingRequiredPlaceholders(subject, body)) {
@@ -156,7 +187,7 @@ async function collectTemplateSourceErrors(
   }
 
   try {
-    assertValidTemplate({ subject, body }, extraAllowed);
+    assertValidTemplate({ subject, body }, extraAllowed, disallowed);
   } catch (err) {
     if (err instanceof UnknownPlaceholdersError) {
       // already reported via validateTemplate
@@ -289,15 +320,20 @@ export async function handleGetEventTemplate(c: Context, db: PrismaClient): Prom
       logo_url: true,
       header_image_url: true,
       organization: { select: { logo_url: true, header_image_url: true } },
+      ...WALLET_PLACEHOLDER_SELECT,
     },
   });
   const branding = resolveBrandingFromEvent(brandingEvent);
+  const disallowedWallet = disallowedWalletPlaceholders(brandingEvent);
 
   const dto: EventTemplateDto = {
     ...template,
-    allowed_placeholders: [...ALLOWED_PLACEHOLDER_LIST, ...customAssetNames].sort((a, b) =>
-      a.localeCompare(b),
-    ),
+    // A picker chip for a wallet-add-link placeholder this event's own toggles have off would
+    // insert something collectTemplateSourceErrors immediately rejects on save - excluded here
+    // the same way a not-yet-existing custom image asset token is (customAssetNames above).
+    allowed_placeholders: [...ALLOWED_PLACEHOLDER_LIST, ...customAssetNames]
+      .filter((name) => !disallowedWallet.has(name))
+      .sort((a, b) => a.localeCompare(b)),
     required_url_placeholders: REQUIRED_URL_PLACEHOLDER_LIST,
     image_placeholders: [...IMAGE_PLACEHOLDER_LIST, ...customAssetNames].sort((a, b) =>
       a.localeCompare(b),

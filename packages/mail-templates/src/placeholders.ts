@@ -164,12 +164,16 @@ export function extractPlaceholderNames(
 
 /**
  * Returns invalid placeholder names: malformed {{...}} tokens and names outside the whitelist
- * (static list plus `extraAllowed`, e.g. an event's custom image asset tokens).
+ * (static list plus `extraAllowed`, e.g. an event's custom image asset tokens), or a name
+ * `disallowed` explicitly pulls back out of that whitelist for this call (e.g. apple_wallet_url
+ * for an event with Apple Wallet turned off) - checked after extraAllowed, so a name can't be
+ * both event-specific-allowed and disallowed at once for the same call.
  */
 export function findUnknownPlaceholders(
   subject: string,
   body: string,
   extraAllowed?: ReadonlySet<string>,
+  disallowed?: ReadonlySet<string>,
 ): string[] {
   const issues = new Set<string>();
   for (const text of [subject, body]) {
@@ -180,7 +184,8 @@ export function findUnknownPlaceholders(
       if (
         padded ||
         !VALID_PLACEHOLDER_NAME_RE.test(name) ||
-        !(ALLOWED_PLACEHOLDERS.has(name) || extraAllowed?.has(name) === true)
+        !(ALLOWED_PLACEHOLDERS.has(name) || extraAllowed?.has(name) === true) ||
+        disallowed?.has(name) === true
       ) {
         issues.add(name === "" ? "{{}}" : name);
       }
