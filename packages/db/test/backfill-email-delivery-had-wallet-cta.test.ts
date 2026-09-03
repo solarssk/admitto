@@ -48,8 +48,25 @@ async function makeAttendee(id: string) {
 }
 
 describe("backfillEmailDeliveryHadWalletCta", () => {
-  it("sets had_wallet_cta from a raw {{apple_wallet_url}} token still in rendered_html", async () => {
-    const attendee = await makeAttendee("att-backfill-wallet-cta-apple");
+  // Parameterized (SonarCloud S5976): these 5 cases all share the same shape - create one
+  // delivery with the given rendered_html, run the backfill, assert the resulting had_wallet_cta.
+  // Comment-awareness cases (rows 3-4) are regression coverage (CodeRabbit): templateHasWalletCta
+  // (send.ts) excludes a commented-out reference for a live send via extractPlaceholderNamesFromHtml
+  // - this backfill must apply the same rule to historical rows, not a bare substring/LIKE match
+  // that can't tell a live token from one sitting inside an HTML/Outlook comment.
+  it.each<[label: string, renderedHtml: string, expectHadWalletCta: boolean]>([
+    ["a raw {{apple_wallet_url}} token", '<a href="{{apple_wallet_url}}">Add to Apple Wallet</a>', true],
+    ["a raw {{google_wallet_url}} token", '<a href="{{google_wallet_url}}">Add to Google Wallet</a>', true],
+    ["a token only inside an HTML comment", "<!-- {{apple_wallet_url}} --><p>Hi {{first_name}}</p>", false],
+    [
+      "a live token alongside a commented-out one",
+      '<!-- {{apple_wallet_url}} --><a href="{{google_wallet_url}}">Add</a>',
+      true,
+    ],
+    ["no wallet placeholder at all", "<p>Hi {{first_name}}</p>", false],
+  ])("sets had_wallet_cta correctly for %s", async (label, renderedHtml, expectHadWalletCta) => {
+    const slug = label.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    const attendee = await makeAttendee(`att-backfill-wallet-cta-param-${slug}`);
     const delivery = await prisma.emailDelivery.create({
       data: {
         organization_id: ORG_ID,
@@ -58,52 +75,7 @@ describe("backfillEmailDeliveryHadWalletCta", () => {
         purpose: "resend",
         provider: "export_only",
         status: "sent",
-        rendered_html: '<a href="{{apple_wallet_url}}">Add to Apple Wallet</a>',
-      },
-    });
-    expect(delivery.had_wallet_cta).toBe(false);
-
-    const result = await backfillEmailDeliveryHadWalletCta(prisma);
-    expect(result.updated).toBeGreaterThanOrEqual(1);
-
-    const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
-    expect(after.had_wallet_cta).toBe(true);
-  });
-
-  it("sets had_wallet_cta from a raw {{google_wallet_url}} token too", async () => {
-    const attendee = await makeAttendee("att-backfill-wallet-cta-google");
-    const delivery = await prisma.emailDelivery.create({
-      data: {
-        organization_id: ORG_ID,
-        event_id: EVENT_ID,
-        attendee_id: attendee.id,
-        purpose: "resend",
-        provider: "export_only",
-        status: "sent",
-        rendered_html: '<a href="{{google_wallet_url}}">Add to Google Wallet</a>',
-      },
-    });
-
-    await backfillEmailDeliveryHadWalletCta(prisma);
-
-    const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
-    expect(after.had_wallet_cta).toBe(true);
-  });
-
-  it("does not set had_wallet_cta from a token that only appears inside an HTML comment", async () => {
-    // Regression coverage (CodeRabbit): templateHasWalletCta (send.ts) excludes a commented-out
-    // reference for a live send via extractPlaceholderNamesFromHtml - this backfill must apply the
-    // same rule to historical rows, not a bare substring/LIKE match that can't tell the two apart.
-    const attendee = await makeAttendee("att-backfill-wallet-cta-comment-only");
-    const delivery = await prisma.emailDelivery.create({
-      data: {
-        organization_id: ORG_ID,
-        event_id: EVENT_ID,
-        attendee_id: attendee.id,
-        purpose: "resend",
-        provider: "export_only",
-        status: "sent",
-        rendered_html: "<!-- {{apple_wallet_url}} --><p>Hi {{first_name}}</p>",
+        rendered_html: renderedHtml,
       },
     });
     expect(delivery.had_wallet_cta).toBe(false);
@@ -111,27 +83,7 @@ describe("backfillEmailDeliveryHadWalletCta", () => {
     await backfillEmailDeliveryHadWalletCta(prisma);
 
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
-    expect(after.had_wallet_cta).toBe(false);
-  });
-
-  it("still sets had_wallet_cta when a live token exists outside a comment, even alongside a commented-out one", async () => {
-    const attendee = await makeAttendee("att-backfill-wallet-cta-mixed");
-    const delivery = await prisma.emailDelivery.create({
-      data: {
-        organization_id: ORG_ID,
-        event_id: EVENT_ID,
-        attendee_id: attendee.id,
-        purpose: "resend",
-        provider: "export_only",
-        status: "sent",
-        rendered_html: '<!-- {{apple_wallet_url}} --><a href="{{google_wallet_url}}">Add</a>',
-      },
-    });
-
-    await backfillEmailDeliveryHadWalletCta(prisma);
-
-    const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
-    expect(after.had_wallet_cta).toBe(true);
+    expect(after.had_wallet_cta).toBe(expectHadWalletCta);
   });
 
   it("processes an early live-html match followed by a subject-only row correctly in the same run", async () => {
@@ -197,26 +149,6 @@ describe("backfillEmailDeliveryHadWalletCta", () => {
 
     const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
     expect(after.had_wallet_cta).toBe(true);
-  });
-
-  it("leaves a delivery with no wallet placeholder untouched", async () => {
-    const attendee = await makeAttendee("att-backfill-wallet-cta-none");
-    const delivery = await prisma.emailDelivery.create({
-      data: {
-        organization_id: ORG_ID,
-        event_id: EVENT_ID,
-        attendee_id: attendee.id,
-        purpose: "resend",
-        provider: "export_only",
-        status: "sent",
-        rendered_html: "<p>Hi {{first_name}}</p>",
-      },
-    });
-
-    await backfillEmailDeliveryHadWalletCta(prisma);
-
-    const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
-    expect(after.had_wallet_cta).toBe(false);
   });
 
   it("leaves a delivery with no rendered_html at all untouched", async () => {
