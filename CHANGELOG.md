@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Reports' Wallets tab "Wallet lifecycle" donut now centers on the total number of passes issued, not the "Removed" slice's own count - that number duplicated what the ring's red slice and legend row already show, while the center previously had nothing to say about the whole the ring represents.
+
 ## [0.6.6] - 2026-09-03
 
 ### Added
