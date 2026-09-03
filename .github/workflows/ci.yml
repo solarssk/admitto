@@ -295,13 +295,14 @@ jobs:
           cache: "npm"
       # See lint-and-typecheck's own comment for why the cache step and the two conditional steps
       # below exist. No root `npm run build` here (unlike lint-and-typecheck, which typechecks the
-      # whole monorepo and genuinely needs it built): the migration/backfill step below runs
-      # Prisma CLI + `tsx`-executed TS scripts with no @admitto/* workspace imports (verified by
-      # grepping packages/db/src/scripts/*.ts), so it needs nothing pre-built beyond the
-      # `db:generate` step already below; and every workspace this job tests has its own
-      # `precoverage`/`pretest` hook that builds exactly its own dependency subgraph before
-      # `vitest run --coverage` executes for it. A full 16-workspace build here was pure duplicate
-      # work with no effect on correctness.
+      # whole monorepo and genuinely needs it built) - every workspace this job tests already has
+      # its own `precoverage`/`pretest` hook that builds exactly its own dependency subgraph before
+      # `vitest run --coverage` executes for it, so a full 16-workspace build was pure duplicate
+      # work there. The one exception is the migration/backfill step below, which runs outside any
+      # workspace's own test/coverage script: `packages/db/src/index.ts` imports `@admitto/shared`
+      # (confirmed the only such import reachable from every backfill script, by grepping every
+      # non-test .ts file under packages/db/src for `@admitto/`), so @admitto/shared needs building
+      # explicitly here first - it's the one real dependency a plain root-build removal missed.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         id: node-modules-cache
         with:
@@ -315,6 +316,7 @@ jobs:
       - if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
       - run: npm run db:generate -w @admitto/db
+      - run: npm run build -w @admitto/shared
       - name: Create test databases
         run: bash infra/scripts/create-test-dbs.sh
       - name: Run database migrations and agency public_ref backfill
