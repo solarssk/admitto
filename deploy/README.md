@@ -2,7 +2,30 @@
 
 Production-oriented compose: **app + PostgreSQL + Redis + nginx reverse proxy**.
 
-Dev/CI database stack remains in [`../infra/docker-compose.yml`](../infra/docker-compose.yml) — do not use dev creds here.
+Dev/CI database stack remains in [`../infra/docker-compose.yml`](../infra/docker-compose.yml) - do not use dev creds here.
+
+- [Deployment model](#deployment-model)
+- [Minimum to boot (read this first)](#minimum-to-boot-read-this-first)
+- [Edge proxy: two variants](#edge-proxy-two-variants)
+- [Container registries (ghcr.io / docker.io)](#container-registries-ghcrio--dockerio)
+- [Platform and image architecture](#platform-and-image-architecture)
+- [Quick start](#quick-start)
+- [Upgrading](#upgrading)
+- [Self-hosted SMTP on a private address](#self-hosted-smtp-on-a-private-address)
+- [Self-hosted identity provider (SSO) on a private address](#self-hosted-identity-provider-sso-on-a-private-address)
+- [Container startup (entrypoint)](#container-startup-entrypoint)
+- [Container logs (what to expect where)](#container-logs-what-to-expect-where)
+- [First superadmin](#first-superadmin)
+- [Emergency CLI (event-day failover)](#emergency-cli-event-day-failover)
+- [Nginx Proxy Manager (deep notes)](#nginx-proxy-manager-deep-notes)
+- [Cloudflare and WireGuard](#cloudflare-and-wireguard)
+- [Admitto worker (mail, import/export, bounce, retention)](#admitto-worker-mail-importexport-bounce-retention)
+- [PostgreSQL backups (ADR 0012, ADR 0027)](#postgresql-backups-adr-0012-adr-0027)
+- [Rollback runbook](#rollback-runbook)
+- [Uptime Kuma (observability)](#uptime-kuma-observability)
+- [TLS notes](#tls-notes)
+- [Verify deployment](#verify-deployment)
+- [Stop](#stop)
 
 ## Deployment model
 
@@ -16,11 +39,11 @@ What you get in `deploy/`:
 |-------|------|
 | `Dockerfile` | Builds the `app` image (Node monorepo → production runtime) |
 | `docker-compose.yml` | Orchestrates `app`, `worker`, Postgres, Redis, migrate, backups, and an internal nginx proxy |
-| `.env` (from `.env.example`) | Secrets and config — never committed |
-| [`ENV.md`](./ENV.md) | Generated env dictionary (boot vs UI, who reads what) — regenerate with `npm run docs:env` |
+| `.env` (from `.env.example`) | Secrets and config - never committed |
+| [`ENV.md`](./ENV.md) | Generated env dictionary (boot vs UI, who reads what) - regenerate with `npm run docs:env` |
 | [`env-catalog.json`](./env-catalog.json) | Human summaries for that dictionary (source of truth for descriptions) |
-| **ghcr.io image** | `ghcr.io/solarssk/admitto:X.Y.Z` — published automatically on each git tag `vX.Y.Z` |
-| **docker.io image** | `docker.io/solarssk/admitto:X.Y.Z` — same image, mirrored to Docker Hub on the same tag |
+| **ghcr.io image** | `ghcr.io/solarssk/admitto:X.Y.Z` - published automatically on each git tag `vX.Y.Z` |
+| **docker.io image** | `docker.io/solarssk/admitto:X.Y.Z` - same image, mirrored to Docker Hub on the same tag |
 
 TLS termination and public DNS usually sit **in front** of this stack (e.g. Nginx Proxy Manager, Cloudflare). Prefer forwarding to the compose nginx on port **8080** (Variant A below). Portainer stacks that publish the app port directly are Variant B.
 
@@ -63,7 +86,7 @@ Mail can be seeded from `.env`, but most operators configure it under **Organisa
 
 ## Edge proxy: two variants
 
-### Variant A — recommended (NPM → compose nginx `:8080`)
+### Variant A - recommended (NPM → compose nginx `:8080`)
 
 Keep the compose `proxy` service. NPM (or any TLS terminator) forwards **only** to:
 
@@ -108,9 +131,9 @@ location ~ ^/api/checkin/events/[^/]+/stream$ {
 
 (When the location is on NPM facing the published `:8080` port, `proxy_pass` should target that upstream the same way your other locations do - often `http://127.0.0.1:8080` with the path preserved.)
 
-### Variant B — Portainer / NAS without compose nginx
+### Variant B - Portainer / NAS without compose nginx
 
-Some hosts publish the app directly (e.g. `62100:3000`) and terminate TLS only in NPM. This works, but the trust boundary is thinner: NPM talks straight to `app`, so `TRUSTED_PROXY_CIDRS` must list **only** the TCP source address NPM uses — not every private Docker network on the host.
+Some hosts publish the app directly (e.g. `62100:3000`) and terminate TLS only in NPM. This works, but the trust boundary is thinner: NPM talks straight to `app`, so `TRUSTED_PROXY_CIDRS` must list **only** the TCP source address NPM uses - not every private Docker network on the host.
 
 Checklist:
 
@@ -121,7 +144,7 @@ Checklist:
 ```env
 BASE_URL=https://your.public.hostname
 TRUST_PROXY=true
-# NPM's actual source as seen by the app container — often the Docker bridge gateway on /32
+# NPM's actual source as seen by the app container - often the Docker bridge gateway on /32
 # (e.g. 172.17.0.1/32) when NPM is in Docker, or 127.0.0.1/32 when NPM runs on the host and
 # forwards to localhost. Do NOT use 172.16.0.0/12: any other container on the host's Docker
 # networks could then spoof X-Forwarded-For / Host / Proto for rate limits and CSRF checks.
@@ -138,30 +161,29 @@ Self-hosted LAN SMTP that resolves to RFC1918 is blocked when `NODE_ENV=producti
 
 ---
 
-## GitHub Container Registry (ghcr.io)
+## Container registries (ghcr.io / docker.io)
 
-Each release tag `vX.Y.Z` triggers [`.github/workflows/publish-container.yml`](../.github/workflows/publish-container.yml) and pushes:
+Each release tag `vX.Y.Z` triggers [`.github/workflows/publish-container.yml`](../.github/workflows/publish-container.yml) and pushes the same multi-arch image (`linux/amd64` + `linux/arm64`, one digest, one Trivy CRITICAL gate) to two registries:
 
 ```text
-ghcr.io/solarssk/admitto:X.Y.Z
-ghcr.io/solarssk/admitto:X.Y      # minor line (e.g. 0.3)
+ghcr.io/solarssk/admitto:X.Y.Z      docker.io/solarssk/admitto:X.Y.Z
+ghcr.io/solarssk/admitto:X.Y        docker.io/solarssk/admitto:X.Y      # minor line (e.g. 0.3)
 ```
 
-Images are built on `linux/amd64` (GitHub Actions) — suitable for typical VPS hosts.
-
-### Pull on the server (recommended for production)
+`ghcr.io` is the primary/documented registry below; `docker.io` is an equivalent alternative, useful where Docker Hub is easier to reach or already allowlisted (e.g. some `docker login`-free NAS UIs default to it). Pick one, pin `ADMITTO_IMAGE` to it, and pull:
 
 ```bash
 cd deploy
 cp .env.example .env
-# Set secrets, then pin the release image (version without leading v):
+# Set secrets, then pin the release image (version without leading v). Either registry works:
 # ADMITTO_IMAGE=ghcr.io/solarssk/admitto:0.4.11
+# ADMITTO_IMAGE=docker.io/solarssk/admitto:0.4.11
 
 docker compose pull app
 docker compose up -d --no-build
 ```
 
-If the package is **private**, log in once on the host:
+`docker.io` is a public repo, no login needed to pull. For `ghcr.io`, only log in if the package is **private**:
 
 ```bash
 echo "$GITHUB_PAT" | docker login ghcr.io -u YOUR_GITHUB_USER --password-stdin
@@ -172,33 +194,11 @@ Public repo → package is usually public; private repo → configure package vi
 
 ### Build on the server (alternative)
 
-Omit `ADMITTO_IMAGE` or leave the default `ghcr.io/solarssk/admitto:local` — compose builds and tags locally:
+Omit `ADMITTO_IMAGE` or leave the default `ghcr.io/solarssk/admitto:local` - compose builds and tags locally:
 
 ```bash
 docker compose up -d --build
 ```
-
-## Docker Hub (docker.io) — mirror
-
-The same [`publish-container.yml`](../.github/workflows/publish-container.yml) run also pushes the identical image (same digest, same multi-arch manifest, same Trivy CRITICAL gate) to Docker Hub:
-
-```text
-docker.io/solarssk/admitto:X.Y.Z
-docker.io/solarssk/admitto:X.Y      # minor line (e.g. 0.3)
-```
-
-`ghcr.io` stays the primary/documented registry above; this is an alternative pull source, useful where Docker Hub is easier to reach or already allowlisted (e.g. some `docker login`-free NAS UIs default to it). Pull it the same way, just with the `docker.io` reference:
-
-```bash
-cd deploy
-cp .env.example .env
-# ADMITTO_IMAGE=docker.io/solarssk/admitto:0.4.11
-
-docker compose pull app
-docker compose up -d --no-build
-```
-
-Public repo → no `docker login` needed to pull.
 
 ## Platform and image architecture
 
@@ -206,9 +206,10 @@ Public repo → no `docker login` needed to pull.
 
 | Build where | Image CPU | Typical use |
 |-------------|-----------|---------------|
-| GitHub Actions (`docker-build` / `publish-container` on `v*` tag) | `linux/amd64` | CI validation; **published ghcr releases** |
+| GitHub Actions, `main` push (`docker-build` job in `ci.yml`) | `linux/amd64` | CVE drift check only, not published |
+| GitHub Actions, release tag (`publish-container.yml`) | `linux/amd64` **+** `linux/arm64` (multi-arch manifest) | **Published ghcr.io / docker.io releases** - Docker pulls the matching one automatically |
 | Your production server (`docker compose build` on the host) | Same as the host | First deploy or air-gapped |
-| Apple Silicon Mac (`docker compose build` locally) | `linux/arm64` | Dev/smoke only — **do not** push that image to an amd64 VPS |
+| Apple Silicon Mac (`docker compose build` locally) | `linux/arm64` | Dev/smoke only - **do not** push that image to an amd64 VPS |
 
 **Why it matters:** `prisma generate` runs at image build time and embeds a native query-engine binary for the build platform. An `arm64` image on an `amd64` server (or the reverse) will fail at startup.
 
@@ -218,7 +219,7 @@ Public repo → no `docker login` needed to pull.
 docker build --platform linux/amd64 -f Dockerfile -t admitto-app ..
 ```
 
-We have not tested or documented Synology ARM vs Intel paths separately — pick the platform flag that matches your NAS/CPU.
+We have not tested or documented Synology ARM vs Intel paths separately - pick the platform flag that matches your NAS/CPU.
 
 ## Quick start
 
@@ -227,15 +228,15 @@ cd deploy
 cp .env.example .env
 # Edit .env:
 #   POSTGRES_PASSWORD (openssl rand -hex 32)
-#   REDIS_PASSWORD (openssl rand -hex 32) — keep REDIS_URL password in sync
+#   REDIS_PASSWORD (openssl rand -hex 32) - keep REDIS_URL password in sync
 #   ENCRYPTION_KEY (openssl rand -base64 32)
-#   DATABASE_URL — same password as POSTGRES_PASSWORD
-#   BASE_URL — production: https://tickets.example.com; local smoke: http://127.0.0.1:8080
+#   DATABASE_URL - same password as POSTGRES_PASSWORD
+#   BASE_URL - production: https://tickets.example.com; local smoke: http://127.0.0.1:8080
 # Set EMAIL_PROVIDER to one of: smtp, graph, powerautomate (production paths)
-# export_only is dev/test dry-run only — requires a runtime exportSink; npm run dev wires one
+# export_only is dev/test dry-run only - requires a runtime exportSink; npm run dev wires one
 # automatically; production deploy must use a real provider (default in .env.example: smtp).
 # If EMAIL_PROVIDER=export_only slips into production anyway, boot logs a warning but does not
-# exit — mail sends fail at runtime until a real provider is configured.
+# exit - mail sends fail at runtime until a real provider is configured.
 # Populate only the mail section for that provider
 
 ./validate-env.sh
@@ -259,7 +260,10 @@ docker compose logs migrate              # check what schema changes / backfills
 curl -sf http://127.0.0.1:8080/healthz
 ```
 
-Migrations apply in the one-shot `migrate` service. `docker compose up -d` blocks until `migrate` finishes (or fails), so its full log is already available by the time the command returns — check it every upgrade, not just when something looks wrong: `migrate` exits and its container shows as stopped, which some UIs (e.g. Portainer) collapse or hide by default, so it's easy to miss unless you look. There is **no** automatic pre-migration dump anymore; the nightly `db-backup` service is the automated baseline only.
+Migrations apply in the one-shot `migrate` service. `docker compose up -d` blocks until `migrate` finishes (or fails), so its full log is already available by the time the command returns. Check that log every upgrade, not just when something looks wrong:
+
+- `migrate` exits once done and its container shows as stopped, which some UIs (e.g. Portainer) collapse or hide by default - easy to miss unless you look.
+- There is **no** automatic pre-migration dump anymore; the nightly `db-backup` service is the automated baseline only, not a substitute for the manual backup above.
 
 `validate-env.sh` checks placeholders, secret lengths, `BASE_URL` (`https://` on production hosts), and `DATABASE_URL` / `POSTGRES_PASSWORD` consistency. The app container also fails fast at boot if `REDIS_URL`, `ENCRYPTION_KEY`, or `BASE_URL` are misconfigured.
 
@@ -273,7 +277,7 @@ If your MTA is only reachable on the LAN (for example AdGuard rewrites `mail.exa
 `192.168.x.x`), set an explicit allowlist on **both** `app` and `worker`:
 
 ```bash
-# deploy/.env — exact hostnames or IP literals, comma-separated
+# deploy/.env - exact hostnames or IP literals, comma-separated
 MAIL_PRIVATE_DESTINATION_ALLOWLIST=mail.example.lan
 ```
 
@@ -318,8 +322,8 @@ cd deploy
 
 **`migrate`** runs **fail-fast** (any step fails → exits nonzero, `app` never starts):
 
-1. `prisma migrate status` — detect pending migrations (text parse; connection errors abort with a clear log)
-2. `prisma migrate deploy` — idempotent schema migrations (automatic; operators never run this by hand)
+1. `prisma migrate status` - detect pending migrations (text parse; connection errors abort with a clear log)
+2. `prisma migrate deploy` - idempotent schema migrations (automatic; operators never run this by hand)
 3. Idempotent backfills (safe to re-run; throw if DB/schema incompatible)
 
 **`app`** execs `node apps/web/dist/src/index.js` only. No migration logic, no retention on boot, and
@@ -328,31 +332,39 @@ log), bounce ingest, mail drain, and import/export jobs run on the **`worker`** 
 `command: ["worker"]` → `admitto worker`). Keep exactly one worker replica; the process uses session
 advisory locks so a mistaken second replica skips overlapping jobs rather than double-running them.
 
-**Operator upgrade:** take a **manual database backup first** (see [PostgreSQL backups](#postgresql-backups-adr-0012-adr-0027)), then pull the new image and `docker compose up -d`. Migrations apply automatically; there is **no** automatic pre-migration dump anymore.
+Operator upgrade procedure: see [Upgrading](#upgrading) above.
 
 Schema change policy (expand-contract, CI guard): [packages/db/README.md](../packages/db/README.md#schema-change-policy).
 
 For one-off CLI (bootstrap, MFA reset, emergency export), the entrypoint passes through `node …` after
-checking that `EMERGENCY_EXPORT_DIR` is writable — see below. `npm`/`npx` are not available in the production image.
+checking that `EMERGENCY_EXPORT_DIR` is writable - see below. `npm`/`npx` are not available in the production image.
 
 ## Container logs (what to expect where)
 
-Per-container stdout, by design (SECURITY-CONTROLS: logs are operational — no PII, secrets, or tokens; no built-in SIEM):
+Per-container stdout, by design (SECURITY-CONTROLS: logs are operational - no PII, secrets, or tokens; no built-in SIEM):
 
 | Container | What its logs show |
 |-----------|--------------------|
-| `migrate` | Entrypoint boot steps (migration status, backfills) — a one-shot container, exits after logging `migrate: startup tasks complete` |
-| `app` | `Admitto web running at …`, then: JSON access log (one line per request — method, redacted path, status, `duration_ms`, client `ip`, plus a `ref` hash for ticket/QR paths) when `LOG_HTTP_REQUESTS=1` (compose default), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
+| `migrate` | Entrypoint boot steps (migration status, backfills) - a one-shot container, exits after logging `migrate: startup tasks complete` |
+| `app` | `Admitto web running at …`, then: JSON access log (one line per request - method, redacted path, status, `duration_ms`, client `ip`, plus a `ref` hash for ticket/QR paths) when `LOG_HTTP_REQUESTS=1` (compose default), plus sparse JSON events (import, upload, `/readyz` auth failure, SPA client errors) |
 | `worker` | `[worker] …` lines for heartbeat, mail drain, import/export jobs, bounce ingest, and retention (boot + ~24h) |
-| `proxy` | Nginx access/error log (image default) — includes client IPs; rotate/limit via Docker logging options if kept long-term |
+| `proxy` | Nginx access/error log (image default) - includes client IPs; rotate/limit via Docker logging options if kept long-term |
 | `db-backup` | `[db-backup] …` prefixed lines per nightly dump |
 | `db` / `redis` | Image defaults (Postgres startup/checkpoints, Redis notices) |
 
-**Decision (issue #237):** the `app` access log is the supported way to see request activity in Portainer/`docker logs`. It deliberately excludes user agents, cookies, and query strings; the client IP is included for every request, staff or anonymous, since the app already reads it to key its rate limiter on the same routes (see [DATA-PROTECTION.md](../DATA-PROTECTION.md) for the exact rule and retention). Ticket/QR paths are logged as `/t/[redacted]` and `/q/[redacted]` so tokens never reach stdout, alongside a short one-way `ref` hash so repeated hits on the same participant's link are recognizable across lines. Successful `/healthz`/`/readyz` probes are skipped (Docker healthcheck fires every 10s); failing probes are logged. Request-level *attribution* (who did what) stays in the DB audit log. Disable with `LOG_HTTP_REQUESTS=0` in `deploy/.env`.
+**Decision (issue #237):** the `app` access log is the supported way to see request activity in Portainer/`docker logs`. It deliberately trades some detail for privacy:
+
+- **Excludes** user agents, cookies, and query strings.
+- **Includes** the client IP on every request, staff or anonymous, since the app already reads it to key its rate limiter on the same routes (see [DATA-PROTECTION.md](../DATA-PROTECTION.md) for the exact rule and retention).
+- **Redacts** ticket/QR paths as `/t/[redacted]` and `/q/[redacted]` so tokens never reach stdout, alongside a short one-way `ref` hash so repeated hits on the same participant's link are recognizable across lines.
+- **Skips** successful `/healthz`/`/readyz` probes (Docker healthcheck fires every 10s); failing probes are logged.
+- **Omits** attribution: request-level *attribution* (who did what) stays in the DB audit log, not here.
+
+Disable with `LOG_HTTP_REQUESTS=0` in `deploy/.env`.
 
 ## First superadmin
 
-On a **fresh database** (no users), open the app URL — you are redirected to **`/setup`**
+On a **fresh database** (no users), open the app URL - you are redirected to **`/setup`**
 automatically (`/`, `/login`, and other staff paths send you there until the first account exists).
 
 Create the break-glass superadmin in the browser: email, display name, and password (min. 12
@@ -368,11 +380,11 @@ docker compose run --rm app node packages/auth/dist/cli.js bootstrap-superadmin 
 
 Additional instance superadmins can be assigned in the admin UI (Users) or via OIDC group mappings.
 Before demoting a superadmin in your IdP, ensure at least one other **active** instance superadmin
-remains — see the OIDC offboarding runbook in [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md).
+remains - see the OIDC offboarding runbook in [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md).
 
 ## Emergency CLI (event-day failover)
 
-When the admin SPA or scanner is down, use the unified emergency binary (same production `app` image — `npm`/`npx` are not available):
+When the admin SPA or scanner is down, use the unified emergency binary (same production `app` image - `npm`/`npx` are not available):
 
 ```bash
 docker compose run --rm app node apps/cli/dist/index.js --help
@@ -381,7 +393,7 @@ docker compose run --rm app node apps/cli/dist/index.js --help
 docker compose run --rm app node apps/cli/dist/index.js checkin lookup --event <eventId> --query "jan kowal"
 docker compose run --rm app node apps/cli/dist/index.js checkin admit --event <eventId> --attendee-id <attendeeId>
 
-# Paper backup list (CSV) — use EMERGENCY_EXPORT_DIR (node-writable bind mount), NOT /app/uploads or /backups
+# Paper backup list (CSV) - use EMERGENCY_EXPORT_DIR (node-writable bind mount), NOT /app/uploads or /backups
 # Run ./scripts/init-host-dirs.sh on the host first if a fresh deploy created root-owned emergency-exports/
 # (/uploads/* is served without auth; /backups is only on the db-backup sidecar volume)
 docker compose run --rm app node apps/cli/dist/index.js attendees export --event <eventId> --out /app/emergency-exports/emergency-attendees-<eventId>.csv --operator-email super@example.com
@@ -390,7 +402,7 @@ docker compose run --rm app node apps/cli/dist/index.js attendees export --event
 # Retry failed mail batch
 docker compose run --rm app node apps/cli/dist/index.js mail retry-failed --event <eventId>
 
-# Session break-glass (destructive — requires confirmation or --yes, and --operator-email for audit)
+# Session break-glass (destructive - requires confirmation or --yes, and --operator-email for audit)
 docker compose run --rm app node apps/cli/dist/index.js sessions revoke --user admin@example.com --operator-email super@example.com
 docker compose run --rm app node apps/cli/dist/index.js sessions purge --all --yes --operator-email super@example.com
 
@@ -405,21 +417,14 @@ Legacy per-package CLIs (`packages/auth/dist/cli.js`, `packages/mail-delivery/di
 
 ## Nginx Proxy Manager (deep notes)
 
-Start with **[Edge proxy: two variants](#edge-proxy-two-variants)** above (headers, SSL, Portainer). This section is the trust-model detail for Variant A.
+Start with **[Edge proxy: two variants](#edge-proxy-two-variants)** above (headers, SSL, Portainer) to configure NPM. This section is the trust-model detail behind those steps for Variant A - why each header/CIDR rule exists, in case something doesn't add up:
 
-NPM must **overwrite** `X-Forwarded-For` with the real client IP - never `$proxy_add_x_forwarded_for`. Compose nginx (`deploy/nginx/default.conf`) uses `real_ip` from loopback/docker peers, then forwards a **single** `$remote_addr` to the app.
-
-Use `$http_host` instead of `$host` when the public URL uses a non-default port (e.g. local smoke on `:8080`) so the CSRF origin check matches the browser `Origin` header.
-
-With `TRUST_PROXY=true`, Admitto reads the **first** `X-Forwarded-For` hop ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)); an appended chain would let clients pick the rate-limit bucket. The first hop must be a **valid IP**; otherwise the app falls back to the TCP remote address (see [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md)).
-
-Compose nginx trusts **only `127.0.0.1`** as the RealIP peer (NPM on the host → `127.0.0.1:8080`). If NPM runs in Docker and hits the host via the bridge gateway (often `172.17.0.1`), add that single address to `deploy/nginx/default.conf` - do not widen to whole RFC1918 ranges.
-
-The app only honours `X-Forwarded-*` when the direct TCP peer is inside `TRUSTED_PROXY_CIDRS` ([`trust-proxy.ts`](../apps/web/src/rate-limit/trust-proxy.ts)). For Variant A that is the compose `internal` subnet in `.env.example`. For Variant B, set only NPM's source on `/32` (see Variant B checklist above), not broad Docker RFC1918 ranges.
-
-(`$scheme` is `https` on the public NPM vhost; compose nginx forwards that value so CSRF checks see HTTPS.)
-
-Set `TRUST_PROXY=true` and `TRUSTED_PROXY_CIDRS` in `deploy/.env`.
+- **NPM must overwrite `X-Forwarded-For`** with the real client IP, never append (`$proxy_add_x_forwarded_for` would let a client spoof an earlier hop). Compose nginx (`deploy/nginx/default.conf`) uses `real_ip` from loopback/docker peers, then forwards a **single** `$remote_addr` to the app.
+- **Use `$http_host`, not `$host`,** when the public URL uses a non-default port (e.g. local smoke on `:8080`), so the CSRF origin check matches the browser's `Origin` header.
+- **Admitto trusts only the first `X-Forwarded-For` hop** ([`client-ip.ts`](../apps/web/src/rate-limit/client-ip.ts)) when `TRUST_PROXY=true` - an appended chain would let clients pick their own rate-limit bucket. If that first hop isn't a valid IP, the app falls back to the TCP remote address (see [SECURITY-CONTROLS.md](../docs/security/SECURITY-CONTROLS.md)).
+- **Compose nginx trusts only `127.0.0.1`** as the RealIP peer (NPM on the host → `127.0.0.1:8080`). If NPM runs in Docker and reaches the host via the bridge gateway (often `172.17.0.1`), add that one address to `deploy/nginx/default.conf` - never widen it to a whole RFC1918 range.
+- **The app itself only honours `X-Forwarded-*`** when the direct TCP peer is inside `TRUSTED_PROXY_CIDRS` ([`trust-proxy.ts`](../apps/web/src/rate-limit/trust-proxy.ts)) - the compose `internal` subnet for Variant A, or NPM's exact source `/32` for Variant B (never a broad Docker RFC1918 range).
+- **`$scheme` is `https`** on the public NPM vhost; compose nginx forwards that value so CSRF checks see HTTPS.
 
 ## Cloudflare and WireGuard
 
@@ -461,7 +466,7 @@ docker compose exec app node packages/auth/dist/cli.js purge-security-audit-log
 `purge-security-audit-log` defaults to a 30-day window; override with
 `SECURITY_AUDIT_LOG_RETENTION_DAYS` (see `.env.example`).
 
-Failed worker job ticks log `FAILED` but do not stop the loop — check `docker compose logs worker`
+Failed worker job ticks log `FAILED` but do not stop the loop - check `docker compose logs worker`
 after deploy. Without a running worker, bulk mail stays queued and bounce/retention do not run.
 
 ## PostgreSQL backups (ADR 0012, ADR 0027)
@@ -497,10 +502,10 @@ card and that Health row. When `OPS_HEALTH_TOKEN` is set, compose also points
 gauges (never alone a 503). Worker liveness for operators is the Settings → Health **Background
 worker** row (DB heartbeat), not a bounce-only container HEALTHCHECK.
 
-Nightly dumps on the host volume are **not** a full disaster-recovery strategy — copy offsite per
+Nightly dumps on the host volume are **not** a full disaster-recovery strategy - copy offsite per
 ADR 0023 (S3, rsync, or your backup tool). TODO: document operator-specific offsite copy.
 
-**Manual (ops milestones):** run from the `deploy/` directory. Postgres credentials come from the **db container env** (compose `.env`), not your host shell — use `sh -c` so `$POSTGRES_USER` / `$POSTGRES_DB` expand inside the container:
+**Manual (ops milestones):** run from the `deploy/` directory. Postgres credentials come from the **db container env** (compose `.env`), not your host shell - use `sh -c` so `$POSTGRES_USER` / `$POSTGRES_DB` expand inside the container:
 
 ```bash
 # Pre-import
@@ -520,13 +525,13 @@ Test a restore on a non-production database before the first large event.
 
 ## Rollback runbook
 
-`prisma migrate deploy` is forward-only — the database always rolls **forward**.
+`prisma migrate deploy` is forward-only - the database always rolls **forward**.
 App rollback is a separate operation and covers the vast majority of incidents.
 
-### Case A — bad app code, schema is fine (the common case)
+### Case A - bad app code, schema is fine (the common case)
 
 Additive migrations keep the new schema backward-compatible with the previous app image.
-Roll back by pointing at the previous image tag — **no DB operation needed, no data loss, ~30 seconds**.
+Roll back by pointing at the previous image tag - **no DB operation needed, no data loss, ~30 seconds**.
 
 **Portainer:** Stack → edit image tag → redeploy.
 
@@ -537,17 +542,15 @@ Roll back by pointing at the previous image tag — **no DB operation needed, no
 docker compose pull app && docker compose up -d app
 ```
 
-This works for any number of skipped versions — all intermediate migrations are additive
+This works for any number of skipped versions - all intermediate migrations are additive
 (enforced by CI), so the old app runs safely against a newer schema.
 
-### Case B — a bad migration destroyed or corrupted data (disaster only)
+### Case B - a bad migration destroyed or corrupted data (disaster only)
 
 Stop the app and worker, **empty the target database**, restore from your **pre-upgrade backup** or a
 **nightly dump** on the `migration_backups` volume, then redeploy the previous image.
 
-Entrypoint backups are plain `pg_dump` SQL (`--no-owner`, no `--clean`). Replaying into a database
-that already ran the bad migration will hit existing tables/types and can leave a **partial** schema
-— not a true rollback. You must drop and recreate the application database first.
+Entrypoint backups are plain `pg_dump` SQL (`--no-owner`, no `--clean`). Replaying into a database that already ran the bad migration will hit existing tables/types and can leave a **partial** schema - not a true rollback. You must drop and recreate the application database first.
 
 ```bash
 docker compose stop app worker
@@ -555,7 +558,7 @@ docker compose stop app worker
 # List nightly dumps on the migration_backups volume (or use your host backup-pre-upgrade-*.sql.gz)
 docker compose exec db-backup sh -c 'ls -lt /backups/nightly-*.sql.gz'
 
-# Empty target DB (credentials from the db container env — same pattern as manual backups above)
+# Empty target DB (credentials from the db container env - same pattern as manual backups above)
 docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 \
   -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '\''$POSTGRES_DB'\'' AND pid <> pg_backend_pid()" \
   -c "DROP DATABASE IF EXISTS \"$POSTGRES_DB\"" \
@@ -569,18 +572,18 @@ docker compose exec -T db-backup sh -c 'gunzip -c /backups/nightly-<UTC>.sql.gz'
 docker compose pull app && docker compose up -d app worker
 ```
 
-Without a pre-upgrade or nightly dump you cannot roll the database back — Case A (image-only rollback)
+Without a pre-upgrade or nightly dump you cannot roll the database back - Case A (image-only rollback)
 still works when the schema change was additive and the old app tolerates the new schema.
 Practice this on a non-production database before the first large event.
 
-### Case C — the schema needs fixing after a bad migration
+### Case C - the schema needs fixing after a bad migration
 
 Do **not** reverse the migration. Ship a new corrective (additive) migration in the next release.
 
 ### Invariant
 
 Every app release must run correctly against **both** the previous and the new schema (expand-contract).
-That is what makes Case A — image rollback without touching the DB — safe by default.
+That is what makes Case A - image rollback without touching the DB - safe by default.
 
 ## Uptime Kuma (observability)
 
@@ -588,13 +591,13 @@ Set `OPS_HEALTH_TOKEN` in `deploy/.env` (see `.env.example`). `/readyz` is **dis
 
 | Monitor | URL | Notes |
 |---------|-----|-------|
-| Basic up/down | `GET /healthz` | Expect HTTP 200 and body keyword `ok` (no auth). Rate-limited (120/min per IP) — do not poll faster from a single monitor source. |
+| Basic up/down | `GET /healthz` | Expect HTTP 200 and body keyword `ok` (no auth). Rate-limited (120/min per IP) - do not poll faster from a single monitor source. |
 | Critical readiness | `GET /readyz` | Header `Authorization: Bearer $OPS_HEALTH_TOKEN` or `X-Ops-Token: $OPS_HEALTH_TOKEN`; HTTP **503** = critical failure |
 | DB | same `/readyz` | JSON-query: `$.checks.database.status == "ok"` |
 | Redis | same `/readyz` | JSON-query: `$.checks.redis.status == "ok"` (or `disabled` when Redis not configured) |
 | Mail queue | same `/readyz` | JSON-query: `$.gauges.email_deliveries_failed_retryable < 50` (adjust threshold) |
 
-`/readyz` may sit on the Cloudflare Access bypass list — it is token-gated, not CF-protected. Docker `HEALTHCHECK` stays on `/healthz` only.
+`/readyz` may sit on the Cloudflare Access bypass list - it is token-gated, not CF-protected. Docker `HEALTHCHECK` stays on `/healthz` only.
 
 ## TLS notes
 

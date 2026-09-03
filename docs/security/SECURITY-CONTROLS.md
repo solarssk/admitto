@@ -8,12 +8,30 @@ For **repository CI** (SAST, secret scan, container scan, SBOM), see [SECURITY.m
 For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPLOYMENT.md).
 
 > **How to read this:** rows describe what organizations commonly require and how Admitto can be
-> configured — not a checklist of what any single deployment must enable. Your runbook and
+> configured - not a checklist of what any single deployment must enable. Your runbook and
 > environment variables define the effective control set.
 >
 > **`Where` column:** **App** = built into the application; **Config** = available but must be
 > enabled or tuned in deployment settings; **Operator** = customer infrastructure or process
 > (reverse proxy, disk encryption, perimeter, runbooks).
+
+- [Control areas (summary)](#control-areas-summary)
+- [Authentication and access](#authentication-and-access)
+  - [Role hierarchy](#role-hierarchy)
+  - [Implemented in codebase](#implemented-in-codebase)
+- [Authorization (RBAC)](#authorization-rbac)
+- [Optional hardening (customer choice)](#optional-hardening-customer-choice)
+- [Rate limiting](#rate-limiting)
+  - [Public and authentication](#public-and-authentication)
+  - [Operations probes](#operations-probes)
+  - [Staff admin (authenticated)](#staff-admin-authenticated)
+  - [Superadmin (identity provider UI)](#superadmin-identity-provider-ui)
+- [Reverse proxy and client IP (`TRUST_PROXY`)](#reverse-proxy-and-client-ip-trust_proxy)
+- [Outbound HTTP (SSRF mitigation)](#outbound-http-ssrf-mitigation)
+- [Data protection in operations](#data-protection-in-operations)
+- [Known scope limits (MVP)](#known-scope-limits-mvp)
+  - [Penetration test verification (operator checklist)](#penetration-test-verification-operator-checklist)
+- [Related documents](#related-documents)
 
 ---
 
@@ -24,7 +42,7 @@ For **hosting and data residency**, see [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPL
 | Authentication | Staff sign-in before admin/operator actions | Local accounts and/or **OIDC** | App · Config |
 | Authorization | Least privilege by role and event/org scope | **RBAC** (admin, operator, platform roles) | App |
 | Strong auth | MFA for privileged users | **TOTP** authenticator apps, and **WebAuthn passkeys/security keys** (FIDO2, e.g. Face ID, Windows Hello, YubiKey) for elevated roles - usable for enrollment, sign-in, and step-up | App · Config |
-| Edge access (ZTNA) | Restrict staff URLs at the perimeter, so an unauthorized request never reaches the application at all | Optional zero-trust network access (ZTNA) gateway — e.g. **Cloudflare Access** — in front of staff paths. Verifies identity (via the same OIDC provider or its own) and device posture before proxying the request through; complements, does not replace, Admitto's own RBAC | Operator |
+| Edge access (ZTNA) | Restrict staff URLs at the perimeter, so an unauthorized request never reaches the application at all | Optional zero-trust network access (ZTNA) gateway - e.g. **Cloudflare Access** - in front of staff paths. Verifies identity (via the same OIDC provider or its own) and device posture before proxying the request through; complements, does not replace, Admitto's own RBAC | Operator |
 | Session security | HttpOnly cookies, TLS, rotation | Configurable lifetime; server-side revocation | App · Config |
 | CSRF | Protect state-changing browser requests | Same-origin checks on mutating requests (behind standard reverse proxy) | App |
 | Abuse prevention | Rate limits on auth, public, ops, and admin surfaces | Per-route throttling (see **Rate limiting** below; shared Redis store recommended in production) | App · Config |
@@ -53,7 +71,7 @@ flowchart TB
 
 - **Local accounts** with password and optional MFA for privileged roles.
 - **OIDC / SSO** (optional) alongside a local break-glass administrator account.
-- **Perimeter access control** (optional) — e.g. corporate zero-trust gateway, VPN, or CDN access
+- **Perimeter access control** (optional) - e.g. corporate zero-trust gateway, VPN, or CDN access
   rules in front of staff URLs. This complements, but does not replace, application RBAC.
 
 Sessions are **server-side** (opaque token, hash stored in the database). Cookie flags follow
@@ -67,25 +85,25 @@ to preview counts).
 `admitto_trusted_device` cookie or its database row. A **"Remember this device"** trust now lasts
 for its full window (`trusted_device_days`, 30 days by default) regardless of how many times the
 user signs out and back in on that browser, matching how most other products with this feature
-behave. It is cleared only by: the trust window expiring, a password change, an MFA reset, an
-admin-initiated reset, or the account's own **"Forget all trusted devices"** action (My account →
-Two-factor authentication's options menu).
+behave. It is cleared only by one of:
+
+- the trust window expiring,
+- a password change,
+- an MFA reset,
+- an admin-initiated reset, or
+- the account's own **"Forget all trusted devices"** action (My account → Two-factor authentication's options menu).
 
 > **Shared check-in devices.** On shared operator tablets, signing out alone no longer clears
-> remembered-device trust — the trust is scoped to that specific account (`validateTrustedDevice`
+> remembered-device trust - the trust is scoped to that specific account (`validateTrustedDevice`
 > rejects the cookie for a different `user_id`), so it does not carry over to whoever uses the
 > device next, but it does let the *same* account skip MFA again on that device until the trust
 > window expires. Set `trusted_device_days` to a short value (or `0` to disable the feature
 > entirely) for any instance where the same account may sign in from a device it shouldn't stay
 > trusted on, and use **"Forget all trusted devices"** or an admin-initiated reset to clear it
 > sooner.
-Frozen email delivery bodies (`EmailDelivery.rendered_html` / `rendered_subject`) are nullified
-best-effort on the Admitto **worker** (boot + ~24h) once a delivery is terminal and older than 60 days
-(configurable via `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`). Preview with
-`npm run cli -w @admitto/mail-delivery -- nullify-delivery-snapshots --dry-run`.
 
 **Session idle timeout (v0.4.13+).** Sessions previously only expired on an absolute lifetime
-(admin defaulted to 7 days), with no inactivity check — a stolen or left-open admin browser tab
+(admin defaulted to 7 days), with no inactivity check - a stolen or left-open admin browser tab
 stayed authenticated for up to a week. A `full`-stage session now also ends once `now -
 last_seen_at` exceeds a configurable idle window (`SESSION_IDLE_TIMEOUT_ADMIN_MS` /
 `SESSION_IDLE_TIMEOUT_OPERATOR_MS`, same env-lock pattern as the absolute-lifetime settings).
@@ -96,29 +114,29 @@ absolute lifetime.
 
 **Password blocklist (v0.4.13+).** Every place a password is set or changed (first-run setup, forced
 change, self-service Account change, admin-initiated create/reset) now rejects the ~250 most common
-passwords and trivial patterns (a single repeated character, a simple ascending/descending run) —
-enforced server-side, not just the strength meter shown while typing — per NIST SP 800-63B-4
+passwords and trivial patterns (a single repeated character, a simple ascending/descending run) -
+enforced server-side, not just the strength meter shown while typing - per NIST SP 800-63B-4
 §3.1.1.2's requirement to check candidates against a blocklist instead of relying on
 character-composition rules.
 
 **No account lockout, by design.** Local password authentication never locks or disables an
-account after repeated failed attempts — a login-triggerable lockout on admin/superadmin accounts
+account after repeated failed attempts - a login-triggerable lockout on admin/superadmin accounts
 would itself be a denial-of-service vector on a self-hosted internal tool. Brute-force is
 mitigated instead by the login rate limits above (see **Rate limiting**) plus an audit record on
 repeated failed attempts against privileged accounts (`packages/auth/src/privileged-login-alert.ts`):
 crossing the threshold emits an `auth.login.repeated_failures` (or `auth.mfa.repeated_failures`)
 event into the System logs live tail and writes a durable `SecurityAuditLog` row, for an operator to
-find on review — it never blocks the account, and there is no email, webhook, or other push
+find on review - it never blocks the account, and there is no email, webhook, or other push
 notification, so an operator who isn't actively watching those logs will not be proactively alerted
 in the moment.
 
 ### Implemented in codebase
 
-These capabilities exist in the application — they are **not** roadmap-only claims:
+These capabilities exist in the application - they are **not** roadmap-only claims:
 
 | Capability | Where |
 |------------|-------|
-| TOTP MFA (privileged roles) | `packages/auth` — MFA enrollment and verification |
+| TOTP MFA (privileged roles) | `packages/auth` - MFA enrollment and verification |
 | WebAuthn passkeys / security keys (enrollment, sign-in, step-up) | `packages/auth/src/mfa/webauthn.ts`; `apps/web/src/auth/mfa-html-routes.ts`, `apps/web/src/admin/account-routes.ts` |
 | OIDC / SSO | `packages/auth` OIDC provider module; staff login routes in the web app |
 | Local break-glass admin | Local account provider alongside OIDC |
@@ -151,13 +169,13 @@ Organizations with stricter policies often add controls **outside** the applicat
 |-------|-------------------------------------|
 | Edge / CDN | Cloudflare, Akamai, corporate CDN with WAF |
 | Reverse proxy | nginx, **Nginx Proxy Manager**, HAProxy, F5, cloud load balancer |
-| Network / ZTNA | Site-to-site VPN, private link to origin, or a zero-trust access gateway — **Cloudflare Access is natively supported** (Organisation Settings → Identity): Admitto validates its JWT directly, so staff can authenticate through the gateway without a separate Admitto login prompt |
-| Identity (SSO) | Entra ID, Okta, Authentik, or another OIDC provider (Organisation Settings → Identity) — staff sign in with their existing corporate account instead of a separate Admitto password, with IdP group membership mapped to Admitto roles |
+| Network / ZTNA | Site-to-site VPN, private link to origin, or a zero-trust access gateway - **Cloudflare Access is natively supported** (Organisation Settings → Identity): Admitto validates its JWT directly, so staff can authenticate through the gateway without a separate Admitto login prompt |
+| Identity (SSO) | Entra ID, Okta, Authentik, or another OIDC provider (Organisation Settings → Identity) - staff sign in with their existing corporate account instead of a separate Admitto password, with IdP group membership mapped to Admitto roles |
 | Mail | Microsoft 365 / Graph, corporate SMTP relay |
 
 Admitto is designed to sit **behind** a trusted reverse proxy (`TRUST_PROXY` and forwarded headers
 documented in [`deploy/README.md`](../../deploy/README.md)). The proxy must **overwrite**
-`X-Forwarded-For` with the real client IP — never append to a browser-supplied value.
+`X-Forwarded-For` with the real client IP - never append to a browser-supplied value.
 
 ---
 
@@ -165,7 +183,7 @@ documented in [`deploy/README.md`](../../deploy/README.md)). The proxy must **ov
 
 Application throttles use a fixed window (default **60 seconds** unless noted): each bucket resets
 at a fixed boundary rather than rolling continuously, so a burst straddling a window edge can allow
-up to roughly 2x the stated limit in the worst case — a common, accepted trade-off against the
+up to roughly 2x the stated limit in the worst case - a common, accepted trade-off against the
 extra cost of a true sliding window. Limits apply per bucket key; HTTP **429** when exceeded.
 Structured audit events: `auth.rate_limit.exceeded` (see `packages/auth` audit helpers).
 
@@ -215,13 +233,13 @@ Docker `HEALTHCHECK` uses `/healthz` only. With shared Redis, the limit is scope
 
 All three test-mail routes above (`template/test-send` and both `mail-settings/test` routes) also
 share one additional budget on top of their own per-user/event bucket: **5 / hour per recipient
-address, instance-wide** — not scoped to the calling user, event, or which of the three routes
+address, instance-wide** - not scoped to the calling user, event, or which of the three routes
 sent it. This bounds how much test mail any single external address can receive even if a
 compromised admin session rotates between routes, events, or accounts to work around the
 per-user/event limits above.
 
 Every route above that can reach PassCreator is additionally paced at the outbound-call layer, not
-just gated at the HTTP-route layer — see **Outbound HTTP** below.
+just gated at the HTTP-route layer - see **Outbound HTTP** below.
 
 ### Superadmin (identity provider UI)
 
@@ -232,7 +250,7 @@ just gated at the HTTP-route layer — see **Outbound HTTP** below.
 
 **Body size caps** (separate from rate limits): import uploads ≤ 5 MB; template JSON sized for
 ≤ 200k character body field; every bulk-attendee-id request (the mutation and wallet routes above)
-≤ 0.5 MB, with each attendee id itself capped at 128 characters — see
+≤ 0.5 MB, with each attendee id itself capped at 128 characters - see
 `apps/web/src/admin/import-api-routes.ts`, `communication-api-routes.ts`, and
 `apps/web/src/app.ts` (`bulkAttendeeIdsBodyLimit`).
 
@@ -243,7 +261,7 @@ just gated at the HTTP-route layer — see **Outbound HTTP** below.
 `X-Forwarded-*` headers are honoured only when **both** are true: `TRUST_PROXY=true`, **and** the
 request's direct TCP peer is inside `TRUSTED_PROXY_CIDRS` (default in
 [`deploy/.env.example`](../../deploy/.env.example), loopback-only if unset). `TRUST_PROXY` alone is
-not a trust boundary — anything that can reach the app directly could otherwise set these headers
+not a trust boundary - anything that can reach the app directly could otherwise set these headers
 itself.
 
 | Header | Used for |
@@ -266,12 +284,12 @@ misconfiguration risk, not bypassable from the app alone.
 **Hardening (v0.4.5+):** malformed or non-IP first hops fall back to the TCP remote address instead
 of a shared `"unknown"` bucket (which previously allowed cross-client rate-limit interference).
 
-**Hardening (v0.4.13+):** `TRUSTED_PROXY_CIDRS` peer allowlist — previously `TRUST_PROXY=true`
+**Hardening (v0.4.13+):** `TRUSTED_PROXY_CIDRS` peer allowlist - previously `TRUST_PROXY=true`
 trusted forwarded headers from **any** direct connection, so a client that reached the app
 directly (misconfigured port exposure, or from elsewhere on the same network) could forge its own
 rate-limit IP, CSRF origin, and cookie `Secure` flag. **Residual:** the default deploy topology
 pins `TRUSTED_PROXY_CIDRS` to the whole `internal` compose network subnet, not just the `proxy`
-container's individual address — a compromise of another container on that same network (`db`,
+container's individual address - a compromise of another container on that same network (`db`,
 `redis`, `migrate`, `worker`) could still inject these headers. Narrowing to a single pinned
 container IP was judged not worth the added operational fragility (static IPs in Compose); this
 subnet-level allowlist is still a materially smaller trust boundary than "any direct connection."
@@ -298,7 +316,7 @@ Superadmin identity-provider **Discover** / **Test connection** and runtime OIDC
 
 Requires **superadmin** session (or Cloudflare Access JWT with instance admin role) for admin UI
 discover/test. Residual risk: compromised superadmin account can still trigger outbound fetches to
-**public** URLs the instance can reach — perimeter egress filtering remains an operator control.
+**public** URLs the instance can reach - perimeter egress filtering remains an operator control.
 
 **Self-hosted private SSO allowlist.** `SSO_PRIVATE_DESTINATION_ALLOWLIST` (comma-separated exact
 hostnames or IP literals, case-insensitive) is an ops-only escape hatch that works in production:
@@ -329,47 +347,36 @@ and `worker`.
 admin-configurable external-service URLs under Organisation Settings → External services: the
 Weather (Open-Meteo) base URL, the Nominatim geocoding base URL, and the map tile-server URL. Each
 re-resolves the hostname and pins the outbound connection to the validated address at request
-time, closing the same DNS-rebinding gap as the OIDC and mail guards above — see
+time, closing the same DNS-rebinding gap as the OIDC and mail guards above - see
 `apps/web/src/weather/open-meteo-client.ts`, `apps/web/src/maps/nominatim-provider.ts`, and
 `apps/web/src/maps/static-map.ts`.
 
-**PassCreator call pacing (not SSRF — availability/abuse hardening).** Every outbound call to
-PassCreator (issue, void, restore, delete, push, search, webhook key fetch) goes through one
-choke point, `PassCreatorClient.requestRaw`, which spaces calls at least 150ms apart — across every
-caller: single and bulk admin wallet actions, the background wallet-push/wallet-sync workers, and
-webhook resubscribe-on-save — regardless of how many separate requests or client instances are
-triggering them concurrently. This keeps Admitto's own outbound traffic under PassCreator's
-documented account-wide 600 req/min limit even under a burst (e.g. several bulk actions started at
-once), rather than relying only on reacting to a 429 after the limit is already exceeded. When
-`REDIS_URL` is configured, this pacing is coordinated across every server process handling
-requests via a Redis-backed gate (`packages/wallet/src/passcreator-pace-gate.ts`); without it, each
-process paces only its own calls, so the combined rate across multiple processes could exceed the
-intended pace. The admin-facing rate limits in the table above bound how much work an admin can
-queue up; this pacing bounds how fast that work actually reaches PassCreator. One consequence: a
-bulk wallet action against a selection now takes proportionally longer to complete than a
-non-wallet bulk action, rather than firing all calls at once and having a chunk of them fail once
-PassCreator's own rate limit was exceeded — bulk wallet actions on a whole selection are also
-capped at 100 attendees per request (down from the general 500 bulk-action cap) so a full-size
-request stays comfortably within a typical reverse proxy's response timeout. Bulk-delete and
-bulk-revoke-pass share that same 100-attendee cap whenever the target event has wallet configured
-(both can also reach PassCreator once per selected attendee in that case); an event with no wallet
-configured keeps the general 500-attendee cap for both, since neither can reach PassCreator at all.
+**PassCreator call pacing (not SSRF - availability/abuse hardening).** Every outbound call to PassCreator (issue, void, restore, delete, push, search, webhook key fetch) goes through one choke point, `PassCreatorClient.requestRaw`, which paces requests proactively rather than reacting to a 429 after PassCreator's own limit is already exceeded:
+
+- **Spacing:** at least 150ms between calls, across every caller - single and bulk admin wallet actions, the background wallet-push/wallet-sync workers, and webhook resubscribe-on-save - regardless of how many separate requests or client instances are triggering them concurrently. This keeps Admitto's outbound traffic under PassCreator's documented account-wide 600 req/min limit even under a burst (e.g. several bulk actions started at once).
+- **Multi-process coordination:** with `REDIS_URL` configured, pacing is coordinated across every server process via a Redis-backed gate (`packages/wallet/src/passcreator-pace-gate.ts`). Without it, each process paces only its own calls, so the combined rate across processes could exceed the intended pace.
+- **Relationship to the rate limits above:** those bound how much work an admin can queue up; this pacing bounds how fast that work actually reaches PassCreator - so a bulk wallet action against a selection now takes proportionally longer than a non-wallet bulk action, by design, rather than firing every call at once and having a chunk fail once PassCreator's limit was exceeded.
+- **Attendee caps:** bulk wallet actions on a whole selection are capped at 100 attendees per request (down from the general 500 bulk-action cap) so a full-size request stays within a typical reverse proxy's response timeout. Bulk-delete and bulk-revoke-pass share that same 100-attendee cap whenever the target event has wallet configured (both can also reach PassCreator once per selected attendee in that case); an event with no wallet configured keeps the general 500-attendee cap for both, since neither can reach PassCreator at all.
 
 ---
 
 ## Data protection in operations
 
-- **Ticket / QR payload:** opaque random identifier — no attendee name or email embedded in the QR.
+- **Ticket / QR payload:** opaque random identifier - no attendee name or email embedded in the QR.
 - **Integration credentials** (mail, OIDC, Wallet/PassCreator): stored encrypted in the application database; key
   supplied at deploy time via environment variable.
 - **Logs:** intended for operations, not analytics. Attendee-facing data (recipient addresses,
   import content) and secrets are never logged in full. A small, named set of staff/operator
   accountability events (login success, admin actions) does log the acting staff member's own
-  email address — see **Logs** and **System logs (live tail)** in
+  email address - see **Logs** and **System logs (live tail)** in
   [DATA-PROTECTION.md](../../DATA-PROTECTION.md) for exactly which events and why.
-- **Health endpoints:** `/healthz` — liveness + DB ping, rate-limited, no PII; `/readyz` —
+- **Health endpoints:** `/healthz` - liveness + DB ping, rate-limited, no PII; `/readyz` -
   token-gated detailed readiness (disabled when `OPS_HEALTH_TOKEN` unset). Both return baseline
   security headers; neither exposes secrets or attendee data.
+- **Frozen email delivery bodies:** `EmailDelivery.rendered_html` / `rendered_subject` are nullified
+  best-effort on the Admitto **worker** (boot + ~24h) once a delivery is terminal and older than 60
+  days (configurable via `EMAIL_DELIVERY_SNAPSHOT_RETENTION_DAYS`). Preview with
+  `npm run cli -w @admitto/mail-delivery -- nullify-delivery-snapshots --dry-run`.
 - **Container privilege (v0.4.13+):** the production image runs as the unprivileged `node` user
   (UID 1000) for `migrate`, `app`, and `worker`. Schema migration is a one-shot `migrate` compose
   service; database dumps are **not** written during migrate. Operators take a pre-upgrade dump
@@ -384,9 +391,9 @@ Be explicit with auditors about what is **out of product scope** today:
 
 - No built-in SIEM or central log platform (forward container logs if required). The in-app
   **System logs** screen (superadmin only, see [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) is a
-  short, in-memory live tail for day-to-day diagnostics — not a substitute for a SIEM: it holds
+  short, in-memory live tail for day-to-day diagnostics - not a substitute for a SIEM: it holds
   only the last 1000 entries and is emptied on every restart. A narrower, durable exception exists
-  for ten auth/security event types (login, MFA, logout, OIDC, access-denied) — see **Durable
+  for ten auth/security event types (login, MFA, logout, OIDC, access-denied) - see **Durable
   security audit trail (`SecurityAuditLog`)** in [DATA-PROTECTION.md](../../DATA-PROTECTION.md); this
   is a queryable incident-review trail, not a general-purpose log platform, and rate-limit/system
   log signals stay ephemeral and operator-shipped as above. That trail is also neither complete nor
@@ -399,7 +406,7 @@ Be explicit with auditors about what is **out of product scope** today:
   Admitto **worker** at boot and about every 24 hours, and are also available as CLI maintenance
   commands).
 - Disk/volume encryption for PostgreSQL and Redis is an **infrastructure** control.
-- No automated entropy check on `CHECKIN_OPERATOR_TOKEN` / `OPS_HEALTH_TOKEN` at boot — minimum
+- No automated entropy check on `CHECKIN_OPERATOR_TOKEN` / `OPS_HEALTH_TOKEN` at boot - minimum
   length only; operators should generate with `openssl rand -hex 32` (documented in `.env.example`).
 - Rate limits are application-layer; high-volume DoS may still require edge WAF/CDN or network
   controls in front of the origin.
@@ -425,15 +432,18 @@ Be explicit with auditors about what is **out of product scope** today:
   2. In Admitto, revoke the user's active sessions (`POST /api/admin/users/:id/revoke-sessions`).
   3. On the next OIDC login, `applyOidcGroupRoleMappings` removes grants no longer authorized by
      current IdP group membership.
-  4. In session-cookie OIDC mode, revoking the user's Admitto sessions in step 2 is sufficient for
-     immediate access removal: an OIDC-sourced grant without an active session grants nothing. In
-     Cloudflare Access mode, also remove or block the user at the Cloudflare Access / IdP policy
-     layer because a valid CF Access JWT can authenticate staff requests without an Admitto
-     `Session` row. The grant row is removed on the next OIDC/CF Access reconciliation.
-     OIDC-sourced grants cannot be removed through the manual role revoke action (`managed_by_idp`);
-     if the grant row must disappear before the user's next authentication, temporarily remove or
-     disable the relevant group→role mapping rule, complete reconciliation, then re-enable the rule
-     if still needed.
+  4. Immediate access removal depends on the auth mode:
+     - **Session-cookie OIDC mode:** revoking sessions in step 2 is sufficient - an OIDC-sourced
+       grant without an active session grants nothing.
+     - **Cloudflare Access mode:** also remove or block the user at the Cloudflare Access / IdP
+       policy layer, because a valid CF Access JWT can authenticate staff requests without an
+       Admitto `Session` row.
+
+     Either way, the grant row itself is only removed on the next OIDC/CF Access reconciliation,
+     and OIDC-sourced grants cannot be removed through the manual role revoke action
+     (`managed_by_idp`). If the grant row must disappear before the user's next authentication,
+     temporarily remove or disable the relevant group→role mapping rule, complete reconciliation,
+     then re-enable the rule if still needed.
 
 ### Penetration test verification (operator checklist)
 
@@ -441,7 +451,7 @@ Useful when repeating internal or vendor PEN tests against a staging instance:
 
 1. **Proxy trust:** confirm NPM/nginx uses `$remote_addr` for `X-Forwarded-For`, not
    `$proxy_add_x_forwarded_for`, when `TRUST_PROXY=true`. Separately, confirm a request sent
-   directly to the app (bypassing compose nginx, spoofed `X-Forwarded-*`) is **not** trusted —
+   directly to the app (bypassing compose nginx, spoofed `X-Forwarded-*`) is **not** trusted -
    its peer address falls outside `TRUSTED_PROXY_CIDRS`.
 2. **Rate limits:** unauthenticated login → 429 on 11th attempt/minute; `/healthz` → 429 after
    sustained flood; MFA enroll requires partial session and throttles repeated secret fetches.
@@ -449,7 +459,7 @@ Useful when repeating internal or vendor PEN tests against a staging instance:
 4. **AuthZ:** `GET /api/admin/events` without session → 401.
 5. **SSRF:** OIDC discover to private IP literal blocked; hostname resolving to RFC1918 blocked
    after DNS check (superadmin action).
-6. **Residual:** misconfigured proxy append on `X-Forwarded-For` can still spoof rate-limit IP —
+6. **Residual:** misconfigured proxy append on `X-Forwarded-For` can still spoof rate-limit IP -
    verify deploy runbook, not app-only config.
 
 Source constants: `apps/web/src/rate-limit/policies.ts` (definitions), `apps/web/src/app.ts`
@@ -459,8 +469,8 @@ Source constants: `apps/web/src/rate-limit/policies.ts` (definitions), `apps/web
 
 ## Related documents
 
-- [SECURITY.md](../../SECURITY.md) — vulnerability reporting, CI controls
-- [DATA-PROTECTION.md](../../DATA-PROTECTION.md) — personal data handling
-- [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPLOYMENT.md) — deployment model
-- [ARCHITECTURE-FOR-AUDITORS.md](ARCHITECTURE-FOR-AUDITORS.md) — scope and data flows
-- [GDPR-ONE-PAGER.md](GDPR-ONE-PAGER.md) — privacy summary for DPO review
+- [SECURITY.md](../../SECURITY.md) - vulnerability reporting, CI controls
+- [DATA-PROTECTION.md](../../DATA-PROTECTION.md) - personal data handling
+- [CORPORATE-DEPLOYMENT.md](CORPORATE-DEPLOYMENT.md) - deployment model
+- [ARCHITECTURE-FOR-AUDITORS.md](ARCHITECTURE-FOR-AUDITORS.md) - scope and data flows
+- [GDPR-ONE-PAGER.md](GDPR-ONE-PAGER.md) - privacy summary for DPO review
