@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@admitto/db";
 import { resolveWalletProvider } from "./resolve-provider.js";
 import type { WalletPassProvider } from "./provider.js";
+import { registrationStatusToWalletPassFields } from "./registration-status-to-wallet-pass-fields.js";
 
 /** Cap on how many passes one sync call refreshes - keeps a single tick bounded regardless of
  * how many are stale at once (the rest just wait for the next tick). */
@@ -38,14 +39,27 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
-/** Always stamps registration_sync_attempted_at, even when the provider call itself fails -
- * otherwise a persistently-failing row (revoked key, provider outage) never advances past this
- * batch's oldest-first ordering and starves every other candidate, in this event and every
- * other, from ever being re-checked again. registration_checked_at only advances on a genuine
- * successful read, so it stays a trustworthy "last known good" for the UI instead of being
- * conflated with a mere retry-backoff timestamp. Still rejects on failure so the caller's
- * Promise.allSettled counts it as `failed`, matching its existing contract - only the DB write
- * changes shape. */
+/** Always stamps registration_sync_attempted_at, even when the provider found no match or the
+ * call itself failed - otherwise a persistently-unresolvable row (deleted at the provider,
+ * revoked key, provider outage) never advances past this batch's oldest-first ordering and
+ * starves every other candidate, in this event and every other, from ever being re-checked
+ * again. registration_checked_at and every registration-count column only advance on a genuine
+ * *found* read - a provider "no match" result is written identically to a hard failure (nothing
+ * touched but registration_sync_attempted_at), not as a confirmed zero.
+ *
+ * This distinction matters because PassCreator's own lookup (searchByUserProvidedId,
+ * passcreator-client.ts) is a *search*, not a get-by-ID: a pass that has genuinely vanished at the
+ * provider (deleted directly there, bypassing Admitto, or pruned by the provider's own data-
+ * retention rules while the rest of the account is still fully reachable) makes that search
+ * return a normal, non-error empty result - getRegistrationStatus resolves to `null`, exactly the
+ * same shape as "not yet installed anywhere". Writing that as all-null registration counts would
+ * silently overwrite the historical fact that this pass really was confirmed installed at some
+ * point (2026-09-03 incident/investigation) - registration_checked_at would even advance,
+ * making the row look freshly, successfully synced. Checking `status` (not `err`) for the write
+ * decision below fixes this uniformly: both "no match" and "provider error" already resolve
+ * `status` to null, so both take the same preserve-everything-but-attempted_at path without
+ * needing a third branch. Still rejects on a genuine error so the caller's Promise.allSettled
+ * counts it as `failed`, matching its existing contract - only the DB write's shape changed. */
 async function syncOne(db: PrismaClient, provider: WalletPassProvider, row: CandidateRow): Promise<void> {
   let status: Awaited<ReturnType<WalletPassProvider["getRegistrationStatus"]>> | null = null;
   let err: unknown;
@@ -58,19 +72,13 @@ async function syncOne(db: PrismaClient, provider: WalletPassProvider, row: Cand
   }
   await db.walletPass.update({
     where: { attendee_id: row.attendee_id },
-    data: err
-      ? { registration_sync_attempted_at: new Date() }
-      : {
-          apple_active_registrations: status?.appleActiveRegistrations ?? null,
-          apple_inactive_registrations: status?.appleInactiveRegistrations ?? null,
-          google_active_registrations: status?.googleActiveRegistrations ?? null,
-          google_inactive_registrations: status?.googleInactiveRegistrations ?? null,
-          samsung_active_registrations: status?.samsungActiveRegistrations ?? null,
-          samsung_inactive_registrations: status?.samsungInactiveRegistrations ?? null,
-          first_downloaded_at: status?.firstDownloadedAt ?? null,
+    data: status
+      ? {
+          ...registrationStatusToWalletPassFields(status),
           registration_checked_at: new Date(),
           registration_sync_attempted_at: new Date(),
-        },
+        }
+      : { registration_sync_attempted_at: new Date() },
   });
   if (err) throw err;
 }
