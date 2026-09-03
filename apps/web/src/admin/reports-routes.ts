@@ -2039,28 +2039,34 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
   const timeZone = resolvePreviewEventTimeZone(event.timezone);
   const dateStamp = new Date().toISOString().slice(0, 10).replaceAll("-", "");
 
-  if (reportRaw === "wallets") {
-    const platforms = enabledWalletPlatforms(event);
-    return formatRaw === "csv"
-      ? exportWalletReportsCsv(db, c, eventId, event, timeZone, dateStamp, platforms)
-      : exportWalletReportsPdf(db, c, eventId, event, timeZone, platforms);
-  }
+  // Per-report-type dispatch as a lookup instead of a sequential if-chain (each with its own
+  // csv/pdf ternary) - the if-chain's own branching pushed this function's cognitive complexity
+  // over SonarCloud's limit once mail/customfields joined admissions/wallets. Each entry closes
+  // over the context every export function needs (db/c/eventId/event/timeZone/dateStamp), so a
+  // future report type only needs one new entry here, not another branch threaded through this
+  // function's own body.
+  const exportByReport: Record<typeof reportRaw, (format: typeof formatRaw) => Promise<Response>> = {
+    admissions: (format) =>
+      format === "csv"
+        ? exportAdmissionsReportsCsv(db, c, eventId, event, timeZone, dateStamp)
+        : exportAdmissionsReportsPdf(db, c, eventId, event, timeZone),
+    wallets: (format) => {
+      const platforms = enabledWalletPlatforms(event);
+      return format === "csv"
+        ? exportWalletReportsCsv(db, c, eventId, event, timeZone, dateStamp, platforms)
+        : exportWalletReportsPdf(db, c, eventId, event, timeZone, platforms);
+    },
+    mail: (format) =>
+      format === "csv"
+        ? exportMailReportsCsv(db, c, eventId, event, timeZone, dateStamp)
+        : exportMailReportsPdf(db, c, eventId, event, timeZone),
+    customfields: (format) =>
+      format === "csv"
+        ? exportCustomFieldReportsCsv(db, c, eventId, event, dateStamp)
+        : exportCustomFieldReportsPdf(db, c, eventId, event),
+  };
 
-  if (reportRaw === "mail") {
-    return formatRaw === "csv"
-      ? exportMailReportsCsv(db, c, eventId, event, timeZone, dateStamp)
-      : exportMailReportsPdf(db, c, eventId, event, timeZone);
-  }
-
-  if (reportRaw === "customfields") {
-    return formatRaw === "csv"
-      ? exportCustomFieldReportsCsv(db, c, eventId, event, dateStamp)
-      : exportCustomFieldReportsPdf(db, c, eventId, event);
-  }
-
-  return formatRaw === "csv"
-    ? exportAdmissionsReportsCsv(db, c, eventId, event, timeZone, dateStamp)
-    : exportAdmissionsReportsPdf(db, c, eventId, event, timeZone);
+  return exportByReport[reportRaw](formatRaw);
 }
 
 const WALLET_EXPORT_ATTENDEE_SELECT = {
@@ -2743,9 +2749,13 @@ async function exportMailReportsPdf(
 function customFieldCellValue(customData: unknown, field: { source_field: string; type: string }): string {
   if (customData === null || typeof customData !== "object" || Array.isArray(customData)) return "";
   const raw = (customData as Record<string, unknown>)[field.source_field];
-  if (raw === null || raw === undefined) return "";
-  const value = String(raw);
-  return field.type === "boolean" ? booleanValueLabel(value) : value;
+  // Every write path stores custom_data values as strings (same assumption
+  // countAttendeesByCustomFieldValue's own raw SQL ->> extraction makes) - a non-string value here
+  // means malformed/legacy data, not a real answer, so it reads as blank rather than falling back
+  // to Object's default stringification ("[object Object]" for a stray nested value, SonarCloud
+  // S6551) which would misrepresent it as a genuine (and nonsensical) answer.
+  if (typeof raw !== "string") return "";
+  return field.type === "boolean" ? booleanValueLabel(raw) : raw;
 }
 
 const CUSTOM_FIELDS_EXPORT_ATTENDEE_SELECT = {

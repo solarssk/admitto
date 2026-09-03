@@ -39,6 +39,24 @@ const REPORT_SUBTITLE = "Admission statistics and event-day analytics";
 
 type ReportsTab = "eventday" | "wallets" | "customfields" | "mail";
 
+/** Per-tab CSV export request, keyed by ReportsTab - a lookup table instead of an if/else chain
+ * (or the PDF map below's equivalent nested ternary) so a new tab only ever needs a new entry
+ * here, not another branch threaded through handleExportCsv's own body (SonarCloud S3358/S3776). */
+const REPORT_CSV_EXPORT_BY_TAB: Record<ReportsTab, (eventId: string, signal?: AbortSignal) => Promise<void>> = {
+  eventday: exportEventReportsCsv,
+  wallets: exportEventWalletReportsCsv,
+  customfields: exportEventCustomFieldReportsCsv,
+  mail: exportEventMailReportsCsv,
+};
+
+/** Per-tab printable-PDF URL, same reasoning as REPORT_CSV_EXPORT_BY_TAB above. */
+const REPORT_PRINT_URL_BY_TAB: Record<ReportsTab, (eventId: string) => string> = {
+  eventday: eventReportsPrintUrl,
+  wallets: eventWalletReportsPrintUrl,
+  customfields: eventCustomFieldReportsPrintUrl,
+  mail: eventMailReportsPrintUrl,
+};
+
 /** Resolve the active tab from `?tab=`, same convention as usersTabFromSearch/inPageTabFromSearch. */
 function reportsTabFromSearch(params: URLSearchParams): ReportsTab {
   const tab = params.get("tab");
@@ -978,17 +996,9 @@ export function ReportsPage() {
     try {
       // Exports whatever tab is active, not always the admission log - a Wallets/Mail/Custom
       // fields-tab CSV shares nothing with Event day's per-admission rows (see
-      // WalletsReportsTab.tsx et al), so this branches to a wholly separate request per tab
-      // rather than a shared "export the current tab" helper.
-      if (activeTab === "wallets") {
-        await exportEventWalletReportsCsv(eventId, ac.signal);
-      } else if (activeTab === "mail") {
-        await exportEventMailReportsCsv(eventId, ac.signal);
-      } else if (activeTab === "customfields") {
-        await exportEventCustomFieldReportsCsv(eventId, ac.signal);
-      } else {
-        await exportEventReportsCsv(eventId, ac.signal);
-      }
+      // WalletsReportsTab.tsx et al), so this looks up a wholly separate request per tab rather
+      // than a shared "export the current tab" helper.
+      await REPORT_CSV_EXPORT_BY_TAB[activeTab](eventId, ac.signal);
     } catch (err) {
       handleExportRequestError(err, "Export failed.", addToast, reportApiError);
     } finally {
@@ -998,15 +1008,7 @@ export function ReportsPage() {
 
   const handleExportPdf = useCallback(() => {
     if (!eventId) return;
-    const url =
-      activeTab === "wallets"
-        ? eventWalletReportsPrintUrl(eventId)
-        : activeTab === "mail"
-          ? eventMailReportsPrintUrl(eventId)
-          : activeTab === "customfields"
-            ? eventCustomFieldReportsPrintUrl(eventId)
-            : eventReportsPrintUrl(eventId);
-    window.open(url, "_blank", "noopener,noreferrer");
+    window.open(REPORT_PRINT_URL_BY_TAB[activeTab](eventId), "_blank", "noopener,noreferrer");
   }, [eventId, activeTab]);
 
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
