@@ -146,19 +146,28 @@ describe("runWalletRegistrationSync", () => {
     expect(mockResolveWalletProvider).toHaveBeenCalledTimes(2);
   });
 
-  it("writes all-null registration fields (but still stamps both registration_checked_at and registration_sync_attempted_at) when the provider returns no match", async () => {
+  it("preserves whatever registration counts and registration_checked_at a pass already has, only bumping registration_sync_attempted_at, when the provider finds no matching pass", async () => {
+    // 2026-09-03 incident: this used to write every registration column to null and advance
+    // registration_checked_at on a provider "no match" result, treating it as a confirmed zero.
+    // PassCreator's own lookup is a search, not a get-by-ID - a pass that has genuinely vanished
+    // at the provider (deleted directly there, bypassing Admitto, or pruned by the provider's own
+    // data-retention rules while the rest of the account is still reachable) makes that search
+    // return a normal, non-error empty result, indistinguishable in shape from "never installed
+    // anywhere". Writing that as all-null silently erased the historical fact that the pass had
+    // really been confirmed installed at some point. A "no match" read is now treated exactly like
+    // a hard provider error (see the test above): the write contains only
+    // registration_sync_attempted_at, so a real DB row's own existing counts are left completely
+    // untouched (Prisma's partial update only writes the keys present here).
     const db = makeDb([row()]);
     const getRegistrationStatus = vi.fn(async () => null);
     mockResolveWalletProvider.mockReturnValue({ getRegistrationStatus });
 
     await runWalletRegistrationSync(db);
 
-    const call = db.walletPass.update.mock.calls[0][0];
-    expect(call.data.apple_active_registrations).toBeNull();
-    expect(call.data.samsung_active_registrations).toBeNull();
-    expect(call.data.first_downloaded_at).toBeNull();
-    expect(call.data.registration_checked_at).toBeInstanceOf(Date);
-    expect(call.data.registration_sync_attempted_at).toBeInstanceOf(Date);
+    expect(db.walletPass.update).toHaveBeenCalledWith({
+      where: { attendee_id: "att-1" },
+      data: { registration_sync_attempted_at: expect.any(Date) },
+    });
   });
 
   it("queries only active/voided passes with a known provider_pass_id, capped at WALLET_SYNC_BATCH_LIMIT, staleness keyed off registration_sync_attempted_at", async () => {
