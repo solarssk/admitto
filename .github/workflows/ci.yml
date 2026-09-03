@@ -11,6 +11,15 @@ on:
   # pii-guard, analyze, migration-safety) for every PR in a stack after its first link merged.
   pull_request: {}
 
+# Cancel a still-running CI for the same PR/branch the moment a newer push supersedes it - without
+# this, every push to an open PR queues a brand new set of jobs alongside the previous (now
+# pointless) run instead of replacing it, wasting runner slots and delaying feedback on the latest
+# commit. Not applied to `main`: a push there gates docker-build (image publish) and is rare enough
+# (one per merge) that every commit deserves a full, uncancelled run rather than racing the next.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 env:
   # Shared by every job below (only test-web/test-admin/test-rest actually use these; harmless
   # unused strings in lint-and-typecheck). Defined once at workflow level, not per-job.
@@ -33,6 +42,7 @@ jobs:
       github.event_name != 'pull_request' ||
       github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
@@ -56,6 +66,7 @@ jobs:
   # volume; everything else is bundled into test-rest.
   lint-and-typecheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -66,6 +77,17 @@ jobs:
         with:
           node-version: "24.17.0"
           cache: "npm"
+      # setup-node's cache: npm only caches the ~/.npm download store, not the linked node_modules
+      # tree or the native-binding rebuild below - both still redone from scratch every run. This
+      # cache lets an unchanged lockfile skip `npm ci` + `npm rebuild` entirely across runs.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        id: node-modules-cache
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            apps/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       # Supply-chain hardening (SonarCloud githubactions:S6505): --ignore-scripts skips every
       # dependency's install/postinstall script by default, instead of letting all ~900 of them
       # run silently and automatically. Only the packages this workflow has confirmed it actually
@@ -74,10 +96,12 @@ jobs:
       # packages/auth) via `npm rebuild`, and Prisma's query engine + generated client via its own
       # `prisma generate`. Adding a new dependency that also needs its install script to run means
       # adding it here explicitly, not silently inheriting it.
-      - run: npm ci --ignore-scripts
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
       - name: Verify lockfile resolutions match package.json declarations
         run: python3 scripts/verify-lockfile-resolutions.py
-      - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
       - run: npm run db:generate -w @admitto/db
       - run: npm audit --audit-level=high
       - name: License compliance check (report-only - see scripts/check-licenses.mjs)
@@ -91,6 +115,7 @@ jobs:
 
   test-web:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     services:
@@ -124,11 +149,25 @@ jobs:
         with:
           node-version: "24.17.0"
           cache: "npm"
-      # See lint-and-typecheck's own comment for why these two extra steps exist.
-      - run: npm ci --ignore-scripts
-      - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
+      # See lint-and-typecheck's own comment for why the cache step and the two conditional steps
+      # below exist. No root `npm run build` here (unlike lint-and-typecheck, which typechecks the
+      # whole monorepo and genuinely needs it built) - @admitto/web's own `precoverage`/`pretest`
+      # hook (see apps/web/package.json) already builds exactly the workspaces it depends on
+      # (shared, ui, admin) before `vitest run --coverage` executes, so a full 16-workspace build
+      # here was pure duplicate work with no effect on correctness.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        id: node-modules-cache
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            apps/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
       - run: npm run db:generate -w @admitto/db
-      - run: npm run build
       - name: Create test databases
         run: bash infra/scripts/create-test-dbs.sh
       - name: Migrate web integration test database
@@ -160,6 +199,7 @@ jobs:
 
   test-admin:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -170,11 +210,26 @@ jobs:
         with:
           node-version: "24.17.0"
           cache: "npm"
-      # See lint-and-typecheck's own comment for why these two extra steps exist.
-      - run: npm ci --ignore-scripts
-      - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
+      # See lint-and-typecheck's own comment for why the cache step and the two conditional steps
+      # below exist. No root `npm run build` here (unlike lint-and-typecheck, which typechecks the
+      # whole monorepo and genuinely needs it built) - @admitto/admin's own `precoverage`/`pretest`
+      # hook (see apps/admin/package.json) already builds exactly the workspaces it depends on
+      # (db, shared, location, wallet, mail-templates, tickets, ui, auth) before `vitest run
+      # --coverage` executes, so a full 16-workspace build here was pure duplicate work with no
+      # effect on correctness.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        id: node-modules-cache
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            apps/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
       - run: npm run db:generate -w @admitto/db
-      - run: npm run build
       - name: Run coverage (also emits JUnit XML for Test Analytics)
         run: npm run coverage -w @admitto/admin --if-present -- --reporter=default --reporter=junit --outputFile.junit=./junit.xml
       - name: Upload coverage to Codecov
@@ -204,6 +259,7 @@ jobs:
   # database (or none at all), verified with an Explore agent before this split was written.
   test-rest:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     services:
@@ -237,11 +293,28 @@ jobs:
         with:
           node-version: "24.17.0"
           cache: "npm"
-      # See lint-and-typecheck's own comment for why these two extra steps exist.
-      - run: npm ci --ignore-scripts
-      - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
+      # See lint-and-typecheck's own comment for why the cache step and the two conditional steps
+      # below exist. No root `npm run build` here (unlike lint-and-typecheck, which typechecks the
+      # whole monorepo and genuinely needs it built): the migration/backfill step below runs
+      # Prisma CLI + `tsx`-executed TS scripts with no @admitto/* workspace imports (verified by
+      # grepping packages/db/src/scripts/*.ts), so it needs nothing pre-built beyond the
+      # `db:generate` step already below; and every workspace this job tests has its own
+      # `precoverage`/`pretest` hook that builds exactly its own dependency subgraph before
+      # `vitest run --coverage` executes for it. A full 16-workspace build here was pure duplicate
+      # work with no effect on correctness.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        id: node-modules-cache
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            apps/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
+      - if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
       - run: npm run db:generate -w @admitto/db
-      - run: npm run build
       - name: Create test databases
         run: bash infra/scripts/create-test-dbs.sh
       - name: Run database migrations and agency public_ref backfill
@@ -294,6 +367,7 @@ jobs:
   # cheap (CodeRabbit review).
   build-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     needs: [lint-and-typecheck, test-web, test-admin, test-rest]
@@ -315,6 +389,7 @@ jobs:
 
   secret-scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -350,6 +425,7 @@ jobs:
 
   pii-guard:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
@@ -406,6 +482,7 @@ jobs:
 
   migration-safety:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: read
@@ -431,9 +508,29 @@ jobs:
       - name: Migrate entrypoint smoke (docker compose)
         run: bash scripts/test-migrate-entrypoint.sh
 
+  # Complements `npm audit --audit-level=high` in lint-and-typecheck: that check re-audits the
+  # whole resolved tree on every run regardless of what changed, while this action diffs the
+  # dependency manifest against the PR's base ref, so it only flags newly introduced vulnerable or
+  # license-incompatible packages - the thing a PR actually did. pull_request-only by design (the
+  # action needs a base ref to diff against; nothing to compare on a push to main).
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
+        with:
+          fail-on-severity: high
+
   docker-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       security-events: write

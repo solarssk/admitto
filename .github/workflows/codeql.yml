@@ -10,6 +10,13 @@ on:
   schedule:
     - cron: "0 3 * * 1"
 
+# See ci.yml's own concurrency block for the full rationale - same group/cancel pattern so a
+# superseded PR push doesn't leave a stale `analyze` run (a required status check) racing the new
+# one, while main pushes and the weekly schedule always run to completion uncancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 permissions:
   contents: read
   security-events: write
