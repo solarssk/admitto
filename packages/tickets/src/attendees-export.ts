@@ -117,7 +117,7 @@ export function buildSanitizedExportRows(
   });
 }
 
-function buildExportColumnLabels(attributeFields: EventItemContent[]): string[] {
+export function buildExportColumnLabels(attributeFields: EventItemContent[]): string[] {
   const labelCounts = new Map<string, number>();
   for (const field of attributeFields) {
     labelCounts.set(field.label, (labelCounts.get(field.label) ?? 0) + 1);

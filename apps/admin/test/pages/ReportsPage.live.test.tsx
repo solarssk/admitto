@@ -12,6 +12,8 @@ const fetchTicketTypes = vi.fn();
 const fetchEventWalletReports = vi.fn();
 const exportEventReportsCsv = vi.fn();
 const exportEventWalletReportsCsv = vi.fn();
+const exportEventMailReportsCsv = vi.fn();
+const exportEventCustomFieldReportsCsv = vi.fn();
 const reportApiError = vi.fn();
 
 // vi.mock factories are hoisted above this file's own top-level bindings, so the class referenced
@@ -91,6 +93,11 @@ vi.mock("../../src/api/client.js", () => ({
   fetchEventWalletReports: (...args: unknown[]) => fetchEventWalletReports(...args),
   exportEventWalletReportsCsv: (...args: unknown[]) => exportEventWalletReportsCsv(...args),
   eventWalletReportsPrintUrl: (eventId: string) => `/api/admin/events/${eventId}/reports/export?format=pdf&report=wallets`,
+  exportEventMailReportsCsv: (...args: unknown[]) => exportEventMailReportsCsv(...args),
+  eventMailReportsPrintUrl: (eventId: string) => `/api/admin/events/${eventId}/reports/export?format=pdf&report=mail`,
+  exportEventCustomFieldReportsCsv: (...args: unknown[]) => exportEventCustomFieldReportsCsv(...args),
+  eventCustomFieldReportsPrintUrl: (eventId: string) =>
+    `/api/admin/events/${eventId}/reports/export?format=pdf&report=customfields`,
 }));
 
 function reportFixture(

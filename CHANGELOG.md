@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Reports' Mail and Custom fields tabs now have the same **Export report** CSV/PDF options the Wallets tab already had - the CSV is one row per attendee (delivery/reach/viewed/wallet-installed status for Mail; each configured custom field's own answer for Custom fields), and the PDF is a printable summary of that tab's own cards. The export button, previously disabled while either tab was active, now works the same way it already did for Wallets and Event day.
+
 ### Changed
 
 - Reports' Wallets tab "Installed" (and the same definition used by ticket-type adoption, time to wallet install, time to install after reminder, admission by wallet status, and the Mail tab's "Wallet installed" funnel stage) now means "was ever confirmed installed on a wallet app" instead of "is actively registered right now". A pass an attendee later removed from their device, or that a wallet provider stopped reporting on, no longer silently pulls these numbers down after the fact - that's exactly what "Wallet lifecycle" already tracks separately (Active vs Removed), so Installed now cleanly equals Active + Removed. "Wallet platform" and "Devices per attendee" are unaffected and still show live, right-now status - their own copy now says "currently"/"right now" to make that distinction clear next to the Wallet adoption card's now-historical count.
