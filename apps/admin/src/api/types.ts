@@ -830,12 +830,16 @@ export interface MailTemplateDetail extends MailTemplateListItem {
   compiled_html_template?: string;
 }
 
+/** Same three buckets as the Wallets reports `wallet_lifecycle` card. */
+export type WalletLifecycleStatus = "active" | "removed" | "never_installed";
+
 /** Audience filter for POST `/api/admin/events/:eventId/send`. */
 export type BulkSendFilter =
   | { type: "all" }
   | { type: "ticket_type"; value: string }
   | { type: "rsvp_status"; value: RsvpStatus }
   | { type: "no_delivery" }
+  | { type: "wallet_status"; value: WalletLifecycleStatus }
   | { type: "attendee_ids"; ids: string[] };
 
 /** Request body for bulk mail send (dry-run or queue). Omitted templateId -> the

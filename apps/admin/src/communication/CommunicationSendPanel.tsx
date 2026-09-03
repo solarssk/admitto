@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, Notice } from "@admitto/ui";
 import { cancelBulkSend, fetchBulkSendStatus, fetchTicketTypes, sendEventBulk } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
-import type { AttendeeRowDto, BulkSendFilter, RsvpStatus, TicketTypeDto } from "../api/types.js";
+import type { AttendeeRowDto, BulkSendFilter, RsvpStatus, TicketTypeDto, WalletLifecycleStatus } from "../api/types.js";
 import { RSVP_STATUS_OPTIONS } from "../attendees/rsvpStatusBadge.js";
 import type { ArchivedGuardEvent } from "../components/ArchivedGuard.js";
 import { ArchivedGuard } from "../components/ArchivedGuard.js";
@@ -59,6 +59,12 @@ const RECIPIENT_OPTIONS: ReadonlyArray<{
     icon: "ti-ticket",
   },
   {
+    value: "wallet_status",
+    label: "By wallet status",
+    description: "Only attendees with the wallet pass status you pick below.",
+    icon: "ti-wallet",
+  },
+  {
     value: "no_delivery",
     label: "Not yet emailed",
     description: "Only attendees who've never received this template - catch up latecomers without re-emailing everyone.",
@@ -70,6 +76,12 @@ const RECIPIENT_OPTIONS: ReadonlyArray<{
     description: "Pick individual attendees by name or email.",
     icon: "ti-user-search",
   },
+];
+
+const WALLET_STATUS_OPTIONS: ReadonlyArray<{ id: WalletLifecycleStatus; label: string; icon: string }> = [
+  { id: "active", label: "Active (installed now)", icon: "circle-check" },
+  { id: "removed", label: "Removed (installed, then removed)", icon: "wallet-off" },
+  { id: "never_installed", label: "Never added", icon: "minus" },
 ];
 
 /** Notice tone for the two remaining plain-text result cases (SendCompleteSummary owns its own
@@ -221,6 +233,9 @@ export function CommunicationSendPanel({
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [rsvpStatus, setRsvpStatus] = useState<RsvpStatus>("confirmed");
+  // Defaults to the most likely real use case: reminding attendees who haven't added the wallet
+  // pass yet, the same reasoning as rsvpStatus defaulting to "confirmed" above.
+  const [walletStatus, setWalletStatus] = useState<WalletLifecycleStatus>("never_installed");
   const [selectedAttendees, setSelectedAttendees] = useState<AttendeeRowDto[]>([]);
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [phase, setPhase] = useState<SendPhase>("form");
@@ -241,6 +256,7 @@ export function CommunicationSendPanel({
     setTicketTypes([]);
     setTicketTypesError(null);
     setRsvpStatus("confirmed");
+    setWalletStatus("never_installed");
     setSelectedAttendees([]);
     setRecipientCount(null);
     setPhase("form");
@@ -255,9 +271,9 @@ export function CommunicationSendPanel({
   }, []);
 
   // Clears count/result/batch UI without touching the admin's chosen filter strategy (all /
-  // ticket type / RSVP / specific attendees). Ticket type *value* and options are cleared by the
-  // fetch effect below. Selected attendee chips *are* cleared on event switch - those IDs belong
-  // to the previous event and must not be submitted against the new one.
+  // ticket type / RSVP / wallet status / specific attendees). Ticket type *value* and options are
+  // cleared by the fetch effect below. Selected attendee chips *are* cleared on event switch -
+  // those IDs belong to the previous event and must not be submitted against the new one.
   const resetSendOutcome = useCallback(() => {
     runIdRef.current += 1;
     setSelectedAttendees([]);
@@ -367,6 +383,7 @@ export function CommunicationSendPanel({
   const buildFilter = (): BulkSendFilter => {
     if (filterType === "ticket_type") return { type: "ticket_type", value: ticketType.trim() };
     if (filterType === "rsvp_status") return { type: "rsvp_status", value: rsvpStatus };
+    if (filterType === "wallet_status") return { type: "wallet_status", value: walletStatus };
     if (filterType === "no_delivery") return { type: "no_delivery" };
     if (filterType === "attendee_ids") {
       return { type: "attendee_ids", ids: selectedAttendees.map((a) => a.id) };
@@ -504,6 +521,29 @@ export function CommunicationSendPanel({
             </div>
             <p className="mail-field-hint">
               Attendees currently marked with this status will receive the email.
+            </p>
+          </>
+        )}
+        {filterType === "wallet_status" && (
+          <>
+            <div className="communication-half-field">
+              <SearchableSelect
+                id="communication-send-wallet-status"
+                label="Wallet status"
+                placeholder="Select status…"
+                searchPlaceholder="Search statuses…"
+                emptyLabel="No statuses found"
+                value={walletStatus}
+                disabled={pickerLocked}
+                options={WALLET_STATUS_OPTIONS}
+                onChange={(id) => {
+                  setWalletStatus(id as WalletLifecycleStatus);
+                  setRecipientCount(null);
+                }}
+              />
+            </div>
+            <p className="mail-field-hint">
+              Attendees whose wallet pass currently matches this status will receive the email.
             </p>
           </>
         )}

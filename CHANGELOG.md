@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Communication's mail Send screen has a new "By wallet status" recipient filter, alongside the existing ticket type and attendance status ones - send only to attendees whose wallet pass is currently active, was installed and later removed, or was never added at all, the same three-way split Reports' Wallets tab already uses. Useful for a reminder to attendees who haven't added their pass yet, or a follow-up only to those who have.
 - Reports' Mail and Custom fields tabs now have the same **Export report** CSV/PDF options the Wallets tab already had - the CSV is one row per attendee (delivery/reach/viewed/wallet-installed status for Mail; each configured custom field's own answer for Custom fields), and the PDF is a printable summary of that tab's own cards. The export button, previously disabled while either tab was active, now works the same way it already did for Wallets and Event day.
 
 ### Changed
