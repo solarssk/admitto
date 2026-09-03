@@ -90,6 +90,32 @@ describe("backfillEmailDeliveryHadWalletCta", () => {
     expect(after.had_wallet_cta).toBe(true);
   });
 
+  it("sets had_wallet_cta from a raw token in rendered_subject alone, no rendered_html match needed", async () => {
+    // Regression coverage (CodeRabbit): a live send checks both subjectTemplate and
+    // compiledHtmlTemplate (templateHasWalletCta, send.ts) - the backfill for pre-existing rows
+    // must recognize the same two fields, not just rendered_html, or a historical send whose only
+    // wallet-CTA reference was in its subject line stays permanently misclassified.
+    const attendee = await makeAttendee("att-backfill-wallet-cta-subject");
+    const delivery = await prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG_ID,
+        event_id: EVENT_ID,
+        attendee_id: attendee.id,
+        purpose: "resend",
+        provider: "export_only",
+        status: "sent",
+        rendered_subject: "Don't forget: {{apple_wallet_url}}",
+        rendered_html: "<p>Hi {{first_name}}</p>",
+      },
+    });
+    expect(delivery.had_wallet_cta).toBe(false);
+
+    await backfillEmailDeliveryHadWalletCta(prisma);
+
+    const after = await prisma.emailDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
+    expect(after.had_wallet_cta).toBe(true);
+  });
+
   it("leaves a delivery with no wallet placeholder untouched", async () => {
     const attendee = await makeAttendee("att-backfill-wallet-cta-none");
     const delivery = await prisma.emailDelivery.create({

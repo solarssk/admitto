@@ -4,6 +4,7 @@ import { decryptFromString } from "@admitto/crypto";
 import {
   buildEventLocationTemplateVars,
   extractPlaceholderNames,
+  extractPlaceholderNamesFromHtml,
   materializeStoredDeliveryMessage,
   renderTemplateTrustedForStorage,
   resolveBrandingFromEvent,
@@ -188,13 +189,17 @@ const WALLET_CTA_PLACEHOLDERS = new Set(["apple_wallet_url", "google_wallet_url"
 /** Whether a resolved template's subject or body references either wallet-add-link placeholder
  * - see EmailDelivery.had_wallet_cta's own doc comment (schema.prisma) for why this is checked
  * against the template's raw text rather than any per-template "purpose"/category. Same
- * whitelisted-token extraction every other placeholder consumer uses (extractPlaceholderNames),
- * not a bare substring search, so this can't be fooled by the token appearing inside an HTML
- * comment or unrelated text that merely mentions it. */
+ * whitelisted-token extraction every other placeholder consumer uses, not a bare substring
+ * search, so this can't be fooled by unrelated text that merely mentions the token name. The body
+ * uses extractPlaceholderNamesFromHtml, not extractPlaceholderNames, so a token sitting inside an
+ * HTML/Outlook conditional comment doesn't count - a template save already rejects that
+ * combination (assertRenderableCompiledHtml), but this stays correct even for a row that predates
+ * that check. Subjects have no HTML markup to comment out, so extractPlaceholderNames (plain text
+ * scan) is enough there. */
 function templateHasWalletCta(resolvedTemplate: ResolvedTemplate): boolean {
   return (
     extractPlaceholderNames(resolvedTemplate.subjectTemplate).some((name) => WALLET_CTA_PLACEHOLDERS.has(name)) ||
-    extractPlaceholderNames(resolvedTemplate.compiledHtmlTemplate).some((name) => WALLET_CTA_PLACEHOLDERS.has(name))
+    extractPlaceholderNamesFromHtml(resolvedTemplate.compiledHtmlTemplate).some((name) => WALLET_CTA_PLACEHOLDERS.has(name))
   );
 }
 

@@ -39,6 +39,11 @@ const EVENT_WALLETS_SAMSUNG = "evt-reports-wallets-samsung";
 // dataset with a non-ticket, had_wallet_cta template in play, which the main EVENT_WALLETS fixture
 // several other tests already pin exact numbers against doesn't have.
 const EVENT_WALLETS_REMINDER = "evt-reports-wallets-reminder";
+// Minimal, separate event (not EVENT_WALLETS_REMINDER above), same reasoning - regression fixture
+// for isTicketScopedDelivery's own template_label_snapshot guard (reports-routes.ts, CodeRabbit):
+// a deleted non-ticket wallet-CTA template's delivery must still classify as a reminder, not
+// silently flip to "ticket-scoped" once its template_id is SetNull'd.
+const EVENT_WALLETS_REMINDER_DELETED_TEMPLATE = "evt-reports-wallets-reminder-deleted-template";
 const EVENT_CUSTOM_FIELDS = "evt-reports-custom-fields";
 // Minimal, separate event (not EVENT_CUSTOM_FIELDS above) so this doesn't need to mutate a
 // fixture several other tests in this file already depend on - proves the tie-breaker on its
@@ -76,6 +81,7 @@ const ATT_REM_AFTER_INSTALL_ONLY = "att-reports-rem-after-install-only";
 const ATT_REM_TICKET_HAS_CTA = "att-reports-rem-ticket-has-cta";
 const ATT_REM_NONE = "att-reports-rem-none";
 const ATT_REM_NO_TICKET_LOGGED = "att-reports-rem-no-ticket-logged";
+const ATT_REM_DELETED_TEMPLATE = "att-reports-rem-deleted-template";
 
 const ATT_LC_ACTIVE_SAME_PLATFORM = "att-reports-lc-active-same-platform";
 const ATT_LC_ACTIVE_CROSS_PLATFORM = "att-reports-lc-active-cross-platform";
@@ -148,6 +154,7 @@ async function seed(client: PrismaClient) {
     EVENT_WALLETS_LIFECYCLE,
     EVENT_WALLETS_SAMSUNG,
     EVENT_WALLETS_REMINDER,
+    EVENT_WALLETS_REMINDER_DELETED_TEMPLATE,
     EVENT_CUSTOM_FIELDS,
     EVENT_CUSTOM_FIELDS_TIE,
     EVENT_MAIL,
@@ -252,6 +259,13 @@ async function seed(client: PrismaClient) {
         title: "Wallet Reminder Event",
         slug: "reports-wallets-reminder",
         date: new Date("2027-07-04T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+      {
+        id: EVENT_WALLETS_REMINDER_DELETED_TEMPLATE,
+        title: "Wallet Reminder Deleted-Template Event",
+        slug: "reports-wallets-reminder-deleted-template",
+        date: new Date("2027-07-05T12:00:00.000Z"),
         organization_id: ORG_REP,
       },
       {
@@ -425,6 +439,63 @@ async function seed(client: PrismaClient) {
       { organization_id: ORG_REP, event_id: EVENT_WALLETS_REMINDER, attendee_id: ATT_REM_NO_TICKET_LOGGED, purpose: "resend", template_id: reminderTemplate.id, provider: "export_only", status: "accepted", accepted_at: new Date("2027-03-08T10:00:00.000Z"), had_wallet_cta: true },
     ],
   });
+
+  // Regression fixture for isTicketScopedDelivery's own template_label_snapshot guard
+  // (reports-routes.ts, CodeRabbit): this attendee's only delivery is a wallet-CTA reminder (no
+  // genuine ticket-scoped send at all, same shape as ATT_REM_NO_TICKET_LOGGED above), whose
+  // template is deleted AFTER it's used - SetNull'ing template_id the same way a deleted
+  // non-ticket Communication template does elsewhere in this file. Without the guard,
+  // isTicketScopedDelivery misreads the null template_id as "genuine builtin ticket send" once
+  // the template's gone, which flips isWalletReminderDelivery to false and silently drops this
+  // attendee out of time_to_install_after_reminder's eligible_count entirely.
+  const deletedReminderTemplate = await client.mailTemplate.create({
+    data: {
+      scope_type: "event",
+      scope_id: EVENT_WALLETS_REMINDER_DELETED_TEMPLATE,
+      name: "wallet-nudge",
+      label: "Wallet nudge",
+      subject_template: "Don't forget your pass",
+      body_template: "<p>{{apple_wallet_url}}</p>",
+      template_format: "html",
+      compiled_html_template: "<p>{{apple_wallet_url}}</p>",
+    },
+  });
+  const remDeletedTemplateInstalledAt = new Date("2027-03-10T10:00:00.000Z");
+  await client.attendee.create({
+    data: {
+      id: ATT_REM_DELETED_TEMPLATE,
+      event_id: EVENT_WALLETS_REMINDER_DELETED_TEMPLATE,
+      email: "rem-deleted-template@example.com",
+      name: "Reminder Deleted Template",
+      ...mkAttendeeToken(),
+    },
+  });
+  await client.walletPass.create({
+    data: {
+      attendee_id: ATT_REM_DELETED_TEMPLATE,
+      status: "active",
+      issued_at: remDeletedTemplateInstalledAt,
+      first_confirmed_at: remDeletedTemplateInstalledAt,
+      apple_active_registrations: 1,
+    },
+  });
+  await client.emailDelivery.create({
+    data: {
+      organization_id: ORG_REP,
+      event_id: EVENT_WALLETS_REMINDER_DELETED_TEMPLATE,
+      attendee_id: ATT_REM_DELETED_TEMPLATE,
+      purpose: "resend",
+      template_id: deletedReminderTemplate.id,
+      template_label_snapshot: "Wallet nudge",
+      provider: "export_only",
+      status: "accepted",
+      // 2 whole days before install - if wrongly excluded from the reminder pool, eligible_count
+      // stays 0 and average_days is null instead of 2.
+      accepted_at: new Date("2027-03-08T10:00:00.000Z"),
+      had_wallet_cta: true,
+    },
+  });
+  await client.mailTemplate.delete({ where: { id: deletedReminderTemplate.id } });
 
   await client.attendee.createMany({
     data: [
@@ -2870,6 +2941,31 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     for (const key of ["4_7", "8_plus"]) {
       expect(body.time_to_install_after_reminder.buckets.find((b) => b.key === key)!.count).toBe(0);
     }
+  });
+
+  it("still counts a wallet-CTA reminder toward time_to_install_after_reminder after its template is deleted", async () => {
+    // Separate event (not EVENT_WALLETS_REMINDER above) - see ATT_REM_DELETED_TEMPLATE's own seed
+    // comment. Regression coverage for isTicketScopedDelivery's template_label_snapshot guard
+    // (CodeRabbit): without it, this attendee's only (wallet-CTA) delivery would misclassify as
+    // the ticket send once its template_id is SetNull'd, dropping it out of the reminder metric
+    // entirely - eligible_count 0 and average_days null instead of 1 and 2.
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS_REMINDER_DELETED_TEMPLATE}/reports/wallets`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      adoption: { confirmed: number };
+      time_to_wallet_tap: { average_days: number | null };
+      time_to_install_after_reminder: { eligible_count: number; average_days: number | null };
+    };
+    expect(body.adoption.confirmed).toBe(1);
+    expect(body.time_to_install_after_reminder.eligible_count).toBe(1);
+    expect(body.time_to_install_after_reminder.average_days).toBe(2);
+    // The same delivery must also stay OUT of the ticket-scoped pool - the flip side of the same
+    // bug: a deleted-template send misclassified as "genuine builtin ticket" would otherwise wrongly
+    // anchor "Time to wallet install" here too, even though this attendee never got an actual ticket
+    // email at all.
+    expect(body.time_to_wallet_tap.average_days).toBeNull();
   });
 });
 

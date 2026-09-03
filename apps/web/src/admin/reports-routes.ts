@@ -612,6 +612,7 @@ const WALLET_RELEVANT_EMAIL_DELIVERIES_SELECT = {
     sent_at: true,
     delivered_at: true,
     template_id: true,
+    template_label_snapshot: true,
     had_wallet_cta: true,
     template: { select: { name: true } },
   },
@@ -662,9 +663,19 @@ export function earliestDeliverySuccessAt(
 }
 
 /** The genuine ticket-email send (built-in default or a MailTemplate literally named "ticket") -
- * see the shared select's own doc comment above for why this can't happen via two relation loads. */
+ * see the shared select's own doc comment above for why this can't happen via two relation loads.
+ * template_id === null alone isn't enough: it's also what a deleted non-ticket wallet-CTA
+ * template's delivery looks like after the relation's own onDelete: SetNull rule fires, which
+ * would otherwise misclassify that reminder as the ticket send and drop it out of
+ * isWalletReminderDelivery below (CodeRabbit). template_label_snapshot survives that deletion, so
+ * the null-template_id branch also requires a null snapshot - same reasoning as the shared
+ * select's own where.OR above, just re-applied here since Prisma can't push an AND-with-a-sibling-
+ * OR-branch condition down into a boolean this function alone can express as one query filter. */
 function isTicketScopedDelivery(delivery: WalletPassAggregateDelivery): boolean {
-  return delivery.template_id === null || delivery.template?.name === "ticket";
+  return (
+    (delivery.template_id === null && delivery.template_label_snapshot === null) ||
+    delivery.template?.name === "ticket"
+  );
 }
 
 /** A genuine follow-up nudge, not the ticket email itself: a delivery through a different

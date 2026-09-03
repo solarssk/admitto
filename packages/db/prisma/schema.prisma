@@ -454,10 +454,10 @@ model EmailDelivery {
   // named/tagged "reminder" - can carry a wallet button, and this must recognize all of them.
   // Computed once per batch in sendTicketEmails() (send.ts), from the same resolvedTemplate every
   // attendee in that batch shares, not per attendee. Default false for rows predating this column;
-  // backfilled from their still-literal rendered_html (see backfill-email-delivery-wallet-cta.ts -
-  // apple_wallet_url/google_wallet_url are STORAGE_DEFERRED_LINK_PLACEHOLDERS, so rendered_html
-  // keeps the raw {{token}} text forever, never the materialized link, unlike a link that gets
-  // substituted before storage).
+  // backfilled from their still-literal rendered_html/rendered_subject (see
+  // backfill-email-delivery-had-wallet-cta.ts - apple_wallet_url/google_wallet_url are
+  // STORAGE_DEFERRED_LINK_PLACEHOLDERS, so both keep the raw {{token}} text forever, never the
+  // materialized link, unlike a link that gets substituted before storage).
   had_wallet_cta          Boolean       @default(false)
   provider                String
   provider_message_id     String?

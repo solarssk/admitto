@@ -88,6 +88,26 @@ export function findPlaceholdersInHtmlComments(html: string): string[] {
   return [...names].sort((a, b) => a.localeCompare(b));
 }
 
+/** Whitelisted placeholder names actually live in the rendered HTML - unlike
+ * extractPlaceholderNames, which reads every well-formed {{name}} occurrence regardless of
+ * surrounding markup, this excludes one sitting inside an HTML/Outlook conditional comment (see
+ * isPlaceholderInHtmlComment), since a template save already rejects that combination
+ * (assertRenderableCompiledHtml, validate.ts) - so a caller that only cares whether a feature is
+ * genuinely present in what actually renders (not just "did this text ever contain the token")
+ * shouldn't count a commented-out one as live. */
+export function extractPlaceholderNamesFromHtml(html: string): string[] {
+  const names = new Set<string>();
+  let match: RegExpExecArray | null;
+  const re = /\{\{([a-z][a-z0-9_]*)\}\}/g;
+  while ((match = re.exec(html)) !== null) {
+    const token = match[1]!;
+    if (ALLOWED_PLACEHOLDERS.has(token) && !isPlaceholderInHtmlComment(html, match.index!)) {
+      names.add(token);
+    }
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
+}
+
 /** Attribute names that use unquoted placeholder values (invalid / unsafe markup). */
 export function findUnquotedAttributePlaceholders(html: string): string[] {
   const attributes = new Set<string>();
