@@ -4,6 +4,18 @@
 
 Every field-level and cross-field rule Admitto enforces, organised by screen. Use this page when a save is rejected and you want to know exactly why, or when you're preparing data or configuration and want to check the limits up front. A rule marked **frontend only** blocks the Save button before a request is even sent; **backend** means the server re-checks it regardless of what the browser already validated (so scripted or API access can't skip it); **both** means the same rule is enforced twice, once for immediate feedback and once for real.
 
+- [Sign-in and account security](#sign-in-and-account-security)
+- [Identity providers and Cloudflare Access (Superadmin)](#identity-providers-and-cloudflare-access-superadmin)
+- [User management (Superadmin)](#user-management-superadmin)
+- [Account self-service (My Account)](#account-self-service-my-account)
+- [Attendees, import, and requirements](#attendees-import-and-requirements)
+- [Event settings](#event-settings)
+- [Communication](#communication)
+- [Check-in and the public ticket page](#check-in-and-the-public-ticket-page)
+- [Wallet actions (Attendee Detail and bulk)](#wallet-actions-attendee-detail-and-bulk)
+- [Organisation settings (Superadmin)](#organisation-settings-superadmin)
+- [Related pages](#related-pages)
+
 ## Sign-in and account security
 
 ### Signing in
