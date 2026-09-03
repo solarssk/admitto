@@ -140,6 +140,7 @@ function walletFixture(): import("../../src/api/types.js").EventWalletReportsRes
     by_ticket_type: [],
     issued_by_day: [],
     time_to_wallet_tap: { average_days: null, buckets: [] },
+    time_to_install_after_reminder: { eligible_count: 0, average_days: null, buckets: [] },
     admission_by_wallet: {
       with_wallet: { total: 1, admitted: 1, pct: 100 },
       without_wallet: { total: 3, admitted: 0, pct: 0 },

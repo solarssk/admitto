@@ -189,6 +189,16 @@ function fixture(overrides: Partial<EventWalletReportsResponse> = {}): EventWall
         { key: "8_plus", count: 1, pct: 10 },
       ],
     },
+    time_to_install_after_reminder: {
+      eligible_count: 0,
+      average_days: null,
+      buckets: [
+        { key: "same_day", count: 0, pct: 0 },
+        { key: "1_3", count: 0, pct: 0 },
+        { key: "4_7", count: 0, pct: 0 },
+        { key: "8_plus", count: 0, pct: 0 },
+      ],
+    },
     admission_by_wallet: {
       with_wallet: { total: 12, admitted: 9, pct: 75 },
       without_wallet: { total: 8, admitted: 2, pct: 25 },
@@ -497,6 +507,45 @@ describe("WalletsReportsTab", () => {
     const tapCard = cardByTitle("Time to wallet install");
     const tapRows = dataRows(within(tapCard).getByTestId("rc-bar"));
     expect(tapRows.map((r) => r.pct)).toEqual([0, 0, 0, 0]);
+  });
+
+  it("still renders the Time to install after reminder chart, all-zero, when eligible_count is 0 - same as Time to wallet install, never a text-only fallback", async () => {
+    fetchEventWalletReports.mockResolvedValue(fixture());
+
+    renderWithToast(
+      <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    const reminderCard = cardByTitle("Time to install after reminder");
+    const reminderRows = dataRows(within(reminderCard).getByTestId("rc-bar"));
+    expect(reminderRows.map((r) => r.pct)).toEqual([0, 0, 0, 0]);
+  });
+
+  it("renders real, non-zero bars for Time to install after reminder once eligible_count is non-zero", async () => {
+    fetchEventWalletReports.mockResolvedValue(
+      fixture({
+        time_to_install_after_reminder: {
+          eligible_count: 4,
+          average_days: 0.5,
+          buckets: [
+            { key: "same_day", count: 3, pct: 75 },
+            { key: "1_3", count: 1, pct: 25 },
+            { key: "4_7", count: 0, pct: 0 },
+            { key: "8_plus", count: 0, pct: 0 },
+          ],
+        },
+      }),
+    );
+
+    renderWithToast(
+      <WalletsReportsTab isActive eventId="evt-1" walletPlatforms={{ apple: true, google: true, samsung: true, any: true }} />,
+    );
+    await screen.findByText("Wallet adoption");
+
+    const reminderCard = cardByTitle("Time to install after reminder");
+    const reminderRows = dataRows(within(reminderCard).getByTestId("rc-bar"));
+    expect(reminderRows.map((r) => r.pct)).toEqual([75, 25, 0, 0]);
   });
 
   it("still renders the devices-per-attendee chart, all-zero, when nothing is confirmed - buckets are always 4 zero-filled entries from the backend, never truly absent", async () => {

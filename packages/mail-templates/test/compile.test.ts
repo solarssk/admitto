@@ -77,6 +77,35 @@ describe("validateTemplate", () => {
     ).toEqual([]);
   });
 
+  it("treats a `disallowed` name as unknown even though it's in the base whitelist", () => {
+    // Regression coverage: apps/web's own communication-api-routes.ts uses this to reject
+    // apple_wallet_url/google_wallet_url for a platform the event doesn't have turned on.
+    expect(
+      validateTemplate(
+        { subject: "{{event_name}}", body: "<a href=\"{{apple_wallet_url}}\">Add</a>" },
+        undefined,
+        new Set(["apple_wallet_url"]),
+      ),
+    ).toEqual(["apple_wallet_url"]);
+    expect(() =>
+      assertValidTemplate(
+        { subject: "Hi", body: "<a href=\"{{apple_wallet_url}}\">Add</a>" },
+        undefined,
+        new Set(["apple_wallet_url"]),
+      ),
+    ).toThrow(/Unknown template placeholders: apple_wallet_url/);
+  });
+
+  it("leaves a name out of `disallowed` unaffected", () => {
+    expect(
+      validateTemplate(
+        { subject: "{{event_name}}", body: "<a href=\"{{google_wallet_url}}\">Add</a>" },
+        undefined,
+        new Set(["apple_wallet_url"]),
+      ),
+    ).toEqual([]);
+  });
+
   it("rejects malformed placeholder tokens", () => {
     expect(
       validateTemplate({

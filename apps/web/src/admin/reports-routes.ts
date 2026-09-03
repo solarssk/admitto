@@ -576,6 +576,48 @@ function addDaysToIsoDate(isoDate: string, days: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
+// Every non-bounced delivery across initial and resend attempts, not just "initial" (a "purpose:
+// initial" filter would keep pointing at one that later hard-bounced - applyBounceResult retains
+// its sent_at, only status flips to "bounced" - overstating tap time against a since-successful
+// resend). No orderBy/take here (unlike a plain "earliest sent_at" query) - see
+// earliestDeliverySuccessAt's own comment for why: status "accepted" is this codebase's only real
+// terminal-success state today (no mailer adapter ever reports "sent"), and ordering by a column
+// that's always null would silently drop every real send. The OR covers two independent
+// populations, told apart in application code (see isTicketScopedDelivery/isWalletReminderDelivery
+// below), not two separate relation loads (Prisma can't select the same relation twice with
+// different filters): a genuine ticket-email send (template_id null - the compiled builtin - or a
+// live MailTemplate row still named "ticket", never any other name - resolveTemplateForEvent,
+// mail-templates package) OR any other template's delivery that carried a wallet-add-link
+// placeholder at send time (had_wallet_cta - see that column's own schema comment; it's a
+// send-time snapshot, unaffected by a later template edit/delete, unlike template_id itself).
+// template_id null alone isn't enough for the ticket branch: it's SetNull'd (the relation's own
+// onDelete rule) when an admin later deletes a non-ticket Communication template, which would
+// otherwise make that deleted template's send indistinguishable from a genuine builtin one.
+// template_label_snapshot survives that deletion (captured at send time for exactly this reason -
+// see its own schema comment) and stays null only for a real builtin send, so the null-template_id
+// branch also requires a null snapshot. Shared by WALLET_PASS_AGGREGATE_SELECT and
+// WALLET_EXPORT_ATTENDEE_SELECT below so the two definitions can't drift apart (AGENTS.md's
+// duplication-gate note is why this is one constant instead of two near-identical inline copies).
+const WALLET_RELEVANT_EMAIL_DELIVERIES_SELECT = {
+  where: {
+    status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES] as string[] },
+    OR: [
+      { template_id: null, template_label_snapshot: null },
+      { template: { name: "ticket" } },
+      { had_wallet_cta: true },
+    ] as Prisma.EmailDeliveryWhereInput[],
+  },
+  select: {
+    accepted_at: true,
+    sent_at: true,
+    delivered_at: true,
+    template_id: true,
+    template_label_snapshot: true,
+    had_wallet_cta: true,
+    template: { select: { name: true } },
+  },
+} as const;
+
 const WALLET_PASS_AGGREGATE_SELECT = {
   issued_at: true,
   first_confirmed_at: true,
@@ -590,33 +632,13 @@ const WALLET_PASS_AGGREGATE_SELECT = {
   attendee: {
     select: {
       ticket_type: true,
-      // Every non-bounced TICKET delivery across initial and resend attempts, not just "initial"
-      // (a "purpose: initial" filter would keep pointing at one that later hard-bounced -
-      // applyBounceResult retains its sent_at, only status flips to "bounced" - overstating tap
-      // time against a since-successful resend). No orderBy/take here (unlike a plain "earliest
-      // sent_at" query) - see earliestDeliverySuccessAt's own comment for why: status "accepted"
-      // is this codebase's only real terminal-success state today (no mailer adapter ever reports
-      // "sent"), and ordering by a column that's always null would silently drop every real send.
-      // template_id: null OR template.name === "ticket" scopes this to genuine ticket-email sends
-      // only - without it, a Communication campaign send using a different template is recorded
-      // with purpose "resend" too (resolveNoDeliveryScopeAndPurpose, bulk-send-routes.ts), so an
-      // attendee who received a reminder/announcement before ever getting a ticket would have that
-      // unrelated email's timestamp picked up here instead (bot review on this PR). Every genuine
-      // ticket send resolves to either no custom template (template_id null, the compiled builtin)
-      // or a MailTemplate row named "ticket" (resolveTemplateForEvent, mail-templates package) -
-      // never any other name - so this mirrors that resolution rather than inventing a new rule.
-      email_deliveries: {
-        where: {
-          status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES] as string[] },
-          OR: [{ template_id: null }, { template: { name: "ticket" } }] as Prisma.EmailDeliveryWhereInput[],
-        },
-        select: { accepted_at: true, sent_at: true, delivered_at: true },
-      },
+      email_deliveries: WALLET_RELEVANT_EMAIL_DELIVERIES_SELECT,
     },
   },
 } as const;
 
 type WalletPassAggregateRow = Prisma.WalletPassGetPayload<{ select: typeof WALLET_PASS_AGGREGATE_SELECT }>;
+type WalletPassAggregateDelivery = WalletPassAggregateRow["attendee"]["email_deliveries"][number];
 
 /** Earliest moment any of an attendee's non-bounced ticket-email deliveries left our system,
  * across every delivery attempt - the anchor for "time to wallet tap" and the wallet export's
@@ -626,7 +648,9 @@ type WalletPassAggregateRow = Prisma.WalletPassGetPayload<{ select: typeof WALLE
  * schema for a future webhook-driven pipeline stage and are read here too so this doesn't need to
  * change again once one exists. Within one delivery the three are chronologically ordered
  * (accepted -> sent -> delivered), so the first non-null of the three is that delivery's own
- * earliest known milestone; the overall result is the minimum of that across every delivery. */
+ * earliest known milestone; the overall result is the minimum of that across every delivery.
+ * Callers must pre-filter to ticket-scoped deliveries (isTicketScopedDelivery) - the shared select
+ * above also returns wallet-reminder deliveries in the same array, for the separate metric below. */
 export function earliestDeliverySuccessAt(
   deliveries: ReadonlyArray<{ accepted_at: Date | null; sent_at: Date | null; delivered_at: Date | null }>,
 ): Date | null {
@@ -636,6 +660,60 @@ export function earliestDeliverySuccessAt(
     if (at && (!earliest || at < earliest)) earliest = at;
   }
   return earliest;
+}
+
+/** The genuine ticket-email send (built-in default or a MailTemplate literally named "ticket") -
+ * see the shared select's own doc comment above for why this can't happen via two relation loads.
+ * template_id === null alone isn't enough: it's also what a deleted non-ticket wallet-CTA
+ * template's delivery looks like after the relation's own onDelete: SetNull rule fires, which
+ * would otherwise misclassify that reminder as the ticket send and drop it out of
+ * isWalletReminderDelivery below (CodeRabbit). template_label_snapshot survives that deletion, so
+ * the null-template_id branch also requires a null snapshot - same reasoning as the shared
+ * select's own where.OR above, just re-applied here since Prisma can't push an AND-with-a-sibling-
+ * OR-branch condition down into a boolean this function alone can express as one query filter. */
+function isTicketScopedDelivery(delivery: WalletPassAggregateDelivery): boolean {
+  return (
+    (delivery.template_id === null && delivery.template_label_snapshot === null) ||
+    delivery.template?.name === "ticket"
+  );
+}
+
+/** A genuine follow-up nudge, not the ticket email itself: a delivery through a different
+ * template (not null/"ticket") whose subject or body referenced a wallet-add-link placeholder at
+ * send time (EmailDelivery.had_wallet_cta - see that column's own doc comment, schema.prisma, for
+ * why this is content-based rather than a manually-tagged template "purpose"). Deliberately content
+ * over category: apple_wallet_url/google_wallet_url sit in the same global placeholder whitelist as
+ * every other token, so any Communication campaign can carry one, not just a template specifically
+ * named/tagged as a reminder. The org's own ticket template embedding a wallet button too doesn't
+ * make that send a "reminder" - it's still the same first email, just excluded here via
+ * isTicketScopedDelivery, same as it's included there. */
+function isWalletReminderDelivery(delivery: WalletPassAggregateDelivery): boolean {
+  return !isTicketScopedDelivery(delivery) && delivery.had_wallet_cta;
+}
+
+/** Latest of an attendee's non-bounced wallet-reminder deliveries (isWalletReminderDelivery) whose
+ * earliest known milestone - same accepted -> sent -> delivered precedence as
+ * earliestDeliverySuccessAt - falls strictly before `beforeAt`, the anchor for "Time to install
+ * after reminder". Deliberately latest-, not earliest-, before install: unlike
+ * earliestDeliverySuccessAt (first-touch - "when did the very first relevant email leave"), this
+ * is last-touch - "what's the most recent nudge this person could plausibly have acted on". A
+ * reminder delivered AFTER the attendee already installed can't be what they reacted to, so it's
+ * excluded rather than becoming the (nonsensical, negative) anchor; among the ones that qualify,
+ * the closest one to the install is the one whose response time this metric is actually trying to
+ * measure - crediting an earlier reminder here would overstate how slow that particular nudge was,
+ * the same distortion this metric exists to avoid for the ticket email in time_to_wallet_tap.
+ * Returns null when no wallet-reminder delivery precedes `beforeAt` at all - this pass's install
+ * isn't attributable to any reminder and doesn't count toward the metric. */
+export function latestWalletReminderDeliverySuccessBefore(
+  deliveries: ReadonlyArray<{ accepted_at: Date | null; sent_at: Date | null; delivered_at: Date | null }>,
+  beforeAt: Date,
+): Date | null {
+  let latest: Date | null = null;
+  for (const delivery of deliveries) {
+    const at = delivery.accepted_at ?? delivery.sent_at ?? delivery.delivered_at;
+    if (at && at < beforeAt && (!latest || at > latest)) latest = at;
+  }
+  return latest;
 }
 
 /** Which wallet platform(s) a pass is actively registered on - "none" covers issued-but-never-
@@ -736,6 +814,9 @@ interface WalletPassAggregates {
   bucketCounts: Record<TimeToTapBucketKey, number>;
   tapDaySum: number;
   tapDayCount: number;
+  reminderBucketCounts: Record<TimeToTapBucketKey, number>;
+  reminderTapDaySum: number;
+  reminderTapDayCount: number;
   registrationCountBuckets: Record<RegistrationCountBucketKey, number>;
   lifecycleCounts: Record<"active" | "removed" | "never_installed", number>;
 }
@@ -785,12 +866,35 @@ function applyTapDayStats(
   platform: ReturnType<typeof classifyPassPlatform>,
   acc: Pick<WalletPassAggregates, "tapDaySum" | "tapDayCount" | "bucketCounts">,
 ): void {
+  const ticketDeliveries = pass.attendee.email_deliveries.filter(isTicketScopedDelivery);
   const tapDays =
-    platform !== "none" ? computeTapDays(earliestDeliverySuccessAt(pass.attendee.email_deliveries), pass.first_confirmed_at) : null;
+    platform !== "none" ? computeTapDays(earliestDeliverySuccessAt(ticketDeliveries), pass.first_confirmed_at) : null;
   if (tapDays !== null) {
     acc.tapDaySum += tapDays;
     acc.tapDayCount++;
     acc.bucketCounts[bucketForDays(tapDays)]++;
+  }
+}
+
+/** Updates the reminder-response accumulators for one pass - "Time to install after reminder",
+ * the last-touch companion to applyTapDayStats above (see latestWalletReminderDeliverySuccessBefore
+ * for why the two stay separate metrics rather than one replacing the other). Same platform !==
+ * "none" gate as applyTapDayStats; additionally only counts a pass that actually has a qualifying
+ * wallet-reminder delivery before its install - most confirmed passes won't, especially before any
+ * wallet-CTA campaign has been sent, and that's correctly "not counted" here, not "0 days". */
+function applyReminderTapDayStats(
+  pass: WalletPassAggregateRow,
+  platform: ReturnType<typeof classifyPassPlatform>,
+  acc: Pick<WalletPassAggregates, "reminderTapDaySum" | "reminderTapDayCount" | "reminderBucketCounts">,
+): void {
+  if (platform === "none" || !pass.first_confirmed_at) return;
+  const reminderDeliveries = pass.attendee.email_deliveries.filter(isWalletReminderDelivery);
+  const anchor = latestWalletReminderDeliverySuccessBefore(reminderDeliveries, pass.first_confirmed_at);
+  const tapDays = computeTapDays(anchor, pass.first_confirmed_at);
+  if (tapDays !== null) {
+    acc.reminderTapDaySum += tapDays;
+    acc.reminderTapDayCount++;
+    acc.reminderBucketCounts[bucketForDays(tapDays)]++;
   }
 }
 
@@ -836,6 +940,7 @@ function applyWalletPassToAggregates(
   if (platform !== "none") acc.confirmedByType.set(typeKey, (acc.confirmedByType.get(typeKey) ?? 0) + 1);
 
   applyTapDayStats(pass, platform, acc);
+  applyReminderTapDayStats(pass, platform, acc);
 
   acc.lifecycleCounts[
     classifyPassLifecycle(
@@ -868,6 +973,9 @@ export function aggregateWalletPasses(
     bucketCounts: { same_day: 0, "1_3": 0, "4_7": 0, "8_plus": 0 },
     tapDaySum: 0,
     tapDayCount: 0,
+    reminderBucketCounts: { same_day: 0, "1_3": 0, "4_7": 0, "8_plus": 0 },
+    reminderTapDaySum: 0,
+    reminderTapDayCount: 0,
     registrationCountBuckets: { "1": 0, "2": 0, "3": 0, "4_plus": 0 },
     lifecycleCounts: { active: 0, removed: 0, never_installed: 0 },
   };
@@ -1068,6 +1176,9 @@ async function loadWalletReportsAggregates(
     bucketCounts,
     tapDaySum,
     tapDayCount,
+    reminderBucketCounts,
+    reminderTapDaySum,
+    reminderTapDayCount,
     registrationCountBuckets,
     lifecycleCounts,
   } = aggregateWalletPasses(passes, enabledPlatforms);
@@ -1082,6 +1193,11 @@ async function loadWalletReportsAggregates(
     key,
     count: bucketCounts[key],
     pct: oneDecimalPct(bucketCounts[key], tapDayCount),
+  }));
+  const reminderBuckets = bucketOrder.map((key) => ({
+    key,
+    count: reminderBucketCounts[key],
+    pct: oneDecimalPct(reminderBucketCounts[key], reminderTapDayCount),
   }));
 
   const registrationCountBucketOrder: RegistrationCountBucketKey[] = ["1", "2", "3", "4_plus"];
@@ -1115,6 +1231,12 @@ async function loadWalletReportsAggregates(
     time_to_wallet_tap: {
       average_days: tapDayCount > 0 ? Math.round((tapDaySum / tapDayCount) * 10) / 10 : null,
       buckets,
+    },
+    time_to_install_after_reminder: {
+      eligible_count: reminderTapDayCount,
+      average_days:
+        reminderTapDayCount > 0 ? Math.round((reminderTapDaySum / reminderTapDayCount) * 10) / 10 : null,
+      buckets: reminderBuckets,
     },
     admission_by_wallet: {
       with_wallet: {
@@ -1883,19 +2005,29 @@ const WALLET_EXPORT_ATTENDEE_SELECT = {
       registration_checked_at: true,
     },
   },
-  // Same shape and reasoning as WALLET_PASS_AGGREGATE_SELECT above - fed through
-  // earliestDeliverySuccessAt rather than a plain earliest-sent_at query, see its own comment,
-  // including the template_id/template.name scoping to genuine ticket-email sends only.
-  email_deliveries: {
-    where: {
-      status: { in: [...EMAIL_DELIVERY_SUCCESS_STATUSES] as string[] },
-      OR: [{ template_id: null }, { template: { name: "ticket" } }] as Prisma.EmailDeliveryWhereInput[],
-    },
-    select: { accepted_at: true, sent_at: true, delivered_at: true },
-  },
+  // Same shape and reasoning as WALLET_RELEVANT_EMAIL_DELIVERIES_SELECT above - fed through
+  // earliestDeliverySuccessAt/latestDeliverySuccessAt rather than a plain min/max-sent_at query,
+  // see its own comment for the full template_id/template.name/had_wallet_cta scoping.
+  email_deliveries: WALLET_RELEVANT_EMAIL_DELIVERIES_SELECT,
 } as const;
 
 type WalletExportAttendeeRow = Prisma.AttendeeGetPayload<{ select: typeof WALLET_EXPORT_ATTENDEE_SELECT }>;
+
+/** Unconditional latest, unlike latestWalletReminderDeliverySuccessBefore above - the export's own
+ * "Most recent reminder email sent at" column has no install-time cutoff to apply here (recomputing
+ * "before install" from the archive, using this column alongside the pass's own confirmed-install
+ * data, is left to whoever reads the export - see this file's own CSV export doc comment on why
+ * raw, not pre-gated, numbers belong there). */
+function latestDeliverySuccessAt(
+  deliveries: ReadonlyArray<{ accepted_at: Date | null; sent_at: Date | null; delivered_at: Date | null }>,
+): Date | null {
+  let latest: Date | null = null;
+  for (const delivery of deliveries) {
+    const at = delivery.accepted_at ?? delivery.sent_at ?? delivery.delivered_at;
+    if (at && (!latest || at > latest)) latest = at;
+  }
+  return latest;
+}
 
 /** One platform's own two CSV columns (active, inactive) - blank for both when `counts` is null
  * (unsynced, or the event has since disabled this platform - see walletCsvPlatformFields' own
@@ -1965,7 +2097,8 @@ export function buildWalletExportCsvRow(
   enabledPlatforms: EnabledWalletPlatforms,
 ): string {
   const pass = row.wallet_pass;
-  const emailFirstSentAt = earliestDeliverySuccessAt(row.email_deliveries);
+  const emailFirstSentAt = earliestDeliverySuccessAt(row.email_deliveries.filter(isTicketScopedDelivery));
+  const reminderLastSentAt = latestDeliverySuccessAt(row.email_deliveries.filter(isWalletReminderDelivery));
   const platformFields = walletCsvPlatformFields(pass, enabledPlatforms);
 
   return [
@@ -1981,6 +2114,7 @@ export function buildWalletExportCsvRow(
     pass?.voided_at ? formatAdmittedAtExport(pass.voided_at, timeZone) : "",
     pass?.registration_checked_at ? formatAdmittedAtExport(pass.registration_checked_at, timeZone) : "",
     emailFirstSentAt ? formatAdmittedAtExport(emailFirstSentAt, timeZone) : "",
+    reminderLastSentAt ? formatAdmittedAtExport(reminderLastSentAt, timeZone) : "",
     row.admitted_at ? "Yes" : "No",
     row.admitted_at ? formatAdmittedAtExport(row.admitted_at, timeZone) : "",
     resolveOperatorLabel(resolveOperatorFields(row.admitted_by, operatorDisplayMap)),
@@ -2040,6 +2174,7 @@ async function exportWalletReportsCsv(
     `Pass voided at (${timeZone})`,
     `Registration last checked at (${timeZone})`,
     `Ticket email first sent at (${timeZone})`,
+    `Most recent reminder email sent at (${timeZone})`,
     "Admitted",
     `Admitted at (${timeZone})`,
     "Checked in by",
@@ -2150,6 +2285,12 @@ async function exportWalletReportsPdf(
       : aggregates.time_to_wallet_tap.buckets
           .map((b) => `<tr><td>${escapeHtml(tapBucketLabels[b.key] ?? b.key)}</td><td>${b.count}</td><td>${b.pct}%</td></tr>`)
           .join("");
+  const reminderTapRows =
+    aggregates.time_to_install_after_reminder.average_days === null
+      ? ""
+      : aggregates.time_to_install_after_reminder.buckets
+          .map((b) => `<tr><td>${escapeHtml(tapBucketLabels[b.key] ?? b.key)}</td><td>${b.count}</td><td>${b.pct}%</td></tr>`)
+          .join("");
 
   const lifecycleLabels: Record<keyof EventWalletReportsResponse["wallet_lifecycle"], string> = {
     active: "Active",
@@ -2183,7 +2324,7 @@ async function exportWalletReportsPdf(
   // sampled (bot review). .print-hint's existing warning-box styling, without no-print, since
   // this needs to survive into the saved/printed PDF, not just the on-screen preview.
   const truncatedWarningHtml = aggregates.passes_truncated
-    ? `<p class="print-hint">This event has more issued wallet passes than a single report can process at once, so platform mix, devices per attendee, adoption by ticket type, wallet lifecycle, and time to wallet install below are based on a partial sample rather than every pass. Cumulative passes issued and admission rate by wallet status are unaffected - both come from a full count, not a sample.</p>`
+    ? `<p class="print-hint">This event has more issued wallet passes than a single report can process at once, so platform mix, devices per attendee, adoption by ticket type, wallet lifecycle, time to wallet install, and time to install after reminder below are based on a partial sample rather than every pass. Cumulative passes issued and admission rate by wallet status are unaffected - both come from a full count, not a sample.</p>`
     : "";
 
   const sectionsHtml = `
@@ -2207,6 +2348,11 @@ async function exportWalletReportsPdf(
   <table>
     <thead><tr><th>Days after ticket email</th><th>Passes</th><th>Share</th></tr></thead>
     <tbody>${tapRows || '<tr><td colspan="3">Not enough data yet</td></tr>'}</tbody>
+  </table>
+  <h2>Time to install after reminder</h2>
+  <table>
+    <thead><tr><th>Days after most recent reminder</th><th>Passes</th><th>Share</th></tr></thead>
+    <tbody>${reminderTapRows || '<tr><td colspan="3">No installs are attributable to a follow-up email yet</td></tr>'}</tbody>
   </table>
   <h2>Wallet lifecycle</h2>
   <table>

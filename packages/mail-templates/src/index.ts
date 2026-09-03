@@ -17,6 +17,7 @@ export {
   IMAGE_PLACEHOLDERS,
   extractPlaceholderNames,
   extractPlaceholderTokens,
+  extractPlaceholderNamesFromHtml,
   findUnknownPlaceholders,
   findUnquotedAttributePlaceholders,
   findPlaceholdersInHtmlComments,

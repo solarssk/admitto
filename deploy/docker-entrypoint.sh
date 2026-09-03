@@ -142,6 +142,8 @@ log "running event actor-attribution backfill with 120s timeout"
 run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-event-actor-attribution.js
 log "running email delivery template-label-snapshot backfill with 120s timeout"
 run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-email-delivery-template-label-snapshot.js
+log "running email delivery had-wallet-cta backfill with 120s timeout"
+run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-email-delivery-had-wallet-cta.js
 log "running JIT password-hash backfill with 120s timeout"
 run_as_node_cmd timeout 120 node packages/db/dist/scripts/backfill-jit-password-hash.js
 

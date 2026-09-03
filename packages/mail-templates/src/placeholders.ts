@@ -88,6 +88,26 @@ export function findPlaceholdersInHtmlComments(html: string): string[] {
   return [...names].sort((a, b) => a.localeCompare(b));
 }
 
+/** Whitelisted placeholder names actually live in the rendered HTML - unlike
+ * extractPlaceholderNames, which reads every well-formed {{name}} occurrence regardless of
+ * surrounding markup, this excludes one sitting inside an HTML/Outlook conditional comment (see
+ * isPlaceholderInHtmlComment), since a template save already rejects that combination
+ * (assertRenderableCompiledHtml, validate.ts) - so a caller that only cares whether a feature is
+ * genuinely present in what actually renders (not just "did this text ever contain the token")
+ * shouldn't count a commented-out one as live. */
+export function extractPlaceholderNamesFromHtml(html: string): string[] {
+  const names = new Set<string>();
+  let match: RegExpExecArray | null;
+  const re = /\{\{([a-z][a-z0-9_]*)\}\}/g;
+  while ((match = re.exec(html)) !== null) {
+    const token = match[1]!;
+    if (ALLOWED_PLACEHOLDERS.has(token) && !isPlaceholderInHtmlComment(html, match.index!)) {
+      names.add(token);
+    }
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
+}
+
 /** Attribute names that use unquoted placeholder values (invalid / unsafe markup). */
 export function findUnquotedAttributePlaceholders(html: string): string[] {
   const attributes = new Set<string>();
@@ -144,12 +164,16 @@ export function extractPlaceholderNames(
 
 /**
  * Returns invalid placeholder names: malformed {{...}} tokens and names outside the whitelist
- * (static list plus `extraAllowed`, e.g. an event's custom image asset tokens).
+ * (static list plus `extraAllowed`, e.g. an event's custom image asset tokens), or a name
+ * `disallowed` explicitly pulls back out of that whitelist for this call (e.g. apple_wallet_url
+ * for an event with Apple Wallet turned off) - checked after extraAllowed, so a name can't be
+ * both event-specific-allowed and disallowed at once for the same call.
  */
 export function findUnknownPlaceholders(
   subject: string,
   body: string,
   extraAllowed?: ReadonlySet<string>,
+  disallowed?: ReadonlySet<string>,
 ): string[] {
   const issues = new Set<string>();
   for (const text of [subject, body]) {
@@ -160,7 +184,8 @@ export function findUnknownPlaceholders(
       if (
         padded ||
         !VALID_PLACEHOLDER_NAME_RE.test(name) ||
-        !(ALLOWED_PLACEHOLDERS.has(name) || extraAllowed?.has(name) === true)
+        !(ALLOWED_PLACEHOLDERS.has(name) || extraAllowed?.has(name) === true) ||
+        disallowed?.has(name) === true
       ) {
         issues.add(name === "" ? "{{}}" : name);
       }
