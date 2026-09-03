@@ -19,7 +19,7 @@ the OIDC button on `/login`.
 |---|----------|-----------|-------------|---------------|
 | 1 | Admin off-site, active Authentik/CF session | `/admin` | Admin SPA loads without Admitto `/login` form | No |
 | 2 | Admin off-site, no SSO session | `/admin` | CF Access / Authentik once → admin panel | No (single SSO at edge) |
-| 3 | Admin off-site bookmarks login bypass | `/login` | Admitto form (OIDC + password); OIDC may reuse IdP session | Possible if user also hit CF separately — prefer bookmark `/admin` |
+| 3 | Admin off-site bookmarks login bypass | `/login` | Admitto form (OIDC + password); OIDC may reuse IdP session | Possible if user also hit CF separately - prefer bookmark `/admin` |
 | 4 | Operator on event (WireGuard, no CF JWT) | `/operator` | Redirect `/login` → password → `/operator` (or auto single event) | No CF layer |
 | 5 | Admin on event (WireGuard) | `/admin` | Redirect `/login` → password + TOTP → `/admin` | No CF layer |
 | 6 | Admin on event needs check-in | `/login` then `/operator` | Session cookie required before check-in | N/A |

@@ -2,6 +2,18 @@
 
 **Audience:** Event Managers · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.3
 
+- [What this page helps you do](#what-this-page-helps-you-do)
+- [Before you start](#before-you-start)
+- [Steps](#steps)
+  - [Overview](#overview)
+  - [Event settings tabs](#event-settings-tabs)
+  - [Danger zone](#danger-zone)
+- [Expected result](#expected-result)
+- [Important decisions](#important-decisions)
+- [What changes after this action](#what-changes-after-this-action)
+- [Common problems](#common-problems)
+- [Related pages](#related-pages)
+
 ## What this page helps you do
 
 Check whether an event is ready and maintain its supported event-level settings.

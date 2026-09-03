@@ -2,6 +2,18 @@
 
 **Audience:** Superadmins · **Required role:** Superadmin · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.2
 
+- [What this page helps you do](#what-this-page-helps-you-do)
+  - [Login methods at a glance](#login-methods-at-a-glance)
+- [Before you start](#before-you-start)
+- [Steps](#steps)
+  - [Setting up OIDC (SSO)](#setting-up-oidc-sso)
+  - [Setting up Cloudflare Access (ZTNA)](#setting-up-cloudflare-access-ztna)
+- [Expected result](#expected-result)
+- [Important decisions](#important-decisions)
+- [What changes after this action](#what-changes-after-this-action)
+- [Common problems](#common-problems)
+- [Related pages](#related-pages)
+
 ## What this page helps you do
 
 Configure supported OIDC sign-in and Cloudflare Access from the administration UI.
@@ -14,7 +26,7 @@ This page covers two independent, optional layers:
   Admitto roles, so adding or removing someone from a group in the identity provider changes what
   they can do here too.
 - **Cloudflare Access** is a zero-trust network access (ZTNA) gateway: it checks a staff member's
-  identity and, optionally, their device before their request is even allowed to reach Admitto —
+  identity and, optionally, their device before their request is even allowed to reach Admitto -
   a perimeter control, not a replacement for Admitto's own roles. Enable it if your organisation
   wants staff URLs unreachable to anyone who hasn't already authenticated at the network edge, on
   top of signing in to Admitto itself. It is a separate layer in front of sign-in, not a
@@ -28,11 +40,11 @@ or any combination. See [Glossary](Glossary) for short definitions of SSO, OIDC,
 
 | Method | What the staff member sees | What you need to set up | Where it's configured |
 |---|---|---|---|
-| **Local password** | Email + password, plus an authenticator app code (MFA) for roles that require it | Nothing extra — this always works, even if the two options below are also enabled | Built in; no setup |
+| **Local password** | Email + password, plus an authenticator app code (MFA) for roles that require it | Nothing extra - this always works, even if the two options below are also enabled | Built in; no setup |
 | **OIDC single sign-on** | A "Sign in with `<your provider>`" button that sends them to your identity provider's own login page | Values from your identity provider (see the table below) | **Organisation settings → Identity → OIDC providers** |
 | **Cloudflare Access (ZTNA)** | A Cloudflare login/device-check screen *before* they ever see Admitto's own login page | A Cloudflare Zero Trust team and an Access application in front of Admitto's staff URLs | **Organisation settings → Identity → Cloudflare Access**, plus the Cloudflare dashboard |
 
-A local password always keeps working as a fallback (unless the account has no local password set — see
+A local password always keeps working as a fallback (unless the account has no local password set - see
 **Important decisions**), so enabling OIDC or Cloudflare Access is never an all-or-nothing switch.
 
 ## Before you start
@@ -179,4 +191,4 @@ Enabled providers appear in the staff sign-in flow. Updated mappings apply when 
 - [Organisation Settings](Organisation-Settings)
 - [Logs and Audit](Logs-and-Audit)
 - [Technical Documentation](Technical-Documentation)
-- [My Account](My-Account) — staff self-service: once a provider is enabled here, each account connects or unlinks it for themselves from **My account**, without needing this page.
+- [My Account](My-Account) - staff self-service: once a provider is enabled here, each account connects or unlinks it for themselves from **My account**, without needing this page.

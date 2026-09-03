@@ -3,6 +3,16 @@
 Template for security and availability incidents in a **self-hosted** Admitto deployment.
 Assign names and contacts in your internal runbook.
 
+- [Triage](#triage)
+- [Severity](#severity)
+- [First 30 minutes](#first-30-minutes)
+- [Secret rotation](#secret-rotation)
+- [Rollback](#rollback)
+- [Health checks](#health-checks)
+- [Aftercare](#aftercare)
+  - [Post-incident review](#post-incident-review)
+- [Related documents](#related-documents)
+
 ---
 
 ## Triage
@@ -10,11 +20,11 @@ Assign names and contacts in your internal runbook.
 ```mermaid
 flowchart TD
     A([Incident detected]) --> B{Personal data\npossibly exposed?}
-    B -- Yes --> C[P1 — Customer security\n+ platform owner]
+    B -- Yes --> C[P1 - Customer security\n+ platform owner]
     C --> D[GDPR Art. 33/34:\n72h authority clock starts]
     B -- No --> E{Event-day outage?}
-    E -- Yes --> F[P2 — Platform owner\n+ event operator]
-    E -- No --> G[P3 — Follow\nSECURITY.md disclosure]
+    E -- Yes --> F[P2 - Platform owner\n+ event operator]
+    E -- No --> G[P3 - Follow\nSECURITY.md disclosure]
     C & F & G --> H[Contain → Assess → Preserve → Notify]
 ```
 
@@ -30,19 +40,19 @@ flowchart TD
 
 ## First 30 minutes
 
-1. **Contain** — rotate exposed secrets; disable compromised accounts; block abusive traffic at edge.
-2. **Assess** — admin audit log, **Security audit log** (Settings → Logs & audit → Security audit
-   log, superadmin only — durable login/MFA/logout/OIDC/access-denied history; survives a restart,
-   so prefer it over the live tail below for reconstructing what happened — but writes are
+1. **Contain** - rotate exposed secrets; disable compromised accounts; block abusive traffic at edge.
+2. **Assess** - admin audit log, **Security audit log** (Settings → Logs & audit → Security audit
+   log, superadmin only - durable login/MFA/logout/OIDC/access-denied history; survives a restart,
+   so prefer it over the live tail below for reconstructing what happened - but writes are
    best-effort, so a DB hiccup at the moment of the event can leave a gap even though the
    underlying auth action itself succeeded, and rows past the retention window, 30 days by
    default, are gone), **System logs** live tail (Settings → Logs & audit → System, superadmin
-   only — shows recent activity in near real time, but only the last 1000 entries and only while
+   only - shows recent activity in near real time, but only the last 1000 entries and only while
    the server process is still running), readiness probe, mail delivery log, recent deployments.
-3. **Preserve** — snapshot logs and database if investigation is likely.
-4. **Notify** — privacy officer if personal data may be affected. Under **GDPR Art. 33** (when
+3. **Preserve** - snapshot logs and database if investigation is likely.
+4. **Notify** - privacy officer if personal data may be affected. Under **GDPR Art. 33** (when
    applicable), notify the supervisory authority **without undue delay and, where feasible, within
-   72 hours** of becoming aware of a personal-data breach — unless the breach is unlikely to result
+   72 hours** of becoming aware of a personal-data breach - unless the breach is unlikely to result
    in a risk to individuals. Notify affected data subjects when required (**Art. 34**). Record
    timeline, scope, and decision in your internal breach register.
 
@@ -56,7 +66,7 @@ Treat any secret exposed in logs, tickets, or version control as **compromised**
 |-------------|--------|
 | Database password | Rotate in database and deployment config; restart services |
 | Mail integration | Rotate in M365 / SMTP provider and application settings |
-| Encryption key | Major incident — plan re-encryption with maintenance window |
+| Encryption key | Major incident - plan re-encryption with maintenance window |
 | Monitoring token | Regenerate and update observability tools |
 | Session compromise | Invalidate active sessions; force staff re-authentication |
 
@@ -82,13 +92,13 @@ curl -fsS https://<your-host>/healthz
 curl -fsS -H "Authorization: Bearer <readiness-token>" https://<your-host>/readyz
 ```
 
-Readiness output is intended for operators — no personal data in responses.
+Readiness output is intended for operators - no personal data in responses.
 
 ---
 
 ## Aftercare
 
-1. Root cause and timeline — see **Post-incident review** below for how deep this needs to go.
+1. Root cause and timeline - see **Post-incident review** below for how deep this needs to go.
 2. Update runbook or perimeter controls if needed.
 3. Privacy / DPO sign-off when personal data was involved (include 72h authority notification decision if GDPR applies).
 4. Patch dependencies or deploy hotfix release if applicable.
@@ -96,16 +106,16 @@ Readiness output is intended for operators — no personal data in responses.
 ### Post-incident review
 
 - **P1:** always write one. Circulate to customer security + platform owner within 5 business days.
-- **P2:** always write one, less formally — a few paragraphs is enough. Circulate to platform owner + event operator.
+- **P2:** always write one, less formally - a few paragraphs is enough. Circulate to platform owner + event operator.
 - **P3:** a review is optional; the [SECURITY.md](../../SECURITY.md) disclosure record itself usually covers it.
 
-Keep it short and blameless — a paragraph per section, not a full report:
+Keep it short and blameless - a paragraph per section, not a full report:
 
-- **What happened** — plain-language summary, who noticed it and how.
-- **Timeline** — detection, containment, resolution, each with a timestamp.
-- **Root cause** — the actual mechanism, not just "human error."
-- **Impact** — what broke, for whom, for how long; personal data involved, if any.
-- **What we're changing** — the concrete follow-up (a runbook update, a new alert, a code fix) with an owner. If there's nothing to change, say why.
+- **What happened** - plain-language summary, who noticed it and how.
+- **Timeline** - detection, containment, resolution, each with a timestamp.
+- **Root cause** - the actual mechanism, not just "human error."
+- **Impact** - what broke, for whom, for how long; personal data involved, if any.
+- **What we're changing** - the concrete follow-up (a runbook update, a new alert, a code fix) with an owner. If there's nothing to change, say why.
 
 ---
 
