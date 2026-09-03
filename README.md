@@ -10,6 +10,8 @@
   &nbsp;
   <a href="https://github.com/solarssk/admitto/pkgs/container/admitto"><img src="https://img.shields.io/badge/docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white" alt="Docker: amd64 and arm64"></a>
   &nbsp;
+  <a href="https://hub.docker.com/r/solarssk/admitto"><img src="https://img.shields.io/badge/docker%20hub-solarssk%2Fadmitto-2496ED?logo=docker&logoColor=white" alt="Docker Hub: solarssk/admitto"></a>
+  &nbsp;
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="Apache 2.0"></a>
 </p>
 
@@ -33,6 +35,23 @@
   <strong>Self-hosted registration-to-check-in for internal corporate events.</strong><br>
   One source of truth. No SaaS. No recurring fees.
 </p>
+
+<details>
+<summary><strong>Table of contents</strong></summary>
+
+- [What is Admitto?](#what-is-admitto)
+- [Documentation map](#documentation-map)
+- [How it works](#how-it-works)
+- [Features](#features)
+- [Stack](#stack)
+- [Prerequisites](#prerequisites)
+- [Quick start](#quick-start)
+- [Production deployment](#production-deployment)
+- [Repo layout](#repo-layout)
+- [Roadmap](#roadmap)
+- [Licence](#licence)
+
+</details>
 
 ---
 
