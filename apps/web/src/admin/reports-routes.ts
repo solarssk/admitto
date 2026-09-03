@@ -2258,17 +2258,19 @@ async function exportWalletReportsPdf(
   const eventDate = event.date.toISOString().slice(0, 10);
 
   // Same buckets-always-populated issue as tapRows below: these rows exist even with zero
-  // installed passes (every count would just read 0), so the "No wallet passes installed"
+  // active passes (every count would just read 0), so the "No wallet passes currently active"
   // fallback a few lines down was unreachable dead code - branch on wallet_lifecycle.active
-  // instead (not got_pass: this breakdown is the platform split among installed passes, not
-  // issued ones), matching the Wallets tab's own whole-page EmptyState condition. Denominator is
-  // also wallet_lifecycle.active, not adoption.confirmed - platform stays a live-right-now count
-  // (unlike adoption.confirmed itself, which now means "ever confirmed installed"), and its four
-  // slices sum to wallet_lifecycle.active, not adoption.confirmed (see
-  // EventWalletReportsResponse's own doc comment) - denominating against the wrong one here would
-  // under-report every percentage, and they'd stop summing to 100%, for any event with a nonzero
+  // instead (not got_pass: this breakdown is the platform split among currently-active passes,
+  // not issued ones), matching the Wallets tab's own whole-page EmptyState condition. Denominator
+  // and column label ("Share of active", not "Share of installed") are also wallet_lifecycle.active,
+  // not adoption.confirmed - platform stays a live-right-now count (unlike adoption.confirmed
+  // itself, which now means "ever confirmed installed"), and its four slices sum to
+  // wallet_lifecycle.active, not adoption.confirmed (see EventWalletReportsResponse's own doc
+  // comment) - denominating (or labeling) against the wrong one here would under-report every
+  // percentage, and they'd stop summing to 100%, for any event with a nonzero
   // wallet_lifecycle.removed (architect review, 2026-09-03 - missed in the first pass of this
-  // change, caught by adversarial review before it shipped).
+  // change, caught by adversarial review before it shipped; the label mismatch itself was a
+  // separate follow-up catch after the denominator fix already landed).
   const platformRows =
     aggregates.wallet_lifecycle.active === 0
       ? ""
@@ -2370,13 +2372,13 @@ async function exportWalletReportsPdf(
   ${truncatedWarningHtml}
   <h2>Wallet platform</h2>
   <table>
-    <thead><tr><th>Platform</th><th>Passes</th><th>Share of installed</th></tr></thead>
-    <tbody>${platformRows || '<tr><td colspan="3">No wallet passes installed yet</td></tr>'}</tbody>
+    <thead><tr><th>Platform</th><th>Passes</th><th>Share of active</th></tr></thead>
+    <tbody>${platformRows || '<tr><td colspan="3">No wallet passes currently active</td></tr>'}</tbody>
   </table>
   <h2>Devices per attendee</h2>
   <table>
-    <thead><tr><th>Devices</th><th>Attendees</th><th>Share</th></tr></thead>
-    <tbody>${registrationCountRows || '<tr><td colspan="3">No wallet passes installed yet</td></tr>'}</tbody>
+    <thead><tr><th>Devices</th><th>Attendees</th><th>Share of active</th></tr></thead>
+    <tbody>${registrationCountRows || '<tr><td colspan="3">No wallet passes currently active</td></tr>'}</tbody>
   </table>
   <h2>Adoption by ticket type</h2>
   <table>

@@ -3327,11 +3327,11 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     // own "nothing yet" fallback rather than empty bucket rows or a missing heading entirely.
     expect(html).toContain("Time to install after reminder");
     expect(html).toContain("No installs are attributable to a follow-up email yet");
-    // registrations_per_attendee.buckets isn't all-zero (adoption.confirmed=5 above), so the
+    // registrations_per_attendee.buckets isn't all-zero (wallet_lifecycle.active=5 above), so the
     // "Devices per attendee" table's real rows should render, not its own empty fallback.
     expect(html).toContain("Devices per attendee");
     expect(html).toContain("1 device");
-    expect(html).not.toContain("No wallet passes installed yet");
+    expect(html).not.toContain("No wallet passes currently active");
     // wallet_lifecycle: active=5, removed=0, never_installed=2 (same fixture as the GET aggregate
     // test's own wallet_lifecycle assertion above) - the real rows should render, not the "No
     // wallet passes issued yet" empty fallback.
@@ -3382,7 +3382,7 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     // buckets-or-list-always-populated ternaries at once, plus the never-synced meta line.
     expect(html).toContain("Not synced yet");
     expect(html).not.toContain("Synced ");
-    expect(html).toContain("No wallet passes installed yet");
+    expect(html).toContain("No wallet passes currently active");
     expect(html).toContain("No attendees");
     expect(html).toContain("Not enough data yet");
     expect(html).toContain("No wallet passes issued yet");
