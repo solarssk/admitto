@@ -530,20 +530,28 @@ jobs:
         with:
           fail-on-severity: high
           # `fail-on-severity` alone only gates vulnerabilities - it does nothing for license
-          # compliance, so without these two inputs a newly introduced disallowed-license
+          # compliance, so without `allow-licenses` a newly introduced disallowed-license
           # dependency would pass this job silently (scripts/check-licenses.mjs's own gate for
           # that is `continue-on-error: true`, i.e. non-blocking, so nothing else here catches it
           # either). Mirrors that script's ALLOWLIST of standalone permissive SPDX licenses -
           # spdx-satisfies (what this action uses) resolves an "X OR Y" compound automatically once
           # one side is allowed, so the compound entries in ALLOWLIST don't need listing here too,
           # but an "X AND Y" compound needs every side present (hence adding Zlib alongside MIT for
-          # the one AND-compound package that script allows). allow-dependencies-licenses mirrors
-          # check-licenses.mjs's REVIEWED_PACKAGE_VERSIONS - copyleft packages already individually
-          # reviewed there - so a routine Dependabot version bump of one of them doesn't newly fail
-          # this gate. Keep both lists in sync with scripts/check-licenses.mjs by hand; nothing
-          # enforces that automatically.
+          # the one AND-compound package that script allows). Keep in sync with
+          # scripts/check-licenses.mjs's ALLOWLIST by hand; nothing enforces that automatically.
+          #
+          # Deliberately NOT mirroring check-licenses.mjs's REVIEWED_PACKAGE_VERSIONS via this
+          # action's `allow-dependencies-licenses`: that input matches on package name only - this
+          # action's own `purlsMatch()` explicitly ignores the version part of a purl, so a
+          # version-qualified entry would silently exempt every future version too, defeating the
+          # exact thing REVIEWED_PACKAGE_VERSIONS exists for (forcing re-review on a version bump -
+          # see that script's own comment). Confirmed this isn't theoretical: right now
+          # @img/sharp-libvips-darwin-arm64@1.3.3 and @img/sharp-wasm32@0.35.4 are already past
+          # their reviewed 1.3.2/0.35.3 entries and would fail scripts/check-licenses.mjs today if
+          # it were blocking. Leaving these packages off `allow-licenses` means a PR that bumps one
+          # of them will correctly fail this gate until a human re-reviews and updates both this
+          # list and REVIEWED_PACKAGE_VERSIONS - friction that's the point, not a bug.
           allow-licenses: MIT, ISC, Apache-2.0, BSD-3-Clause, BSD-2-Clause, BlueOak-1.0.0, Unlicense, OFL-1.1, MIT-0, CC0-1.0, 0BSD, CC-BY-4.0, Python-2.0, Zlib
-          allow-dependencies-licenses: "pkg:npm/@img/sharp-libvips-darwin-arm64, pkg:npm/@img/sharp-wasm32, pkg:npm/elkjs, pkg:npm/lightningcss, pkg:npm/lightningcss-darwin-arm64"
 
   docker-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
