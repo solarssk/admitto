@@ -691,6 +691,24 @@ describe("POST /api/admin/events/:eventId/template/preview", () => {
     expect(body.html.length).toBeGreaterThan(0);
   });
 
+  it("still previews a wallet placeholder for a platform the event has turned off - unlike a save of the same content", async () => {
+    // Regression coverage (CodeRabbit): Template-Variables.md's own Wallet row promises Preview
+    // always shows a placeholder link regardless of Wallet configuration - collectTemplateSourceErrors'
+    // checkWalletAvailability: false here must keep that true even though PUT /template would
+    // reject this exact body for EVENT_NO_APPLE_WALLET (see the PUT describe block's own test).
+    const res = await app.request(`/api/admin/events/${EVENT_NO_APPLE_WALLET}/template/preview`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        subject_template: "Ticket for {{event_name}}",
+        body_template:
+          '<p><a href="{{ticket_url}}">Ticket</a></p><img src="{{qr_image_url}}"><p><a href="{{apple_wallet_url}}">Add to Apple Wallet</a></p>',
+        template_format: "html",
+      }),
+    });
+    expect(res.status).toBe(200);
+  });
+
   it("renders event location and map vars for a saved pin", async () => {
     await prisma.eventLocation.create({
       data: {
