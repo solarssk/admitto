@@ -1877,14 +1877,21 @@ describe("PATCH /api/admin/events/:eventId", () => {
     it("migrates a legacy pass_voided subscription off the shared URL: unsubscribes it and resubscribes all 4 events fresh", async () => {
       const baseUrl = await resolveInstanceBaseUrl(prisma);
       const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
-      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([
+      const staleHooks = [
         // Stale: pass_voided still on the pre-2026-08-19 shared URL, alongside the three
         // registration events that are still correctly subscribed there.
         { targetUrl, event: "pass_voided", passTemplate: "tmpl-sub" },
         { targetUrl, event: "pushnotification_registered", passTemplate: "tmpl-sub" },
         { targetUrl, event: "first_pushnotification_registered", passTemplate: "tmpl-sub" },
         { targetUrl, event: "pushnotification_unregistered", passTemplate: "tmpl-sub" },
-      ]);
+      ];
+      // First call (initial listing) sees the stale state; the post-unsubscribe re-check sees
+      // registrationUrl genuinely cleared, matching what a real, effective PassCreator unsubscribe
+      // does.
+      const listSpy = vi
+        .spyOn(PassCreatorClient.prototype, "listWebhooks")
+        .mockResolvedValueOnce(staleHooks)
+        .mockResolvedValue([]);
       const unsubscribeSpy = vi
         .spyOn(PassCreatorClient.prototype, "unsubscribeWebhook")
         .mockResolvedValue(undefined);
@@ -1904,6 +1911,65 @@ describe("PATCH /api/admin/events/:eventId", () => {
         const targetUrlByEvent = new Map(subscribeSpy.mock.calls.map((call) => [call[1], call[0]]));
         expect(targetUrlByEvent.get("pass_voided")).toBe(`${targetUrl}/voided`);
         expect(targetUrlByEvent.get("pushnotification_registered")).toBe(targetUrl);
+      } finally {
+        listSpy.mockRestore();
+        unsubscribeSpy.mockRestore();
+        subscribeSpy.mockRestore();
+      }
+    });
+
+    it("does not duplicate the registration-event subscriptions when unsubscribeWebhook resolves but PassCreator never actually cleared the shared URL", async () => {
+      // 2026-09-03 production incident: unsubscribeWebhook resolved without throwing on every
+      // save, yet the legacy first_pushnotification_registered entry on the shared URL never
+      // actually went away - the old code trusted the non-throwing resolve and blindly
+      // re-subscribed pushnotification_registered/unregistered on top of what was still there,
+      // adding one more duplicate on every single save.
+      const baseUrl = await resolveInstanceBaseUrl(prisma);
+      const targetUrl = `${baseUrl}/api/wallet/webhook/passcreator/${SUB_EVENT}`;
+      const staleHooks = [
+        { targetUrl, event: "pass_voided", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "pushnotification_registered", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "first_pushnotification_registered", passTemplate: "tmpl-sub" },
+        { targetUrl, event: "pushnotification_unregistered", passTemplate: "tmpl-sub" },
+      ];
+      // Every call - including the post-unsubscribe re-check - still reports the same stale
+      // state, simulating an unsubscribeWebhook call that reports success but never actually
+      // took effect on PassCreator's side.
+      const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue(staleHooks);
+      const unsubscribeSpy = vi
+        .spyOn(PassCreatorClient.prototype, "unsubscribeWebhook")
+        .mockResolvedValue(undefined);
+      const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+      resetSystemLogBufferForTest();
+      try {
+        const res = await app.request(`/api/admin/events/${SUB_EVENT}`, {
+          method: "PATCH",
+          headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet_template_id: "tmpl-sub" }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(unsubscribeSpy).toHaveBeenCalledExactlyOnceWith(targetUrl);
+        // Only the dedicated-URL events (already missing, since the fixture only has them on the
+        // shared URL) get subscribed - pushnotification_registered/unregistered, which the
+        // re-check still finds present, must not get a duplicate piled on top.
+        await vi.waitFor(() => {
+          expect(subscribeSpy).toHaveBeenCalledTimes(2);
+        });
+        expect(subscribeSpy).toHaveBeenCalledWith(`${targetUrl}/first-confirmed`, "first_pushnotification_registered");
+        expect(subscribeSpy).toHaveBeenCalledWith(`${targetUrl}/voided`, "pass_voided");
+
+        const [entry] = await vi.waitFor(() => {
+          const entries = querySystemLogs({ source: "admin", search: "wallet_webhook_legacy_unsubscribe_ineffective" });
+          expect(entries).toHaveLength(1);
+          return entries;
+        });
+        expect(entry).toMatchObject({
+          level: "error",
+          source: "admin",
+          message: "wallet_webhook_legacy_unsubscribe_ineffective",
+          fields: { eventId: SUB_EVENT },
+        });
       } finally {
         listSpy.mockRestore();
         unsubscribeSpy.mockRestore();

@@ -718,13 +718,42 @@ export async function subscribeWalletWebhooksBestEffort(
   if (hasLegacyEventOnRegistrationUrl && dedicatedOk) {
     try {
       await client.unsubscribeWebhook(registrationUrl);
-      alreadySubscribed.delete(`${registrationUrl} pushnotification_registered`);
-      alreadySubscribed.delete(`${registrationUrl} pushnotification_unregistered`);
     } catch (err) {
-      // Unsubscribe failed: the stale entry is still there untouched, so fall back to the normal
-      // dedup (alreadySubscribed, unmodified) rather than piling a duplicate registration-event
-      // subscription on top of it.
       console.error("wallet webhook subscribe: legacy event-URL migration unsubscribe failed:", err);
+    }
+    // Re-check against a fresh listWebhooks() call instead of trusting the call above resolving
+    // without throwing - confirmed in production (2026-09-03) that PassCreator can report success
+    // here while registrationUrl's subscriptions are left untouched. The previous version of this
+    // code just deleted these two keys from its own in-memory bookkeeping the moment unsubscribe
+    // resolved, then blindly re-subscribed pushnotification_registered/unregistered on top of
+    // whatever never actually went away - piling on a fresh duplicate every time this function ran
+    // for that event, since hasLegacyEventOnRegistrationUrl stayed true on every subsequent run. A
+    // failed re-check falls back to the same "skip resubscribing" behavior as a failed unsubscribe
+    // above (alreadySubscribed left as the last known, stale-inclusive state) rather than guessing.
+    try {
+      const freshHooks = (await client.listWebhooks()).filter(
+        (hook) => hook.passTemplate === updated.wallet_template_id,
+      );
+      alreadySubscribed.clear();
+      freshHooks.forEach((hook) => alreadySubscribed.add(`${hook.targetUrl ?? ""} ${hook.event}`));
+      const stillStale = freshHooks.some(
+        (hook) =>
+          hook.targetUrl === registrationUrl &&
+          (hook.event === "pass_voided" || hook.event === "first_pushnotification_registered"),
+      );
+      if (stillStale) {
+        console.error(
+          `wallet webhook subscribe: legacy event still on the shared URL after unsubscribe for event ${eventId} - PassCreator may not have applied the delete`,
+        );
+        recordSystemLog({
+          level: "error",
+          source: "admin",
+          message: "wallet_webhook_legacy_unsubscribe_ineffective",
+          fields: { eventId },
+        });
+      }
+    } catch (err) {
+      console.error("wallet webhook subscribe: post-unsubscribe re-check failed:", err);
     }
   }
 
