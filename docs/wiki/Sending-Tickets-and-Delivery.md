@@ -17,12 +17,12 @@ Save and test the selected template. Review attendee pass status, email addresse
 3. Select **Count recipients** and compare the count with your expectation.
 4. If the count is wrong, cancel and correct the filter or attendee data.
 5. Select **Send**.
-6. Watch **Sent**, **Failed**, and **Remaining** progress until the batch completes. If you spot a mistake mid-send (wrong template, a typo, the wrong audience), select **Stop** and confirm: attendees not yet emailed are skipped, but anyone already sent the message keeps it — a send in progress cannot be recalled.
+6. Watch **Sent**, **Failed**, and **Remaining** progress until the batch completes. If you spot a mistake mid-send (wrong template, a typo, the wrong audience), select **Stop** and confirm: attendees not yet emailed are skipped, but anyone already sent the message keeps it - a send in progress cannot be recalled.
 7. Open the delivery log; filter by status, purpose, or template, or search by recipient name or email. Use a row's **…** menu to view the sent message or the full delivery details for that attendee.
 
 ## Expected result
 
-The batch completes with a recorded status for every attempted delivery — including **Cancelled** for any recipient skipped by a Stop. The delivery log identifies initial sends and resends.
+The batch completes with a recorded status for every attempted delivery - including **Cancelled** for any recipient skipped by a Stop. The delivery log identifies initial sends and resends.
 
 ## Important decisions
 

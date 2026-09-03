@@ -13,7 +13,7 @@ The delivery log records the latest known state reported by Admitto and the conf
 | Failed | Sending failed. The record may indicate whether retry is possible. The background worker retries transient failures with backoff up to 8 attempts, then marks the row non-retryable. | Check the address, template, and mail configuration before retrying or using Resend. |
 | Bounced | The receiving system returned the message (for example via bounce detection from a forwarded NDR for this event). | Confirm or correct the attendee address before resending. Open delivery details for the SMTP code and reason when available. |
 | Rejected | The transport refused the message and it is not treated as retryable. | Correct the cause before attempting another send. |
-| Cancelled | An Event Manager stopped a still-draining bulk send (see [Sending Messages and Delivery](Sending-Tickets-and-Delivery)) before this attendee's turn. Nothing went wrong; the recipient simply never received this send. | Treated the same as no delivery for filtering and resending — use **No delivery for this template**, or select the attendee directly, to send again. |
+| Cancelled | An Event Manager stopped a still-draining bulk send (see [Sending Messages and Delivery](Sending-Tickets-and-Delivery)) before this attendee's turn. Nothing went wrong; the recipient simply never received this send. | Treated the same as no delivery for filtering and resending - use **No delivery for this template**, or select the attendee directly, to send again. |
 
 ## Delivery purpose
 

@@ -2,6 +2,22 @@
 
 **Audience:** Superadmins · **Required role:** Superadmin for organisation transport; Superadmin for event Mailing settings · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
 
+- [What this page helps you do](#what-this-page-helps-you-do)
+- [Before you start](#before-you-start)
+- [How Admitto chooses a transport](#how-admitto-chooses-a-transport)
+- [Bounce detection (delivery failures)](#bounce-detection-delivery-failures) - its own mini workflow, nested below
+  - [Before you start](#before-you-start-1)
+  - [Steps](#steps)
+  - [Expected result](#expected-result-1)
+  - [Important decisions](#important-decisions-1)
+  - [Common problems](#common-problems-1)
+- [Steps](#steps-1) (main mail transport setup)
+- [Expected result](#expected-result)
+- [Important decisions](#important-decisions)
+- [What changes after this action](#what-changes-after-this-action)
+- [Common problems](#common-problems)
+- [Related pages](#related-pages)
+
 ## What this page helps you do
 
 Select, test, and troubleshoot the supported mail transport used by event messages, and optionally configure per-event bounce detection from forwarded delivery-failure mail.
