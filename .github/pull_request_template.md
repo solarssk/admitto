@@ -9,11 +9,11 @@ If a checklist item does not apply, keep it and add a brief note instead of dele
 
 <!--
 Cover two things, as separate paragraphs:
-1. Business context — the real problem this solves for an operator, admin, or attendee,
+1. Business context - the real problem this solves for an operator, admin, or attendee,
    in plain language a non-technical reader (PM, stakeholder) can follow. Skip only for
-   pure internal maintenance (dependency bump, CI tweak) with no user-facing effect —
+   pure internal maintenance (dependency bump, CI tweak) with no user-facing effect -
    say so explicitly instead.
-2. Technical changes — what changed in the code, grouped by area (API / UI / DB / infra)
+2. Technical changes - what changed in the code, grouped by area (API / UI / DB / infra)
    if it touches more than one. Describe the diff as shipped, not the original plan/issue.
 
 Be explicit about scope. If this is docs-only or infra-only, say so clearly.
@@ -42,7 +42,7 @@ reason. The CI documentation check verifies this declaration and the Wiki source
 -->
 
 - [ ] Wiki updated
-- [ ] No Wiki update needed — explain why
+- [ ] No Wiki update needed - explain why
 
 ---
 

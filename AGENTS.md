@@ -1,10 +1,24 @@
-# AGENTS.md — Admitto
+# AGENTS.md - Admitto
 
 Instructions for AI agents in this repository (Cursor, Claude Code, Codex, Copilot, and others).
 
 Repo: https://github.com/solarssk/admitto  
-**Active milestone:** see the open GitHub milestone and `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md) — this file does not track it to avoid drift.  
-**Product version:** git tag `v0.x.y` + root `package.json` + [CHANGELOG.md](CHANGELOG.md) — see [VERSIONING.md](VERSIONING.md).
+**Active milestone:** see the open GitHub milestone and `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md) - this file does not track it to avoid drift.  
+**Product version:** git tag `v0.x.y` + root `package.json` + [CHANGELOG.md](CHANGELOG.md) - see [VERSIONING.md](VERSIONING.md).
+
+- [Project](#project)
+- [Working style](#working-style)
+- [Security](#security)
+- [Tests](#tests)
+- [Commits and branches](#commits-and-branches)
+- [Pull requests](#pull-requests)
+- [Changelog and releases](#changelog-and-releases)
+- [Admin SPA feedback (toast vs inline)](#admin-spa-feedback-toast-vs-inline)
+  - [Admin API errors in the UI](#admin-api-errors-in-the-ui)
+- [Compounding rules](#compounding-rules)
+  - [Visual documentation](#visual-documentation)
+- [Claude Code](#claude-code)
+- [Cursor Cloud specific instructions](#cursor-cloud-specific-instructions)
 
 ## Project
 
@@ -34,7 +48,7 @@ Admitto is a self-hostable **internal event access gateway**: attendee import (C
 npm test
 ```
 
-Integration tests need Postgres — run `npm run db:test-setup` once per environment. For coverage reports (same tests + LCOV, matches CI):
+Integration tests need Postgres - run `npm run db:test-setup` once per environment. For coverage reports (same tests + LCOV, matches CI):
 
 ```bash
 npm run coverage
@@ -61,9 +75,9 @@ Follow [.github/pull_request_template.md](.github/pull_request_template.md) exac
 
 `Description` covers **business context** (the real operator/admin/attendee problem, plain
 language, no jargon) and **technical changes** (what changed in the code, by area) as separate
-paragraphs — not blended. Describe the diff that actually shipped, not the original plan.
+paragraphs - not blended. Describe the diff that actually shipped, not the original plan.
 
-Before handoff: assignee @solarssk, current milestone when it exists, labels — one `type:*`, at least one `area:*`, `prio:*` when obvious.
+Before handoff: assignee @solarssk, current milestone when it exists, labels - one `type:*`, at least one `area:*`, `prio:*` when obvious.
 
 ## Changelog and releases
 
@@ -77,7 +91,7 @@ Before handoff: assignee @solarssk, current milestone when it exists, labels —
 2. Bump root `package.json` `"version"`.
 3. **Before** the release commit: `python3 scripts/generate-release-notes.py 0.x.y "tagline"` then `python3 scripts/sync-release-docs.py` (and `npm install --package-lock-only` so `package-lock.json` matches).
 4. One release commit: `CHANGELOG.md`, `package.json`, `package-lock.json`, synced docs, `.github/release-notes/v0.x.y.md`, `.github/release-notes/v0.x.y.title` (commit subject exactly `release: v0.x.y`).
-5. **Merge the release PR** — Actions creates tag, GitHub Release (`v0.x.y — tagline`), triggers `publish-container`, and closes the milestone.
+5. **Merge the release PR** - Actions creates tag, GitHub Release (`v0.x.y - tagline`), triggers `publish-container`, and closes the milestone.
 
 Local `./scripts/release-tag.sh` is emergency-only (signed tag). Do **not** use the deprecated v0.3.x emoji GitHub Release template.
 
@@ -90,7 +104,7 @@ Staff UI uses `useToast()` from `@admitto/ui` (`ToastProvider` in the admin shel
 | **Toast** | Transient outcome of an action the user just took; does not need a retry control | Save/test success, mutation API errors, import finished, wizard step saved |
 | **`Notice`** | Persistent fact or warning about the surrounding view (bordered/tinted box with icon) | Settings warnings, wizard banners, form-level auth errors. Server-rendered auth pages use the same `.at-notice` markup via `renderNoticeHtml` (not the React component) |
 | **Inline / `EmptyState`** | Initial page load failed or data is missing until the user retries | Attendees/Requirements load error with **Retry**; AuthProvider session bootstrap failure |
-| **`ConfirmDialog`** | Destructive or irreversible confirmation | Delete attendee, archive event — do not also toast the same message |
+| **`ConfirmDialog`** | Destructive or irreversible confirmation | Delete attendee, archive event - do not also toast the same message |
 | **In-context inline** | Error is tied to a modal, form field, or overlay that already has focus | Mobile check-in camera overlay (no-match → overlay message, not toast behind overlay); form field validation |
 
 Toasts dedupe identical `message + variant`, cap at five, and sit below the check-in overlay (`--z-toast` &lt; `--z-overlay`). Prefer `renderWithToast()` in admin tests when asserting toast behavior.
@@ -106,7 +120,7 @@ treatment used for a real delete would misrepresent the risk. See
 for the Cancel button, one for the router's dirty-guard blocker) most editors with unsaved-changes
 protection should reuse rather than re-implementing per screen.
 
-**Check-in camera exception:** the desktop inline camera (`CkInlineCamera`) is scan-only — unlike the mobile fullscreen overlay, it never doubles as the operator's check-in/item-issuing surface, so no result ever renders on top of it. A no-match scan there reports via **toast**, the same as manual lookup's no-match, and the camera keeps scanning. This is the opposite of the in-context-inline row above, which still governs the mobile overlay (where a toast would render below `--z-overlay`, invisible).
+**Check-in camera exception:** the desktop inline camera (`CkInlineCamera`) is scan-only - unlike the mobile fullscreen overlay, it never doubles as the operator's check-in/item-issuing surface, so no result ever renders on top of it. A no-match scan there reports via **toast**, the same as manual lookup's no-match, and the camera keeps scanning. This is the opposite of the in-context-inline row above, which still governs the mobile overlay (where a toast would render below `--z-overlay`, invisible).
 
 ### Admin API errors in the UI
 
@@ -115,7 +129,7 @@ Do **not** pass `ApiError.message` straight into toasts or inline error strings.
 - Use `operatorApiErrorMessage(err, fallback)` from `apps/admin/src/api/operator-api-error.ts` for operator-visible copy.
 - Use `hasApiErrorCode(err, "code")` when branching on a known API failure (exact match on normalized `err.code` / machine-readable `err.message`).
 - Known codes are mapped to fixed UI strings; short human `detail` text is shown only when it passes the helper's safety checks; everything else logs in dev and returns `fallback`.
-- `TemplateValidationError` and client-side validation stay separate — they never go through `operatorApiErrorMessage`.
+- `TemplateValidationError` and client-side validation stay separate - they never go through `operatorApiErrorMessage`.
 
 The table above governs which surface to use; it doesn't govern what the text inside it says. For
 which register (Superadmin/Administrator/Operator/Public attendee) gets how much technical detail,
@@ -126,53 +140,53 @@ and the content rules behind it, see [docs/dev/error-and-notice-copy.md](docs/de
 When an agent repeats a mistake, add a precise rule here (or in a scoped `.cursor/rules/*.mdc` file). One line per gotcha; cut rules that no longer prevent real errors.
 
 **SonarCloud Automatic Analysis needs `sonar.tests` listed explicitly in `.sonarcloud.properties`
-(repo root) — without it every `*.test.ts(x)` file analyzes as production source (qualifier `FIL`
+(repo root) - without it every `*.test.ts(x)` file analyzes as production source (qualifier `FIL`
 instead of `UTS`), so intentional test-fixture duplication (db seeding, TOTP enrollment, login
 flows repeated across integration test files) counts against the "New Code Duplication" quality
 gate as if it were a production-code smell.** Confirmed via the public API
 (`api/components/tree?component=solarssk_admitto&qualifiers=UTS`) that this project had **zero**
-files classified `UTS` project-wide before this fix — every workspace's tests were silently being
+files classified `UTS` project-wide before this fix - every workspace's tests were silently being
 scanned as source. Once classified `UTS`, SonarCloud still analyzes Bugs and Code Smells on that
-file (per SonarSource's own docs), it just stops counting Duplication and Security Hotspots there —
+file (per SonarSource's own docs), it just stops counting Duplication and Security Hotspots there -
 this is not "tests go unanalyzed", it's Sonar's own documented, intentional scope split.
 **`.sonarcloud.properties` under Automatic Analysis (the GitHub App mode, no CI scanner step) does
-not support wildcard patterns** — `sonar.test.inclusions=**/*.test.ts` or `sonar.tests=packages/*/test`
+not support wildcard patterns** - `sonar.test.inclusions=**/*.test.ts` or `sonar.tests=packages/*/test`
 are silently ignored, not an error. List every workspace's `test/` directory as a literal,
 comma-separated path instead (every `*.test.ts(x)` file lives under a dedicated `test/` directory
 per workspace, never co-located next to source, so `sonar.tests` alone covers those with no
-`sonar.test.inclusions` glob needed) — plus the shell test harnesses `ci.yml` runs outside any
+`sonar.test.inclusions` glob needed) - plus the shell test harnesses `ci.yml` runs outside any
 workspace (`scripts/*.test.sh`, `scripts/fixtures/`), which are easy to forget since they don't
-follow the per-workspace `test/` convention. Verify empirically after any change here — push, wait
-for the SonarCloud re-scan, then re-query the `UTS` qualifier via the API — don't trust the docs'
+follow the per-workspace `test/` convention. Verify empirically after any change here - push, wait
+for the SonarCloud re-scan, then re-query the `UTS` qualifier via the API - don't trust the docs'
 description of the property over what the dashboard actually shows for this project.
 **Setting `sonar.tests` alone, without also excluding those same paths from `sonar.sources`, fails
-the whole project scan** ("source and test file paths overlap") — `sonar.sources` defaults to `.`
+the whole project scan** ("source and test file paths overlap") - `sonar.sources` defaults to `.`
 under Automatic Analysis, so every path listed in `sonar.tests` is still also a source path unless
 `sonar.exclusions` mirrors the same list (with a trailing `/**` per directory, since exclusions are
 glob patterns rather than the bare-path list `sonar.tests` takes). Confirmed broken as a hard
 failure (not a warning) on the very next push to `main` after adding `sonar.tests` without this.
 
-**SonarCloud Automatic Analysis cannot ingest coverage, full stop — not a `.sonarcloud.properties`
+**SonarCloud Automatic Analysis cannot ingest coverage, full stop - not a `.sonarcloud.properties`
 config gap.** Confirmed from SonarSource's own docs: "Code coverage information is not supported"
 is listed as a current Automatic Analysis limitation, and the JS/TS coverage page has a dedicated
 section titled "Use CI-based, not automatic analysis." `sonar.javascript.lcov.reportPaths` is real
 but is a CI-based-analysis-only property (`sonar-project.properties`, read by an actual
-`sonar-scanner`/`sonarqube-scan-action` run) — Automatic Analysis never reads
+`sonar-scanner`/`sonarqube-scan-action` run) - Automatic Analysis never reads
 `sonar-project.properties` at all (it reads `.sonarcloud.properties` instead) and has coverage
 support removed at the product level regardless of any property. Don't spend time trying to wire
 coverage into `.sonarcloud.properties`; see
 [docs/dev/sonarcloud-ci-coverage-migration.md](docs/dev/sonarcloud-ci-coverage-migration.md) for
 the sourced answer and the concrete (human-gated, needs a `SONAR_TOKEN`) migration path.
 
-**Font formats (`apps/admin`'s own bundled fonts): woff2 only, no woff/truetype fallback** — the
+**Font formats (`apps/admin`'s own bundled fonts): woff2 only, no woff/truetype fallback** - the
 app's JS already requires a browser new enough that woff2 is a given, so older formats are pure
 dead weight in the package-shipped CSS (Tabler icons, `@fontsource` text fonts). This does **not**
-apply to organisation-uploaded custom branding fonts (`FontFamilyModal.tsx`, `uploadThemeFont`) —
+apply to organisation-uploaded custom branding fonts (`FontFamilyModal.tsx`, `uploadThemeFont`) -
 those accept whatever format the customer's own font file comes in
 (`woff2`/`woff`/`ttf`/`otf`, see `FONT_FILE_RE`), and we don't control that. See
 [packages/ui/README.md](packages/ui/README.md) "Fonts" for the full reasoning, what's currently
 shipped vs. stripped, script/locale coverage gaps (Arabic, CJK, RTL), and why the same fix doesn't
-mechanically extend to `@fontsource` text fonts (CSS `@import` bypasses Vite's plugin hooks — don't
+mechanically extend to `@fontsource` text fonts (CSS `@import` bypasses Vite's plugin hooks - don't
 re-attempt that approach without reading why it failed first).
 
 **No production installs of unreleased feature work.** Admitto has no customer/staging deploy of WIP branches or unreleased milestone features until a tagged stable release ships. Do **not** invent “legacy cleanup”, migration backfills, or compatibility shims for code that only ever existed on a PR branch. If a review says delete dead “older builds” cleanup, delete it.
@@ -188,14 +202,14 @@ Prefer full `npm test` when blast radius is unclear. Do not push on red. Cite th
 pass/fail in the handoff. For fetch
 mocks in web tests, type the first argument (`input: string | URL`); bare `vi.fn(async () => …)`
 makes `mock.calls[0][0]` a `TS2493` under `tsc` even when Vitest is green. After a null-check on
-React state, nest handlers must use narrowed locals (`const weather = weatherDraft`) — TypeScript
+React state, nest handlers must use narrowed locals (`const weather = weatherDraft`) - TypeScript
 does not keep the narrowing inside nested functions.
 
 **New `process.env.X` reads must be registered in `deploy/env-catalog.json`, then regenerated.**
 CI's `wiki-docs` job runs `npm run docs:check`, which includes `generate-env-dictionary.mjs
---check` — it scans source for env var references and fails the build if one isn't listed in the
+--check` - it scans source for env var references and fails the build if one isn't listed in the
 catalog (or under its `scanIgnore`). Add a catalog entry (`name`, `group`, `boot`, `consumers`,
-`secret`, `ui`, `summary` — copy the shape of a sibling entry), then run `npm run docs:env` to
+`secret`, `ui`, `summary` - copy the shape of a sibling entry), then run `npm run docs:env` to
 regenerate `deploy/ENV.md` and commit both files together; the check also fails if `ENV.md` is
 stale relative to the catalog even when the catalog entry itself is present.
 
@@ -204,7 +218,7 @@ will likely trip SonarCloud's new-code duplication gate (max 3%).** Structural c
 `resolveEventWalletProvider` or the stale-job reclaim loop read as near-verbatim duplicates by
 line/token comparison even when deliberately parallel by design. Extract genuinely shared pieces
 into their own small module (see `resolve-event-wallet-provider.ts`,
-`reclaim-stale-admin-jobs-by-type.ts`) rather than leaving two inline copies — check the SonarCloud
+`reclaim-stale-admin-jobs-by-type.ts`) rather than leaving two inline copies - check the SonarCloud
 PR dashboard (`new_duplicated_lines_density` condition) before assuming a passing local build means
 this gate will pass too, since duplication isn't caught by `tsc`/vitest.
 
@@ -214,51 +228,51 @@ pattern as crypto/location/…). Builder already has all of `packages/`; omittin
 COPY lines yields `ERR_MODULE_NOT_FOUND` when the container starts (CI `migration-safety`).
 
 **Renaming a Vitest project (`test.name`):** grep `package.json` scripts and CI workflows for
-`--project <old-name>` first — the filter is an anchored exact match, so a stale reference fails
+`--project <old-name>` first - the filter is an anchored exact match, so a stale reference fails
 at startup ("No projects matched the filter").
 
 **Integration tests sharing a package's `*_test` database run one file at a time** (their configs
 set `fileParallelism: false`), so cross-file failures there are leftover-state pollution, not
-concurrency races — fix them with cleanup in the polluting file, not with `sequence.concurrent`
+concurrency races - fix them with cleanup in the polluting file, not with `sequence.concurrent`
 (that option only affects tests within one file).
 
 **`eslint-disable-next-line` only covers the literal next line.** When the reason needs 2-3 lines
 of prose, put the plain `//` explanation lines first and the `eslint-disable-next-line` comment
-itself last, directly above the code it's suppressing for — reversing that order (or splitting
+itself last, directly above the code it's suppressing for - reversing that order (or splitting
 the explanation across lines *after* the directive) silences nothing, since "next line" then
 points at another comment instead of the real target. Grep for `eslint-disable-next-line` mid a
 multi-line comment block if a lint warning appears on a line that already has one right above it.
 
 **SonarCloud's `NOSONAR` marker must be the first thing in its own comment on the flagged line**,
-e.g. `code // NOSONAR — reason` or `// NOSONAR — reason` as a whole standalone comment. Appending
-` // NOSONAR — reason` after an *already-open* `//` comment (e.g. after an existing `// TODO: …`)
-does not suppress anything — the whole line is one comment token to the parser either way, but
+e.g. `code // NOSONAR - reason` or `// NOSONAR - reason` as a whole standalone comment. Appending
+` // NOSONAR - reason` after an *already-open* `//` comment (e.g. after an existing `// TODO: …`)
+does not suppress anything - the whole line is one comment token to the parser either way, but
 Sonar's own marker only registers when NOSONAR leads it. Confirmed by re-checking the PR's issue
-list after pushing, not by assumption — the same file's own `role="presentation"` suppression a
+list after pushing, not by assumption - the same file's own `role="presentation"` suppression a
 few lines away (NOSONAR leading its own comment) did clear, this trailing form did not.
 
 **A comment explaining *why* two files share a deliberately-unextracted duplicate block can
 itself blow the `new_duplicated_lines_density` gate, even worded differently in each file.**
 SonarCloud's CPD match is computed on code tokens (comments are stripped for the comparison
 itself), but the *reported* duplicate line range for a file still includes any new line sitting
-inside the matched block's span — so a freshly-added comment right above an already-flagged
+inside the matched block's span - so a freshly-added comment right above an already-flagged
 `vi.mock()`/`vi.hoisted()` block counts toward that file's "new duplicated lines" regardless of
 whether its text matches the sibling file's comment. Confirmed by pushing a near-identical
 5-line explanation to two files (19.8%→1.4%→3.1%, gate failed), then confirming the fix isn't
 "make the wording different" (still 2.6%, most of the increase persisted) but "make the comment
 short" (down to 2.1% after trimming both to 1-2 lines). Keep any such comment as short as
-possible, and re-check the actual SonarCloud PR analysis after pushing — don't assume a comment
+possible, and re-check the actual SonarCloud PR analysis after pushing - don't assume a comment
 is free just because it isn't executable code.
 
-**`apps/admin` pages are lazily code-split (`React.lazy`) — a component's CSS import must live in
+**`apps/admin` pages are lazily code-split (`React.lazy`) - a component's CSS import must live in
 that component's own file, not just "somewhere already loaded on this page".** A modal/component
 that reuses another feature's CSS classes (e.g. the shared `add-attendee-modal.css` "standard
 modal" markup, or `IconPicker`'s `icon-picker.css`) needs its own `import "*.css"` line even if
-some other already-visited lazy chunk happens to load that stylesheet too — that only works by
+some other already-visited lazy chunk happens to load that stylesheet too - that only works by
 accident of navigation order within one browser session, and renders fully unstyled on a cold
 visit straight to the page that's missing the import. Found via `CreateTemplateDialog.tsx` (in the
 lazy `communication` chunk) using `.add-attendee-modal__*` classes with no import of that CSS file
-at all. `grep -rn 'import "delivery-modals.css"' apps/admin/src/communication/` — every consumer of
+at all. `grep -rn 'import "delivery-modals.css"' apps/admin/src/communication/` - every consumer of
 a shared modal/component CSS file should show up importing it directly.
 
 **Do not import `@admitto/mail-templates`, `@admitto/tickets`, or `@admitto/wallet` (package
@@ -307,7 +321,7 @@ an already-open modal.
 fixed: `README.md`, `CHANGELOG.md`, `SECURITY.md`, `VERSIONING.md`, `DATA-PROTECTION.md`,
 `AGENTS.md`, `CLAUDE.md`, plus package-level `README.md` files and `docs/*` referenced from them.
 If something doesn't fit an existing file, add a section to the closest one instead of starting a
-new file. Avoid hardcoding "current milestone/version" callouts in prose here — point to
+new file. Avoid hardcoding "current milestone/version" callouts in prose here - point to
 `CHANGELOG.md`'s `[Unreleased]` section or the open GitHub milestone instead, so this file can't
 drift out of date.
 
@@ -324,7 +338,7 @@ or unsupported operational workarounds.
 **`docs:pr-check` (CI wiki-docs job) is not `docs:check`.** The job also runs
 `scripts/check-pr-docs-impact.mjs`, which requires the PR body to include the template's
 `## Documentation impact` section with **exactly one** checked line on its own line:
-`- [x] Wiki updated` or `- [x] No Wiki update needed — <specific reason>` (em/en/hyphen dash
+`- [x] Wiki updated` or `- [x] No Wiki update needed - <specific reason>` (em/en/hyphen dash
 accepted). A Checklist bullet that merely mentions "Wiki updated" does **not** pass. Keep the
 other option present and unchecked. If wiki files changed, the checked option must be
 `Wiki updated`; if none changed, it must be `No Wiki update needed` with a real reason.
@@ -358,13 +372,13 @@ below is intentionally **not** in that script (services, env, one-off setup) and
 VM snapshot. Standard build/run/test commands live in [README.md](README.md).
 
 - **Node 24 required** (`engines`). nvm's default is set to 24, so fresh login shells use it. If
-  `node -v` prints 22, run `nvm use 24` — the `/exec-daemon/node` shim is v22 and can precede nvm
+  `node -v` prints 22, run `nvm use 24` - the `/exec-daemon/node` shim is v22 and can precede nvm
   on `PATH` in non-login shells.
 - **Postgres + Redis are native (no Docker).** Docker is not installed here; Postgres 16 and
   Redis 7 are installed via apt and are **not** auto-started. Start them each session:
   `sudo pg_ctlcluster 16 main start` and `sudo redis-server /etc/redis/redis.conf --daemonize yes`.
   Role/creds `admitto`/`admitto`, database `admitto`, and the `admitto_*_test` databases are
-  already created + migrated + seeded in the snapshot. `infra/docker-compose.yml` is unused — the
+  already created + migrated + seeded in the snapshot. `infra/docker-compose.yml` is unused - the
   test-db scripts fall back to local `psql`/`createdb`.
 - **Local env files (gitignored):** `packages/db/.env` and `apps/web/.env` hold the dev
   `DATABASE_URL`, a generated `ENCRYPTION_KEY`, and `REDIS_URL=redis://localhost:6379`. Recreate

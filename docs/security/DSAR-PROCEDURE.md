@@ -1,4 +1,4 @@
-# Data Subject Access and Erasure — Organizer-Mediated Procedure (Option B)
+# Data Subject Access and Erasure - Organizer-Mediated Procedure (Option B)
 
 Template for deployments that **do not** use self-service DSAR APIs. Adapt to your organisation's
 privacy policy and legal sign-off. **Not legal advice.**
@@ -41,7 +41,7 @@ flowchart TD
 - Organizer with `admin` role exports the attendee row via **Admin → Attendees → Export**
   (CSV/XLSX/PDF, filtered to the data subject if needed).
 - Deliver export through your organisation's **secure channel** (encrypted mail, ticket system).
-- Log: who exported, when, which event — use your internal audit process.
+- Log: who exported, when, which event - use your internal audit process.
 
 ## 4. Erasure
 
@@ -50,12 +50,12 @@ flowchart TD
      Delete attendee** (type the attendee's name to confirm), or for multiple data subjects at
      once, select their rows on the **Attendees** list and use the bulk bar's **More actions →
      Delete** (a confirmation dialog lists what will be removed; no typed confirmation since
-     there's no single name to type — unlike the single-attendee flow above). Both call the same
+     there's no single name to type - unlike the single-attendee flow above). Both call the same
      `DELETE`/`bulk-delete`
-     `/api/admin/events/:eventId/attendees/...` endpoints used by the API client below — they
+     `/api/admin/events/:eventId/attendees/...` endpoints used by the API client below - they
      remove dependent delivery, wallet, and check-in rows in one transaction and write an audit
      log entry (per-attendee, plus a central admin-audit-log entry naming the erased attendee(s)
-     and event — see [DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog)
+     and event - see [DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog)
      for why that one retains identity, unlike the per-attendee trail). Not blocked by the event
      being archived. If the SPA is unavailable, call the endpoint directly with an authenticated
      staff session and CSRF token (same session model as other admin mutations).
@@ -69,8 +69,8 @@ removed before the attendee because `EmailDelivery`, `WalletPass`, and `CheckIn`
 with `ON DELETE RESTRICT`. Sent delivery rows can include rendered ticket email HTML.
 
 **This bypasses both audit writers the API path uses** (the per-attendee `AttendeeActionLog` entry
-and the central `AdminAuditLog` entry — see
-[DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog)) — a manual
+and the central `AdminAuditLog` entry - see
+[DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog)) - a manual
 erasure with no central audit record is exactly the accountability gap that log exists to close.
 The `INSERT` below writes the same central record by hand; do not skip it. Capture the attendee's
 name/email and the event's title *before* the delete (the `SELECT` in the transaction does this),
@@ -106,7 +106,7 @@ DELETE FROM "Attendee"
 WHERE "event_id" = :'event_id'
   AND "id" = :'attendee_id';
 
--- Central accountability record — fill in the values from the two SELECTs above.
+-- Central accountability record - fill in the values from the two SELECTs above.
 INSERT INTO "AdminAuditLog" (id, organization_id, actor_user_id, action_type, metadata, created_at)
 VALUES (
   gen_random_uuid()::text,

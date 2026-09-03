@@ -12,13 +12,13 @@ Admitto uses **one product version** for releases. Internal workspace packages a
 |------|--------|
 | **Release number** | Git tag `v0.x.y` on `main` |
 | **Human-readable history** | [`CHANGELOG.md`](CHANGELOG.md) |
-| **Tracked in repo** | Root [`package.json`](package.json) `"version"` — bumped when cutting a release |
+| **Tracked in repo** | Root [`package.json`](package.json) `"version"` - bumped when cutting a release |
 
 GitHub **milestones** (`v0.3.6`, `v0.4.0`, …) group PRs toward the next tag; milestone title matches the upcoming product version.
 
 ## Product version lines (what `v0.x` vs `v1.0` means)
 
-Admitto ships as **one product** with git tags like `v0.4.0`. That is **not** independent semver for each npm workspace package — it is the **release train** toward the first real event.
+Admitto ships as **one product** with git tags like `v0.4.0`. That is **not** independent semver for each npm workspace package - it is the **release train** toward the first real event.
 
 | Line | Meaning |
 |------|---------|
@@ -28,7 +28,7 @@ Admitto ships as **one product** with git tags like `v0.4.0`. That is **not** in
 
 ### Planned sequence (high level)
 
-This is the current product roadmap — details live in milestone descriptions and `CHANGELOG.md`:
+This is the current product roadmap - details live in milestone descriptions and `CHANGELOG.md`:
 
 ```mermaid
 flowchart LR
@@ -43,19 +43,19 @@ flowchart LR
 
 | Version | Focus |
 |---------|--------|
-| **v0.4** | Operator UI + event-day ops + staff SPA foundation (through current `v0.4.x` patches — see [CHANGELOG.md](CHANGELOG.md)). |
+| **v0.4** | Operator UI + event-day ops + staff SPA foundation (through current `v0.4.x` patches - see [CHANGELOG.md](CHANGELOG.md)). |
 | **v0.5** | Delivered - wallet passes (Apple/Google via PassCreator), passkey/security-key registration, SSO/OIDC hardening, users-table UX. |
 | **v0.6** | Delivered - passkeys/security keys usable for sign-in and step-up (not just registration), first-time 2FA method choice, session-cookie and step-up security hardening; later 0.6.x patches added Reports' Wallets and Custom fields tabs, a Samsung Wallet settings toggle, passkey autofill (conditional mediation) on the login page, and multi-arch container images. |
 | **v0.7** | Hardening phase 1 (Outlook/iPhone/Android mail and ticket tests, operational fixes toward go-live). |
-| **v0.8–v0.9** | External-ingest `/api/ingest`, RSVP intake, calendar iMIP/ICS, waitlist, template lifecycle triggers, further hardening + dry run (backup/restore, event-day readiness — ADR 0012) - not yet scheduled to a specific version. |
+| **v0.8–v0.9** | External-ingest `/api/ingest`, RSVP intake, calendar iMIP/ICS, waitlist, template lifecycle triggers, further hardening + dry run (backup/restore, event-day readiness - ADR 0012) - not yet scheduled to a specific version. |
 | **v1.0** | First event **go-live ready** = MVP complete. |
-| **v1.1+** | New waves **after** the first event — e.g. native bounded registration form, branded domain (CNAME), i18n, multi-room, mini-CRM. |
+| **v1.1+** | New waves **after** the first event - e.g. native bounded registration form, branded domain (CNAME), i18n, multi-room, mini-CRM. |
 
 ### Common scope mistakes (read before opening a milestone PR)
 
 - **First-event attendee intake** is planned as **MS Forms → Power Automate → `/api/ingest`**, not a native public registration UI inside Admitto - not yet built as of v0.6.0, and not yet assigned to a specific upcoming version.
 - **Native registration form**, custom branded domain, full i18n, multi-room scheduling, and mini-CRM belong to **`v1.1+`**, not to `v0.5`–`v0.7` pre-go-live milestones.
-- **`v0.x` patches** (`v0.4.1`, `v0.4.2`, …) are normal — they still belong to the same minor line until the next tagged minor (e.g. `v0.5.0`).
+- **`v0.x` patches** (`v0.4.1`, `v0.4.2`, …) are normal - they still belong to the same minor line until the next tagged minor (e.g. `v0.5.0`).
 
 Internal Polish product guide (maintainer docs, outside this public repo) mirrors this model; **this file is the canonical English definition for contributors and operators.**
 
@@ -81,20 +81,20 @@ Do not bump per-package versions unless we start publishing libraries separately
    python3 scripts/sync-release-docs.py
    npm install --package-lock-only
    ```
-   `generate-release-notes.py` writes `.github/release-notes/v0.x.y.md` and `.github/release-notes/v0.x.y.title` (tagline only — workflow composes `v0.x.y — tagline`, same pattern as earlier releases). `sync-release-docs.py` updates `<!-- admitto:latest-patch -->` markers (e.g. in `SECURITY.md`) from `package.json`. CI runs `python3 scripts/sync-release-docs.py --check` on every PR.
+   `generate-release-notes.py` writes `.github/release-notes/v0.x.y.md` and `.github/release-notes/v0.x.y.title` (tagline only - workflow composes `v0.x.y - tagline`, same pattern as earlier releases). `sync-release-docs.py` updates `<!-- admitto:latest-patch -->` markers (e.g. in `SECURITY.md`) from `package.json`. CI runs `python3 scripts/sync-release-docs.py --check` on every PR.
    Release notes follow the same [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) typed sections as `CHANGELOG.md` for that version, plus a short **Deploy** footer (container image, migration policy). Do not use the deprecated v0.3.x emoji template. See [`.github/release-notes/v0.4.4.md`](.github/release-notes/v0.4.4.md) as reference.
-6. Commit on `main` — include `CHANGELOG.md`, `package.json`, `package-lock.json`, synced docs, `.github/release-notes/v0.x.y.md`, and `.github/release-notes/v0.x.y.title` in one release commit (subject exactly `release: v0.x.y`).
-7. **Merge the release PR** — GitHub Actions [`.github/workflows/release.yml`](.github/workflows/release.yml) on `main` then:
+6. Commit on `main` - include `CHANGELOG.md`, `package.json`, `package-lock.json`, synced docs, `.github/release-notes/v0.x.y.md`, and `.github/release-notes/v0.x.y.title` in one release commit (subject exactly `release: v0.x.y`).
+7. **Merge the release PR** - GitHub Actions [`.github/workflows/release.yml`](.github/workflows/release.yml) on `main` then:
    - verifies release artifacts (`sync-release-docs.py --check`, notes file, non-empty `.title` file, CHANGELOG section),
-   - creates git tag `v0.x.y` and GitHub Release from `.github/release-notes/v0.x.y.md` with title `v0.x.y — …` from the `.title` file, marked as the **latest** release,
+   - creates git tag `v0.x.y` and GitHub Release from `.github/release-notes/v0.x.y.md` with title `v0.x.y - …` from the `.title` file, marked as the **latest** release,
    - triggers [`publish-container.yml`](.github/workflows/publish-container.yml) (GHCR image, SBOM upload),
    - closes the open milestone titled `v0.x.y`.
 
-   Local [`scripts/release-tag.sh`](scripts/release-tag.sh) remains for emergency **GPG/SSH-signed** tags only (see below) — not the default path.
+   Local [`scripts/release-tag.sh`](scripts/release-tag.sh) remains for emergency **GPG/SSH-signed** tags only (see below) - not the default path.
 
-### Tag signing (optional — emergency manual releases)
+### Tag signing (optional - emergency manual releases)
 
-CI-created tags from `release.yml` are ordinary GitHub tags (not GPG/SSH-signed). For a **Verified** signed tag, delete the CI tag and use `release-tag.sh` instead — rare.
+CI-created tags from `release.yml` are ordinary GitHub tags (not GPG/SSH-signed). For a **Verified** signed tag, delete the CI tag and use `release-tag.sh` instead - rare.
 
 **SSH signing** (if commits already use `gpg.format ssh`):
 
@@ -117,4 +117,4 @@ git tag -d v0.0.0-signing-smoke
 
 **Container image:** pushing git tag `v0.x.y` publishes `ghcr.io/solarssk/admitto:0.x.y` and the rolling minor tag `ghcr.io/solarssk/admitto:0.x`, mirrored to `docker.io/solarssk/admitto` under the same tags (see `deploy/README.md`).
 
-Runtime (`/healthz`, Docker labels) does not expose version yet — by design until we need operator-facing build info.
+Runtime (`/healthz`, Docker labels) does not expose version yet - by design until we need operator-facing build info.
