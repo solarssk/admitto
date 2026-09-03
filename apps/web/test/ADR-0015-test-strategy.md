@@ -1,4 +1,4 @@
-# ADR 0015 — Test strategy (stop the per-file thrash)
+# ADR 0015 - Test strategy (stop the per-file thrash)
 
 Status: Accepted · Date: 2026-06-14
 
@@ -21,4 +21,4 @@ per-file "improvements" that conflict across files.
 
 ## Deferred
 
-Testcontainers / per-test transaction rollback — revisit when integration volume grows.
+Testcontainers / per-test transaction rollback - revisit when integration volume grows.

@@ -43,18 +43,18 @@ Active automated checks in this repository:
 | Semgrep | SAST (JavaScript/TypeScript) | Every PR + merge to `main` + weekly | `.github/workflows/semgrep.yml` |
 | gitleaks | Secret scan (full history) | Every PR | `.github/workflows/ci.yml` (`secret-scan`) |
 | npm audit | Dependency SCA (`--audit-level=high`) | Every PR | `.github/workflows/ci.yml` (`lint-and-typecheck`) |
-| License compliance | Every third-party package's license against an allowlist of standard permissive terms (`scripts/check-licenses.mjs`); report-only for now (`continue-on-error: true`) — one flagged package (`buffers`, no discoverable license text) still needs a decision, see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | Every PR | `.github/workflows/ci.yml` (`lint-and-typecheck`) |
+| License compliance | Every third-party package's license against an allowlist of standard permissive terms (`scripts/check-licenses.mjs`); report-only for now (`continue-on-error: true`) - one flagged package (`buffers`, no discoverable license text) still needs a decision, see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | Every PR | `.github/workflows/ci.yml` (`lint-and-typecheck`) |
 | Dependabot | npm + GitHub Actions updates | Scheduled | `.github/dependabot.yml` |
 | Docker build smoke | Production `Dockerfile` builds | Every merge to `main` | `.github/workflows/ci.yml` (`docker-build`) |
 | Trivy (report-only) | Container image scan (OS + libraries), SARIF to Security tab | Every merge to `main` | `.github/workflows/ci.yml` (`docker-build`) |
 | Trivy | Container image scan (OS + libraries) per platform (linux/amd64, linux/arm64, each on its own native runner - no QEMU); **scan-before-push** CRITICAL gate on each before either is pushed | Release tags + manual dispatch | `.github/workflows/publish-container.yml` |
 | CycloneDX SBOM | Container image bill of materials | Release tags | `.github/workflows/publish-container.yml` (artifact + release asset) |
 | Codecov | Test coverage reporting; `codecov/project` and `codecov/patch` status checks + PR comment configured (`codecov.yml`), not yet in `main`'s required checks so still non-blocking today | Every PR | `.github/workflows/ci.yml` (`test-web` / `test-admin` / `test-rest`) |
-| SonarCloud | Code quality and maintainability (SAST-adjacent, e.g. hardcoded-secret patterns, injection-prone constructs). Automatic Analysis cannot ingest coverage under any configuration (confirmed from SonarSource's own docs); a CI-based migration that would add a coverage quality-gate condition is planned but blocked on a human generating a `SONAR_TOKEN` — see [docs/dev/sonarcloud-ci-coverage-migration.md](docs/dev/sonarcloud-ci-coverage-migration.md) | Automatic analysis on every PR and `main` push | GitHub App (`sonarcloud.io`) — not a workflow file in this repo |
+| SonarCloud | Code quality and maintainability (SAST-adjacent, e.g. hardcoded-secret patterns, injection-prone constructs). Automatic Analysis cannot ingest coverage under any configuration (confirmed from SonarSource's own docs); a CI-based migration that would add a coverage quality-gate condition is planned but blocked on a human generating a `SONAR_TOKEN` - see [docs/dev/sonarcloud-ci-coverage-migration.md](docs/dev/sonarcloud-ci-coverage-migration.md) | Automatic analysis on every PR and `main` push | GitHub App (`sonarcloud.io`) - not a workflow file in this repo |
 | OWASP ZAP baseline | DAST, unauthenticated passive scan (no merge gate) | Manual dispatch + weekly | `.github/workflows/dast-baseline.yml` |
 
 **DAST scope (2026-08-29):** the ZAP baseline scan runs against the same docker-compose stack
-`deploy-smoke.yml` builds, unauthenticated — it only reaches `/`, `/login`, `/healthz`, and
+`deploy-smoke.yml` builds, unauthenticated - it only reaches `/`, `/login`, `/healthz`, and
 whatever its spider finds from there without credentials. Nothing behind `/admin` or `/operator`
 is covered yet; an authenticated crawl is future scope. Report-only for now: results are a
 workflow artifact, not a Security-tab SARIF upload (ZAP's baseline scanner has no native SARIF
@@ -64,9 +64,9 @@ output) and do not block any pipeline.
 
 **PR pipeline:** application build, lint, typecheck, tests with coverage, dependency audit, license compliance, secret scan, PII guard, migration safety, CodeQL, and Semgrep. Container image build smoke and a report-only Trivy scan run on every merge to `main`; release tags add the blocking Trivy CRITICAL gate, SBOM, and provenance.
 
-**SAST on PRs vs `main` — decision (2026-07-06), revised (2026-08-29):** Semgrep was kept off PRs (Option B) purely on a CI-speed/marginal-value tradeoff: ~2–3 min added per PR against overlap with CodeQL's `security-extended` rules. That calculus didn't weigh external perception — an enterprise security review of this repo checks whether *every* PR gets dual SAST coverage, not just what lands on `main`. Semgrep (`p/javascript`, `p/typescript`) now also runs on every PR (Option A); CodeQL `security-extended` remains the primary gate, Semgrep the complementary second engine, on PRs and `main` alike.
+**SAST on PRs vs `main` - decision (2026-07-06), revised (2026-08-29):** Semgrep was kept off PRs (Option B) purely on a CI-speed/marginal-value tradeoff: ~2–3 min added per PR against overlap with CodeQL's `security-extended` rules. That calculus didn't weigh external perception - an enterprise security review of this repo checks whether *every* PR gets dual SAST coverage, not just what lands on `main`. Semgrep (`p/javascript`, `p/typescript`) now also runs on every PR (Option A); CodeQL `security-extended` remains the primary gate, Semgrep the complementary second engine, on PRs and `main` alike.
 
-**Required merge checks on `main`:** GitHub branch protection requires `build-test`, `secret-scan`, `pii-guard`, `analyze` (CodeQL), `migration-safety`, and `wiki-docs`. All six must pass before a PR can merge. Semgrep is not yet in this list — GitHub only allows a required check that has posted at least once with its new trigger; add it once this PR's own Semgrep run lands on `main`.
+**Required merge checks on `main`:** GitHub branch protection requires `build-test`, `secret-scan`, `pii-guard`, `analyze` (CodeQL), `migration-safety`, and `wiki-docs`. All six must pass before a PR can merge. Semgrep is not yet in this list - GitHub only allows a required check that has posted at least once with its new trigger; add it once this PR's own Semgrep run lands on `main`.
 
 Container image scanning fails the release pipeline on **CRITICAL** vulnerabilities
 with a known fix (`ignore-unfixed: true`). **HIGH** findings are reported (SARIF in the
@@ -84,13 +84,13 @@ pushed to GHCR on release tags.
 
 Only `.env.example` belongs in this repository. Real credentials (Graph, SMTP, database,
 TLS keys, API tokens) must be supplied via environment variables or a secret manager at
-deploy time — never committed. See **What counts as a secret** above.
+deploy time - never committed. See **What counts as a secret** above.
 
 ### Supported versions
 
 Only the **latest minor release** is supported (currently `0.6.x`, latest <!-- admitto:latest-patch -->`0.6.6`<!-- /admitto:latest-patch -->). Deploy from
 semver tags (`v0.6.y`) published to `ghcr.io/solarssk/admitto` (mirrored to `docker.io/solarssk/admitto`). These CI-created tags are ordinary,
-unsigned GitHub tags by default; a manual, GPG/SSH-signed tag path exists for emergencies — see
+unsigned GitHub tags by default; a manual, GPG/SSH-signed tag path exists for emergencies - see
 [VERSIONING.md](VERSIONING.md).
 
 ### Data protection

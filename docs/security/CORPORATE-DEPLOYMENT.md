@@ -20,11 +20,11 @@ own database, secrets, and operator access.
 | Aspect | Approach |
 |--------|----------|
 | Hosting | **Self-hosted** (customer VPC, private cloud, or on-premises) |
-| SaaS | **No** — single-tenant per deployment |
+| SaaS | **No** - single-tenant per deployment |
 | Data region | **Customer choice** (EU is the documented target for GDPR-oriented deployments) |
 | Orchestration | **Docker Compose** (supported production path for MVP) |
-| Container image | Published from semver tags on the project registry; CI-created tags are unsigned by default, with a signed-tag path for emergencies — see [VERSIONING.md](../../VERSIONING.md) |
-| Secrets | Customer `.env` / secret manager — never committed to git |
+| Container image | Published from semver tags on the project registry; CI-created tags are unsigned by default, with a signed-tag path for emergencies - see [VERSIONING.md](../../VERSIONING.md) |
+| Secrets | Customer `.env` / secret manager - never committed to git |
 
 ---
 
@@ -43,7 +43,7 @@ own database, secrets, and operator access.
 | **Monitoring** | Customer tools; application exposes liveness and token-gated readiness endpoints |
 
 Optional **wallet pass** integration (PassCreator) adds a third-party pass provider when enabled
-per event — see [SUBPROCESSORS.md](SUBPROCESSORS.md).
+per event - see [SUBPROCESSORS.md](SUBPROCESSORS.md).
 
 ---
 
@@ -83,7 +83,7 @@ flowchart TB
 | Private access | Corporate VPN, zero-trust client | Staff reach origin without public admin exposure |
 | On-prem | No public CDN | Proxy on LAN; attendees may use separate public hostname |
 
-The application origin should **not** be wide-open on the internet for staff functions — customers
+The application origin should **not** be wide-open on the internet for staff functions - customers
 define whether staff paths are VPN-only, zero-trust gated, or public with strong app auth.
 
 ---
@@ -103,7 +103,7 @@ define whether staff paths are VPN-only, zero-trust gated, or public with strong
 | Platform owner | IT / platform team | Admin UI; may combine with perimeter controls |
 | Event organizer | Business owner | Admin UI, organization scope |
 | Check-in operator | On-site staff | Operator UI, event scope |
-| Attendee | Guest | Public ticket link — no account |
+| Attendee | Guest | Public ticket link - no account |
 
 Initial platform administrator is created via documented bootstrap CLI inside the container.
 
@@ -114,7 +114,7 @@ Initial platform administrator is created via documented bootstrap CLI inside th
 1. Take a manual database backup (see `deploy/README.md`).
 2. Pull the new container image tag.
 3. Update compose image reference.
-4. Restart stack — the one-shot `migrate` service applies schema changes; there is no automatic pre-migration dump.
+4. Restart stack - the one-shot `migrate` service applies schema changes; there is no automatic pre-migration dump.
 5. Verify health endpoints.
 
 Rollback: previous image tag (no schema change) or database restore from your pre-upgrade backup or a nightly dump.

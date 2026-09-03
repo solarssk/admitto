@@ -1,4 +1,4 @@
-# Claude Code — Admitto
+# Claude Code - Admitto
 
 @AGENTS.md
 
@@ -10,7 +10,7 @@ Rules below are **Claude Code–specific** (planning gate, session workflow). Sh
 
 **Read first. Propose a plan. Get alignment before writing a line.**
 
-- Read the relevant packages and existing patterns — do not assume, verify.
+- Read the relevant packages and existing patterns - do not assume, verify.
 - State what you will change, in which files, in what order, and why.
 - If the task spans more than ~3 packages or needs a DB migration + UI + tests, propose a split and get confirmation before starting.
 - Ask only when a decision blocks implementation or creates real risk.
@@ -26,7 +26,7 @@ Rules below are **Claude Code–specific** (planning gate, session workflow). Sh
 - No features beyond what was asked.
 - No abstractions for single-use code.
 - No error handling for scenarios that cannot happen.
-- If you wrote 300 lines and 100 would do — rewrite it.
+- If you wrote 300 lines and 100 would do - rewrite it.
 
 **The test:** Would a senior engineer say this is overcomplicated? If yes, simplify.
 
@@ -37,7 +37,7 @@ Rules below are **Claude Code–specific** (planning gate, session workflow). Sh
 **Touch only what you must. Clean up only your own mess.**
 
 - Do not "improve" adjacent code while fixing something else.
-- Match existing style; mention unrelated dead code in the PR — do not delete it.
+- Match existing style; mention unrelated dead code in the PR - do not delete it.
 - Remove only imports/variables **your** changes made unused.
 
 **The test:** Every changed line should trace directly to the task.
