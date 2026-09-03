@@ -36,6 +36,23 @@
   One source of truth. No SaaS. No recurring fees.
 </p>
 
+<details>
+<summary><strong>Table of contents</strong></summary>
+
+- [What is Admitto?](#what-is-admitto)
+- [Documentation map](#documentation-map)
+- [How it works](#how-it-works)
+- [Features](#features)
+- [Stack](#stack)
+- [Prerequisites](#prerequisites)
+- [Quick start](#quick-start)
+- [Production deployment](#production-deployment)
+- [Repo layout](#repo-layout)
+- [Roadmap](#roadmap)
+- [Licence](#licence)
+
+</details>
+
 ---
 
 ## What is Admitto?
