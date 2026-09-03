@@ -870,7 +870,7 @@ async function seed(client: PrismaClient) {
   // non-ticket MailTemplate, not just a template_label_snapshot string, so ATT_MAIL_RECOVERED's
   // only successful delivery genuinely resolves to a non-ticket template_id rather than the
   // default null (which the ticket filter's own OR would otherwise still match).
-  const reminderTemplate = await client.mailTemplate.create({
+  const mailFunnelReminderTemplate = await client.mailTemplate.create({
     data: {
       scope_type: "event",
       scope_id: EVENT_MAIL,
@@ -919,7 +919,7 @@ async function seed(client: PrismaClient) {
         // must still pick this delivery up. Regression coverage: this row was silently dropped from
         // the chart before that fix.
         sent_at: new Date("2027-09-02T10:00:00.000Z"),
-        template_id: reminderTemplate.id,
+        template_id: mailFunnelReminderTemplate.id,
         template_label_snapshot: "Reminder",
       },
       {
@@ -996,7 +996,7 @@ async function seed(client: PrismaClient) {
   // read as "genuine builtin ticket send" here, or a deleted-campaign-template send becomes
   // indistinguishable from one. ATT_MAIL_RECOVERED's resend must stay excluded from
   // reached_by_email even after this delete, the same as it was while the template still existed.
-  await client.mailTemplate.delete({ where: { id: reminderTemplate.id } });
+  await client.mailTemplate.delete({ where: { id: mailFunnelReminderTemplate.id } });
 
   // One field of each EventCustomField type - covers the report's generic per-type behavior
   // (select/boolean chart as a distribution, text only gets a fill-rate stat), not any single
