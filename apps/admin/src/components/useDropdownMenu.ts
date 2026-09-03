@@ -133,15 +133,24 @@ export function useDropdownMenu<
       // rect covers test environments and panels whose content has no scroll container.
       const panelHeight = Math.max(panel.scrollHeight, panel.getBoundingClientRect().height);
       const viewport = getFixedOverlayViewport();
-      const spaceBelow = viewport.bottom - triggerRect.bottom;
-      const spaceAbove = triggerRect.top - viewport.top;
+      // Reserve the gap+pad margin *before* deciding which side to open on, not only when
+      // clamping maxHeight afterward - comparing the flip decision against the raw, unreserved
+      // space left a `margin`-tall dead zone where a panel was judged to "fit below" (panelHeight
+      // <= the raw space) yet still got clamped with a scrollbar once the margin came out of
+      // that same space for the maxHeight calc (panelHeight > space - margin). A panel landing in
+      // that narrow band stayed down with a near-invisible scroll clamp instead of comfortably
+      // fitting or cleanly flipping - found via a real 3-option picker (Communication's "By
+      // wallet status" filter) whose short, icon-only content happened to land exactly there.
+      const margin = gap + VIEWPORT_PAD_PX;
+      const spaceBelow = Math.max(0, viewport.bottom - triggerRect.bottom - margin);
+      const spaceAbove = Math.max(0, triggerRect.top - viewport.top - margin);
       const spaceUnchanged = spaceBelow === lastSpaceBelow && spaceAbove === lastSpaceAbove;
       // Only flip when upward genuinely has more room - never flip into an even tighter fit.
       const above = spaceUnchanged ? lockedAbove : panelHeight > spaceBelow && spaceAbove > spaceBelow;
       lockedAbove = above;
       lastSpaceBelow = spaceBelow;
       lastSpaceAbove = spaceAbove;
-      const available = Math.max(0, (above ? spaceAbove : spaceBelow) - gap - VIEWPORT_PAD_PX);
+      const available = above ? spaceAbove : spaceBelow;
       const maxHeight = panelHeight > available ? available : undefined;
       const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
       const top = above ? triggerRect.top - usedHeight - gap : triggerRect.bottom + gap;

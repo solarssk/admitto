@@ -22,6 +22,7 @@ import {
 } from "./admin-helpers.js";
 import { sanitizeCsvCell } from "./csv-sanitize.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
+import { buildEverInstalledWalletFilter } from "./wallet-lifecycle-filter.js";
 
 const HOUR_LABELS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
 const CSV_EXPORT_MAX = 10_000;
@@ -1124,42 +1125,6 @@ export function buildIssuedByDay(
   }
 
   return issued_by_day;
-}
-
-// "Ever confirmed installed" - a `first_confirmed_at` timestamp, or any active/inactive
-// registration count > 0 on any platform, ever. Matches everInstalledAnywhere's own definition
-// exactly (this same file, above aggregateWalletPasses) by design: this is the SQL-side
-// equivalent of that in-memory check, used wherever the aggregate needs a DB-level filter instead
-// of a loop over already-fetched WalletPass rows (admission_by_wallet's with/without counts
-// below, and the Mail tab's funnel.wallet_installed stage - EventMailReportsResponse's own doc
-// comment). Deliberately ungated by enabledPlatforms, unlike aggregateWalletPasses' own
-// confirmed/platform/registrationCountBuckets counters - "was this pass ever installed" is a
-// historical fact a later platform toggle can't retroactively undo (architect review, 2026-09-03,
-// following on from the 2026-09-03 registration-sync fix - see everInstalledAnywhere's own doc
-// comment for the full reasoning this filter mirrors). Each column filter pairs `gt: 0` with an
-// explicit `not: null` - without it, a genuinely never-synced pass (a real, common state
-// pre-sync, not test-only) makes that one column's own SQL comparison evaluate to NULL rather
-// than false; ORed with another platform's real false/true value that's still NULL, not false,
-// and a caller negating this whole filter with `NOT:` gets `NOT NULL`, which is NULL too - the
-// attendee then matches neither side and silently vanishes from a with+without total (found via a
-// real regression: three platform conditions ORed together are far more likely to include an
-// unset column - almost guaranteed for samsung_active_registrations before an event's first sync
-// - than the two-condition apple/google case this file shipped with previously, where every
-// existing test fixture happened to always set an explicit 0). Unlike the enabledPlatforms-gated
-// filter this replaces, there's no "matches nothing" fallback for an empty condition list - every
-// OR branch here is unconditional, so the filter can never be empty.
-function buildEverInstalledWalletFilter(): Prisma.AttendeeWhereInput {
-  return {
-    OR: [
-      { wallet_pass: { first_confirmed_at: { not: null } } },
-      { wallet_pass: { apple_active_registrations: { gt: 0, not: null } } },
-      { wallet_pass: { google_active_registrations: { gt: 0, not: null } } },
-      { wallet_pass: { samsung_active_registrations: { gt: 0, not: null } } },
-      { wallet_pass: { apple_inactive_registrations: { gt: 0, not: null } } },
-      { wallet_pass: { google_inactive_registrations: { gt: 0, not: null } } },
-      { wallet_pass: { samsung_inactive_registrations: { gt: 0, not: null } } },
-    ],
-  };
 }
 
 async function loadWalletReportsAggregates(
