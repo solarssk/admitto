@@ -207,22 +207,33 @@ async function collectTemplateSourceErrors(
   try {
     assertValidTemplate({ subject, body }, extraAllowed, disallowed);
   } catch (err) {
-    if (err instanceof UnknownPlaceholdersError) {
-      // already reported via validateTemplate
-    } else if (err instanceof PlaceholderInHtmlCommentError) {
-      for (const p of err.placeholders) {
-        errors.push(`Placeholder in HTML comment: ${p}`);
-      }
-    } else if (err instanceof UnquotedAttributePlaceholderError) {
-      for (const a of err.attributes) {
-        errors.push(`Unquoted attribute placeholder: ${a}`);
-      }
-    } else {
-      throw err;
-    }
+    pushMarkupSafetyErrors(errors, err);
   }
 
   return errors;
+}
+
+/** Maps an `assertValidTemplate` throw to formatted error messages pushed onto `errors`;
+ * rethrows anything it doesn't recognize. Split out of collectTemplateSourceErrors to keep that
+ * function's cognitive complexity down (SonarCloud S3776) - an UnknownPlaceholdersError is
+ * already reported via validateTemplate above, so it's swallowed here on purpose. */
+function pushMarkupSafetyErrors(errors: string[], err: unknown): void {
+  if (err instanceof UnknownPlaceholdersError) {
+    return;
+  }
+  if (err instanceof PlaceholderInHtmlCommentError) {
+    for (const p of err.placeholders) {
+      errors.push(`Placeholder in HTML comment: ${p}`);
+    }
+    return;
+  }
+  if (err instanceof UnquotedAttributePlaceholderError) {
+    for (const a of err.attributes) {
+      errors.push(`Unquoted attribute placeholder: ${a}`);
+    }
+    return;
+  }
+  throw err;
 }
 
 /** Return 400 JSON when template source validation fails. */
@@ -1096,11 +1107,28 @@ export async function handleGetEventTemplateById(c: Context, db: PrismaClient): 
   return c.json(dto);
 }
 
-/** PUT /api/admin/events/:eventId/templates/:templateId */
-export async function handlePutEventTemplateById(
+/** Shared preamble for the two named-template-by-id write endpoints (save, preview): resolve
+ * eventId/access, load the existing row (404 if it's gone), parse the request body against
+ * `updateTemplateBodySchema`, and merge it over the existing subject/body/format. Returns a
+ * `Response` to send as-is on any early exit - callers check `instanceof Response` the same way
+ * `requireEventId` itself is already checked elsewhere in this file. Extracted to keep this
+ * identical block from also duplicating requireTicketPlaceholders's `existing.name ===
+ * DEFAULT_TEMPLATE_NAME` line between the two callers (SonarCloud new-code duplication). */
+async function loadEventTemplateEditRequest(
   c: Context,
   db: PrismaClient,
-): Promise<Response> {
+): Promise<
+  | Response
+  | {
+      eventId: string;
+      templateId: string;
+      existing: NonNullable<Awaited<ReturnType<typeof getEventTemplateRow>>>;
+      body: z.infer<typeof updateTemplateBodySchema>;
+      subject: string;
+      templateBody: string;
+      format: TemplateFormat;
+    }
+> {
   const eventId = requireEventId(c);
   if (eventId instanceof Response) return eventId;
 
@@ -1118,9 +1146,25 @@ export async function handlePutEventTemplateById(
     return c.json({ error: "validation_failed" }, 400);
   }
 
-  const subject = body.subject_template ?? existing.subject_template;
-  const templateBody = body.body_template ?? existing.body_template;
-  const format = (body.template_format ?? existing.template_format) as TemplateFormat;
+  return {
+    eventId,
+    templateId,
+    existing,
+    body,
+    subject: body.subject_template ?? existing.subject_template,
+    templateBody: body.body_template ?? existing.body_template,
+    format: (body.template_format ?? existing.template_format) as TemplateFormat,
+  };
+}
+
+/** PUT /api/admin/events/:eventId/templates/:templateId */
+export async function handlePutEventTemplateById(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
+  const loaded = await loadEventTemplateEditRequest(c, db);
+  if (loaded instanceof Response) return loaded;
+  const { eventId, templateId, existing, body, subject, templateBody, format } = loaded;
 
   const sourceErrors = await collectTemplateSourceErrors(db, eventId, subject, templateBody, {
     requireTicketPlaceholders: existing.name === DEFAULT_TEMPLATE_NAME,
@@ -1401,26 +1445,9 @@ export async function handlePreviewEventTemplateById(
   db: PrismaClient,
   injectedBaseUrl?: string,
 ): Promise<Response> {
-  const eventId = requireEventId(c);
-  if (eventId instanceof Response) return eventId;
-
-  const forbidden = await assertEventManageAccess(c, db, eventId);
-  if (forbidden) return forbidden;
-
-  const templateId = c.req.param("templateId") ?? "";
-  const existing = await getEventTemplateRow(db, eventId, templateId);
-  if (!existing) return c.json({ error: "not_found" }, 404);
-
-  let body: z.infer<typeof updateTemplateBodySchema>;
-  try {
-    body = updateTemplateBodySchema.parse(await c.req.json());
-  } catch {
-    return c.json({ error: "validation_failed" }, 400);
-  }
-
-  const subject = body.subject_template ?? existing.subject_template;
-  const templateBody = body.body_template ?? existing.body_template;
-  const format = (body.template_format ?? existing.template_format) as TemplateFormat;
+  const loaded = await loadEventTemplateEditRequest(c, db);
+  if (loaded instanceof Response) return loaded;
+  const { eventId, existing, subject, templateBody, format } = loaded;
 
   // checkWalletAvailability: false - see handlePreviewEventTemplate's own comment.
   const sourceErrors = await collectTemplateSourceErrors(db, eventId, subject, templateBody, {
