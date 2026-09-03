@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { z } from "zod";
 import { EMAIL_DELIVERY_SUCCESS_STATUSES } from "@admitto/db";
+import { enabledWalletPlatforms } from "@admitto/shared";
 import {
   cancelBulkSendBatch,
   sendTicketEmails,
@@ -17,16 +18,19 @@ import {
   writeBulkActionLog,
 } from "@admitto/tickets";
 import { adminAuditFromContext, assertEventManageAccess, requireEventId, resolveClientTimezone, resolveMailInstanceBaseUrl } from "./admin-helpers.js";
+import { buildWalletLifecycleFilter } from "./wallet-lifecycle-filter.js";
 
 export const BULK_SEND_LIMIT = 500;
 
 const RSVP_STATUSES = ["none", "confirmed", "declined", "tentative", "cancelled"] as const;
+const WALLET_LIFECYCLE_STATUSES = ["active", "removed", "never_installed"] as const;
 
 const bulkSendFilterSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("all") }).strict(),
   z.object({ type: z.literal("ticket_type"), value: z.string().trim().min(1).max(100) }).strict(),
   z.object({ type: z.literal("rsvp_status"), value: z.enum(RSVP_STATUSES) }).strict(),
   z.object({ type: z.literal("no_delivery") }).strict(),
+  z.object({ type: z.literal("wallet_status"), value: z.enum(WALLET_LIFECYCLE_STATUSES) }).strict(),
   z
     .object({
       type: z.literal("attendee_ids"),
@@ -172,6 +176,22 @@ export async function resolveBulkSendAttendeeIds(
         },
       };
       break;
+    case "wallet_status": {
+      const event = await db.event.findUniqueOrThrow({
+        where: { id: eventId },
+        select: {
+          wallet_enabled: true,
+          wallet_apple_enabled: true,
+          wallet_google_enabled: true,
+          wallet_samsung_enabled: true,
+        },
+      });
+      where = {
+        ...baseWhere,
+        ...buildWalletLifecycleFilter(filter.value, enabledWalletPlatforms(event)),
+      };
+      break;
+    }
     case "attendee_ids":
       where = { ...baseWhere, id: { in: filter.ids } };
       break;
