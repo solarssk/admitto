@@ -384,13 +384,14 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-    needs: [lint-and-typecheck, test-web, test-admin, test-rest]
+    needs: [lint-and-typecheck, actionlint, test-web, test-admin, test-rest]
     if: always()
     steps:
       - name: Check all shards succeeded
         run: |
           for result in \
             "${{ needs.lint-and-typecheck.result }}" \
+            "${{ needs.actionlint.result }}" \
             "${{ needs.test-web.result }}" \
             "${{ needs.test-admin.result }}" \
             "${{ needs.test-rest.result }}"; do
