@@ -123,7 +123,7 @@
       "consumers": ["compose"],
       "secret": false,
       "ui": "none",
-      "summary": "ghcr.io/solarssk/admitto:X.Y.Z image pin (version without leading v)."
+      "summary": "ghcr.io/solarssk/admitto:X.Y.Z image pin (version without leading v); docker.io/solarssk/admitto:X.Y.Z mirror works the same way."
     },
     {
       "name": "TRUST_PROXY",
