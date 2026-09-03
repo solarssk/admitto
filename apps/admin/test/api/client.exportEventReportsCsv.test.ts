@@ -2,8 +2,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
+  eventCustomFieldReportsPrintUrl,
+  eventMailReportsPrintUrl,
   eventReportsPrintUrl,
   eventWalletReportsPrintUrl,
+  exportEventCustomFieldReportsCsv,
+  exportEventMailReportsCsv,
   exportEventReportsCsv,
   exportEventWalletReportsCsv,
 } from "../../src/api/client.js";
@@ -156,7 +160,125 @@ describe("exportEventWalletReportsCsv (client)", () => {
   });
 });
 
-describe("eventReportsPrintUrl / eventWalletReportsPrintUrl (client)", () => {
+describe("exportEventMailReportsCsv (client)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("fetches the mail export URL (report=mail) and triggers the download", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ "Content-Disposition": 'attachment; filename="mail-evt-1.csv"' }),
+      blob: async () => new Blob(["a,b\n1,2\n"], { type: "text/csv" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const stub = stubBlobDownload();
+    const controller = new AbortController();
+
+    try {
+      await exportEventMailReportsCsv("evt-1", controller.signal);
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/admin/events/evt-1/reports/export?format=csv&report=mail",
+        expect.objectContaining({ credentials: "same-origin", signal: controller.signal }),
+      );
+      expect(stub.createObjectURL).toHaveBeenCalledOnce();
+      expect(stub.anchorClicks).toEqual(["mail-evt-1.csv"]);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it("falls back to mail.csv when the response has no Content-Disposition filename", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers(),
+      blob: async () => new Blob(["a,b\n1,2\n"], { type: "text/csv" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const stub = stubBlobDownload();
+
+    try {
+      await exportEventMailReportsCsv("evt-1");
+      expect(stub.anchorClicks).toEqual(["mail.csv"]);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it("throws ApiError when the endpoint rejects", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      json: async () => ({ error: "server_error" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(exportEventMailReportsCsv("evt-1")).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe("exportEventCustomFieldReportsCsv (client)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("fetches the custom-fields export URL (report=customfields) and triggers the download", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ "Content-Disposition": 'attachment; filename="custom-fields-evt-1.csv"' }),
+      blob: async () => new Blob(["a,b\n1,2\n"], { type: "text/csv" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const stub = stubBlobDownload();
+    const controller = new AbortController();
+
+    try {
+      await exportEventCustomFieldReportsCsv("evt-1", controller.signal);
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/admin/events/evt-1/reports/export?format=csv&report=customfields",
+        expect.objectContaining({ credentials: "same-origin", signal: controller.signal }),
+      );
+      expect(stub.createObjectURL).toHaveBeenCalledOnce();
+      expect(stub.anchorClicks).toEqual(["custom-fields-evt-1.csv"]);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it("falls back to custom-fields.csv when the response has no Content-Disposition filename", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers(),
+      blob: async () => new Blob(["a,b\n1,2\n"], { type: "text/csv" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const stub = stubBlobDownload();
+
+    try {
+      await exportEventCustomFieldReportsCsv("evt-1");
+      expect(stub.anchorClicks).toEqual(["custom-fields.csv"]);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it("throws ApiError when the endpoint rejects", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      json: async () => ({ error: "server_error" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(exportEventCustomFieldReportsCsv("evt-1")).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe("eventReportsPrintUrl / eventWalletReportsPrintUrl / eventMailReportsPrintUrl / eventCustomFieldReportsPrintUrl (client)", () => {
   it("builds the admissions PDF print URL", () => {
     expect(eventReportsPrintUrl("evt-1")).toBe("/api/admin/events/evt-1/reports/export?format=pdf");
   });
@@ -167,12 +289,28 @@ describe("eventReportsPrintUrl / eventWalletReportsPrintUrl (client)", () => {
     );
   });
 
-  it("URL-encodes the event id in both print URLs", () => {
+  it("builds the mail PDF print URL (report=mail)", () => {
+    expect(eventMailReportsPrintUrl("evt-1")).toBe("/api/admin/events/evt-1/reports/export?format=pdf&report=mail");
+  });
+
+  it("builds the custom-fields PDF print URL (report=customfields)", () => {
+    expect(eventCustomFieldReportsPrintUrl("evt-1")).toBe(
+      "/api/admin/events/evt-1/reports/export?format=pdf&report=customfields",
+    );
+  });
+
+  it("URL-encodes the event id in every print URL", () => {
     expect(eventReportsPrintUrl("evt with spaces")).toBe(
       "/api/admin/events/evt%20with%20spaces/reports/export?format=pdf",
     );
     expect(eventWalletReportsPrintUrl("evt with spaces")).toBe(
       "/api/admin/events/evt%20with%20spaces/reports/export?format=pdf&report=wallets",
+    );
+    expect(eventMailReportsPrintUrl("evt with spaces")).toBe(
+      "/api/admin/events/evt%20with%20spaces/reports/export?format=pdf&report=mail",
+    );
+    expect(eventCustomFieldReportsPrintUrl("evt with spaces")).toBe(
+      "/api/admin/events/evt%20with%20spaces/reports/export?format=pdf&report=customfields",
     );
   });
 });

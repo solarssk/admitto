@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Reports' Mail and Custom fields tabs now have the same **Export report** CSV/PDF options the Wallets tab already had - the CSV is one row per attendee (delivery/reach/viewed/wallet-installed status for Mail; each configured custom field's own answer for Custom fields), and the PDF is a printable summary of that tab's own cards. The export button, previously disabled while either tab was active, now works the same way it already did for Wallets and Event day.
 - The published container image is now also mirrored to Docker Hub (`docker.io/solarssk/admitto`) alongside `ghcr.io/solarssk/admitto` on each release tag - same multi-arch manifest, same digest, same Trivy CRITICAL gate and provenance attestation.
 
 ### Changed

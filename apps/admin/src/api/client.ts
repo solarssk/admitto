@@ -2978,6 +2978,39 @@ export async function fetchEventMailReports(
   return parseJson<EventMailReportsResponse>(res);
 }
 
+/** Download the Mail tab's CSV export (one row per attendee) and trigger browser save - same
+ * fetch-blob-then-anchor-click pattern as exportEventWalletReportsCsv above, `report=mail` is the
+ * only difference in the request itself. */
+export async function exportEventMailReportsCsv(eventId: string, signal?: AbortSignal): Promise<void> {
+  return downloadExportBlob(
+    `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=csv&report=mail`,
+    "mail.csv",
+    signal,
+  );
+}
+
+/** Same-origin URL for the Mail tab's printable HTML report (open in new tab for Save as PDF). */
+export function eventMailReportsPrintUrl(eventId: string): string {
+  return `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=pdf&report=mail`;
+}
+
+/** Download the Custom fields tab's CSV export (one row per attendee) and trigger browser save -
+ * same fetch-blob-then-anchor-click pattern as exportEventWalletReportsCsv above, `report=
+ * customfields` is the only difference in the request itself. */
+export async function exportEventCustomFieldReportsCsv(eventId: string, signal?: AbortSignal): Promise<void> {
+  return downloadExportBlob(
+    `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=csv&report=customfields`,
+    "custom-fields.csv",
+    signal,
+  );
+}
+
+/** Same-origin URL for the Custom fields tab's printable HTML report (open in new tab for Save as
+ * PDF). */
+export function eventCustomFieldReportsPrintUrl(eventId: string): string {
+  return `/api/admin/events/${encodeURIComponent(eventId)}/reports/export?format=pdf&report=customfields`;
+}
+
 // --- Identity providers & Cloudflare Access (SPA Settings → Identity, #266) ---
 
 /** List configured OIDC identity providers (superadmin). */
