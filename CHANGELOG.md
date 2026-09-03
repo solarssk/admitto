@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Communication's template editor rejected saving any event template - a wallet reminder, a general announcement, anything besides the ticket email itself - unless it included a ticket link and a QR code placeholder, even though neither makes sense outside the actual ticket confirmation. Only the "Ticket email" template now requires them; every other named template can be saved without a ticket link or QR code. A brand-new blank template no longer starts pre-filled with a hidden ticket link and QR code image either, now that nothing forces them in.
+
 ## [0.6.6] - 2026-09-03
 
 ### Added

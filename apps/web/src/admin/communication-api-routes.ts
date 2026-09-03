@@ -8,6 +8,7 @@ import {
   IMAGE_PLACEHOLDERS,
   DEFAULT_BODY_MJML,
   DEFAULT_SUBJECT_TEMPLATE,
+  DEFAULT_TEMPLATE_NAME,
   assertValidTemplate,
   assertRenderableCompiledHtml,
   compileTemplate,
@@ -170,13 +171,21 @@ function disallowedWalletPlaceholders(event: EventWalletToggles): Set<string> {
  * row promises Preview and Send test always show a placeholder link regardless of Wallet
  * configuration (CodeRabbit) - that promise predates and is independent of this save-time
  * restriction, so preview must keep resolving the placeholder normally even when a save of the
- * same content would be rejected. */
+ * same content would be rejected.
+ *
+ * `requireTicketPlaceholders` (default true) gates the ticket_url/qr_image_url check: it only
+ * makes sense for the one template ticket delivery actually sends (name === DEFAULT_TEMPLATE_NAME)
+ * - callers editing any other named template (a reminder, a wallet nudge, a general announcement)
+ * pass false, since those have no reason to embed a ticket link or QR code at all. */
 async function collectTemplateSourceErrors(
   db: PrismaClient,
   eventId: string,
   subject: string,
   body: string,
-  { checkWalletAvailability = true }: { checkWalletAvailability?: boolean } = {},
+  {
+    checkWalletAvailability = true,
+    requireTicketPlaceholders = true,
+  }: { checkWalletAvailability?: boolean; requireTicketPlaceholders?: boolean } = {},
 ): Promise<string[]> {
   const errors: string[] = [];
   const { names: extraAllowed } = await resolveEventImageAssetVars(eventId, db);
@@ -189,8 +198,10 @@ async function collectTemplateSourceErrors(
   for (const unknown of validateTemplate({ subject, body }, extraAllowed, disallowed)) {
     errors.push(`Unknown placeholder: ${unknown}`);
   }
-  for (const missing of findMissingRequiredPlaceholders(subject, body)) {
-    errors.push(`Missing required placeholder: ${missing}`);
+  if (requireTicketPlaceholders) {
+    for (const missing of findMissingRequiredPlaceholders(subject, body)) {
+      errors.push(`Missing required placeholder: ${missing}`);
+    }
   }
 
   try {
@@ -909,14 +920,11 @@ const EMPTY_TEMPLATE_BODY_MJML = `<mjml>
       <mj-column>
         <mj-text>Hi {{first_name}},</mj-text>
         <mj-text>Edit this template before sending.</mj-text>
-        <mj-button href="{{ticket_url}}">View ticket</mj-button>
-        <mj-image src="{{qr_image_url}}" alt="QR" width="200px" />
       </mj-column>
     </mj-section>
   </mj-body>
 </mjml>`;
-const EMPTY_TEMPLATE_BODY_HTML =
-  '<p>Hi {{first_name}},</p><p>Edit this template before sending.</p><p><a href="{{ticket_url}}">View ticket</a></p><img src="{{qr_image_url}}" alt="QR" />';
+const EMPTY_TEMPLATE_BODY_HTML = "<p>Hi {{first_name}},</p><p>Edit this template before sending.</p>";
 
 function slugifyTemplateLabel(label: string): string {
   const slug = label
@@ -1114,7 +1122,9 @@ export async function handlePutEventTemplateById(
   const templateBody = body.body_template ?? existing.body_template;
   const format = (body.template_format ?? existing.template_format) as TemplateFormat;
 
-  const sourceErrors = await collectTemplateSourceErrors(db, eventId, subject, templateBody);
+  const sourceErrors = await collectTemplateSourceErrors(db, eventId, subject, templateBody, {
+    requireTicketPlaceholders: existing.name === DEFAULT_TEMPLATE_NAME,
+  });
   if (sourceErrors.length > 0) {
     return templateValidationResponse(c, sourceErrors);
   }
@@ -1307,7 +1317,12 @@ export async function handleCreateEventTemplate(c: Context, db: PrismaClient): P
     body.body_template ??
     (format === "mjml" ? EMPTY_TEMPLATE_BODY_MJML : EMPTY_TEMPLATE_BODY_HTML);
 
-  const sourceErrors = await collectTemplateSourceErrors(db, eventId, subject, templateBody);
+  // requireTicketPlaceholders: false - a created-here template can never land on
+  // DEFAULT_TEMPLATE_NAME (uniqueTemplateName reserves it, see RESERVED_CUSTOM_TEMPLATE_NAMES
+  // below), so it's never the one template ticket delivery actually sends.
+  const sourceErrors = await collectTemplateSourceErrors(db, eventId, subject, templateBody, {
+    requireTicketPlaceholders: false,
+  });
   if (sourceErrors.length > 0) {
     return templateValidationResponse(c, sourceErrors);
   }
@@ -1410,6 +1425,7 @@ export async function handlePreviewEventTemplateById(
   // checkWalletAvailability: false - see handlePreviewEventTemplate's own comment.
   const sourceErrors = await collectTemplateSourceErrors(db, eventId, subject, templateBody, {
     checkWalletAvailability: false,
+    requireTicketPlaceholders: existing.name === DEFAULT_TEMPLATE_NAME,
   });
   if (sourceErrors.length > 0) {
     return templateValidationResponse(c, sourceErrors);

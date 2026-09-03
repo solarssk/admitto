@@ -53,6 +53,7 @@ export {
   getBuiltinTemplate,
 } from "./defaultTemplate.js";
 export {
+  DEFAULT_TEMPLATE_NAME,
   resolveTemplate,
   resolveTemplateForEvent,
   resolveTemplateById,

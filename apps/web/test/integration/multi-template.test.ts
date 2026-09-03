@@ -295,6 +295,83 @@ describe("multi-template API", () => {
     expect(primary).toBeNull();
   });
 
+  it("PUT /template (default ticket template) still requires ticket_url and qr_image_url", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/template`, {
+      method: "PUT",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        subject_template: "Hi {{first_name}}",
+        body_template: "<p>Hi {{first_name}}</p>",
+        template_format: "html",
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; errors: string[] };
+    expect(body.error).toBe("template_validation_failed");
+    expect(body.errors).toEqual(
+      expect.arrayContaining([
+        "Missing required placeholder: qr_image_url",
+        "Missing required placeholder: ticket_url",
+      ]),
+    );
+  });
+
+  it("POST /templates creates a custom template without ticket_url or qr_image_url", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/templates`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        label: "Wallet reminder",
+        template_format: "html",
+        subject_template: "Add your ticket to Wallet",
+        body_template: "<p>Hi {{first_name}}, add your ticket to Wallet.</p>",
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { name: string };
+    expect(body.name).toBe("wallet_reminder");
+  });
+
+  it("PUT /templates/:id saves a custom template without ticket_url or qr_image_url", async () => {
+    const reminder = await postNamedTemplate(app, "Reminder");
+    const res = await app.request(`/api/admin/events/${EVENT_A}/templates/${reminder.id}`, {
+      method: "PUT",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        subject_template: "Add your ticket to Wallet",
+        body_template: "<p>Hi {{first_name}}, add your ticket to Wallet.</p>",
+        template_format: "html",
+      }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("PUT /templates/:id on the ticket-named template still requires ticket_url and qr_image_url", async () => {
+    await putTicketTemplate(app);
+    const ticket = await prisma.mailTemplate.findUniqueOrThrow({
+      where: {
+        scope_type_scope_id_name: { scope_type: "event", scope_id: EVENT_A, name: "ticket" },
+      },
+    });
+    const res = await app.request(`/api/admin/events/${EVENT_A}/templates/${ticket.id}`, {
+      method: "PUT",
+      headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+      body: JSON.stringify({
+        subject_template: "Hi {{first_name}}",
+        body_template: "<p>Hi {{first_name}}</p>",
+        template_format: "html",
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; errors: string[] };
+    expect(body.errors).toEqual(
+      expect.arrayContaining([
+        "Missing required placeholder: qr_image_url",
+        "Missing required placeholder: ticket_url",
+      ]),
+    );
+  });
+
   it("DELETE blocks ticket template", async () => {
     await putTicketTemplate(app);
     const ticket = await prisma.mailTemplate.findUniqueOrThrow({

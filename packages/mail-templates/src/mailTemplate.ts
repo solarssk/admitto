@@ -12,7 +12,10 @@ import type {
 } from "./types.js";
 export { MjmlCompileError, UnknownPlaceholdersError } from "./errors.js";
 
-const DEFAULT_TEMPLATE_NAME = "ticket";
+/** The one template per scope that ticket delivery actually sends - the only one required to
+ * carry `ticket_url`/`qr_image_url` (see REQUIRED_URL_PLACEHOLDERS). Every other event template
+ * is free-form. */
+export const DEFAULT_TEMPLATE_NAME = "ticket";
 
 /** Custom asset tokens are only meaningful for event-scoped templates (the image library is
  * per-event) — organization-scoped templates never get a widened placeholder whitelist. */
