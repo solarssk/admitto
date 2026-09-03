@@ -8,14 +8,14 @@
 - [Bounce detection (delivery failures)](#bounce-detection-delivery-failures) - its own mini workflow, nested below
   - [Before you start](#before-you-start-1)
   - [Steps](#steps)
-  - [Expected result](#expected-result-1)
-  - [Important decisions](#important-decisions-1)
-  - [Common problems](#common-problems-1)
+  - [Expected result](#expected-result)
+  - [Important decisions](#important-decisions)
+  - [Common problems](#common-problems)
 - [Steps](#steps-1) (main mail transport setup)
-- [Expected result](#expected-result)
-- [Important decisions](#important-decisions)
+- [Expected result](#expected-result-1)
+- [Important decisions](#important-decisions-1)
 - [What changes after this action](#what-changes-after-this-action)
-- [Common problems](#common-problems)
+- [Common problems](#common-problems-1)
 - [Related pages](#related-pages)
 
 ## What this page helps you do
