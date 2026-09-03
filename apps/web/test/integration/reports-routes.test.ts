@@ -2707,7 +2707,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
   // End-to-end wiring check (event.wallet_apple_enabled/wallet_google_enabled -> route handler ->
   // enabledWalletPlatforms -> aggregateWalletPasses) on top of aggregateWalletPasses' own unit
   // coverage for the filtering logic itself (wallet-reports-helpers.test.ts).
-  it("reclassifies a both-platform pass as apple-only when the event has Google Wallet disabled, and excludes a google-only pass from admission_by_wallet entirely", async () => {
+  it("reclassifies a both-platform pass as apple-only when the event has Google Wallet disabled, and still counts a google-only pass toward adoption.confirmed/admission_by_wallet via its real (if now-disabled-platform) registration history", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_WALLETS_APPLE_ONLY}/reports/wallets`, {
       headers: { Cookie: adminCookie },
     });
@@ -2723,7 +2723,15 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
       wallet_lifecycle: { active: number; removed: number; never_installed: number };
     };
     expect(body.adoption.got_pass).toBe(2);
-    expect(body.adoption.confirmed).toBe(1);
+    // adoption.confirmed is now "ever confirmed installed" (historical), not gated on the event's
+    // current platform settings - both attendees count: ATT_W_APPLE_ONLY_EVENT via its still-live
+    // Apple registration, and ATT_W_GOOGLE_ONLY_EVENT via its real (if now-disabled-platform)
+    // Google registration, same as wallet_lifecycle's own active+removed split below. Was 1
+    // (ATT_W_GOOGLE_ONLY_EVENT excluded) before this change.
+    expect(body.adoption.confirmed).toBe(2);
+    // `platform` stays gated on the event's current settings (a live-right-now number, unlike
+    // adoption.confirmed above) - ATT_W_GOOGLE_ONLY_EVENT's registration is on a disabled
+    // platform, so it contributes no slice here.
     expect(body.platform).toEqual({ apple_only: 1, google_only: 0, samsung_only: 0, both: 0 });
     // ATT_W_APPLE_ONLY_EVENT: active (its Apple registration stays live regardless of Google
     // being disabled). ATT_W_GOOGLE_ONLY_EVENT: removed, not never_installed - its Google
@@ -2733,21 +2741,26 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     // registration on record, so calling it never_installed would be flatly false, even though the
     // event's current settings mean it doesn't count as `active` here.
     expect(body.wallet_lifecycle).toEqual({ active: 1, removed: 1, never_installed: 0 });
-    // ATT_W_APPLE_ONLY_EVENT has apple_active_registrations=1, google_active_registrations=1,
-    // but Google is disabled for this event - the same enabledPlatforms-zeroed googleActive=0
-    // classifyPassPlatform already uses feeds this bucket too, so the sum is 1, not 2.
+    // The core "Installed = Active + Removed" identity (architect review, 2026-09-03), checked
+    // against a real fixture with a non-zero `removed` count.
+    expect(body.wallet_lifecycle.active + body.wallet_lifecycle.removed).toBe(body.adoption.confirmed);
+    // registrations_per_attendee stays gated (a live-right-now count, denominated on
+    // wallet_lifecycle.active=1, not adoption.confirmed=2) - ATT_W_APPLE_ONLY_EVENT has
+    // apple_active_registrations=1, google_active_registrations=1, but Google is disabled for this
+    // event, so the same enabledPlatforms-zeroed googleActive=0 classifyPassPlatform already uses
+    // feeds this bucket too, and ATT_W_GOOGLE_ONLY_EVENT contributes nothing (platform=none for it).
     expect(body.registrations_per_attendee.buckets).toEqual([
       { key: "1", count: 1, pct: 100 },
       { key: "2", count: 0, pct: 0 },
       { key: "3", count: 0, pct: 0 },
       { key: "4_plus", count: 0, pct: 0 },
     ]);
-    // ATT_W_GOOGLE_ONLY_EVENT's registration is only on the now-disabled Google platform - without
-    // enabledPlatforms gating confirmedWalletFilter too (not just aggregateWalletPasses above),
-    // this would still count it as "with wallet" here despite adoption.confirmed already
-    // excluding it as not installed (CodeRabbit review).
-    expect(body.admission_by_wallet.with_wallet.total).toBe(1);
-    expect(body.admission_by_wallet.without_wallet.total).toBe(1);
+    // ATT_W_GOOGLE_ONLY_EVENT's registration is only on the now-disabled Google platform, but
+    // buildEverInstalledWalletFilter is deliberately ungated (unlike the old, enabledPlatforms-gated
+    // confirmedWalletFilter it replaced) - "was this pass ever installed" can't be undone by a later
+    // platform toggle, so both attendees now count as with_wallet.
+    expect(body.admission_by_wallet.with_wallet.total).toBe(2);
+    expect(body.admission_by_wallet.without_wallet.total).toBe(0);
   });
 
   it("classifies wallet_lifecycle correctly, including active-on-one-device-inactive-on-another for both the same and a different platform", async () => {
@@ -2756,7 +2769,7 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      adoption: { got_pass: number };
+      adoption: { got_pass: number; confirmed: number };
       wallet_lifecycle: { active: number; removed: number; never_installed: number };
     };
     expect(body.adoption.got_pass).toBe(5);
@@ -2767,6 +2780,14 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     // inactive registration(s) make them removed. ATT_LC_NEVER_INSTALLED has neither. Sums to
     // adoption.got_pass=5 above.
     expect(body.wallet_lifecycle).toEqual({ active: 2, removed: 2, never_installed: 1 });
+    // adoption.confirmed is now "ever confirmed installed" (historical), so it includes
+    // ATT_LC_REMOVED and ATT_LC_REMOVED_BOTH too (their inactive registrations are real
+    // installation history), not just the 2 currently-active passes - active(2) + removed(2) = 4,
+    // excluding only ATT_LC_NEVER_INSTALLED. The core "Installed = Active + Removed" identity
+    // (architect review, 2026-09-03), checked here against a fixture purpose-built to have a
+    // non-trivial `removed` bucket.
+    expect(body.adoption.confirmed).toBe(4);
+    expect(body.wallet_lifecycle.active + body.wallet_lifecycle.removed).toBe(body.adoption.confirmed);
   });
 
   it("counts a Samsung-only registration as confirmed, samsung_only, and active - the Reports pipeline reads samsung_active_registrations end to end", async () => {
@@ -2837,7 +2858,9 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
 
     // Registrations per attendee: ATT_W_APPLE (1+0=1), ATT_W_NOTYPE (1+0=1), ATT_W_LEGACY_TYPE
     // (1+0=1) bucket as "1"; ATT_W_BOTH (2+1=3) and ATT_W_GOOGLE (0+3=3) bucket as "3" - sums to
-    // adoption.confirmed=5 above, same as `platform`.
+    // wallet_lifecycle.active=5 below, same as `platform` (both stay live-right-now counts, unlike
+    // adoption.confirmed, which happens to equal 5 too here only because this fixture has no
+    // removed passes - see the wallet_lifecycle assertion's own comment further down).
     expect(body.registrations_per_attendee.buckets).toEqual([
       { key: "1", count: 3, pct: 60 },
       { key: "2", count: 0, pct: 0 },
@@ -2903,12 +2926,16 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     expect(body.admission_by_wallet.without_wallet.admitted).toBe(2);
 
     // wallet_lifecycle: active is the same 5 passes as adoption.confirmed above (APPLE, BOTH,
-    // GOOGLE, NOTYPE, LEGACY_TYPE); NOT_INSTALLED and VOIDED both have zero registrations of any
-    // kind, so they're never_installed rather than removed (none of this fixture's passes have an
-    // inactive registration - that gets its own dedicated fixture/event below). Sums to
-    // adoption.got_pass=7 above, not total_attendees=8 (ATT_W_NOPASS was never issued a pass at
-    // all, so it's outside wallet_lifecycle entirely).
+    // GOOGLE, NOTYPE, LEGACY_TYPE) - coincidentally equal here only because this fixture has no
+    // removed passes (active + removed == adoption.confirmed in general, not active alone; see the
+    // EVENT_WALLETS_LIFECYCLE and EVENT_WALLETS_APPLE_ONLY tests above for fixtures with a
+    // non-zero removed count where the two numbers actually diverge). NOT_INSTALLED and VOIDED
+    // both have zero registrations of any kind, so they're never_installed rather than removed
+    // (none of this fixture's passes have an inactive registration - that gets its own dedicated
+    // fixture/event above). Sums to adoption.got_pass=7 above, not total_attendees=8 (ATT_W_NOPASS
+    // was never issued a pass at all, so it's outside wallet_lifecycle entirely).
     expect(body.wallet_lifecycle).toEqual({ active: 5, removed: 0, never_installed: 2 });
+    expect(body.wallet_lifecycle.active + body.wallet_lifecycle.removed).toBe(body.adoption.confirmed);
   });
 
   it("anchors time_to_install_after_reminder on the latest wallet-CTA delivery before install, excludes reminders sent after install, and excludes the ticket template even when it itself carries a wallet CTA", async () => {
@@ -3300,11 +3327,11 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     // own "nothing yet" fallback rather than empty bucket rows or a missing heading entirely.
     expect(html).toContain("Time to install after reminder");
     expect(html).toContain("No installs are attributable to a follow-up email yet");
-    // registrations_per_attendee.buckets isn't all-zero (adoption.confirmed=5 above), so the
+    // registrations_per_attendee.buckets isn't all-zero (wallet_lifecycle.active=5 above), so the
     // "Devices per attendee" table's real rows should render, not its own empty fallback.
     expect(html).toContain("Devices per attendee");
     expect(html).toContain("1 device");
-    expect(html).not.toContain("No wallet passes installed yet");
+    expect(html).not.toContain("No wallet passes currently active");
     // wallet_lifecycle: active=5, removed=0, never_installed=2 (same fixture as the GET aggregate
     // test's own wallet_lifecycle assertion above) - the real rows should render, not the "No
     // wallet passes issued yet" empty fallback.
@@ -3316,6 +3343,29 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     // passes to exercise directly, impractical for an integration test; this only guards the
     // false-path regression).
     expect(html).not.toContain("partial sample");
+  });
+
+  it("denominates the pdf's platform-mix percentages against wallet_lifecycle.active, not the now-historical adoption.confirmed, so they still sum to 100%", async () => {
+    // Regression test for a bug caught by adversarial review, 2026-09-03: exportWalletReportsPdf
+    // was missed when adoption.confirmed became historical ("ever confirmed installed") - it kept
+    // dividing platformRows/registrationCountRows by adoption.confirmed instead of switching to
+    // wallet_lifecycle.active like WalletsReportsTab.tsx's own PlatformDonut did, silently
+    // under-reporting every percentage (and no longer summing to 100%) for any event with a
+    // nonzero wallet_lifecycle.removed. EVENT_WALLETS_LIFECYCLE is exactly such an event:
+    // wallet_lifecycle = { active: 2, removed: 2, never_installed: 1 } (see the GET aggregate
+    // test's own assertion above), so adoption.confirmed = 4, twice wallet_lifecycle.active = 2.
+    // platform = { apple_only: 1, google_only: 1, samsung_only: 0, both: 0 } (ATT_LC_ACTIVE_SAME_PLATFORM
+    // is apple-only, ATT_LC_ACTIVE_CROSS_PLATFORM is google-only - the two `active` passes) - the
+    // buggy denominator (4) would render "25%" for each; the correct one (wallet_lifecycle.active=2)
+    // renders "50%" and the visible rows actually sum to 100%.
+    const res = await app.request(`/api/admin/events/${EVENT_WALLETS_LIFECYCLE}/reports/export?format=pdf&report=wallets`, {
+      headers: { Cookie: adminWalletsCookie },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("<td>Apple Wallet only</td><td>1</td><td>50%</td>");
+    expect(html).toContain("<td>Google Wallet only</td><td>1</td><td>50%</td>");
+    expect(html).not.toContain("25%");
   });
 
   it("shows every empty/not-synced state in the wallets pdf for an event with no attendees", async () => {
@@ -3332,7 +3382,7 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     // buckets-or-list-always-populated ternaries at once, plus the never-synced meta line.
     expect(html).toContain("Not synced yet");
     expect(html).not.toContain("Synced ");
-    expect(html).toContain("No wallet passes installed yet");
+    expect(html).toContain("No wallet passes currently active");
     expect(html).toContain("No attendees");
     expect(html).toContain("Not enough data yet");
     expect(html).toContain("No wallet passes issued yet");

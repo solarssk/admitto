@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reports' Wallets tab "Installed" (and the same definition used by ticket-type adoption, time to wallet install, time to install after reminder, admission by wallet status, and the Mail tab's "Wallet installed" funnel stage) now means "was ever confirmed installed on a wallet app" instead of "is actively registered right now". A pass an attendee later removed from their device, or that a wallet provider stopped reporting on, no longer silently pulls these numbers down after the fact - that's exactly what "Wallet lifecycle" already tracks separately (Active vs Removed), so Installed now cleanly equals Active + Removed. "Wallet platform" and "Devices per attendee" are unaffected and still show live, right-now status - their own copy now says "currently"/"right now" to make that distinction clear next to the Wallet adoption card's now-historical count.
 - Reports' Wallets tab "Wallet lifecycle" donut now centers on the total number of passes issued, not the "Removed" slice's own count - that number duplicated what the ring's red slice and legend row already show, while the center previously had nothing to say about the whole the ring represents.
 
 ### Fixed

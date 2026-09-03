@@ -753,12 +753,16 @@ export function confirmedPlatformLabel(appleActive: number, googleActive: number
 }
 
 /** What became of one issued pass, for the Wallets tab's "Wallet lifecycle" card - mutually
- * exclusive with the other two outcomes. "active" reuses classifyPassPlatform's own "confirmed"
- * definition (appleActive/googleActive already zeroed for a disabled platform by the caller, same
- * as everywhere else in this file) rather than re-deriving it, so the two can't drift - this
- * intentionally stays gated, keeping `wallet_lifecycle.active` in agreement with
- * `adoption.confirmed` elsewhere on this same report, rather than the two silently disagreeing on
- * "how many are active right now" (bot review). "removed" is deliberately not "any inactive
+ * exclusive with the other two outcomes. "active" reuses classifyPassPlatform's own live
+ * "platform !== none" definition (appleActive/googleActive already zeroed for a disabled platform
+ * by the caller, same as everywhere else in this file) rather than re-deriving it, so the two
+ * can't drift - this intentionally stays gated, keeping `wallet_lifecycle.active` in agreement
+ * with `platform`/`registrations_per_attendee` elsewhere on this same report (also live-right-now
+ * counts), rather than the two silently disagreeing on "how many are active right now" (bot
+ * review). `adoption.confirmed` is deliberately NOT the same number as `active` any more
+ * (architect review, 2026-09-03): `confirmed` means "ever confirmed installed" and equals
+ * `active + removed` - see `applyWalletPassToAggregates`'s and `EventWalletReportsResponse`'s own
+ * doc comments. "removed" is deliberately not "any inactive
  * registration count > 0" on its own - an attendee can have an active registration on one device
  * and an unrelated inactive registration left over from a different, since-removed device (or a
  * different platform entirely), and that pass is still genuinely in use, so classifyPassPlatform's
@@ -856,19 +860,20 @@ function everInstalledAnywhere(pass: WalletPassAggregateRow): boolean {
 }
 
 /** Updates the tap-day accumulators for one pass - split out of applyWalletPassToAggregates below
- * (SonarCloud S3776). Gated on platform !== "none" (the same post-enabledPlatforms confirmed check
- * as confirmed/confirmedByType there), not just first_confirmed_at being set: a pass historically
- * confirmed on a platform the event has since disabled keeps its first_confirmed_at (it really did
- * happen), but must not count toward "Time to wallet install" while adoption.confirmed and every
- * other confirmed-based number in this same report no longer count it either. */
+ * (SonarCloud S3776). No longer gated on platform !== "none" (it used to be, matching the old
+ * live-only `confirmed` check) - adoption.confirmed and every other number this metric feeds now
+ * mean "was this pass EVER confirmed installed", not "is it active right now" (architect review,
+ * 2026-09-03, following on from the 2026-09-03 registration-sync fix), so gating on the live
+ * platform would wrongly drop a pass that installed and was later removed, or whose platform the
+ * event has since disabled - exactly the case this metric must keep counting. computeTapDays
+ * itself already returns null whenever first_confirmed_at (its second argument) is unset, so no
+ * separate gate is needed here at all. */
 function applyTapDayStats(
   pass: WalletPassAggregateRow,
-  platform: ReturnType<typeof classifyPassPlatform>,
   acc: Pick<WalletPassAggregates, "tapDaySum" | "tapDayCount" | "bucketCounts">,
 ): void {
   const ticketDeliveries = pass.attendee.email_deliveries.filter(isTicketScopedDelivery);
-  const tapDays =
-    platform !== "none" ? computeTapDays(earliestDeliverySuccessAt(ticketDeliveries), pass.first_confirmed_at) : null;
+  const tapDays = computeTapDays(earliestDeliverySuccessAt(ticketDeliveries), pass.first_confirmed_at);
   if (tapDays !== null) {
     acc.tapDaySum += tapDays;
     acc.tapDayCount++;
@@ -878,16 +883,18 @@ function applyTapDayStats(
 
 /** Updates the reminder-response accumulators for one pass - "Time to install after reminder",
  * the last-touch companion to applyTapDayStats above (see latestWalletReminderDeliverySuccessBefore
- * for why the two stay separate metrics rather than one replacing the other). Same platform !==
- * "none" gate as applyTapDayStats; additionally only counts a pass that actually has a qualifying
- * wallet-reminder delivery before its install - most confirmed passes won't, especially before any
- * wallet-CTA campaign has been sent, and that's correctly "not counted" here, not "0 days". */
+ * for why the two stay separate metrics rather than one replacing the other). No longer gated on
+ * platform !== "none" either - same historical-semantics reasoning as applyTapDayStats' own doc
+ * comment above; `!pass.first_confirmed_at` is now the only gate, since a pass that never installed
+ * has nothing to anchor a reminder-response time on regardless of its current live platform.
+ * Additionally only counts a pass that actually has a qualifying wallet-reminder delivery before
+ * its install - most installed passes won't, especially before any wallet-CTA campaign has been
+ * sent, and that's correctly "not counted" here, not "0 days". */
 function applyReminderTapDayStats(
   pass: WalletPassAggregateRow,
-  platform: ReturnType<typeof classifyPassPlatform>,
   acc: Pick<WalletPassAggregates, "reminderTapDaySum" | "reminderTapDayCount" | "reminderBucketCounts">,
 ): void {
-  if (platform === "none" || !pass.first_confirmed_at) return;
+  if (!pass.first_confirmed_at) return;
   const reminderDeliveries = pass.attendee.email_deliveries.filter(isWalletReminderDelivery);
   const anchor = latestWalletReminderDeliverySuccessBefore(reminderDeliveries, pass.first_confirmed_at);
   const tapDays = computeTapDays(anchor, pass.first_confirmed_at);
@@ -902,12 +909,17 @@ function applyReminderTapDayStats(
  * loop body below so that function's own cognitive complexity stays under Sonar's limit (every
  * branch here loses a nesting level once it's no longer inside a for loop). `enabledPlatforms`
  * zeroes a disabled platform's active-registration count before classification, so a pass
- * registered only on a platform the event owner has since turned off reads as "not installed"
- * here (and in adoption.confirmed) rather than as a still-live confirmation of a platform the
- * Wallets tab no longer offers. Delegates the platform-counter bump, tap-day stats, and the
- * "ever installed anywhere" check to their own small functions above - each independent concern
- * this function pulls together, not a single flat block, so a future 4th platform (or a new stat)
- * can extend just the one relevant helper instead of adding more branches straight into this
+ * registered only on a platform the event owner has since turned off reads as "not installed" for
+ * `platform`/`registrationCountBuckets`/`wallet_lifecycle.active` - the live-right-now numbers
+ * this event's current settings should gate. `acc.confirmed` (adoption.confirmed) is the one
+ * exception: it now means "was this pass EVER confirmed installed", a historical fact a later
+ * platform toggle can't retroactively undo, so it's gated on the ungated `everInstalled` below
+ * instead (architect review, 2026-09-03, following on from the 2026-09-03 registration-sync fix -
+ * same reasoning as buildEverInstalledWalletFilter and everInstalledAnywhere's own doc comments
+ * further down this file). Delegates the platform-counter bump, tap-day stats, and the "ever
+ * installed anywhere" check to their own small functions above - each independent concern this
+ * function pulls together, not a single flat block, so a future 4th platform (or a new stat) can
+ * extend just the one relevant helper instead of adding more branches straight into this
  * function's own body and tipping it over the limit again. */
 function applyWalletPassToAggregates(
   pass: WalletPassAggregateRow,
@@ -925,22 +937,31 @@ function applyWalletPassToAggregates(
   const appleInactive = enabledPlatforms.apple ? (pass.apple_inactive_registrations ?? 0) : 0;
   const googleInactive = enabledPlatforms.google ? (pass.google_inactive_registrations ?? 0) : 0;
   const samsungInactive = enabledPlatforms.samsung ? (pass.samsung_inactive_registrations ?? 0) : 0;
+  // Ungated, unlike appleActive/googleActive/samsungActive above - "was this pass EVER confirmed
+  // installed" is the same historical fact everInstalledAnywhere's own doc comment explains,
+  // computed once here so adoption.confirmed below and wallet_lifecycle at the bottom can't drift
+  // onto two different answers for the same pass.
+  const everInstalled = everInstalledAnywhere(pass);
   const platform = classifyPassPlatform(appleActive, googleActive, samsungActive);
   incrementPlatformCounter(platform, acc);
+  // Stays gated on the live `platform` - Devices per attendee counts active registrations right
+  // now, by explicit architect decision (2026-09-03), unlike `confirmed` below.
   if (platform !== "none") {
-    acc.confirmed++;
     acc.registrationCountBuckets[bucketForRegistrationCount(appleActive + googleActive + samsungActive)]++;
   }
+  // Historical, not live - see this function's own doc comment above for why this is the one
+  // counter here gated on `everInstalled` instead of the live `platform` check.
+  if (everInstalled) acc.confirmed++;
   if (pass.registration_checked_at && (!acc.mostRecentSync || pass.registration_checked_at > acc.mostRecentSync)) {
     acc.mostRecentSync = pass.registration_checked_at;
   }
 
   const typeKey = pass.attendee.ticket_type;
   acc.gotPassByType.set(typeKey, (acc.gotPassByType.get(typeKey) ?? 0) + 1);
-  if (platform !== "none") acc.confirmedByType.set(typeKey, (acc.confirmedByType.get(typeKey) ?? 0) + 1);
+  if (everInstalled) acc.confirmedByType.set(typeKey, (acc.confirmedByType.get(typeKey) ?? 0) + 1);
 
-  applyTapDayStats(pass, platform, acc);
-  applyReminderTapDayStats(pass, platform, acc);
+  applyTapDayStats(pass, acc);
+  applyReminderTapDayStats(pass, acc);
 
   acc.lifecycleCounts[
     classifyPassLifecycle(
@@ -950,7 +971,7 @@ function applyWalletPassToAggregates(
       appleInactive,
       googleInactive,
       samsungInactive,
-      everInstalledAnywhere(pass),
+      everInstalled,
     )
   ]++;
 }
@@ -1079,33 +1100,40 @@ export function buildIssuedByDay(
   return issued_by_day;
 }
 
-// "Confirmed" (active on at least one platform the event still offers), not merely issued - see
-// EventWalletReportsResponse.admission_by_wallet's own doc comment for why. Reused as-is by
-// EventMailReportsResponse.funnel's own wallet_installed stage, so the two tabs can't drift onto
-// two different definitions of "installed" (SonarCloud new-code duplication - this exact block
-// was previously inlined a second time for that, see AGENTS.md's compounding rule on this class
-// of copy). Only checks a platform's registrations when the event still offers it, matching
-// aggregateWalletPasses - a stale registration on a platform since disabled would otherwise still
-// count toward "confirmed" here while reading as not installed everywhere else on this page
-// (CodeRabbit review). `id: { in: [] }` (rather than a bare `OR: []`, whose match-everything-or-
-// nothing behavior isn't something to rely on) is the "matches nothing" fallback for the case
-// where no platform is enabled. Each column filter pairs `gt: 0` with an explicit `not: null` -
-// without it, a genuinely never-synced pass (a real, common state pre-sync, not test-only) makes
-// that one column's own SQL comparison evaluate to NULL rather than false; ORed with another
-// platform's real false/true value that's still NULL, not false, and a caller negating this whole
-// filter with `NOT:` gets `NOT NULL`, which is NULL too - the attendee then matches neither side
-// and silently vanishes from a with+without total (found via a real regression: three platform
-// conditions ORed together are far more likely to include an unset column - almost guaranteed for
-// samsung_active_registrations before an event's first sync - than the two-condition apple/google
-// case this file shipped with previously, where every existing test fixture happened to always
-// set an explicit 0).
-function buildConfirmedWalletFilter(enabledPlatforms: EnabledWalletPlatforms): Prisma.AttendeeWhereInput {
-  const conditions = [
-    ...(enabledPlatforms.apple ? [{ wallet_pass: { apple_active_registrations: { gt: 0, not: null } } }] : []),
-    ...(enabledPlatforms.google ? [{ wallet_pass: { google_active_registrations: { gt: 0, not: null } } }] : []),
-    ...(enabledPlatforms.samsung ? [{ wallet_pass: { samsung_active_registrations: { gt: 0, not: null } } }] : []),
-  ];
-  return conditions.length > 0 ? { OR: conditions } : { id: { in: [] as string[] } };
+// "Ever confirmed installed" - a `first_confirmed_at` timestamp, or any active/inactive
+// registration count > 0 on any platform, ever. Matches everInstalledAnywhere's own definition
+// exactly (this same file, above aggregateWalletPasses) by design: this is the SQL-side
+// equivalent of that in-memory check, used wherever the aggregate needs a DB-level filter instead
+// of a loop over already-fetched WalletPass rows (admission_by_wallet's with/without counts
+// below, and the Mail tab's funnel.wallet_installed stage - EventMailReportsResponse's own doc
+// comment). Deliberately ungated by enabledPlatforms, unlike aggregateWalletPasses' own
+// confirmed/platform/registrationCountBuckets counters - "was this pass ever installed" is a
+// historical fact a later platform toggle can't retroactively undo (architect review, 2026-09-03,
+// following on from the 2026-09-03 registration-sync fix - see everInstalledAnywhere's own doc
+// comment for the full reasoning this filter mirrors). Each column filter pairs `gt: 0` with an
+// explicit `not: null` - without it, a genuinely never-synced pass (a real, common state
+// pre-sync, not test-only) makes that one column's own SQL comparison evaluate to NULL rather
+// than false; ORed with another platform's real false/true value that's still NULL, not false,
+// and a caller negating this whole filter with `NOT:` gets `NOT NULL`, which is NULL too - the
+// attendee then matches neither side and silently vanishes from a with+without total (found via a
+// real regression: three platform conditions ORed together are far more likely to include an
+// unset column - almost guaranteed for samsung_active_registrations before an event's first sync
+// - than the two-condition apple/google case this file shipped with previously, where every
+// existing test fixture happened to always set an explicit 0). Unlike the enabledPlatforms-gated
+// filter this replaces, there's no "matches nothing" fallback for an empty condition list - every
+// OR branch here is unconditional, so the filter can never be empty.
+function buildEverInstalledWalletFilter(): Prisma.AttendeeWhereInput {
+  return {
+    OR: [
+      { wallet_pass: { first_confirmed_at: { not: null } } },
+      { wallet_pass: { apple_active_registrations: { gt: 0, not: null } } },
+      { wallet_pass: { google_active_registrations: { gt: 0, not: null } } },
+      { wallet_pass: { samsung_active_registrations: { gt: 0, not: null } } },
+      { wallet_pass: { apple_inactive_registrations: { gt: 0, not: null } } },
+      { wallet_pass: { google_inactive_registrations: { gt: 0, not: null } } },
+      { wallet_pass: { samsung_inactive_registrations: { gt: 0, not: null } } },
+    ],
+  };
 }
 
 async function loadWalletReportsAggregates(
@@ -1115,7 +1143,7 @@ async function loadWalletReportsAggregates(
   eventDate: Date,
   enabledPlatforms: EnabledWalletPlatforms,
 ): Promise<EventWalletReportsResponse> {
-  const confirmedWalletFilter = buildConfirmedWalletFilter(enabledPlatforms);
+  const everInstalledWalletFilter = buildEverInstalledWalletFilter();
 
   const [
     totalAttendees,
@@ -1154,13 +1182,13 @@ async function loadWalletReportsAggregates(
       GROUP BY 1
       ORDER BY 1
     `,
-    db.attendee.count({ where: { event_id: eventId, ...confirmedWalletFilter } }),
+    db.attendee.count({ where: { event_id: eventId, ...everInstalledWalletFilter } }),
     db.attendee.count({
-      where: { event_id: eventId, admitted_at: { not: null }, ...confirmedWalletFilter },
+      where: { event_id: eventId, admitted_at: { not: null }, ...everInstalledWalletFilter },
     }),
-    db.attendee.count({ where: { event_id: eventId, NOT: confirmedWalletFilter } }),
+    db.attendee.count({ where: { event_id: eventId, NOT: everInstalledWalletFilter } }),
     db.attendee.count({
-      where: { event_id: eventId, admitted_at: { not: null }, NOT: confirmedWalletFilter },
+      where: { event_id: eventId, admitted_at: { not: null }, NOT: everInstalledWalletFilter },
     }),
   ]);
 
@@ -1201,10 +1229,14 @@ async function loadWalletReportsAggregates(
   }));
 
   const registrationCountBucketOrder: RegistrationCountBucketKey[] = ["1", "2", "3", "4_plus"];
+  // Denominator is lifecycleCounts.active (the live "active on an enabled platform right now"
+  // count), not `confirmed` - registrations_per_attendee stays a live-right-now number by
+  // explicit architect decision (2026-09-03), even though adoption.confirmed itself became
+  // historical in the same change (see applyWalletPassToAggregates' own doc comment above).
   const registrationCountBucketsList = registrationCountBucketOrder.map((key) => ({
     key,
     count: registrationCountBuckets[key],
-    pct: oneDecimalPct(registrationCountBuckets[key], confirmed),
+    pct: oneDecimalPct(registrationCountBuckets[key], lifecycleCounts.active),
   }));
 
   return {
@@ -1424,7 +1456,6 @@ async function loadMailReportsAggregates(
   eventId: string,
   timeZone: string,
   eventDate: Date,
-  enabledPlatforms: EnabledWalletPlatforms,
 ): Promise<EventMailReportsResponse> {
   const successStatuses = [...EMAIL_DELIVERY_SUCCESS_STATUSES] as string[];
   // Same attendee-level, resend-deduped definition attendee_reach itself uses - built once so
@@ -1453,7 +1484,7 @@ async function loadMailReportsAggregates(
       },
     },
   };
-  const confirmedWalletFilter = buildConfirmedWalletFilter(enabledPlatforms);
+  const everInstalledWalletFilter = buildEverInstalledWalletFilter();
 
   const [
     totalAttendees,
@@ -1536,7 +1567,7 @@ async function loadMailReportsAggregates(
     db.attendee.count({
       where: { event_id: eventId, admitted_at: { not: null }, NOT: reachedFilter },
     }),
-    db.attendee.count({ where: { event_id: eventId, ...confirmedWalletFilter } }),
+    db.attendee.count({ where: { event_id: eventId, ...everInstalledWalletFilter } }),
     db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
     db.attendee.count({ where: { event_id: eventId, ...ticketReachedFilter } }),
   ]);
@@ -1612,7 +1643,7 @@ export async function handleGetMailReports(c: Context, db: PrismaClient): Promis
   const ctx = await resolveWalletAwareReportsContext(c, db);
   if (ctx instanceof Response) return ctx;
 
-  const body = await loadMailReportsAggregates(db, ctx.eventId, ctx.timeZone, ctx.eventDate, ctx.platforms);
+  const body = await loadMailReportsAggregates(db, ctx.eventId, ctx.timeZone, ctx.eventDate);
   c.header("Cache-Control", "no-store");
   return c.json(body);
 }
@@ -2227,12 +2258,21 @@ async function exportWalletReportsPdf(
   const eventDate = event.date.toISOString().slice(0, 10);
 
   // Same buckets-always-populated issue as tapRows below: these rows exist even with zero
-  // installed passes (every count would just read 0), so the "No wallet passes installed"
-  // fallback a few lines down was unreachable dead code - branch on adoption.confirmed instead
-  // (not got_pass: this breakdown is the platform split among installed passes, not issued
-  // ones), matching the Wallets tab's own whole-page EmptyState condition.
+  // active passes (every count would just read 0), so the "No wallet passes currently active"
+  // fallback a few lines down was unreachable dead code - branch on wallet_lifecycle.active
+  // instead (not got_pass: this breakdown is the platform split among currently-active passes,
+  // not issued ones), matching the Wallets tab's own whole-page EmptyState condition. Denominator
+  // and column label ("Share of active", not "Share of installed") are also wallet_lifecycle.active,
+  // not adoption.confirmed - platform stays a live-right-now count (unlike adoption.confirmed
+  // itself, which now means "ever confirmed installed"), and its four slices sum to
+  // wallet_lifecycle.active, not adoption.confirmed (see EventWalletReportsResponse's own doc
+  // comment) - denominating (or labeling) against the wrong one here would under-report every
+  // percentage, and they'd stop summing to 100%, for any event with a nonzero
+  // wallet_lifecycle.removed (architect review, 2026-09-03 - missed in the first pass of this
+  // change, caught by adversarial review before it shipped; the label mismatch itself was a
+  // separate follow-up catch after the denominator fix already landed).
   const platformRows =
-    aggregates.adoption.confirmed === 0
+    aggregates.wallet_lifecycle.active === 0
       ? ""
       : [
           enabledPlatforms.apple && { label: "Apple Wallet only", count: aggregates.platform.apple_only },
@@ -2246,7 +2286,7 @@ async function exportWalletReportsPdf(
           .filter((row): row is { label: string; count: number } => row !== false)
           .map(
             (row) =>
-              `<tr><td>${escapeHtml(row.label)}</td><td>${row.count}</td><td>${oneDecimalPct(row.count, aggregates.adoption.confirmed)}%</td></tr>`,
+              `<tr><td>${escapeHtml(row.label)}</td><td>${row.count}</td><td>${oneDecimalPct(row.count, aggregates.wallet_lifecycle.active)}%</td></tr>`,
           )
           .join("");
 
@@ -2261,10 +2301,11 @@ async function exportWalletReportsPdf(
     "4_plus": "4+ devices",
   };
   // Same buckets-always-populated issue as platformRows/tapRows above - branch on
-  // adoption.confirmed, matching the Wallets tab's own "Not enough data yet." condition for this
-  // card.
+  // wallet_lifecycle.active (registrations_per_attendee's own denominator, a live-right-now
+  // count, matching platformRows' own fix above), not adoption.confirmed, matching the Wallets
+  // tab's own "Not enough data yet." condition for this card.
   const registrationCountRows =
-    aggregates.adoption.confirmed === 0
+    aggregates.wallet_lifecycle.active === 0
       ? ""
       : aggregates.registrations_per_attendee.buckets
           .map((b) => `<tr><td>${escapeHtml(registrationCountLabels[b.key] ?? b.key)}</td><td>${b.count}</td><td>${b.pct}%</td></tr>`)
@@ -2331,13 +2372,13 @@ async function exportWalletReportsPdf(
   ${truncatedWarningHtml}
   <h2>Wallet platform</h2>
   <table>
-    <thead><tr><th>Platform</th><th>Passes</th><th>Share of installed</th></tr></thead>
-    <tbody>${platformRows || '<tr><td colspan="3">No wallet passes installed yet</td></tr>'}</tbody>
+    <thead><tr><th>Platform</th><th>Passes</th><th>Share of active</th></tr></thead>
+    <tbody>${platformRows || '<tr><td colspan="3">No wallet passes currently active</td></tr>'}</tbody>
   </table>
   <h2>Devices per attendee</h2>
   <table>
-    <thead><tr><th>Devices</th><th>Attendees</th><th>Share</th></tr></thead>
-    <tbody>${registrationCountRows || '<tr><td colspan="3">No wallet passes installed yet</td></tr>'}</tbody>
+    <thead><tr><th>Devices</th><th>Attendees</th><th>Share of active</th></tr></thead>
+    <tbody>${registrationCountRows || '<tr><td colspan="3">No wallet passes currently active</td></tr>'}</tbody>
   </table>
   <h2>Adoption by ticket type</h2>
   <table>

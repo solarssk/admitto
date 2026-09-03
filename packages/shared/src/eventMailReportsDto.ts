@@ -72,8 +72,8 @@ export interface EventMailReportsResponse {
    * scoped to genuine ticket-email sends only (not any successful email, e.g. a Communication
    * campaign reminder), since this stage is documented as "got a ticket email" specifically, the
    * entry point of a causal chain toward wallet install and attendance. wallet_installed uses the
-   * exact same "confirmed" definition (active on a platform the event still offers) as
-   * EventWalletReportsResponse.adoption.confirmed. */
+   * exact same "ever confirmed installed" definition as EventWalletReportsResponse.adoption.confirmed
+   * - a historical fact, not "active on a device right now" (see that field's own doc comment). */
   funnel: {
     total_attendees: number;
     reached_by_email: number;

@@ -270,7 +270,9 @@ function platformBreakdownRows(
 
 /** Same donut-plus-breakdown shape as PlatformDonut above, for wallet_lifecycle's own three
  * mutually-exclusive outcomes (always summing to `adoption.got_pass`, unlike platform's slices
- * which sum to `adoption.confirmed`) - one visual language for "here's how a whole equals the sum
+ * which sum to `wallet_lifecycle.active` - platform stays a live-right-now count, unlike
+ * `adoption.confirmed` itself, see EventWalletReportsResponse's own doc comment) - one visual
+ * language for "here's how a whole equals the sum
  * of its parts" across this tab, rather than a second one-off chart shape for a card that's
  * conceptually the same kind of breakdown. Centers on the same total the ring's slices sum to
  * (`adoption.got_pass`, passed in as `gotPass` rather than re-summed from the three slices here),
@@ -568,7 +570,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       <div className="wallets-panels">
         <Card title={<HintLabel hint={syncedHint(data.synced_at)}>Wallet adoption</HintLabel>}>
           <p className="wallets-description">
-            One pass per attendee: issued when the attendee first taps Add to Wallet, installed once it&rsquo;s confirmed on their wallet app.
+            One pass per attendee, issued on the first Add to Wallet tap and installed once confirmed - unaffected by later removal (see Wallet lifecycle below).
           </p>
           <div className="wallets-adoption">
             <AdoptionGauge
@@ -600,7 +602,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
         </Card>
         <Card title={<HintLabel hint={syncedHint(data.synced_at)}>Wallet platform</HintLabel>}>
           <p className="wallets-description">
-            Attendees with their ticket installed, split by which wallet app they used
+            Attendees with their ticket currently installed, split by which wallet app they used
             {walletPlatforms.apple && walletPlatforms.google
               ? " - one pass can register on more than one at once."
               : "."}
@@ -608,12 +610,12 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
           <div className="wallets-adoption">
             <PlatformDonut
               platform={data.platform}
-              installed={data.adoption.confirmed}
+              installed={data.wallet_lifecycle.active}
               enabledPlatforms={walletPlatforms}
               isActive={isActive}
             />
             <div className="wallets-adoption__breakdown">
-              <BreakdownRows rows={platformBreakdownRows(data.platform, data.adoption.confirmed, walletPlatforms)} />
+              <BreakdownRows rows={platformBreakdownRows(data.platform, data.wallet_lifecycle.active, walletPlatforms)} />
             </div>
           </div>
         </Card>
@@ -622,7 +624,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       <div className="wallets-panels">
         <Card title="Devices per attendee" className="wallets-chart-card">
           <p className="wallets-description">
-            Some attendees add their ticket to more than one device, like a phone and a smartwatch. This shows how many devices attendees are actually using, not just how many people have their ticket installed.
+            Some attendees add their ticket to more than one device - this counts devices actually in use right now, not just who has it installed.
           </p>
           <RegistrationsPerAttendeeChart buckets={data.registrations_per_attendee.buckets} isActive={isActive} />
         </Card>

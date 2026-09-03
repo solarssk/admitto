@@ -331,22 +331,27 @@ describe("aggregateWalletPasses — enabledPlatforms gating", () => {
     expect(result.confirmed).toBe(1);
   });
 
-  it("counts a Google-only pass as not confirmed at all when Google is the disabled platform", () => {
+  // `confirmed` is no longer gated on enabledPlatforms at all (unlike appleOnly/googleOnly/
+  // samsungOnly/both above, which stay live-right-now counts) - it now means "was this pass EVER
+  // confirmed installed", a historical fact a later platform toggle can't retroactively undo, so a
+  // real (if now-disabled-platform) active registration still counts (architect review,
+  // 2026-09-03).
+  it("still counts a Google-only pass as confirmed via its real registration history even when Google is the disabled platform, though googleOnly itself stays gated at zero", () => {
     const result = aggregateWalletPasses(
       [pass({ apple_active_registrations: 0, google_active_registrations: 1 })],
       APPLE_ONLY_ENABLED,
     );
-    expect(result.confirmed).toBe(0);
+    expect(result.confirmed).toBe(1);
     expect(result.googleOnly).toBe(0);
     expect(result.appleOnly).toBe(0);
   });
 
-  it("counts nothing as confirmed when no platform is enabled, regardless of raw registrations", () => {
+  it("still counts confirmed from raw registrations even when no platform is enabled at all, though every platform-mix counter stays gated at zero", () => {
     const result = aggregateWalletPasses(
       [pass({ apple_active_registrations: 1, google_active_registrations: 1, samsung_active_registrations: 1 })],
       NEITHER_ENABLED,
     );
-    expect(result.confirmed).toBe(0);
+    expect(result.confirmed).toBe(1);
     expect(result.appleOnly).toBe(0);
     expect(result.googleOnly).toBe(0);
     expect(result.samsungOnly).toBe(0);
@@ -368,9 +373,9 @@ describe("aggregateWalletPasses — enabledPlatforms gating", () => {
     expect(result.both).toBe(0);
   });
 
-  it("counts a Samsung-only registration as not confirmed at all when Samsung is the disabled platform", () => {
+  it("still counts a Samsung-only registration as confirmed via its real registration history even when Samsung is the disabled platform, though samsungOnly itself stays gated at zero", () => {
     const result = aggregateWalletPasses([pass({ samsung_active_registrations: 1 })], APPLE_ONLY_ENABLED);
-    expect(result.confirmed).toBe(0);
+    expect(result.confirmed).toBe(1);
     expect(result.samsungOnly).toBe(0);
   });
 
