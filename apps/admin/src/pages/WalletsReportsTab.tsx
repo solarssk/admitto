@@ -652,7 +652,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       <div className="wallets-panels">
         <Card title="Wallet lifecycle">
           <p className="wallets-description">
-            Every issued pass, grouped by whether it&rsquo;s still installed, was removed from every device, or was never installed at all.
+            Every issued pass, grouped by whether it&rsquo;s currently active on a platform this event offers, was once installed but isn&rsquo;t active now (including a pass whose platform has since been turned off), or was never installed at all.
           </p>
           <div className="wallets-adoption">
             <WalletLifecycleDonut lifecycle={data.wallet_lifecycle} gotPass={data.adoption.got_pass} isActive={isActive} />
