@@ -2478,7 +2478,10 @@ export function CommunicationPage() {
               activeTemplateName={activeTemplateName}
               allowedPlaceholders={allowedPlaceholders}
               imagePlaceholders={imagePlaceholders}
-              requiredPlaceholders={requiredPlaceholders}
+              // Backend only enforces ticket_url/qr_image_url for the "ticket" template
+              // (see requireTicketPlaceholders, communication-api-routes.ts) - the "required"
+              // chip outline should follow that, not apply to every other template's editor too.
+              requiredPlaceholders={activeTemplateName === "ticket" ? requiredPlaceholders : []}
               onInsertPlaceholder={insertPlaceholder}
               brandingLogoUrl={brandingLogoUrl}
               subjectRef={subjectRef}
