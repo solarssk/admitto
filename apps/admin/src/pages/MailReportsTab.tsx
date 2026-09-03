@@ -306,7 +306,8 @@ export const MailReportsTab = memo(function MailReportsTab({
         </Card>
         <Card title="Event journey" className="wallets-card--centered">
           <p className="wallets-description">
-            How many attendees reached each stage of the event: got a ticket email, installed a wallet pass, and attended.
+            How many attendees reached each stage of the event: got a ticket email, installed a wallet pass (a
+            permanent count that doesn&rsquo;t drop if they later remove it), and attended.
           </p>
           <EventJourneyFunnel funnel={data.funnel} />
         </Card>
