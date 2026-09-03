@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@admitto/db";
 import type { WalletPassProvider } from "./provider.js";
+import { registrationStatusToWalletPassFields } from "./registration-status-to-wallet-pass-fields.js";
 
 /** Thrown when the provider still has no matching record for a pass after the one retry below -
  * genuinely gone at the provider (deleted out of band) or longer-than-usual search-index lag.
@@ -53,13 +54,7 @@ export async function refreshOneWalletPassStatus(
       user_provided_id: target.userProvidedId,
     },
     data: {
-      apple_active_registrations: status.appleActiveRegistrations,
-      apple_inactive_registrations: status.appleInactiveRegistrations,
-      google_active_registrations: status.googleActiveRegistrations,
-      google_inactive_registrations: status.googleInactiveRegistrations,
-      samsung_active_registrations: status.samsungActiveRegistrations,
-      samsung_inactive_registrations: status.samsungInactiveRegistrations,
-      first_downloaded_at: status.firstDownloadedAt,
+      ...registrationStatusToWalletPassFields(status),
       registration_checked_at: new Date(),
       // Matches syncOne's own success write (registration-sync.ts) - the periodic worker selects
       // its next stale-row batch by this field, not registration_checked_at, so leaving it
