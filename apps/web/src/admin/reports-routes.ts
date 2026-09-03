@@ -841,13 +841,28 @@ function incrementPlatformCounter(
   else if (platform === "samsung_only") acc.samsungOnly++;
 }
 
+/** The subset of WalletPassAggregateRow's own fields everInstalledAnywhere below actually reads -
+ * split out so the Mail CSV export's own per-attendee wallet_pass select (a differently-shaped
+ * query, centered on Attendee rather than WalletPass) can share this same function instead of
+ * duplicating its OR chain, as long as its select lists these same seven fields. */
+type WalletPassInstalledFields = Pick<
+  WalletPassAggregateRow,
+  | "first_confirmed_at"
+  | "apple_active_registrations"
+  | "google_active_registrations"
+  | "samsung_active_registrations"
+  | "apple_inactive_registrations"
+  | "google_inactive_registrations"
+  | "samsung_inactive_registrations"
+>;
+
 /** Raw (ungated) - unlike the enabledPlatforms-zeroed appleActive/appleInactive/etc. in
  * applyWalletPassToAggregates below, "was this pass ever installed anywhere" must not forget a
  * since-disabled platform's own real history (classifyPassLifecycle's own doc comment explains
  * why). Split out purely to shorten applyWalletPassToAggregates' own body (SonarCloud S3776) - a
  * long OR chain like this is cheap on its own, but every additional platform adds two more terms
  * to it. */
-function everInstalledAnywhere(pass: WalletPassAggregateRow): boolean {
+function everInstalledAnywhere(pass: WalletPassInstalledFields): boolean {
   return (
     pass.first_confirmed_at != null ||
     (pass.apple_active_registrations ?? 0) > 0 ||
@@ -1741,7 +1756,7 @@ async function auditReportsExported(
   format: "csv" | "pdf",
   count: number,
   truncated: boolean,
-  report: "admissions" | "wallets" = "admissions",
+  report: "admissions" | "wallets" | "mail" | "customfields" = "admissions",
 ): Promise<void> {
   await db.$transaction(async (tx) => {
     await writeBulkActionLog(tx, {
@@ -1965,7 +1980,7 @@ async function exportAdmissionsReportsPdf(
   });
 }
 
-/** GET /api/admin/events/:eventId/reports/export?format=csv|pdf&report=admissions|wallets */
+/** GET /api/admin/events/:eventId/reports/export?format=csv|pdf&report=admissions|wallets|mail|customfields */
 export async function handleExportReports(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdParam = requireEventId(c);
   if (eventIdParam instanceof Response) return eventIdParam;
@@ -1976,8 +1991,8 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
     return c.json({ error: "format must be csv or pdf" }, 400);
   }
   const reportRaw = c.req.query("report") ?? "admissions";
-  if (reportRaw !== "admissions" && reportRaw !== "wallets") {
-    return c.json({ error: "report must be admissions or wallets" }, 400);
+  if (reportRaw !== "admissions" && reportRaw !== "wallets" && reportRaw !== "mail" && reportRaw !== "customfields") {
+    return c.json({ error: "report must be admissions, wallets, mail, or customfields" }, 400);
   }
 
   const forbidden = await assertEventManageAccess(c, db, eventId);
@@ -2008,6 +2023,18 @@ export async function handleExportReports(c: Context, db: PrismaClient): Promise
     return formatRaw === "csv"
       ? exportWalletReportsCsv(db, c, eventId, event, timeZone, dateStamp, platforms)
       : exportWalletReportsPdf(db, c, eventId, event, timeZone, platforms);
+  }
+
+  if (reportRaw === "mail") {
+    return formatRaw === "csv"
+      ? exportMailReportsCsv(db, c, eventId, event, timeZone, dateStamp)
+      : exportMailReportsPdf(db, c, eventId, event, timeZone);
+  }
+
+  if (reportRaw === "customfields") {
+    return formatRaw === "csv"
+      ? exportCustomFieldReportsCsv(db, c, eventId, event, dateStamp)
+      : exportCustomFieldReportsPdf(db, c, eventId, event);
   }
 
   return formatRaw === "csv"
@@ -2426,6 +2453,454 @@ async function exportWalletReportsPdf(
   });
 
   await auditReportsExported(db, c, eventId, "pdf", aggregates.adoption.got_pass, aggregates.passes_truncated, "wallets");
+
+  return new Response(html, {
+    status: 200,
+    headers: getPrintableReportSecurityHeaders(),
+  });
+}
+
+const MAIL_EXPORT_ATTENDEE_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  ticket_type: true,
+  admitted_at: true,
+  admitted_by: true,
+  wallet_pass: {
+    select: {
+      first_confirmed_at: true,
+      apple_active_registrations: true,
+      google_active_registrations: true,
+      samsung_active_registrations: true,
+      apple_inactive_registrations: true,
+      google_inactive_registrations: true,
+      samsung_inactive_registrations: true,
+    },
+  },
+  // Extends WALLET_RELEVANT_EMAIL_DELIVERIES_SELECT's own field list (not its `where` filter -
+  // this export needs every delivery attempt, not just successful ticket/wallet-CTA ones, to
+  // fill its own "Delivery attempts"/"Last delivery status" columns) with the three extra fields
+  // those columns need, so the resulting row still structurally satisfies
+  // isTicketScopedDelivery/earliestDeliverySuccessAt's own parameter types without duplicating
+  // their seven shared fields (same duplication-avoidance reasoning as WalletPassInstalledFields
+  // above for everInstalledAnywhere).
+  email_deliveries: {
+    select: { ...WALLET_RELEVANT_EMAIL_DELIVERIES_SELECT.select, status: true, viewed_at: true, created_at: true },
+  },
+} as const;
+
+type MailExportAttendeeRow = Prisma.AttendeeGetPayload<{ select: typeof MAIL_EXPORT_ATTENDEE_SELECT }>;
+
+/** One CSV row for exportMailReportsCsv below - same split-out-of-the-map-callback reasoning as
+ * buildWalletExportCsvRow. */
+export function buildMailExportCsvRow(
+  row: MailExportAttendeeRow,
+  catalog: TicketTypeInfo[],
+  timeZone: string,
+  operatorDisplayMap: Record<string, UserDisplayRow>,
+): string {
+  const successStatuses = [...EMAIL_DELIVERY_SUCCESS_STATUSES] as string[];
+  const deliveries = row.email_deliveries;
+  const successfulCount = deliveries.filter((d) => successStatuses.includes(d.status)).length;
+  // Same created_at DESC tiebreak the schema's own "Latest-delivery lookup" index comment
+  // documents (EmailDelivery model, schema.prisma) - accepted_at/sent_at/delivered_at can all be
+  // null for a delivery that never got past queued/failed, so created_at is the only field
+  // guaranteed present to order the most recent attempt by.
+  const lastDelivery = deliveries.reduce<MailExportAttendeeRow["email_deliveries"][number] | null>(
+    (latest, d) => (!latest || d.created_at > latest.created_at ? d : latest),
+    null,
+  );
+  const ticketEmailFirstSentAt = earliestDeliverySuccessAt(
+    deliveries.filter((d) => successStatuses.includes(d.status) && isTicketScopedDelivery(d)),
+  );
+  const viewedAt = deliveries.reduce<Date | null>(
+    (latest, d) => (d.viewed_at && (!latest || d.viewed_at > latest) ? d.viewed_at : latest),
+    null,
+  );
+  const walletInstalled = row.wallet_pass ? everInstalledAnywhere(row.wallet_pass) : false;
+
+  return [
+    row.name,
+    row.email,
+    resolveTicketTypeLabel(catalog, row.ticket_type),
+    String(deliveries.length),
+    String(successfulCount),
+    successfulCount > 0 ? "Yes" : "No",
+    lastDelivery?.status ?? "",
+    ticketEmailFirstSentAt ? formatAdmittedAtExport(ticketEmailFirstSentAt, timeZone) : "",
+    viewedAt ? "Yes" : "No",
+    viewedAt ? formatAdmittedAtExport(viewedAt, timeZone) : "",
+    walletInstalled ? "Yes" : "No",
+    row.admitted_at ? "Yes" : "No",
+    row.admitted_at ? formatAdmittedAtExport(row.admitted_at, timeZone) : "",
+    resolveOperatorLabel(resolveOperatorFields(row.admitted_by, operatorDisplayMap)),
+  ]
+    .map((cell) => quoteCsvCell(sanitizeCsvCell(String(cell))))
+    .join(",");
+}
+
+/** GET .../reports/export?format=csv&report=mail - one row per attendee, not the Mail tab's own
+ * aggregate cards: same "the full underlying population is what archiving/re-deriving this data
+ * later needs" reasoning as exportWalletReportsCsv above. Scoped to every attendee, including one
+ * with zero delivery attempts - "never sent" is as meaningful a row here as "no pass" is on the
+ * wallets export. */
+async function exportMailReportsCsv(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  event: { slug: string },
+  timeZone: string,
+  dateStamp: string,
+): Promise<Response> {
+  const [totalAttendees, rows, catalog] = await Promise.all([
+    db.attendee.count({ where: { event_id: eventId } }),
+    db.attendee.findMany({
+      where: { event_id: eventId },
+      orderBy: { name: "asc" },
+      take: CSV_EXPORT_MAX,
+      select: MAIL_EXPORT_ATTENDEE_SELECT,
+    }),
+    loadEventTicketTypes(db, eventId),
+  ]);
+
+  const truncated = totalAttendees > CSV_EXPORT_MAX;
+
+  const operatorIds = [...new Set(rows.map((row) => row.admitted_by).filter((id): id is string => id != null))];
+  const operatorDisplayMap = await resolveUserDisplayMap(db, operatorIds);
+
+  const columns = [
+    "Name",
+    "Email",
+    "Ticket type",
+    "Delivery attempts",
+    "Successful delivery attempts",
+    "Reached by email",
+    "Last delivery status",
+    `Ticket email first sent at (${timeZone})`,
+    "Ticket page viewed",
+    `Ticket page viewed at (${timeZone})`,
+    "Wallet installed",
+    "Admitted",
+    `Admitted at (${timeZone})`,
+    "Checked in by",
+  ];
+  const header = columns.map((col) => quoteCsvCell(col)).join(",");
+
+  const dataRows = rows.map((row) => buildMailExportCsvRow(row, catalog, timeZone, operatorDisplayMap));
+
+  const truncationNotice = truncated
+    ? [
+        quoteCsvCell(sanitizeCsvCell(`Export truncated: first ${CSV_EXPORT_MAX} of ${totalAttendees} attendees.`)),
+        ...new Array(columns.length - 1).fill(quoteCsvCell("")),
+      ].join(",")
+    : null;
+
+  const csvBody = [header, ...(truncationNotice ? [truncationNotice] : []), ...dataRows].join("\r\n");
+  const bom = "﻿";
+  const filename = `mail-${event.slug}-${dateStamp}.csv`;
+
+  await auditReportsExported(db, c, eventId, "csv", rows.length, truncated, "mail");
+
+  return new Response(bom + csvBody, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": attachmentContentDisposition(filename),
+      "Cache-Control": "no-store",
+      "Pragma": "no-cache",
+      "X-Content-Type-Options": "nosniff",
+      "X-Mail-Export-Total": String(totalAttendees),
+      "X-Mail-Export-Truncated": String(truncated),
+    },
+  });
+}
+
+/** GET .../reports/export?format=pdf&report=mail - printable summary mirroring the Mail tab's own
+ * cards (delivery-attempt breakdown, attendee reach, initial-vs-resend, delivery by template,
+ * ticket page opened, admission rate by email status, event journey) - reuses
+ * loadMailReportsAggregates, the same aggregate function backing the live JSON /reports/mail
+ * endpoint, matching exportWalletReportsPdf's own reuse of loadWalletReportsAggregates. The
+ * day-by-day "Emails sent over time" chart has no printable-table equivalent here, same as the
+ * Wallets PDF omitting its own "Cumulative passes issued over time" chart. */
+async function exportMailReportsPdf(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  event: { title: string; date: Date },
+  timeZone: string,
+): Promise<Response> {
+  const aggregates = await loadMailReportsAggregates(db, eventId, timeZone, event.date);
+  const eventDate = event.date.toISOString().slice(0, 10);
+
+  const statusRows =
+    aggregates.delivery.total_attempts === 0
+      ? ""
+      : aggregates.delivery.by_status
+          .map(
+            (s) =>
+              `<tr><td>${escapeHtml(s.status)}</td><td>${s.count}</td><td>${oneDecimalPct(s.count, aggregates.delivery.total_attempts)}%</td></tr>`,
+          )
+          .join("");
+
+  const reachRows = `
+    <tr><td>Reached</td><td>${aggregates.attendee_reach.reached}</td><td>${aggregates.attendee_reach.reached_pct}%</td></tr>
+    <tr><td>Not reached</td><td>${aggregates.attendee_reach.not_reached}</td><td>${oneDecimalPct(aggregates.attendee_reach.not_reached, aggregates.total_attendees)}%</td></tr>`;
+
+  const purposeRows =
+    aggregates.delivery.total_attempts === 0
+      ? ""
+      : `
+    <tr><td>Initial</td><td>${aggregates.by_purpose.initial}</td><td>${oneDecimalPct(aggregates.by_purpose.initial, aggregates.delivery.total_attempts)}%</td></tr>
+    <tr><td>Resend</td><td>${aggregates.by_purpose.resend}</td><td>${oneDecimalPct(aggregates.by_purpose.resend, aggregates.delivery.total_attempts)}%</td></tr>`;
+
+  const templateRows = aggregates.by_template
+    .map(
+      (t) =>
+        `<tr><td>${escapeHtml(t.template ?? "Default ticket email")}</td><td>${t.successful}</td><td>${t.total}</td><td>${t.successful_pct}%</td></tr>`,
+    )
+    .join("");
+
+  const viewedRows =
+    aggregates.ticket_viewed.reached === 0
+      ? ""
+      : `
+    <tr><td>Opened ticket page</td><td>${aggregates.ticket_viewed.viewed}</td><td>${aggregates.ticket_viewed.viewed_pct}%</td></tr>
+    <tr><td>Not opened yet</td><td>${aggregates.ticket_viewed.reached - aggregates.ticket_viewed.viewed}</td><td>${oneDecimalPct(aggregates.ticket_viewed.reached - aggregates.ticket_viewed.viewed, aggregates.ticket_viewed.reached)}%</td></tr>`;
+
+  const journeyRows = [
+    { label: "Attendees", value: aggregates.funnel.total_attendees },
+    { label: "Reached by email", value: aggregates.funnel.reached_by_email },
+    { label: "Wallet installed", value: aggregates.funnel.wallet_installed },
+    { label: "Attended", value: aggregates.funnel.attended },
+  ]
+    .map(
+      (s) =>
+        `<tr><td>${s.label}</td><td>${s.value}</td><td>${oneDecimalPct(s.value, aggregates.funnel.total_attendees)}%</td></tr>`,
+    )
+    .join("");
+
+  const statsHtml = [
+    { label: "Total attendees", value: String(aggregates.total_attendees) },
+    { label: "Reached by email", value: `${aggregates.attendee_reach.reached} (${aggregates.attendee_reach.reached_pct}%)` },
+    { label: "Wallet installed", value: String(aggregates.funnel.wallet_installed) },
+    { label: "Attended", value: String(aggregates.funnel.attended) },
+  ]
+    .map((s) => `<div class="stat"><span>${s.label}</span><strong>${s.value}</strong></div>`)
+    .join("");
+
+  const sectionsHtml = `
+  <h2>Email delivery</h2>
+  <table>
+    <thead><tr><th>Status</th><th>Attempts</th><th>Share</th></tr></thead>
+    <tbody>${statusRows || '<tr><td colspan="3">No emails sent yet</td></tr>'}</tbody>
+  </table>
+  <h2>Attendee reach</h2>
+  <table>
+    <thead><tr><th>Group</th><th>Attendees</th><th>Share</th></tr></thead>
+    <tbody>${reachRows}</tbody>
+  </table>
+  <h2>Initial vs resend</h2>
+  <table>
+    <thead><tr><th>Purpose</th><th>Attempts</th><th>Share</th></tr></thead>
+    <tbody>${purposeRows || '<tr><td colspan="3">No emails sent yet</td></tr>'}</tbody>
+  </table>
+  <h2>Delivery by template</h2>
+  <table>
+    <thead><tr><th>Template</th><th>Successful</th><th>Total</th><th>Rate</th></tr></thead>
+    <tbody>${templateRows || '<tr><td colspan="4">No emails sent yet</td></tr>'}</tbody>
+  </table>
+  <h2>Ticket page opened</h2>
+  <table>
+    <thead><tr><th>Status</th><th>Attendees</th><th>Share</th></tr></thead>
+    <tbody>${viewedRows || '<tr><td colspan="3">No reached attendees yet</td></tr>'}</tbody>
+  </table>
+  <h2>Admission rate by email status</h2>
+  <table>
+    <thead><tr><th>Group</th><th>Admitted</th><th>Total</th><th>Rate</th></tr></thead>
+    <tbody>
+      <tr><td>Reached by email</td><td>${aggregates.admission_by_email.reached.admitted}</td><td>${aggregates.admission_by_email.reached.total}</td><td>${aggregates.admission_by_email.reached.pct}%</td></tr>
+      <tr><td>Not reached by email</td><td>${aggregates.admission_by_email.not_reached.admitted}</td><td>${aggregates.admission_by_email.not_reached.total}</td><td>${aggregates.admission_by_email.not_reached.pct}%</td></tr>
+    </tbody>
+  </table>
+  <h2>Event journey</h2>
+  <table>
+    <thead><tr><th>Stage</th><th>Attendees</th><th>Share of attendees</th></tr></thead>
+    <tbody>${journeyRows}</tbody>
+  </table>`;
+
+  const html = renderPrintableReportHtml({
+    titleSuffix: "Mail report",
+    eventTitle: event.title,
+    metaLine: `Event date: ${escapeHtml(eventDate)} · Times in ${escapeHtml(timeZone)} · Generated ${escapeHtml(new Date().toISOString())}`,
+    statsHtml,
+    sectionsHtml,
+  });
+
+  await auditReportsExported(db, c, eventId, "pdf", aggregates.total_attendees, false, "mail");
+
+  return new Response(html, {
+    status: 200,
+    headers: getPrintableReportSecurityHeaders(),
+  });
+}
+
+/** Display value for one attendee's answer to one custom field, read straight off the attendee's
+ * own `custom_data` JSON blob (same column countAttendeesByCustomFieldValue's raw SQL reads via
+ * `custom_data->>field`) - blank when the object itself is missing/malformed or the field was
+ * never answered. `boolean`-typed fields go through the same Yes/No label the Custom fields tab's
+ * own distribution chart uses (booleanValueLabel); `select`/`text` fields are already stored as
+ * their own display value, matching loadCustomFieldDistribution's own labelFor. */
+function customFieldCellValue(customData: unknown, field: { source_field: string; type: string }): string {
+  if (customData === null || typeof customData !== "object" || Array.isArray(customData)) return "";
+  const raw = (customData as Record<string, unknown>)[field.source_field];
+  if (raw === null || raw === undefined) return "";
+  const value = String(raw);
+  return field.type === "boolean" ? booleanValueLabel(value) : value;
+}
+
+const CUSTOM_FIELDS_EXPORT_ATTENDEE_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  ticket_type: true,
+  custom_data: true,
+} as const;
+
+/** One CSV row for exportCustomFieldReportsCsv below - same split-out-of-the-map-callback
+ * reasoning as buildWalletExportCsvRow/buildMailExportCsvRow. */
+export function buildCustomFieldExportCsvRow(
+  row: Prisma.AttendeeGetPayload<{ select: typeof CUSTOM_FIELDS_EXPORT_ATTENDEE_SELECT }>,
+  catalog: TicketTypeInfo[],
+  fields: ReadonlyArray<{ source_field: string; type: string }>,
+): string {
+  return [
+    row.name,
+    row.email,
+    resolveTicketTypeLabel(catalog, row.ticket_type),
+    ...fields.map((field) => customFieldCellValue(row.custom_data, field)),
+  ]
+    .map((cell) => quoteCsvCell(sanitizeCsvCell(String(cell))))
+    .join(",");
+}
+
+/** GET .../reports/export?format=csv&report=customfields - one row per attendee, one column per
+ * the event's own EventCustomField catalog (same order loadCustomFieldReportsAggregates already
+ * uses for the tab's own cards) - same "full underlying population" reasoning as the wallets/mail
+ * exports above. A field added after some attendees registered still gets its own column; those
+ * earlier rows just read blank for it, same as a genuinely unanswered field. */
+async function exportCustomFieldReportsCsv(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  event: { slug: string },
+  dateStamp: string,
+): Promise<Response> {
+  const [totalAttendees, rows, catalog, fields] = await Promise.all([
+    db.attendee.count({ where: { event_id: eventId } }),
+    db.attendee.findMany({
+      where: { event_id: eventId },
+      orderBy: { name: "asc" },
+      take: CSV_EXPORT_MAX,
+      select: CUSTOM_FIELDS_EXPORT_ATTENDEE_SELECT,
+    }),
+    loadEventTicketTypes(db, eventId),
+    db.eventCustomField.findMany({
+      where: { event_id: eventId },
+      orderBy: [{ created_at: "asc" }, { id: "asc" }],
+    }),
+  ]);
+
+  const truncated = totalAttendees > CSV_EXPORT_MAX;
+
+  const columns = ["Name", "Email", "Ticket type", ...fields.map((f) => f.label)];
+  const header = columns.map((col) => quoteCsvCell(col)).join(",");
+
+  const dataRows = rows.map((row) => buildCustomFieldExportCsvRow(row, catalog, fields));
+
+  const truncationNotice = truncated
+    ? [
+        quoteCsvCell(sanitizeCsvCell(`Export truncated: first ${CSV_EXPORT_MAX} of ${totalAttendees} attendees.`)),
+        ...new Array(columns.length - 1).fill(quoteCsvCell("")),
+      ].join(",")
+    : null;
+
+  const csvBody = [header, ...(truncationNotice ? [truncationNotice] : []), ...dataRows].join("\r\n");
+  const bom = "﻿";
+  const filename = `custom-fields-${event.slug}-${dateStamp}.csv`;
+
+  await auditReportsExported(db, c, eventId, "csv", rows.length, truncated, "customfields");
+
+  return new Response(bom + csvBody, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": attachmentContentDisposition(filename),
+      "Cache-Control": "no-store",
+      "Pragma": "no-cache",
+      "X-Content-Type-Options": "nosniff",
+      "X-Custom-Fields-Export-Total": String(totalAttendees),
+      "X-Custom-Fields-Export-Truncated": String(truncated),
+    },
+  });
+}
+
+/** GET .../reports/export?format=pdf&report=customfields - printable summary mirroring the
+ * Custom fields tab's own per-field cards (a distribution table for select/boolean fields, a
+ * fill-rate stat for text fields) - reuses loadCustomFieldReportsAggregates, the same aggregate
+ * function backing the live JSON /reports/custom-fields endpoint. The CSV export above is where
+ * the full per-attendee raw answers live, same split as the wallets/mail exports. */
+async function exportCustomFieldReportsPdf(
+  db: PrismaClient,
+  c: Context,
+  eventId: string,
+  event: { title: string; date: Date },
+): Promise<Response> {
+  const aggregates = await loadCustomFieldReportsAggregates(db, eventId);
+  const eventDate = event.date.toISOString().slice(0, 10);
+
+  const statsHtml = [
+    { label: "Total attendees", value: String(aggregates.total_attendees) },
+    { label: "Custom fields", value: String(aggregates.fields.length) },
+  ]
+    .map((s) => `<div class="stat"><span>${s.label}</span><strong>${s.value}</strong></div>`)
+    .join("");
+
+  const sectionsHtml =
+    aggregates.fields.length === 0
+      ? `<p>This event has no custom fields configured.</p>`
+      : aggregates.fields
+          .map((field) => {
+            if (field.type === "text") {
+              const rate = field.response_rate;
+              return `
+  <h2>${escapeHtml(field.label)}</h2>
+  <table>
+    <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+    <tbody><tr><td>Answered</td><td>${rate ? `${rate.answered} (${rate.pct}%)` : "0 (0%)"}</td></tr></tbody>
+  </table>`;
+            }
+            const rows = (field.distribution ?? [])
+              .map((d) => `<tr><td>${escapeHtml(d.label)}</td><td>${d.count}</td><td>${d.pct}%</td></tr>`)
+              .join("");
+            return `
+  <h2>${escapeHtml(field.label)}</h2>
+  <table>
+    <thead><tr><th>Value</th><th>Attendees</th><th>Share</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="3">No responses yet</td></tr>'}</tbody>
+  </table>`;
+          })
+          .join("");
+
+  const html = renderPrintableReportHtml({
+    titleSuffix: "Custom fields report",
+    eventTitle: event.title,
+    metaLine: `Event date: ${escapeHtml(eventDate)} · Generated ${escapeHtml(new Date().toISOString())}`,
+    statsHtml,
+    sectionsHtml,
+  });
+
+  await auditReportsExported(db, c, eventId, "pdf", aggregates.total_attendees, false, "customfields");
 
   return new Response(html, {
     status: 200,

@@ -54,6 +54,7 @@ const EVENT_MAIL = "evt-reports-mail";
 const EMAIL_ADMIN = "reports-admin@example.com";
 const EMAIL_ADMIN_B = "reports-admin-b@example.com";
 const EMAIL_ADMIN_WALLETS = "reports-admin-wallets@example.com";
+const EMAIL_ADMIN_MAIL = "reports-admin-mail@example.com";
 const EMAIL_OP = "reports-op@example.com";
 const PASSWORD = "reports-test-pass-123";
 
@@ -110,6 +111,7 @@ let app: ReturnType<typeof createApp>;
 let adminId: string;
 let adminBId: string;
 let adminWalletsId: string;
+let adminMailId: string;
 let opId: string;
 let adminCookie = "";
 let adminBCookie = "";
@@ -119,6 +121,11 @@ let opCookie = "";
 // reusing adminCookie here would share a single 10-per-hour budget with every admissions export
 // test above and trip the limiter (Codecov coverage follow-up, PR #1125).
 let adminWalletsCookie = "";
+// Same reasoning as adminWalletsCookie above, shared by the mail and customfields export
+// describe blocks below (report=mail/report=customfields still hit the same
+// admin:export:user:<id>:route:/reports/export bucket as every other report type) - one dedicated
+// user is enough since the two blocks together stay well under the 10/hour cap.
+let adminMailCookie = "";
 
 function mkAttendeeToken() {
   const token = generateToken();
@@ -174,13 +181,13 @@ async function seed(client: PrismaClient) {
     where: { OR: [{ scope_id: { in: [ORG_REP, ORG_REP_B, ...eventIds] } }] },
   });
   await client.session.deleteMany({
-    where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS, EMAIL_OP] } } },
+    where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS, EMAIL_ADMIN_MAIL, EMAIL_OP] } } },
   });
   await client.userMfaMethod.deleteMany({
-    where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS] } } },
+    where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS, EMAIL_ADMIN_MAIL] } } },
   });
   await client.user.deleteMany({
-    where: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS, EMAIL_OP] } },
+    where: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS, EMAIL_ADMIN_MAIL, EMAIL_OP] } },
   });
   await client.event.deleteMany({ where: { id: { in: eventIds } } });
   await client.organization.deleteMany({ where: { id: { in: [ORG_REP, ORG_REP_B] } } });
@@ -586,10 +593,12 @@ async function seed(client: PrismaClient) {
   const adminUser = await client.user.create({ data: { email: EMAIL_ADMIN, password_hash } });
   const adminBUser = await client.user.create({ data: { email: EMAIL_ADMIN_B, password_hash } });
   const adminWalletsUser = await client.user.create({ data: { email: EMAIL_ADMIN_WALLETS, password_hash } });
+  const adminMailUser = await client.user.create({ data: { email: EMAIL_ADMIN_MAIL, password_hash } });
   const opUser = await client.user.create({ data: { email: EMAIL_OP, password_hash } });
   adminId = adminUser.id;
   adminBId = adminBUser.id;
   adminWalletsId = adminWalletsUser.id;
+  adminMailId = adminMailUser.id;
   opId = opUser.id;
 
   await client.roleAssignment.createMany({
@@ -597,11 +606,12 @@ async function seed(client: PrismaClient) {
       { user_id: adminId, role: "admin", scope_type: "organization", scope_id: ORG_REP },
       { user_id: adminBId, role: "admin", scope_type: "organization", scope_id: ORG_REP_B },
       { user_id: adminWalletsId, role: "admin", scope_type: "organization", scope_id: ORG_REP },
+      { user_id: adminMailId, role: "admin", scope_type: "organization", scope_id: ORG_REP },
       { user_id: opId, role: "operator", scope_type: "event", scope_id: EVENT_REP },
     ],
   });
 
-  for (const userId of [adminId, adminBId, adminWalletsId]) {
+  for (const userId of [adminId, adminBId, adminWalletsId, adminMailId]) {
     await client.userMfaMethod.create({
       data: {
         user_id: userId,
@@ -1194,10 +1204,12 @@ beforeAll(async () => {
   const adminSession = await createSession(prisma, { userId: adminId, stage: SESSION_STAGE.FULL });
   const adminBSession = await createSession(prisma, { userId: adminBId, stage: SESSION_STAGE.FULL });
   const adminWalletsSession = await createSession(prisma, { userId: adminWalletsId, stage: SESSION_STAGE.FULL });
+  const adminMailSession = await createSession(prisma, { userId: adminMailId, stage: SESSION_STAGE.FULL });
   const opSession = await createSession(prisma, { userId: opId, stage: SESSION_STAGE.FULL });
   adminCookie = `admitto_session=${adminSession.rawToken}`;
   adminBCookie = `admitto_session=${adminBSession.rawToken}`;
   adminWalletsCookie = `admitto_session=${adminWalletsSession.rawToken}`;
+  adminMailCookie = `admitto_session=${adminMailSession.rawToken}`;
   opCookie = `admitto_session=${opSession.rawToken}`;
 });
 
@@ -2554,7 +2566,7 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("report must be admissions or wallets");
+    expect(body.error).toBe("report must be admissions, wallets, mail, or customfields");
   });
 
   it("returns 403 for operator on CSV export", async () => {
@@ -3407,5 +3419,227 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     expect(meta.report).toBe("wallets");
     expect(meta.format).toBe("csv");
     expect(meta.count).toBe(8);
+  });
+});
+
+describe("GET /api/admin/events/:eventId/reports/export?report=mail", () => {
+  it("returns 403 for admin without event org access", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_MAIL}/reports/export?format=csv&report=mail`, {
+      headers: { Cookie: adminBCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns a mail CSV with one row per attendee, delivery/reach/viewed/wallet columns independent of each other", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_MAIL}/reports/export?format=csv&report=mail`, {
+      headers: { Cookie: adminMailCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/csv");
+    expect(res.headers.get("Content-Disposition")).toContain('filename="mail-reports-mail-');
+    expect(res.headers.get("X-Mail-Export-Total")).toBe("7");
+    expect(res.headers.get("X-Mail-Export-Truncated")).toBe("false");
+
+    const text = await res.text();
+    const lines = text.replace(/^﻿/, "").split("\r\n");
+    expect(lines).toHaveLength(8); // header + 7 attendees, no truncation notice
+    const header = lines[0]!.split(",").map((c) => c.replace(/^"|"$/g, ""));
+    const reachedCol = header.findIndex((h) => h === "Reached by email");
+    const successfulCol = header.findIndex((h) => h === "Successful delivery attempts");
+    const ticketSentCol = header.findIndex((h) => h.startsWith("Ticket email first sent at"));
+    const viewedCol = header.findIndex((h) => h === "Ticket page viewed");
+    const walletCol = header.findIndex((h) => h === "Wallet installed");
+    for (const col of [reachedCol, successfulCol, ticketSentCol, viewedCol, walletCol]) {
+      expect(col).toBeGreaterThan(-1);
+    }
+
+    const cellsFor = (name: string) => {
+      const row = lines.find((l) => l.includes(`"${name}"`));
+      expect(row).toBeDefined();
+      return row!.split(",").map((c) => c.replace(/^"|"$/g, ""));
+    };
+
+    // ATT_MAIL_QUEUED never had a working delivery (still "queued"), but its wallet_pass fixture
+    // makes it installed - proves "Wallet installed" isn't gated on "Reached by email", the same
+    // independence funnel.wallet_installed's own doc comment covers.
+    const queued = cellsFor("Mail Queued");
+    expect(queued[reachedCol]).toBe("No");
+    expect(queued[walletCol]).toBe("Yes");
+
+    // ATT_MAIL_BOUNCED_AFTER_ACCEPT has a real accepted_at but its current status is "bounced" -
+    // "Successful delivery attempts" and "Ticket email first sent at" must both read as if it
+    // never succeeded (status-gated, not just a non-null timestamp - the same bug class the
+    // sent_by_day chart itself was regression-tested against above).
+    const bouncedAfterAccept = cellsFor("Mail Bounced After Accept");
+    expect(bouncedAfterAccept[successfulCol]).toBe("0");
+    expect(bouncedAfterAccept[reachedCol]).toBe("No");
+    expect(bouncedAfterAccept[ticketSentCol]).toBe("");
+
+    // ATT_MAIL_RECOVERED reads as reached (its resend succeeded), but that resend used the
+    // "Reminder" template, not a genuine ticket send - "Ticket email first sent at" must stay
+    // blank, matching funnel.reached_by_email's own narrower ticket-only scoping.
+    const recovered = cellsFor("Mail Recovered");
+    expect(recovered[reachedCol]).toBe("Yes");
+    expect(recovered[ticketSentCol]).toBe("");
+
+    // ATT_MAIL_VIEWED_RECOVERED viewed its ticket page on an initial delivery that only later
+    // hard-bounced; a separate resend is what makes it "reached". "Ticket page viewed" reads Yes
+    // from the bounced row regardless, and "Ticket email first sent at" is populated from the
+    // resend (a genuine, successful, ticket-scoped delivery) - both independent EXISTS checks,
+    // not tied to the same row.
+    const viewedRecovered = cellsFor("Mail Viewed Recovered");
+    expect(viewedRecovered[reachedCol]).toBe("Yes");
+    expect(viewedRecovered[viewedCol]).toBe("Yes");
+    expect(viewedRecovered[ticketSentCol]).not.toBe("");
+  });
+
+  it("returns printable HTML for a mail pdf export", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_MAIL}/reports/export?format=pdf&report=mail`, {
+      headers: { Cookie: adminMailCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/html");
+    const html = await res.text();
+    expect(html).toContain("Mail Reports Event");
+    // Same by_status counts already pinned by the GET aggregate test above (9 attempts: 1 queued,
+    // 2 accepted, 1 sent, 1 failed, 3 bounced, 1 cancelled).
+    expect(html).toContain("<td>bounced</td><td>3</td><td>33.3%</td>");
+    expect(html).toContain("<td>queued</td><td>1</td>");
+    // by_template: the default (null) template reads as "Default ticket email".
+    expect(html).toContain("<td>Default ticket email</td><td>2</td><td>8</td><td>25%</td>");
+    expect(html).toContain("<td>Reminder</td><td>1</td><td>1</td><td>100%</td>");
+    // ticket_viewed: reached 3, viewed 2.
+    expect(html).toContain("<tr><td>Opened ticket page</td><td>2</td><td>66.7%</td></tr>");
+    // admission_by_email: reached 3 (2 admitted), not_reached 4 (1 admitted).
+    expect(html).toContain("<tr><td>Reached by email</td><td>2</td><td>3</td><td>66.7%</td></tr>");
+    expect(html).toContain("<tr><td>Not reached by email</td><td>1</td><td>4</td><td>25%</td></tr>");
+    // Event journey: total 7, reached_by_email 2, wallet_installed 2, attended 3.
+    expect(html).toContain("<tr><td>Reached by email</td><td>2</td><td>28.6%</td></tr>");
+    expect(html).toContain("<tr><td>Wallet installed</td><td>2</td><td>28.6%</td></tr>");
+    expect(html).toContain("<tr><td>Attended</td><td>3</td><td>42.9%</td></tr>");
+  });
+
+  it("shows every empty state in the mail pdf for an event with no attendees", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EMPTY}/reports/export?format=pdf&report=mail`, {
+      headers: { Cookie: adminMailCookie },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("No emails sent yet");
+    expect(html).toContain("No reached attendees yet");
+  });
+
+  it("audit: reports_exported records report=mail, not the admissions default", async () => {
+    await prisma.attendeeActionLog.deleteMany({
+      where: { event_id: EVENT_MAIL, action_type: "reports_exported" },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_MAIL}/reports/export?format=csv&report=mail`, {
+      headers: { Cookie: adminMailCookie },
+    });
+    expect(res.status).toBe(200);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_MAIL, action_type: "reports_exported" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    const meta = log!.metadata as Record<string, unknown>;
+    expect(meta.report).toBe("mail");
+    expect(meta.format).toBe("csv");
+    expect(meta.count).toBe(7);
+  });
+});
+
+describe("GET /api/admin/events/:eventId/reports/export?report=customfields", () => {
+  it("returns 403 for admin without event org access", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_CUSTOM_FIELDS}/reports/export?format=csv&report=customfields`, {
+      headers: { Cookie: adminBCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns a custom-fields CSV with one column per field, blank for an unanswered field", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_CUSTOM_FIELDS}/reports/export?format=csv&report=customfields`, {
+      headers: { Cookie: adminMailCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/csv");
+    expect(res.headers.get("Content-Disposition")).toContain('filename="custom-fields-reports-custom-fields-');
+    expect(res.headers.get("X-Custom-Fields-Export-Total")).toBe("5");
+    expect(res.headers.get("X-Custom-Fields-Export-Truncated")).toBe("false");
+
+    const text = await res.text();
+    const lines = text.replace(/^﻿/, "").split("\r\n");
+    expect(lines).toHaveLength(6); // header + 5 attendees
+    // Registry order (created_at asc), same order the live JSON endpoint's own test asserts.
+    expect(lines[0]).toBe('"Name","Email","Ticket type","Dietary requirements","Shirt size","Vegetarian","Newsletter opt-in"');
+
+    const cellsFor = (name: string) => {
+      const row = lines.find((l) => l.includes(`"${name}"`));
+      expect(row).toBeDefined();
+      return row!.split(",").map((c) => c.replace(/^"|"$/g, ""));
+    };
+
+    // ATT_CF_1: dietary "Vegan", shirt_size "M", vegetarian true, newsletter true - boolean
+    // fields resolve to the same Yes/No label the tab's own distribution chart uses.
+    expect(cellsFor("CF One")).toEqual(["CF One", "cf1@example.com", "(none)", "Vegan", "M", "Yes", "Yes"]);
+    // ATT_CF_4: only newsletter_optin answered - the other three fields read blank, not "false"/0.
+    expect(cellsFor("CF Four")).toEqual(["CF Four", "cf4@example.com", "(none)", "", "", "", "No"]);
+  });
+
+  it("returns printable HTML for a custom-fields pdf export", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_CUSTOM_FIELDS}/reports/export?format=pdf&report=customfields`, {
+      headers: { Cookie: adminMailCookie },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/html");
+    const html = await res.text();
+    expect(html).toContain("Custom Fields Reports Event");
+    expect(html).toContain("<h2>Dietary requirements</h2>");
+    // text field: response_rate 3 of 5 answered (60%), same as the GET aggregate test above.
+    expect(html).toContain("<tr><td>Answered</td><td>3 (60%)</td></tr>");
+    // select field: 2xM, 1xL, 2 not answered.
+    expect(html).toContain("<tr><td>M</td><td>2</td><td>40%</td></tr>");
+    expect(html).toContain("<tr><td>Not answered</td><td>2</td><td>40%</td></tr>");
+    // Newsletter opt-in: every attendee answered it, unlike shirt_size above - its own table must
+    // have no "Not answered" row at all, not just a 0-count one (per
+    // EventCustomFieldReportsResponse's own doc comment on omitting that bucket entirely).
+    const newsletterSectionStart = html.indexOf("<h2>Newsletter opt-in</h2>");
+    expect(newsletterSectionStart).toBeGreaterThan(-1);
+    const newsletterSection = html.slice(newsletterSectionStart, newsletterSectionStart + 400);
+    expect(newsletterSection).toContain("<tr><td>Yes</td><td>3</td><td>60%</td></tr>");
+    expect(newsletterSection).toContain("<tr><td>No</td><td>2</td><td>40%</td></tr>");
+    expect(newsletterSection).not.toContain("Not answered");
+  });
+
+  it("shows a 'no custom fields configured' fallback for an event with none", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EMPTY}/reports/export?format=pdf&report=customfields`, {
+      headers: { Cookie: adminMailCookie },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("This event has no custom fields configured.");
+  });
+
+  it("audit: reports_exported records report=customfields, not the admissions default", async () => {
+    await prisma.attendeeActionLog.deleteMany({
+      where: { event_id: EVENT_CUSTOM_FIELDS, action_type: "reports_exported" },
+    });
+
+    const res = await app.request(`/api/admin/events/${EVENT_CUSTOM_FIELDS}/reports/export?format=csv&report=customfields`, {
+      headers: { Cookie: adminMailCookie },
+    });
+    expect(res.status).toBe(200);
+
+    const log = await prisma.attendeeActionLog.findFirst({
+      where: { event_id: EVENT_CUSTOM_FIELDS, action_type: "reports_exported" },
+      orderBy: { created_at: "desc" },
+    });
+    expect(log).not.toBeNull();
+    const meta = log!.metadata as Record<string, unknown>;
+    expect(meta.report).toBe("customfields");
+    expect(meta.format).toBe("csv");
+    expect(meta.count).toBe(5);
   });
 });

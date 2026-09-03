@@ -5,8 +5,12 @@ import { Badge, Button, Card, EmptyState, HintLabel, PageHeader, Skeleton, Spinn
 import { enabledWalletPlatforms } from "@admitto/shared";
 import {
   ApiError,
+  eventCustomFieldReportsPrintUrl,
+  eventMailReportsPrintUrl,
   eventReportsPrintUrl,
   eventWalletReportsPrintUrl,
+  exportEventCustomFieldReportsCsv,
+  exportEventMailReportsCsv,
   exportEventReportsCsv,
   exportEventWalletReportsCsv,
   fetchEventReports,
@@ -972,11 +976,16 @@ export function ReportsPage() {
 
     setExportingCsv(true);
     try {
-      // Exports whatever tab is active, not always the admission log - a Wallets-tab CSV shares
-      // nothing with Event day's per-admission rows (see WalletsReportsTab.tsx), so this branches
-      // to a wholly separate request rather than a shared "export the current tab" helper.
+      // Exports whatever tab is active, not always the admission log - a Wallets/Mail/Custom
+      // fields-tab CSV shares nothing with Event day's per-admission rows (see
+      // WalletsReportsTab.tsx et al), so this branches to a wholly separate request per tab
+      // rather than a shared "export the current tab" helper.
       if (activeTab === "wallets") {
         await exportEventWalletReportsCsv(eventId, ac.signal);
+      } else if (activeTab === "mail") {
+        await exportEventMailReportsCsv(eventId, ac.signal);
+      } else if (activeTab === "customfields") {
+        await exportEventCustomFieldReportsCsv(eventId, ac.signal);
       } else {
         await exportEventReportsCsv(eventId, ac.signal);
       }
@@ -989,7 +998,14 @@ export function ReportsPage() {
 
   const handleExportPdf = useCallback(() => {
     if (!eventId) return;
-    const url = activeTab === "wallets" ? eventWalletReportsPrintUrl(eventId) : eventReportsPrintUrl(eventId);
+    const url =
+      activeTab === "wallets"
+        ? eventWalletReportsPrintUrl(eventId)
+        : activeTab === "mail"
+          ? eventMailReportsPrintUrl(eventId)
+          : activeTab === "customfields"
+            ? eventCustomFieldReportsPrintUrl(eventId)
+            : eventReportsPrintUrl(eventId);
     window.open(url, "_blank", "noopener,noreferrer");
   }, [eventId, activeTab]);
 
@@ -1029,18 +1045,12 @@ export function ReportsPage() {
         actions={
           <ReportsExportMenu
             exportingCsv={exportingCsv}
-            // Only Event day's own loading/error gates the button - the Wallets tab loads and
-            // exports independently (WalletsReportsTab owns its own fetch, ReportsPage never
-            // sees its loading state), so gating on Event day's state while Wallets is active
-            // would disable the button for a fetch that has nothing to do with what it's about
-            // to export. Custom fields has no CSV/PDF export of its own yet, so the button is
-            // simply unavailable while that tab is active, rather than falling through to
-            // export whichever other tab's data handleExportCsv/handleExportPdf default to.
-            disabled={
-              (activeTab === "eventday" && (loading || !!error)) ||
-              activeTab === "customfields" ||
-              activeTab === "mail"
-            }
+            // Only Event day's own loading/error gates the button - the Wallets/Mail/Custom
+            // fields tabs each load and export independently (own fetch, own aggregate query on
+            // the export side; ReportsPage never sees their loading state), so gating on Event
+            // day's state while one of them is active would disable the button for a fetch that
+            // has nothing to do with what it's about to export.
+            disabled={activeTab === "eventday" && (loading || !!error)}
             isDesktop={isDesktop}
             onExport={handleExport}
           />
