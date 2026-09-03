@@ -430,8 +430,10 @@ describe("WalletsReportsTab", () => {
       { name: "Removed", meta: "3 · 20%" },
       { name: "Never installed", meta: "6 · 40%" },
     ]);
-    expect(lifecycleCard.querySelector(".wallets-gauge-overlay__value")?.textContent).toBe("3");
-    expect(lifecycleCard.querySelector(".wallets-gauge-overlay__label")?.textContent).toBe("removed");
+    // Centers on the ring's whole (got_pass=15), not the "Removed" slice's own value - that value
+    // is already shown in the "Removed" legend row above.
+    expect(lifecycleCard.querySelector(".wallets-gauge-overlay__value")?.textContent).toBe("15");
+    expect(lifecycleCard.querySelector(".wallets-gauge-overlay__label")?.textContent).toBe("issued");
 
     // No truncation notice for this (default) fixture.
     expect(document.querySelector(".wallets-truncated-notice")).toBeNull();
