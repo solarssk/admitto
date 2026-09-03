@@ -11,6 +11,13 @@ on:
   schedule:
     - cron: "0 5 * * 1"
 
+# See ci.yml's own concurrency block for the full rationale - same group/cancel pattern so a
+# superseded PR push doesn't leave a stale `semgrep` run racing the new one, while main pushes and
+# the weekly schedule always run to completion uncancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 permissions:
   contents: read
   security-events: write
@@ -52,6 +59,9 @@ jobs:
             --exclude coverage
 
           if [ ! -f semgrep.sarif ]; then
+            # Literal SARIF JSON: "$schema" is a JSON key, not a shell variable, and must stay
+            # unexpanded - single-quoting is intentional here, not an oversight.
+            # shellcheck disable=SC2016
             printf '%s\n' '{"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[{"tool":{"driver":{"name":"Semgrep","informationUri":"https://semgrep.dev","rules":[]}},"results":[]}]}' > semgrep.sarif
           fi
         env:
