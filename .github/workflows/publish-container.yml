@@ -285,6 +285,15 @@ jobs:
             $(printf 'ghcr.io/${{ github.repository }}@sha256:%s ' *)
           echo "digest=$(jq -r '.["containerimage.descriptor"].digest' /tmp/manifest-metadata.json)" >> "$GITHUB_OUTPUT"
 
+      - name: Verify manifest landed identically on both registries
+        run: |
+          set -euo pipefail
+          DIGEST="${{ steps.manifest.outputs.digest }}"
+          for IMG in "ghcr.io/${{ github.repository }}" "docker.io/solarssk/admitto"; do
+            echo "Verifying ${IMG}@${DIGEST}"
+            docker buildx imagetools inspect "${IMG}@${DIGEST}" >/dev/null
+          done
+
       - name: Attest build provenance (ghcr.io)
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
