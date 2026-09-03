@@ -790,6 +790,18 @@ describe("CommunicationSendPanel", () => {
         dryRun: true,
       });
     });
+
+    fireEvent.click(screen.getByRole("radio", { name: "By wallet status" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Wallet status,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Active (installed now)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
+    await waitFor(() => {
+      expect(sendEventBulk).toHaveBeenLastCalledWith("evt-1", {
+        templateId: "tpl-1",
+        filter: { type: "wallet_status", value: "active" },
+        dryRun: true,
+      });
+    });
   });
 
   it("shows the empty and singular dry-run recipient notices", async () => {

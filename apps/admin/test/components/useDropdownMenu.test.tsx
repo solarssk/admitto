@@ -210,6 +210,35 @@ describe("useDropdownMenu", () => {
     vi.unstubAllGlobals();
   });
 
+  it("flips instead of clamping a short panel that fits raw space below but not once the gap+pad margin is reserved", () => {
+    // Regression coverage for a real 3-option picker (Communication's "By wallet status"
+    // filter): a panel this short (35px) fits within the raw 40px below the trigger, so the old
+    // flip check (`panelHeight > spaceBelow`) judged it as "fits, stay down" - but the clamp
+    // check right after reserves gap(4) + VIEWPORT_PAD_PX(8) = 12px first, leaving only 28px
+    // available, which the same 35px panel does *not* fit into. That mismatch clamped the panel
+    // with a barely-there scrollbar instead of flipping it into the 350px of room above, which
+    // both checks agree it needs.
+    vi.stubGlobal("innerHeight", 400);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const base = { left: 0, right: 0, width: 0, x: 0, y: 0, toJSON() {} };
+      if (this.getAttribute("role") === "menu") return { ...base, top: 0, bottom: 0, height: 35 };
+      return { ...base, top: 350, bottom: 360, height: 10 }; // trigger: 40px below, 350px above
+    });
+
+    render(<TestMenu />);
+    fireEvent.click(screen.getByRole("button", { name: "Trigger" }));
+    const menu = screen.getByRole("menu");
+
+    expect(menu.dataset.up).toBe("true");
+    expect(menu.style.maxHeight).toBe("");
+    expect(menu.style.top).toBe("311px"); // 350 - 35 - 4 (gap)
+
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
   it("repositions an upward-flipped panel when its own content shrinks, not just on window resize", () => {
     // Regression coverage for the bot review finding: SearchableSelect/PhoneCountrySelect's
     // list can shrink by hundreds of pixels as the user types into the search box. A panel
