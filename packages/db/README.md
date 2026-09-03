@@ -4,7 +4,7 @@ Database layer for Admitto. PostgreSQL is the single engine across dev, CI and p
 
 ## Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) — required to run PostgreSQL locally
+- [Docker](https://docs.docker.com/get-docker/) - required to run PostgreSQL locally
 
 ## First run
 
@@ -17,8 +17,8 @@ cp packages/db/.env.example packages/db/.env          # already set for docker-c
 
 # 3. Generate Prisma client and migrate (includes agency public_ref backfill)
 npm run db:migrate -w @admitto/db
-npm run db:seed -w @admitto/db      # idempotent — safe to run multiple times
-npm run db:test-setup               # from repo root — creates admitto_*_test DBs for package tests
+npm run db:seed -w @admitto/db      # idempotent - safe to run multiple times
+npm run db:test-setup               # from repo root - creates admitto_*_test DBs for package tests
 ```
 
 Or from the repo root using the delegating scripts:
@@ -38,7 +38,7 @@ npm run db:seed
 | `db:migrate:dev` | Creates a new migration from schema changes during development (`prisma migrate dev`) |
 | `db:migrate:status` | Shows which migrations are applied and whether the schema has local drift |
 | `db:backfill-public-ref` | Idempotent TS backfill for agency rows missing `public_ref` (also runs at end of `db:migrate`) |
-| `db:seed` | Inserts 1 event + 4 attendees (upsert by `(event_id, email)` — mirrors real import logic) |
+| `db:seed` | Inserts 1 event + 4 attendees (upsert by `(event_id, email)` - mirrors real import logic) |
 
 From repo root, `npm run db:test-setup` creates `admitto_tickets_test` and `admitto_import_test`
 (idempotent). Required before `npm test` when using the local Docker Postgres.
@@ -47,9 +47,9 @@ From repo root, `npm run db:test-setup` creates `admitto_tickets_test` and `admi
 
 Additive-by-default (ADR 0027 expand-contract). Production upgrades must never destroy data.
 
-1. **Expand** — add columns/tables (nullable or with defaults) in release N.
-2. **Backfill + verify** — dual-write/read; backfill in release N or N+1.
-3. **Contract** — drop old columns/tables in a **later** release after nothing reads them.
+1. **Expand** - add columns/tables (nullable or with defaults) in release N.
+2. **Backfill + verify** - dual-write/read; backfill in release N or N+1.
+3. **Contract** - drop old columns/tables in a **later** release after nothing reads them.
 
 **Renames:** add new column → backfill → switch application code → drop old column. Do not use raw
 `RENAME COLUMN` / `RENAME TABLE` in a release that still runs older code.
@@ -59,7 +59,7 @@ existing columns, `DROP` without `IF EXISTS`) is blocked in CI for **new** migra
 only with PR label `migration-destructive-approved`, SQL comment
 `-- destructive-approved: <reason>`, and Opus pre-merge review.
 
-**Never edit** an existing `prisma/migrations/<name>/migration.sql` after merge — add a new migration
+**Never edit** an existing `prisma/migrations/<name>/migration.sql` after merge - add a new migration
 folder instead. The CI guard scans only newly added files (`git diff --diff-filter=A` vs `main`).
 
 **Production path:** only `prisma migrate deploy` (automatic on container start). Never
@@ -75,7 +75,7 @@ import { type AttendeeStatus, type CheckInStatus, CHECKIN_STATUS } from '@admitt
 ## Statuses
 
 TypeScript unions in `src/status.ts` are the single source of truth for all status values
-(no Prisma enums — kept as String for portability and consistency).
+(no Prisma enums - kept as String for portability and consistency).
 
 | Type | Values |
 |---|---|
@@ -90,8 +90,8 @@ TypeScript unions in `src/status.ts` are the single source of truth for all stat
 
 ## Schema notes
 
-- `Attendee.token_hash` — SHA-256 of the raw token; null for agency (Mode B) attendees.
-- `Attendee.qr_payload` — agency-provided QR payload preserved as source of truth.
-- `Attendee.external_uuid` — agency UUID; unique per event `(event_id, external_uuid)` for idempotent re-import.
-- `CheckIn.event_id` — denormalised for event-scoped queries; composite FK `(attendee_id, event_id)` → `Attendee(id, event_id)` prevents cross-event mismatches.
-- `CheckIn.status` — `CheckInStatus` value recorded at scan time.
+- `Attendee.token_hash` - SHA-256 of the raw token; null for agency (Mode B) attendees.
+- `Attendee.qr_payload` - agency-provided QR payload preserved as source of truth.
+- `Attendee.external_uuid` - agency UUID; unique per event `(event_id, external_uuid)` for idempotent re-import.
+- `CheckIn.event_id` - denormalised for event-scoped queries; composite FK `(attendee_id, event_id)` → `Attendee(id, event_id)` prevents cross-event mismatches.
+- `CheckIn.status` - `CheckInStatus` value recorded at scan time.

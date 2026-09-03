@@ -4,7 +4,7 @@ AES-256-GCM encryption for secrets and ticket tokens at rest (ADR 0006). Small, 
 
 ## Configuration
 
-`ENCRYPTION_KEY` must be set in the environment — a **32-byte** value, base64-encoded (typically `openssl rand -base64 32`). Missing or wrong-length keys fail fast at first use.
+`ENCRYPTION_KEY` must be set in the environment - a **32-byte** value, base64-encoded (typically `openssl rand -base64 32`). Missing or wrong-length keys fail fast at first use.
 
 ```ts
 import { encrypt, decrypt, encryptToString, decryptFromString } from "@admitto/crypto";
@@ -17,7 +17,7 @@ const plain = decrypt(payload);
 
 ## Token helper
 
-`generateToken()` — 256-bit CSPRNG, base64url — for opaque identifiers unrelated to AES payloads.
+`generateToken()` - 256-bit CSPRNG, base64url - for opaque identifiers unrelated to AES payloads.
 
 ## Tests
 

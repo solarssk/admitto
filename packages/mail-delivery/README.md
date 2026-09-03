@@ -14,9 +14,9 @@ Orchestrates ticket email delivery: resolve config/template → issue ticket →
 
 ### Operator preflight (v0.3 PR5)
 
-- `sendTestEmail({ eventId, toAddress }, prisma, env?, deps?)` — one test mail with **sample** template data (`previewTemplate`); does **not** create `EmailDelivery` rows
-- `getMailConfigDescription(eventId, prisma, env?)` — masked read-only config (passthrough to `describeMailConfig`)
-- `listDeliveries({ eventId, filters?, skip?, take? }, prisma)` — returns `{ items, total }`; safe delivery log projection (no `rendered_html` body)
+- `sendTestEmail({ eventId, toAddress }, prisma, env?, deps?)` - one test mail with **sample** template data (`previewTemplate`); does **not** create `EmailDelivery` rows
+- `getMailConfigDescription(eventId, prisma, env?)` - masked read-only config (passthrough to `describeMailConfig`)
+- `listDeliveries({ eventId, filters?, skip?, take? }, prisma)` - returns `{ items, total }`; safe delivery log projection (no `rendered_html` body)
 
 ## Test-send vs ticket send
 
@@ -49,8 +49,8 @@ Initial sends use a PostgreSQL partial unique index on `(attendee_id, event_id) 
 
 ## Retry vs resend
 
-- **Retry** — same `EmailDelivery` row, frozen `rendered_subject` / `rendered_html`.
-- **Resend** — new row with `purpose = 'resend'`, fresh render.
+- **Retry** - same `EmailDelivery` row, frozen `rendered_subject` / `rendered_html`.
+- **Resend** - new row with `purpose = 'resend'`, fresh render.
 
 ## Snapshot retention
 

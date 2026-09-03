@@ -1,6 +1,6 @@
 # @admitto/shared
 
-Neutral, dependency-free helpers shared across workspace packages. Keep this package tiny — no DB, no crypto, no framework imports.
+Neutral, dependency-free helpers shared across workspace packages. Keep this package tiny - no DB, no crypto, no framework imports.
 
 ## Exports
 

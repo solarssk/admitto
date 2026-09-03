@@ -7,6 +7,15 @@ provider would only need to implement this interface.
 
 This README is the current technical reference for how the wallet integration works today.
 
+- [Architecture](#architecture)
+- [Key exports](#key-exports)
+- [PassCreator API surface actually used](#passcreator-api-surface-actually-used)
+- [Data flow: field mapping is the only mechanism (semantics API field does not exist)](#data-flow-field-mapping-is-the-only-mechanism-semantics-api-field-does-not-exist)
+  - [Standard: every date/time placeholder sent to Apple is a real ISO 8601 instant](#standard-every-datetime-placeholder-sent-to-apple-is-a-real-iso-8601-instant)
+  - [Visible field text: region-aware formatting](#visible-field-text-region-aware-formatting-packagesticketssrcregion-date-formatts)
+- [Explicitly out of scope](#explicitly-out-of-scope)
+- [Webhooks and background sync](#webhooks-and-background-sync)
+
 ## Architecture
 
 ```
@@ -14,7 +23,7 @@ apps/web (on-demand create/redirect routes, admin wallet action routes, webhook 
 apps/cli (background worker: registration-sync, wallet_push job drain)
         │
         ▼
-packages/tickets  buildWalletPassInput()  — Event/Attendee → provider-neutral WalletPassInput
+packages/tickets  buildWalletPassInput()  - Event/Attendee → provider-neutral WalletPassInput
         │
         ▼
 packages/wallet    WalletPassProvider interface, PassCreatorClient, toPassCreatorData() mapper
