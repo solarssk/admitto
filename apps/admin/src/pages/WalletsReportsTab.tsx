@@ -272,9 +272,12 @@ function platformBreakdownRows(
  * mutually-exclusive outcomes (always summing to `adoption.got_pass`, unlike platform's slices
  * which sum to `adoption.confirmed`) - one visual language for "here's how a whole equals the sum
  * of its parts" across this tab, rather than a second one-off chart shape for a card that's
- * conceptually the same kind of breakdown. Centers on `removed` (not the `active` count
- * AdoptionGauge/PlatformDonut center on) - the removal count is the one number this card exists to
- * surface that no other card on this tab can show at all (see the DTO's own doc comment). */
+ * conceptually the same kind of breakdown. Centers on the same total the ring's slices sum to
+ * (`adoption.got_pass`, passed in as `gotPass` rather than re-summed from the three slices here),
+ * matching PlatformDonut/AdoptionGauge centering on their own ring's whole - not on `removed`
+ * (PO review, 2026-09-03): the ring already has a red "Removed" slice and legend row for that
+ * number, so the center is free to answer "how many total" instead of repeating one slice's value
+ * there too. */
 function walletLifecycleSlices(lifecycle: EventWalletReportsResponse["wallet_lifecycle"]): ReportsDonutSlice[] {
   return (Object.keys(LIFECYCLE_LABELS) as WalletLifecycleKey[]).map((key) => ({
     label: LIFECYCLE_LABELS[key],
@@ -285,13 +288,18 @@ function walletLifecycleSlices(lifecycle: EventWalletReportsResponse["wallet_lif
 
 function WalletLifecycleDonut({
   lifecycle,
+  gotPass,
   isActive,
-}: Readonly<{ lifecycle: EventWalletReportsResponse["wallet_lifecycle"]; isActive: boolean }>) {
+}: Readonly<{
+  lifecycle: EventWalletReportsResponse["wallet_lifecycle"];
+  gotPass: number;
+  isActive: boolean;
+}>) {
   return (
     <ReportsDonutChart
       slices={walletLifecycleSlices(lifecycle)}
-      centerValue={lifecycle.removed}
-      centerLabel="removed"
+      centerValue={gotPass}
+      centerLabel="issued"
       unit="pass"
       isActive={isActive}
     />
@@ -645,7 +653,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
             Every issued pass, grouped by whether it&rsquo;s still installed, was removed from every device, or was never installed at all.
           </p>
           <div className="wallets-adoption">
-            <WalletLifecycleDonut lifecycle={data.wallet_lifecycle} isActive={isActive} />
+            <WalletLifecycleDonut lifecycle={data.wallet_lifecycle} gotPass={data.adoption.got_pass} isActive={isActive} />
             <div className="wallets-adoption__breakdown">
               <BreakdownRows rows={walletLifecycleBreakdownRows(data.wallet_lifecycle, data.adoption.got_pass)} />
             </div>
