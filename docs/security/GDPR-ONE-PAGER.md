@@ -13,15 +13,15 @@
 - **Processor role:** if applicable, determined by customer contracts (self-hosted software;
   no vendor cloud database in MVP).
 - **Deployment:** single-tenant, self-hosted; region chosen by the customer.
-- **No vendor-hosted multi-tenant SaaS** in MVP — personal data stays in customer PostgreSQL.
+- **No vendor-hosted multi-tenant SaaS** in MVP - personal data stays in customer PostgreSQL.
 
 ---
 
 ## Purposes of processing
 
-| Purpose | Lawful basis (candidates — confirm with legal) |
+| Purpose | Lawful basis (candidates - confirm with legal) |
 |---------|--------------------------------------------------|
-| Event access (ticketing, check-in) | Legitimate interest / contract — **LIA may be required** for external guests |
+| Event access (ticketing, check-in) | Legitimate interest / contract - **LIA may be required** for external guests |
 | Ticket email delivery | Same as above |
 | Security and audit logging | Legitimate interest |
 | Staff administration | Contract / legitimate interest |
@@ -36,7 +36,7 @@ If you rely on **legitimate interest** (Art. 6(1)(f) GDPR), your DPO should docu
 | Category | Examples | Special category? |
 |----------|----------|-------------------|
 | Identity | Name, email | Personal data |
-| Optional profile | Company, department, custom fields | Personal data — free-text notes/custom fields may contain Art. 9 special-category data (e.g. dietary, accessibility); see [DATA-PROTECTION.md](../../DATA-PROTECTION.md) |
+| Optional profile | Company, department, custom fields | Personal data - free-text notes/custom fields may contain Art. 9 special-category data (e.g. dietary, accessibility); see [DATA-PROTECTION.md](../../DATA-PROTECTION.md) |
 | Access token | Random QR / opaque ID | Not PII in the QR itself |
 | Operational | Check-in time, ticket type | Operational |
 | Technical | IP address, user-agent (sessions / throttling) | Personal data (online identifier) |
@@ -51,13 +51,13 @@ Two layers: **product-automated** (Admitto **worker** at boot and about every 24
 
 | Data | Policy (default design intent) |
 |------|-------------------------------|
-| Login sessions, trusted devices | Purged automatically when expired/revoked — **worker** (boot + ~24h) |
-| Security audit trail (`SecurityAuditLog` — login/MFA/logout/OIDC/access-denied) | Purged automatically after **30 days** default (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) — **worker** (boot + ~24h) |
-| Email delivery snapshots (`rendered_html`, `rendered_subject`) | Nullified **60 days** after terminal delivery — **worker** (boot + ~24h); delivery log metadata retained |
-| IP in admin audit log | **30 days or operator corporate log retention policy** — not auto-purged by product. (Check-in-time IP only appears in the System logs live tail below, in-memory only — not a persisted, purgeable table.) |
+| Login sessions, trusted devices | Purged automatically when expired/revoked - **worker** (boot + ~24h) |
+| Security audit trail (`SecurityAuditLog` - login/MFA/logout/OIDC/access-denied) | Purged automatically after **30 days** default (`SECURITY_AUDIT_LOG_RETENTION_DAYS`) - **worker** (boot + ~24h) |
+| Email delivery snapshots (`rendered_html`, `rendered_subject`) | Nullified **60 days** after terminal delivery - **worker** (boot + ~24h); delivery log metadata retained |
+| IP in admin audit log | **30 days or operator corporate log retention policy** - not auto-purged by product. (Check-in-time IP only appears in the System logs live tail below, in-memory only - not a persisted, purgeable table.) |
 | Event attendee PII | **Retained until operator erasure** (conscious product default); export via admin UI; erasure via the Attendees admin UI (single or bulk) or the `DELETE` API directly, per DSAR procedure |
 | Audit logs (general) | Per customer security policy; attendee data minimised in log lines (staff-accountability exception documented in [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) |
-| System logs live tail (in-memory only) | Not persisted by the product — last 1000 entries, emptied on every restart |
+| System logs live tail (in-memory only) | Not persisted by the product - last 1000 entries, emptied on every restart |
 
 Organizers can export attendee lists before erasure (spreadsheet / PDF export in admin UI).
 Per-attendee erasure uses `DELETE /api/admin/events/:eventId/attendees/:id` (v0.4.6+); follow
@@ -67,9 +67,9 @@ Per-attendee erasure uses `DELETE /api/admin/events/:eventId/attendees/:id` (v0.
 
 ## Data subject rights (access / erasure)
 
-Two models — **customer legal team chooses** before production:
+Two models - **customer legal team chooses** before production:
 
-### Option A — Self-service (API)
+### Option A - Self-service (API)
 
 Dedicated endpoints for data-subject export and deletion (e.g. verified via ticket token or email
 verification).
@@ -79,9 +79,9 @@ verification).
 | Clear for formal DSAR programmes | Extra development and legal alignment |
 | Fits automated privacy portals | Must match internal process exactly |
 
-**Status:** not in MVP by default — implement only if legal requires it.
+**Status:** not in MVP by default - implement only if legal requires it.
 
-### Option B — Organizer-mediated
+### Option B - Organizer-mediated
 
 Authorized staff export attendee data through the admin UI; erasure follows a **written procedure**
 (SLA, identity verification, audit trail).
@@ -97,7 +97,7 @@ Authorized staff export attendee data through the admin UI; erasure follows a **
 
 ## Subprocessors
 
-Depends on customer configuration — typical categories:
+Depends on customer configuration - typical categories:
 
 | Category | Role |
 |----------|------|
