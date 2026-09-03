@@ -1,6 +1,6 @@
 # @admitto/web
 
-HTTP server for Admitto — Hono on Node. Wires domain packages (`@admitto/auth`, `@admitto/tickets`, `@admitto/mail-delivery`, …) into routes, cookies, rate limits, and server-rendered HTML.
+HTTP server for Admitto - Hono on Node. Wires domain packages (`@admitto/auth`, `@admitto/tickets`, `@admitto/mail-delivery`, …) into routes, cookies, rate limits, and server-rendered HTML.
 
 Production runs from the Docker image built at the monorepo root (`Dockerfile` → `deploy/`). Local dev uses this package directly.
 
@@ -8,7 +8,7 @@ Production runs from the Docker image built at the monorepo root (`Dockerfile` �
 
 - Postgres (+ optional Redis) via [`infra/docker-compose.yml`](../../infra/docker-compose.yml)
 - `packages/db/.env` with `DATABASE_URL`
-- Root or `apps/web/.env` for `BASE_URL`, `ENCRYPTION_KEY`, mail provider vars — see [`apps/web/.env.example`](.env.example)
+- Root or `apps/web/.env` for `BASE_URL`, `ENCRYPTION_KEY`, mail provider vars - see [`apps/web/.env.example`](.env.example)
 
 ## Dev
 

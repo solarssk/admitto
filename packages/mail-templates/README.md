@@ -9,7 +9,7 @@ Outlook-safe mail template renderer for Admitto ticket emails.
 
 ## Placeholders
 
-Closed whitelist — `{{snake_case}}` only, no interior whitespace (use `{{first_name}}`, not
+Closed whitelist - `{{snake_case}}` only, no interior whitespace (use `{{first_name}}`, not
 `{{ first_name }}`). Any `{{...}}` token is validated: malformed names (e.g. `{{First_Name}}`,
 `{{first-name}}`, padded spacing) and unknown names fail validation (fail-closed).
 
@@ -19,9 +19,9 @@ Closed whitelist — `{{snake_case}}` only, no interior whitespace (use `{{first
 | `event_name`, `event_date`, `event_location`, `event_address`, `directions_text`, `accessibility_text` | Event location text; `event_location` is the venue name |
 | `event_map_url` | Optional static map image URL; empty until the event has a saved pin, or when `LOCATION_MAPS_ENABLED=false` |
 | `google_maps_url`, `apple_maps_url` | Optional directions links; empty until the event has a saved pin |
-| `ticket_url`, `qr_image_url` | Required URLs — missing/empty values fail render |
-| `logo_url`, `header_image_url` | Optional URLs — empty omits `src`/`href` (no `src=""`) |
-| `apple_wallet_url`, `google_wallet_url`, `download_page_url` | Reserved — empty until v0.5 |
+| `ticket_url`, `qr_image_url` | Required URLs - missing/empty values fail render |
+| `logo_url`, `header_image_url` | Optional URLs - empty omits `src`/`href` (no `src=""`) |
+| `apple_wallet_url`, `google_wallet_url`, `download_page_url` | Reserved - empty until v0.5 |
 
 URL validation applies to **runtime values**, not to `href="{{ticket_url}}"` in the template source.
 
@@ -31,8 +31,8 @@ Placeholders inside HTML or Outlook `<!--[if mso]>` conditional comments are als
 
 ## Template formats
 
-- **`mjml`** (default) — compiled on save via MJML → table-based, inline CSS HTML.
-- **`html`** (advanced) — passthrough; author is responsible for Outlook-safe markup.
+- **`mjml`** (default) - compiled on save via MJML → table-based, inline CSS HTML.
+- **`html`** (advanced) - passthrough; author is responsible for Outlook-safe markup.
 
 Built-in default is MJML, text-only header (no `{{logo_url}}` section).
 
@@ -51,7 +51,7 @@ Target **Outlook Classic (Word engine)** on Windows. Outlook New/Mac/web use a w
 
 **Layout**
 
-- Nested `<table role="presentation" cellpadding="0" cellspacing="0" border="0">` only — no flex/grid/`position` for structure.
+- Nested `<table role="presentation" cellpadding="0" cellspacing="0" border="0">` only - no flex/grid/`position` for structure.
 - Fixed **600px** width; ghost table: `<!--[if mso]><table width="600">…<![endif]-->`.
 - Single column preferred.
 
@@ -69,7 +69,7 @@ Target **Outlook Classic (Word engine)** on Windows. Outlook New/Mac/web use a w
 
 - `width` / `height` attributes + `display: block` + `alt`.
 - **No data-URI** images (blocked in many clients).
-- Hosted PNG for QR (`/q/:token.png` — wired in PR4).
+- Hosted PNG for QR (`/q/:token.png` - wired in PR4).
 
 **Head**
 

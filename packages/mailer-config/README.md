@@ -15,7 +15,7 @@ import {
 
 | Function | Purpose |
 |----------|---------|
-| `resolveMailConfig(eventId, prisma, env?)` | Full config for sending — decrypts secrets via `ENCRYPTION_KEY` |
+| `resolveMailConfig(eventId, prisma, env?)` | Full config for sending - decrypts secrets via `ENCRYPTION_KEY` |
 | `resolveMailConfigForOrg(organizationId, prisma, env?)` | Org-scoped resolve for instance Settings (no event layer) |
 | `describeMailConfig(eventId, prisma, env?)` | Masked read-only view for admin/settings (no plaintext secrets) |
 | `describeMailConfigForOrg(organizationId, prisma, env?)` | Org-scoped masked describe for instance Settings |
@@ -24,7 +24,7 @@ import {
 
 ## Providers
 
-Resolved `provider` is one of: `export_only`, `powerautomate`, `smtp`, `graph` — same set as `@admitto/mailer`.
+Resolved `provider` is one of: `export_only`, `powerautomate`, `smtp`, `graph` - same set as `@admitto/mailer`.
 
 ## Tests
 
