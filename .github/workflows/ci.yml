@@ -215,6 +215,19 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: web
           fail_ci_if_error: false
+      # Handed off to the sonarcloud job below (needs all three test-* jobs' LCOV together, and
+      # this repo's fork PRs never receive secrets - see that job's own comment).
+      - name: Upload coverage artifact for SonarCloud
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: coverage-web
+          path: |
+            apps/**/coverage/lcov.info
+            apps/**/coverage-integration/lcov.info
+            packages/**/coverage/lcov.info
+            packages/**/coverage-integration/lcov.info
+          retention-days: 1
 
   test-admin:
     runs-on: ubuntu-latest
@@ -267,6 +280,17 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: admin
           fail_ci_if_error: false
+      - name: Upload coverage artifact for SonarCloud
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: coverage-admin
+          path: |
+            apps/**/coverage/lcov.info
+            apps/**/coverage-integration/lcov.info
+            packages/**/coverage/lcov.info
+            packages/**/coverage-integration/lcov.info
+          retention-days: 1
 
   # Every remaining workspace. packages/db and packages/tickets both target the same
   # admitto_tickets_test database and both destructively reset its schema in their own beforeAll
@@ -367,6 +391,47 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: rest
           fail_ci_if_error: false
+      - name: Upload coverage artifact for SonarCloud
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: coverage-rest
+          path: |
+            apps/**/coverage/lcov.info
+            apps/**/coverage-integration/lcov.info
+            packages/**/coverage/lcov.info
+            packages/**/coverage-integration/lcov.info
+          retention-days: 1
+
+  # CI-based analysis (docs/dev/sonarcloud-ci-coverage-migration.md) - replaces the SonarCloud
+  # GitHub App's own Automatic Analysis, which cannot ingest coverage under any configuration.
+  # Report-only for now: no sonar.qualitygate.wait, not in build-test's needs: or main's required
+  # checks - that's a deliberate follow-up once real coverage numbers are visible and the existing
+  # "Sonar way" new_coverage < 80% condition is confirmed achievable, not a surprise wall here.
+  sonarcloud:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [test-web, test-admin, test-rest]
+    # Fork PRs never receive repo secrets, and unlike Codecov's upload action this scanner has no
+    # fail_ci_if_error-style soft-fail - an empty SONAR_TOKEN errors the step for real. Means fork
+    # PRs get no SonarCloud analysis post-migration (Automatic Analysis covered them today, just
+    # without coverage) - see the migration doc for the fuller trade-off writeup.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0 # required for accurate SCM/blame data - shallow clones degrade analysis
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: coverage-*
+          merge-multiple: true
+      - name: SonarQube Cloud Scan
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f  # v8.2.1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   # main's branch protection requires a status check literally named "build-test" - this
   # aggregator keeps that name alive (and its pass/fail contract equivalent to the old monolithic
@@ -564,6 +629,17 @@ jobs:
           # of them will correctly fail this gate until a human re-reviews and updates both this
           # list and REVIEWED_PACKAGE_VERSIONS - friction that's the point, not a bug.
           allow-licenses: MIT, ISC, Apache-2.0, BSD-3-Clause, BSD-2-Clause, BlueOak-1.0.0, Unlicense, OFL-1.1, MIT-0, CC0-1.0, 0BSD, CC-BY-4.0, Python-2.0, Zlib
+          # SonarSource/sonarqube-scan-action is LGPL-3.0, which isn't on the list above.
+          # Deliberately different case from the npm-package REVIEWED_PACKAGE_VERSIONS reasoning
+          # two paragraphs up: LGPL's redistribution obligation is about code a customer actually
+          # receives (why sharp/libvips - shipped in the container image - went through real
+          # per-version review instead of a blanket exemption here). A GitHub Action runs only in
+          # this repo's own CI and is never bundled into what a customer runs, so that concern
+          # doesn't apply regardless of which version is pinned - version-blindness here isn't the
+          # same hole it would be for a runtime dependency. Any future SHA bump still goes through
+          # Dependabot + a human-reviewed PR (dependabot.yml's github-actions ecosystem), same as
+          # every other action pin in this repo.
+          allow-dependencies-licenses: "pkg:githubactions/sonarsource/sonarqube-scan-action"
 
   docker-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
