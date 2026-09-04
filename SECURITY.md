@@ -44,7 +44,7 @@ Active automated checks in this repository:
 | gitleaks | Secret scan (full history) | Every PR | `.github/workflows/ci.yml` (`secret-scan`) |
 | npm audit | Dependency SCA (`--audit-level=high`) | Every PR | `.github/workflows/ci.yml` (`lint-and-typecheck`) |
 | Dependency review | Diffs the PR's manifest against its base ref; blocks newly introduced high-severity-vulnerable or disallowed-license dependencies | Every PR | `.github/workflows/ci.yml` (`dependency-review`) |
-| License compliance | Every third-party package's license against an allowlist of standard permissive terms (`scripts/check-licenses.mjs`); report-only for now (`continue-on-error: true`) - one flagged package (`buffers`, no discoverable license text) still needs a decision, see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | Every PR | `.github/workflows/ci.yml` (`lint-and-typecheck`) |
+| License compliance | Every third-party package's license against an allowlist of standard permissive terms (`scripts/check-licenses.mjs`); `continue-on-error: true` by design - one flagged package (`buffers`, no discoverable license anywhere) is an accepted risk, see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | Every PR | `.github/workflows/ci.yml` (`lint-and-typecheck`) |
 | Dependabot | npm + GitHub Actions updates | Scheduled | `.github/dependabot.yml` |
 | Docker build smoke | Production `Dockerfile` builds | Every merge to `main` | `.github/workflows/ci.yml` (`docker-build`) |
 | Trivy (report-only) | Container image scan (OS + libraries), SARIF to Security tab | Every merge to `main` | `.github/workflows/ci.yml` (`docker-build`) |
