@@ -43,6 +43,7 @@ Active automated checks in this repository:
 | Semgrep | SAST (JavaScript/TypeScript) | Every PR + merge to `main` + weekly | `.github/workflows/semgrep.yml` |
 | gitleaks | Secret scan (full history) | Every PR | `.github/workflows/ci.yml` (`secret-scan`) |
 | npm audit | Dependency SCA (`--audit-level=high`) | Every PR | `.github/workflows/ci.yml` (`lint-and-typecheck`) |
+| Dependency review | Diffs the PR's manifest against its base ref; blocks newly introduced high-severity-vulnerable or disallowed-license dependencies | Every PR | `.github/workflows/ci.yml` (`dependency-review`) |
 | License compliance | Every third-party package's license against an allowlist of standard permissive terms (`scripts/check-licenses.mjs`); report-only for now (`continue-on-error: true`) - one flagged package (`buffers`, no discoverable license text) still needs a decision, see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | Every PR | `.github/workflows/ci.yml` (`lint-and-typecheck`) |
 | Dependabot | npm + GitHub Actions updates | Scheduled | `.github/dependabot.yml` |
 | Docker build smoke | Production `Dockerfile` builds | Every merge to `main` | `.github/workflows/ci.yml` (`docker-build`) |
@@ -66,7 +67,7 @@ output) and do not block any pipeline.
 
 **SAST on PRs vs `main` - decision (2026-07-06), revised (2026-08-29):** Semgrep was kept off PRs (Option B) purely on a CI-speed/marginal-value tradeoff: ~2–3 min added per PR against overlap with CodeQL's `security-extended` rules. That calculus didn't weigh external perception - an enterprise security review of this repo checks whether *every* PR gets dual SAST coverage, not just what lands on `main`. Semgrep (`p/javascript`, `p/typescript`) now also runs on every PR (Option A); CodeQL `security-extended` remains the primary gate, Semgrep the complementary second engine, on PRs and `main` alike.
 
-**Required merge checks on `main`:** GitHub branch protection requires `build-test`, `secret-scan`, `pii-guard`, `analyze` (CodeQL), `migration-safety`, and `wiki-docs`. All six must pass before a PR can merge. Semgrep is not yet in this list - GitHub only allows a required check that has posted at least once with its new trigger; add it once this PR's own Semgrep run lands on `main`.
+**Required merge checks on `main`:** GitHub branch protection requires `build-test`, `secret-scan`, `pii-guard`, `analyze` (CodeQL), `migration-safety`, `wiki-docs`, `semgrep`, and `dependency-review`. All eight must pass before a PR can merge.
 
 Container image scanning fails the release pipeline on **CRITICAL** vulnerabilities
 with a known fix (`ignore-unfixed: true`). **HIGH** findings are reported (SARIF in the

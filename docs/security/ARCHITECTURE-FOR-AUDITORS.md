@@ -56,7 +56,7 @@ flowchart TB
   end
   subgraph external [Customer-managed integrations]
     Mail[Corporate email]
-    Wallet[Wallet provider - optional future]
+    Wallet[Wallet provider - Apple/Google, config-gated]
   end
   Users[Users] --> CDN
   CDN --> RP
@@ -64,7 +64,7 @@ flowchart TB
   APP --> PG
   APP --> RD
   APP --> Mail
-  APP -.-> Wallet
+  APP --> Wallet
   WORKER --> PG
   WORKER --> RD
   WORKER --> Mail

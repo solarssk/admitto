@@ -303,8 +303,8 @@ When `TRUST_PROXY` is unset/false, forwarded headers are ignored for IP, CSRF or
 
 Superadmin identity-provider **Discover** / **Test connection** and runtime OIDC token/JWKS fetches
 (and Cloudflare Access JWKS) use
-[`assertSafeOidcFetchUrl`](../packages/auth/src/oidc/safe-url.ts) plus
-[`safeOidcFetch`](../packages/auth/src/oidc/safe-oidc-fetch.ts) / pinned JWKS verifiers:
+[`assertSafeOidcFetchUrl`](../../packages/auth/src/oidc/safe-url.ts) plus
+[`safeOidcFetch`](../../packages/auth/src/oidc/safe-oidc-fetch.ts) / pinned JWKS verifiers:
 
 - HTTPS required in production (HTTP loopback allowed in development for mock IdPs).
 - Literal private, link-local, and metadata hostnames rejected.
