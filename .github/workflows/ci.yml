@@ -629,6 +629,17 @@ jobs:
           # of them will correctly fail this gate until a human re-reviews and updates both this
           # list and REVIEWED_PACKAGE_VERSIONS - friction that's the point, not a bug.
           allow-licenses: MIT, ISC, Apache-2.0, BSD-3-Clause, BSD-2-Clause, BlueOak-1.0.0, Unlicense, OFL-1.1, MIT-0, CC0-1.0, 0BSD, CC-BY-4.0, Python-2.0, Zlib
+          # SonarSource/sonarqube-scan-action is LGPL-3.0, which isn't on the list above.
+          # Deliberately different case from the npm-package REVIEWED_PACKAGE_VERSIONS reasoning
+          # two paragraphs up: LGPL's redistribution obligation is about code a customer actually
+          # receives (why sharp/libvips - shipped in the container image - went through real
+          # per-version review instead of a blanket exemption here). A GitHub Action runs only in
+          # this repo's own CI and is never bundled into what a customer runs, so that concern
+          # doesn't apply regardless of which version is pinned - version-blindness here isn't the
+          # same hole it would be for a runtime dependency. Any future SHA bump still goes through
+          # Dependabot + a human-reviewed PR (dependabot.yml's github-actions ecosystem), same as
+          # every other action pin in this repo.
+          allow-dependencies-licenses: "pkg:githubactions/sonarsource/sonarqube-scan-action"
 
   docker-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
