@@ -35,16 +35,19 @@ plain-English description of the role, not the product's name for it.
 1. **One message per known cause, never one generic message for several causes.** *(Microsoft
    Writing Style Guide, [Error Message Guidelines](https://learn.microsoft.com/en-us/windows/win32/debug/error-message-guidelines))*
    If a 400 response can mean two different things, write two messages, not one that covers both.
-   [`AddAttendeeModal.tsx:173-178`](../../apps/admin/src/attendees/AddAttendeeModal.tsx) is the case
-   this doc exists to fix: it collapses `required_custom_data_field_missing` and `validation_failed`
-   into one sentence ("Check required attribute fields and option values.").
+   [`AddAttendeeModal.tsx:174-190`](../../apps/admin/src/attendees/AddAttendeeModal.tsx) is the
+   pattern this rule asks for: the server's `customDataErrorPayload` branches on three distinct
+   codes (`unknown_custom_data_field`, `required_custom_data_field_missing`, `validation_failed`)
+   and carries the offending field's slug back to the client, which
+   [`customDataApiErrorMessage`](../../apps/admin/src/attendees/customData.ts) turns into a
+   specific per-field sentence (e.g. "Shirt size is required.") instead of one generic blob.
 2. **Name the specific field or item in text, not color alone.** *(WCAG 2.x SC 3.3.1 Error
-   Identification)* A validation error must say which field failed. This is a backend gap today, not
-   only a copy gap: the field slug is computed in
-   [`packages/tickets/src/validate-custom-data.ts:48,74`](../../packages/tickets/src/validate-custom-data.ts)
-   and then discarded before the response is built
-   ([`apps/web/src/admin/attendees-api-routes.ts:1322-1329`](../../apps/web/src/admin/attendees-api-routes.ts),
-   `customDataErrorCode`). Fixing the copy requires the slug to survive the round trip first.
+   Identification)* A validation error must say which field failed. The field slug is computed in
+   [`packages/tickets/src/validate-custom-data.ts:48,74`](../../packages/tickets/src/validate-custom-data.ts),
+   carried through the response by
+   [`customDataErrorPayload`](../../apps/web/src/admin/attendees-api-routes.ts), and turned into
+   the field's human label by `customDataApiErrorMessage` (see rule 1) - the slug now survives the
+   full round trip, so the copy layer can always name the field.
 3. **Say what happened and suggest the fix, not just that something is wrong.** *(WCAG SC 3.3.3
    Error Suggestion; NN/g [Error-Message Guidelines](https://www.nngroup.com/articles/error-message-guidelines/))*
    "Enter a value" is not a fix suggestion; "Attendee count must be a whole number, e.g. 12" is.
