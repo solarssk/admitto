@@ -1570,6 +1570,117 @@ describe("multi-template API", () => {
     }
   });
 
+  it("POST /templates/:id/test-send reports a thrown sendTestEmail error as failed, without creating a delivery", async () => {
+    rateLimitStore.reset();
+    const created = await postNamedTemplate(app, "Thrown send error");
+    const sendTestEmail = vi
+      .spyOn(mailDelivery, "sendTestEmail")
+      .mockRejectedValueOnce(new Error("smtp connection refused"));
+
+    try {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/templates/${created.id}/test-send`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+          body: JSON.stringify({ to: "thrown-send-error-test@example.com" }),
+        },
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { status: string; error?: string };
+      expect(body.status).toBe("failed");
+      expect(body.error).toBe("smtp connection refused");
+      expect(exported).toHaveLength(0);
+    } finally {
+      sendTestEmail.mockRestore();
+    }
+  });
+
+  it("POST /templates/:id/test-send reports a rejected SendResult as failed, without creating a delivery", async () => {
+    rateLimitStore.reset();
+    const created = await postNamedTemplate(app, "Rejected send result");
+    const sendTestEmail = vi.spyOn(mailDelivery, "sendTestEmail").mockResolvedValueOnce({
+      status: "rejected",
+      provider: "smtp",
+      error: "550 mailbox unavailable",
+    });
+
+    try {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/templates/${created.id}/test-send`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+          body: JSON.stringify({ to: "rejected-send-result-test@example.com" }),
+        },
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { status: string; error?: string };
+      expect(body.status).toBe("failed");
+      expect(body.error).toBe("550 mailbox unavailable");
+      expect(exported).toHaveLength(0);
+    } finally {
+      sendTestEmail.mockRestore();
+    }
+  });
+
+  it("POST /templates/:id/test-send falls back to generic copy for a thrown non-Error value", async () => {
+    // err instanceof Error is false here, so both the API error text and the log-safe text
+    // must fall back to their generic defaults instead of reading a .message that doesn't exist.
+    rateLimitStore.reset();
+    const created = await postNamedTemplate(app, "Thrown non-Error value");
+    const sendTestEmail = vi
+      .spyOn(mailDelivery, "sendTestEmail")
+      .mockRejectedValueOnce("connection reset by peer");
+
+    try {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/templates/${created.id}/test-send`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+          body: JSON.stringify({ to: "thrown-non-error-test@example.com" }),
+        },
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { status: string; error?: string };
+      expect(body.status).toBe("failed");
+      expect(body.error).toBe("Send failed.");
+      expect(exported).toHaveLength(0);
+    } finally {
+      sendTestEmail.mockRestore();
+    }
+  });
+
+  it("POST /templates/:id/test-send falls back to generic copy for a failed SendResult with no error text", async () => {
+    // result.error is undefined here, so both the API error text and the log-safe text must
+    // fall back to their generic defaults instead of passing undefined straight through.
+    rateLimitStore.reset();
+    const created = await postNamedTemplate(app, "Failed result without error text");
+    const sendTestEmail = vi.spyOn(mailDelivery, "sendTestEmail").mockResolvedValueOnce({
+      status: "failed",
+      provider: "smtp",
+    });
+
+    try {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/templates/${created.id}/test-send`,
+        {
+          method: "POST",
+          headers: { Cookie: adminCookie, "Content-Type": "application/json", ...sameOrigin },
+          body: JSON.stringify({ to: "failed-result-no-error-test@example.com" }),
+        },
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { status: string; error?: string };
+      expect(body.status).toBe("failed");
+      expect(body.error).toBe("Send failed.");
+      expect(exported).toHaveLength(0);
+    } finally {
+      sendTestEmail.mockRestore();
+    }
+  });
+
   it("PATCH /templates/:id updates label/icon/description without touching content", async () => {
     const created = await postNamedTemplate(app, "Reminder");
 

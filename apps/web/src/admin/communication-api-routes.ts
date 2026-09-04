@@ -46,7 +46,7 @@ import {
   type DeliveryDetailDto,
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
-import { isSendSuccess } from "@admitto/mailer";
+import { isSendSuccess, sanitizeProviderErrorForLog } from "@admitto/mailer";
 import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell, writeActionLog, writeBulkActionLog } from "@admitto/tickets";
 import {
   adminAuditFromContext,
@@ -61,6 +61,7 @@ import {
 import { acquireEventImageAssetsLock } from "./event-image-assets-routes.js";
 import { guardMailTestRecipientRateLimit } from "../rate-limit/policies.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
+import { emitSystemLog } from "@admitto/shared/system-log";
 
 /** Max character length for `body_template` (schema); shared with wire byte cap below. */
 export const TEMPLATE_BODY_CHAR_LIMIT = 200_000;
@@ -568,13 +569,29 @@ async function runTestSendEventTemplate(
     );
   } catch (err) {
     console.error("[admin] template test-send failed", err);
+    const rawMessage = err instanceof Error ? err.message : undefined;
+    // Log-safe form only, never clientSafeDeliveryError's API-safe text - that one only
+    // redacts emails/URLs/tokens/selected infra terms, not arbitrary echoed content (e.g. a
+    // provider error body that happens to include the subject line). Same helper the mail
+    // adapters themselves use before logging a send failure (graph.ts, powerAutomate.ts).
+    emitSystemLog("mail", "error", "mail_test_send_failed", {
+      eventId,
+      templateId,
+      error: sanitizeProviderErrorForLog(rawMessage ?? "test-send failed"),
+    });
     return c.json({
       status: "failed",
-      error: clientSafeDeliveryError(err instanceof Error ? err.message : undefined),
+      error: clientSafeDeliveryError(rawMessage),
     } satisfies { status: "failed"; error: string });
   }
 
   if (!isSendSuccess(result.status) || result.error) {
+    emitSystemLog("mail", "error", "mail_test_send_failed", {
+      eventId,
+      templateId,
+      provider: result.provider,
+      error: sanitizeProviderErrorForLog(result.error ?? "test-send failed"),
+    });
     return c.json({
       status: "failed",
       error: clientSafeDeliveryError(result.error),
