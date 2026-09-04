@@ -46,7 +46,7 @@ import {
   type DeliveryDetailDto,
   type MailDeliveryDeps,
 } from "@admitto/mail-delivery";
-import { isSendSuccess } from "@admitto/mailer";
+import { isSendSuccess, sanitizeProviderErrorForLog } from "@admitto/mailer";
 import { EXPORT_ROW_CAP, quoteCsvCell, sanitizeCsvCell, writeActionLog, writeBulkActionLog } from "@admitto/tickets";
 import {
   adminAuditFromContext,
@@ -569,23 +569,33 @@ async function runTestSendEventTemplate(
     );
   } catch (err) {
     console.error("[admin] template test-send failed", err);
-    const error = clientSafeDeliveryError(err instanceof Error ? err.message : undefined);
-    // Sanitized text only (never the raw err) - same convention as runTransportTest's own
-    // emitSystemLog calls, so a failed test-send is traceable in System logs/stdout the same
-    // way a failed connection test already is, regardless of the response's HTTP status.
-    emitSystemLog("mail", "error", "mail_test_send_failed", { eventId, templateId, error });
-    return c.json({ status: "failed", error } satisfies { status: "failed"; error: string });
+    const rawMessage = err instanceof Error ? err.message : undefined;
+    // Log-safe form only, never clientSafeDeliveryError's API-safe text - that one only
+    // redacts emails/URLs/tokens/selected infra terms, not arbitrary echoed content (e.g. a
+    // provider error body that happens to include the subject line). Same helper the mail
+    // adapters themselves use before logging a send failure (graph.ts, powerAutomate.ts).
+    emitSystemLog("mail", "error", "mail_test_send_failed", {
+      eventId,
+      templateId,
+      error: sanitizeProviderErrorForLog(rawMessage ?? "test-send failed"),
+    });
+    return c.json({
+      status: "failed",
+      error: clientSafeDeliveryError(rawMessage),
+    } satisfies { status: "failed"; error: string });
   }
 
   if (!isSendSuccess(result.status) || result.error) {
-    const error = clientSafeDeliveryError(result.error);
     emitSystemLog("mail", "error", "mail_test_send_failed", {
       eventId,
       templateId,
       provider: result.provider,
-      error,
+      error: sanitizeProviderErrorForLog(result.error ?? "test-send failed"),
     });
-    return c.json({ status: "failed", error } satisfies { status: "failed"; error: string });
+    return c.json({
+      status: "failed",
+      error: clientSafeDeliveryError(result.error),
+    } satisfies { status: "failed"; error: string });
   }
 
   try {
