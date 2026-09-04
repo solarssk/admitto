@@ -4,8 +4,13 @@ on:
   issue_comment:
     types: [created]
 
-# Scoped to the PR so quick successive comments on the same PR queue instead of producing
-# overlapping bot responses; comments on different PRs still run independently.
+# Scoped to the PR so two comments on the same PR can't run at once (a new run waits for the
+# current one instead of interleaving); comments on different PRs still run independently.
+# GitHub Actions only holds one pending run per concurrency group - a third comment posted while
+# the first is still running replaces the second's still-queued run rather than queuing behind
+# it, so that second command is silently dropped, not just delayed. A real queue (three commands
+# in, three responses out) would need something outside Actions' own concurrency model; not worth
+# building for a low-traffic PR-comment bot.
 concurrency:
   group: pr-agent-${{ github.event.issue.number }}
   cancel-in-progress: false
