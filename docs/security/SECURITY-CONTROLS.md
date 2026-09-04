@@ -303,8 +303,8 @@ When `TRUST_PROXY` is unset/false, forwarded headers are ignored for IP, CSRF or
 
 Superadmin identity-provider **Discover** / **Test connection** and runtime OIDC token/JWKS fetches
 (and Cloudflare Access JWKS) use
-[`assertSafeOidcFetchUrl`](../packages/auth/src/oidc/safe-url.ts) plus
-[`safeOidcFetch`](../packages/auth/src/oidc/safe-oidc-fetch.ts) / pinned JWKS verifiers:
+[`assertSafeOidcFetchUrl`](../../packages/auth/src/oidc/safe-url.ts) plus
+[`safeOidcFetch`](../../packages/auth/src/oidc/safe-oidc-fetch.ts) / pinned JWKS verifiers:
 
 - HTTPS required in production (HTTP loopback allowed in development for mock IdPs).
 - Literal private, link-local, and metadata hostnames rejected.
@@ -393,7 +393,8 @@ Be explicit with auditors about what is **out of product scope** today:
   **System logs** screen (superadmin only, see [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) is a
   short, in-memory live tail for day-to-day diagnostics - not a substitute for a SIEM: it holds
   only the last 1000 entries and is emptied on every restart. A narrower, durable exception exists
-  for ten auth/security event types (login, MFA, logout, OIDC, access-denied) - see **Durable
+  for fifteen auth/security event types (login, MFA, logout, OIDC, access-denied, trusted-device,
+  superadmin bootstrap) - see **Durable
   security audit trail (`SecurityAuditLog`)** in [DATA-PROTECTION.md](../../DATA-PROTECTION.md); this
   is a queryable incident-review trail, not a general-purpose log platform, and rate-limit/system
   log signals stay ephemeral and operator-shipped as above. That trail is also neither complete nor

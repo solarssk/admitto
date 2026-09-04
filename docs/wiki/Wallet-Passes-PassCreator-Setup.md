@@ -1,6 +1,6 @@
 # Wallet Passes - PassCreator Template Setup
 
-**Audience:** Superadmins · **Required role:** Superadmin · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.3
+**Audience:** Superadmins · **Required role:** Superadmin · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.7
 
 ## What this page helps you do
 

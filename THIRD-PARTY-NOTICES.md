@@ -22,6 +22,12 @@ This file is informational. Prefer package-local license files in `node_modules`
 - License: EPL-2.0
 - Notes: Graph-layout engine used only through its public API, unmodified. EPL-2.0 is a file-level (weak) copyleft license - its share-alike obligation applies to modifications of elkjs's own source files, not to code that merely calls it, so it does not extend to Admitto application code. Retain the package's own `LICENSE`/notice files when redistributing.
 
+## buffers (accepted risk)
+
+- Package: `buffers` (transitive: `exceljs` → `unzipper` → `binary` → `buffers`)
+- License: none discoverable - no `license` field in the package's `package.json`, no `LICENSE` file in the package, no license metadata on the npm registry entry, and the upstream repository (`github.com/substack/node-buffers`) no longer exists
+- Notes: flagged by `scripts/check-licenses.mjs` (see [SECURITY.md](SECURITY.md)'s control table). Accepted as-is - a tiny, unmodified utility with no reachable copyright/license claim to violate - rather than replacing the `exceljs`/`unzipper` dependency chain that pulls it in. The license-compliance gate stays `continue-on-error: true` for this package permanently.
+
 ## lightningcss
 
 - Packages: `lightningcss` and platform package `lightningcss-darwin-arm64`

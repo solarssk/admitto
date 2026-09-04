@@ -91,8 +91,14 @@ headings as they are:
 - **Documentation impact**: check exactly one box; CI verifies this against the actual diff.
 - **Checklist**: secrets, personal data, tests, migrations.
 
-A maintainer will review, request changes if needed, and merge once CI is green and the
-PR is approved. Please don't merge your own PR.
+Admitto is currently a single-maintainer project (see
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)): @solarssk reviews and merges every PR, including their
+own, once CI is green - there's no one else to hand it to yet. "Please don't merge your own PR"
+applies once a second maintainer has write access to the repository.
+
+Branches aren't auto-deleted on merge (`delete_branch_on_merge` is off): this repo uses native
+GitHub stacked PRs, where a later branch's base is an earlier, still-open PR's branch, so branches
+routinely need to outlive their own PR's merge.
 
 ## Questions
 
