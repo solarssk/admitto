@@ -4,6 +4,17 @@ on:
   issue_comment:
     types: [created]
 
+# Scoped to the PR so two comments on the same PR can't run at once (a new run waits for the
+# current one instead of interleaving); comments on different PRs still run independently.
+# GitHub Actions only holds one pending run per concurrency group - a third comment posted while
+# the first is still running replaces the second's still-queued run rather than queuing behind
+# it, so that second command is silently dropped, not just delayed. A real queue (three commands
+# in, three responses out) would need something outside Actions' own concurrency model; not worth
+# building for a low-traffic PR-comment bot.
+concurrency:
+  group: pr-agent-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   pull-requests: write
@@ -25,7 +36,7 @@ jobs:
         )
       }}
     steps:
-      - uses: Codium-ai/pr-agent@4ebd5c5333c6ef21509e7304d27969eb825e6f22  # HEAD 2026-06-08
+      - uses: The-PR-Agent/pr-agent@ab6ec54bfeb37933ddb74259338752e9272016c6  # v0.44.0
         env:
           ANTHROPIC__KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -107,7 +107,7 @@ services:
       - internal
 
   proxy:
-    image: nginx:alpine
+    image: nginx:1-alpine
     depends_on:
       app:
         condition: service_healthy

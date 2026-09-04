@@ -3,12 +3,18 @@ name: E2E check-in smoke
 # Not run on push/pull_request on purpose (AGENTS.md "checklist" gate stays untouched) — this is
 # the repo's first browser-level test (apps/admin/e2e, Playwright), and needs a few real runs in
 # actual CI timing/environment before it's trusted as a blocking check. Manual dispatch plus a
-# low-frequency schedule let it prove itself; promote it into ci.yml's build-test once it has been
-# stable for a while.
+# low-frequency schedule let it prove itself; promote it into ci.yml's build-test once it has had
+# 14 consecutive green scheduled runs (about two weeks at this cadence) with no environment-only
+# flakiness - a concrete checkpoint so this doesn't linger past the point it's actually proven.
 on:
   workflow_dispatch:
   schedule:
     - cron: "0 6 * * *"
+
+# A manual dispatch could otherwise overlap the daily schedule's own run.
+concurrency:
+  group: e2e-checkin-smoke
+  cancel-in-progress: false
 
 permissions:
   contents: read

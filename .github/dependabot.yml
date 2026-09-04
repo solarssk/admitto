@@ -28,3 +28,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+  # The runtime deploy stack (deploy/docker-compose.yml) pins its own images separately from the
+  # root Dockerfile above - without this entry, Dependabot never watches postgres/redis/nginx CVEs
+  # or upstream releases in what self-hosters actually run.
+  - package-ecosystem: "docker"
+    directory: "/deploy"
+    schedule:
+      interval: "weekly"

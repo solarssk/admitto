@@ -2,7 +2,8 @@ name: Release
 
 # After a `release: vX.Y.Z` commit on main bumps package.json, create the git tag,
 # GitHub Release (notes + required .title tagline), close the milestone, and trigger
-# publish-container.yml (GITHUB_TOKEN tag pushes do not start other workflows).
+# publish-container.yml and deploy-smoke.yml (GITHUB_TOKEN tag pushes do not start other
+# workflows, so each needs an explicit dispatch here rather than relying on its own tag trigger).
 #
 # The release commit isn't always HEAD: a "Create a merge commit" merge of the release
 # PR puts it one or more commits behind the merge commit that actually triggers this push
@@ -116,6 +117,22 @@ jobs:
             --ref "$TAG" \
             -f "ref=refs/tags/${TAG}"
           echo "Triggered publish-container for ${TAG}."
+
+      # deploy-smoke.yml's own `push: tags:` trigger never fires for this - GITHUB_TOKEN tag
+      # pushes don't start other workflows (same reason publish-container above needs a manual
+      # dispatch), so without this call every ordinary release would ship with no automated
+      # functional smoke test, silently. That push trigger stays useful only for the emergency
+      # signed-tag path (scripts/release-tag.sh), which pushes with a real user's credentials.
+      - name: Trigger deploy smoke test
+        if: steps.bump.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.bump.outputs.version }}'
+          TAG="v${VERSION}"
+          gh workflow run deploy-smoke.yml --ref "$TAG"
+          echo "Triggered deploy-smoke for ${TAG}."
 
       - name: Close matching GitHub milestone
         if: steps.bump.outputs.skip != 'true'

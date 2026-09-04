@@ -1,7 +1,20 @@
 name: Deploy smoke
 
+# The `push: tags:` trigger below only fires for a tag pushed with real user credentials (the
+# emergency signed-tag path, scripts/release-tag.sh) - GitHub suppresses workflow triggers from
+# tag pushes made with the default GITHUB_TOKEN, which is how every ordinary release creates its
+# tag (release.yml's `gh release create`). release.yml explicitly dispatches this workflow for
+# that path instead; this trigger is a backup for the path release.yml doesn't cover.
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
+
+# Scoped per ref so a manual dispatch can't overlap a tag push's own run.
+concurrency:
+  group: deploy-smoke-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
