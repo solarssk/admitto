@@ -16,14 +16,21 @@ name: DAST baseline scan
 # future scope — ZAP's baseline scan has no session), and active/attack scanning (ZAP's full
 # scan, not baseline, which is unsuitable for a shared CI stack).
 #
-# Report-only: fail_action is false and this does not gate merges. Results are uploaded as a
-# workflow artifact (HTML/JSON/MD reports). ZAP's baseline scanner has no native SARIF output, so
-# Security-tab integration is left for a follow-up rather than bolting on a hand-rolled converter.
+# Report-only: fail_action is false and this does not gate merges. Full HTML/JSON/MD reports are
+# uploaded as workflow artifacts; a parsed risk/alert/count summary for each target is also
+# written to the run's job summary so findings are visible without downloading anything. ZAP's
+# baseline scanner has no native SARIF output, so Security-tab integration is left for a
+# follow-up rather than bolting on a hand-rolled converter.
 
 on:
   workflow_dispatch:
   schedule:
     - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+
+# A manual dispatch could otherwise overlap the weekly schedule's own run of this workflow.
+concurrency:
+  group: dast-baseline
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -88,6 +95,26 @@ jobs:
           fail_action: false
           allow_issue_writing: false
 
+      # action-baseline always writes to the same fixed filenames (report_json.json etc.) in the
+      # workspace root, so this must run before the /healthz scan below overwrites them. Without
+      # this, findings only ever exist in the downloadable artifact - nothing prompts anyone to
+      # open it (audit: DAST results write-only, no escalation path).
+      - name: Summarize / scan into job summary
+        if: always()
+        run: |
+          {
+            echo "### DAST baseline: / (spidered from login page)"
+            echo
+            if [ -s report_json.json ] && [ "$(jq '.site[0].alerts | length' report_json.json)" -gt 0 ]; then
+              echo "| Risk | Alert | Count |"
+              echo "|---|---|---|"
+              jq -r '.site[0].alerts[] | "| " + .riskdesc + " | " + .name + " | " + (.count|tostring) + " |"' report_json.json
+            else
+              echo "No findings."
+            fi
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # /healthz isn't linked from any page a spider would crawl (it's a machine health-check
       # endpoint, not a user-facing one), so it needs its own explicit scan rather than relying on
       # discovery from the / target above - action-baseline only accepts a single `target` per run.
@@ -98,6 +125,22 @@ jobs:
           artifact_name: "zap-baseline-report-healthz"
           fail_action: false
           allow_issue_writing: false
+
+      - name: Summarize /healthz scan into job summary
+        if: always()
+        run: |
+          {
+            echo "### DAST baseline: /healthz"
+            echo
+            if [ -s report_json.json ] && [ "$(jq '.site[0].alerts | length' report_json.json)" -gt 0 ]; then
+              echo "| Risk | Alert | Count |"
+              echo "|---|---|---|"
+              jq -r '.site[0].alerts[] | "| " + .riskdesc + " | " + .name + " | " + (.count|tostring) + " |"' report_json.json
+            else
+              echo "No findings."
+            fi
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Tear down
         if: always()

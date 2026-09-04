@@ -4,6 +4,12 @@ on:
   issue_comment:
     types: [created]
 
+# Scoped to the PR so quick successive comments on the same PR queue instead of producing
+# overlapping bot responses; comments on different PRs still run independently.
+concurrency:
+  group: pr-agent-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   pull-requests: write

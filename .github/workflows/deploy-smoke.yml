@@ -2,6 +2,14 @@ name: Deploy smoke
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
+
+# Scoped per ref so a manual dispatch can't overlap a tag push's own run.
+concurrency:
+  group: deploy-smoke-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read

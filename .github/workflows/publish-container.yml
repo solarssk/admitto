@@ -11,6 +11,14 @@ on:
         required: true
         default: refs/heads/main
 
+# Scoped to the resolved ref (the pushed tag, or the dispatched ref) so two overlapping runs for
+# the same release can't interleave digest exports or race the release-creation/upload calls.
+# cancel-in-progress stays false, matching release.yml - a publish in flight must finish, not be
+# cut off mid-push.
+concurrency:
+  group: publish-container-${{ github.event.inputs.ref || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   # Resolves the release tag/publish decision and the final image tags/labels once, so both
   # matrix legs below and the merge job agree on exactly the same values instead of each
