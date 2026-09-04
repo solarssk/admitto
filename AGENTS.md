@@ -71,7 +71,7 @@ Breaking changes: `!` after scope + description in commit body.
 
 Follow [.github/pull_request_template.md](.github/pull_request_template.md) exactly:
 
-`Description` · `How to test` · `What stays / known limitations` · `Checklist`
+`Description` · `How to test` · `What stays / known limitations` · `Documentation impact` · `Checklist`
 
 `Description` covers **business context** (the real operator/admin/attendee problem, plain
 language, no jargon) and **technical changes** (what changed in the code, by area) as separate
@@ -319,7 +319,8 @@ an already-open modal.
 
 **Do not create new top-level `.md` documentation files in this repo.** This repo's doc set is
 fixed: `README.md`, `CHANGELOG.md`, `SECURITY.md`, `VERSIONING.md`, `DATA-PROTECTION.md`,
-`AGENTS.md`, `CLAUDE.md`, plus package-level `README.md` files and `docs/*` referenced from them.
+`THIRD-PARTY-NOTICES.md`, `AGENTS.md`, `CLAUDE.md`, plus package-level `README.md` files and
+`docs/*` referenced from them.
 If something doesn't fit an existing file, add a section to the closest one instead of starting a
 new file. Avoid hardcoding "current milestone/version" callouts in prose here - point to
 `CHANGELOG.md`'s `[Unreleased]` section or the open GitHub milestone instead, so this file can't

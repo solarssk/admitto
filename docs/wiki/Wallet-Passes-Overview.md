@@ -1,6 +1,6 @@
 # Wallet Passes Overview
 
-**Audience:** Superadmins (configuration), Administrators and Superadmins (attendee actions) · **Required role:** Superadmin for Event Settings → Wallet; Administrator or Superadmin for attendee wallet actions · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.3
+**Audience:** Superadmins (configuration), Administrators and Superadmins (attendee actions) · **Required role:** Superadmin for Event Settings → Wallet; Administrator or Superadmin for attendee wallet actions · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.7
 
 ## What this page helps you do
 
@@ -28,7 +28,7 @@ works; Admitto never signs or hosts pass files itself.
   an Admitto **value** from a fixed list (attendee full/first/last name, email, company,
   department, event name/date/hours/location, directions/accessibility text, Google/Apple Maps
   links, individual address parts, ticket type, the ticket/QR value itself, event type, or a venue
-  access-point detail such as room, entrance, door/gate/portal, phone number, Apple place ID, or
+  access-point detail such as room, entrance, door/gate/portal, phone number, Venue place ID, or
   an opening time), then type the exact
   **key** that matches that field's name in the PassCreator template. For example, mapping value
   "Attendee full name" to key `fullName` sends the attendee's name to whichever template field is
