@@ -61,6 +61,7 @@ import {
 import { acquireEventImageAssetsLock } from "./event-image-assets-routes.js";
 import { guardMailTestRecipientRateLimit } from "../rate-limit/policies.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
+import { emitSystemLog } from "@admitto/shared/system-log";
 
 /** Max character length for `body_template` (schema); shared with wire byte cap below. */
 export const TEMPLATE_BODY_CHAR_LIMIT = 200_000;
@@ -568,17 +569,23 @@ async function runTestSendEventTemplate(
     );
   } catch (err) {
     console.error("[admin] template test-send failed", err);
-    return c.json({
-      status: "failed",
-      error: clientSafeDeliveryError(err instanceof Error ? err.message : undefined),
-    } satisfies { status: "failed"; error: string });
+    const error = clientSafeDeliveryError(err instanceof Error ? err.message : undefined);
+    // Sanitized text only (never the raw err) - same convention as runTransportTest's own
+    // emitSystemLog calls, so a failed test-send is traceable in System logs/stdout the same
+    // way a failed connection test already is, regardless of the response's HTTP status.
+    emitSystemLog("mail", "error", "mail_test_send_failed", { eventId, templateId, error });
+    return c.json({ status: "failed", error } satisfies { status: "failed"; error: string });
   }
 
   if (!isSendSuccess(result.status) || result.error) {
-    return c.json({
-      status: "failed",
-      error: clientSafeDeliveryError(result.error),
-    } satisfies { status: "failed"; error: string });
+    const error = clientSafeDeliveryError(result.error);
+    emitSystemLog("mail", "error", "mail_test_send_failed", {
+      eventId,
+      templateId,
+      provider: result.provider,
+      error,
+    });
+    return c.json({ status: "failed", error } satisfies { status: "failed"; error: string });
   }
 
   try {
