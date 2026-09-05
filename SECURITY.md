@@ -89,7 +89,7 @@ deploy time - never committed. See **What counts as a secret** above.
 
 ### Supported versions
 
-Only the **latest minor release** is supported (currently `0.6.x`, latest <!-- admitto:latest-patch -->`0.6.7`<!-- /admitto:latest-patch -->). Deploy from
+Only the **latest minor release** is supported (currently `0.6.x`, latest <!-- admitto:latest-patch -->`0.6.8`<!-- /admitto:latest-patch -->). Deploy from
 semver tags (`v0.6.y`) published to `ghcr.io/solarssk/admitto` (mirrored to `docker.io/solarssk/admitto`). These CI-created tags are ordinary,
 unsigned GitHub tags by default; a manual, GPG/SSH-signed tag path exists for emergencies - see
 [VERSIONING.md](VERSIONING.md).
