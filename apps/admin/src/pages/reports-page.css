@@ -712,14 +712,14 @@
 }
 
 /* min-height: 230px, same floor as .wallets-chart-card__chart's own 230px - every list card in
-   this feature so far (Adoption by ticket type) has always sat next to a chart card, so grid's
-   align-items: stretch matching the row to that chart already gave it a consistent minimum
-   height for free. A row pairing two list cards together (Mail's Initial vs resend / Delivery by
-   template) has no chart sibling to stretch against, so without this floor a sparse list (a
-   couple of rows) collapses the whole card down around just its own short content - a real
+   this feature so far (Adoption by ticket type) has always sat next to a chart or donut card, so
+   grid's align-items: stretch matching the row to that row-mate already gave it a consistent
+   minimum height for free. A row pairing two list cards together (Mail's Initial vs resend /
+   Delivery by template) has no such row-mate to stretch against, so without this floor a sparse
+   list (a couple of rows) collapses the whole card down around just its own short content - a real
    inconsistency the more rows-poor the pairing is (Reports feedback, Mail tab). This is a no-op
-   for the ticket-type pairing (its row already exceeds 230px via the chart), so it doesn't change
-   that card's own layout. */
+   for the ticket-type pairing (its row already exceeds 230px via its row-mate), so it doesn't
+   change that card's own layout. */
 .wallets-list-card > .at-card__body {
   flex: 1;
   display: flex;
@@ -823,6 +823,31 @@
   font-size: var(--fs-xs);
   color: var(--text-muted);
   margin-top: 2px;
+}
+
+/* Devices per attendee's donut is the one center overlay with two real numbers to show (attendees
+   vs. device registrations - see RegistrationsPerAttendeeDonut's own doc comment for why one ring
+   can't honestly claim both), so its center stacks a second, visually subordinate value/label pair
+   below a plain divider rather than fighting the primary value/label above for the same size and
+   weight. */
+.wallets-gauge-overlay__divider {
+  width: 22px;
+  height: var(--border-width);
+  background: var(--border-strong);
+  margin: 3px 0;
+}
+
+.wallets-gauge-overlay__sub-value {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  line-height: 1.1;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.wallets-gauge-overlay__sub-label {
+  font-size: 9px;
+  color: var(--text-muted);
 }
 
 /* ---- Wallet vs. admission comparison: two independent gauges, not a bar list - these are two

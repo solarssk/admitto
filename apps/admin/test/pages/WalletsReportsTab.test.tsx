@@ -69,6 +69,17 @@ vi.mock("recharts", () => {
     return found;
   }
 
+  /** Same idea as childProps above, but returns every matching child's props in order instead of
+   * just the last one - RegistrationsPerAttendeeDonut renders two <Pie> children (one ring each)
+   * inside a single <PieChart>, unlike every other donut in this file's one-Pie-per-chart shape. */
+  function allChildProps(children: ReactNode, type: unknown): any[] {
+    const found: any[] = [];
+    Children.forEach(children, (child) => {
+      if (isValidElement(child) && child.type === type) found.push(child.props);
+    });
+    return found;
+  }
+
   const RadialBar = () => null;
   const PolarAngleAxis = () => null;
   const Cell = () => null;
@@ -87,11 +98,23 @@ vi.mock("recharts", () => {
   );
 
   const PieChart = ({ children }: { children: ReactNode }) => {
-    const pie = childProps(children, Pie);
+    const pies = allChildProps(children, Pie);
     const tooltip = childProps(children, Tooltip);
-    const values = ((pie?.data ?? []) as Array<{ count: number }>).map((d) => d.count);
-    capturedDonut = { values, tooltipFormatter: tooltip?.formatter };
-    return <div data-testid="rc-pie" data-values={JSON.stringify(values)} />;
+    const valuesOf = (pie: { data?: Array<Record<string, number>>; dataKey?: string }) =>
+      (pie.data ?? []).map((d) => d[pie.dataKey ?? "count"]);
+    // Unchanged for every existing one-ring donut (PlatformDonut, WalletLifecycleDonut, ...): the
+    // sole <Pie> is both "the first ring" and what capturedDonut has always exposed.
+    capturedDonut = { values: valuesOf(pies[0] ?? {}), tooltipFormatter: tooltip?.formatter };
+    // One marker div per <Pie> - RegistrationsPerAttendeeDonut's two concentric rings each need
+    // their own data-values to assert on independently (getAllByTestId("rc-pie")), unlike every
+    // other donut here which only ever renders one.
+    return (
+      <>
+        {pies.map((pie, index) => (
+          <div key={index} data-testid="rc-pie" data-values={JSON.stringify(valuesOf(pie))} />
+        ))}
+      </>
+    );
   };
 
   const AreaChart = ({
@@ -159,14 +182,16 @@ function fixture(overrides: Partial<EventWalletReportsResponse> = {}): EventWall
     passes_truncated: false,
     adoption: { got_pass: 15, got_pass_pct: 75, confirmed: 10, confirmed_pct: 66.7 },
     platform: { apple_only: 6, google_only: 3, samsung_only: 0, both: 1 },
-    // Sums to confirmed=10 above (6+3+0+1).
+    // Bucket counts sum to confirmed=10 above (6+3+1+0). `registrations`/`total` are the uncapped
+    // device counts those buckets/attendees sort into: 6*1 + 3*2 + 1*3 + 0*4 = 15.
     registrations_per_attendee: {
       buckets: [
-        { key: "1", count: 6, pct: 60 },
-        { key: "2", count: 3, pct: 30 },
-        { key: "3", count: 1, pct: 10 },
-        { key: "4_plus", count: 0, pct: 0 },
+        { key: "1", count: 6, pct: 60, registrations: 6 },
+        { key: "2", count: 3, pct: 30, registrations: 6 },
+        { key: "3", count: 1, pct: 10, registrations: 3 },
+        { key: "4_plus", count: 0, pct: 0, registrations: 0 },
       ],
+      total: 15,
     },
     // got_pass/pct (issued) deliberately differ from confirmed/confirmed_pct (installed) below -
     // the "Adoption by ticket type" card must read the confirmed numbers, not got_pass, since a
@@ -379,11 +404,26 @@ describe("WalletsReportsTab", () => {
       { name: "More than one wallet", meta: "1 · 16.7%" },
     ]);
 
-    // Devices per attendee bar chart: one bar per bucket, matching fixture()'s buckets
-    // (6/3/1/0, summing to confirmed=10 above).
+    // Devices per attendee: two concentric donuts, not a bar chart - outer ring is attendees per
+    // bucket (6/3/1/0, matching fixture()'s own counts), inner ring is the same buckets weighted
+    // by registrations (6/6/3/0, matching fixture()'s own comment on the uncapped total).
     const devicesCard = cardByTitle("Devices per attendee");
-    const deviceRows = dataRows(within(devicesCard).getByTestId("rc-bar"));
-    expect(deviceRows.map((r) => r.pct)).toEqual([60, 30, 10, 0]);
+    const [outerRing, innerRing] = Array.from(within(devicesCard).getAllByTestId("rc-pie"));
+    expect(dataValues(outerRing!)).toEqual([6, 3, 1, 0]);
+    expect(dataValues(innerRing!)).toEqual([6, 6, 3, 0]);
+    // Center overlay: wallet_lifecycle.active (6) as the primary attendee total, registrations_
+    // per_attendee.total (15) as the secondary registration total - not the outer/inner rings'
+    // own sums, matching PlatformDonut's own use of wallet_lifecycle.active two cards over.
+    expect(within(devicesCard).getByText("6")).toBeTruthy();
+    expect(within(devicesCard).getByText("attendees")).toBeTruthy();
+    expect(within(devicesCard).getByText("15")).toBeTruthy();
+    expect(within(devicesCard).getByText("registrations")).toBeTruthy();
+    expect(breakdownRows(devicesCard)).toEqual([
+      { name: "1 device", meta: "6 attendees · 6 registrations" },
+      { name: "2 devices", meta: "3 attendees · 6 registrations" },
+      { name: "3 devices", meta: "1 attendee · 3 registrations" },
+      { name: "4+ devices", meta: "0 attendees · 0 registrations" },
+    ]);
 
     // Ticket-type breakdown: sorted descending by confirmed_pct (installed, not got_pass/pct
     // which are issued), and the null-key row relabeled "No ticket type" instead of showing its
@@ -556,18 +596,20 @@ describe("WalletsReportsTab", () => {
     expect(reminderRows.map((r) => r.pct)).toEqual([75, 25, 0, 0]);
   });
 
-  it("still renders the devices-per-attendee chart, all-zero, when nothing is confirmed - buckets are always 4 zero-filled entries from the backend, never truly absent", async () => {
+  it("still renders the devices-per-attendee donut, all-zero, when nothing is confirmed - buckets are always 4 zero-filled entries from the backend, never truly absent", async () => {
     fetchEventWalletReports.mockResolvedValue(
       fixture({
         adoption: { got_pass: 15, got_pass_pct: 75, confirmed: 0, confirmed_pct: 0 },
         registrations_per_attendee: {
           buckets: [
-            { key: "1", count: 0, pct: 0 },
-            { key: "2", count: 0, pct: 0 },
-            { key: "3", count: 0, pct: 0 },
-            { key: "4_plus", count: 0, pct: 0 },
+            { key: "1", count: 0, pct: 0, registrations: 0 },
+            { key: "2", count: 0, pct: 0, registrations: 0 },
+            { key: "3", count: 0, pct: 0, registrations: 0 },
+            { key: "4_plus", count: 0, pct: 0, registrations: 0 },
           ],
+          total: 0,
         },
+        wallet_lifecycle: { active: 0, removed: 0, never_installed: 15 },
       }),
     );
 
@@ -577,8 +619,13 @@ describe("WalletsReportsTab", () => {
     await screen.findByText("Wallet adoption");
 
     const devicesCard = cardByTitle("Devices per attendee");
-    const deviceRows = dataRows(within(devicesCard).getByTestId("rc-bar"));
-    expect(deviceRows.map((r) => r.pct)).toEqual([0, 0, 0, 0]);
+    const [outerRing, innerRing] = Array.from(within(devicesCard).getAllByTestId("rc-pie"));
+    expect(dataValues(outerRing!)).toEqual([0, 0, 0, 0]);
+    expect(dataValues(innerRing!)).toEqual([0, 0, 0, 0]);
+    // Both center numbers, and all 4 breakdown rows, still render at zero rather than the card
+    // collapsing or hiding anything once there's nothing to show.
+    expect(within(devicesCard).getAllByText("0")).toHaveLength(2);
+    expect(breakdownRows(devicesCard)).toHaveLength(4);
   });
 
   it("formats chart tooltip/label text with correct singular/plural and rounding", async () => {

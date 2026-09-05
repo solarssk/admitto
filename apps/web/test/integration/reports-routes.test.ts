@@ -2886,7 +2886,10 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     const body = (await res.json()) as {
       adoption: { got_pass: number; confirmed: number };
       platform: { apple_only: number; google_only: number; samsung_only: number; both: number };
-      registrations_per_attendee: { buckets: Array<{ key: string; count: number; pct: number }> };
+      registrations_per_attendee: {
+        buckets: Array<{ key: string; count: number; pct: number; registrations: number }>;
+        total: number;
+      };
       admission_by_wallet: {
         with_wallet: { total: number; admitted: number; pct: number };
         without_wallet: { total: number; admitted: number; pct: number };
@@ -2921,11 +2924,15 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     // event, so the same enabledPlatforms-zeroed googleActive=0 classifyPassPlatform already uses
     // feeds this bucket too, and ATT_W_GOOGLE_ONLY_EVENT contributes nothing (platform=none for it).
     expect(body.registrations_per_attendee.buckets).toEqual([
-      { key: "1", count: 1, pct: 100 },
-      { key: "2", count: 0, pct: 0 },
-      { key: "3", count: 0, pct: 0 },
-      { key: "4_plus", count: 0, pct: 0 },
+      { key: "1", count: 1, pct: 100, registrations: 1 },
+      { key: "2", count: 0, pct: 0, registrations: 0 },
+      { key: "3", count: 0, pct: 0, registrations: 0 },
+      { key: "4_plus", count: 0, pct: 0, registrations: 0 },
     ]);
+    // ATT_W_APPLE_ONLY_EVENT's own gated total (appleActive=1, googleActive=0) - the true device
+    // count this field exists for, not just the bucket it falls into. Equals the "1" bucket's own
+    // registrations above since there's only one attendee active here.
+    expect(body.registrations_per_attendee.total).toBe(1);
     // ATT_W_GOOGLE_ONLY_EVENT's registration is only on the now-disabled Google platform, but
     // buildEverInstalledWalletFilter is deliberately ungated (unlike the old, enabledPlatforms-gated
     // confirmedWalletFilter it replaced) - "was this pass ever installed" can't be undone by a later
@@ -2992,7 +2999,10 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
       passes_truncated: boolean;
       adoption: { got_pass: number; got_pass_pct: number; confirmed: number; confirmed_pct: number };
       platform: { apple_only: number; google_only: number; samsung_only: number; both: number };
-      registrations_per_attendee: { buckets: Array<{ key: string; count: number; pct: number }> };
+      registrations_per_attendee: {
+        buckets: Array<{ key: string; count: number; pct: number; registrations: number }>;
+        total: number;
+      };
       by_ticket_type: Array<{
         key: string | null;
         type: string;
@@ -3032,11 +3042,18 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     // wallet_lifecycle.active=5 below, same as `platform` (both stay live-right-now counts, unlike
     // adoption.confirmed, which happens to equal 5 too here only because this fixture has no
     // removed passes - see the wallet_lifecycle assertion's own comment further down).
+    // Total device registrations: ATT_W_APPLE (1) + ATT_W_NOTYPE (1) + ATT_W_LEGACY_TYPE (1) +
+    // ATT_W_BOTH (3) + ATT_W_GOOGLE (3) = 9, uncapped unlike the "3"-bucket count above (which
+    // only says "2 attendees have 3+", not how many they actually have).
+    expect(body.registrations_per_attendee.total).toBe(9);
+    // Per-bucket registrations: "1" sums its own 3 attendees' 1 registration each (3); "3" sums
+    // ATT_W_BOTH's 3 and ATT_W_GOOGLE's 3 (6) - not count*3, an exact per-attendee sum instead, so
+    // this stays correct once a real event has an attendee with more than 4 registrations too.
     expect(body.registrations_per_attendee.buckets).toEqual([
-      { key: "1", count: 3, pct: 60 },
-      { key: "2", count: 0, pct: 0 },
-      { key: "3", count: 2, pct: 40 },
-      { key: "4_plus", count: 0, pct: 0 },
+      { key: "1", count: 3, pct: 60, registrations: 3 },
+      { key: "2", count: 0, pct: 0, registrations: 0 },
+      { key: "3", count: 2, pct: 40, registrations: 6 },
+      { key: "4_plus", count: 0, pct: 0, registrations: 0 },
     ]);
 
     const general = body.by_ticket_type.find((t) => t.key === "General");

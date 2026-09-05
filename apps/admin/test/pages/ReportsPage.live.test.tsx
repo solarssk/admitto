@@ -138,11 +138,12 @@ function walletFixture(): import("../../src/api/types.js").EventWalletReportsRes
     // here) - an empty array would be an impossible response (bot review).
     registrations_per_attendee: {
       buckets: [
-        { key: "1", count: 1, pct: 100 },
-        { key: "2", count: 0, pct: 0 },
-        { key: "3", count: 0, pct: 0 },
-        { key: "4_plus", count: 0, pct: 0 },
+        { key: "1", count: 1, pct: 100, registrations: 1 },
+        { key: "2", count: 0, pct: 0, registrations: 0 },
+        { key: "3", count: 0, pct: 0, registrations: 0 },
+        { key: "4_plus", count: 0, pct: 0, registrations: 0 },
       ],
+      total: 1,
     },
     by_ticket_type: [],
     issued_by_day: [],
