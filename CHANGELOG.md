@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.8] - 2026-09-05
+
 ### Changed
 
-- Reports' Wallets tab "Devices per attendee" card is now a two-ring donut instead of a bar chart: the outer ring is the existing attendee-count breakdown, and a new inner ring weights the same buckets by device registrations instead, so the center can show both the attendee total and the device-registration total at once - useful for reconciling against a wallet provider's own "active registrations" figure, which counts per device rather than per attendee the way the outer ring does.
+- Reports' Wallets tab "Devices per attendee" card is now a two-ring donut instead of a bar chart: the outer ring is the existing attendee-count breakdown, and a new inner ring weights the same buckets by device registrations instead, so the center can show both the attendee total and the device-registration total at once - useful for reconciling against a wallet provider's own "active registrations" figure, which counts per device rather than per attendee the way the outer ring does. Both totals only count wallet platforms this event currently has enabled, same as "Wallet platform" and the rest of this tab's live-right-now numbers, so a platform disabled after attendees already installed on it can make this read lower than the provider's own dashboard - a hint on the card explains this.
 
 ### Fixed
 
@@ -1359,7 +1361,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.7...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.8...HEAD
+[0.6.8]: https://github.com/solarssk/admitto/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/solarssk/admitto/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/solarssk/admitto/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/solarssk/admitto/compare/v0.6.4...v0.6.5
