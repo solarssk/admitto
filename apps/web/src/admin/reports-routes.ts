@@ -834,6 +834,23 @@ interface WalletPassAggregates {
   reminderTapDaySum: number;
   reminderTapDayCount: number;
   registrationCountBuckets: Record<RegistrationCountBucketKey, number>;
+  /** Same per-bucket split as registrationCountBuckets, but summing each bucket's passes' own
+   * apple+google+samsung active-registration count instead of counting passes - exact even for
+   * "4_plus" (a real sum of however many registrations those passes actually have, not an assumed
+   * "4 each"), so the Devices per attendee donut's inner ring can weight by registrations without
+   * undercounting once any attendee crosses the 4+ bucket. Always sums to totalActiveRegistrations
+   * below, the same way registrationCountBuckets always sums to wallet_lifecycle.active. */
+  registrationsByBucket: Record<RegistrationCountBucketKey, number>;
+  /** Sum of every currently-active pass's own apple+google+samsung active-registration count -
+   * the actual device/account total registrationCountBuckets only sorts into capped buckets ("4+"
+   * loses the real count past 4), kept here so the Devices per attendee card can show a true total
+   * instead of one that undercounts once any attendee crosses the 4+ bucket. Same
+   * enabledPlatforms/platform!=="none" gating as registrationCountBuckets, so the two always stay
+   * consistent with each other - but this same gating means a registration on a platform this
+   * event has since disabled isn't summed here either, even though it's still real and active on
+   * the attendee's own device (bot review), so this can genuinely read lower than a wallet
+   * provider's own "active registrations" total in that specific case. */
+  totalActiveRegistrations: number;
   lifecycleCounts: Record<"active" | "removed" | "never_installed", number>;
 }
 
@@ -974,7 +991,11 @@ function applyWalletPassToAggregates(
   // Stays gated on the live `platform` - Devices per attendee counts active registrations right
   // now, by explicit architect decision (2026-09-03), unlike `confirmed` below.
   if (platform !== "none") {
-    acc.registrationCountBuckets[bucketForRegistrationCount(appleActive + googleActive + samsungActive)]++;
+    const activeRegistrations = appleActive + googleActive + samsungActive;
+    const bucketKey = bucketForRegistrationCount(activeRegistrations);
+    acc.registrationCountBuckets[bucketKey]++;
+    acc.registrationsByBucket[bucketKey] += activeRegistrations;
+    acc.totalActiveRegistrations += activeRegistrations;
   }
   // Historical, not live - see this function's own doc comment above for why this is the one
   // counter here gated on `everInstalled` instead of the live `platform` check.
@@ -1025,6 +1046,8 @@ export function aggregateWalletPasses(
     reminderTapDaySum: 0,
     reminderTapDayCount: 0,
     registrationCountBuckets: { "1": 0, "2": 0, "3": 0, "4_plus": 0 },
+    registrationsByBucket: { "1": 0, "2": 0, "3": 0, "4_plus": 0 },
+    totalActiveRegistrations: 0,
     lifecycleCounts: { active: 0, removed: 0, never_installed: 0 },
   };
 
@@ -1199,6 +1222,8 @@ async function loadWalletReportsAggregates(
     reminderTapDaySum,
     reminderTapDayCount,
     registrationCountBuckets,
+    registrationsByBucket,
+    totalActiveRegistrations,
     lifecycleCounts,
   } = aggregateWalletPasses(passes, enabledPlatforms);
 
@@ -1228,6 +1253,7 @@ async function loadWalletReportsAggregates(
     key,
     count: registrationCountBuckets[key],
     pct: oneDecimalPct(registrationCountBuckets[key], lifecycleCounts.active),
+    registrations: registrationsByBucket[key],
   }));
 
   return {
@@ -1248,6 +1274,7 @@ async function loadWalletReportsAggregates(
     },
     registrations_per_attendee: {
       buckets: registrationCountBucketsList,
+      total: totalActiveRegistrations,
     },
     by_ticket_type,
     issued_by_day,

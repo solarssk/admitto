@@ -3,6 +3,9 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
   PolarAngleAxis,
   RadialBar,
   RadialBarChart,
@@ -116,6 +119,16 @@ function syncedHint(syncedAt: string | null): string {
   // shared timestamp covering whichever platforms the event actually offers, Samsung included now
   // that this tab reads its real registration data too (CodeRabbit review).
   return `${label}. Reflects each enabled wallet platform's last registration check for this event - refreshes each time the wallet-sync job runs, not on every page load.`;
+}
+
+/** Devices per attendee's own hint - both totals here are scoped to platforms this event
+ * currently has enabled (RegistrationsPerAttendeeDonut's own doc comment explains why: same
+ * enabledPlatforms gating as `platform`/`wallet_lifecycle.active` elsewhere on this tab). A
+ * platform turned off after attendees already installed on it keeps working on their devices, but
+ * those registrations drop out of this card's totals - worth saying explicitly, since it means
+ * this can read lower than a wallet provider's own dashboard in that specific case (bot review). */
+function devicesPerAttendeeHint(): string {
+  return "Counts registrations on wallet platforms this event currently has enabled. Disabling a platform later doesn't remove it from devices that already installed on it, but those registrations drop out of the totals here - so this can read lower than your wallet provider's own dashboard if a platform with existing installs has since been turned off.";
 }
 
 /** Two-stage funnel as one radialBar with two series, outer to inner: share of attendees the pass
@@ -321,10 +334,10 @@ function walletLifecycleBreakdownRows(
   }));
 }
 
-// Percentage axes (Time to wallet install, Devices per attendee) share a fixed [0, 100] domain, so
-// unlike reports-charts.tsx's own yAxisWidthForCount their longest possible label is always the
-// same one value - "100%", measured the same way (Canvas measureText, 11px): ~29px + the same
-// +16 buffer.
+// Time to wallet install/reminder's percentage axis (TimeToTapChart, via BucketBarChart) shares a
+// fixed [0, 100] domain, so unlike reports-charts.tsx's own yAxisWidthForCount its longest possible
+// label is always the same one value - "100%", measured the same way (Canvas measureText, 11px):
+// ~29px + the same +16 buffer.
 const PERCENT_Y_AXIS_WIDTH = 46;
 
 function ticketTypeAdoptionRows(rows: EventWalletReportsResponse["by_ticket_type"]): BreakdownRow[] {
@@ -415,11 +428,12 @@ interface BucketChartRow {
   fill: string;
 }
 
-/** Shared bar-chart body for TimeToTapChart and RegistrationsPerAttendeeChart below - both chart a
- * small ordinal bucket distribution the same way (bar heights read more naturally than percentage
- * text for a distribution like this), with only the row labels/colors differing between the two.
- * Extracted to keep that shared JSX in one place rather than two near-identical copies (SonarCloud
- * new-code duplication, PR review). */
+/** Bar-chart body for TimeToTapChart below, which this file's own two "Time to wallet
+ * install"/"Time to install after reminder" cards both instantiate - bar heights read more
+ * naturally than percentage text for a small ordinal bucket distribution like this. Kept as its
+ * own function rather than inlined into TimeToTapChart (SonarCloud new-code duplication, PR
+ * review, from when Devices per attendee's own bucket chart shared this same body too - see git
+ * history if a second caller returns). */
 function BucketBarChart({ rows, isActive }: Readonly<{ rows: BucketChartRow[]; isActive: boolean }>) {
   return (
     <div // NOSONAR: mousedown-only, see preventFocusRing above; not an interactive element itself
@@ -477,26 +491,120 @@ function TimeToTapChart({
   return <BucketBarChart rows={rows} isActive={isActive} />;
 }
 
-/** Same bar-per-bucket shape as TimeToTapChart above, for the same reason: a distribution across a
- * small ordinal count reads more naturally as bar heights than as list text. `count` here is
- * attendees, not registrations - one attendee's single pass can be registered on more than one
- * device/wallet account (an iPhone and an Apple Watch, say), and this groups attendees by how many
- * of those they currently have, not the raw registration total. */
-function RegistrationsPerAttendeeChart({
+/** Two concentric donuts, not a bar chart - one attendee's single pass can be registered on more
+ * than one device/wallet account (an iPhone and an Apple Watch, say), so this card has two
+ * genuinely different totals to show: how many attendees fall in each bucket (outer ring, sums to
+ * `attendeeTotal`), and how many device registrations those same buckets actually account for
+ * (inner ring, sums to `registrationTotal`) - a wallet provider's own dashboard counts the same
+ * way (once per device, not once per attendee), but ONLY for platforms this event currently has
+ * enabled: both rings, like `platform`/`wallet_lifecycle.active` elsewhere on this tab, are
+ * gated on enabledPlatforms (see applyWalletPassToAggregates' own doc comment, reports-routes.ts),
+ * so a registration on a platform this event has since disabled drops out of `registrationTotal`
+ * even though it's still real and active on the attendee's own device (bot review) - this can
+ * genuinely under-count against the provider's own total in that specific case, by the same
+ * existing architect decision every other live-right-now number on this tab already follows.
+ * Centering a single ring on `registrationTotal` while its own slices only summed to
+ * `attendeeTotal` would be internally inconsistent (the exact bug Wallet lifecycle's donut was
+ * fixed for in 0.6.7) - two independently-consistent rings avoids that instead of picking one
+ * number to misrepresent. */
+function registrationCountSlices(
+  buckets: EventWalletReportsResponse["registrations_per_attendee"]["buckets"],
+): Array<{ key: string; label: string; color: string; count: number; registrations: number }> {
+  return buckets.map((b) => ({
+    key: b.key,
+    label: REGISTRATION_COUNT_LABELS[b.key],
+    color: REGISTRATION_COUNT_COLORS[b.key],
+    count: b.count,
+    registrations: b.registrations,
+  }));
+}
+
+function RegistrationsPerAttendeeDonut({
   buckets,
+  attendeeTotal,
+  registrationTotal,
   isActive,
 }: Readonly<{
   buckets: EventWalletReportsResponse["registrations_per_attendee"]["buckets"];
+  attendeeTotal: number;
+  registrationTotal: number;
   isActive: boolean;
 }>) {
-  const rows = buckets.map((b) => ({
-    key: b.key,
-    label: REGISTRATION_COUNT_LABELS[b.key],
-    pct: b.pct,
-    count: b.count,
-    fill: REGISTRATION_COUNT_COLORS[b.key],
+  const slices = registrationCountSlices(buckets);
+  // Inner ring's own name carries "registrations" so its tooltip reads distinctly from the outer
+  // ring's ("2 devices: 5" vs "2 devices registrations: 10") instead of two identically-labeled
+  // series differing only in the number shown.
+  const registrationSlices = slices.map((s) => ({ ...s, label: `${s.label} registrations` }));
+  return (
+    <div // NOSONAR: mousedown-only, see preventFocusRing above; not an interactive element itself
+      className="wallets-gauge-overlay"
+      role="presentation"
+      onMouseDown={preventFocusRing}
+    >
+      {/* isActive-gated mount - see AdoptionGauge's own comment above for why. */}
+      {isActive && (
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart style={{ fontFamily: FONT_FAMILY }}>
+            <Pie
+              data={slices}
+              dataKey="count"
+              nameKey="label"
+              innerRadius="70%"
+              outerRadius="92%"
+              stroke="#ffffff"
+              strokeWidth={2}
+              label={false}
+              labelLine={false}
+              isAnimationActive={false}
+            >
+              {slices.map((slice) => (
+                <Cell key={slice.key} fill={slice.color} />
+              ))}
+            </Pie>
+            <Pie
+              data={registrationSlices}
+              dataKey="registrations"
+              nameKey="label"
+              innerRadius="52%"
+              outerRadius="64%"
+              stroke="#ffffff"
+              strokeWidth={2}
+              label={false}
+              labelLine={false}
+              isAnimationActive={false}
+            >
+              {registrationSlices.map((slice) => (
+                <Cell key={slice.key} fill={slice.color} fillOpacity={0.55} />
+              ))}
+            </Pie>
+            <Tooltip position={{ y: 256 }} />
+          </PieChart>
+        </ResponsiveContainer>
+      )}
+      <div className="wallets-gauge-overlay__center">
+        <span className="wallets-gauge-overlay__value">{attendeeTotal}</span>
+        <span className="wallets-gauge-overlay__label">attendees</span>
+        <span className="wallets-gauge-overlay__divider" />
+        <span className="wallets-gauge-overlay__sub-value">{registrationTotal}</span>
+        <span className="wallets-gauge-overlay__sub-label">registrations</span>
+      </div>
+    </div>
+  );
+}
+
+function registrationCountBreakdownRows(
+  buckets: EventWalletReportsResponse["registrations_per_attendee"]["buckets"],
+): BreakdownRow[] {
+  return registrationCountSlices(buckets).map((slice) => ({
+    id: slice.key,
+    label: slice.label,
+    // Same "·" separator as every other card's own meta text (e.g. AdoptionGauge's "63 · 57.3% of
+    // issued") - a tried icon-only version (ti-user/ti-device-mobile with no words) read as a
+    // rebus rather than a serious admin readout (PO review), so this keeps plain, unambiguous text.
+    meta: `${slice.count} attendee${slice.count === 1 ? "" : "s"} · ${slice.registrations} registration${slice.registrations === 1 ? "" : "s"}`,
+    pct: buckets.find((b) => b.key === slice.key)?.pct ?? 0,
+    color: slice.color,
   }));
-  return <BucketBarChart rows={rows} isActive={isActive} />;
 }
 
 // Memoized: ReportsPage re-renders on every live check-in (Event Day's SSE feed), and this tab
@@ -622,11 +730,21 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       </div>
 
       <div className="wallets-panels">
-        <Card title="Devices per attendee" className="wallets-chart-card">
+        <Card title={<HintLabel hint={devicesPerAttendeeHint()}>Devices per attendee</HintLabel>}>
           <p className="wallets-description">
             Some attendees add their ticket to more than one device - this counts devices actually in use right now, not just who has it installed.
           </p>
-          <RegistrationsPerAttendeeChart buckets={data.registrations_per_attendee.buckets} isActive={isActive} />
+          <div className="wallets-adoption">
+            <RegistrationsPerAttendeeDonut
+              buckets={data.registrations_per_attendee.buckets}
+              attendeeTotal={data.wallet_lifecycle.active}
+              registrationTotal={data.registrations_per_attendee.total}
+              isActive={isActive}
+            />
+            <div className="wallets-adoption__breakdown">
+              <BreakdownRows rows={registrationCountBreakdownRows(data.registrations_per_attendee.buckets)} />
+            </div>
+          </div>
         </Card>
         <Card title="Adoption by ticket type" className="wallets-list-card">
           <p className="wallets-description">Percentage of each ticket type&rsquo;s own attendees who installed a wallet pass.</p>

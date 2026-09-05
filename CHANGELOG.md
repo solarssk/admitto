@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Reports' Wallets tab "Devices per attendee" card is now a two-ring donut instead of a bar chart: the outer ring is the existing attendee-count breakdown, and a new inner ring weights the same buckets by device registrations instead, so the center can show both the attendee total and the device-registration total at once - useful for reconciling against a wallet provider's own "active registrations" figure, which counts per device rather than per attendee the way the outer ring does.
+
 ### Fixed
 
 - A failed template "test send" (Communication's template editor and Event Settings' mail test) previously left no trace in System logs to distinguish it from a successful one - only the API response carried the failure reason. It now logs a `mail_test_send_failed` entry with the same sanitized error text already shown in the UI, matching the existing mail connection test's logging.

@@ -402,11 +402,15 @@ describe("aggregateWalletPasses — registrationCountBuckets", () => {
       BOTH_ENABLED,
     );
     expect(result.registrationCountBuckets).toEqual({ "1": 1, "2": 1, "3": 1, "4_plus": 1 });
+    // Each bucket's own pass's real registration count, not the bucket key multiplied out - most
+    // visible on "4_plus", where a naive count*4 would say 4 instead of this pass's real 6.
+    expect(result.registrationsByBucket).toEqual({ "1": 1, "2": 2, "3": 3, "4_plus": 6 });
   });
 
   it("excludes a not-confirmed pass (no active registration on any platform) from every bucket", () => {
     const result = aggregateWalletPasses([pass({ apple_active_registrations: 0, google_active_registrations: 0 })], BOTH_ENABLED);
     expect(result.registrationCountBuckets).toEqual({ "1": 0, "2": 0, "3": 0, "4_plus": 0 });
+    expect(result.registrationsByBucket).toEqual({ "1": 0, "2": 0, "3": 0, "4_plus": 0 });
   });
 
   it("only counts the enabled platform's own registrations, same gating as confirmed/appleOnly above", () => {
@@ -416,6 +420,7 @@ describe("aggregateWalletPasses — registrationCountBuckets", () => {
       APPLE_ONLY_ENABLED,
     );
     expect(result.registrationCountBuckets).toEqual({ "1": 0, "2": 1, "3": 0, "4_plus": 0 });
+    expect(result.registrationsByBucket).toEqual({ "1": 0, "2": 2, "3": 0, "4_plus": 0 });
   });
 
   it("includes samsung's own active registrations in the sum when Samsung is enabled", () => {
@@ -424,6 +429,7 @@ describe("aggregateWalletPasses — registrationCountBuckets", () => {
       ALL_ENABLED,
     );
     expect(result.registrationCountBuckets).toEqual({ "1": 0, "2": 0, "3": 1, "4_plus": 0 });
+    expect(result.registrationsByBucket).toEqual({ "1": 0, "2": 0, "3": 3, "4_plus": 0 });
   });
 });
 
