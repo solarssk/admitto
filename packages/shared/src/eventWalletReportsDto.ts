@@ -68,8 +68,12 @@ export interface EventWalletReportsResponse {
     buckets: Array<{ key: "1" | "2" | "3" | "4_plus"; count: number; pct: number; registrations: number }>;
     /** Sum of every active attendee's own device/account count - unlike the buckets above, this
      * isn't capped at the "4_plus" bucket, so it's the true total device registrations right now
-     * (comparable to a wallet provider's own "active registrations" figure, which counts the same
-     * way: once per device, not once per attendee). */
+     * among platforms this event currently has enabled (comparable to a wallet provider's own
+     * "active registrations" figure for those same platforms, which counts the same way: once per
+     * device, not once per attendee). Like `platform`/`wallet_lifecycle.active` elsewhere in this
+     * response, a registration on a platform this event has since disabled doesn't count here even
+     * though it's still real and active on the attendee's own device (bot review) - this can
+     * genuinely read lower than the provider's own total in that specific case. */
     total: number;
   };
   by_ticket_type: Array<{

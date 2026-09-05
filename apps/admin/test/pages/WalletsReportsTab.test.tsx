@@ -236,12 +236,12 @@ function fixture(overrides: Partial<EventWalletReportsResponse> = {}): EventWall
   };
 }
 
-/** Cards title their header with `<HintLabel>` for two of these cards ("Wallet adoption",
- * "Wallet platform"), which renders the title text alongside a trailing icon inside the same
- * tooltip-trigger wrapper as `.at-card__title` itself - both nodes end up with identical
- * `textContent`, so a plain `screen.getByText(title)` throws "multiple elements found" for those
- * two cards. Locating the `.at-card` by its title text via `closest` sidesteps that ambiguity
- * for every card uniformly. */
+/** Cards title their header with `<HintLabel>` for three of these cards ("Wallet adoption",
+ * "Wallet platform", "Devices per attendee"), which renders the title text alongside a trailing
+ * icon inside the same tooltip-trigger wrapper as `.at-card__title` itself - both nodes end up
+ * with identical `textContent`, so a plain `screen.getByText(title)` throws "multiple elements
+ * found" for those cards. Locating the `.at-card` by its title text via `closest` sidesteps that
+ * ambiguity for every card uniformly. */
 function cardByTitle(title: string): HTMLElement {
   const titleEl = Array.from(document.querySelectorAll(".at-card__title")).find((el) =>
     el.textContent?.includes(title),

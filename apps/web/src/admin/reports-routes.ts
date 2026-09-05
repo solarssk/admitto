@@ -846,7 +846,10 @@ interface WalletPassAggregates {
    * loses the real count past 4), kept here so the Devices per attendee card can show a true total
    * instead of one that undercounts once any attendee crosses the 4+ bucket. Same
    * enabledPlatforms/platform!=="none" gating as registrationCountBuckets, so the two always stay
-   * consistent with each other. */
+   * consistent with each other - but this same gating means a registration on a platform this
+   * event has since disabled isn't summed here either, even though it's still real and active on
+   * the attendee's own device (bot review), so this can genuinely read lower than a wallet
+   * provider's own "active registrations" total in that specific case. */
   totalActiveRegistrations: number;
   lifecycleCounts: Record<"active" | "removed" | "never_installed", number>;
 }

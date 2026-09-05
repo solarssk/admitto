@@ -121,6 +121,16 @@ function syncedHint(syncedAt: string | null): string {
   return `${label}. Reflects each enabled wallet platform's last registration check for this event - refreshes each time the wallet-sync job runs, not on every page load.`;
 }
 
+/** Devices per attendee's own hint - both totals here are scoped to platforms this event
+ * currently has enabled (RegistrationsPerAttendeeDonut's own doc comment explains why: same
+ * enabledPlatforms gating as `platform`/`wallet_lifecycle.active` elsewhere on this tab). A
+ * platform turned off after attendees already installed on it keeps working on their devices, but
+ * those registrations drop out of this card's totals - worth saying explicitly, since it means
+ * this can read lower than a wallet provider's own dashboard in that specific case (bot review). */
+function devicesPerAttendeeHint(): string {
+  return "Counts registrations on wallet platforms this event currently has enabled. Disabling a platform later doesn't remove it from devices that already installed on it, but those registrations drop out of the totals here - so this can read lower than your wallet provider's own dashboard if a platform with existing installs has since been turned off.";
+}
+
 /** Two-stage funnel as one radialBar with two series, outer to inner: share of attendees the pass
  * was issued to, then share of attendees who actually installed it on a phone. Both `issuedPct`
  * and `installedPct` are shares of the same base - total attendees - so the inner ring reads as
@@ -485,9 +495,15 @@ function TimeToTapChart({
  * than one device/wallet account (an iPhone and an Apple Watch, say), so this card has two
  * genuinely different totals to show: how many attendees fall in each bucket (outer ring, sums to
  * `attendeeTotal`), and how many device registrations those same buckets actually account for
- * (inner ring, sums to `registrationTotal`) - a wallet provider's own "active registrations" figure
- * matches this second number, not the first, since it also counts once per device rather than once
- * per attendee. Centering a single ring on `registrationTotal` while its own slices only summed to
+ * (inner ring, sums to `registrationTotal`) - a wallet provider's own dashboard counts the same
+ * way (once per device, not once per attendee), but ONLY for platforms this event currently has
+ * enabled: both rings, like `platform`/`wallet_lifecycle.active` elsewhere on this tab, are
+ * gated on enabledPlatforms (see applyWalletPassToAggregates' own doc comment, reports-routes.ts),
+ * so a registration on a platform this event has since disabled drops out of `registrationTotal`
+ * even though it's still real and active on the attendee's own device (bot review) - this can
+ * genuinely under-count against the provider's own total in that specific case, by the same
+ * existing architect decision every other live-right-now number on this tab already follows.
+ * Centering a single ring on `registrationTotal` while its own slices only summed to
  * `attendeeTotal` would be internally inconsistent (the exact bug Wallet lifecycle's donut was
  * fixed for in 0.6.7) - two independently-consistent rings avoids that instead of picking one
  * number to misrepresent. */
@@ -714,7 +730,7 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       </div>
 
       <div className="wallets-panels">
-        <Card title="Devices per attendee">
+        <Card title={<HintLabel hint={devicesPerAttendeeHint()}>Devices per attendee</HintLabel>}>
           <p className="wallets-description">
             Some attendees add their ticket to more than one device - this counts devices actually in use right now, not just who has it installed.
           </p>
