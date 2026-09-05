@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- The production container image now runs `apt-get upgrade` when installing its base packages, picking up Debian's own bookworm-security point-fixes (e.g. CVE-2026-86145, a high-severity libpcre2-8-0 issue Docker Scout flagged in the v0.6.8 image) instead of shipping whatever version the base image tag happened to bake in until its own next rebuild.
+
 ## [0.6.8] - 2026-09-05
 
 ### Changed
