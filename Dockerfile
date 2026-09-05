@@ -45,7 +45,12 @@ FROM node:24-bookworm-slim AS production
 # fontconfig + fonts-dejavu-core: debian-slim ships no fonts at all, so sharp's SVG compositor
 # (apps/web/src/maps/static-map.ts, font-family "DejaVu Sans, Arial, Helvetica, sans-serif") has
 # nothing to resolve glyphs against and draws the static-map attribution/placeholder text as tofu.
+# `apt-get upgrade` pulls in Debian's own bookworm-security point-fixes for whatever the base
+# image already shipped (e.g. libpcre2-8-0, CVE-2026-86145) - the base image tag itself only gets
+# rebuilt on its own schedule, so without this an already-fixed-upstream package can still ship
+# stale in our image between those rebuilds.
 RUN apt-get update \
+  && apt-get upgrade -y \
   && apt-get install -y --no-install-recommends ca-certificates fontconfig fonts-dejavu-core openssl wget \
   && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/* \
