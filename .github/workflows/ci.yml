@@ -416,7 +416,11 @@ jobs:
     # fail_ci_if_error-style soft-fail - an empty SONAR_TOKEN errors the step for real. Means fork
     # PRs get no SonarCloud analysis post-migration (Automatic Analysis covered them today, just
     # without coverage) - see the migration doc for the fuller trade-off writeup.
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
+    # Dependabot PRs hit the same empty-SONAR_TOKEN failure even though head.repo.fork is false -
+    # GitHub withholds repo secrets from Dependabot-triggered runs regardless of fork status. Skip
+    # by PR author (not github.actor, which a human re-run would set to themselves) - same pattern
+    # as wiki-docs above.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.user.login != 'dependabot[bot]')) }}
     permissions:
       contents: read
     steps:
