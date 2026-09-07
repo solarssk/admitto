@@ -94,9 +94,11 @@ describe("CameraScanner", () => {
         new DOMException("denied", "NotAllowedError"),
       );
       render(<CameraScanner enabled={true} wedgeActive={false} onScan={() => {}} />);
-      await screen.findByText(
-        "Camera access denied. Allow camera access for this site in your browser settings, then reload.",
-      );
+      expect(
+        await screen.findByText(
+          "Camera access denied. Allow camera access for this site in your browser settings, then reload.",
+        ),
+      ).toBeTruthy();
     });
 
     it("shows the same permission-denied message for SecurityError", async () => {
@@ -104,9 +106,11 @@ describe("CameraScanner", () => {
         new DOMException("insecure context", "SecurityError"),
       );
       render(<CameraScanner enabled={true} wedgeActive={false} onScan={() => {}} />);
-      await screen.findByText(
-        "Camera access denied. Allow camera access for this site in your browser settings, then reload.",
-      );
+      expect(
+        await screen.findByText(
+          "Camera access denied. Allow camera access for this site in your browser settings, then reload.",
+        ),
+      ).toBeTruthy();
     });
 
     it("shows a no-camera message for NotFoundError", async () => {
@@ -114,7 +118,7 @@ describe("CameraScanner", () => {
         new DOMException("no device", "NotFoundError"),
       );
       render(<CameraScanner enabled={true} wedgeActive={false} onScan={() => {}} />);
-      await screen.findByText("No camera found on this device.");
+      expect(await screen.findByText("No camera found on this device.")).toBeTruthy();
     });
 
     it("shows a broader access-problem message for NotReadableError, without asserting a single cause (bot review)", async () => {
@@ -122,15 +126,17 @@ describe("CameraScanner", () => {
         new DOMException("hardware error", "NotReadableError"),
       );
       render(<CameraScanner enabled={true} wedgeActive={false} onScan={() => {}} />);
-      await screen.findByText(
-        "Could not access the camera. It may be in use by another app, or a hardware problem. Close other apps using the camera and try again.",
-      );
+      expect(
+        await screen.findByText(
+          "Could not access the camera. It may be in use by another app, or a hardware problem. Close other apps using the camera and try again.",
+        ),
+      ).toBeTruthy();
     });
 
     it("shows a generic start-failure message for an unrecognized error", async () => {
       decodeFromConstraints.mockRejectedValueOnce(new Error("boom"));
       render(<CameraScanner enabled={true} wedgeActive={false} onScan={() => {}} />);
-      await screen.findByText("Could not start the camera. Try again.");
+      expect(await screen.findByText("Could not start the camera. Try again.")).toBeTruthy();
     });
 
     it("does not set an error once the camera has already been stopped (unmounted before the rejection settles)", async () => {
