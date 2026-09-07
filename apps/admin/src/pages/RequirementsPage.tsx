@@ -40,6 +40,24 @@ function loadErrorMessage(err: unknown): string {
   return "Could not load requirements.";
 }
 
+/** Maps a failed requirements load to UI state: reported status code, redirect on 401 (returns
+ * true so the caller skips setting an error message), or the access-denied flag for a 403.
+ * Extracted from load() so that function's own cognitive complexity stays low. */
+function handleLoadError(
+  err: unknown,
+  reportApiError: (status: number) => void,
+  setAccessDenied: (denied: boolean) => void,
+): boolean {
+  if (!(err instanceof ApiError)) return false;
+  reportApiError(err.status);
+  if (err.status === 401) {
+    redirectToLogin();
+    return true;
+  }
+  if (err.status === 403) setAccessDenied(true);
+  return false;
+}
+
 function EventItemsTableBody({
   loading,
   showLoading,
@@ -256,6 +274,7 @@ export function RequirementsPage() {
   const [customFields, setCustomFields] = useState<EventCustomFieldDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [selectedItem, setSelectedItem] = useState<EventItemDto | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
@@ -302,6 +321,7 @@ export function RequirementsPage() {
     // has valid rows on screen, so blanking them out for the refetch just
     // reads as a flash/jump instead of a smooth in-place update.
     if (!hasLoadedRef.current) setLoading(true);
+    setAccessDenied(false);
     try {
       const [itemRows, fields] = await Promise.all([
         fetchEventItems(eventId, ac.signal),
@@ -321,13 +341,7 @@ export function RequirementsPage() {
       setItems([]);
       setCustomFields([]);
       setSelectedItem(null);
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          redirectToLogin();
-          return;
-        }
-      }
+      if (handleLoadError(err, reportApiError, setAccessDenied)) return;
       setLoadError(loadErrorMessage(err));
     } finally {
       if (!ac.signal.aborted) setLoading(false);
@@ -420,7 +434,7 @@ export function RequirementsPage() {
       />
       {loadError && !loading ? (
         <EmptyState
-          title="Could not load requirements"
+          title={accessDenied ? "You do not have access to this event" : "Could not load requirements"}
           description={loadError}
           action={
             <Button type="button" variant="secondary" onClick={() => void load()}>

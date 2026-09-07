@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { ToastProvider } from "@admitto/ui";
 import { RequirementsPage } from "../../src/pages/RequirementsPage.js";
 import type { EventItemDto } from "../../src/api/types.js";
+import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
 
 const fetchEventItems = vi.fn();
 const fetchEventCustomFields = vi.fn();
@@ -107,6 +108,52 @@ describe("RequirementsPage load failure", () => {
       expect(screen.queryByText("Could not load requirements")).toBeNull();
     });
     expect(await screen.findByRole("switch", { name: "Disable Badge" })).toBeTruthy();
+  });
+
+  it("gives an event-access error, not the generic title, for a forbidden load", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventItems.mockRejectedValueOnce(new ApiError(403, "not_for_operator"));
+
+    renderPage();
+
+    expect(await screen.findByText("You do not have access to this event.")).toBeTruthy();
+    // The EmptyState title must match this specific cause, not the generic "Could not load
+    // requirements" heading used for every other load failure.
+    expect(screen.getByText("You do not have access to this event")).toBeTruthy();
+    expect(screen.queryByText("Could not load requirements")).toBeNull();
+    expect(reportApiError).toHaveBeenCalledWith(403);
+  });
+
+  it("shows the generic error when loading fails outside the API layer", async () => {
+    fetchEventItems.mockRejectedValueOnce(new Error("network unavailable"));
+
+    renderPage();
+
+    await screen.findByText("Could not load requirements");
+    expect(screen.getByText("Could not load requirements.")).toBeTruthy();
+    expect(reportApiError).not.toHaveBeenCalled();
+  });
+
+  it("redirects to login when the load returns 401", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventItems.mockRejectedValueOnce(new ApiError(401, "authentication_required"));
+    const assignSpy = vi.fn();
+    const locationDescriptor = Object.getOwnPropertyDescriptor(window, "location");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { pathname: "/admin/events/evt-1/requirements", assign: assignSpy },
+    });
+    try {
+      renderPage();
+      await waitFor(() =>
+        expect(assignSpy).toHaveBeenCalledWith(
+          "/login?next=%2Fadmin%2Fevents%2Fevt-1%2Frequirements",
+        ),
+      );
+      expect(reportApiError).toHaveBeenCalledWith(401);
+    } finally {
+      if (locationDescriptor) Object.defineProperty(window, "location", locationDescriptor);
+    }
   });
 });
 
