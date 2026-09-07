@@ -28,7 +28,7 @@
     "@admitto/shared": "*",
     "@admitto/storage": "*",
     "@admitto/tickets": "*",
-    "zod": "^4.4.3"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@prisma/client": "^7.10.0",
