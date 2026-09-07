@@ -6,7 +6,7 @@ import {
   verifyAuthenticationResponse,
   type RegistrationResponseJSON,
   type AuthenticationResponseJSON,
-  type AuthenticatorTransportFuture,
+  type AuthenticatorTransport,
   type PublicKeyCredentialCreationOptionsJSON,
   type PublicKeyCredentialRequestOptionsJSON,
   type WebAuthnCredential,
@@ -35,8 +35,8 @@ export interface WebauthnRpConfig {
 /** Shared with `webauthn-login.ts` (the discoverable-credential first-factor ceremony), which
  * reads the same `webauthn_transports` column but for a credential resolved without a known
  * userId. */
-export function toTransports(transports: string[]): AuthenticatorTransportFuture[] {
-  return transports as AuthenticatorTransportFuture[];
+export function toTransports(transports: string[]): AuthenticatorTransport[] {
+  return transports as AuthenticatorTransport[];
 }
 
 export interface BeginWebauthnRegistrationResult {
