@@ -13,6 +13,33 @@ updates:
     # fresh lockfile resolve, or close/reopen - CI's lockfile check (verify-lockfile-
     # resolutions.py) is the backstop if a conflict does get auto-resolved some other way.
     rebase-strategy: "disabled"
+    # Each group below is a peer-version pair split across two different package names, so a
+    # same-target-version bump lands in one PR instead of two independent ones. Without this,
+    # Dependabot bundles same-*name* bumps across every workspace's package.json into one PR
+    # (that part already works, e.g. vitest itself) but never bundles across *different* names,
+    # even when one requires the other at an exact matching version - merging just one half then
+    # leaves package-lock.json unresolvable, caught (not prevented) by verify-lockfile-
+    # resolutions.py. Confirmed broken this way for vitest / @vitest/coverage-v8 (PR #1256 vs
+    # #1254, both bumping 4.1.11 -> 5.0.0 independently) - the same class of bug PR #1035 first
+    # patched a symptom of, and PR #734 fixed manually pre-Dependabot-groups.
+    groups:
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+      prisma:
+        # packages/db pins these two to the identical version on adjacent lines; @prisma/client
+        # will not run against a mismatched prisma CLI/engine version.
+        patterns:
+          - "prisma"
+          - "@prisma/*"
+      typescript-eslint:
+        patterns:
+          - "@typescript-eslint/*"
+      vite:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
     ignore:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
