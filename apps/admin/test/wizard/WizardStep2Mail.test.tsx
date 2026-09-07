@@ -109,6 +109,24 @@ describe("WizardStep2Mail delayed loading", () => {
   });
 });
 
+describe("WizardStep2Mail load error", () => {
+  it("shows a persistent error with Retry instead of leaving the step blank (regression)", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("network down"));
+    renderStep();
+
+    expect(await screen.findByText("Could not load mail settings.")).toBeTruthy();
+    // The form itself never mounts while apiData is still null - the error notice is the only
+    // thing on screen, not a blank step.
+    expect(screen.queryByLabelText("SMTP host")).toBeNull();
+
+    mockFetch.mockResolvedValueOnce(smtpResponse());
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByLabelText("SMTP host")).toBeTruthy();
+    expect(screen.queryByText("Could not load mail settings.")).toBeNull();
+  });
+});
+
 describe("WizardStep2Mail Transport picker", () => {
   it("switches provider-specific fields and resets SMTP defaults when returning to SMTP", async () => {
     const response = smtpResponse();

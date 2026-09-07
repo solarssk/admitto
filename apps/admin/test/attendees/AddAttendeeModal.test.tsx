@@ -213,8 +213,8 @@ describe("AddAttendeeModal", () => {
       <AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />,
     );
 
-    const alert = await screen.findByText(message);
-    expect(alert.getAttribute("role")).toBe("alert");
+    const alertText = await screen.findByText(message);
+    expect(alertText.closest('[role="alert"]')).toBeTruthy();
 
     rerender(
       <AddAttendeeModal eventId="evt-1" open={false} onClose={() => {}} onCreated={() => {}} />,

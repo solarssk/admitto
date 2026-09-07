@@ -1872,7 +1872,7 @@ export function AttendeeDetailPage() {
       navigate(`/admin/events/${eventId}/attendees`);
     } catch (err) {
       if (!isStillSelected(target)) return;
-      setDeleteError(operatorApiErrorMessage(err, "Delete failed"));
+      setDeleteError(operatorApiErrorMessage(err, "Could not delete attendee. Try again."));
     } finally {
       if (isStillSelected(target)) setDeleting(false);
     }
@@ -2319,7 +2319,17 @@ export function AttendeeDetailPage() {
     return (
       <div className="attendee-detail-page screen">
         <PageHeader title="Attendee" actions={<Button variant="secondary" onClick={goBack}>Back</Button>} />
-        {error && <p className="text-error">{error}</p>}
+        {error && (
+          <EmptyState
+            title="Could not load attendee"
+            description={error}
+            action={
+              <Button type="button" variant="secondary" onClick={() => void loadDetail()}>
+                Retry
+              </Button>
+            }
+          />
+        )}
       </div>
     );
   }
@@ -2459,7 +2469,7 @@ export function AttendeeDetailPage() {
       {/* Not shown while the Edit modal is open - that error text renders inside the modal
           itself instead, otherwise it's stuck behind the modal's opaque backdrop, invisible
           (bot review), and duplicated in the DOM behind it if left unconditional here. */}
-      {error && !editMode && <p className="text-error">{error}</p>}
+      {error && !editMode && <Notice variant="error" role="alert">{error}</Notice>}
       {itemsWarning && <Notice variant="warning" className="attendee-form__warn">{itemsWarning}</Notice>}
 
       <AttendeeStatusStrip
@@ -2541,9 +2551,9 @@ export function AttendeeDetailPage() {
               Update this attendee&apos;s profile and ticket details.
             </p>
             {error && (
-              <p className="text-error" role="alert">
+              <Notice variant="error" role="alert">
                 {error}
-              </p>
+              </Notice>
             )}
             {staleWrite && (
               <Notice
@@ -2606,7 +2616,9 @@ export function AttendeeDetailPage() {
                   </Notice>
                 )}
                 {emailConflict && (
-                  <p className="attendee-form__error">This email is already used by another attendee in this event.</p>
+                  <Notice variant="error" role="alert">
+                    This email is already used by another attendee in this event. Use a different email address.
+                  </Notice>
                 )}
                 <Input
                   label="First name"
@@ -2653,12 +2665,16 @@ export function AttendeeDetailPage() {
                   />
                 </div>
                 {ticketTypesError && (
-                  <p className="attendee-form__error">
-                    {ticketTypesError}{" "}
-                    <button type="button" className="link-btn" onClick={loadTicketTypes}>
-                      Retry
-                    </button>
-                  </p>
+                  <Notice
+                    variant="error"
+                    action={
+                      <Button type="button" variant="ghost" size="sm" onClick={loadTicketTypes}>
+                        Retry
+                      </Button>
+                    }
+                  >
+                    {ticketTypesError}
+                  </Notice>
                 )}
                 {attributeFields.map((field) => (
                   <CustomDataFieldInput

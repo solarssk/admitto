@@ -9,7 +9,7 @@ import {
   type RefObject,
 } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
-import { Button, EmptyState, Input, ModalBackdrop, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
+import { Button, EmptyState, Input, ModalBackdrop, Notice, PageHeader, Tooltip, useToast, type ToastVariant } from "@admitto/ui";
 import { enabledWalletPlatforms, type EnabledWalletPlatforms } from "@admitto/shared";
 import {
   ApiError,
@@ -426,9 +426,9 @@ function SendTicketsDialog({
           Send tickets
         </h2>
         {error && (
-          <p className="add-attendee-modal__error" role="alert">
+          <Notice variant="error" role="alert">
             {error}
-          </p>
+          </Notice>
         )}
         <p className="mail-field-hint">Choose who should receive a ticket email in this batch.</p>
         <div className="mail-field-row">
@@ -562,9 +562,9 @@ function CardPickerDialog<T>({
           {title}
         </h2>
         {error && (
-          <p className="add-attendee-modal__error" role="alert">
+          <Notice variant="error" role="alert">
             {error}
-          </p>
+          </Notice>
         )}
         <p className="mail-field-hint">
           Set the {fieldLabel} for {selectedCount} selected attendee{selectedCount === 1 ? "" : "s"}.
@@ -690,9 +690,9 @@ function BulkTextFieldDialog({
           {title}
         </h2>
         {error && (
-          <p className="add-attendee-modal__error" role="alert">
+          <Notice variant="error" role="alert">
             {error}
-          </p>
+          </Notice>
         )}
         <p className="mail-field-hint">
           Set the {fieldLabel} for {selectedCount} selected attendee{selectedCount === 1 ? "" : "s"}.
@@ -1121,7 +1121,7 @@ export function AttendeesPage() {
       .catch((err: unknown) => {
         if (ac.signal.aborted) return;
         setTicketTypes([]);
-        setTicketTypesError(operatorApiErrorMessage(err, "Couldn't load types."));
+        setTicketTypesError(operatorApiErrorMessage(err, "Could not load types."));
       });
     return () => ac.abort();
   }, [eventId, ticketTypesRetryToken]);
@@ -1139,7 +1139,7 @@ export function AttendeesPage() {
       .catch((err: unknown) => {
         if (ac.signal.aborted) return;
         setEventItemCount(0);
-        setEventItemsError(operatorApiErrorMessage(err, "Couldn't load items."));
+        setEventItemsError(operatorApiErrorMessage(err, "Could not load items."));
       });
     return () => ac.abort();
   }, [eventId, eventItemsRetryToken]);

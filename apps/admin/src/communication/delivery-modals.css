@@ -97,17 +97,6 @@
   gap: var(--space-2);
 }
 
-.delivery-modal__loading,
-.delivery-modal__error {
-  padding: var(--space-6);
-  text-align: center;
-  color: var(--text-muted);
-}
-
-.delivery-modal__error {
-  color: var(--status-error-fg);
-}
-
 /* "View sent message" preview - sandboxed iframe (the privacy notice above it is a shared
  * <Notice variant="highlight">, see Notice.tsx). */
 .delivery-modal-preview-subject {

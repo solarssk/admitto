@@ -312,6 +312,22 @@ describe("CommunicationPage templates", () => {
     expect(reportApiError).not.toHaveBeenCalled();
   });
 
+  it("retries the initial template load when Retry is clicked", async () => {
+    fetchEventTemplates.mockRejectedValueOnce(new Error("network unavailable"));
+    fetchEventTemplate.mockResolvedValue(legacyTemplate);
+
+    renderPage();
+    await screen.findByText("Could not load template.");
+
+    fetchEventTemplates.mockResolvedValueOnce([]);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Ticket email")).toBeTruthy();
+    });
+    expect(screen.queryByText("Could not load template.")).toBeNull();
+  });
+
   it("reports the API status and gives an event-access error for a forbidden initial load", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventTemplates.mockRejectedValueOnce(new ApiError(403, "not_for_operator"));
@@ -320,6 +336,10 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     expect(await screen.findByText("You do not have access to this event.")).toBeTruthy();
+    // The EmptyState title must match this specific cause, not the generic "Could not load
+    // template" heading used for every other load failure (bot review).
+    expect(screen.getByText("You do not have access to this event")).toBeTruthy();
+    expect(screen.queryByText("Could not load template")).toBeNull();
     expect(reportApiError).toHaveBeenCalledWith(403);
   });
 
@@ -331,6 +351,7 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     expect(await screen.findByText("Could not load template.")).toBeTruthy();
+    expect(screen.getByText("Could not load template")).toBeTruthy();
     expect(reportApiError).toHaveBeenCalledWith(500);
   });
 

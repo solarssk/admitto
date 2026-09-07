@@ -230,7 +230,9 @@ describe("AttendeeDetailPage profile edit (active event)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(
-      await screen.findByText("This email is already used by another attendee in this event."),
+      await screen.findByText(
+        "This email is already used by another attendee in this event. Use a different email address.",
+      ),
     ).toBeTruthy();
   });
 
@@ -643,7 +645,9 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "taken@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(
-      await screen.findByText("This email is already used by another attendee in this event."),
+      await screen.findByText(
+        "This email is already used by another attendee in this event. Use a different email address.",
+      ),
     ).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -654,7 +658,7 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
     // Re-entering edit mode must not resurrect the conflict from the abandoned attempt.
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(
-      screen.queryByText("This email is already used by another attendee in this event."),
+      screen.queryByText("This email is already used by another attendee in this event. Use a different email address."),
     ).toBeNull();
   });
 });

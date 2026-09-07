@@ -166,7 +166,7 @@ async function runCropApply(
   onApply: CropImageModalProps["onApply"],
 ): Promise<string | null> {
   if (completedCrop.width < 1 || completedCrop.height < 1) {
-    return "Drag the edges to select the area you want to keep.";
+    return "No area selected. Drag the edges to select the area you want to keep.";
   }
   try {
     const blob = await getCroppedImageBlob(img, completedCrop, sourceMime);
@@ -176,7 +176,7 @@ async function runCropApply(
     });
     return null;
   } catch (err) {
-    return err instanceof Error ? err.message : "Could not crop image.";
+    return err instanceof Error ? err.message : "Could not crop image. Try again or pick a different image.";
   }
 }
 
@@ -212,7 +212,7 @@ function seedCropFromLoadedImage(
   setters: SeedCropSetters,
 ): void {
   if (img.naturalWidth < 1 || img.naturalHeight < 1) {
-    setters.setError("Could not read this image.");
+    setters.setError("Could not read this image. Try a different image file.");
     return;
   }
   const limits = cropViewportLimits();

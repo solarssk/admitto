@@ -344,7 +344,7 @@ export function CfAccessEditor() {
       const teamDomain = draft.teamDomain.trim();
       const result = await testCfAccess(teamDomain || undefined);
       addToast(
-        result.ok ? "Connection verified." : result.error ?? "Connection test failed.",
+        result.ok ? "Connection test passed." : result.error ?? "Connection test failed.",
         result.ok ? "success" : "error",
       );
     } catch (err) {

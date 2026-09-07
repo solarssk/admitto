@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { IconButton, ModalBackdrop, Skeleton } from "@admitto/ui";
+import { IconButton, ModalBackdrop, Notice, Skeleton } from "@admitto/ui";
 import { fetchRenderedDelivery } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { DeliveryDto, RenderedDeliveryDto } from "../api/types.js";
@@ -69,11 +69,9 @@ export function SentMessagePreviewModal({ eventId, row, onClose }: Readonly<Sent
                 <Skeleton variant="rect" height={320} className="delivery-modal-skeleton-frame" />
               </div>
             )}
-            {!loading && error && <div className="delivery-modal__error">{error}</div>}
+            {!loading && error && <Notice variant="error" role="alert">{error}</Notice>}
             {!loading && !error && !rendered?.html && (
-              <div className="delivery-modal__loading">
-                This message&apos;s stored content is no longer available.
-              </div>
+              <Notice variant="info">This message&apos;s stored content is no longer available.</Notice>
             )}
             {!loading && !error && rendered?.html && (
               <>

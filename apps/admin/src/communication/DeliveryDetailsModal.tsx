@@ -234,7 +234,7 @@ export function DeliveryDetailsModal({
                 </div>
               </div>
             )}
-            {!loading && error && <div className="delivery-modal__error">{error}</div>}
+            {!loading && error && <Notice variant="error" role="alert">{error}</Notice>}
             {!loading && !error && detail && (
               <>
                 <div>

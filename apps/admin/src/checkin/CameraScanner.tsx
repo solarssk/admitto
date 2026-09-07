@@ -100,8 +100,18 @@ export function CameraScanner({
         // value is just start/stop controls.
         const track = (video.srcObject as MediaStream | null)?.getVideoTracks()[0] ?? null;
         onTrackChangeRef.current?.(track);
-      } catch {
-        if (!stopped) setError("Camera unavailable or permission denied.");
+      } catch (err) {
+        if (stopped) return;
+        const name = err instanceof DOMException ? err.name : null;
+        if (name === "NotAllowedError" || name === "SecurityError") {
+          setError("Camera access denied. Allow camera access for this site in your browser settings, then reload.");
+        } else if (name === "NotFoundError") {
+          setError("No camera found on this device.");
+        } else if (name === "NotReadableError") {
+          setError("Could not access the camera. It may be in use by another app, or a hardware problem. Close other apps using the camera and try again.");
+        } else {
+          setError("Could not start the camera. Try again.");
+        }
       }
     }
 

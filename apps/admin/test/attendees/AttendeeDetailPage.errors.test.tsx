@@ -97,12 +97,17 @@ describe("AttendeeDetailPage operator errors", () => {
     expect(document.querySelector(".attendee-detail-skeleton")).toBeTruthy();
   });
 
-  it("shows load failure", async () => {
+  it("shows load failure, and retries the load on demand", async () => {
     loadAttendeeDetailData.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderPage();
     await waitFor(() => {
-      expect(screen.getByText(/Could not load attendee/)).toBeTruthy();
+      expect(screen.getByText("Could not load attendee")).toBeTruthy();
     });
+
+    loadAttendeeDetailData.mockResolvedValueOnce({ detail, attributeFields: [], itemsWarning: null });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByRole("heading", { name: "Anna" });
+    expect(loadAttendeeDetailData).toHaveBeenCalledTimes(2);
   });
 
   it("shows an inline retryable error next to the Ticket type field when the catalog fails to load (CodeRabbit review)", async () => {

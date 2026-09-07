@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Button, Input, Switch, useToast } from "@admitto/ui";
+import { Button, Input, Notice, Switch, useToast } from "@admitto/ui";
 import {
   fetchMailSettings,
   saveMailSettings,
@@ -50,9 +50,11 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
     const [draft, setDraft] = useState<MailDraft>(emptyMailDraft());
     const [secrets, setSecrets] = useState<SecretEdits>(emptySecretEdits());
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [validationErrors, setValidationErrors] = useState<string[]>([]);
     const [testSending, setTestSending] = useState(false);
     const [testSent, setTestSent] = useState(false);
+    const [reloadToken, setReloadToken] = useState(0);
     const loadAbortRef = useRef<AbortController | null>(null);
 
     const fieldLocked = useCallback(
@@ -76,6 +78,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
       const ac = new AbortController();
       loadAbortRef.current = ac;
       setLoading(true);
+      setLoadError(null);
       void (async () => {
         try {
           const data = await fetchMailSettings(ac.signal);
@@ -83,16 +86,13 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
           applyResponse(data);
         } catch (err) {
           if (ac.signal.aborted) return;
-          addToast(
-            operatorApiErrorMessage(err, "Could not load mail settings."),
-            "error",
-          );
+          setLoadError(operatorApiErrorMessage(err, "Could not load mail settings."));
         } finally {
           if (!ac.signal.aborted) setLoading(false);
         }
       })();
       return () => ac.abort();
-    }, [addToast, applyResponse]);
+    }, [applyResponse, reloadToken]);
 
     const updateDraft = (patch: Partial<MailDraft>) => {
       setDraft((prev) => ({ ...prev, ...patch }));
@@ -193,6 +193,20 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
         </p>
 
         {loading && showLoading && <p className="setup-wizard__hint">Loading mail settings…</p>}
+
+        {!loading && loadError && (
+          <Notice
+            variant="error"
+            role="alert"
+            action={
+              <Button type="button" variant="secondary" onClick={() => setReloadToken((t) => t + 1)}>
+                Retry
+              </Button>
+            }
+          >
+            {loadError}
+          </Notice>
+        )}
 
         {!loading && apiData && (
           <>

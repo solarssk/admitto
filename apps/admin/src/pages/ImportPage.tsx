@@ -709,7 +709,7 @@ export function ImportPage() {
       .then((items) => setHistory(items))
       .catch((err) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
-        setHistoryError("Couldn't load import history.");
+        setHistoryError("Could not load import history.");
       })
       .finally(() => {
         if (!ac.signal.aborted) setHistoryLoading(false);

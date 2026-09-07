@@ -54,7 +54,9 @@ function isValidEmail(value: string): boolean {
 
 /** Both/neither rejected are the unambiguous cases; when exactly one side failed, "reject" is
  * whichever settled result wasn't fulfilled - there's no third option once the first two are
- * ruled out. */
+ * ruled out. Each failure names its own part (Instance URL vs Support contact) rather than
+ * falling back to one generic "something failed" message for both, mirroring
+ * `toastExternalServicesSaveResult`'s per-resource join in ExternalServicesPanel.tsx. */
 function describeSaveOutcome(
   urlResult: PromiseSettledResult<SystemSettingsDto>,
   contactResult: PromiseSettledResult<SetupSupportContactDto>,
@@ -62,14 +64,14 @@ function describeSaveOutcome(
   if (urlResult.status === "fulfilled" && contactResult.status === "fulfilled") {
     return { message: "Settings saved.", variant: "success" };
   }
-  if (urlResult.status === "rejected" && contactResult.status === "rejected") {
-    return { message: "Failed to save settings.", variant: "error" };
+  const failures: string[] = [];
+  if (urlResult.status === "rejected") {
+    failures.push(operatorApiErrorMessage(urlResult.reason, "Failed to save instance URL."));
   }
-  const rejected = urlResult.status === "rejected" ? urlResult : (contactResult as PromiseRejectedResult);
-  return {
-    message: operatorApiErrorMessage(rejected.reason, "Part of your settings failed to save - the rest was saved."),
-    variant: "error",
-  };
+  if (contactResult.status === "rejected") {
+    failures.push(operatorApiErrorMessage(contactResult.reason, "Failed to save support contact."));
+  }
+  return { message: failures.join(" "), variant: "error" };
 }
 
 /** General tab: Instance URL + Support contact, one shared Save/Reset (mirrors

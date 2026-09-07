@@ -1283,10 +1283,10 @@ export function MailTransportCard({
         <p className="settings-card-intro">{intro}</p>
         <div className="mail-transport-form">
         {providerLocked && (
-          <p className="mail-transport__env-note">
+          <Notice variant="info">
             Some transport settings are managed by your deployment configuration and cannot be changed
             here. Contact your instance administrator if you need to update them.
-          </p>
+          </Notice>
         )}
         <TransportTileGrid
           provider={provider}
@@ -1295,9 +1295,9 @@ export function MailTransportCard({
           onSelect={onSelectProvider}
         />
         {provider === "export_only" && (
-          <output className="mail-dev-warning">
+          <Notice as="output" variant="warning">
             Dev/test only. Cannot send real mail in production.
-          </output>
+          </Notice>
         )}
         </div>
       </div>

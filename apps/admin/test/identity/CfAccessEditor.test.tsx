@@ -251,7 +251,7 @@ describe("CfAccessEditor (slice 4)", () => {
     await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await waitFor(() => expect(mockTest).toHaveBeenCalledWith("https://team.cloudflareaccess.com"));
-    await screen.findByText("Connection verified.");
+    await screen.findByText("Connection test passed.");
   });
 
   it("Test connection surfaces a failure payload as an error toast", async () => {
@@ -261,6 +261,15 @@ describe("CfAccessEditor (slice 4)", () => {
     await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     expect(await screen.findByText("JWKS unreachable")).toBeTruthy();
+  });
+
+  it("Test connection falls back to a generic failure toast when the payload has no error detail", async () => {
+    mockFetch.mockResolvedValueOnce(summary({ teamDomain: "https://t" }));
+    mockTest.mockResolvedValueOnce({ ok: false });
+    renderEditorAt();
+    await screen.findByRole("button", { name: "Test connection" });
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    expect(await screen.findByText("Connection test failed.")).toBeTruthy();
   });
 
   it("Test connection stays enabled when the team domain field is env-locked", async () => {

@@ -71,7 +71,7 @@ function renderConsoleBody(
   if (error) {
     return (
       <div className="system-log-panel__console-empty system-log-panel__console-empty--error">
-        <p>Could not load system logs: {error}</p>
+        <p>{error}</p>
         <Button type="button" variant="secondary" size="sm" onClick={onRetry}>
           Retry
         </Button>

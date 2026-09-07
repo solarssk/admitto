@@ -522,13 +522,13 @@ describe("CommunicationSendPanel", () => {
     });
   });
 
-  it("shows operator-safe dry run failure", async () => {
+  it("shows operator-safe count failure", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     sendEventBulk.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     render(<CommunicationSendPanel event={activeEvent} snapshotMissing={false} isDirty={false} eventId="evt-1" templateId="tpl-1" />);
     fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
     await waitFor(() => {
-      expect(screen.getByText(/Dry run failed/)).toBeTruthy();
+      expect(screen.getByText(/Count failed/)).toBeTruthy();
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
   });

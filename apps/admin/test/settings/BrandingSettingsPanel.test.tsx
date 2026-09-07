@@ -1033,7 +1033,7 @@ describe("BrandingSettingsPanel - save and reset", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Part of your branding failed to save/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save organization branding/);
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
@@ -1057,7 +1057,7 @@ describe("BrandingSettingsPanel - save and reset", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Part of your branding failed to save/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save theme/);
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
   });

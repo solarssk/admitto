@@ -777,7 +777,9 @@ describe("UserEditModal role & access - exclusive roles", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
-    expect(await screen.findByText("A user with this email already exists.")).toBeTruthy();
+    expect(
+      await screen.findByText("A user with this email already exists. Use a different email address."),
+    ).toBeTruthy();
   });
 
   it("maps cannot_change_own_role to a specific message when confirming a role type change", async () => {

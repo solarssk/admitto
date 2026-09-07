@@ -131,7 +131,9 @@ describe("GeneralSettingsPanel", () => {
     fireEvent.change(screen.getByLabelText("Contact name"), { target: { value: "Acme Events" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toContain("Failed to save settings.");
+      const toast = screen.getByTestId("at-toast").textContent ?? "";
+      expect(toast).toMatch(/Failed to save instance URL/);
+      expect(toast).toMatch(/Failed to save support contact/);
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
@@ -156,7 +158,7 @@ describe("GeneralSettingsPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(
-        /Part of your settings failed to save/,
+        /Failed to save support contact/,
       );
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
@@ -175,7 +177,7 @@ describe("GeneralSettingsPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(
-        /Part of your settings failed to save/,
+        /Failed to save instance URL/,
       );
     });
     expect(screen.queryByText("secret_internal")).toBeNull();

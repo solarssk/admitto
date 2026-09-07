@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - My Account's passkey management now sends a best-effort WebAuthn Signal API notification when removing a passkey or security key. Supported browsers and password managers can then stop offering the deleted credential for future sign-ins. The "Add" button for passkeys is also now disabled on browsers that report no passkey support, instead of only failing after the setup prompt is attempted.
 
+### Fixed
+
+- A large batch of error and warning messages across the admin app (Add attendee, Edit attendee, Create event, delivery details, sent-message preview, mail settings, external services, the setup wizard, and several other screens) now render as the same bordered notice box used everywhere else, instead of plain unstyled or ad-hoc colored text - the "This email is already registered for this event." message was one of several places still on the older pattern. A few pages that could previously fail to load with no way to recover (the check-in event picker, the Communication template editor, a wizard mail-settings step) now show a clear message with a Retry action instead of leaving the screen blank or relying on a toast that disappears. Several messages describing the same underlying failure in different words across screens (for example "Couldn't load X" vs "Could not load X") were also made consistent, and a few messages that stated a problem without suggesting a fix now do.
+
 ### Security
 
 - The production container image now runs `apt-get upgrade` when installing its base packages, picking up Debian's own bookworm-security point-fixes (e.g. CVE-2026-86145, a high-severity libpcre2-8-0 issue Docker Scout flagged in the v0.6.8 image) instead of shipping whatever version the base image tag happened to bake in until its own next rebuild.

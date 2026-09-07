@@ -2090,7 +2090,7 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     // The error sits inside the Filters dropdown panel now (PO review) — open it to confirm
     // the ticketTypesError state has actually settled before proceeding.
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    await screen.findByText("Couldn't load types.");
+    await screen.findByText("Could not load types.");
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
@@ -2099,7 +2099,7 @@ describe("AttendeesPage bulk change ticket type (#521)", () => {
     const item = bulkBar().getByRole("menuitem", { name: /Change ticket type/ }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
     expect(getTooltipText(item)).not.toContain("No ticket types configured");
-    expect(getTooltipText(item)).toContain("Couldn't load ticket types");
+    expect(getTooltipText(item)).toContain("Could not load ticket types");
   });
 
   it("lets the operator retry the catalog load from the bulk bar's More actions menu, without losing the selection (Codex review)", async () => {
