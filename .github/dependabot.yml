@@ -40,6 +40,15 @@ updates:
         patterns:
           - "vite"
           - "@vitejs/*"
+      simplewebauthn:
+        # Unlike the pairs above, browser/server aren't an npm peerDependency of each other (they
+        # only share a spec-compliant WebAuthn JSON wire format, confirmed safe to bump
+        # independently - verify-lockfile-resolutions.py passed on PR #1255's browser-only bump).
+        # Grouped anyway: they're released together from the same upstream monorepo/changelog, and
+        # a browser-only or server-only bump silently leaves the other half's release notes (new
+        # methods, security fixes) unreviewed even when nothing breaks.
+        patterns:
+          - "@simplewebauthn/*"
     ignore:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
