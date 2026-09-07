@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { startRegistration } from "@simplewebauthn/browser";
+import { browserSupportsPasskeys, sendSignal, startRegistration } from "@simplewebauthn/browser";
 import { Badge, Button, Card, Checkbox, EmptyState, HintLabel, Input, Notice, PasswordStrengthMeter, Spinner, useToast } from "@admitto/ui";
 import {
   ApiError,
@@ -479,6 +479,11 @@ export function AccountPage() {
   const [addingSecurityKey, setAddingSecurityKey] = useState(false);
   const [addSecurityKeyError, setAddSecurityKeyError] = useState<string | null>(null);
   const [addSecurityKeyBackupCodes, setAddSecurityKeyBackupCodes] = useState<string[] | null>(null);
+  // Optimistic default (don't hide/disable passkey setup while this resolves, or on a browser
+  // this async feature-detection itself can't run in) - only ever narrows to false once the
+  // browser positively reports it can't facilitate passkeys. A false negative here just means the
+  // "Add" button's own registration ceremony fails with the existing generic error message below.
+  const [passkeysSupported, setPasskeysSupported] = useState(true);
   const [managePasskeysOpen, setManagePasskeysOpen] = useState(false);
   const [manageSecurityKeysOpen, setManageSecurityKeysOpen] = useState(false);
   const [removeCredentialTarget, setRemoveCredentialTarget] = useState<AccountMfaMethodDto | null>(null);
@@ -558,6 +563,21 @@ export function AccountPage() {
     void loadBackupCodesStatus(controller.signal);
     return () => controller.abort();
   }, [loadAccount, loadSessions, loadBackupCodesStatus]);
+
+  useEffect(() => {
+    let cancelled = false;
+    browserSupportsPasskeys()
+      .then((supported) => {
+        if (!cancelled) setPasskeysSupported(supported);
+      })
+      .catch(() => {
+        // Detection itself failing isn't evidence the browser lacks passkey support - leave the
+        // optimistic default in place.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // A fetch that resolves near-instantly (localhost, a warm cache) would
   // otherwise flash the spinner on and off faster than it can register as
@@ -658,6 +678,22 @@ export function AccountPage() {
    * has already null-checked `.id` right before calling this. */
   async function submitRemoveCredential(target: AccountMfaMethodDto, proof?: StepUpProofBody): Promise<void> {
     await deleteWebauthnCredential(target.id!, proof);
+    // Best-effort WebAuthn Signal API call - tells the browser/password manager this credential ID
+    // is gone, so it can stop offering the now-deleted passkey/security key for use. Sent right
+    // after the deletion succeeds, not after the loadAccount()/loadBackupCodesStatus() refreshes
+    // below - a rejection from either of those must not skip a signal for a credential we already
+    // know is gone. `credential_id` (the actual WebAuthn credential ID, not `target.id` - this
+    // row's own database id) is only absent if the server response is somehow malformed; nothing
+    // useful to signal in that case. Fire-and-forget: the spec itself documents signals as
+    // no-delivery-guarantee, and support varies by browser, so this must never turn an
+    // otherwise-successful removal into a visible error, and the browser can't confirm receipt.
+    if (target.credential_id) {
+      sendSignal({
+        signalName: "unknownCredential",
+        rpID: window.location.hostname,
+        credentialID: target.credential_id,
+      }).catch(() => {});
+    }
     const removedLabel = target.label ? `"${target.label}"` : "Credential";
     setRemoveCredentialTarget(null);
     setRemoveCredentialCode("");
@@ -1234,7 +1270,7 @@ export function AccountPage() {
     if (!account) return null;
     const isPasskey = attachment === "platform";
     const credentials = webauthnCredentials(account, attachment);
-    const canAdd = account.has_local_password && account.webauthn_enabled;
+    const canAdd = account.has_local_password && account.webauthn_enabled && (!isPasskey || passkeysSupported);
     const adding = isPasskey ? addingPasskey : addingSecurityKey;
     return (
       <div className="account-mfa-method">
@@ -1290,7 +1326,7 @@ export function AccountPage() {
     const open = isPasskey ? managePasskeysOpen : manageSecurityKeysOpen;
     const setOpen = isPasskey ? setManagePasskeysOpen : setManageSecurityKeysOpen;
     const credentials = webauthnCredentials(account, attachment);
-    const canAdd = account.has_local_password && account.webauthn_enabled;
+    const canAdd = account.has_local_password && account.webauthn_enabled && (!isPasskey || passkeysSupported);
     return (
       <ConfirmDialog
         open={open}

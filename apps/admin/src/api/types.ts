@@ -1652,6 +1652,10 @@ export interface AccountMfaMethodDto {
   id?: string;
   label?: string | null;
   attachment?: WebauthnAttachment;
+  /** The actual WebAuthn credential ID (base64url) - distinct from `id` (this row's own
+   * UserMfaMethod primary key, used to target removal). Needed for the WebAuthn Signal API,
+   * which the browser/authenticator can only match against the credential ID it actually issued. */
+  credential_id?: string | null;
 }
 
 export interface AccountExternalIdentityDto {

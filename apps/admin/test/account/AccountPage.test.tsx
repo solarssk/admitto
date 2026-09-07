@@ -38,6 +38,8 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
 vi.mock("@simplewebauthn/browser", () => ({
   startRegistration: vi.fn(),
   startAuthentication: vi.fn(),
+  browserSupportsPasskeys: vi.fn().mockResolvedValue(true),
+  sendSignal: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../../src/account/TotpQrCode.js", () => ({
@@ -79,7 +81,7 @@ import {
   fetchBackupCodesStatus,
   regenerateBackupCodes,
 } from "../../src/api/client.js";
-import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
+import { browserSupportsPasskeys, sendSignal, startRegistration, startAuthentication } from "@simplewebauthn/browser";
 
 const mockDeleteSession = vi.mocked(deleteAccountSession);
 
@@ -102,6 +104,8 @@ const mockDeleteAccountTotp = vi.mocked(deleteAccountTotp);
 const mockFetchBackupCodesStatus = vi.mocked(fetchBackupCodesStatus);
 const mockRegenerateBackupCodes = vi.mocked(regenerateBackupCodes);
 const mockStartRegistration = vi.mocked(startRegistration);
+const mockBrowserSupportsPasskeys = vi.mocked(browserSupportsPasskeys);
+const mockSendSignal = vi.mocked(sendSignal);
 
 const REVOKE_SESSION_BUTTON = /Revoke session for admin@example.com/;
 
@@ -137,6 +141,10 @@ function makeWebauthnMethod(overrides: Partial<AccountMfaMethodDto> = {}): Accou
     confirmed: true,
     last_used_at: null,
     id: "cred-1",
+    // Deliberately distinct from `id` - proves callers use the real WebAuthn credential id
+    // (server-side: UserMfaMethod.webauthn_credential_id) for the Signal API, not this row's own
+    // database id (which is only ever valid for the deleteWebauthnCredential(id) call).
+    credential_id: "webauthn-cred-1",
     label: "MacBook Touch ID",
     attachment: "platform",
     ...overrides,
@@ -2748,6 +2756,70 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     });
     expect(mockDeleteWebauthnCredential).toHaveBeenCalledWith("cred-1", undefined);
     expect(screen.queryByRole("dialog")).toBeNull();
+    // The Signal API call must use the actual WebAuthn credential id ("webauthn-cred-1"), not
+    // this row's own database id ("cred-1") passed to deleteWebauthnCredential above - the
+    // browser/authenticator has no notion of our internal row ids.
+    expect(mockSendSignal).toHaveBeenCalledWith({
+      signalName: "unknownCredential",
+      rpID: "localhost",
+      credentialID: "webauthn-cred-1",
+    });
+  });
+
+  it("still toasts a successful credential removal when the WebAuthn Signal API call fails", async () => {
+    const account: AccountDto = {
+      ...baseAccount,
+      mfa_methods: [
+        { type: "totp", confirmed: true, last_used_at: null },
+        makeWebauthnMethod({ last_used_at: "2026-08-01T00:00:00.000Z" }),
+      ],
+    };
+    mockFetchAccount
+      .mockResolvedValueOnce(account)
+      .mockResolvedValueOnce({ ...account, mfa_methods: [account.mfa_methods[0]!] });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockDeleteWebauthnCredential.mockResolvedValueOnce({ ok: true });
+    mockSendSignal.mockRejectedValueOnce(new Error("Signal API unsupported"));
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Manage" }));
+    const manageDialog = await screen.findByRole("dialog", { name: "Manage passkeys" });
+    fireEvent.click(within(manageDialog).getByRole("button", { name: "Remove MacBook Touch ID" }));
+    const dialog = await screen.findByRole("dialog", { name: "Remove passkey" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/"MacBook Touch ID" removed\./);
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("does not call the Signal API when the account response is missing a credential_id", async () => {
+    const account: AccountDto = {
+      ...baseAccount,
+      mfa_methods: [makeWebauthnMethod({ credential_id: undefined, last_used_at: "2026-08-01T00:00:00.000Z" })],
+    };
+    mockFetchAccount.mockResolvedValueOnce(account).mockResolvedValueOnce({ ...account, mfa_methods: [] });
+    mockFetchSessions.mockResolvedValue({ sessions: [] });
+    mockDeleteWebauthnCredential.mockResolvedValueOnce({ ok: true });
+
+    renderWithToast(<AccountPage />);
+    await waitFor(() => {
+      expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
+    });
+    fireEvent.click(within(passkeyRow()).getByRole("button", { name: "Manage" }));
+    const manageDialog = await screen.findByRole("dialog", { name: "Manage passkeys" });
+    fireEvent.click(within(manageDialog).getByRole("button", { name: "Remove MacBook Touch ID" }));
+    const dialog = await screen.findByRole("dialog", { name: "Remove passkey" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/"MacBook Touch ID" removed\./);
+    });
+    expect(mockSendSignal).not.toHaveBeenCalled();
   });
 
   it("removes a credential that requires a step-up code, revealing the code field in the same dialog", async () => {
@@ -3086,6 +3158,21 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
 
     fireEvent.click(addButton);
     expect(screen.queryByRole("dialog", { name: "Add passkey" })).toBeNull();
+  });
+
+  it("disables Add passkey (but not Add security key) when the browser reports no passkey support", async () => {
+    mockBrowserSupportsPasskeys.mockResolvedValueOnce(false);
+    mockLoadedAccount(baseAccount);
+
+    renderWithToast(<AccountPage />);
+    const passkeyAdd = await waitFor(() => {
+      const button = within(passkeyRow()).getByRole("button", { name: "Add" });
+      expect(button.hasAttribute("disabled")).toBe(true);
+      return button;
+    });
+    expect(passkeyAdd).toBeTruthy();
+    const securityKeyAdd = within(securityKeyRow()).getByRole("button", { name: "Add" });
+    expect(securityKeyAdd.hasAttribute("disabled")).toBe(false);
   });
 
   it("hides Add passkey/Add security key when the account has no local password", async () => {

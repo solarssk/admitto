@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- My Account's passkey management now sends a best-effort WebAuthn Signal API notification when removing a passkey or security key. Supported browsers and password managers can then stop offering the deleted credential for future sign-ins. The "Add" button for passkeys is also now disabled on browsers that report no passkey support, instead of only failing after the setup prompt is attempted.
+
 ### Security
 
 - The production container image now runs `apt-get upgrade` when installing its base packages, picking up Debian's own bookworm-security point-fixes (e.g. CVE-2026-86145, a high-severity libpcre2-8-0 issue Docker Scout flagged in the v0.6.8 image) instead of shipping whatever version the base image tag happened to bake in until its own next rebuild.

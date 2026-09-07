@@ -490,6 +490,7 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
         last_used_at: true,
         label: true,
         webauthn_attachment: true,
+        webauthn_credential_id: true,
       },
     }),
     db.externalIdentity.findMany({
@@ -562,9 +563,12 @@ export async function handleGetAccount(c: Context, db: PrismaClient): Promise<Re
       // A user can register several passkeys/security keys, so only webauthn rows carry an id
       // (to target one for removal) and a nickname/attachment for the My Account list; TOTP and
       // recovery rows stay the existing shape (unchanged) since neither has more than one "row"
-      // that matters to the client.
+      // that matters to the client. `credential_id` is the actual WebAuthn credential identifier
+      // (base64url) - distinct from `id`, this row's own UserMfaMethod primary key - needed for
+      // the client's WebAuthn Signal API call, which the browser/authenticator can only match
+      // against the credential ID it actually issued, never our internal row id.
       ...(m.type === "webauthn"
-        ? { id: m.id, label: m.label, attachment: m.webauthn_attachment }
+        ? { id: m.id, label: m.label, attachment: m.webauthn_attachment, credential_id: m.webauthn_credential_id }
         : {}),
     })),
     webauthn_enabled: await getWebauthnEnabled(db),
