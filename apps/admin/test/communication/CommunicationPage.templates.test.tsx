@@ -336,6 +336,10 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     expect(await screen.findByText("You do not have access to this event.")).toBeTruthy();
+    // The EmptyState title must match this specific cause, not the generic "Could not load
+    // template" heading used for every other load failure (bot review).
+    expect(screen.getByText("You do not have access to this event")).toBeTruthy();
+    expect(screen.queryByText("Could not load template")).toBeNull();
     expect(reportApiError).toHaveBeenCalledWith(403);
   });
 
@@ -347,6 +351,7 @@ describe("CommunicationPage templates", () => {
     renderPage();
 
     expect(await screen.findByText("Could not load template.")).toBeTruthy();
+    expect(screen.getByText("Could not load template")).toBeTruthy();
     expect(reportApiError).toHaveBeenCalledWith(500);
   });
 

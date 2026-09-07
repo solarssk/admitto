@@ -428,6 +428,7 @@ function handleInitialTemplateLoadError(
   isCancelled: () => boolean,
   reportApiError: (status: number) => void,
   setError: (message: string) => void,
+  setAccessDenied: (denied: boolean) => void,
 ): void {
   if (isCancelled()) return;
   if (!(err instanceof ApiError)) {
@@ -440,7 +441,12 @@ function handleInitialTemplateLoadError(
     window.location.assign(`/login?next=${next}`);
     return;
   }
-  setError(err.status === 403 ? "You do not have access to this event." : "Could not load template.");
+  if (err.status === 403) {
+    setAccessDenied(true);
+    setError("You do not have access to this event.");
+    return;
+  }
+  setError("Could not load template.");
 }
 
 /** Maps a failed deliveries load to UI state, or suppresses it for a silent poll tick (mirrors
@@ -1547,6 +1553,7 @@ export function CommunicationPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   const [templates, setTemplates] = useState<MailTemplateListItem[]>([]);
   const [activeKey, setActiveKey] = useState<string>("virtual-ticket");
@@ -1982,6 +1989,7 @@ export function CommunicationPage() {
       if (!eventId) return;
       setLoading(true);
       setError(null);
+      setAccessDenied(false);
       try {
         const [items, data] = await Promise.all([
           fetchEventTemplates(eventId),
@@ -2008,7 +2016,7 @@ export function CommunicationPage() {
         setPreviewSubject(null);
         setPreviewHtml(null);
       } catch (err) {
-        handleInitialTemplateLoadError(err, () => cancelled, reportApiError, setError);
+        handleInitialTemplateLoadError(err, () => cancelled, reportApiError, setError, setAccessDenied);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -2357,7 +2365,7 @@ export function CommunicationPage() {
   if (error) {
     return (
       <EmptyState
-        title="Could not load template"
+        title={accessDenied ? "You do not have access to this event" : "Could not load template"}
         description={error}
         action={
           <Button type="button" variant="secondary" onClick={() => setReloadToken((t) => t + 1)}>
