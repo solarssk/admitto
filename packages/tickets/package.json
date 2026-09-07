@@ -50,7 +50,7 @@
     "@admitto/wallet": "*",
     "dejavu-fonts-ttf": "^2.37.3",
     "exceljs": "^4.4.0",
-    "pdfkit": "^0.19.1",
+    "pdfkit": "^0.20.2",
     "qrcode": "^1.5.3"
   },
   "devDependencies": {
