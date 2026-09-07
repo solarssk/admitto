@@ -678,6 +678,22 @@ export function AccountPage() {
    * has already null-checked `.id` right before calling this. */
   async function submitRemoveCredential(target: AccountMfaMethodDto, proof?: StepUpProofBody): Promise<void> {
     await deleteWebauthnCredential(target.id!, proof);
+    // Best-effort WebAuthn Signal API call - tells the browser/password manager this credential ID
+    // is gone, so it can stop offering the now-deleted passkey/security key for use. Sent right
+    // after the deletion succeeds, not after the loadAccount()/loadBackupCodesStatus() refreshes
+    // below - a rejection from either of those must not skip a signal for a credential we already
+    // know is gone. `credential_id` (the actual WebAuthn credential ID, not `target.id` - this
+    // row's own database id) is only absent if the server response is somehow malformed; nothing
+    // useful to signal in that case. Fire-and-forget: the spec itself documents signals as
+    // no-delivery-guarantee, and support varies by browser, so this must never turn an
+    // otherwise-successful removal into a visible error, and the browser can't confirm receipt.
+    if (target.credential_id) {
+      sendSignal({
+        signalName: "unknownCredential",
+        rpID: window.location.hostname,
+        credentialID: target.credential_id,
+      }).catch(() => {});
+    }
     const removedLabel = target.label ? `"${target.label}"` : "Credential";
     setRemoveCredentialTarget(null);
     setRemoveCredentialCode("");
@@ -687,15 +703,6 @@ export function AccountPage() {
     // Same reasoning as the TOTP-removal handler above - a step-up code here can be a backup
     // code too.
     await loadBackupCodesStatus();
-    // Best-effort WebAuthn Signal API call - tells the browser/password manager this credential ID
-    // is gone, so it stops offering the now-deleted passkey/security key for use. Fire-and-forget:
-    // the spec itself documents signals as no-delivery-guarantee, and support varies by browser, so
-    // this must never turn an otherwise-successful removal into a visible error.
-    sendSignal({
-      signalName: "unknownCredential",
-      rpID: window.location.hostname,
-      credentialID: target.id!,
-    }).catch(() => {});
   }
 
   /** Shared by the dialog's own confirm and the WebauthnStepUpButton below it, `proof` is only

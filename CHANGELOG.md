@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- My Account's passkey management now uses the WebAuthn Signal API: removing a passkey or security key tells the browser/password manager that credential is gone, so it stops offering it for future sign-ins. The "Add" button for passkeys is also now disabled on browsers that report no passkey support, instead of only failing after the setup prompt is attempted.
+- My Account's passkey management now sends a best-effort WebAuthn Signal API notification when removing a passkey or security key. Supported browsers and password managers can then stop offering the deleted credential for future sign-ins. The "Add" button for passkeys is also now disabled on browsers that report no passkey support, instead of only failing after the setup prompt is attempted.
 
 ### Security
 

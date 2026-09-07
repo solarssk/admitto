@@ -252,7 +252,7 @@ describe("POST /api/account/mfa/webauthn/register/begin", () => {
 
 describe("POST /api/account/mfa/webauthn/register/finish", () => {
   it("registers a passkey end to end and lists it on GET /api/account", async () => {
-    const { finishRes, finishBody } = await registerCredential(userCookie, "platform", "My laptop");
+    const { credentialId, finishRes, finishBody } = await registerCredential(userCookie, "platform", "My laptop");
     expect(finishRes.status).toBe(200);
     expect((finishBody as { ok: boolean }).ok).toBe(true);
     expect((finishBody as { backupCodes: string[] }).backupCodes.length).toBeGreaterThan(0);
@@ -260,13 +260,18 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
     const accountRes = await app.request("/api/account", { headers: { Cookie: userCookie } });
     const account = (await accountRes.json()) as {
       webauthn_enabled: boolean;
-      mfa_methods: { type: string; confirmed: boolean; label?: string; attachment?: string }[];
+      mfa_methods: { type: string; confirmed: boolean; label?: string; attachment?: string; id?: string; credential_id?: string }[];
     };
     expect(account.webauthn_enabled).toBe(true);
     const row = account.mfa_methods.find((m) => m.type === "webauthn");
     expect(row?.confirmed).toBe(true);
     expect(row?.label).toBe("My laptop");
     expect(row?.attachment).toBe("platform");
+    // credential_id must be the actual WebAuthn credential id the authenticator returned - the
+    // client's WebAuthn Signal API call needs this, not `id` (this row's own database id, used
+    // only to target DELETE /api/account/mfa/webauthn/:id).
+    expect(row?.credential_id).toBe(credentialId);
+    expect(row?.credential_id).not.toBe(row?.id);
   });
 
   it("a second credential does not return fresh backup codes (already acknowledged from the first)", async () => {
