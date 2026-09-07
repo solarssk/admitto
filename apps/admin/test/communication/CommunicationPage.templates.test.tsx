@@ -312,6 +312,22 @@ describe("CommunicationPage templates", () => {
     expect(reportApiError).not.toHaveBeenCalled();
   });
 
+  it("retries the initial template load when Retry is clicked", async () => {
+    fetchEventTemplates.mockRejectedValueOnce(new Error("network unavailable"));
+    fetchEventTemplate.mockResolvedValue(legacyTemplate);
+
+    renderPage();
+    await screen.findByText("Could not load template.");
+
+    fetchEventTemplates.mockResolvedValueOnce([]);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Ticket email")).toBeTruthy();
+    });
+    expect(screen.queryByText("Could not load template.")).toBeNull();
+  });
+
   it("reports the API status and gives an event-access error for a forbidden initial load", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     fetchEventTemplates.mockRejectedValueOnce(new ApiError(403, "not_for_operator"));

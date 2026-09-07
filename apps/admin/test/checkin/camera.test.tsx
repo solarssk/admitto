@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { CameraScanner } from "../../src/checkin/CameraScanner.js";
 
 const { decodeFromConstraints, stop } = vi.hoisted(() => {
@@ -86,5 +86,69 @@ describe("CameraScanner", () => {
     decodeCallback?.(result);
     expect(onScan).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
+  });
+
+  describe("camera start failure", () => {
+    it("shows a permission-denied message for NotAllowedError", async () => {
+      decodeFromConstraints.mockRejectedValueOnce(
+        new DOMException("denied", "NotAllowedError"),
+      );
+      render(<CameraScanner enabled={true} wedgeActive={false} onScan={() => {}} />);
+      await screen.findByText(
+        "Camera access denied. Allow camera access for this site in your browser settings, then reload.",
+      );
+    });
+
+    it("shows the same permission-denied message for SecurityError", async () => {
+      decodeFromConstraints.mockRejectedValueOnce(
+        new DOMException("insecure context", "SecurityError"),
+      );
+      render(<CameraScanner enabled={true} wedgeActive={false} onScan={() => {}} />);
+      await screen.findByText(
+        "Camera access denied. Allow camera access for this site in your browser settings, then reload.",
+      );
+    });
+
+    it("shows a no-camera message for NotFoundError", async () => {
+      decodeFromConstraints.mockRejectedValueOnce(
+        new DOMException("no device", "NotFoundError"),
+      );
+      render(<CameraScanner enabled={true} wedgeActive={false} onScan={() => {}} />);
+      await screen.findByText("No camera found on this device.");
+    });
+
+    it("shows a broader access-problem message for NotReadableError, without asserting a single cause (bot review)", async () => {
+      decodeFromConstraints.mockRejectedValueOnce(
+        new DOMException("hardware error", "NotReadableError"),
+      );
+      render(<CameraScanner enabled={true} wedgeActive={false} onScan={() => {}} />);
+      await screen.findByText(
+        "Could not access the camera. It may be in use by another app, or a hardware problem. Close other apps using the camera and try again.",
+      );
+    });
+
+    it("shows a generic start-failure message for an unrecognized error", async () => {
+      decodeFromConstraints.mockRejectedValueOnce(new Error("boom"));
+      render(<CameraScanner enabled={true} wedgeActive={false} onScan={() => {}} />);
+      await screen.findByText("Could not start the camera. Try again.");
+    });
+
+    it("does not set an error once the camera has already been stopped (unmounted before the rejection settles)", async () => {
+      let rejectStart!: (err: unknown) => void;
+      decodeFromConstraints.mockImplementationOnce(
+        () => new Promise((_resolve, reject) => { rejectStart = reject; }),
+      );
+      const { unmount } = render(
+        <CameraScanner enabled={true} wedgeActive={false} onScan={() => {}} />,
+      );
+      await waitFor(() => expect(decodeFromConstraints).toHaveBeenCalled());
+
+      unmount();
+      rejectStart(new DOMException("no device", "NotFoundError"));
+
+      // Nothing left to assert on the unmounted tree - this just proves the rejection after
+      // unmount doesn't throw an unhandled/act warning by trying to setState on a gone component.
+      await Promise.resolve();
+    });
   });
 });

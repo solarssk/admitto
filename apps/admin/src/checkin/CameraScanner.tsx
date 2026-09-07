@@ -108,7 +108,7 @@ export function CameraScanner({
         } else if (name === "NotFoundError") {
           setError("No camera found on this device.");
         } else if (name === "NotReadableError") {
-          setError("Camera is already in use by another app. Close it and try again.");
+          setError("Could not access the camera. It may be in use by another app, or a hardware problem. Close other apps using the camera and try again.");
         } else {
           setError("Could not start the camera. Try again.");
         }
