@@ -108,6 +108,19 @@ describe("RequirementsPage load failure", () => {
     });
     expect(await screen.findByRole("switch", { name: "Disable Badge" })).toBeTruthy();
   });
+
+  it("gives an event-access error, not the generic title, for a forbidden load", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    fetchEventItems.mockRejectedValueOnce(new ApiError(403, "not_for_operator"));
+
+    renderPage();
+
+    expect(await screen.findByText("You do not have access to this event.")).toBeTruthy();
+    // The EmptyState title must match this specific cause, not the generic "Could not load
+    // requirements" heading used for every other load failure.
+    expect(screen.getByText("You do not have access to this event")).toBeTruthy();
+    expect(screen.queryByText("Could not load requirements")).toBeNull();
+  });
 });
 
 describe("RequirementsPage — item enable/disable toggle", () => {

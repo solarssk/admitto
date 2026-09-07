@@ -256,6 +256,7 @@ export function RequirementsPage() {
   const [customFields, setCustomFields] = useState<EventCustomFieldDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [selectedItem, setSelectedItem] = useState<EventItemDto | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
@@ -302,6 +303,7 @@ export function RequirementsPage() {
     // has valid rows on screen, so blanking them out for the refetch just
     // reads as a flash/jump instead of a smooth in-place update.
     if (!hasLoadedRef.current) setLoading(true);
+    setAccessDenied(false);
     try {
       const [itemRows, fields] = await Promise.all([
         fetchEventItems(eventId, ac.signal),
@@ -327,6 +329,7 @@ export function RequirementsPage() {
           redirectToLogin();
           return;
         }
+        if (err.status === 403) setAccessDenied(true);
       }
       setLoadError(loadErrorMessage(err));
     } finally {
@@ -420,7 +423,7 @@ export function RequirementsPage() {
       />
       {loadError && !loading ? (
         <EmptyState
-          title="Could not load requirements"
+          title={accessDenied ? "You do not have access to this event" : "Could not load requirements"}
           description={loadError}
           action={
             <Button type="button" variant="secondary" onClick={() => void load()}>
