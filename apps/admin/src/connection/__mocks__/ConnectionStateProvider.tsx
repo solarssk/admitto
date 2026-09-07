@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 
-export const reportApiError = vi.fn();
+export const reportApiError = vi.fn<(status: number) => void>();
 
 /** Matches the real ConnectionContextValue shape (state/lastCheckedAt/reportApiError) - "connected"
  * is a reasonable default for tests that don't otherwise care about the connection banner. */
