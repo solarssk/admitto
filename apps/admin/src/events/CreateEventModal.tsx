@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Input, ModalBackdrop } from "@admitto/ui";
+import { Button, Input, ModalBackdrop, Notice } from "@admitto/ui";
 import { LOCATION_LIMITS } from "@admitto/location";
 import { ApiError, createEvent } from "../api/client.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
@@ -137,9 +137,9 @@ export function CreateEventModal({ open, onClose, onCreated }: Readonly<CreateEv
           Add a title and date.
         </p>
         {error && (
-          <p className="add-attendee-modal__error" role="alert">
+          <Notice variant="error" role="alert">
             {error}
-          </p>
+          </Notice>
         )}
         <div className="add-attendee-modal__fields">
           <Input

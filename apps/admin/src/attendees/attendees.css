@@ -643,12 +643,6 @@
   cursor: pointer;
 }
 
-.attendee-form__error {
-  color: var(--status-error);
-  font-size: var(--fs-sm);
-  margin: 0;
-}
-
 .attendee-form__actions {
   display: flex;
   justify-content: flex-end;

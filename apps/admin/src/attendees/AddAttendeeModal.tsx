@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Button, Input, ModalBackdrop } from "@admitto/ui";
+import { Button, Input, ModalBackdrop, Notice } from "@admitto/ui";
 import { ApiError, createAttendee, fetchTicketTypes } from "../api/client.js";
 import { hasApiErrorCode, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import type { AttendeeDetailDto, TicketTypeDto } from "../api/types.js";
@@ -216,19 +216,19 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
           Enter their email, first name, and last name. Everything else is optional.
         </p>
         {error && (
-          <p className="add-attendee-modal__error" role="alert">
+          <Notice variant="error" role="alert">
             {error}
-          </p>
+          </Notice>
         )}
         {attributeFieldsError && (
-          <p className="add-attendee-modal__error" role="alert">
+          <Notice variant="error" role="alert">
             {attributeFieldsError}
-          </p>
+          </Notice>
         )}
         {ticketTypesError && (
-          <p className="add-attendee-modal__error" role="alert">
+          <Notice variant="error" role="alert">
             {ticketTypesError}
-          </p>
+          </Notice>
         )}
         {attributeFieldsLoading && showAttributeFieldsLoading && (
           <p className="add-attendee-modal__hint">Loading attribute fields…</p>

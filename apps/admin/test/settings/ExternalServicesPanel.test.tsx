@@ -222,7 +222,7 @@ describe("ExternalServicesPanel", () => {
     fireEvent.click(el<HTMLInputElement>("external-weather-enabled"));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not save weather settings/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save weather settings/);
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
@@ -321,7 +321,7 @@ describe("ExternalServicesPanel", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not save maps settings/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save maps settings/);
     });
     expect(screen.queryByText("secret_maps")).toBeNull();
   });
@@ -412,8 +412,8 @@ describe("ExternalServicesPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
       const toast = screen.getByTestId("at-toast").textContent ?? "";
-      expect(toast).toMatch(/Could not save weather settings/);
-      expect(toast).toMatch(/Could not save maps settings/);
+      expect(toast).toMatch(/Failed to save weather settings/);
+      expect(toast).toMatch(/Failed to save maps settings/);
     });
     expect(screen.queryByText("wx_secret")).toBeNull();
     expect(screen.queryByText("maps_secret")).toBeNull();
@@ -682,7 +682,7 @@ describe("ExternalServicesPanel", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Could not save maps settings/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save maps settings/);
     });
     expect(mockSaveWeather).toHaveBeenCalled();
     expect(el<HTMLInputElement>("external-weather-enabled").checked).toBe(false);

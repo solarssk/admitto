@@ -163,13 +163,13 @@ function apiKeyPlaceholder(required: boolean, configured: boolean): string {
 const WEATHER_PROBE_ERROR_COPY: Record<string, string> = {
   invalid_base_url: "Weather base URL must be a valid public http(s) URL.",
   url_host_blocked: "Weather base URL must not point at a private or local network address.",
-  url_host_unresolved: "Could not resolve the weather base URL hostname.",
+  url_host_unresolved: "Could not resolve the weather base URL hostname. Check the URL is correct and reachable.",
 };
 
 const MAPS_PROBE_ERROR_COPY: Record<string, string> = {
   invalid_geocoding_base_url: "Geocoding base URL must be a valid public http(s) URL.",
   url_host_blocked: "Geocoding base URL must not point at a private or local network address.",
-  url_host_unresolved: "Could not resolve the geocoding base URL hostname.",
+  url_host_unresolved: "Could not resolve the geocoding base URL hostname. Check the URL is correct and reachable.",
 };
 
 function probeResultToastMessage(
@@ -245,12 +245,12 @@ function toastExternalServicesSaveResult(
   const failures: string[] = [];
   if (opts.saveWeather && opts.weatherResult.status === "rejected") {
     failures.push(
-      operatorApiErrorMessage(opts.weatherResult.reason, "Could not save weather settings."),
+      operatorApiErrorMessage(opts.weatherResult.reason, "Failed to save weather settings."),
     );
   }
   if (opts.saveMaps && opts.mapsResult.status === "rejected") {
     failures.push(
-      operatorApiErrorMessage(opts.mapsResult.reason, "Could not save maps settings."),
+      operatorApiErrorMessage(opts.mapsResult.reason, "Failed to save maps settings."),
     );
   }
   if (failures.length === 0) {

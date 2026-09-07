@@ -15,6 +15,7 @@ import {
   Badge,
   Button,
   Card,
+  EmptyState,
   HintLabel,
   Input,
   Notice,
@@ -1545,6 +1546,7 @@ export function CommunicationPage() {
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   const [templates, setTemplates] = useState<MailTemplateListItem[]>([]);
   const [activeKey, setActiveKey] = useState<string>("virtual-ticket");
@@ -2014,7 +2016,7 @@ export function CommunicationPage() {
     return () => {
       cancelled = true;
     };
-  }, [eventId, reportApiError, applyDetailTemplate, applyLegacyTemplate]);
+  }, [eventId, reportApiError, applyDetailTemplate, applyLegacyTemplate, reloadToken]);
 
   useLayoutEffect(() => {
     setEmailBounced(0);
@@ -2352,7 +2354,19 @@ export function CommunicationPage() {
 
   if (!eventId) return <p>Missing event.</p>;
   if (loading) return whenShown(showLoading, <p>Loading communication…</p>);
-  if (error) return <p>{error}</p>;
+  if (error) {
+    return (
+      <EmptyState
+        title="Could not load template"
+        description={error}
+        action={
+          <Button type="button" variant="secondary" onClick={() => setReloadToken((t) => t + 1)}>
+            Retry
+          </Button>
+        }
+      />
+    );
+  }
 
   const unsavedTemplateLabel = isDirty ? "Save *" : "Saved";
   const saveButtonLabel = saving ? "Saving…" : unsavedTemplateLabel;

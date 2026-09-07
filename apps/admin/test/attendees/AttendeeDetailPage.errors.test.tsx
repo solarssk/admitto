@@ -101,7 +101,7 @@ describe("AttendeeDetailPage operator errors", () => {
     loadAttendeeDetailData.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderPage();
     await waitFor(() => {
-      expect(screen.getByText(/Could not load attendee/)).toBeTruthy();
+      expect(screen.getByText("Could not load attendee")).toBeTruthy();
     });
   });
 

@@ -669,12 +669,12 @@ export function BrandingSettingsPanel() {
         addToast("Failed to save branding.", "error");
       } else if (orgResult.status === "rejected") {
         addToast(
-          operatorApiErrorMessage(orgResult.reason, "Part of your branding failed to save - the rest was saved."),
+          operatorApiErrorMessage(orgResult.reason, "Failed to save organization branding. Theme changes were saved."),
           "error",
         );
       } else if (themeResult.status === "rejected") {
         addToast(
-          operatorApiErrorMessage(themeResult.reason, "Part of your branding failed to save - the rest was saved."),
+          operatorApiErrorMessage(themeResult.reason, "Failed to save theme. Organization branding was saved."),
           "error",
         );
       }

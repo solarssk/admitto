@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
-import { Card, HintLabel, Button, EmptyState, useToast } from "@admitto/ui";
+import { Card, HintLabel, Button, EmptyState, Notice, useToast } from "@admitto/ui";
 import {
   clearEventMailSettings,
   fetchEventBounceIngestSettings,
@@ -543,10 +543,10 @@ export const EventMailSettingsCard = forwardRef<
                 onOpenInstanceSettings={() => navigate("/admin/settings?tab=mail")}
               />
             ) : (
-              <p className="mail-transport__env-note">
+              <Notice variant="info">
                 Reverting will remove this event&apos;s dedicated transport and fall back to the
                 organization&apos;s mail settings. Save to confirm.
-              </p>
+              </Notice>
             ))}
 
           {mode === "org" && !isSa && (
@@ -561,10 +561,10 @@ export const EventMailSettingsCard = forwardRef<
                 Useful for a co-branded event or a separate mailbox.
               </p>
               {fieldLocked("provider") && (
-                <p className="mail-transport__env-note">
+                <Notice variant="info">
                   Some transport settings are managed by your deployment configuration and cannot be
                   changed here. Contact your instance administrator if you need to update them.
-                </p>
+                </Notice>
               )}
               <TransportTileGrid
                 provider={draft.provider}

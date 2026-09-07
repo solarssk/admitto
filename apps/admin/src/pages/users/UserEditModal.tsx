@@ -778,7 +778,7 @@ export function UserEditModal({ open, user, onClose, onUpdated, onDeleted }: Rea
       onClose();
     } catch (err) {
       if (err instanceof ApiError && (hasApiErrorCode(err, "email_taken") || hasApiErrorCode(err, "email_conflict"))) {
-        setError("A user with this email already exists.");
+        setError("A user with this email already exists. Use a different email address.");
       } else if (err instanceof ApiError && hasApiErrorCode(err, "cannot_change_own_role")) {
         setError("You cannot change your own role. Ask another superadmin.");
       } else {

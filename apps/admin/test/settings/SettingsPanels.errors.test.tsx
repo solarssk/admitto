@@ -215,7 +215,7 @@ describe("BrandingSettingsPanel operator errors", () => {
     fireEvent.change(screen.getByLabelText("Organisation name"), { target: { value: "Acme " } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/the rest was saved/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to save theme/);
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
   });
@@ -228,7 +228,7 @@ describe("EventArchivingPanel operator errors", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     });
-    expect(screen.getByText(/Could not load events/)).toBeTruthy();
+    expect(screen.getByText("Could not load events")).toBeTruthy();
 
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([sampleEvent]);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));

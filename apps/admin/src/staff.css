@@ -4042,27 +4042,10 @@ output.mail-field-hint {
   color: var(--status-warn-fg);
 }
 
-.mail-transport__desc,
-.mail-transport__env-note {
+.mail-transport__desc {
   margin: 0 0 var(--space-3);
   font-size: var(--fs-sm);
   color: var(--text-muted);
-}
-
-.mail-transport__env-note {
-  color: var(--text-secondary);
-  background: var(--surface-2, #f6f6f7);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md, 6px);
-  padding: var(--space-2) var(--space-3);
-}
-
-.mail-transport__env-note code {
-  font-family: ui-monospace, monospace;
-  font-size: 0.9em;
-  background: rgba(0 0 0 / .06);
-  padding: 1px 4px;
-  border-radius: 3px;
 }
 
 .mail-transport-form {
@@ -4075,8 +4058,7 @@ output.mail-field-hint {
    container's gap when nested directly inside it - the two don't collapse in flexbox the way
    block margins would, so the tile grid below sat further down than the equivalent content in
    Organization mode, which has no such wrapper (PO report). */
-.mail-transport-form > .mail-transport__desc,
-.mail-transport-form > .mail-transport__env-note {
+.mail-transport-form > .mail-transport__desc {
   margin-bottom: 0;
 }
 
@@ -4595,17 +4577,6 @@ output.mail-field-hint {
 
 .mail-secret-field__icon-btn--cancel:not(:disabled) {
   color: var(--status-error);
-}
-
-.mail-dev-warning {
-  /* <output>'s UA default is display:inline — this box needs to behave like the
-     <p> it replaced (full-width block). */
-  display: block;
-  padding: var(--space-3);
-  border-radius: var(--radius);
-  background: var(--surface-hover);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
 }
 
 .mail-graph-setup-info {

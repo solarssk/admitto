@@ -294,7 +294,7 @@ export function EventCustomFieldModal({ eventId, field, onClose, onSaved }: Even
                 <>
                   <span className="at-label">Options</span>
                   {usageError && (
-                    <p className="at-hint custom-field-usage-error" role="alert">
+                    <p className="at-hint at-hint--error custom-field-usage-error" role="alert">
                       Could not load how many attendees use each option.
                       <Button
                         type="button"

@@ -375,7 +375,7 @@ export function CommunicationSendPanel({
   if (snapshotMissing) {
     return (
       <Card title="Send">
-        <p className="muted">Could not load the ticket template. Reload the page.</p>
+        <Notice variant="error" role="alert">Could not load the ticket template. Reload the page.</Notice>
       </Card>
     );
   }
@@ -417,7 +417,7 @@ export function CommunicationSendPanel({
       }
     } catch (err) {
       if (runId !== runIdRef.current) return;
-      setError(operatorApiErrorMessage(err, "Dry run failed."));
+      setError(operatorApiErrorMessage(err, "Count failed."));
     } finally {
       if (runId === runIdRef.current) setBusy(false);
     }

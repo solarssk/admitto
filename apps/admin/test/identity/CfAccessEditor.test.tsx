@@ -251,7 +251,7 @@ describe("CfAccessEditor (slice 4)", () => {
     await screen.findByRole("button", { name: "Test connection" });
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await waitFor(() => expect(mockTest).toHaveBeenCalledWith("https://team.cloudflareaccess.com"));
-    await screen.findByText("Connection verified.");
+    await screen.findByText("Connection test passed.");
   });
 
   it("Test connection surfaces a failure payload as an error toast", async () => {

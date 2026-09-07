@@ -303,12 +303,15 @@ export function EventArchivingPanel() {
         {loading && showLoading && <p className="archiving-status">Loading…</p>}
 
         {!loading && error && (
-          <div className="archiving-status">
-            <p className="archiving-error">{error}</p>
-            <Button type="button" variant="secondary" onClick={() => void load()}>
-              Retry
-            </Button>
-          </div>
+          <EmptyState
+            title="Could not load events"
+            description={error}
+            action={
+              <Button type="button" variant="secondary" onClick={() => void load()}>
+                Retry
+              </Button>
+            }
+          />
         )}
 
         {!loading && !error && (

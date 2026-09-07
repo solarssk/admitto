@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { Card, PageHeader } from "@admitto/ui";
+import { Button, Card, EmptyState, PageHeader } from "@admitto/ui";
 import { ApiError, fetchCheckInEvents } from "../api/client.js";
 import type { CheckInEventDto } from "../api/types.js";
 import { EventCard, eventGridClassName } from "../components/EventCard.js";
@@ -12,10 +12,13 @@ export function CheckInEntryPage() {
   const [events, setEvents] = useState<CheckInEventDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reloadToken, setReloadToken] = useState(0);
   const { reportApiError } = useConnectionState();
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setError(null);
     (async () => {
       try {
         const list = await fetchCheckInEvents({ includeAttendeeCount: true });
@@ -27,12 +30,8 @@ export function CheckInEntryPage() {
         setEvents(list);
       } catch (err) {
         if (cancelled) return;
-        if (err instanceof ApiError) {
-          reportApiError(err.status);
-          setError("Could not load check-in events.");
-        } else {
-          setError("Could not load check-in events.");
-        }
+        if (err instanceof ApiError) reportApiError(err.status);
+        setError("Could not load check-in events.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -40,7 +39,7 @@ export function CheckInEntryPage() {
     return () => {
       cancelled = true;
     };
-  }, [navigate, reportApiError]);
+  }, [navigate, reportApiError, reloadToken]);
 
   // A fetch that resolves near-instantly (localhost, a warm cache) would otherwise flash
   // the "Loading…" text on and off faster than it can register as loading — show it only
@@ -52,7 +51,17 @@ export function CheckInEntryPage() {
   }
 
   if (error) {
-    return <p className="text-error">{error}</p>;
+    return (
+      <EmptyState
+        title="Could not load check-in events"
+        description={error}
+        action={
+          <Button type="button" variant="secondary" onClick={() => setReloadToken((t) => t + 1)}>
+            Retry
+          </Button>
+        }
+      />
+    );
   }
 
   if (events.length === 0) {

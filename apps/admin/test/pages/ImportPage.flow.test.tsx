@@ -938,7 +938,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     fetchImportHistory.mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce([]);
     renderPage();
 
-    expect(await screen.findByText("Couldn't load import history.")).toBeTruthy();
+    expect(await screen.findByText("Could not load import history.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("No imports yet for this event.")).toBeTruthy();
   });
@@ -948,7 +948,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     fetchImportHistory.mockRejectedValueOnce(new Error("boom"));
     renderPage();
 
-    expect(await screen.findByText("Couldn't load import history.")).toBeTruthy();
+    expect(await screen.findByText("Could not load import history.")).toBeTruthy();
 
     let resolveRetry!: (items: unknown) => void;
     fetchImportHistory.mockImplementationOnce(
@@ -959,7 +959,7 @@ describe("ImportPage history + done screen (#358 Phase C)", () => {
     try {
       fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
-      expect(screen.queryByText("Couldn't load import history.")).toBeNull();
+      expect(screen.queryByText("Could not load import history.")).toBeNull();
       expect(screen.queryByText("Loading…")).toBeNull();
 
       act(() => {
