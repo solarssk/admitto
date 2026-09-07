@@ -40,6 +40,24 @@ function loadErrorMessage(err: unknown): string {
   return "Could not load requirements.";
 }
 
+/** Maps a failed requirements load to UI state: reported status code, redirect on 401 (returns
+ * true so the caller skips setting an error message), or the access-denied flag for a 403.
+ * Extracted from load() so that function's own cognitive complexity stays low. */
+function handleLoadError(
+  err: unknown,
+  reportApiError: (status: number) => void,
+  setAccessDenied: (denied: boolean) => void,
+): boolean {
+  if (!(err instanceof ApiError)) return false;
+  reportApiError(err.status);
+  if (err.status === 401) {
+    redirectToLogin();
+    return true;
+  }
+  if (err.status === 403) setAccessDenied(true);
+  return false;
+}
+
 function EventItemsTableBody({
   loading,
   showLoading,
@@ -323,14 +341,7 @@ export function RequirementsPage() {
       setItems([]);
       setCustomFields([]);
       setSelectedItem(null);
-      if (err instanceof ApiError) {
-        reportApiError(err.status);
-        if (err.status === 401) {
-          redirectToLogin();
-          return;
-        }
-        if (err.status === 403) setAccessDenied(true);
-      }
+      if (handleLoadError(err, reportApiError, setAccessDenied)) return;
       setLoadError(loadErrorMessage(err));
     } finally {
       if (!ac.signal.aborted) setLoading(false);
