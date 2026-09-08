@@ -1,0 +1,170 @@
+name: Privacy Guard
+
+# pull_request_target (not pull_request): the workflow definition used for this run is always
+# the one on the base branch, even for same-repo PRs — a PR that edits this file cannot change
+# the logic that scans its own diff or gain access to the secret through a modified script.
+#
+# We never checkout or `git fetch` anything from the PR — that alone is a flagged pattern
+# (SonarCloud githubactions:S7631 / GitHub's own "Pwn Request" guidance) regardless of whether
+# the fetched content is actually executed, since a git checkout can trigger diff/merge drivers,
+# hooks, or submodule handling that a purely static review can't rule out. Instead we read the
+# diff as plain text via the REST API (`GET .../pulls/{n}/files`), which is a JSON response over
+# HTTPS — there is no git object, no working tree, nothing derived from the PR to execute.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scan PR diff (via API) for sensitive patterns
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GUARD_PATTERNS: ${{ secrets.PII_DENYLIST }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+        run: |
+          set -uo pipefail   # deliberately not -e: every exit code is handled explicitly below
+
+          # Forced explicitly: under the C/POSIX locale, grep does not reliably match character
+          # classes or case-fold accented letters (e.g. Polish [oó]) — confirmed empirically on
+          # the local pre-push hook's grep. C.UTF-8 is present on ubuntu-latest by default.
+          export LC_ALL=C.UTF-8
+
+          # pull_request_target hands secrets to fork PRs too (unlike plain pull_request) - a
+          # public pass/fail result on a secret-backed comparison is an oracle: an outside
+          # contributor could open a fork PR with candidate values and use repeated pass/fail
+          # splits to reconstruct exactly what's in PII_DENYLIST, without the content ever being
+          # printed. Only same-repo branches can be scanned safely, since opening one requires
+          # write access this repo doesn't grant to strangers - this check runs first, before
+          # GUARD_PATTERNS is even read, so a fork PR's outcome never depends on its content.
+          if [ "${IS_FORK:-false}" = "true" ]; then
+            echo "::notice::Privacy guard: skipped for a fork-originated PR — requires manual maintainer review before merge."
+            exit 0
+          fi
+
+          if [ -z "${GUARD_PATTERNS:-}" ]; then
+            echo "::warning::PII_DENYLIST secret not set — skipping privacy guard check"
+            exit 0
+          fi
+
+          raw_file="$(mktemp)"; lit_file="$(mktemp)"; rx_file="$(mktemp)"
+          trap 'rm -f "$raw_file" "$lit_file" "$rx_file"' EXIT
+          printf '%s\n' "$GUARD_PATTERNS" > "$raw_file"
+
+          # split into LITERAL (grep -F) and REGEX (grep -E) sections at the "___REGEX___" marker
+          awk -v lit="$lit_file" -v rx="$rx_file" '
+              /^___REGEX___[[:space:]]*$/ { mode=1; next }
+              mode==0 { print > lit; next }
+              { print > rx }
+          ' "$raw_file"
+
+          # drop blank/comment lines from both — an empty pattern in `grep -f` matches every line
+          grep -Ev '^[[:space:]]*(#.*)?$' "$lit_file" > "${lit_file}.clean" 2>/dev/null || true
+          mv "${lit_file}.clean" "$lit_file"
+          grep -Ev '^[[:space:]]*(#.*)?$' "$rx_file" > "${rx_file}.clean" 2>/dev/null || true
+          mv "${rx_file}.clean" "$rx_file"
+
+          # a secret that's non-empty but reduces to nothing usable (only comments/whitespace,
+          # or just the marker line) must not silently pass with zero patterns actually checked
+          if [ ! -s "$lit_file" ] && [ ! -s "$rx_file" ]; then
+            echo "::error::Privacy guard: PII_DENYLIST secret has no usable patterns after removing blank/comment lines. Fix the secret before this check can run."
+            exit 1
+          fi
+
+          # validate every regex pattern compiles; never let a malformed pattern's grep error
+          # (exit >=2) get silently swallowed into "no match"
+          while IFS= read -r pat; do
+            [ -z "$pat" ] && continue
+            printf '' | grep -Eq -- "$pat" 2>/dev/null
+            rc=$?
+            if [ "$rc" -ge 2 ]; then
+              echo "::error::Privacy guard: malformed regex pattern in PII_DENYLIST secret (content withheld). Fix the secret before this check can run."
+              exit 1
+            fi
+          done < "$rx_file"
+
+          # The files-list endpoint below caps out at 3000 entries and silently returns a
+          # truncated list past that - no error, no pagination past the cap - so a denylisted
+          # value in an alphabetically later file could sail through unscanned on a huge PR
+          # while this job still reports success. `changed_files` on the PR itself is the true
+          # total, independent of that cap - check it first and fail closed if it could exceed
+          # what the files endpoint can actually return.
+          changed_files_count="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.changed_files')"
+          cf_rc=$?
+          if [ "$cf_rc" -ne 0 ] || [ -z "$changed_files_count" ]; then
+            echo "::error::Privacy guard: failed to determine this PR's changed-file count (exit $cf_rc). Failing closed rather than risking a silently truncated scan."
+            exit 1
+          fi
+          if [ "$changed_files_count" -gt 3000 ]; then
+            echo "::error::Privacy guard: this PR changes $changed_files_count files - the GitHub API caps the file list at 3000 and returns it silently truncated beyond that. Failing closed rather than accepting a partial scan; split this PR into smaller ones."
+            exit 1
+          fi
+
+          # Diff via the API, not git: each entry's `patch` is the unified diff text for that
+          # file (omitted by GitHub for binary files, and for text files whose diff is too large -
+          # exactly the large-CSV-export case this check most needs to catch). A file with real
+          # additions but no `.patch` is flagged UNSCANNABLE below and fails closed rather than
+          # being silently treated as "nothing added".
+          #
+          # `.filename` matters just as much as content (a new file whose own path leaks a value,
+          # e.g. an export literally named after someone's email, would otherwise sail through
+          # unscanned) - but only for statuses that introduce or keep that path in the tree.
+          # A "removed" entry's `.filename` is the path being deleted: flagging it as a hit would
+          # block a PR that's cleaning up an old leak, exactly backwards from the intent here.
+          raw_scan="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '
+            .[] |
+            (if .status != "removed" then "FILENAME:" + .filename else empty end),
+            (if .patch == null and (.additions // 0) > 0 then "UNSCANNABLE:" + .filename else (.patch // empty) end)
+          ')"
+          api_rc=$?
+          if [ "$api_rc" -ne 0 ]; then
+            echo "::error::Privacy guard: failed to fetch the PR diff via the GitHub API (exit $api_rc). Failing closed rather than merging unscanned."
+            exit 1
+          fi
+
+          unscannable="$(printf '%s\n' "$raw_scan" | grep '^UNSCANNABLE:' | sed 's/^UNSCANNABLE://')"
+          if [ -n "$unscannable" ]; then
+            echo "::error::Privacy guard: GitHub omitted the diff for the following file(s) with added content (too large or binary) - cannot verify they're clean. Failing closed; review manually before merging: $unscannable"
+            exit 1
+          fi
+
+          filenames="$(printf '%s\n' "$raw_scan" | grep '^FILENAME:' | sed 's/^FILENAME://')"
+          # exactly one leading "+" stripped - it's the diff marker, not part of the real content.
+          # An anchored pattern like `^value$` in the denylist would otherwise never match (every
+          # added line's actual first character is shifted one position by the marker), and a
+          # value whose own real content starts with "+" would be scanned with a synthetic extra
+          # one prepended.
+          added_lines="$(printf '%s\n' "$raw_scan" | grep -Ev '^(FILENAME|UNSCANNABLE):' | grep -E '^\+' | sed 's/^+//')"
+          scan_targets="$(printf '%s\n%s\n' "$filenames" "$added_lines")"
+
+          if [ -z "$(printf '%s' "$scan_targets" | tr -d '[:space:]')" ]; then
+            echo "Privacy guard: nothing to scan (no changed filenames or added lines)."
+            exit 0
+          fi
+
+          blocked=0
+
+          if [ -s "$lit_file" ]; then
+            printf '%s\n' "$scan_targets" | grep -Fqi -f "$lit_file"
+            rc=$?
+            { [ "$rc" -eq 0 ] || [ "$rc" -ge 2 ]; } && blocked=1
+          fi
+
+          if [ -s "$rx_file" ]; then
+            printf '%s\n' "$scan_targets" | grep -Eqi -f "$rx_file"
+            rc=$?
+            { [ "$rc" -eq 0 ] || [ "$rc" -ge 2 ]; } && blocked=1
+          fi
+
+          if [ "$blocked" -eq 1 ]; then
+            echo "::error::Privacy guard: potential sensitive data detected (or the scan itself failed) in this diff. Content is not shown here for safety — review your changes locally before merging."
+            exit 1
+          fi
+
+          echo "Privacy guard: no matches."
