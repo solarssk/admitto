@@ -15,7 +15,10 @@ export function sanitizeNotificationText(value: string): string {
 /** Recursively sanitizes every string in a JSON-shaped value, at any depth - metadata is typed as
  * Record<string, unknown> precisely because call sites attach arbitrary structured context, and a
  * sensitive string nested inside an object or array must be redacted exactly like a top-level one
- * before it reaches a webhook payload or an in-app Notification row.
+ * before it reaches a webhook payload or an in-app Notification row. Object/Map KEYS are
+ * sanitized too, not just values - a caller building a per-subject map (e.g. a failed-login count
+ * keyed by the attempted email) would otherwise leak that key verbatim into every channel's
+ * output even though the exact same string as a VALUE would have been redacted.
  *
  * Date/Error/Map/Set/RegExp each get their own explicit, lossless-ish conversion instead of
  * falling into the generic object branch: Object.entries(new Date()) and Object.entries(new
@@ -34,13 +37,18 @@ function sanitizeJsonValue(value: unknown): unknown {
   if (value instanceof Date) return value.toISOString();
   if (value instanceof Error) return sanitizeNotificationText(value.message);
   if (value instanceof Map) {
-    return Object.fromEntries([...value].map(([key, v]) => [String(key), sanitizeJsonValue(v)]));
+    return Object.fromEntries(
+      [...value].map(([key, v]) => [sanitizeNotificationText(String(key)), sanitizeJsonValue(v)]),
+    );
   }
   if (value instanceof Set) return [...value].map(sanitizeJsonValue);
   if (value instanceof RegExp) return sanitizeNotificationText(value.source);
   if (value !== null && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, v]) => [key, sanitizeJsonValue(v)]),
+      Object.entries(value as Record<string, unknown>).map(([key, v]) => [
+        sanitizeNotificationText(key),
+        sanitizeJsonValue(v),
+      ]),
     );
   }
   return value;

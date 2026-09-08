@@ -373,6 +373,20 @@ describe("notify()", () => {
     );
   });
 
+  it("still attempts the email channel for a configured team distro when resolving per-user preferences fails, since extra_email_recipients doesn't depend on them", async () => {
+    stubHappyPath(db);
+    db.notificationPreference.findMany.mockRejectedValue(new Error("connection reset"));
+    const email = stubChannel(); // includeExtraRecipients is true for org-staff types (TYPE)
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email, webhook: stubChannel({ ok: true, noop: true }), in_app: stubChannel() },
+    });
+
+    // Called with an empty recipient list (personal preferences couldn't be resolved), not
+    // skipped outright - EmailChannel itself still queries extra_email_recipients internally.
+    expect(email.send).toHaveBeenCalledWith(expect.anything(), []);
+  });
+
   it("dispatches channels concurrently - the in-app write completes without waiting for a slow email provider", async () => {
     stubHappyPath(db);
     let resolveEmail: (value: { ok: boolean }) => void = () => undefined;

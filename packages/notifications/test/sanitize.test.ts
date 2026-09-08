@@ -45,6 +45,24 @@ describe("sanitizeNotificationMetadata", () => {
     expect(recipients.join(" ")).not.toContain("second@example.com");
   });
 
+  it("sanitizes an object KEY the same way it sanitizes a value, not just the value - a per-subject map keyed by an email must not leak that key verbatim", () => {
+    const result = sanitizeNotificationMetadata({ "attacker@example.com": 5 });
+    const keys = Object.keys(result!);
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).not.toContain("attacker@example.com");
+  });
+
+  it("sanitizes a Map key the same way it sanitizes a value", () => {
+    const result = sanitizeNotificationMetadata({
+      counts: new Map([["attacker@example.com", 5]]),
+    });
+    const counts = result!.counts as Record<string, number>;
+    const keys = Object.keys(counts);
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).not.toContain("attacker@example.com");
+    expect(counts[keys[0]!]).toBe(5);
+  });
+
   it("converts a Date to its ISO string instead of {} - Object.entries(new Date()) is always empty", () => {
     const when = new Date("2026-01-15T10:30:00.000Z");
     const result = sanitizeNotificationMetadata({ occurredAt: when });

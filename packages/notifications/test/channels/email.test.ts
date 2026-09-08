@@ -166,7 +166,7 @@ describe("EmailChannel", () => {
     expect(result).toEqual({ ok: false, error: "not an Error instance" });
   });
 
-  it("bounds the mailer round-trip and returns a failure instead of hanging when it never settles", async () => {
+  it("bounds the mailer round-trip and returns a failure instead of hanging when the send itself never settles", async () => {
     const db = createStubDb();
     db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
     send.mockImplementation(() => new Promise(() => undefined)); // never resolves/rejects
@@ -176,7 +176,23 @@ describe("EmailChannel", () => {
 
     expect(result.ok).toBe(false);
     expect(result.error).toBeTruthy();
-    expect(closeMailer).toHaveBeenCalledTimes(1);
+    // closeMailer is NOT asserted here: the timeout races the whole attempt rather than
+    // cancelling it, so the abandoned attempt's own cleanup (including closeMailer) only runs
+    // once/if the underlying mock ever actually settles - which this specific mock deliberately
+    // never does. See EMAIL_SEND_TIMEOUT_MS's own doc comment for that tradeoff.
+  });
+
+  it("bounds createMailer() itself, not just the later send - e.g. SmtpAdapter resolving its destination at construction time", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    createMailer.mockImplementation(() => new Promise(() => undefined)); // never resolves/rejects
+    const channel = new EmailChannel(db as unknown as PrismaClient, { timeoutMs: 20 });
+
+    const result = await channel.send(EVENT, ["u-1"]);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBeTruthy();
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("catches an unexpected throw (e.g. mail config resolution failure) and returns a sanitized failure", async () => {

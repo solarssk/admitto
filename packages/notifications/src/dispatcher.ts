@@ -279,28 +279,31 @@ async function dispatchToChannels(
     dispatch("webhook", webhookChannel.send(dispatched, []));
   }
 
-  let recipients: { emailRecipients: string[]; inAppRecipients: string[] } | null = null;
+  // Falls back to "nobody personally opted in" (not "skip email entirely") on failure: a
+  // configured team distro (extra_email_recipients) has nothing to do with per-user preferences,
+  // so a preference-lookup failure must not also suppress it - only the per-user-gated portion
+  // (personal email opt-ins, in_app) is actually affected by this failure.
+  let recipients: { emailRecipients: string[]; inAppRecipients: string[] };
   try {
     recipients = await splitRecipientsByChannel(db, candidates, type);
   } catch (err) {
     const error = formatDispatchError(err);
     if (typeDef.availableChannels.includes("email")) outcome.failures.push({ channel: "email", error });
     if (typeDef.availableChannels.includes("in_app")) outcome.failures.push({ channel: "in_app", error });
+    recipients = { emailRecipients: [], inAppRecipients: [] };
   }
 
-  if (recipients) {
-    const { emailRecipients, inAppRecipients } = recipients;
-    // EmailChannel itself no-ops (ok: true) when there is nothing to send, so calling it whenever
-    // extras might apply is never wasted beyond one lightweight settings lookup.
-    if (
-      typeDef.availableChannels.includes("email") &&
-      (emailRecipients.length > 0 || includeExtraRecipients)
-    ) {
-      dispatch("email", emailChannel.send(dispatched, emailRecipients));
-    }
-    if (typeDef.availableChannels.includes("in_app") && inAppRecipients.length > 0) {
-      dispatch("in_app", inAppChannel.send(dispatched, inAppRecipients));
-    }
+  const { emailRecipients, inAppRecipients } = recipients;
+  // EmailChannel itself no-ops (ok: true) when there is nothing to send, so calling it whenever
+  // extras might apply is never wasted beyond one lightweight settings lookup.
+  if (
+    typeDef.availableChannels.includes("email") &&
+    (emailRecipients.length > 0 || includeExtraRecipients)
+  ) {
+    dispatch("email", emailChannel.send(dispatched, emailRecipients));
+  }
+  if (typeDef.availableChannels.includes("in_app") && inAppRecipients.length > 0) {
+    dispatch("in_app", inAppChannel.send(dispatched, inAppRecipients));
   }
 
   await Promise.all(pending);
