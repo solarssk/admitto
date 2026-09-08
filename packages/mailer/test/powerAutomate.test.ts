@@ -207,6 +207,17 @@ describe("PowerAutomateAdapter", () => {
     expect(captured.redirect).toBe("error");
   });
 
+  it("bounds the send with an abort signal so a stalled flow cannot hang the caller", async () => {
+    let captured: any;
+    const fetchFn = vi.fn(async (_url: string, init: any) => {
+      captured = init;
+      return { ok: true, status: 200, text: async () => "", headers: { get: () => null } };
+    });
+    const adapter = new PowerAutomateAdapter(config, fetchFn as unknown as typeof fetch);
+    await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+    expect(captured.signal).toBeInstanceOf(AbortSignal);
+  });
+
   describe("DNS pinning (no fetchFn injected — production path)", () => {
     beforeEach(() => {
       mockedUndiciFetch.mockResolvedValue(
@@ -228,7 +239,11 @@ describe("PowerAutomateAdapter", () => {
       });
       expect(mockedUndiciFetch).toHaveBeenCalledWith(
         config.url,
-        expect.objectContaining({ redirect: "error", dispatcher: expect.any(Object) }),
+        expect.objectContaining({
+          redirect: "error",
+          dispatcher: expect.any(Object),
+          signal: expect.any(AbortSignal),
+        }),
       );
     });
 

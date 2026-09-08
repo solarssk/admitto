@@ -10,6 +10,7 @@ import { MailDestinationError, resolveSafeMailDestination } from "../ssrfGuard.j
 import { isSendSuccess, type FetchFn, type MailMessage, type MailerAdapter, type SendResult } from "../types.js";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import { redactEmail } from "@admitto/shared";
+import { awaitWithAbortSignal } from "@admitto/shared/ssrf-guard";
 
 /**
  * Power Automate — sends via an HTTP-triggered flow (Admitto POSTs a ready-to-send
@@ -36,9 +37,13 @@ export class PowerAutomateAdapter implements MailerAdapter {
     }
 
     const hostname = new URL(this.config.url).hostname;
+    // Bounds both the DNS-rebinding recheck below (dns.lookup takes no signal of its own -
+    // see awaitWithAbortSignal's doc comment) and the send itself. Matches GraphAdapter's
+    // token/sendMail deadline and MAIL_PROBE_TIMEOUT_MS.
+    const signal = AbortSignal.timeout(15_000);
     let records: LookupAddress[];
     try {
-      records = await resolveSafeMailDestination(hostname);
+      records = await awaitWithAbortSignal(resolveSafeMailDestination(hostname), signal);
     } catch (e) {
       // Fixed category, not `error` - see the same note in smtp.ts.
       emitSystemLog("security", "warn", "mail_destination_blocked", {
@@ -100,14 +105,18 @@ export class PowerAutomateAdapter implements MailerAdapter {
       // Reject outright rather than follow a redirect — a same-host-looking URL that
       // 302s to an internal target would otherwise bypass the destination check above.
       const result = this.fetchFn
-        ? await this.fetchFn(this.config.url, { method: "POST", headers, redirect: "error", body }).then(
-            processResponse,
-          )
+        ? await this.fetchFn(this.config.url, {
+            method: "POST",
+            headers,
+            redirect: "error",
+            body,
+            signal,
+          }).then(processResponse)
         : await withPinnedFetch(
             this.config.url,
             hostname,
             records,
-            { method: "POST", headers, body },
+            { method: "POST", headers, body, signal },
             processResponse,
           );
       if (isSendSuccess(result.status)) {
