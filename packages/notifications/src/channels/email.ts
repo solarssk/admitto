@@ -20,7 +20,7 @@ const GENERIC_SEND_FAILED = "Send failed.";
 export interface EmailChannelOptions {
   /**
    * Whether to also send to NotificationSettings.extra_email_recipients for this org. Only true
-   * for org-staff-audience types — never for a self-audience personal receipt (e.g. "your
+   * for org-staff-audience types - never for a self-audience personal receipt (e.g. "your
    * password changed"), which must not leak to a shared team distro list. Set by dispatcher.ts
    * per notify() call, based on the resolved NotificationTypeDef.audience.
    */
@@ -39,7 +39,7 @@ function substitute(html: string, values: Record<string, PlaceholderValue>): str
   return out;
 }
 
-/** One composed, server-side line of text — never a table (prompt 86 "CZYTAJ NAJPIERW": every
+/** One composed, server-side line of text - never a table (prompt 86 "CZYTAJ NAJPIERW": every
  * placeholder is HTML-escaped text, not markup, so metadata can never smuggle HTML). */
 function buildMetadataLine(metadata: Record<string, unknown> | undefined): string {
   if (!metadata) return "";
@@ -61,7 +61,7 @@ async function resolveExtraRecipients(db: Db, organizationId: string): Promise<s
 
 /**
  * Email delivery for the notification module. Every registered type renders through the single
- * shared layout (ADR 0044 §7, SYSTEM_NOTIFICATION_EMAIL_MJML) — no per-type visual design. One
+ * shared layout (ADR 0044 §7, SYSTEM_NOTIFICATION_EMAIL_MJML) - no per-type visual design. One
  * message per resolved address (mailer contract is one-recipient-per-message).
  */
 export class EmailChannel implements NotificationChannel {
@@ -102,7 +102,7 @@ export class EmailChannel implements NotificationChannel {
       try {
         // Substitute into the raw MJML source, not the compiled HTML: mjml2html's
         // validationLevel "strict" validates certain attribute values by type at compile time
-        // (e.g. mj-section background-color as a CSS Color) — a still-literal "{{severity_color}}"
+        // (e.g. mj-section background-color as a CSS Color) - a still-literal "{{severity_color}}"
         // token fails that validation before substitution ever gets a chance to run.
         const baseUrl = resolvePublicBaseUrl(this.options.env);
         const substituted = substitute(SYSTEM_NOTIFICATION_EMAIL_MJML, {

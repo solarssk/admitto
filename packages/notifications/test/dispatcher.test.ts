@@ -176,11 +176,9 @@ describe("notify()", () => {
       { user_id: "u-1", user: { is_active: true } },
       { user_id: "u-2", user: { is_active: true } },
     ]);
-    db.notificationPreference.findMany.mockImplementation(({ where }: { where: { user_id: string } }) =>
-      Promise.resolve(
-        where.user_id === "u-2" ? [{ channel: "email", enabled: false }] : [],
-      ),
-    );
+    db.notificationPreference.findMany.mockResolvedValue([
+      { user_id: "u-2", channel: "email", enabled: false },
+    ]);
     const email = stubChannel();
     const inApp = stubChannel();
 
@@ -190,6 +188,22 @@ describe("notify()", () => {
 
     expect(email.send).toHaveBeenCalledWith(expect.anything(), ["u-1"]);
     expect(inApp.send).toHaveBeenCalledWith(expect.anything(), ["u-1", "u-2"]);
+  });
+
+  it("still invokes the email channel (with zero user recipients) when every org-staff candidate opted out, so a configured team distro address still gets it", async () => {
+    db.notificationSettings.findUnique.mockResolvedValue(null);
+    db.notificationThrottle.create.mockResolvedValue({});
+    db.roleAssignment.findMany.mockResolvedValue([{ user_id: "u-1", user: { is_active: true } }]);
+    db.notificationPreference.findMany.mockResolvedValue([
+      { user_id: "u-1", channel: "email", enabled: false },
+    ]);
+    const email = stubChannel();
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email, webhook: stubChannel(), in_app: stubChannel() },
+    });
+
+    expect(email.send).toHaveBeenCalledWith(expect.anything(), []);
   });
 
   it("writes a failed audit row (not sent) when any channel reports failure, without throwing", async () => {

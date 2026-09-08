@@ -25,7 +25,7 @@ const GENERIC_SEND_FAILED = "Webhook send failed.";
 
 class BlockedWebhookUrlError extends Error {}
 
-/** Same SSRF posture as packages/auth/src/oidc/safe-url.ts's assertSafeOidcFetchUrl — HTTPS
+/** Same SSRF posture as packages/auth/src/oidc/safe-url.ts's assertSafeOidcFetchUrl - HTTPS
  * required (loopback+HTTP allowed outside production for local testing), private/link-local/
  * metadata hosts blocked (ADR 0016 SEC-1). No allowlist: unlike OIDC/mail, a self-hosted
  * private-network webhook target is not an expected use case for Discord/Slack/generic alerts. */
@@ -94,9 +94,9 @@ function buildMetadataFields(
 }
 
 /**
- * Generic webhook delivery (Discord/Slack/generic — ADR 0044 §1, generalizes ADR 0038's
+ * Generic webhook delivery (Discord/Slack/generic - ADR 0044 §1, generalizes ADR 0038's
  * Discord-only design). One team-wide URL per organization, sent once per notify() call
- * regardless of how many candidates resolved — `recipientUserIds` is unused here.
+ * regardless of how many candidates resolved - `recipientUserIds` is unused here.
  */
 export class WebhookChannel implements NotificationChannel {
   readonly channel = "webhook" as const;
@@ -137,7 +137,13 @@ export class WebhookChannel implements NotificationChannel {
           headers: { "content-type": "application/json" },
           body: JSON.stringify(payload),
         },
-        async (res) => res.status,
+        async (res) => {
+          // withPinnedFetch's own contract (packages/mailer/src/pinnedFetch.ts): the handler must
+          // consume the body before returning, or dispatcher.close() waits for it forever. We only
+          // need the status, not the target's response content.
+          await res.text().catch(() => undefined);
+          return res.status;
+        },
       );
 
       if (status < 200 || status >= 300) {

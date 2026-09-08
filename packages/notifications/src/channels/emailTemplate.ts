@@ -1,11 +1,11 @@
 /**
  * Runtime copy of `_ops/design/system-notification-email.mjml` (design source of truth, not
- * shipped in the built image — same pattern as packages/mail-templates/src/defaultTemplate.ts's
+ * shipped in the built image - same pattern as packages/mail-templates/src/defaultTemplate.ts's
  * DEFAULT_BODY_MJML). Keep byte-for-byte in sync with that file; every notification type renders
- * through this one layout (ADR 0044 §7) — no per-type visual design.
+ * through this one layout (ADR 0044 §7) - no per-type visual design.
  *
  * Placeholders are substituted as literal text via escapeHtmlText/escapeHtmlAttribute
- * (see substitute.ts) — never interpolated as HTML, so a notification body can never inject
+ * (see substitute.ts) - never interpolated as HTML, so a notification body can never inject
  * markup into this template.
  */
 export const SYSTEM_NOTIFICATION_EMAIL_MJML = `<mjml>
@@ -51,7 +51,7 @@ export const SYSTEM_NOTIFICATION_EMAIL_MJML = `<mjml>
     <mj-section background-color="#f1f5f9" padding="20px 32px">
       <mj-column>
         <mj-text font-size="12px" line-height="18px" color="#94a3b8" align="center">
-          Automated system notification from Admitto — sent because your account has the admin or superadmin role on this instance. Manage recipients in Settings → System notifications.
+          Automated system notification from Admitto - sent because your account has the admin or superadmin role on this instance. Manage recipients in Settings → System notifications.
         </mj-text>
       </mj-column>
     </mj-section>
@@ -60,7 +60,7 @@ export const SYSTEM_NOTIFICATION_EMAIL_MJML = `<mjml>
 </mjml>
 `;
 
-/** Same 3 severities as NotificationSeverity/SystemLogLevel — hex values match
+/** Same 3 severities as NotificationSeverity/SystemLogLevel - hex values match
  * packages/ui/src/styles/tokens/colors.css (--status-error/--status-warn/--status-info), the
  * same source ADR 0038 §4 already draws Discord embed colors from. */
 export const SEVERITY_COLOR: Record<"info" | "warn" | "error", string> = {

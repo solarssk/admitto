@@ -1,11 +1,11 @@
 import type { NotificationTypeDef } from "./types.js";
 
 /**
- * Closed, developer-defined set of notification types (ADR 0038 §9 — no admin-configurable
+ * Closed, developer-defined set of notification types (ADR 0038 §9 - no admin-configurable
  * rules/thresholds, no "subscribe to any System Log entry"). ADR 0044 §6 registry, foundation
  * slice: the 4 org-staff security/ops alerts wired in this PR. A 5th, self-audience type
  * (`account.auth_factor.changed`, ASVS V2.5.5) is added by a later PR once the personal-account
- * wiring it needs exists — see the notifications-module-foundation plan.
+ * wiring it needs exists - see the notifications-module-foundation plan.
  */
 export const NOTIFICATION_TYPES: Record<string, NotificationTypeDef> = {
   "auth.login.repeated_failures": {

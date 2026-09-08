@@ -1,7 +1,7 @@
 import { vi } from "vitest";
 
 /**
- * Minimal stub covering exactly the Prisma model methods this package's own logic calls —
+ * Minimal stub covering exactly the Prisma model methods this package's own logic calls -
  * pure unit tests, no Postgres (mirrors packages/wallet's stub-provider.ts style testing).
  * Cast to PrismaClient at each call site: `createStubDb() as unknown as PrismaClient`.
  */

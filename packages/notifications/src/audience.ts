@@ -3,7 +3,7 @@ import type { NotificationAudienceKey } from "./types.js";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
-/** Thrown by resolveAudienceCandidates for "event-staff" — reserved for a future event-day-ops
+/** Thrown by resolveAudienceCandidates for "event-staff" - reserved for a future event-day-ops
  * notification prompt; no registry entry uses this strategy yet. */
 export class NotImplementedError extends Error {
   constructor(message: string) {
@@ -20,7 +20,7 @@ export interface AudienceContext {
 
 /**
  * Resolves the user_ids who should receive a notification for the given audience strategy.
- * Never throws for "org-staff"/"self" — always returns a possibly-empty array. dispatcher.ts
+ * Never throws for "org-staff"/"self" - always returns a possibly-empty array. dispatcher.ts
  * treats an empty array as "nothing to send", not an error.
  */
 export async function resolveAudienceCandidates(
@@ -45,7 +45,7 @@ export async function resolveAudienceCandidates(
 }
 
 /** Every active superadmin (instance-scoped) plus every active admin scoped to this organization
- * — the same rule ADR 0044 §2 keeps unchanged from ADR 0038 §4: recipients for a security-critical
+ * - the same rule ADR 0044 §2 keeps unchanged from ADR 0038 §4: recipients for a security-critical
  * type are never narrowed to one person by a per-user preference, only the audience-resolution
  * rule below decides who is a candidate at all. */
 async function resolveOrgStaff(db: Db, organizationId: string): Promise<string[]> {
@@ -65,9 +65,9 @@ async function resolveOrgStaff(db: Db, organizationId: string): Promise<string[]
 }
 
 /** The event's targetUserId, but only once confirmed to be an active user with a real role
- * assignment in this organization (or instance-wide) — never trusts the call site blindly
+ * assignment in this organization (or instance-wide) - never trusts the call site blindly
  * (prompt 86 §3: "nie ufaj call-site'owi bezkrytycznie"). Returns [] (not a throw) for a
- * missing targetUserId, an inactive user, or a user with no standing in this organization —
+ * missing targetUserId, an inactive user, or a user with no standing in this organization -
  * dispatcher.ts logs and skips on an empty audience rather than failing the caller. */
 async function resolveSelf(db: Db, ctx: AudienceContext): Promise<string[]> {
   if (!ctx.targetUserId) return [];

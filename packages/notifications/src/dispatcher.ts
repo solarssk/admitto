@@ -2,7 +2,7 @@ import { emitSystemLog } from "@admitto/shared/system-log";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import { getNotificationTypeDef } from "./registry.js";
 import { resolveAudienceCandidates } from "./audience.js";
-import { resolveEnabledChannels } from "./preferences.js";
+import { resolveEnabledChannelsForUsers } from "./preferences.js";
 import { sanitizeNotificationMetadata, sanitizeNotificationText } from "./sanitize.js";
 import { EmailChannel } from "./channels/email.js";
 import { WebhookChannel } from "./channels/webhook.js";
@@ -15,7 +15,7 @@ type Db = PrismaClient | Prisma.TransactionClient;
 const DEFAULT_THROTTLE_WINDOW_MINUTES = 15;
 
 export interface DispatchDeps {
-  /** Overrides for testing — a stub NotificationChannel per channel key. */
+  /** Overrides for testing - a stub NotificationChannel per channel key. */
   channels?: Partial<Record<"email" | "webhook" | "in_app", NotificationChannel>>;
   now?: () => Date;
   env?: NodeJS.ProcessEnv;
@@ -25,14 +25,14 @@ function reportUnknownType(type: string): void {
   emitSystemLog(
     "security",
     "error",
-    `notify(): unknown notification type "${type}" — not registered in packages/notifications/src/registry.ts`,
+    `notify(): unknown notification type "${type}" - not registered in packages/notifications/src/registry.ts`,
     { notification_type: type },
   );
   if (process.env["NODE_ENV"] !== "production") {
-    // Loud in dev/CI so a registry typo is impossible to miss — never a thrown error out of
+    // Loud in dev/CI so a registry typo is impossible to miss - never a thrown error out of
     // notify() itself, since call sites (auth/audit code) must never be crashed by a dispatch bug.
     console.error(
-      `[notifications] unknown notification type "${type}" — this is a bug, add it to registry.ts`,
+      `[notifications] unknown notification type "${type}" - this is a bug, add it to registry.ts`,
     );
   }
 }
@@ -118,7 +118,7 @@ async function readOrgSettings(
  * Steps (ADR 0038/0044, prompt 86 §2.A, amended per the notifications-module-foundation plan):
  * registry lookup → org-disabled check → throttle claim → audience resolution → sanitize
  * content → webhook (once, team-wide) → email/in-app (per candidate, per-user preferences) →
- * SecurityAuditLog write. Never throws — every failure mode is caught, logged, and swallowed so
+ * SecurityAuditLog write. Never throws - every failure mode is caught, logged, and swallowed so
  * a dispatch bug can never break the call site (a login, an MFA check, a settings save).
  */
 export async function notify(
@@ -182,9 +182,11 @@ export async function notify(
       metadata: sanitizeNotificationMetadata(event.metadata),
     };
 
+    // Team-wide extra_email_recipients (NotificationSettings) apply only to org-staff-audience
+    // types - never a self-audience personal receipt, which must not leak to a shared distro list.
+    const includeExtraRecipients = typeDef.audience === "org-staff";
     const emailChannel =
-      deps.channels?.email ??
-      new EmailChannel(db, { includeExtraRecipients: typeDef.audience === "org-staff", env: deps.env });
+      deps.channels?.email ?? new EmailChannel(db, { includeExtraRecipients, env: deps.env });
     const webhookChannel = deps.channels?.webhook ?? new WebhookChannel(db, { env: deps.env });
     const inAppChannel = deps.channels?.in_app ?? new InAppChannel(db);
 
@@ -197,15 +199,24 @@ export async function notify(
       else failures.push({ channel: "webhook", error: result.error });
     }
 
+    const enabledByUser = await resolveEnabledChannelsForUsers(db, candidates, type);
     const emailRecipients: string[] = [];
     const inAppRecipients: string[] = [];
     for (const userId of candidates) {
-      const enabled = await resolveEnabledChannels(db, userId, type);
+      const enabled = enabledByUser.get(userId) ?? [];
       if (enabled.includes("email")) emailRecipients.push(userId);
       if (enabled.includes("in_app")) inAppRecipients.push(userId);
     }
 
-    if (typeDef.availableChannels.includes("email") && emailRecipients.length > 0) {
+    // extra_email_recipients is a team-wide address list independent of any individual admin's
+    // personal opt-out: even if every org-staff candidate disabled email for themselves, a
+    // configured shared mailbox must still get the alert. EmailChannel itself no-ops (ok: true)
+    // when there is nothing to send, so calling it here is never wasted beyond one lightweight
+    // settings lookup.
+    if (
+      typeDef.availableChannels.includes("email") &&
+      (emailRecipients.length > 0 || includeExtraRecipients)
+    ) {
       const result = await emailChannel.send(dispatched, emailRecipients);
       if (result.ok) channelsSent.push("email");
       else failures.push({ channel: "email", error: result.error });

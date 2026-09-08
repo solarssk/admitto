@@ -10,7 +10,7 @@ vi.mock("@admitto/mailer", () => ({
   withPinnedFetch: (...args: unknown[]) => withPinnedFetch(...args),
 }));
 
-// Real SSRF blocking logic stays real (that's what several tests below verify) — only the actual
+// Real SSRF blocking logic stays real (that's what several tests below verify) - only the actual
 // DNS lookup is stubbed, so a public hostname like "discord.com" doesn't need real network access
 // in CI and can't flake on it.
 vi.mock("@admitto/shared/ssrf-guard", async (importOriginal) => {
@@ -32,6 +32,12 @@ const EVENT: DispatchedNotification = {
 
 function settingsWith(url: string, kind: string | null = "generic") {
   return { webhook_url_enc: encryptToString(url), webhook_kind: kind };
+}
+
+/** Minimal fetch Response stand-in - includes `text()` since withPinnedFetch's handler contract
+ * requires the body be consumed before returning (see the regression test below). */
+function mockResponse(status: number) {
+  return { status, text: vi.fn().mockResolvedValue("") };
 }
 
 describe("WebhookChannel", () => {
@@ -83,7 +89,7 @@ describe("WebhookChannel", () => {
       settingsWith("https://discord.com/api/webhooks/x/y", "discord"),
     );
     withPinnedFetch.mockImplementation(async (_url, _hostname, _records, _init, handler) =>
-      handler({ status: 204 }),
+      handler(mockResponse(204)),
     );
     const channel = new WebhookChannel(db as unknown as PrismaClient);
 
@@ -103,7 +109,7 @@ describe("WebhookChannel", () => {
       settingsWith("https://hooks.example.com/x", "generic"),
     );
     withPinnedFetch.mockImplementation(async (_url, _hostname, _records, _init, handler) =>
-      handler({ status: 200 }),
+      handler(mockResponse(200)),
     );
     const channel = new WebhookChannel(db as unknown as PrismaClient);
 
@@ -126,7 +132,7 @@ describe("WebhookChannel", () => {
       settingsWith("https://hooks.example.com/x"),
     );
     withPinnedFetch.mockImplementation(async (_url, _hostname, _records, _init, handler) =>
-      handler({ status: 500 }),
+      handler(mockResponse(500)),
     );
     const channel = new WebhookChannel(db as unknown as PrismaClient);
 
@@ -134,5 +140,21 @@ describe("WebhookChannel", () => {
 
     expect(result.ok).toBe(false);
     expect(result.error).toContain("500");
+  });
+
+  it("consumes the response body before returning (withPinnedFetch hangs on an unread body)", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(
+      settingsWith("https://hooks.example.com/x"),
+    );
+    const response = mockResponse(200);
+    withPinnedFetch.mockImplementation(async (_url, _hostname, _records, _init, handler) =>
+      handler(response),
+    );
+    const channel = new WebhookChannel(db as unknown as PrismaClient);
+
+    await channel.send(EVENT, []);
+
+    expect(response.text).toHaveBeenCalled();
   });
 });
