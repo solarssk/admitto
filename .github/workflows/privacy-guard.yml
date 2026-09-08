@@ -1,0 +1,51 @@
+name: Privacy Guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan diff for sensitive patterns
+        env:
+          GUARD_PATTERNS: ${{ secrets.PII_DENYLIST }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GUARD_PATTERNS:-}" ]; then
+            echo "::warning::PII_DENYLIST secret not set — skipping privacy guard check"
+            exit 0
+          fi
+
+          pattern_file="$(mktemp)"
+          trap 'rm -f "$pattern_file"' EXIT
+          printf '%s\n' "$GUARD_PATTERNS" > "$pattern_file"
+
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+
+          added_lines="$(git diff -U0 "$base_sha...$head_sha" -- . | grep -E '^\+' | grep -Ev '^\+\+\+' || true)"
+
+          if [ -z "$added_lines" ]; then
+            echo "Privacy guard: no added lines to scan."
+            exit 0
+          fi
+
+          match_count="$(echo "$added_lines" | grep -Eic -f "$pattern_file" || true)"
+
+          if [ "$match_count" -gt 0 ]; then
+            echo "::error::Privacy guard: potential sensitive data detected in $match_count added line(s). Content is not shown here for safety — review the diff yourself and remove it before merging."
+            exit 1
+          fi
+
+          echo "Privacy guard: no matches."
