@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@admitto/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { EmailChannel } from "../../src/channels/email.js";
+import { EMAIL_SEND_CONCURRENCY, EmailChannel } from "../../src/channels/email.js";
 import type { DispatchedNotification } from "../../src/types.js";
 import { createStubDb } from "../stubDb.js";
 
@@ -142,6 +142,43 @@ describe("EmailChannel", () => {
 
     expect(result.ok).toBe(true);
     expect(result.error).toContain("1/2 recipients failed");
+  });
+
+  it("bounds concurrent sends to EMAIL_SEND_CONCURRENCY instead of firing every recipient at once", async () => {
+    const db = createStubDb();
+    const recipientCount = EMAIL_SEND_CONCURRENCY + 2; // more recipients than the concurrency cap
+    db.user.findMany.mockResolvedValue(
+      Array.from({ length: recipientCount }, (_, i) => ({ email: `u${i}@example.com` })),
+    );
+    let inFlight = 0;
+    let maxInFlight = 0;
+    let pending: Array<() => void> = [];
+    send.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          inFlight++;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          pending.push(() => {
+            inFlight--;
+            resolve({ status: "sent", provider: "smtp" });
+          });
+        }),
+    );
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+    const recipientIds = Array.from({ length: recipientCount }, (_, i) => `u-${i}`);
+
+    const sendPromise = channel.send(EVENT, recipientIds);
+
+    while (send.mock.calls.length < recipientCount) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const toResolve = pending;
+      pending = [];
+      toResolve.forEach((resolveOne) => resolveOne());
+    }
+
+    await sendPromise;
+    expect(maxInFlight).toBe(EMAIL_SEND_CONCURRENCY);
+    expect(send).toHaveBeenCalledTimes(recipientCount);
   });
 
   it("reports a clean failure (not partial) when every recipient's send rejects", async () => {

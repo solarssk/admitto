@@ -64,6 +64,17 @@ function hexToDecimalColor(hex: string): number {
   return Number.parseInt(hex.replace("#", ""), 16);
 }
 
+/** isLoopbackHost() also matches the bare hostname "localhost", which - unlike 127.0.0.1, ::1, or
+ * an IPv4-mapped-IPv6 literal - is a NAME, not a real address: createPinnedDispatcher's `lookup`
+ * callback (packages/shared/src/pinnedDispatcher.ts) hands `record.address` straight to the
+ * underlying connect() call, which needs a numeric IP, not the literal string "localhost" - using
+ * it as-is fails the connection instead of reaching the local webhook. Only "localhost" needs
+ * substituting; every other loopback form isLoopbackHost() matches is already a real address. */
+function resolveLoopbackRecord(hostname: string): LookupAddress {
+  if (hostname === "localhost") return { address: "127.0.0.1", family: 4 };
+  return { address: hostname, family: hostname.includes(":") ? 6 : 4 };
+}
+
 function buildPayload(kind: WebhookKind, event: DispatchedNotification): Record<string, unknown> {
   switch (kind) {
     case "discord":
@@ -138,7 +149,7 @@ export class WebhookChannel implements NotificationChannel {
       const signal = AbortSignal.timeout(this.options.timeoutMs ?? WEBHOOK_SEND_TIMEOUT_MS);
       const hostname = unbracketHostname(url.hostname);
       const records: LookupAddress[] = isLoopbackHost(hostname)
-        ? [{ address: hostname, family: hostname.includes(":") ? 6 : 4 }]
+        ? [resolveLoopbackRecord(hostname)]
         : await awaitWithAbortSignal(resolveSafeHostname(hostname), signal);
 
       const payload = buildPayload(kind, event);

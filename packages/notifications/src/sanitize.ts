@@ -20,11 +20,12 @@ export function sanitizeNotificationText(value: string): string {
  * keyed by the attempted email) would otherwise leak that key verbatim into every channel's
  * output even though the exact same string as a VALUE would have been redacted.
  *
- * bigint (e.g. a raw SQL aggregate count) converts to its decimal string: neither JSON.stringify
- * (WebhookChannel's payload) nor Prisma's JSON serialization (InAppChannel's metadata column)
- * accepts a bigint - both throw - so passing one through unconverted would silently fail delivery
- * on 2 of the 3 channels instead of just rendering as text, the same "safe channels never see a
- * value that breaks them" reasoning as every other conversion here.
+ * bigint (e.g. a raw SQL aggregate count) converts to its decimal string, undefined to JSON null,
+ * a function/symbol to a fixed marker/its sanitized description: none of these are valid JSON, so
+ * neither JSON.stringify (WebhookChannel's payload) nor Prisma's JSON serialization (InAppChannel's
+ * metadata column) accepts them - both throw - so passing one through unconverted would silently
+ * fail delivery on 2 of the 3 channels instead of just rendering as text, the same "safe channels
+ * never see a value that breaks them" reasoning as every other conversion here.
  *
  * Date/Error/Map/Set/RegExp each get their own explicit, lossless-ish conversion instead of
  * falling into the generic object branch: Object.entries(new Date()) and Object.entries(new
@@ -40,25 +41,34 @@ export function sanitizeNotificationText(value: string): string {
 function sanitizeJsonValue(value: unknown): unknown {
   if (typeof value === "string") return sanitizeNotificationText(value);
   if (typeof value === "bigint") return value.toString();
+  if (value === undefined) return null;
+  if (typeof value === "function") return "[Function]";
+  if (typeof value === "symbol") return sanitizeNotificationText(value.toString());
   if (Array.isArray(value)) return value.map(sanitizeJsonValue);
   if (value instanceof Date) return value.toISOString();
   if (value instanceof Error) return sanitizeNotificationText(value.message);
-  if (value instanceof Map) {
-    return Object.fromEntries(
-      [...value].map(([key, v]) => [sanitizeNotificationText(String(key)), sanitizeJsonValue(v)]),
-    );
-  }
+  if (value instanceof Map) return Object.fromEntries(sanitizeEntries([...value]));
   if (value instanceof Set) return [...value].map(sanitizeJsonValue);
   if (value instanceof RegExp) return sanitizeNotificationText(value.source);
   if (value !== null && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, v]) => [
-        sanitizeNotificationText(key),
-        sanitizeJsonValue(v),
-      ]),
-    );
+    return Object.fromEntries(sanitizeEntries(Object.entries(value as Record<string, unknown>)));
   }
   return value;
+}
+
+/** Sanitizes a set of [key, value] entries, disambiguating keys that collide after sanitization
+ * (e.g. two different attacker-controlled email keys both redacting to the literal "[redacted]")
+ * with a numeric suffix - Object.fromEntries silently keeps only the LAST entry for a repeated
+ * key, so without this a second colliding entry would silently overwrite, not just rename, the
+ * first one's value. */
+function sanitizeEntries(entries: Array<[unknown, unknown]>): Array<[string, unknown]> {
+  const seen = new Map<string, number>();
+  return entries.map(([key, v]) => {
+    const base = sanitizeNotificationText(String(key));
+    const occurrence = (seen.get(base) ?? 0) + 1;
+    seen.set(base, occurrence);
+    return [occurrence === 1 ? base : `${base}_${occurrence}`, sanitizeJsonValue(v)];
+  });
 }
 
 export function sanitizeNotificationMetadata(

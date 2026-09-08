@@ -52,6 +52,44 @@ describe("sanitizeNotificationMetadata", () => {
     expect(keys[0]).not.toContain("attacker@example.com");
   });
 
+  it("disambiguates two different keys that redact to the same sanitized text, instead of the second silently overwriting the first via Object.fromEntries", () => {
+    const result = sanitizeNotificationMetadata({
+      "one@example.com": 3,
+      "two@example.com": 5,
+    });
+    const values = Object.values(result!).toSorted((a, b) => (a as number) - (b as number));
+    expect(values).toEqual([3, 5]);
+    expect(Object.keys(result!)).toHaveLength(2);
+  });
+
+  it("disambiguates two colliding Map keys the same way", () => {
+    const result = sanitizeNotificationMetadata({
+      counts: new Map([
+        ["one@example.com", 3],
+        ["two@example.com", 5],
+      ]),
+    });
+    const counts = result!.counts as Record<string, number>;
+    const values = Object.values(counts).toSorted((a, b) => a - b);
+    expect(values).toEqual([3, 5]);
+    expect(Object.keys(counts)).toHaveLength(2);
+  });
+
+  it("converts undefined to JSON null, since neither JSON.stringify nor Prisma's JSON serialization accepts undefined nested in a value", () => {
+    const result = sanitizeNotificationMetadata({ values: [undefined] });
+    expect(result!.values).toEqual([null]);
+  });
+
+  it("converts a function to a fixed marker instead of silently dropping or leaking its source", () => {
+    const result = sanitizeNotificationMetadata({ handler: () => "unused" });
+    expect(result!.handler).toBe("[Function]");
+  });
+
+  it("converts a symbol to its sanitized description", () => {
+    const result = sanitizeNotificationMetadata({ tag: Symbol("leak@example.com") });
+    expect(result!.tag).not.toContain("leak@example.com");
+  });
+
   it("sanitizes a Map key the same way it sanitizes a value", () => {
     const result = sanitizeNotificationMetadata({
       counts: new Map([["attacker@example.com", 5]]),

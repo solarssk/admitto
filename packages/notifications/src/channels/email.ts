@@ -5,7 +5,7 @@ import {
   escapeHtmlText,
   resolvePublicBaseUrl,
 } from "@admitto/mail-templates";
-import { closeMailer, createMailer, type MailMessage } from "@admitto/mailer";
+import { closeMailer, createMailer, type MailerAdapter, type MailMessage, type SendResult } from "@admitto/mailer";
 import { resolveMailConfigForOrg } from "@admitto/mailer-config";
 import { sanitizeDeliveryError } from "@admitto/mail-delivery";
 import { awaitWithAbortSignal } from "@admitto/shared/ssrf-guard";
@@ -42,6 +42,40 @@ const GENERIC_SEND_FAILED = "Send failed.";
  * outbound fetch (tracked as separate follow-up work, out of this package's scope).
  */
 export const EMAIL_SEND_TIMEOUT_MS = 15_000;
+
+/** Matches packages/mailer's own sendBatch default ("gentle on connectors") - not reusing
+ * sendBatch itself here since it has no try/catch around adapter.send(), so one recipient's
+ * MailDestinationError rethrow would fail its internal Promise.all and discard every other
+ * recipient's already-settled result, reintroducing the exact bug allSettled below exists to
+ * avoid. */
+export const EMAIL_SEND_CONCURRENCY = 3;
+
+/** Bounded-concurrency fan-out for per-recipient sends, in Promise.allSettled's own result shape
+ * (so the caller's existing result-processing loop needs no changes). Sending every recipient at
+ * once is real, not just theoretical, provider risk beyond the obvious rate-limit burst: Graph's
+ * token cache (packages/mailer/src/adapters/graph.ts) is a plain `this.token` field with no
+ * in-flight-request de-duplication, so N fully-concurrent sends before the first one resolves
+ * means N concurrent OAuth token requests, not one reused token. */
+async function sendAllSettledBounded(
+  mailer: MailerAdapter,
+  messages: MailMessage[],
+  concurrency: number,
+): Promise<Array<PromiseSettledResult<SendResult>>> {
+  const results = new Map<number, PromiseSettledResult<SendResult>>();
+  let next = 0;
+  async function worker(): Promise<void> {
+    for (let index = next++; index < messages.length; index = next++) {
+      const message = messages.at(index)!;
+      try {
+        results.set(index, { status: "fulfilled", value: await mailer.send(message) });
+      } catch (reason) {
+        results.set(index, { status: "rejected", reason });
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, messages.length) }, worker));
+  return Array.from({ length: messages.length }, (_, index) => results.get(index)!);
+}
 
 export interface EmailChannelOptions {
   /**
@@ -168,14 +202,15 @@ export class EmailChannel implements NotificationChannel {
         html,
       }));
 
-      // Promise.allSettled, not Promise.all: SmtpAdapter (and Power Automate) deliberately
-      // rethrow MailDestinationError for an SSRF-blocked/DNS-rebound destination (so ticket
-      // send/resend can map it to a distinct HTTP status) - a genuine exception to the
-      // MailerAdapter contract's "does not throw" rule. Promise.all's fail-fast semantics would
-      // let one recipient's throw discard every OTHER recipient's already-settled result;
-      // allSettled keeps every outcome regardless. No timeout race here - the whole method is
-      // already bounded by send()'s single outer deadline (see EMAIL_SEND_TIMEOUT_MS).
-      const settled = await Promise.allSettled(messages.map((message) => mailer.send(message)));
+      // Bounded concurrency (EMAIL_SEND_CONCURRENCY), Promise.allSettled result shape: SmtpAdapter
+      // (and Power Automate) deliberately rethrow MailDestinationError for an SSRF-blocked/
+      // DNS-rebound destination (so ticket send/resend can map it to a distinct HTTP status) - a
+      // genuine exception to the MailerAdapter contract's "does not throw" rule, so a fail-fast
+      // Promise.all would let one recipient's throw discard every OTHER recipient's already-
+      // settled result; sendAllSettledBounded's own try/catch keeps every outcome regardless. No
+      // timeout race here - the whole method is already bounded by send()'s single outer deadline
+      // (see EMAIL_SEND_TIMEOUT_MS).
+      const settled = await sendAllSettledBounded(mailer, messages, EMAIL_SEND_CONCURRENCY);
 
       let failedCount = 0;
       let firstErrorDetail: string | undefined;

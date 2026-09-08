@@ -239,6 +239,23 @@ describe("WebhookChannel", () => {
     expect(result).toEqual({ ok: true });
   });
 
+  it("resolves the bare hostname 'localhost' to a real numeric loopback address, not the literal string - createPinnedDispatcher's lookup callback needs a real IP to connect to", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(
+      settingsWith("http://localhost:9000/hook"),
+    );
+    withPinnedFetch.mockImplementation(async (_url, _hostname, records, _init, handler) => {
+      expect(records).toEqual([{ address: "127.0.0.1", family: 4 }]);
+      return handler(mockResponse(200));
+    });
+    const channel = new WebhookChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, []);
+
+    expect(result).toEqual({ ok: true });
+    expect(resolveSafeHostname).not.toHaveBeenCalled();
+  });
+
   it("sanitizes a generic error from a non-SSRF failure (e.g. DNS resolution) without throwing", async () => {
     const db = createStubDb();
     db.notificationSettings.findUnique.mockResolvedValue(
