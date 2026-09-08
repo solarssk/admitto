@@ -67,6 +67,14 @@ function formatDispatchError(err: unknown): string {
  * statement handles both the fresh-row and stale-row-reclaim cases natively in Postgres, rather
  * than a `create()` that deliberately relies on catching a P2002 unique-constraint violation as
  * normal control flow - `ON CONFLICT` never raises an error on conflict at all.
+ *
+ * `id = EXCLUDED.id` in the DO UPDATE branch is load-bearing, not decorative: Postgres only
+ * touches columns actually listed in SET, so without it a stale-row reclaim would return the
+ * SAME id the previous (possibly still in-flight) claimant already holds - defeating
+ * releaseThrottleSlot's id-based matching below, since a delete-by-id could then match a row a
+ * different, later claimant now legitimately owns. `EXCLUDED` refers to the row proposed by this
+ * statement's own VALUES clause, so every successful claim - fresh insert or reclaim alike - gets
+ * a freshly generated id distinct from whatever the previous claimant is holding.
  */
 async function claimThrottleSlot(
   db: Db,
@@ -80,7 +88,7 @@ async function claimThrottleSlot(
     INSERT INTO "NotificationThrottle" (id, event_type, dedupe_key, last_sent_at)
     VALUES (gen_random_uuid()::text, ${eventType}, ${dedupeKey}, ${now})
     ON CONFLICT (event_type, dedupe_key)
-    DO UPDATE SET last_sent_at = ${now}
+    DO UPDATE SET last_sent_at = ${now}, id = EXCLUDED.id
     WHERE "NotificationThrottle".last_sent_at < ${cutoff}
     RETURNING id
   `;
@@ -166,10 +174,15 @@ async function readOrgSettings(
   return { disabledTypes };
 }
 
-/** Resolves the audience, or logs the appropriate skip/failure reason and returns null when
- * there's nobody to notify - a "self" type with no valid target is a failed dispatch (prompt 86
- * §3: never trust the call site's targetUserId blindly), anything else (e.g. zero active
- * org-staff) is a quieter skip. */
+/** Resolves the audience. Only "self" with no valid target is treated as a dispatch failure that
+ * skips everything (prompt 86 §3: never trust the call site's targetUserId blindly - there is no
+ * one this personal notification could legitimately be for). For every other audience, an empty
+ * result is returned as-is, NOT treated as "nothing to do": WebhookChannel is a team-wide resource
+ * that never depends on candidates (channel.ts) - org-staff resolving to zero active admins is
+ * exactly when that out-of-band channel matters most (e.g. the sole admin who'd normally get an
+ * in-app/email alert was just deactivated as part of the incident being reported), so dispatch
+ * must still proceed with an empty candidate list rather than short-circuiting before webhook (or
+ * a configured extra_email_recipients distro) ever gets a chance to fire. */
 async function resolveCandidatesOrLogSkip(
   db: Db,
   type: string,
@@ -180,20 +193,14 @@ async function resolveCandidatesOrLogSkip(
     organizationId: event.organizationId,
     targetUserId: event.targetUserId,
   });
-  if (candidates.length > 0) return candidates;
+  if (candidates.length > 0 || typeDef.audience !== "self") return candidates;
 
-  if (typeDef.audience === "self") {
-    await writeDispatchAuditLog(
-      db,
-      "notification.dispatch.failed",
-      { notification_type: type, reason: "self_target_invalid" },
-      event.targetUserId,
-    );
-  } else {
-    await writeDispatchAuditLog(db, "notification.dispatch.skipped_empty_audience", {
-      notification_type: type,
-    });
-  }
+  await writeDispatchAuditLog(
+    db,
+    "notification.dispatch.failed",
+    { notification_type: type, reason: "self_target_invalid" },
+    event.targetUserId,
+  );
   return null;
 }
 
@@ -253,9 +260,23 @@ async function dispatchToChannels(
   };
 
   const pending: Array<Promise<void>> = [];
+  // Every shipped channel's send() is documented, and today verified, to never throw - but
+  // nothing in the type system enforces that for a future or custom channel (DispatchDeps lets a
+  // caller inject an arbitrary NotificationChannel). Without this .catch, one channel violating
+  // that contract would reject the Promise.all below and silently discard every OTHER channel's
+  // already-recorded outcome, including a real delivery a sibling channel's .then(record(...))
+  // already ran.
+  const dispatch = (channel: string, promise: Promise<NotificationSendResult>): void => {
+    pending.push(
+      promise.then(
+        (result) => record(channel, result),
+        (err) => record(channel, { ok: false, error: formatDispatchError(err) }),
+      ),
+    );
+  };
 
   if (typeDef.availableChannels.includes("webhook")) {
-    pending.push(webhookChannel.send(dispatched, []).then((result) => record("webhook", result)));
+    dispatch("webhook", webhookChannel.send(dispatched, []));
   }
 
   let recipients: { emailRecipients: string[]; inAppRecipients: string[] } | null = null;
@@ -275,10 +296,10 @@ async function dispatchToChannels(
       typeDef.availableChannels.includes("email") &&
       (emailRecipients.length > 0 || includeExtraRecipients)
     ) {
-      pending.push(emailChannel.send(dispatched, emailRecipients).then((result) => record("email", result)));
+      dispatch("email", emailChannel.send(dispatched, emailRecipients));
     }
     if (typeDef.availableChannels.includes("in_app") && inAppRecipients.length > 0) {
-      pending.push(inAppChannel.send(dispatched, inAppRecipients).then((result) => record("in_app", result)));
+      dispatch("in_app", inAppChannel.send(dispatched, inAppRecipients));
     }
   }
 

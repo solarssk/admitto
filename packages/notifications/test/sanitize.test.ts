@@ -44,4 +44,35 @@ describe("sanitizeNotificationMetadata", () => {
     expect(recipients.join(" ")).not.toContain("array-leak@example.com");
     expect(recipients.join(" ")).not.toContain("second@example.com");
   });
+
+  it("converts a Date to its ISO string instead of {} - Object.entries(new Date()) is always empty", () => {
+    const when = new Date("2026-01-15T10:30:00.000Z");
+    const result = sanitizeNotificationMetadata({ occurredAt: when });
+    expect(result!.occurredAt).toBe("2026-01-15T10:30:00.000Z");
+  });
+
+  it("converts an Error to its sanitized message instead of {} - Object.entries(new Error()) is always empty", () => {
+    const result = sanitizeNotificationMetadata({ cause: new Error("db said no") });
+    expect(result!.cause).toBe("db said no");
+  });
+
+  it("sanitizes an email-shaped Error message the same way a plain string would be", () => {
+    const result = sanitizeNotificationMetadata({ cause: new Error("failed for leak@example.com") });
+    expect(result!.cause).not.toContain("leak@example.com");
+  });
+
+  it("falls back to a sanitized String() for any other non-plain object, instead of silently discarding it as {}", () => {
+    const result = sanitizeNotificationMetadata({ pattern: /^admin-/ });
+    expect(result!.pattern).toBe("/^admin-/");
+  });
+
+  it("still recurses into a genuinely plain object nested next to a Date/Error sibling", () => {
+    const result = sanitizeNotificationMetadata({
+      occurredAt: new Date("2026-01-15T10:30:00.000Z"),
+      account: { email: "nested-leak@example.com" },
+    });
+    expect(result!.occurredAt).toBe("2026-01-15T10:30:00.000Z");
+    const account = result!.account as { email: string };
+    expect(account.email).not.toContain("nested-leak@example.com");
+  });
 });

@@ -100,6 +100,16 @@ describe("notify()", () => {
     expect(email.send).toHaveBeenCalled();
   });
 
+  it("assigns a fresh id on every successful claim, including a stale-row reclaim - a unit test can't exercise real Postgres ON CONFLICT semantics, so this guards the SQL text itself against an accidental regression of the id = EXCLUDED.id fix", async () => {
+    stubHappyPath(db);
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } });
+
+    const [strings] = db.$queryRaw.mock.calls[0] as [TemplateStringsArray];
+    const sql = strings.join("");
+    expect(sql).toContain("id = EXCLUDED.id");
+  });
+
   it("builds the throttle dedupe key from organizationId + event.dedupeKey, not organizationId alone", async () => {
     stubHappyPath(db);
 
@@ -123,34 +133,52 @@ describe("notify()", () => {
     expect(calledDedupeKey).toBe(`${ORG_ID}:org`);
   });
 
-  it("skips with skipped_empty_audience when org-staff resolves to zero active admins", async () => {
+  it("still attempts the audience-independent webhook (and a configured team distro email) even when org-staff resolves to zero active admins", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
     queryRawClaims(db, true);
     db.roleAssignment.findMany.mockResolvedValue([]);
-    const email = stubChannel();
+    // Mirrors the real EmailChannel/WebhookChannel's own noop-on-nothing-to-send behavior -
+    // recipientUserIds is empty (no candidates), but both are still attempted.
+    const email: NotificationChannel = {
+      channel: "email",
+      send: vi.fn(async (_event, recipientUserIds: string[]) =>
+        recipientUserIds.length === 0 ? { ok: true, noop: true } : { ok: true },
+      ),
+    };
+    const webhook = stubChannel();
 
-    await notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email } });
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email, webhook } });
 
-    expect(email.send).not.toHaveBeenCalled();
+    expect(email.send).toHaveBeenCalledWith(expect.anything(), []);
+    expect(webhook.send).toHaveBeenCalled();
     expect(db.securityAuditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          event_type: "notification.dispatch.skipped_empty_audience",
+          event_type: "notification.dispatch.sent",
+          metadata: expect.objectContaining({ channels_sent: ["webhook"] }),
         }),
       }),
     );
+    expect(db.notificationThrottle.deleteMany).not.toHaveBeenCalled();
   });
 
-  it("releases the throttle claim when the audience resolves to nobody, so a later real occurrence isn't silently suppressed", async () => {
+  it("releases the throttle claim when the audience resolves to nobody AND every channel is a legitimate no-op, so a later real occurrence isn't silently suppressed", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
     queryRawClaims(db, true);
     db.roleAssignment.findMany.mockResolvedValue([]);
 
-    await notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } });
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email: stubChannel({ ok: true, noop: true }), webhook: stubChannel({ ok: true, noop: true }) },
+    });
 
     expect(db.notificationThrottle.deleteMany).toHaveBeenCalledWith({
       where: { event_type: TYPE, dedupe_key: `${ORG_ID}:org`, id: "throttle-1" },
     });
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ event_type: "notification.dispatch.skipped_no_recipients" }),
+      }),
+    );
   });
 
   it("sends through every applicable channel and writes a sent audit row on full success", async () => {
@@ -374,12 +402,42 @@ describe("notify()", () => {
     await notifyPromise;
   });
 
+  it("keeps a sibling channel's already-recorded success even when another channel rejects instead of resolving (violating its own 'never throws' contract)", async () => {
+    stubHappyPath(db);
+    const webhook = stubChannel(); // resolves fine, should still count as delivered
+    const email: NotificationChannel = {
+      channel: "email",
+      send: vi.fn().mockRejectedValue(new Error("adapter bug: rejected instead of resolving")),
+    };
+
+    await expect(
+      notify(db as unknown as PrismaClient, TYPE, EVENT, {
+        channels: { webhook, email, in_app: stubChannel() },
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(db.notificationThrottle.deleteMany).not.toHaveBeenCalled();
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event_type: "notification.dispatch.failed",
+          metadata: expect.objectContaining({
+            channels_sent: expect.arrayContaining(["webhook"]),
+            failures: expect.arrayContaining([{ channel: "email", error: expect.any(String) }]),
+          }),
+        }),
+      }),
+    );
+  });
+
   it("releases exactly the throttle row this attempt claimed, threading claimThrottleSlot's returned id through to the delete filter", async () => {
     stubHappyPath(db);
     db.$queryRaw.mockResolvedValue([{ id: "row-xyz-42" }]);
-    db.roleAssignment.findMany.mockResolvedValue([]); // -> empty audience -> attempts a release
+    db.roleAssignment.findMany.mockResolvedValue([]); // -> empty audience, and every channel noops -> a release
 
-    await notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } });
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email: stubChannel({ ok: true, noop: true }) },
+    });
 
     expect(db.notificationThrottle.deleteMany).toHaveBeenCalledWith({
       where: { event_type: TYPE, dedupe_key: `${ORG_ID}:org`, id: "row-xyz-42" },
@@ -438,22 +496,28 @@ describe("notify()", () => {
 
   it("does not throw when the release matches nothing (deleteMany resolves count: 0, e.g. a later claim already superseded this row)", async () => {
     stubHappyPath(db);
-    db.roleAssignment.findMany.mockResolvedValue([]); // -> empty audience -> attempts a release
+    db.roleAssignment.findMany.mockResolvedValue([]); // -> empty audience, every channel noops -> a release
     db.notificationThrottle.deleteMany.mockResolvedValue({ count: 0 });
 
     await expect(
-      notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } }),
+      notify(db as unknown as PrismaClient, TYPE, EVENT, {
+        channels: { email: stubChannel({ ok: true, noop: true }) },
+      }),
     ).resolves.toBeUndefined();
+    expect(db.notificationThrottle.deleteMany).toHaveBeenCalled();
   });
 
   it("does not throw when the release fails with a real (non-P2025) error", async () => {
     stubHappyPath(db);
-    db.roleAssignment.findMany.mockResolvedValue([]); // -> empty audience -> attempts a release
+    db.roleAssignment.findMany.mockResolvedValue([]); // -> empty audience, every channel noops -> a release
     db.notificationThrottle.deleteMany.mockRejectedValue(new Error("connection reset"));
 
     await expect(
-      notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } }),
+      notify(db as unknown as PrismaClient, TYPE, EVENT, {
+        channels: { email: stubChannel({ ok: true, noop: true }) },
+      }),
     ).resolves.toBeUndefined();
+    expect(db.notificationThrottle.deleteMany).toHaveBeenCalled();
   });
 
   it("sanitizes title/body before any channel sees them", async () => {

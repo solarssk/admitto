@@ -8,6 +8,7 @@ import {
 import { closeMailer, createMailer, type MailMessage } from "@admitto/mailer";
 import { resolveMailConfigForOrg } from "@admitto/mailer-config";
 import { sanitizeDeliveryError } from "@admitto/mail-delivery";
+import { awaitWithAbortSignal } from "@admitto/shared/ssrf-guard";
 import type { NotificationChannel, NotificationSendResult } from "../channel.js";
 import type { DispatchedNotification } from "../types.js";
 import { SEVERITY_COLOR, SEVERITY_LABEL, SYSTEM_NOTIFICATION_EMAIL_MJML } from "./emailTemplate.js";
@@ -18,6 +19,13 @@ type Db = PrismaClient;
 const SETTINGS_NOTIFICATIONS_PATH = "/admin/settings/notifications";
 const GENERIC_SEND_FAILED = "Send failed.";
 
+/** Bounds the mailer round-trip, same value/pattern as WebhookChannel's WEBHOOK_SEND_TIMEOUT_MS.
+ * packages/mailer's Graph/Power Automate adapters put no bound on their own outbound sendMail
+ * call (only Graph's token fetch has a timeout), so without this a stalled provider could hang
+ * this channel - and therefore dispatcher.ts's notify() as a whole (its audit-log write and
+ * throttle keep/release decision both wait on every channel settling) - indefinitely. */
+export const EMAIL_SEND_TIMEOUT_MS = 15_000;
+
 export interface EmailChannelOptions {
   /**
    * Whether to also send to NotificationSettings.extra_email_recipients for this org. Only true
@@ -27,6 +35,7 @@ export interface EmailChannelOptions {
    */
   includeExtraRecipients?: boolean;
   env?: NodeJS.ProcessEnv;
+  timeoutMs?: number;
 }
 
 type PlaceholderValue = { value: string; attribute: boolean };
@@ -123,21 +132,47 @@ export class EmailChannel implements NotificationChannel {
           html,
         }));
 
-        const results = await Promise.all(messages.map((message) => mailer.send(message)));
-        const failedResults = results.filter((r) => r.status === "failed" || r.status === "rejected");
-        if (failedResults.length === 0) return { ok: true };
+        // Promise.allSettled, not Promise.all: SmtpAdapter (and Power Automate) deliberately
+        // rethrow MailDestinationError for an SSRF-blocked/DNS-rebound destination (so ticket
+        // send/resend can map it to a distinct HTTP status) - a genuine exception to the
+        // MailerAdapter contract's "does not throw" rule. Promise.all's fail-fast semantics would
+        // let one recipient's throw discard every OTHER recipient's already-settled result;
+        // allSettled keeps every outcome regardless. Bounded by EMAIL_SEND_TIMEOUT_MS - see its
+        // own doc comment for why. Promise.allSettled itself never rejects, and internally attaches
+        // a handler to every individual send() promise, so losing this race leaves nothing
+        // unhandled in the background.
+        const settled = await awaitWithAbortSignal(
+          Promise.allSettled(messages.map((message) => mailer.send(message))),
+          AbortSignal.timeout(this.options.timeoutMs ?? EMAIL_SEND_TIMEOUT_MS),
+        );
 
-        const detail = sanitizeDeliveryError(failedResults[0]!.error) ?? GENERIC_SEND_FAILED;
-        if (failedResults.length === results.length) {
+        let failedCount = 0;
+        let firstErrorDetail: string | undefined;
+        for (const outcome of settled) {
+          if (outcome.status === "rejected") {
+            failedCount++;
+            const message = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
+            firstErrorDetail ??= sanitizeDeliveryError(message) ?? GENERIC_SEND_FAILED;
+          } else if (outcome.value.status === "failed" || outcome.value.status === "rejected") {
+            failedCount++;
+            firstErrorDetail ??= sanitizeDeliveryError(outcome.value.error) ?? GENERIC_SEND_FAILED;
+          }
+        }
+
+        if (failedCount === 0) return { ok: true };
+        if (failedCount === settled.length) {
           // Nobody got it - a clean failure, no partial delivery to protect from a re-send.
-          return { ok: false, error: detail };
+          return { ok: false, error: firstErrorDetail ?? GENERIC_SEND_FAILED };
         }
         // Some (not all) addresses failed - still a real, partial delivery. `ok: true` so
         // dispatcher.ts keeps the throttle claim (the recipients who already got it must not be
         // re-sent to on the next occurrence), `error` set so the incomplete delivery is still
         // recorded in the audit trail rather than silently looking like a clean success. Recipient
         // counts only, never addresses, in the message (AGENTS.md "no PII in logs").
-        return { ok: true, error: `${failedResults.length}/${results.length} recipients failed: ${detail}` };
+        return {
+          ok: true,
+          error: `${failedCount}/${settled.length} recipients failed: ${firstErrorDetail ?? GENERIC_SEND_FAILED}`,
+        };
       } finally {
         await closeMailer(mailer);
       }

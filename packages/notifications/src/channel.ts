@@ -1,12 +1,15 @@
 import type { DispatchedNotification } from "./types.js";
 
 export interface NotificationSendResult {
-  /** True when at least one recipient/target received the notification through this channel.
-   * For a channel that fans out to multiple addresses (EmailChannel), `ok: true` with `error`
-   * also set means a partial send - some but not all recipients got it - not a clean success:
-   * dispatcher.ts's record() treats that combination as both a delivery (keeps the throttle
-   * claim, since re-sending would spam the recipients who already got it) and a failure worth
-   * auditing (the incomplete delivery still needs to be visible). */
+  /** Not itself proof of delivery - it only rules out a total failure. `ok: true` covers THREE
+   * distinct cases, disambiguated by the other two fields below: a clean send (no `error`, no
+   * `noop`); a "nothing to do" success where zero recipients/targets were even attempted (see
+   * `noop`); and, for a channel that fans out to multiple addresses (EmailChannel), a partial
+   * send where some but not all recipients got it (`error` set, `noop` unset) - dispatcher.ts's
+   * record() treats that last combination as both a delivery (keeps the throttle claim, since
+   * re-sending would spam the recipients who already got it) and a failure worth auditing (the
+   * incomplete delivery still needs to be visible). Only `ok: true` with BOTH `noop` and `error`
+   * unset means every intended recipient actually received it. */
   ok: boolean;
   /** Human-readable, already-sanitized failure/warning reason (no secrets/URLs/tokens/PII) - safe
    * to store in SecurityAuditLog.metadata. Omitted on a clean, complete success. */

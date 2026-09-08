@@ -130,6 +130,55 @@ describe("EmailChannel", () => {
     expect(result.error).not.toContain("b@example.com");
   });
 
+  it("preserves a sibling recipient's already-successful send when another recipient's mailer.send() rejects (e.g. SmtpAdapter's deliberate MailDestinationError rethrow), instead of Promise.all discarding it via fail-fast", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }, { email: "b@example.com" }]);
+    send
+      .mockResolvedValueOnce({ status: "sent", provider: "smtp" })
+      .mockRejectedValueOnce(new Error("destination blocked: DNS rebind detected"));
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, ["u-a", "u-b"]);
+
+    expect(result.ok).toBe(true);
+    expect(result.error).toContain("1/2 recipients failed");
+  });
+
+  it("reports a clean failure (not partial) when every recipient's send rejects", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }, { email: "b@example.com" }]);
+    send.mockRejectedValue(new Error("destination blocked: DNS rebind detected"));
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, ["u-a", "u-b"]);
+
+    expect(result).toEqual({ ok: false, error: "destination blocked: DNS rebind detected" });
+  });
+
+  it("stringifies a non-Error rejection reason before sanitizing it", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    send.mockRejectedValue("not an Error instance");
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, ["u-1"]);
+
+    expect(result).toEqual({ ok: false, error: "not an Error instance" });
+  });
+
+  it("bounds the mailer round-trip and returns a failure instead of hanging when it never settles", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    send.mockImplementation(() => new Promise(() => undefined)); // never resolves/rejects
+    const channel = new EmailChannel(db as unknown as PrismaClient, { timeoutMs: 20 });
+
+    const result = await channel.send(EVENT, ["u-1"]);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBeTruthy();
+    expect(closeMailer).toHaveBeenCalledTimes(1);
+  });
+
   it("catches an unexpected throw (e.g. mail config resolution failure) and returns a sanitized failure", async () => {
     resolveMailConfigForOrg.mockRejectedValue(new Error("Cannot resolve mail provider"));
     const db = createStubDb();
