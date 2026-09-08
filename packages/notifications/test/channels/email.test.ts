@@ -55,7 +55,10 @@ describe("EmailChannel", () => {
     expect(result).toEqual({ ok: true });
     expect(send).toHaveBeenCalledTimes(2);
     const messages = send.mock.calls.map(([message]) => message);
-    expect(messages.map((m) => m.to).sort()).toEqual(["a@example.com", "b@example.com"]);
+    expect(messages.map((m) => m.to).sort((a, b) => a.localeCompare(b))).toEqual([
+      "a@example.com",
+      "b@example.com",
+    ]);
     expect(messages[0].subject).toBe(`[Admitto] ${EVENT.title}`);
     expect(messages[0].html).toContain(EVENT.title);
     expect(messages[0].html).toContain(EVENT.body);

@@ -28,7 +28,7 @@ describe("resolveAudienceCandidates", () => {
         organizationId: ORG_ID,
       });
 
-      expect(candidates.sort()).toEqual(["u-admin", "u-super"]);
+      expect(candidates.sort((a, b) => a.localeCompare(b))).toEqual(["u-admin", "u-super"]);
       expect(db.roleAssignment.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {

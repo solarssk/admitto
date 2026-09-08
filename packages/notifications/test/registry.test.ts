@@ -10,7 +10,8 @@ const EXPECTED_TYPES = [
 
 describe("NOTIFICATION_TYPES", () => {
   it("registers exactly the 4 foundation org-staff types", () => {
-    expect(Object.keys(NOTIFICATION_TYPES).sort()).toEqual([...EXPECTED_TYPES].sort());
+    const compare = (a: string, b: string) => a.localeCompare(b);
+    expect(Object.keys(NOTIFICATION_TYPES).sort(compare)).toEqual([...EXPECTED_TYPES].sort(compare));
   });
 
   it.each(EXPECTED_TYPES)("%s is org-staff-audience, fully configurable, all 3 channels", (type) => {
@@ -18,7 +19,11 @@ describe("NOTIFICATION_TYPES", () => {
     expect(def.audience).toBe("org-staff");
     expect(def.userConfigurable).toBe(true);
     expect(def.orgDisableable).toBe(true);
-    expect(def.availableChannels.sort()).toEqual(["email", "in_app", "webhook"]);
+    expect(def.availableChannels.sort((a, b) => a.localeCompare(b))).toEqual([
+      "email",
+      "in_app",
+      "webhook",
+    ]);
     expect(["info", "warn", "error"]).toContain(def.defaultSeverity);
     expect(def.label.length).toBeGreaterThan(0);
   });
