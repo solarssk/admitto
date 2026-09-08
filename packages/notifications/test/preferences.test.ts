@@ -12,7 +12,7 @@ describe("resolveEnabledChannels", () => {
 
     const enabled = await resolveEnabledChannels(db as unknown as PrismaClient, "user-1", TYPE);
 
-    expect(enabled.sort((a, b) => a.localeCompare(b))).toEqual(["email", "in_app"]);
+    expect(enabled.toSorted((a, b) => a.localeCompare(b))).toEqual(["email", "in_app"]);
     expect(db.notificationPreference.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -77,7 +77,7 @@ describe("resolveEnabledChannelsForUsers", () => {
     expect(db.notificationPreference.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ user_id: { in: ["user-1", "user-2"] } }) }),
     );
-    expect(result.get("user-1")!.sort((a, b) => a.localeCompare(b))).toEqual(["email", "in_app"]);
+    expect(result.get("user-1")!.toSorted((a, b) => a.localeCompare(b))).toEqual(["email", "in_app"]);
     expect(result.get("user-2")).toEqual(["in_app"]);
   });
 });

@@ -7,8 +7,8 @@ import { sanitizeNotificationMetadata, sanitizeNotificationText } from "./saniti
 import { EmailChannel } from "./channels/email.js";
 import { WebhookChannel } from "./channels/webhook.js";
 import { InAppChannel } from "./channels/inApp.js";
-import type { NotificationChannel } from "./channel.js";
-import type { DispatchedNotification, NotificationEvent } from "./types.js";
+import type { NotificationChannel, NotificationSendResult } from "./channel.js";
+import type { DispatchedNotification, NotificationEvent, NotificationTypeDef } from "./types.js";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -19,6 +19,11 @@ export interface DispatchDeps {
   channels?: Partial<Record<"email" | "webhook" | "in_app", NotificationChannel>>;
   now?: () => Date;
   env?: NodeJS.ProcessEnv;
+}
+
+interface DispatchOutcome {
+  channelsSent: string[];
+  failures: Array<{ channel: string; error?: string }>;
 }
 
 function reportUnknownType(type: string): void {
@@ -113,6 +118,119 @@ async function readOrgSettings(
   return { disabledTypes };
 }
 
+/** Resolves the audience, or logs the appropriate skip/failure reason and returns null when
+ * there's nobody to notify - a "self" type with no valid target is a failed dispatch (prompt 86
+ * §3: never trust the call site's targetUserId blindly), anything else (e.g. zero active
+ * org-staff) is a quieter skip. */
+async function resolveCandidatesOrLogSkip(
+  db: Db,
+  type: string,
+  typeDef: NotificationTypeDef,
+  event: NotificationEvent,
+): Promise<string[] | null> {
+  const candidates = await resolveAudienceCandidates(db, typeDef.audience, {
+    organizationId: event.organizationId,
+    targetUserId: event.targetUserId,
+  });
+  if (candidates.length > 0) return candidates;
+
+  if (typeDef.audience === "self") {
+    await writeDispatchAuditLog(
+      db,
+      "notification.dispatch.failed",
+      { notification_type: type, reason: "self_target_invalid" },
+      event.targetUserId,
+    );
+  } else {
+    await writeDispatchAuditLog(db, "notification.dispatch.skipped_empty_audience", {
+      notification_type: type,
+    });
+  }
+  return null;
+}
+
+function buildDispatchedNotification(
+  event: NotificationEvent,
+  type: string,
+  typeDef: NotificationTypeDef,
+): DispatchedNotification {
+  return {
+    ...event,
+    type,
+    severity: typeDef.defaultSeverity,
+    title: sanitizeNotificationText(event.title),
+    body: sanitizeNotificationText(event.body),
+    metadata: sanitizeNotificationMetadata(event.metadata),
+  };
+}
+
+/** Sends `dispatched` through every channel this type has available, resolving per-user
+ * email/in_app recipients from their preferences. Never throws - each channel's own result is
+ * recorded into channelsSent/failures, not propagated. */
+async function dispatchToChannels(
+  db: Db,
+  dispatched: DispatchedNotification,
+  typeDef: NotificationTypeDef,
+  candidates: string[],
+  type: string,
+  deps: DispatchDeps,
+): Promise<DispatchOutcome> {
+  // extra_email_recipients (org-staff-audience types only) is a team-wide address list
+  // independent of any individual admin's personal opt-out.
+  const includeExtraRecipients = typeDef.audience === "org-staff";
+  const emailChannel =
+    deps.channels?.email ?? new EmailChannel(db, { includeExtraRecipients, env: deps.env });
+  const webhookChannel = deps.channels?.webhook ?? new WebhookChannel(db, { env: deps.env });
+  const inAppChannel = deps.channels?.in_app ?? new InAppChannel(db);
+
+  const outcome: DispatchOutcome = { channelsSent: [], failures: [] };
+  const record = (channel: string, result: NotificationSendResult): void => {
+    if (result.ok) outcome.channelsSent.push(channel);
+    else outcome.failures.push({ channel, error: result.error });
+  };
+
+  if (typeDef.availableChannels.includes("webhook")) {
+    record("webhook", await webhookChannel.send(dispatched, []));
+  }
+
+  const { emailRecipients, inAppRecipients } = await splitRecipientsByChannel(
+    db,
+    candidates,
+    type,
+  );
+
+  // EmailChannel itself no-ops (ok: true) when there is nothing to send, so calling it whenever
+  // extras might apply is never wasted beyond one lightweight settings lookup.
+  if (
+    typeDef.availableChannels.includes("email") &&
+    (emailRecipients.length > 0 || includeExtraRecipients)
+  ) {
+    record("email", await emailChannel.send(dispatched, emailRecipients));
+  }
+
+  if (typeDef.availableChannels.includes("in_app") && inAppRecipients.length > 0) {
+    record("in_app", await inAppChannel.send(dispatched, inAppRecipients));
+  }
+
+  return outcome;
+}
+
+async function splitRecipientsByChannel(
+  db: Db,
+  candidates: string[],
+  type: string,
+): Promise<{ emailRecipients: string[]; inAppRecipients: string[] }> {
+  const enabledByUser = await resolveEnabledChannelsForUsers(db, candidates, type);
+  const emailRecipients: string[] = [];
+  const inAppRecipients: string[] = [];
+  for (const userId of candidates) {
+    const enabled = enabledByUser.get(userId) ?? [];
+    if (enabled.includes("email")) emailRecipients.push(userId);
+    if (enabled.includes("in_app")) inAppRecipients.push(userId);
+  }
+  return { emailRecipients, inAppRecipients };
+}
+
 /**
  * Dispatches one notification event through every applicable channel for its registered type.
  * Steps (ADR 0038/0044, prompt 86 §2.A, amended per the notifications-module-foundation plan):
@@ -153,80 +271,18 @@ export async function notify(
       return;
     }
 
-    const candidates = await resolveAudienceCandidates(db, typeDef.audience, {
-      organizationId: event.organizationId,
-      targetUserId: event.targetUserId,
-    });
-    if (candidates.length === 0) {
-      if (typeDef.audience === "self") {
-        await writeDispatchAuditLog(
-          db,
-          "notification.dispatch.failed",
-          { notification_type: type, reason: "self_target_invalid" },
-          event.targetUserId,
-        );
-      } else {
-        await writeDispatchAuditLog(db, "notification.dispatch.skipped_empty_audience", {
-          notification_type: type,
-        });
-      }
-      return;
-    }
+    const candidates = await resolveCandidatesOrLogSkip(db, type, typeDef, event);
+    if (!candidates) return;
 
-    const dispatched: DispatchedNotification = {
-      ...event,
+    const dispatched = buildDispatchedNotification(event, type, typeDef);
+    const { channelsSent, failures } = await dispatchToChannels(
+      db,
+      dispatched,
+      typeDef,
+      candidates,
       type,
-      severity: typeDef.defaultSeverity,
-      title: sanitizeNotificationText(event.title),
-      body: sanitizeNotificationText(event.body),
-      metadata: sanitizeNotificationMetadata(event.metadata),
-    };
-
-    // Team-wide extra_email_recipients (NotificationSettings) apply only to org-staff-audience
-    // types - never a self-audience personal receipt, which must not leak to a shared distro list.
-    const includeExtraRecipients = typeDef.audience === "org-staff";
-    const emailChannel =
-      deps.channels?.email ?? new EmailChannel(db, { includeExtraRecipients, env: deps.env });
-    const webhookChannel = deps.channels?.webhook ?? new WebhookChannel(db, { env: deps.env });
-    const inAppChannel = deps.channels?.in_app ?? new InAppChannel(db);
-
-    const channelsSent: string[] = [];
-    const failures: Array<{ channel: string; error?: string }> = [];
-
-    if (typeDef.availableChannels.includes("webhook")) {
-      const result = await webhookChannel.send(dispatched, []);
-      if (result.ok) channelsSent.push("webhook");
-      else failures.push({ channel: "webhook", error: result.error });
-    }
-
-    const enabledByUser = await resolveEnabledChannelsForUsers(db, candidates, type);
-    const emailRecipients: string[] = [];
-    const inAppRecipients: string[] = [];
-    for (const userId of candidates) {
-      const enabled = enabledByUser.get(userId) ?? [];
-      if (enabled.includes("email")) emailRecipients.push(userId);
-      if (enabled.includes("in_app")) inAppRecipients.push(userId);
-    }
-
-    // extra_email_recipients is a team-wide address list independent of any individual admin's
-    // personal opt-out: even if every org-staff candidate disabled email for themselves, a
-    // configured shared mailbox must still get the alert. EmailChannel itself no-ops (ok: true)
-    // when there is nothing to send, so calling it here is never wasted beyond one lightweight
-    // settings lookup.
-    if (
-      typeDef.availableChannels.includes("email") &&
-      (emailRecipients.length > 0 || includeExtraRecipients)
-    ) {
-      const result = await emailChannel.send(dispatched, emailRecipients);
-      if (result.ok) channelsSent.push("email");
-      else failures.push({ channel: "email", error: result.error });
-    }
-
-    if (typeDef.availableChannels.includes("in_app") && inAppRecipients.length > 0) {
-      const result = await inAppChannel.send(dispatched, inAppRecipients);
-      if (result.ok) channelsSent.push("in_app");
-      else failures.push({ channel: "in_app", error: result.error });
-    }
+      deps,
+    );
 
     if (failures.length > 0) {
       await writeDispatchAuditLog(db, "notification.dispatch.failed", {

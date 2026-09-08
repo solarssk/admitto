@@ -15,7 +15,9 @@ const EVENT: NotificationEvent = {
   body: "5 consecutive failed attempts on user@example.com.",
 };
 
-function stubChannel(result: { ok: boolean; error?: string } = { ok: true }) {
+const STUB_OK_RESULT: { ok: boolean; error?: string } = { ok: true };
+
+function stubChannel(result: { ok: boolean; error?: string } = STUB_OK_RESULT) {
   const send = vi.fn().mockResolvedValue(result);
   return { channel: "email" as const, send } satisfies NotificationChannel;
 }
