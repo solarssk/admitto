@@ -27,8 +27,21 @@ jobs:
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GUARD_PATTERNS: ${{ secrets.PII_DENYLIST }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
         run: |
           set -uo pipefail   # deliberately not -e: every exit code is handled explicitly below
+
+          # pull_request_target hands secrets to fork PRs too (unlike plain pull_request) - a
+          # public pass/fail result on a secret-backed comparison is an oracle: an outside
+          # contributor could open a fork PR with candidate values and use repeated pass/fail
+          # splits to reconstruct exactly what's in PII_DENYLIST, without the content ever being
+          # printed. Only same-repo branches can be scanned safely, since opening one requires
+          # write access this repo doesn't grant to strangers - this check runs first, before
+          # GUARD_PATTERNS is even read, so a fork PR's outcome never depends on its content.
+          if [ "${IS_FORK:-false}" = "true" ]; then
+            echo "::notice::Privacy guard: skipped for a fork-originated PR — requires manual maintainer review before merge."
+            exit 0
+          fi
 
           if [ -z "${GUARD_PATTERNS:-}" ]; then
             echo "::warning::PII_DENYLIST secret not set — skipping privacy guard check"
