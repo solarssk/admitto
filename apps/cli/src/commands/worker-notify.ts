@@ -6,6 +6,7 @@
  * optimization on top of the existing fixed-tick poll loop, never a correctness dependency.
  */
 import pg from "pg";
+import { DEFAULT_STATEMENT_TIMEOUT_MS } from "@admitto/db/adapter";
 
 const { Client } = pg;
 
@@ -28,7 +29,11 @@ function log(message: string): void {
  * Opens a dedicated LISTEN connection. Caller must `close()` on shutdown.
  */
 export async function openWorkerNotifyClient(connectionString: string): Promise<WorkerNotifyClient> {
-  const client = new Client({ connectionString, connectionTimeoutMillis: 5_000 });
+  const client = new Client({
+    connectionString,
+    connectionTimeoutMillis: 5_000,
+    statement_timeout: DEFAULT_STATEMENT_TIMEOUT_MS,
+  });
   let alive = true;
   // Latches a notification that arrives while nothing is awaiting waitForWakeOrTimeout
   // (e.g. a burst of inserts while the worker is mid-tick) so it isn't lost.

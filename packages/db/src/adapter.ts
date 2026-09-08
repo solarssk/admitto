@@ -7,6 +7,10 @@ import { PrismaPg } from '@prisma/adapter-pg';
  * export, retention) already chunks at 1,000-5,000 rows specifically to keep each round trip
  * short, so this is generous headroom above that, not a tight fit. Without it, a query stuck
  * behind a lock (e.g. a burst of concurrent writes) can run indefinitely instead of failing fast.
+ *
+ * Also imported directly (via the `@admitto/db/adapter` subpath) by the worker's two dedicated
+ * `pg.Client` connections (apps/cli/src/commands/worker-locks.ts, worker-notify.ts) - those never
+ * go through PrismaPg at all, so createPrismaAdapter's own default doesn't reach them.
  */
 export const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000;
 
