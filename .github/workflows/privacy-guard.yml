@@ -31,6 +31,11 @@ jobs:
         run: |
           set -uo pipefail   # deliberately not -e: every exit code is handled explicitly below
 
+          # Forced explicitly: under the C/POSIX locale, grep does not reliably match character
+          # classes or case-fold accented letters (e.g. Polish [oó]) — confirmed empirically on
+          # the local pre-push hook's grep. C.UTF-8 is present on ubuntu-latest by default.
+          export LC_ALL=C.UTF-8
+
           # pull_request_target hands secrets to fork PRs too (unlike plain pull_request) - a
           # public pass/fail result on a secret-backed comparison is an oracle: an outside
           # contributor could open a fork PR with candidate values and use repeated pass/fail
@@ -85,35 +90,42 @@ jobs:
           done < "$rx_file"
 
           # Diff via the API, not git: each entry's `patch` is the unified diff text for that
-          # file (omitted by GitHub for binary or very large files - a known, accepted gap). The
-          # API's patch never includes a "+++ b/..." file-header line (unlike raw `git diff` -
-          # each entry is already scoped to one file), so no header-line filter is needed or
-          # wanted here: filtering "^\+\+\+" would also discard a genuine added line whose own
-          # content starts with two plus signs (e.g. `++counter; // secret@example.com`).
-          api_output="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].patch // empty')"
+          # file (omitted by GitHub for binary or very large files - a known, accepted gap).
+          # `.filename` is prefixed with a marker so it can be pulled back out below - it's the
+          # file's new/current name (the destination name for a rename too), and matters just as
+          # much as the content: a new file whose own path leaks a value (e.g. an export literally
+          # named after someone's email) would otherwise sail through unscanned.
+          raw_scan="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[] | "FILENAME:" + .filename, (.patch // empty)')"
           api_rc=$?
           if [ "$api_rc" -ne 0 ]; then
             echo "::error::Privacy guard: failed to fetch the PR diff via the GitHub API (exit $api_rc). Failing closed rather than merging unscanned."
             exit 1
           fi
 
-          added_lines="$(printf '%s\n' "$api_output" | grep -E '^\+' || true)"
+          filenames="$(printf '%s\n' "$raw_scan" | grep '^FILENAME:' | sed 's/^FILENAME://')"
+          # exactly one leading "+" stripped - it's the diff marker, not part of the real content.
+          # An anchored pattern like `^value$` in the denylist would otherwise never match (every
+          # added line's actual first character is shifted one position by the marker), and a
+          # value whose own real content starts with "+" would be scanned with a synthetic extra
+          # one prepended.
+          added_lines="$(printf '%s\n' "$raw_scan" | grep -Ev '^FILENAME:' | grep -E '^\+' | sed 's/^+//')"
+          scan_targets="$(printf '%s\n%s\n' "$filenames" "$added_lines")"
 
-          if [ -z "$added_lines" ]; then
-            echo "Privacy guard: no added lines to scan."
+          if [ -z "$(printf '%s' "$scan_targets" | tr -d '[:space:]')" ]; then
+            echo "Privacy guard: nothing to scan (no changed filenames or added lines)."
             exit 0
           fi
 
           blocked=0
 
           if [ -s "$lit_file" ]; then
-            printf '%s\n' "$added_lines" | grep -Fqi -f "$lit_file"
+            printf '%s\n' "$scan_targets" | grep -Fqi -f "$lit_file"
             rc=$?
             { [ "$rc" -eq 0 ] || [ "$rc" -ge 2 ]; } && blocked=1
           fi
 
           if [ -s "$rx_file" ]; then
-            printf '%s\n' "$added_lines" | grep -Eqi -f "$rx_file"
+            printf '%s\n' "$scan_targets" | grep -Eqi -f "$rx_file"
             rc=$?
             { [ "$rc" -eq 0 ] || [ "$rc" -ge 2 ]; } && blocked=1
           fi
