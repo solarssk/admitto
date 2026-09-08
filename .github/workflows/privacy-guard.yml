@@ -52,6 +52,13 @@ jobs:
           grep -Ev '^[[:space:]]*(#.*)?$' "$rx_file" > "${rx_file}.clean" 2>/dev/null || true
           mv "${rx_file}.clean" "$rx_file"
 
+          # a secret that's non-empty but reduces to nothing usable (only comments/whitespace,
+          # or just the marker line) must not silently pass with zero patterns actually checked
+          if [ ! -s "$lit_file" ] && [ ! -s "$rx_file" ]; then
+            echo "::error::Privacy guard: PII_DENYLIST secret has no usable patterns after removing blank/comment lines. Fix the secret before this check can run."
+            exit 1
+          fi
+
           # validate every regex pattern compiles; never let a malformed pattern's grep error
           # (exit >=2) get silently swallowed into "no match"
           while IFS= read -r pat; do
@@ -65,9 +72,19 @@ jobs:
           done < "$rx_file"
 
           # Diff via the API, not git: each entry's `patch` is the unified diff text for that
-          # file (omitted by GitHub for binary or very large files - a known, accepted gap).
-          added_lines="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].patch // empty' \
-            | grep -E '^\+' | grep -Ev '^\+\+\+')"
+          # file (omitted by GitHub for binary or very large files - a known, accepted gap). The
+          # API's patch never includes a "+++ b/..." file-header line (unlike raw `git diff` -
+          # each entry is already scoped to one file), so no header-line filter is needed or
+          # wanted here: filtering "^\+\+\+" would also discard a genuine added line whose own
+          # content starts with two plus signs (e.g. `++counter; // secret@example.com`).
+          api_output="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].patch // empty')"
+          api_rc=$?
+          if [ "$api_rc" -ne 0 ]; then
+            echo "::error::Privacy guard: failed to fetch the PR diff via the GitHub API (exit $api_rc). Failing closed rather than merging unscanned."
+            exit 1
+          fi
+
+          added_lines="$(printf '%s\n' "$api_output" | grep -E '^\+' || true)"
 
           if [ -z "$added_lines" ]; then
             echo "Privacy guard: no added lines to scan."
