@@ -1,0 +1,97 @@
+name: Privacy Guard
+
+# pull_request_target (not pull_request): the workflow definition used for this run is
+# always the one on the base branch, even for same-repo PRs. A PR that edits this file
+# cannot change the logic that scans its own diff or gains access to the secret through
+# a modified script. We never check out or execute anything from the PR head — only
+# `git diff` text between two known commit SHAs.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout base branch (trusted)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+
+      - name: Fetch PR head commit (data only, never executed)
+        run: git fetch --no-tags origin "${{ github.event.pull_request.head.sha }}"
+
+      - name: Scan diff for sensitive patterns
+        env:
+          GUARD_PATTERNS: ${{ secrets.PII_DENYLIST }}
+        run: |
+          set -uo pipefail   # deliberately not -e: every exit code is handled explicitly below
+
+          if [ -z "${GUARD_PATTERNS:-}" ]; then
+            echo "::warning::PII_DENYLIST secret not set — skipping privacy guard check"
+            exit 0
+          fi
+
+          raw_file="$(mktemp)"; lit_file="$(mktemp)"; rx_file="$(mktemp)"
+          trap 'rm -f "$raw_file" "$lit_file" "$rx_file"' EXIT
+          printf '%s\n' "$GUARD_PATTERNS" > "$raw_file"
+
+          # split into LITERAL (grep -F) and REGEX (grep -E) sections at the "___REGEX___" marker
+          awk -v lit="$lit_file" -v rx="$rx_file" '
+              /^___REGEX___[[:space:]]*$/ { mode=1; next }
+              mode==0 { print > lit; next }
+              { print > rx }
+          ' "$raw_file"
+
+          # drop blank/comment lines from both — an empty pattern in `grep -f` matches every line
+          grep -Ev '^[[:space:]]*(#.*)?$' "$lit_file" > "${lit_file}.clean" 2>/dev/null || true
+          mv "${lit_file}.clean" "$lit_file"
+          grep -Ev '^[[:space:]]*(#.*)?$' "$rx_file" > "${rx_file}.clean" 2>/dev/null || true
+          mv "${rx_file}.clean" "$rx_file"
+
+          # validate every regex pattern compiles; never let a malformed pattern's grep error
+          # (exit >=2) get silently swallowed into "no match"
+          while IFS= read -r pat; do
+            [ -z "$pat" ] && continue
+            printf '' | grep -Eq -- "$pat" 2>/dev/null
+            rc=$?
+            if [ "$rc" -ge 2 ]; then
+              echo "::error::Privacy guard: malformed regex pattern in PII_DENYLIST secret (content withheld). Fix the secret before this check can run."
+              exit 1
+            fi
+          done < "$rx_file"
+
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+
+          added_lines="$(git diff -U0 "$base_sha...$head_sha" -- . | grep -E '^\+' | grep -Ev '^\+\+\+')"
+
+          if [ -z "$added_lines" ]; then
+            echo "Privacy guard: no added lines to scan."
+            exit 0
+          fi
+
+          blocked=0
+
+          if [ -s "$lit_file" ]; then
+            printf '%s\n' "$added_lines" | grep -Fqi -f "$lit_file"
+            rc=$?
+            { [ "$rc" -eq 0 ] || [ "$rc" -ge 2 ]; } && blocked=1
+          fi
+
+          if [ -s "$rx_file" ]; then
+            printf '%s\n' "$added_lines" | grep -Eqi -f "$rx_file"
+            rc=$?
+            { [ "$rc" -eq 0 ] || [ "$rc" -ge 2 ]; } && blocked=1
+          fi
+
+          if [ "$blocked" -eq 1 ]; then
+            echo "::error::Privacy guard: potential sensitive data detected (or the scan itself failed) in this diff. Content is not shown here for safety — review your changes locally before merging."
+            exit 1
+          fi
+
+          echo "Privacy guard: no matches."
