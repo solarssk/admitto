@@ -9,7 +9,7 @@ import { createPrismaAdapter } from "../adapter.js";
  * shorter request/worker-path queries that share the app's singleton client) firing first and
  * masking the intended process-level fail-safe with a Postgres-side error instead.
  */
-const BACKFILL_STATEMENT_TIMEOUT_MS = 110_000;
+export const BACKFILL_STATEMENT_TIMEOUT_MS = 110_000;
 
 /** Builds a standalone PrismaClient for a backfill CLI script - never the app's shared
  * singleton (packages/db/src/index.ts), whose statement timeout is tuned for OLTP queries. */
