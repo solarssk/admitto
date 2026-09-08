@@ -12,36 +12,36 @@ export function sanitizeNotificationText(value: string): string {
   return sanitizeDeliveryError(value) ?? "";
 }
 
-function isPlainObject(value: object): value is Record<string, unknown> {
-  const proto: unknown = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null;
-}
-
 /** Recursively sanitizes every string in a JSON-shaped value, at any depth - metadata is typed as
  * Record<string, unknown> precisely because call sites attach arbitrary structured context, and a
  * sensitive string nested inside an object or array must be redacted exactly like a top-level one
  * before it reaches a webhook payload or an in-app Notification row.
  *
- * A Date/Error (or any other non-plain object - RegExp, Map, a class instance) is deliberately
- * NOT treated as a plain dictionary: Object.entries(new Date()) and Object.entries(new Error())
- * both return [] (their real state lives in non-enumerable internal slots), so recursing into
- * them the same way as a plain object would silently rewrite a real value into an empty {} with
- * no error or signal - and every channel's metadata rendering does `String(value)` per entry, so
- * that {} becomes the literal text "[object Object]" in a delivered security alert. Date/Error get
- * a useful, specific representation; anything else exotic falls back to a sanitized String(value)
- * rather than losing the value entirely. */
+ * Date/Error/Map/Set/RegExp each get their own explicit, lossless-ish conversion instead of
+ * falling into the generic object branch: Object.entries(new Date()) and Object.entries(new
+ * Error()) both return [] (their real state lives in non-enumerable internal slots) - same for
+ * Map/Set, whose entries live in an internal slot rather than own enumerable properties - so
+ * recursing into any of them the same way as a plain object would silently rewrite a real value
+ * into an empty {} with no error or signal, and every channel's metadata rendering does
+ * `String(value)` per entry, turning that {} into the literal text "[object Object]" in a
+ * delivered security alert. An ordinary class instance (not one of the five above) still goes
+ * through Object.entries like a plain object: unlike Date/Error/Map/Set, its real data - for any
+ * normal class using public fields - genuinely does live in its own enumerable properties, so
+ * treating it as a dictionary is correct, not lossy. */
 function sanitizeJsonValue(value: unknown): unknown {
   if (typeof value === "string") return sanitizeNotificationText(value);
   if (Array.isArray(value)) return value.map(sanitizeJsonValue);
   if (value instanceof Date) return value.toISOString();
   if (value instanceof Error) return sanitizeNotificationText(value.message);
+  if (value instanceof Map) {
+    return Object.fromEntries([...value].map(([key, v]) => [String(key), sanitizeJsonValue(v)]));
+  }
+  if (value instanceof Set) return [...value].map(sanitizeJsonValue);
+  if (value instanceof RegExp) return sanitizeNotificationText(value.source);
   if (value !== null && typeof value === "object") {
-    if (isPlainObject(value)) {
-      return Object.fromEntries(
-        Object.entries(value).map(([key, v]) => [key, sanitizeJsonValue(v)]),
-      );
-    }
-    return sanitizeNotificationText(String(value));
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, v]) => [key, sanitizeJsonValue(v)]),
+    );
   }
   return value;
 }

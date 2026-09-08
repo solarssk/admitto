@@ -61,9 +61,32 @@ describe("sanitizeNotificationMetadata", () => {
     expect(result!.cause).not.toContain("leak@example.com");
   });
 
-  it("falls back to a sanitized String() for any other non-plain object, instead of silently discarding it as {}", () => {
+  it("converts a RegExp to its sanitized source, instead of silently discarding it as {}", () => {
     const result = sanitizeNotificationMetadata({ pattern: /^admin-/ });
-    expect(result!.pattern).toBe("/^admin-/");
+    expect(result!.pattern).toBe("^admin-");
+  });
+
+  it("converts a Map to a plain object with sanitized string keys, instead of silently discarding it as {} (Object.entries(new Map()) is always empty)", () => {
+    const result = sanitizeNotificationMetadata({ counts: new Map([["admin", 3]]) });
+    expect(result!.counts).toEqual({ admin: 3 });
+  });
+
+  it("converts a Set to a sanitized array, instead of silently discarding it as {} (Object.entries(new Set()) is always empty)", () => {
+    const result = sanitizeNotificationMetadata({ roles: new Set(["admin", "leak@example.com"]) });
+    const roles = result!.roles as string[];
+    expect(roles[0]).toBe("admin");
+    expect(roles[1]).not.toContain("leak@example.com");
+  });
+
+  it("still recurses via Object.entries into an ordinary class instance, since its real data lives in own enumerable properties (unlike Date/Error/Map/Set/RegExp)", () => {
+    class IncidentContext {
+      userId = "u-1";
+      ip = "leak@example.com"; // deliberately email-shaped to prove it's still sanitized
+    }
+    const result = sanitizeNotificationMetadata({ context: new IncidentContext() });
+    const context = result!.context as { userId: string; ip: string };
+    expect(context.userId).toBe("u-1");
+    expect(context.ip).not.toContain("leak@example.com");
   });
 
   it("still recurses into a genuinely plain object nested next to a Date/Error sibling", () => {
