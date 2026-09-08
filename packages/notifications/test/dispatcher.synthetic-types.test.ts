@@ -98,6 +98,7 @@ describe("notify() with synthetic type shapes", () => {
         }),
       }),
     );
+    expect(db.notificationThrottle.delete).toHaveBeenCalled();
   });
 
   it("sends to a valid self-audience target", async () => {

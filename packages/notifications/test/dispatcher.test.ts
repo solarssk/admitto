@@ -146,6 +146,20 @@ describe("notify()", () => {
     );
   });
 
+  it("releases the throttle claim when the audience resolves to nobody, so a later real occurrence isn't silently suppressed", async () => {
+    db.notificationSettings.findUnique.mockResolvedValue(null);
+    db.notificationThrottle.create.mockResolvedValue({});
+    db.roleAssignment.findMany.mockResolvedValue([]);
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } });
+
+    expect(db.notificationThrottle.delete).toHaveBeenCalledWith({
+      where: {
+        event_type_dedupe_key: { event_type: TYPE, dedupe_key: `${ORG_ID}:org` },
+      },
+    });
+  });
+
   it("sends through every applicable channel and writes a sent audit row on full success", async () => {
     stubHappyPath(db);
     const email = stubChannel();
@@ -169,6 +183,7 @@ describe("notify()", () => {
         }),
       }),
     );
+    expect(db.notificationThrottle.delete).not.toHaveBeenCalled();
   });
 
   it("only sends to candidates whose per-user preference has that channel enabled", async () => {
@@ -255,6 +270,71 @@ describe("notify()", () => {
         }),
       }),
     );
+  });
+
+  it("releases the throttle claim when a channel fails, so a real later occurrence can still alert", async () => {
+    stubHappyPath(db);
+    const email = stubChannel({ ok: false, error: "Send failed." });
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email, webhook: stubChannel(), in_app: stubChannel() },
+    });
+
+    expect(db.notificationThrottle.delete).toHaveBeenCalledWith({
+      where: {
+        event_type_dedupe_key: { event_type: TYPE, dedupe_key: `${ORG_ID}:org` },
+      },
+    });
+  });
+
+  it("releases the throttle claim when an unexpected exception happens after the claim succeeded", async () => {
+    stubHappyPath(db);
+    db.roleAssignment.findMany.mockRejectedValue(new Error("connection reset"));
+
+    await expect(
+      notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } }),
+    ).resolves.toBeUndefined();
+
+    expect(db.notificationThrottle.delete).toHaveBeenCalledWith({
+      where: {
+        event_type_dedupe_key: { event_type: TYPE, dedupe_key: `${ORG_ID}:org` },
+      },
+    });
+  });
+
+  it("does not attempt to release the throttle when the exception happens before a claim was made", async () => {
+    db.notificationSettings.findUnique.mockRejectedValue(new Error("connection reset"));
+
+    await expect(
+      notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } }),
+    ).resolves.toBeUndefined();
+
+    expect(db.notificationThrottle.delete).not.toHaveBeenCalled();
+  });
+
+  it("does not throw when the release itself fails, and treats a concurrently-reclaimed row (P2025) as nothing to do", async () => {
+    stubHappyPath(db);
+    db.roleAssignment.findMany.mockResolvedValue([]); // -> empty audience -> attempts a release
+    db.notificationThrottle.delete.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError("Record to delete does not exist.", {
+        code: "P2025",
+        clientVersion: "test",
+      }),
+    );
+
+    await expect(
+      notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("does not throw when the release fails with a real (non-P2025) error", async () => {
+    stubHappyPath(db);
+    db.roleAssignment.findMany.mockResolvedValue([]); // -> empty audience -> attempts a release
+    db.notificationThrottle.delete.mockRejectedValue(new Error("connection reset"));
+
+    await expect(
+      notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } }),
+    ).resolves.toBeUndefined();
   });
 
   it("sanitizes title/body before any channel sees them", async () => {

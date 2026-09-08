@@ -86,6 +86,38 @@ async function claimThrottleSlot(
   return claimed.count === 1;
 }
 
+/**
+ * Releases a throttle slot claimed by claimThrottleSlot when the attempt it was guarding never
+ * actually delivered anything (a transient channel/DB failure, or an audience that resolved to
+ * nobody) - otherwise the claim's last_sent_at silently suppresses every later occurrence of the
+ * same incident for the rest of the window, even though nothing was ever communicated and there
+ * is no separate retry mechanism. Best-effort: a failure to release just means the window runs
+ * its normal course, never a reason to crash an already-in-progress dispatch.
+ */
+async function releaseThrottleSlot(
+  db: Db,
+  eventType: string,
+  dedupeKey: string,
+): Promise<void> {
+  try {
+    await db.notificationThrottle.delete({
+      where: { event_type_dedupe_key: { event_type: eventType, dedupe_key: dedupeKey } },
+    });
+  } catch (err) {
+    // P2025 (record not found): a concurrent claimant already reclaimed this row (see
+    // claimThrottleSlot's updateMany) - nothing left to release, not a real failure.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") return;
+    console.error(
+      JSON.stringify({
+        event: "notification_dispatch_throttle_release.failed",
+        dispatch_event_type: eventType,
+        error: formatDispatchError(err),
+        ts: new Date().toISOString(),
+      }),
+    );
+  }
+}
+
 async function writeDispatchAuditLog(
   db: Db,
   eventType: string,
@@ -256,6 +288,9 @@ export async function notify(
   event: NotificationEvent,
   deps: DispatchDeps = {},
 ): Promise<void> {
+  // Set once claimThrottleSlot succeeds - tracked here (not just inline) so the outer catch can
+  // also release on an unexpected mid-dispatch exception, not only the two known failure paths.
+  let claimedThrottleKey: string | null = null;
   try {
     const typeDef = getNotificationTypeDef(type);
     if (!typeDef) {
@@ -281,9 +316,13 @@ export async function notify(
       });
       return;
     }
+    claimedThrottleKey = throttleKey;
 
     const candidates = await resolveCandidatesOrLogSkip(db, type, typeDef, event);
-    if (!candidates) return;
+    if (!candidates) {
+      await releaseThrottleSlot(db, type, throttleKey);
+      return;
+    }
 
     const dispatched = buildDispatchedNotification(event, type, typeDef);
     const { channelsSent, failures } = await dispatchToChannels(
@@ -296,6 +335,7 @@ export async function notify(
     );
 
     if (failures.length > 0) {
+      await releaseThrottleSlot(db, type, throttleKey);
       await writeDispatchAuditLog(db, "notification.dispatch.failed", {
         notification_type: type,
         channels_sent: channelsSent,
@@ -309,6 +349,9 @@ export async function notify(
       channels_sent: channelsSent,
     });
   } catch (err) {
+    if (claimedThrottleKey) {
+      await releaseThrottleSlot(db, type, claimedThrottleKey);
+    }
     console.error(
       JSON.stringify({
         event: "notification_dispatch.unexpected_error",
