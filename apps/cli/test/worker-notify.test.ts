@@ -4,6 +4,7 @@ const query = vi.fn();
 const connect = vi.fn();
 const end = vi.fn();
 const listeners: Record<string, ((...args: unknown[]) => void)[]> = {};
+let lastClientConfig: Record<string, unknown> | undefined;
 
 vi.mock("pg", () => ({
   default: {
@@ -11,6 +12,9 @@ vi.mock("pg", () => ({
       query = query;
       connect = connect;
       end = end;
+      constructor(config: Record<string, unknown>) {
+        lastClientConfig = config;
+      }
       on(event: string, cb: (...args: unknown[]) => void) {
         (listeners[event] ??= []).push(cb);
       }
@@ -25,6 +29,7 @@ function emit(event: string, ...args: unknown[]) {
 const { openWorkerNotifyClient, WORKER_WAKE_CHANNEL } = await import(
   "../src/commands/worker-notify.js"
 );
+const { DEFAULT_STATEMENT_TIMEOUT_MS } = await import("@admitto/db/adapter");
 
 describe("openWorkerNotifyClient", () => {
   beforeEach(() => {
@@ -35,12 +40,18 @@ describe("openWorkerNotifyClient", () => {
     end.mockResolvedValue(undefined);
     query.mockResolvedValue(undefined);
     for (const key of Object.keys(listeners)) delete listeners[key];
+    lastClientConfig = undefined;
   });
 
   it("connects and issues LISTEN on the wake channel", async () => {
     await openWorkerNotifyClient("postgresql://example/db");
     expect(connect).toHaveBeenCalledOnce();
     expect(query).toHaveBeenCalledWith(`LISTEN ${WORKER_WAKE_CHANNEL}`);
+  });
+
+  it("bounds the LISTEN connection with a statement_timeout", async () => {
+    await openWorkerNotifyClient("postgresql://example/db");
+    expect(lastClientConfig).toMatchObject({ statement_timeout: DEFAULT_STATEMENT_TIMEOUT_MS });
   });
 
   it("resolves waitForWakeOrTimeout early when a notification arrives", async () => {

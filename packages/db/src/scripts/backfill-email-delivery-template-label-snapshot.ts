@@ -1,5 +1,7 @@
-import { prisma } from "../index.js";
+import { createBackfillPrismaClient } from "./backfillClient.js";
 import { backfillEmailDeliveryTemplateLabelSnapshot } from "../backfill-email-delivery-template-label-snapshot.js";
+
+const prisma = createBackfillPrismaClient();
 
 /** Deploy/CLI entrypoint: idempotent EmailDelivery.template_label_snapshot backfill after migrations. */
 async function main(): Promise<void> {
