@@ -1,7 +1,8 @@
-import type { Prisma, PrismaClient } from "@admitto/db";
+import type { PrismaClient } from "@admitto/db";
 import type { NotificationAudienceKey } from "./types.js";
 
-type Db = PrismaClient | Prisma.TransactionClient;
+// Never Prisma.TransactionClient - see the Db comment in ./dispatcher.ts.
+type Db = PrismaClient;
 
 /** Thrown by resolveAudienceCandidates for "event-staff" - reserved for a future event-day-ops
  * notification prompt; no registry entry uses this strategy yet. */

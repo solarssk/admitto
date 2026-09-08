@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@admitto/db";
+import type { PrismaClient } from "@admitto/db";
 import {
   compileTemplate,
   escapeHtmlAttribute,
@@ -12,7 +12,8 @@ import type { NotificationChannel, NotificationSendResult } from "../channel.js"
 import type { DispatchedNotification } from "../types.js";
 import { SEVERITY_COLOR, SEVERITY_LABEL, SYSTEM_NOTIFICATION_EMAIL_MJML } from "./emailTemplate.js";
 
-type Db = PrismaClient | Prisma.TransactionClient;
+// Never Prisma.TransactionClient - see the Db comment in ../dispatcher.ts.
+type Db = PrismaClient;
 
 const SETTINGS_NOTIFICATIONS_PATH = "/admin/settings/notifications";
 const GENERIC_SEND_FAILED = "Send failed.";
@@ -123,11 +124,20 @@ export class EmailChannel implements NotificationChannel {
         }));
 
         const results = await Promise.all(messages.map((message) => mailer.send(message)));
-        const failed = results.find((r) => r.status === "failed" || r.status === "rejected");
-        if (failed) {
-          return { ok: false, error: sanitizeDeliveryError(failed.error) ?? GENERIC_SEND_FAILED };
+        const failedResults = results.filter((r) => r.status === "failed" || r.status === "rejected");
+        if (failedResults.length === 0) return { ok: true };
+
+        const detail = sanitizeDeliveryError(failedResults[0]!.error) ?? GENERIC_SEND_FAILED;
+        if (failedResults.length === results.length) {
+          // Nobody got it - a clean failure, no partial delivery to protect from a re-send.
+          return { ok: false, error: detail };
         }
-        return { ok: true };
+        // Some (not all) addresses failed - still a real, partial delivery. `ok: true` so
+        // dispatcher.ts keeps the throttle claim (the recipients who already got it must not be
+        // re-sent to on the next occurrence), `error` set so the incomplete delivery is still
+        // recorded in the audit trail rather than silently looking like a clean success. Recipient
+        // counts only, never addresses, in the message (AGENTS.md "no PII in logs").
+        return { ok: true, error: `${failedResults.length}/${results.length} recipients failed: ${detail}` };
       } finally {
         await closeMailer(mailer);
       }

@@ -3,7 +3,8 @@ import { sanitizeDeliveryError } from "@admitto/mail-delivery";
 import type { NotificationChannel, NotificationSendResult } from "../channel.js";
 import type { DispatchedNotification } from "../types.js";
 
-type Db = PrismaClient | Prisma.TransactionClient;
+// Never Prisma.TransactionClient - see the Db comment in ../dispatcher.ts.
+type Db = PrismaClient;
 
 const GENERIC_WRITE_FAILED = "In-app write failed.";
 

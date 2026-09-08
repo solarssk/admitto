@@ -1,8 +1,9 @@
-import type { Prisma, PrismaClient } from "@admitto/db";
+import type { PrismaClient } from "@admitto/db";
 import { getNotificationTypeDef } from "./registry.js";
 import type { NotificationChannelKey } from "./types.js";
 
-type Db = PrismaClient | Prisma.TransactionClient;
+// Never Prisma.TransactionClient - see the Db comment in ./dispatcher.ts.
+type Db = PrismaClient;
 
 /**
  * Resolves which of a notification type's per-user channels (email, in_app - never webhook, a

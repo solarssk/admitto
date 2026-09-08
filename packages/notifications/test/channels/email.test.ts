@@ -109,6 +109,27 @@ describe("EmailChannel", () => {
     expect(closeMailer).toHaveBeenCalledTimes(1);
   });
 
+  it("reports ok:true with a sanitized error (not a clean failure) when some but not all recipients fail, so the throttle claim isn't released and re-sent to those who already got it", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }, { email: "b@example.com" }]);
+    send
+      .mockResolvedValueOnce({ status: "sent", provider: "smtp" })
+      .mockResolvedValueOnce({
+        status: "failed",
+        provider: "smtp",
+        error: "SMTP said no for secret@internal.example.com",
+      });
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, ["u-a", "u-b"]);
+
+    expect(result.ok).toBe(true);
+    expect(result.error).toContain("1/2 recipients failed");
+    expect(result.error).not.toContain("secret@internal.example.com");
+    expect(result.error).not.toContain("a@example.com");
+    expect(result.error).not.toContain("b@example.com");
+  });
+
   it("catches an unexpected throw (e.g. mail config resolution failure) and returns a sanitized failure", async () => {
     resolveMailConfigForOrg.mockRejectedValue(new Error("Cannot resolve mail provider"));
     const db = createStubDb();

@@ -1,6 +1,6 @@
 import type { LookupAddress } from "node:dns";
 import { decryptFromString } from "@admitto/crypto";
-import type { Prisma, PrismaClient } from "@admitto/db";
+import type { PrismaClient } from "@admitto/db";
 import { withPinnedFetch } from "@admitto/mailer";
 import { sanitizeDeliveryError } from "@admitto/mail-delivery";
 import {
@@ -14,7 +14,8 @@ import type { NotificationChannel, NotificationSendResult } from "../channel.js"
 import type { DispatchedNotification } from "../types.js";
 import { SEVERITY_COLOR } from "./emailTemplate.js";
 
-type Db = PrismaClient | Prisma.TransactionClient;
+// Never Prisma.TransactionClient - see the Db comment in ../dispatcher.ts.
+type Db = PrismaClient;
 export type WebhookKind = "discord" | "slack" | "generic";
 
 export interface WebhookChannelOptions {

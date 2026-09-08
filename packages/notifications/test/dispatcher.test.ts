@@ -296,6 +296,30 @@ describe("notify()", () => {
     expect(db.notificationThrottle.delete).not.toHaveBeenCalled();
   });
 
+  it("keeps the throttle claim AND records the failure for a channel that reports a partial delivery (ok:true with error set)", async () => {
+    stubHappyPath(db);
+    // A channel fanning out to multiple recipients (EmailChannel) reports this shape when some,
+    // but not all, recipients received it - a real delivery, not a clean success.
+    const email = stubChannel({ ok: true, error: "1/2 recipients failed: Send failed." });
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email, webhook: stubChannel(), in_app: stubChannel() },
+    });
+
+    expect(db.notificationThrottle.delete).not.toHaveBeenCalled();
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event_type: "notification.dispatch.failed",
+          metadata: expect.objectContaining({
+            channels_sent: expect.arrayContaining(["email"]),
+            failures: [{ channel: "email", error: "1/2 recipients failed: Send failed." }],
+          }),
+        }),
+      }),
+    );
+  });
+
   it("records a fully-empty dispatch (every channel a legitimate noop) as skipped, not sent, and releases the throttle claim", async () => {
     stubHappyPath(db);
     const email = stubChannel({ ok: true, noop: true });

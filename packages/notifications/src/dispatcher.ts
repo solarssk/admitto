@@ -10,7 +10,17 @@ import { InAppChannel } from "./channels/inApp.js";
 import type { NotificationChannel, NotificationSendResult } from "./channel.js";
 import type { DispatchedNotification, NotificationEvent, NotificationTypeDef } from "./types.js";
 
-type Db = PrismaClient | Prisma.TransactionClient;
+/**
+ * Deliberately a standalone `PrismaClient`, never a `Prisma.TransactionClient` - webhook/email
+ * sends are irreversible external I/O with no relationship to Postgres transaction semantics. If
+ * a caller ran notify() from inside their own open transaction, the external send would already
+ * be in flight (or completed) by the time that transaction commits or rolls back; a later
+ * rollback would then leave a real, already-delivered alert with no throttle claim and no audit
+ * record to show it happened, letting a retry of the caller's operation send it again. Callers
+ * that need to notify as part of a larger unit of work must call notify() only after their own
+ * transaction has committed, not with the transaction's own client.
+ */
+type Db = PrismaClient;
 
 const DEFAULT_THROTTLE_WINDOW_MINUTES = 15;
 
@@ -55,11 +65,9 @@ function formatDispatchError(err: unknown): string {
  * True = caller may send (and this claim already recorded last_sent_at = now); false = another
  * send already claimed this window, caller must skip. A single `INSERT ... ON CONFLICT ... DO
  * UPDATE ... WHERE ... RETURNING` statement handles both the fresh-row and stale-row-reclaim
- * cases natively in Postgres: unlike a `create()` that deliberately relies on catching a P2002
- * unique-constraint violation, `ON CONFLICT` never raises an error on conflict, so this is safe
- * to call with a caller-supplied `Prisma.TransactionClient` - a raised P2002 would otherwise abort
- * the whole surrounding Postgres transaction even after being caught in JS, poisoning every
- * statement the caller runs afterwards in that same transaction.
+ * cases natively in Postgres, rather than a `create()` that deliberately relies on catching a
+ * P2002 unique-constraint violation as normal control flow - `ON CONFLICT` never raises an error
+ * on conflict at all.
  */
 async function claimThrottleSlot(
   db: Db,
@@ -221,9 +229,13 @@ async function dispatchToChannels(
   const record = (channel: string, result: NotificationSendResult): void => {
     // A noop success (nothing configured, nothing to send) must not be reported as a delivery -
     // SecurityAuditLog.metadata.channels_sent is read as "the alert actually reached these
-    // channels", not "these channels were attempted".
+    // channels", not "these channels were attempted". A channel can report both at once (`ok:
+    // true` with `error` set) for a partial multi-recipient send - e.g. EmailChannel delivered to
+    // some but not all resolved addresses - which must show up in both places: channelsSent so
+    // the throttle claim isn't released and re-sent to the recipients who already got it, and
+    // failures so the audit trail still surfaces the incomplete delivery.
     if (result.ok && !result.noop) outcome.channelsSent.push(channel);
-    else if (!result.ok) outcome.failures.push({ channel, error: result.error });
+    if (!result.ok || result.error) outcome.failures.push({ channel, error: result.error });
   };
 
   if (typeDef.availableChannels.includes("webhook")) {
