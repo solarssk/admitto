@@ -1,0 +1,51 @@
+import type { PrismaClient } from "@admitto/db";
+import { describe, expect, it } from "vitest";
+import { resolveEnabledChannels } from "../src/preferences.js";
+import { createStubDb } from "./stubDb.js";
+
+const TYPE = "auth.login.repeated_failures";
+
+describe("resolveEnabledChannels", () => {
+  it("returns every non-webhook channel when no preference rows exist (opt-out default)", async () => {
+    const db = createStubDb();
+    db.notificationPreference.findMany.mockResolvedValue([]);
+
+    const enabled = await resolveEnabledChannels(db as unknown as PrismaClient, "user-1", TYPE);
+
+    expect(enabled.sort()).toEqual(["email", "in_app"]);
+    expect(db.notificationPreference.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ user_id: "user-1", notification_type: TYPE }),
+      }),
+    );
+  });
+
+  it("filters out a channel the user explicitly disabled", async () => {
+    const db = createStubDb();
+    db.notificationPreference.findMany.mockResolvedValue([
+      { channel: "email", enabled: false },
+    ]);
+
+    const enabled = await resolveEnabledChannels(db as unknown as PrismaClient, "user-1", TYPE);
+
+    expect(enabled).toEqual(["in_app"]);
+  });
+
+  it("treats a channel with no explicit row as enabled even when another channel has a row", async () => {
+    const db = createStubDb();
+    db.notificationPreference.findMany.mockResolvedValue([
+      { channel: "in_app", enabled: false },
+    ]);
+
+    const enabled = await resolveEnabledChannels(db as unknown as PrismaClient, "user-1", TYPE);
+
+    expect(enabled).toEqual(["email"]);
+  });
+
+  it("returns [] for an unregistered notification type", async () => {
+    const db = createStubDb();
+    const enabled = await resolveEnabledChannels(db as unknown as PrismaClient, "user-1", "not.real");
+    expect(enabled).toEqual([]);
+    expect(db.notificationPreference.findMany).not.toHaveBeenCalled();
+  });
+});

@@ -761,6 +761,75 @@ model MailTemplate {
   @@unique([scope_type, scope_id, name])
 }
 
+// Staff notification module foundation (ADR 0038, revised by ADR 0044) — org-scoped delivery
+// config for the webhook + extra email recipients channels. scope_type is always "organization"
+// today (the same generic scope_type/scope_id shape as MailSettings, kept for parity/future
+// reuse, not because another scope is planned).
+model NotificationSettings {
+  id         String @id @default(cuid())
+  scope_type String // "organization", the only value today
+  scope_id   String
+
+  webhook_url_enc        String? // AES-256-GCM via @admitto/crypto (ADR 0006) — never returned in GET
+  webhook_kind           String? // "discord" | "slack" | "generic"
+  extra_email_recipients Json? // string[] of raw email addresses, org-staff-audience types only
+
+  // notification_type keys this organization has turned off entirely (dispatch skipped, but the
+  // underlying SecurityAuditLog write still always happens — see dispatcher.ts). Only applies to
+  // types with NotificationTypeDef.orgDisableable: true; ASVS V2.5.5 self-audience receipts
+  // ignore this list by design.
+  disabled_types Json?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([scope_type, scope_id])
+}
+
+// Per-user, per-type, per-channel opt-out (ADR 0044 §2). No row = enabled (opt-out default).
+// Webhook never appears here — it's a team-wide resource configured on NotificationSettings, not
+// a personal preference. Types with NotificationTypeDef.userConfigurable: false (ASVS V2.5.5
+// self-audience receipts) ignore any stored row here too — see preferences.ts.
+model NotificationPreference {
+  id                String   @id @default(cuid())
+  user_id           String
+  notification_type String
+  channel           String // "email" | "in_app"
+  enabled           Boolean
+  updated_at        DateTime @updatedAt
+
+  @@unique([user_id, notification_type, channel])
+}
+
+// One row per in-app notification per recipient (InAppChannel).
+model Notification {
+  id                String    @id @default(cuid())
+  user_id           String
+  notification_type String
+  severity          String
+  title             String
+  body              String    @db.Text
+  metadata          Json?
+  read_at           DateTime?
+  created_at        DateTime  @default(now())
+
+  @@index([user_id, read_at])
+}
+
+// Dedup bookkeeping for dispatcher.ts's throttle claim — one row per (event_type, dedupe_key).
+// dedupe_key is organizationId + a per-incident subject (attacked account, admin performing an
+// action, etc.), not organizationId alone — two distinct incidents in the same org must not
+// collapse into a single throttled notification (notifications-module-foundation plan, decision
+// on throttle dedupe scoping).
+model NotificationThrottle {
+  id           String   @id @default(cuid())
+  event_type   String
+  dedupe_key   String
+  last_sent_at DateTime
+
+  @@unique([event_type, dedupe_key])
+}
+
 model User {
   id                    String             @id @default(cuid())
   email                 String             @unique
