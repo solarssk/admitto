@@ -1,5 +1,7 @@
-import { prisma } from "../index.js";
+import { createBackfillPrismaClient } from "./backfillClient.js";
 import { backfillEventCustomFields } from "../backfill-event-custom-fields.js";
+
+const prisma = createBackfillPrismaClient();
 
 /** Deploy/CLI entrypoint: idempotent EventCustomField registry backfill after migrations. */
 async function main(): Promise<void> {
