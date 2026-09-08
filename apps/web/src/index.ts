@@ -6,7 +6,7 @@ import { prisma } from "@admitto/db";
 import { createApp } from "./app.js";
 import { validateCfAccessBootConfig } from "./config.js";
 import { devConsoleExportSink, warnExportOnlyProductionEnv } from "./dev-export-sink.js";
-import { createGracefulShutdown, type CloseableServer } from "./graceful-shutdown.js";
+import { installGracefulShutdown, type CloseableServer } from "./graceful-shutdown.js";
 import { logger } from "./logger.js";
 
 type HttpsServerOptions = { cert: Buffer; key: Buffer };
@@ -181,15 +181,7 @@ if (process.env.NODE_ENV !== "test") {
 
   try {
     const servers = await main();
-    const shutdown = createGracefulShutdown({
-      servers,
-      disconnect: () => prisma.$disconnect(),
-    });
-    const onSignal = (signal: NodeJS.Signals) => {
-      void shutdown(signal).then(() => process.exit(0));
-    };
-    process.on("SIGTERM", onSignal);
-    process.on("SIGINT", onSignal);
+    installGracefulShutdown(servers, () => prisma.$disconnect());
   } catch (err) {
     console.error(err);
     process.exit(1);

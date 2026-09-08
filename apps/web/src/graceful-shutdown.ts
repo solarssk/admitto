@@ -89,3 +89,20 @@ export function createGracefulShutdown(
     log.info("shutdown complete", { signal });
   };
 }
+
+/** Wires SIGTERM/SIGINT to `createGracefulShutdown()` and exits once it resolves. Split out from
+ * index.ts's imperative bootstrap (which only runs when NODE_ENV !== "test", so it can't be
+ * exercised directly) so this wiring itself stays covered by a unit test - `exit` is injectable
+ * for exactly that reason, defaulting to the real process.exit everywhere else. */
+export function installGracefulShutdown(
+  servers: readonly CloseableServer[],
+  disconnect: () => Promise<void>,
+  exit: (code: number) => void = process.exit,
+): void {
+  const shutdown = createGracefulShutdown({ servers, disconnect });
+  const onSignal = (signal: NodeJS.Signals): void => {
+    void shutdown(signal).then(() => exit(0));
+  };
+  process.on("SIGTERM", onSignal);
+  process.on("SIGINT", onSignal);
+}

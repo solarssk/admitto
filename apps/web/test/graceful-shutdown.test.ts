@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createGracefulShutdown, type CloseableServer } from "../src/graceful-shutdown.js";
+import {
+  createGracefulShutdown,
+  installGracefulShutdown,
+  type CloseableServer,
+} from "../src/graceful-shutdown.js";
 
 function fakeLog() {
   return { info: vi.fn(), warn: vi.fn() };
@@ -115,5 +119,69 @@ describe("createGracefulShutdown", () => {
       error: "db gone",
     });
     expect(log.info).toHaveBeenCalledWith("shutdown complete", { signal: "SIGTERM" });
+  });
+
+  it("stringifies a non-Error disconnect rejection", async () => {
+    const server = instantServer();
+    const disconnect = vi.fn().mockRejectedValue("db gone");
+    const log = fakeLog();
+    const shutdown = createGracefulShutdown({ servers: [server], disconnect, log });
+
+    await shutdown("SIGTERM");
+
+    expect(log.warn).toHaveBeenCalledWith("shutdown: database disconnect failed", {
+      error: "db gone",
+    });
+  });
+
+  it("falls back to the real logger when none is injected", async () => {
+    const server = instantServer();
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    const shutdown = createGracefulShutdown({ servers: [server], disconnect });
+
+    await expect(shutdown("SIGTERM")).resolves.toBeUndefined();
+  });
+});
+
+describe("installGracefulShutdown", () => {
+  /** Registers the handler, fires it, waits for its async chain to settle, then removes only
+   * the listener this call added - never a bare `removeAllListeners`, which would also strip
+   * whatever the test runner itself has registered on the shared process object. */
+  async function triggerSignal(
+    signal: "SIGTERM" | "SIGINT",
+    servers: readonly CloseableServer[],
+    disconnect: () => Promise<void>,
+    exit: (code: number) => void,
+  ): Promise<void> {
+    const before = process.listeners(signal);
+    installGracefulShutdown(servers, disconnect, exit);
+    const added = process.listeners(signal).filter((l) => !before.includes(l));
+
+    process.emit(signal);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    for (const listener of added) process.removeListener(signal, listener as () => void);
+  }
+
+  it("shuts down and exits(0) on SIGTERM", async () => {
+    const server = instantServer();
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    const exit = vi.fn();
+
+    await triggerSignal("SIGTERM", [server], disconnect, exit);
+
+    expect(disconnect).toHaveBeenCalledOnce();
+    expect(exit).toHaveBeenCalledWith(0);
+  });
+
+  it("shuts down and exits(0) on SIGINT", async () => {
+    const server = instantServer();
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    const exit = vi.fn();
+
+    await triggerSignal("SIGINT", [server], disconnect, exit);
+
+    expect(disconnect).toHaveBeenCalledOnce();
+    expect(exit).toHaveBeenCalledWith(0);
   });
 });
