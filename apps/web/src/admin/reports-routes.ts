@@ -2359,7 +2359,8 @@ async function exportWalletReportsPdf(
           .join("");
 
   const tapBucketLabels: Record<string, string> = {
-    same_day: "Same day",
+    // "Within 24h", not "Same day" - see the matching label in WalletsReportsTab.tsx for why.
+    same_day: "Within 24h",
     "1_3": "1-3 days",
     "4_7": "4-7 days",
     "8_plus": "8+ days",
