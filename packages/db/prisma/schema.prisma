@@ -150,20 +150,20 @@ model EventResource {
 // dedicated override fields (resolved event -> organization -> empty) - this table is purely
 // for ad-hoc images referenced by name in emails, no fallback/inheritance semantics.
 model EventImageAsset {
-  id         String   @id @default(cuid())
-  event_id   String
-  event      Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
-  token      String
-  filename   String
-  url        String
+  id           String   @id @default(cuid())
+  event_id     String
+  event        Event    @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  token        String
+  filename     String
+  url          String
   // Full pre-crop file for re-Edit; display still uses `url` (cropped). Null for assets
   // created before this column existed - Edit falls back to re-cropping the cropped `url`.
   original_url String?
   // Percent crop + zoom last applied: { unit:"%", x, y, width, height, zoom }.
-  crop       Json?
-  size_bytes Int
-  mime_type  String
-  created_at DateTime @default(now())
+  crop         Json?
+  size_bytes   Int
+  mime_type    String
+  created_at   DateTime @default(now())
 
   @@unique([event_id, token])
   @@index([event_id])
@@ -226,24 +226,24 @@ model EventLocation {
   // entrance-identifier kinds PassCreator itself exposes (door/gate/portal), a general entrance
   // description, phone number, and Apple Maps' own place identifier (admin must look this up
   // manually - Admitto's geocoding is Nominatim/OSM-based, not Apple MapKit). All optional.
-  venue_room                String?
-  venue_entrance            String?
-  venue_entrance_door       String?
-  venue_entrance_gate       String?
-  venue_entrance_portal     String?
-  venue_phone_number        String?
-  venue_place_id            String?
+  venue_room               String?
+  venue_entrance           String?
+  venue_entrance_door      String?
+  venue_entrance_gate      String?
+  venue_entrance_portal    String?
+  venue_phone_number       String?
+  venue_place_id           String?
   // Access-point opening times, "HH:MM" display-only wall-clock strings tied to the event's single
   // `date` - same convention as Event.event_hours_start/end, not separate date pickers (Admitto's
   // event model is single-day). 1:1 with PassCreator's own 7-field "Venue/Doors/Gates/Box Office/
   // Parking Lots/Fan Zone Open Date" cluster.
-  venue_open_time           String?
-  venue_close_time          String?
-  doors_open_time           String?
-  gates_open_time           String?
-  box_office_open_time      String?
-  parking_lots_open_time    String?
-  fan_zone_open_time        String?
+  venue_open_time          String?
+  venue_close_time         String?
+  doors_open_time          String?
+  gates_open_time          String?
+  box_office_open_time     String?
+  parking_lots_open_time   String?
+  fan_zone_open_time       String?
   created_at               DateTime  @default(now())
   updated_at               DateTime  @updatedAt
 }
@@ -761,37 +761,120 @@ model MailTemplate {
   @@unique([scope_type, scope_id, name])
 }
 
+// Staff notification module foundation (ADR 0038, revised by ADR 0044): org-scoped delivery
+// config for the webhook + extra email recipients channels. scope_type is always "organization"
+// today (the same generic scope_type/scope_id shape as MailSettings, kept for parity/future
+// reuse, not because another scope is planned).
+model NotificationSettings {
+  id         String @id @default(cuid())
+  scope_type String // "organization", the only value today
+  scope_id   String
+
+  webhook_url_enc        String? // AES-256-GCM via @admitto/crypto (ADR 0006); never returned in GET
+  webhook_kind           String? // "discord" | "slack" | "generic"
+  extra_email_recipients Json? // string[] of raw email addresses, org-staff-audience types only
+
+  // notification_type keys this organization has turned off entirely (dispatch skipped, but the
+  // underlying SecurityAuditLog write still always happens, see dispatcher.ts). Only applies to
+  // types with NotificationTypeDef.orgDisableable: true; ASVS V2.5.5 self-audience receipts
+  // ignore this list by design.
+  disabled_types Json?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@unique([scope_type, scope_id])
+}
+
+// Per-user, per-type, per-channel opt-out (ADR 0044 §2). No row = enabled (opt-out default).
+// Webhook never appears here: it's a team-wide resource configured on NotificationSettings, not
+// a personal preference. Types with NotificationTypeDef.userConfigurable: false (ASVS V2.5.5
+// self-audience receipts) ignore any stored row here too, see preferences.ts. Cascades on User
+// delete (unlike SecurityAuditLog/AdminAuditLog): this is live personal preference data, not an
+// immutable audit trail meant to survive account deletion.
+model NotificationPreference {
+  id                String   @id @default(cuid())
+  user_id           String
+  user              User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  notification_type String
+  channel           String // "email" | "in_app"
+  enabled           Boolean
+  updated_at        DateTime @updatedAt
+
+  @@unique([user_id, notification_type, channel])
+}
+
+// One row per in-app notification per recipient (InAppChannel). Cascades on User delete, same
+// reasoning as NotificationPreference above. organization_id is a plain string, not a Prisma
+// relation - same lighter-weight scope convention NotificationSettings/NotificationThrottle
+// already use in this package, rather than introducing a new relation+cascade pattern here.
+// Required so a superadmin who receives alerts across multiple organizations (org-staff audience
+// includes every active superadmin, instance-wide) can actually tell them apart, filter, or clean
+// them up per organization - the type/severity/title alone don't identify the tenant.
+model Notification {
+  id                String    @id @default(cuid())
+  user_id           String
+  user              User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  organization_id   String
+  notification_type String
+  severity          String
+  title             String
+  body              String    @db.Text
+  metadata          Json?
+  read_at           DateTime?
+  created_at        DateTime  @default(now())
+
+  @@index([user_id, read_at])
+  @@index([organization_id])
+}
+
+// Dedup bookkeeping for dispatcher.ts's throttle claim: one row per (event_type, dedupe_key).
+// dedupe_key is organizationId + a per-incident subject (attacked account, admin performing an
+// action, etc.), not organizationId alone: two distinct incidents in the same org must not
+// collapse into a single throttled notification (notifications-module-foundation plan, decision
+// on throttle dedupe scoping).
+model NotificationThrottle {
+  id           String   @id @default(cuid())
+  event_type   String
+  dedupe_key   String
+  last_sent_at DateTime
+
+  @@unique([event_type, dedupe_key])
+}
+
 model User {
-  id                    String             @id @default(cuid())
-  email                 String             @unique
-  password_hash         String?
-  display_name          String?
-  preferred_locale      String? // IETF BCP 47 tag, e.g. "pl-PL"; null = browser default
-  preferred_time_format String? // "12h" | "24h"; null = browser default
+  id                       String                   @id @default(cuid())
+  email                    String                   @unique
+  password_hash            String?
+  display_name             String?
+  preferred_locale         String? // IETF BCP 47 tag, e.g. "pl-PL"; null = browser default
+  preferred_time_format    String? // "12h" | "24h"; null = browser default
   // Internal contact use only (not shown on tickets/public pages). Dial code includes the "+",
   // e.g. "+48"; phone_number is the local number with no formatting/validation beyond digits.
-  phone_country_code    String?
-  phone_number          String?
-  is_active             Boolean            @default(true)
-  must_change_password  Boolean            @default(false)
+  phone_country_code       String?
+  phone_number             String?
+  is_active                Boolean                  @default(true)
+  must_change_password     Boolean                  @default(false)
   // Consecutive failed login attempts, tracked only for admin/superadmin accounts (P0 security
   // review) to alert when a privileged account is under attack; reset to 0 on a successful
   // login or once the streak crosses the alert threshold (see auth.login.repeated_failures).
-  failed_login_streak   Int                @default(0)
+  failed_login_streak      Int                      @default(0)
   // Consecutive failed MFA verification attempts (wrong TOTP/recovery code) for admin/superadmin
   // accounts, tracked separately from failed_login_streak since that one resets on password
   // success, before MFA is even attempted - this catches an attacker who already has a valid
   // password grinding MFA-code guesses. Reset to 0 on successful MFA verification or once the
   // streak crosses the alert threshold (see auth.mfa.repeated_failures).
-  failed_mfa_streak     Int                @default(0)
-  created_at            DateTime           @default(now())
-  updated_at            DateTime           @updatedAt
-  sessions              Session[]
-  role_assignments      RoleAssignment[]
-  oidc_role_grants      OidcRoleGrant[]
-  mfa_methods           UserMfaMethod[]
-  trusted_devices       TrustedDevice[]
-  external_identities   ExternalIdentity[]
+  failed_mfa_streak        Int                      @default(0)
+  created_at               DateTime                 @default(now())
+  updated_at               DateTime                 @updatedAt
+  sessions                 Session[]
+  role_assignments         RoleAssignment[]
+  oidc_role_grants         OidcRoleGrant[]
+  mfa_methods              UserMfaMethod[]
+  trusted_devices          TrustedDevice[]
+  external_identities      ExternalIdentity[]
+  notification_preferences NotificationPreference[]
+  notifications            Notification[]
 }
 
 model Session {
@@ -850,7 +933,7 @@ model UserMfaMethod {
   /// WebAuthn signature counter — replay/clone detection (updated on every use).
   webauthn_sign_count          Int?
   /// WebAuthn transport hints reported at registration (e.g. "usb", "internal", "hybrid").
-  webauthn_transports          String[] @default([])
+  webauthn_transports          String[]  @default([])
   /// "platform" (passkey — Touch ID/Windows Hello/password manager) or "cross-platform"
   /// (security key — USB/NFC/BLE FIDO2 device); drives which My Account row a credential shows under.
   webauthn_attachment          String?

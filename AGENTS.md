@@ -227,6 +227,19 @@ Copy both `packages/<name>/package.json` and `--from=builder …/packages/<name>
 pattern as crypto/location/…). Builder already has all of `packages/`; omitting the production
 COPY lines yields `ERR_MODULE_NOT_FOUND` when the container starts (CI `migration-safety`).
 
+**New workspace package (any kind, not just runtime): `.github/workflows/ci.yml`'s `test-rest`
+job's "Run coverage" step is also an explicit `-w @admitto/<name>` allowlist, not a glob.** A
+package left off it never runs `vitest run --coverage` in CI, so it silently contributes zero
+lines to both the Codecov upload and the SonarCloud CI-based scan's `coverage-rest` artifact —
+its real, passing local test suite shows up as 0% "Coverage on New Code" on every PR touching it,
+which reads exactly like SonarCloud Automatic Analysis's well-known inability to ingest coverage
+at all (`docs/dev/sonarcloud-ci-coverage-migration.md`) even though that's a completely different,
+unrelated cause. Root-caused on `packages/notifications`'s first PR (#1272): the package had 54
+real tests and 95%+ local coverage, but `new_coverage` still showed 0% because
+`-w @admitto/notifications` was simply missing from that one `npm run coverage` command line.
+Confirm locally first (`npm run coverage -w @admitto/<name>` should produce
+`packages/<name>/coverage/lcov.info`), then add the workspace flag to the list.
+
 **Renaming a Vitest project (`test.name`):** grep `package.json` scripts and CI workflows for
 `--project <old-name>` first - the filter is an anchored exact match, so a stale reference fails
 at startup ("No projects matched the filter").
