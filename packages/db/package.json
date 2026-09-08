@@ -15,6 +15,10 @@
       "types": "./dist/client.d.ts",
       "default": "./dist/client.js"
     },
+    "./adapter": {
+      "types": "./dist/adapter.d.ts",
+      "default": "./dist/adapter.js"
+    },
     "./status": {
       "types": "./dist/status.d.ts",
       "default": "./dist/status.js"

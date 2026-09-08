@@ -1,5 +1,7 @@
-import { prisma } from "../index.js";
+import { createBackfillPrismaClient } from "./backfillClient.js";
 import { backfillTicketTypes } from "../backfill-ticket-types.js";
+
+const prisma = createBackfillPrismaClient();
 
 /** Deploy/CLI entrypoint: idempotent per-event TicketType catalog backfill after migrations. */
 async function main(): Promise<void> {
