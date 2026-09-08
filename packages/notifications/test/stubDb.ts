@@ -11,7 +11,7 @@ export function createStubDb() {
     user: { findUnique: vi.fn(), findMany: vi.fn() },
     notificationSettings: { findUnique: vi.fn() },
     notificationPreference: { findMany: vi.fn() },
-    notificationThrottle: { delete: vi.fn() },
+    notificationThrottle: { deleteMany: vi.fn() },
     notification: { createMany: vi.fn() },
     securityAuditLog: { create: vi.fn() },
     $queryRaw: vi.fn(),

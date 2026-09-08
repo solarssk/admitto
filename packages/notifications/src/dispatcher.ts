@@ -62,12 +62,11 @@ function formatDispatchError(err: unknown): string {
 
 /**
  * Atomically claims the right to send for (eventType, dedupeKey) within the throttle window.
- * True = caller may send (and this claim already recorded last_sent_at = now); false = another
- * send already claimed this window, caller must skip. A single `INSERT ... ON CONFLICT ... DO
- * UPDATE ... WHERE ... RETURNING` statement handles both the fresh-row and stale-row-reclaim
- * cases natively in Postgres, rather than a `create()` that deliberately relies on catching a
- * P2002 unique-constraint violation as normal control flow - `ON CONFLICT` never raises an error
- * on conflict at all.
+ * Returns the claimed row's id (pass it to releaseThrottleSlot) or null if another send already
+ * claimed this window. A single `INSERT ... ON CONFLICT ... DO UPDATE ... WHERE ... RETURNING`
+ * statement handles both the fresh-row and stale-row-reclaim cases natively in Postgres, rather
+ * than a `create()` that deliberately relies on catching a P2002 unique-constraint violation as
+ * normal control flow - `ON CONFLICT` never raises an error on conflict at all.
  */
 async function claimThrottleSlot(
   db: Db,
@@ -75,7 +74,7 @@ async function claimThrottleSlot(
   dedupeKey: string,
   windowMinutes: number,
   now: Date,
-): Promise<boolean> {
+): Promise<string | null> {
   const cutoff = new Date(now.getTime() - windowMinutes * 60_000);
   const claimed = await db.$queryRaw<Array<{ id: string }>>`
     INSERT INTO "NotificationThrottle" (id, event_type, dedupe_key, last_sent_at)
@@ -85,7 +84,7 @@ async function claimThrottleSlot(
     WHERE "NotificationThrottle".last_sent_at < ${cutoff}
     RETURNING id
   `;
-  return claimed.length === 1;
+  return claimed[0]?.id ?? null;
 }
 
 /**
@@ -95,20 +94,27 @@ async function claimThrottleSlot(
  * same incident for the rest of the window, even though nothing was ever communicated and there
  * is no separate retry mechanism. Best-effort: a failure to release just means the window runs
  * its normal course, never a reason to crash an already-in-progress dispatch.
+ *
+ * Matched by `claimedRowId`, not just (eventType, dedupeKey): if this attempt runs long enough
+ * for its own claim to go stale, a second dispatch can legitimately reclaim the same key (see
+ * claimThrottleSlot's `WHERE last_sent_at < cutoff`) while this attempt is still in flight. A
+ * blind delete-by-key here would then remove that second, live claim out from under it, letting
+ * a third dispatch enter while the second is still sending and duplicate the alert. `deleteMany`
+ * (unlike `delete`, which is keyed only on the (eventType, dedupeKey) unique constraint) can
+ * filter on `id` too, and never throws when nothing matches - a row already superseded by a
+ * later claim is exactly that case, not an error.
  */
 async function releaseThrottleSlot(
   db: Db,
   eventType: string,
   dedupeKey: string,
+  claimedRowId: string,
 ): Promise<void> {
   try {
-    await db.notificationThrottle.delete({
-      where: { event_type_dedupe_key: { event_type: eventType, dedupe_key: dedupeKey } },
+    await db.notificationThrottle.deleteMany({
+      where: { event_type: eventType, dedupe_key: dedupeKey, id: claimedRowId },
     });
   } catch (err) {
-    // P2025 (record not found): a concurrent claimant already reclaimed this row (see
-    // claimThrottleSlot's updateMany) - nothing left to release, not a real failure.
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") return;
     console.error(
       JSON.stringify({
         event: "notification_dispatch_throttle_release.failed",
@@ -208,7 +214,15 @@ function buildDispatchedNotification(
 
 /** Sends `dispatched` through every channel this type has available, resolving per-user
  * email/in_app recipients from their preferences. Never throws - each channel's own result is
- * recorded into channelsSent/failures, not propagated. */
+ * recorded into channelsSent/failures, not propagated.
+ *
+ * Every channel dispatches concurrently, not sequentially: packages/mailer's Graph/Power Automate
+ * adapters put no bound on their own outbound HTTP call (only Graph's token fetch has a
+ * timeout - the actual sendMail request does not), so a stalled mail provider must not delay or
+ * block the independent webhook/in-app sends the way a strictly sequential await chain would.
+ * Resolving per-user channel preferences (splitRecipientsByChannel) is wrapped in its own
+ * try/catch for the same reason a channel's own send() never propagates a throw: a transient
+ * failure there must not discard an already-in-flight (or already-recorded) webhook success. */
 async function dispatchToChannels(
   db: Db,
   dispatched: DispatchedNotification,
@@ -238,29 +252,37 @@ async function dispatchToChannels(
     if (!result.ok || result.error) outcome.failures.push({ channel, error: result.error });
   };
 
+  const pending: Array<Promise<void>> = [];
+
   if (typeDef.availableChannels.includes("webhook")) {
-    record("webhook", await webhookChannel.send(dispatched, []));
+    pending.push(webhookChannel.send(dispatched, []).then((result) => record("webhook", result)));
   }
 
-  const { emailRecipients, inAppRecipients } = await splitRecipientsByChannel(
-    db,
-    candidates,
-    type,
-  );
-
-  // EmailChannel itself no-ops (ok: true) when there is nothing to send, so calling it whenever
-  // extras might apply is never wasted beyond one lightweight settings lookup.
-  if (
-    typeDef.availableChannels.includes("email") &&
-    (emailRecipients.length > 0 || includeExtraRecipients)
-  ) {
-    record("email", await emailChannel.send(dispatched, emailRecipients));
+  let recipients: { emailRecipients: string[]; inAppRecipients: string[] } | null = null;
+  try {
+    recipients = await splitRecipientsByChannel(db, candidates, type);
+  } catch (err) {
+    const error = formatDispatchError(err);
+    if (typeDef.availableChannels.includes("email")) outcome.failures.push({ channel: "email", error });
+    if (typeDef.availableChannels.includes("in_app")) outcome.failures.push({ channel: "in_app", error });
   }
 
-  if (typeDef.availableChannels.includes("in_app") && inAppRecipients.length > 0) {
-    record("in_app", await inAppChannel.send(dispatched, inAppRecipients));
+  if (recipients) {
+    const { emailRecipients, inAppRecipients } = recipients;
+    // EmailChannel itself no-ops (ok: true) when there is nothing to send, so calling it whenever
+    // extras might apply is never wasted beyond one lightweight settings lookup.
+    if (
+      typeDef.availableChannels.includes("email") &&
+      (emailRecipients.length > 0 || includeExtraRecipients)
+    ) {
+      pending.push(emailChannel.send(dispatched, emailRecipients).then((result) => record("email", result)));
+    }
+    if (typeDef.availableChannels.includes("in_app") && inAppRecipients.length > 0) {
+      pending.push(inAppChannel.send(dispatched, inAppRecipients).then((result) => record("in_app", result)));
+    }
   }
 
+  await Promise.all(pending);
   return outcome;
 }
 
@@ -296,7 +318,7 @@ export async function notify(
 ): Promise<void> {
   // Set once claimThrottleSlot succeeds - tracked here (not just inline) so the outer catch can
   // also release on an unexpected mid-dispatch exception, not only the two known failure paths.
-  let claimedThrottleKey: string | null = null;
+  let activeClaim: { throttleKey: string; rowId: string } | null = null;
   try {
     const typeDef = getNotificationTypeDef(type);
     if (!typeDef) {
@@ -315,18 +337,18 @@ export async function notify(
     const now = deps.now?.() ?? new Date();
     const throttleKey = `${event.organizationId}:${event.dedupeKey ?? "org"}`;
     const windowMinutes = typeDef.throttleWindowMinutes ?? DEFAULT_THROTTLE_WINDOW_MINUTES;
-    const claimed = await claimThrottleSlot(db, type, throttleKey, windowMinutes, now);
-    if (!claimed) {
+    const rowId = await claimThrottleSlot(db, type, throttleKey, windowMinutes, now);
+    if (!rowId) {
       await writeDispatchAuditLog(db, "notification.dispatch.skipped_throttled", {
         notification_type: type,
       });
       return;
     }
-    claimedThrottleKey = throttleKey;
+    activeClaim = { throttleKey, rowId };
 
     const candidates = await resolveCandidatesOrLogSkip(db, type, typeDef, event);
     if (!candidates) {
-      await releaseThrottleSlot(db, type, throttleKey);
+      await releaseThrottleSlot(db, type, throttleKey, rowId);
       return;
     }
 
@@ -347,7 +369,7 @@ export async function notify(
     // claim: releasing there would let the channels that already delivered resend/spam on the
     // next occurrence while only the genuinely-still-broken channel needed a retry.
     if (channelsSent.length === 0) {
-      await releaseThrottleSlot(db, type, throttleKey);
+      await releaseThrottleSlot(db, type, throttleKey, rowId);
     }
 
     if (failures.length > 0) {
@@ -371,8 +393,8 @@ export async function notify(
       channels_sent: channelsSent,
     });
   } catch (err) {
-    if (claimedThrottleKey) {
-      await releaseThrottleSlot(db, type, claimedThrottleKey);
+    if (activeClaim) {
+      await releaseThrottleSlot(db, type, activeClaim.throttleKey, activeClaim.rowId);
     }
     console.error(
       JSON.stringify({

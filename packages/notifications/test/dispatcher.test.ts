@@ -1,5 +1,4 @@
 import type { PrismaClient } from "@admitto/db";
-import { Prisma } from "@admitto/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { notify } from "../src/dispatcher.js";
 import type { NotificationChannel } from "../src/channel.js";
@@ -149,10 +148,8 @@ describe("notify()", () => {
 
     await notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } });
 
-    expect(db.notificationThrottle.delete).toHaveBeenCalledWith({
-      where: {
-        event_type_dedupe_key: { event_type: TYPE, dedupe_key: `${ORG_ID}:org` },
-      },
+    expect(db.notificationThrottle.deleteMany).toHaveBeenCalledWith({
+      where: { event_type: TYPE, dedupe_key: `${ORG_ID}:org`, id: "throttle-1" },
     });
   });
 
@@ -179,7 +176,7 @@ describe("notify()", () => {
         }),
       }),
     );
-    expect(db.notificationThrottle.delete).not.toHaveBeenCalled();
+    expect(db.notificationThrottle.deleteMany).not.toHaveBeenCalled();
   });
 
   it("only sends to candidates whose per-user preference has that channel enabled", async () => {
@@ -278,10 +275,8 @@ describe("notify()", () => {
       channels: { email, webhook, in_app: inApp },
     });
 
-    expect(db.notificationThrottle.delete).toHaveBeenCalledWith({
-      where: {
-        event_type_dedupe_key: { event_type: TYPE, dedupe_key: `${ORG_ID}:org` },
-      },
+    expect(db.notificationThrottle.deleteMany).toHaveBeenCalledWith({
+      where: { event_type: TYPE, dedupe_key: `${ORG_ID}:org`, id: "throttle-1" },
     });
   });
 
@@ -293,7 +288,7 @@ describe("notify()", () => {
       channels: { email, webhook: stubChannel(), in_app: stubChannel() },
     });
 
-    expect(db.notificationThrottle.delete).not.toHaveBeenCalled();
+    expect(db.notificationThrottle.deleteMany).not.toHaveBeenCalled();
   });
 
   it("keeps the throttle claim AND records the failure for a channel that reports a partial delivery (ok:true with error set)", async () => {
@@ -306,7 +301,7 @@ describe("notify()", () => {
       channels: { email, webhook: stubChannel(), in_app: stubChannel() },
     });
 
-    expect(db.notificationThrottle.delete).not.toHaveBeenCalled();
+    expect(db.notificationThrottle.deleteMany).not.toHaveBeenCalled();
     expect(db.securityAuditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -318,6 +313,77 @@ describe("notify()", () => {
         }),
       }),
     );
+  });
+
+  it("preserves an already-successful webhook delivery when resolving per-user channel preferences fails afterward", async () => {
+    stubHappyPath(db);
+    db.notificationPreference.findMany.mockRejectedValue(new Error("connection reset"));
+    const webhook = stubChannel();
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { webhook, email: stubChannel(), in_app: stubChannel() },
+    });
+
+    expect(webhook.send).toHaveBeenCalled();
+    // The webhook's own success must not be lost just because a later, unrelated step
+    // (resolving per-user email/in_app preferences) threw - releasing here would let the
+    // already-delivered webhook resend/spam on the next occurrence.
+    expect(db.notificationThrottle.deleteMany).not.toHaveBeenCalled();
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event_type: "notification.dispatch.failed",
+          metadata: expect.objectContaining({
+            channels_sent: expect.arrayContaining(["webhook"]),
+            failures: expect.arrayContaining([
+              { channel: "email", error: expect.any(String) },
+              { channel: "in_app", error: expect.any(String) },
+            ]),
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("dispatches channels concurrently - the in-app write completes without waiting for a slow email provider", async () => {
+    stubHappyPath(db);
+    let resolveEmail: (value: { ok: boolean }) => void = () => undefined;
+    const emailPromise = new Promise<{ ok: boolean }>((resolve) => {
+      resolveEmail = resolve;
+    });
+    const email: NotificationChannel = { channel: "email", send: vi.fn(() => emailPromise) };
+    let inAppSettled = false;
+    const inApp: NotificationChannel = {
+      channel: "in_app",
+      send: vi.fn(async () => {
+        inAppSettled = true;
+        return { ok: true };
+      }),
+    };
+
+    const notifyPromise = notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email, webhook: stubChannel(), in_app: inApp },
+    });
+
+    // Flush the microtask/macrotask queue without ever resolving email - if channels were
+    // still dispatched sequentially, in-app would never get a chance to run at this point.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(inAppSettled).toBe(true);
+
+    resolveEmail({ ok: true });
+    await notifyPromise;
+  });
+
+  it("releases exactly the throttle row this attempt claimed, threading claimThrottleSlot's returned id through to the delete filter", async () => {
+    stubHappyPath(db);
+    db.$queryRaw.mockResolvedValue([{ id: "row-xyz-42" }]);
+    db.roleAssignment.findMany.mockResolvedValue([]); // -> empty audience -> attempts a release
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } });
+
+    expect(db.notificationThrottle.deleteMany).toHaveBeenCalledWith({
+      where: { event_type: TYPE, dedupe_key: `${ORG_ID}:org`, id: "row-xyz-42" },
+    });
   });
 
   it("records a fully-empty dispatch (every channel a legitimate noop) as skipped, not sent, and releases the throttle claim", async () => {
@@ -342,10 +408,8 @@ describe("notify()", () => {
         data: expect.objectContaining({ event_type: "notification.dispatch.sent" }),
       }),
     );
-    expect(db.notificationThrottle.delete).toHaveBeenCalledWith({
-      where: {
-        event_type_dedupe_key: { event_type: TYPE, dedupe_key: `${ORG_ID}:org` },
-      },
+    expect(db.notificationThrottle.deleteMany).toHaveBeenCalledWith({
+      where: { event_type: TYPE, dedupe_key: `${ORG_ID}:org`, id: "throttle-1" },
     });
   });
 
@@ -357,10 +421,8 @@ describe("notify()", () => {
       notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } }),
     ).resolves.toBeUndefined();
 
-    expect(db.notificationThrottle.delete).toHaveBeenCalledWith({
-      where: {
-        event_type_dedupe_key: { event_type: TYPE, dedupe_key: `${ORG_ID}:org` },
-      },
+    expect(db.notificationThrottle.deleteMany).toHaveBeenCalledWith({
+      where: { event_type: TYPE, dedupe_key: `${ORG_ID}:org`, id: "throttle-1" },
     });
   });
 
@@ -371,18 +433,13 @@ describe("notify()", () => {
       notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } }),
     ).resolves.toBeUndefined();
 
-    expect(db.notificationThrottle.delete).not.toHaveBeenCalled();
+    expect(db.notificationThrottle.deleteMany).not.toHaveBeenCalled();
   });
 
-  it("does not throw when the release itself fails, and treats a concurrently-reclaimed row (P2025) as nothing to do", async () => {
+  it("does not throw when the release matches nothing (deleteMany resolves count: 0, e.g. a later claim already superseded this row)", async () => {
     stubHappyPath(db);
     db.roleAssignment.findMany.mockResolvedValue([]); // -> empty audience -> attempts a release
-    db.notificationThrottle.delete.mockRejectedValue(
-      new Prisma.PrismaClientKnownRequestError("Record to delete does not exist.", {
-        code: "P2025",
-        clientVersion: "test",
-      }),
-    );
+    db.notificationThrottle.deleteMany.mockResolvedValue({ count: 0 });
 
     await expect(
       notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } }),
@@ -392,7 +449,7 @@ describe("notify()", () => {
   it("does not throw when the release fails with a real (non-P2025) error", async () => {
     stubHappyPath(db);
     db.roleAssignment.findMany.mockResolvedValue([]); // -> empty audience -> attempts a release
-    db.notificationThrottle.delete.mockRejectedValue(new Error("connection reset"));
+    db.notificationThrottle.deleteMany.mockRejectedValue(new Error("connection reset"));
 
     await expect(
       notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } }),

@@ -7,9 +7,10 @@ import { createStubDb } from "./stubDb.js";
 
 // vi.mock is hoisted above regular top-level consts - anything the factory references must be
 // declared via vi.hoisted() to avoid a temporal-dead-zone ReferenceError.
-const { SELF_TYPE, EMPTY_CHANNELS_TYPE } = vi.hoisted(() => ({
+const { SELF_TYPE, EMPTY_CHANNELS_TYPE, WEBHOOK_INAPP_ONLY_TYPE } = vi.hoisted(() => ({
   SELF_TYPE: "test.self_audience",
   EMPTY_CHANNELS_TYPE: "test.no_channels",
+  WEBHOOK_INAPP_ONLY_TYPE: "test.webhook_and_inapp_only",
 }));
 
 // Every real foundation type is org-staff-audience with all 3 channels and an explicit
@@ -36,6 +37,16 @@ vi.mock("../src/registry.js", async (importOriginal) => {
       label: "Channel-less test type",
       defaultSeverity: "info",
       availableChannels: [],
+      audience: "org-staff",
+      throttleWindowMinutes: 15,
+      userConfigurable: true,
+      orgDisableable: true,
+    },
+    [WEBHOOK_INAPP_ONLY_TYPE]: {
+      category: "system",
+      label: "Webhook + in-app only test type (no email)",
+      defaultSeverity: "info",
+      availableChannels: ["webhook", "in_app"],
       audience: "org-staff",
       throttleWindowMinutes: 15,
       userConfigurable: true,
@@ -94,7 +105,7 @@ describe("notify() with synthetic type shapes", () => {
         }),
       }),
     );
-    expect(db.notificationThrottle.delete).toHaveBeenCalled();
+    expect(db.notificationThrottle.deleteMany).toHaveBeenCalled();
   });
 
   it("sends to a valid self-audience target", async () => {
@@ -132,6 +143,30 @@ describe("notify() with synthetic type shapes", () => {
         }),
       }),
     );
-    expect(db.notificationThrottle.delete).toHaveBeenCalled();
+    expect(db.notificationThrottle.deleteMany).toHaveBeenCalled();
+  });
+
+  it("reports only in_app (not email) as a failure when resolving recipients throws for a type without an email channel, and keeps the already-successful webhook", async () => {
+    db.roleAssignment.findMany.mockResolvedValue([{ user_id: "u-1", user: { is_active: true } }]);
+    db.notificationPreference.findMany.mockRejectedValue(new Error("connection reset"));
+    const webhook = stubChannel();
+
+    await notify(db as unknown as PrismaClient, WEBHOOK_INAPP_ONLY_TYPE, EVENT, {
+      channels: { webhook, email: stubChannel(), in_app: stubChannel() },
+    });
+
+    expect(webhook.send).toHaveBeenCalled();
+    expect(db.notificationThrottle.deleteMany).not.toHaveBeenCalled();
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event_type: "notification.dispatch.failed",
+          metadata: expect.objectContaining({
+            channels_sent: ["webhook"],
+            failures: [{ channel: "in_app", error: expect.any(String) }],
+          }),
+        }),
+      }),
+    );
   });
 });
