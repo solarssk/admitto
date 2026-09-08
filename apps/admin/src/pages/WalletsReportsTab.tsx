@@ -64,7 +64,10 @@ const SAMSUNG_TEAL = "#00bcd4"; // vivid teal/cyan - Samsung's own brand blue wo
 const MULTI_PURPLE = "#8a31a0"; // --status-vip-fg / --at-purple - an internal token, reused for "more than one wallet app" since that's not any single brand's color
 
 const BUCKET_LABELS: Record<EventWalletReportsResponse["time_to_wallet_tap"]["buckets"][number]["key"], string> = {
-  same_day: "Same day",
+  // "Within 24h", not "Same day" - the bucket is elapsed time since the email (bucketForDays,
+  // reports-routes.ts), not a calendar-date match, and an install can cross midnight while still
+  // landing here (PO review, 2026-09-08).
+  same_day: "Within 24h",
   "1_3": "1-3 days",
   "4_7": "4-7 days",
   "8_plus": "8+ days",
