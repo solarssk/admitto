@@ -167,7 +167,7 @@ describe("EmailChannel", () => {
   });
 
   it("falls back to a generic failure message when an unexpected throw has nothing to sanitize", async () => {
-    resolveMailConfigForOrg.mockRejectedValue(new Error(""));
+    resolveMailConfigForOrg.mockRejectedValue(new Error("")); // NOSONAR - deliberately empty, exercises the "nothing to sanitize" fallback
     const db = createStubDb();
     db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
     const channel = new EmailChannel(db as unknown as PrismaClient);

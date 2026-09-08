@@ -66,7 +66,7 @@ describe("InAppChannel", () => {
 
   it("falls back to a generic failure message when the driver error has nothing to sanitize", async () => {
     const db = createStubDb();
-    db.notification.createMany.mockRejectedValue(new Error(""));
+    db.notification.createMany.mockRejectedValue(new Error("")); // NOSONAR - deliberately empty, exercises the "nothing to sanitize" fallback
     const channel = new InAppChannel(db as unknown as PrismaClient);
 
     const result = await channel.send(EVENT, ["u-1"]);

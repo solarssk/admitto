@@ -259,7 +259,7 @@ describe("WebhookChannel", () => {
     db.notificationSettings.findUnique.mockResolvedValue(
       settingsWith("https://hooks.example.com/x"),
     );
-    resolveSafeHostname.mockRejectedValue(new Error(""));
+    resolveSafeHostname.mockRejectedValue(new Error("")); // NOSONAR - deliberately empty, exercises the "nothing to sanitize" fallback
     const channel = new WebhookChannel(db as unknown as PrismaClient);
 
     const result = await channel.send(EVENT, []);
