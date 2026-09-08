@@ -134,9 +134,15 @@ async function releaseThrottleSlot(
   }
 }
 
+/** organizationId is a required, dedicated parameter (not just another metadata field a call site
+ * remembers to add) precisely so it can never be forgotten: SecurityAuditLog is instance-wide and
+ * shared with every other audit event type in the app, so without it a superadmin reviewing a
+ * dispatch outcome for a notification type that fires across multiple organizations has no way to
+ * tell which tenant a given "sent"/"failed"/"skipped_*" row was actually about. */
 async function writeDispatchAuditLog(
   db: Db,
   eventType: string,
+  organizationId: string,
   metadata: Record<string, unknown>,
   userId?: string,
 ): Promise<void> {
@@ -145,7 +151,7 @@ async function writeDispatchAuditLog(
       data: {
         event_type: eventType,
         user_id: userId ?? null,
-        metadata: metadata as Prisma.InputJsonValue,
+        metadata: { organization_id: organizationId, ...metadata } as Prisma.InputJsonValue,
       },
     });
   } catch (err) {
@@ -198,6 +204,7 @@ async function resolveCandidatesOrLogSkip(
   await writeDispatchAuditLog(
     db,
     "notification.dispatch.failed",
+    event.organizationId,
     { notification_type: type, reason: "self_target_invalid" },
     event.targetUserId,
   );
@@ -352,7 +359,7 @@ export async function notify(
 
     const { disabledTypes } = await readOrgSettings(db, event.organizationId);
     if (typeDef.orgDisableable && disabledTypes.includes(type)) {
-      await writeDispatchAuditLog(db, "notification.dispatch.skipped_org_disabled", {
+      await writeDispatchAuditLog(db, "notification.dispatch.skipped_org_disabled", event.organizationId, {
         notification_type: type,
       });
       return;
@@ -363,7 +370,7 @@ export async function notify(
     const windowMinutes = typeDef.throttleWindowMinutes ?? DEFAULT_THROTTLE_WINDOW_MINUTES;
     const rowId = await claimThrottleSlot(db, type, throttleKey, windowMinutes, now);
     if (!rowId) {
-      await writeDispatchAuditLog(db, "notification.dispatch.skipped_throttled", {
+      await writeDispatchAuditLog(db, "notification.dispatch.skipped_throttled", event.organizationId, {
         notification_type: type,
       });
       return;
@@ -397,7 +404,7 @@ export async function notify(
     }
 
     if (failures.length > 0) {
-      await writeDispatchAuditLog(db, "notification.dispatch.failed", {
+      await writeDispatchAuditLog(db, "notification.dispatch.failed", event.organizationId, {
         notification_type: type,
         channels_sent: channelsSent,
         failures,
@@ -406,13 +413,13 @@ export async function notify(
     }
 
     if (channelsSent.length === 0) {
-      await writeDispatchAuditLog(db, "notification.dispatch.skipped_no_recipients", {
+      await writeDispatchAuditLog(db, "notification.dispatch.skipped_no_recipients", event.organizationId, {
         notification_type: type,
       });
       return;
     }
 
-    await writeDispatchAuditLog(db, "notification.dispatch.sent", {
+    await writeDispatchAuditLog(db, "notification.dispatch.sent", event.organizationId, {
       notification_type: type,
       channels_sent: channelsSent,
     });

@@ -35,6 +35,7 @@ describe("InAppChannel", () => {
       data: [
         {
           user_id: "u-1",
+          organization_id: EVENT.organizationId,
           notification_type: EVENT.type,
           severity: EVENT.severity,
           title: EVENT.title,
@@ -43,6 +44,7 @@ describe("InAppChannel", () => {
         },
         {
           user_id: "u-2",
+          organization_id: EVENT.organizationId,
           notification_type: EVENT.type,
           severity: EVENT.severity,
           title: EVENT.title,

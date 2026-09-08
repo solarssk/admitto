@@ -29,6 +29,7 @@ CREATE TABLE "NotificationPreference" (
 CREATE TABLE "Notification" (
     "id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
+    "organization_id" TEXT NOT NULL,
     "notification_type" TEXT NOT NULL,
     "severity" TEXT NOT NULL,
     "title" TEXT NOT NULL,
@@ -58,6 +59,9 @@ CREATE UNIQUE INDEX "NotificationPreference_user_id_notification_type_channel_ke
 
 -- CreateIndex
 CREATE INDEX "Notification_user_id_read_at_idx" ON "Notification"("user_id", "read_at");
+
+-- CreateIndex
+CREATE INDEX "Notification_organization_id_idx" ON "Notification"("organization_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "NotificationThrottle_event_type_dedupe_key_key" ON "NotificationThrottle"("event_type", "dedupe_key");

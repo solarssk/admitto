@@ -207,6 +207,22 @@ describe("notify()", () => {
     expect(db.notificationThrottle.deleteMany).not.toHaveBeenCalled();
   });
 
+  it("includes the organization in every dispatch outcome's audit metadata, not just the notification type - required for a superadmin to tell which tenant a given row is about", async () => {
+    stubHappyPath(db);
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email: stubChannel(), webhook: stubChannel(), in_app: stubChannel() },
+    });
+
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          metadata: expect.objectContaining({ organization_id: ORG_ID }),
+        }),
+      }),
+    );
+  });
+
   it("only sends to candidates whose per-user preference has that channel enabled", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
     queryRawClaims(db, true);

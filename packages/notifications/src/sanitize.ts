@@ -20,6 +20,12 @@ export function sanitizeNotificationText(value: string): string {
  * keyed by the attempted email) would otherwise leak that key verbatim into every channel's
  * output even though the exact same string as a VALUE would have been redacted.
  *
+ * bigint (e.g. a raw SQL aggregate count) converts to its decimal string: neither JSON.stringify
+ * (WebhookChannel's payload) nor Prisma's JSON serialization (InAppChannel's metadata column)
+ * accepts a bigint - both throw - so passing one through unconverted would silently fail delivery
+ * on 2 of the 3 channels instead of just rendering as text, the same "safe channels never see a
+ * value that breaks them" reasoning as every other conversion here.
+ *
  * Date/Error/Map/Set/RegExp each get their own explicit, lossless-ish conversion instead of
  * falling into the generic object branch: Object.entries(new Date()) and Object.entries(new
  * Error()) both return [] (their real state lives in non-enumerable internal slots) - same for
@@ -33,6 +39,7 @@ export function sanitizeNotificationText(value: string): string {
  * treating it as a dictionary is correct, not lossy. */
 function sanitizeJsonValue(value: unknown): unknown {
   if (typeof value === "string") return sanitizeNotificationText(value);
+  if (typeof value === "bigint") return value.toString();
   if (Array.isArray(value)) return value.map(sanitizeJsonValue);
   if (value instanceof Date) return value.toISOString();
   if (value instanceof Error) return sanitizeNotificationText(value.message);

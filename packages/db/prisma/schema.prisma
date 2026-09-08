@@ -805,11 +805,17 @@ model NotificationPreference {
 }
 
 // One row per in-app notification per recipient (InAppChannel). Cascades on User delete, same
-// reasoning as NotificationPreference above.
+// reasoning as NotificationPreference above. organization_id is a plain string, not a Prisma
+// relation - same lighter-weight scope convention NotificationSettings/NotificationThrottle
+// already use in this package, rather than introducing a new relation+cascade pattern here.
+// Required so a superadmin who receives alerts across multiple organizations (org-staff audience
+// includes every active superadmin, instance-wide) can actually tell them apart, filter, or clean
+// them up per organization - the type/severity/title alone don't identify the tenant.
 model Notification {
   id                String    @id @default(cuid())
   user_id           String
   user              User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  organization_id   String
   notification_type String
   severity          String
   title             String
@@ -819,6 +825,7 @@ model Notification {
   created_at        DateTime  @default(now())
 
   @@index([user_id, read_at])
+  @@index([organization_id])
 }
 
 // Dedup bookkeeping for dispatcher.ts's throttle claim: one row per (event_type, dedupe_key).

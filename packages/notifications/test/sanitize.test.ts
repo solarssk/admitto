@@ -63,6 +63,12 @@ describe("sanitizeNotificationMetadata", () => {
     expect(counts[keys[0]!]).toBe(5);
   });
 
+  it("converts a bigint (e.g. a raw SQL aggregate count) to its decimal string, since neither JSON.stringify nor Prisma's JSON serialization accepts one", () => {
+    const result = sanitizeNotificationMetadata({ failedAttempts: 15n });
+    expect(result!.failedAttempts).toBe("15");
+    expect(typeof result!.failedAttempts).toBe("string");
+  });
+
   it("converts a Date to its ISO string instead of {} - Object.entries(new Date()) is always empty", () => {
     const when = new Date("2026-01-15T10:30:00.000Z");
     const result = sanitizeNotificationMetadata({ occurredAt: when });

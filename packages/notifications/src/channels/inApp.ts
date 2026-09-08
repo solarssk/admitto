@@ -26,6 +26,7 @@ export class InAppChannel implements NotificationChannel {
       await this.db.notification.createMany({
         data: recipientUserIds.map((userId) => ({
           user_id: userId,
+          organization_id: event.organizationId,
           notification_type: event.type,
           severity: event.severity,
           title: event.title,
