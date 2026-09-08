@@ -1,32 +1,31 @@
 name: Privacy Guard
 
-# pull_request_target (not pull_request): the workflow definition used for this run is
-# always the one on the base branch, even for same-repo PRs. A PR that edits this file
-# cannot change the logic that scans its own diff or gains access to the secret through
-# a modified script. We never check out or execute anything from the PR head — only
-# `git diff` text between two known commit SHAs.
+# pull_request_target (not pull_request): the workflow definition used for this run is always
+# the one on the base branch, even for same-repo PRs — a PR that edits this file cannot change
+# the logic that scans its own diff or gain access to the secret through a modified script.
+#
+# We never checkout or `git fetch` anything from the PR — that alone is a flagged pattern
+# (SonarCloud githubactions:S7631 / GitHub's own "Pwn Request" guidance) regardless of whether
+# the fetched content is actually executed, since a git checkout can trigger diff/merge drivers,
+# hooks, or submodule handling that a purely static review can't rule out. Instead we read the
+# diff as plain text via the REST API (`GET .../pulls/{n}/files`), which is a JSON response over
+# HTTPS — there is no git object, no working tree, nothing derived from the PR to execute.
 on:
   pull_request_target:
     types: [opened, synchronize, reopened]
 
 permissions:
-  contents: read
+  pull-requests: read
 
 jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout base branch (trusted)
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          fetch-depth: 0
-
-      - name: Fetch PR head commit (data only, never executed)
-        run: git fetch --no-tags origin "${{ github.event.pull_request.head.sha }}"
-
-      - name: Scan diff for sensitive patterns
+      - name: Scan PR diff (via API) for sensitive patterns
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           GUARD_PATTERNS: ${{ secrets.PII_DENYLIST }}
         run: |
           set -uo pipefail   # deliberately not -e: every exit code is handled explicitly below
@@ -65,10 +64,10 @@ jobs:
             fi
           done < "$rx_file"
 
-          base_sha="${{ github.event.pull_request.base.sha }}"
-          head_sha="${{ github.event.pull_request.head.sha }}"
-
-          added_lines="$(git diff -U0 "$base_sha...$head_sha" -- . | grep -E '^\+' | grep -Ev '^\+\+\+')"
+          # Diff via the API, not git: each entry's `patch` is the unified diff text for that
+          # file (omitted by GitHub for binary or very large files - a known, accepted gap).
+          added_lines="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].patch // empty' \
+            | grep -E '^\+' | grep -Ev '^\+\+\+')"
 
           if [ -z "$added_lines" ]; then
             echo "Privacy guard: no added lines to scan."
