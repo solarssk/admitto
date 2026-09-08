@@ -19,7 +19,7 @@ describe("InAppChannel", () => {
 
     const result = await channel.send(EVENT, []);
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, noop: true });
     expect(db.notification.createMany).not.toHaveBeenCalled();
   });
 

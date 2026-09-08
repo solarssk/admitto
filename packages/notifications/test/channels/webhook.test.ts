@@ -35,10 +35,11 @@ function settingsWith(url: string, kind: string | null = "generic") {
   return { webhook_url_enc: encryptToString(url), webhook_kind: kind };
 }
 
-/** Minimal fetch Response stand-in - includes `text()` since withPinnedFetch's handler contract
- * requires the body be consumed before returning (see the regression test below). */
+/** Minimal fetch Response stand-in - `body.cancel()` is what the real handler calls to satisfy
+ * withPinnedFetch's must-consume-the-body contract without buffering it (see the regression test
+ * below). */
 function mockResponse(status: number) {
-  return { status, text: vi.fn().mockResolvedValue("") };
+  return { status, body: { cancel: vi.fn().mockResolvedValue(undefined) } };
 }
 
 describe("WebhookChannel", () => {
@@ -54,7 +55,7 @@ describe("WebhookChannel", () => {
 
     const result = await channel.send(EVENT, []);
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, noop: true });
     expect(withPinnedFetch).not.toHaveBeenCalled();
   });
 
@@ -155,7 +156,7 @@ describe("WebhookChannel", () => {
     expect(result.error).toContain("500");
   });
 
-  it("consumes the response body before returning (withPinnedFetch hangs on an unread body)", async () => {
+  it("consumes the response body before returning without buffering it (withPinnedFetch hangs on an unread body; res.text() would buffer an untrusted body into memory)", async () => {
     const db = createStubDb();
     db.notificationSettings.findUnique.mockResolvedValue(
       settingsWith("https://hooks.example.com/x"),
@@ -168,7 +169,23 @@ describe("WebhookChannel", () => {
 
     await channel.send(EVENT, []);
 
-    expect(response.text).toHaveBeenCalled();
+    expect(response.body.cancel).toHaveBeenCalled();
+  });
+
+  it("bounds the request with a timeout signal, so a stalled webhook target can't block notify() forever", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(
+      settingsWith("https://hooks.example.com/x"),
+    );
+    withPinnedFetch.mockImplementation(async (_url, _hostname, _records, _init, handler) =>
+      handler(mockResponse(200)),
+    );
+    const channel = new WebhookChannel(db as unknown as PrismaClient, { timeoutMs: 5_000 });
+
+    await channel.send(EVENT, []);
+
+    const [, , , init] = withPinnedFetch.mock.calls[0]!;
+    expect((init as { signal?: AbortSignal }).signal).toBeInstanceOf(AbortSignal);
   });
 
   it("sends a Slack text payload for webhook_kind slack", async () => {

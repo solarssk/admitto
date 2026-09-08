@@ -20,7 +20,7 @@ export class InAppChannel implements NotificationChannel {
     event: DispatchedNotification,
     recipientUserIds: string[],
   ): Promise<NotificationSendResult> {
-    if (recipientUserIds.length === 0) return { ok: true };
+    if (recipientUserIds.length === 0) return { ok: true, noop: true };
     try {
       await this.db.notification.createMany({
         data: recipientUserIds.map((userId) => ({

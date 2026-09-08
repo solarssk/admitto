@@ -18,8 +18,15 @@ export type WebhookKind = "discord" | "slack" | "generic";
 
 export interface WebhookChannelOptions {
   env?: NodeJS.ProcessEnv;
-  fetchFn?: typeof fetch;
+  /** Bounds DNS resolution + the POST itself, same value/pattern as packages/mailer's own
+   * outbound calls (MAIL_PROBE_TIMEOUT_MS, GraphAdapter). Without this, a webhook target that
+   * accepts the connection and then stalls leaves notify() pending indefinitely - dispatchToChannels
+   * awaits the webhook before ever resolving email/in-app, so a stuck team webhook silently blocks
+   * every other channel from receiving the same security alert. Override for tests. */
+  timeoutMs?: number;
 }
+
+export const WEBHOOK_SEND_TIMEOUT_MS = 15_000;
 
 const GENERIC_SEND_FAILED = "Webhook send failed.";
 
@@ -116,7 +123,7 @@ export class WebhookChannel implements NotificationChannel {
         where: { scope_type_scope_id: { scope_type: "organization", scope_id: event.organizationId } },
         select: { webhook_url_enc: true, webhook_kind: true },
       });
-      if (!settings?.webhook_url_enc) return { ok: true };
+      if (!settings?.webhook_url_enc) return { ok: true, noop: true };
 
       const rawUrl = decryptFromString(settings.webhook_url_enc);
       const url = assertSafeWebhookUrl(rawUrl, env);
@@ -136,12 +143,15 @@ export class WebhookChannel implements NotificationChannel {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(this.options.timeoutMs ?? WEBHOOK_SEND_TIMEOUT_MS),
         },
         async (res) => {
           // withPinnedFetch's own contract (packages/mailer/src/pinnedFetch.ts): the handler must
-          // consume the body before returning, or dispatcher.close() waits for it forever. We only
-          // need the status, not the target's response content.
-          await res.text().catch(() => undefined);
+          // consume the body before returning, or dispatcher.close() waits for it forever. Cancel
+          // rather than read it (res.text() would buffer the whole thing) - only the status is
+          // used, and an untrusted webhook target returning an arbitrarily large body must not be
+          // able to exhaust memory just because we asked it a question.
+          await res.body?.cancel().catch(() => undefined);
           return res.status;
         },
       );

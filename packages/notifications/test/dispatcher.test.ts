@@ -15,9 +15,9 @@ const EVENT: NotificationEvent = {
   body: "5 consecutive failed attempts on user@example.com.",
 };
 
-const STUB_OK_RESULT: { ok: boolean; error?: string } = { ok: true };
+const STUB_OK_RESULT: { ok: boolean; error?: string; noop?: boolean } = { ok: true };
 
-function stubChannel(result: { ok: boolean; error?: string } = STUB_OK_RESULT) {
+function stubChannel(result: { ok: boolean; error?: string; noop?: boolean } = STUB_OK_RESULT) {
   const send = vi.fn().mockResolvedValue(result);
   return { channel: "email" as const, send } satisfies NotificationChannel;
 }
@@ -206,6 +206,35 @@ describe("notify()", () => {
     });
 
     expect(email.send).toHaveBeenCalledWith(expect.anything(), []);
+  });
+
+  it("does not report a noop channel (nothing configured, nothing to send) as having sent the alert", async () => {
+    stubHappyPath(db);
+    const webhook = stubChannel({ ok: true, noop: true }); // e.g. no webhook_url_enc configured
+    const email = stubChannel();
+    const inApp = stubChannel();
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { webhook, email, in_app: inApp },
+    });
+
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event_type: "notification.dispatch.sent",
+          metadata: expect.objectContaining({
+            channels_sent: expect.not.arrayContaining(["webhook"]),
+          }),
+        }),
+      }),
+    );
+    const call = db.securityAuditLog.create.mock.calls.at(-1)![0] as {
+      data: { metadata: { channels_sent: string[] } };
+    };
+    expect(call.data.metadata.channels_sent.toSorted((a, b) => a.localeCompare(b))).toEqual([
+      "email",
+      "in_app",
+    ]);
   });
 
   it("writes a failed audit row (not sent) when any channel reports failure, without throwing", async () => {

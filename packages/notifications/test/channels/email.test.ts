@@ -41,7 +41,7 @@ describe("EmailChannel", () => {
 
     const result = await channel.send(EVENT, []);
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, noop: true });
     expect(createMailer).not.toHaveBeenCalled();
   });
 
@@ -140,7 +140,7 @@ describe("EmailChannel", () => {
 
     const result = await channel.send(EVENT, []);
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, noop: true });
     expect(createMailer).not.toHaveBeenCalled();
   });
 

@@ -46,6 +46,14 @@ function isUniqueConstraintError(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
 }
 
+/** Sanitized text safe for a console.error/operational log - a raw Prisma/driver error can
+ * include rendered query arguments, connection details, or addresses (same reasoning as every
+ * channel's own error handling, AGENTS.md's "no PII in logs" rule). */
+function formatDispatchError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  return sanitizeNotificationText(message);
+}
+
 /**
  * Atomically claims the right to send for (eventType, dedupeKey) within the throttle window.
  * True = caller may send (and this claim already recorded last_sent_at = now); false = another
@@ -97,7 +105,7 @@ async function writeDispatchAuditLog(
       JSON.stringify({
         event: "notification_dispatch_audit_log.write_failed",
         dispatch_event_type: eventType,
-        error: err instanceof Error ? err.message : String(err),
+        error: formatDispatchError(err),
         ts: new Date().toISOString(),
       }),
     );
@@ -185,8 +193,11 @@ async function dispatchToChannels(
 
   const outcome: DispatchOutcome = { channelsSent: [], failures: [] };
   const record = (channel: string, result: NotificationSendResult): void => {
-    if (result.ok) outcome.channelsSent.push(channel);
-    else outcome.failures.push({ channel, error: result.error });
+    // A noop success (nothing configured, nothing to send) must not be reported as a delivery -
+    // SecurityAuditLog.metadata.channels_sent is read as "the alert actually reached these
+    // channels", not "these channels were attempted".
+    if (result.ok && !result.noop) outcome.channelsSent.push(channel);
+    else if (!result.ok) outcome.failures.push({ channel, error: result.error });
   };
 
   if (typeDef.availableChannels.includes("webhook")) {
@@ -302,7 +313,7 @@ export async function notify(
       JSON.stringify({
         event: "notification_dispatch.unexpected_error",
         notification_type: type,
-        error: err instanceof Error ? err.message : String(err),
+        error: formatDispatchError(err),
         ts: new Date().toISOString(),
       }),
     );

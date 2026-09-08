@@ -90,7 +90,7 @@ export class EmailChannel implements NotificationChannel {
       ]);
 
       const addresses = [...new Set([...users.map((u) => u.email), ...extraRecipients])];
-      if (addresses.length === 0) return { ok: true };
+      if (addresses.length === 0) return { ok: true, noop: true };
 
       const mailConfig = await resolveMailConfigForOrg(
         event.organizationId,

@@ -5,6 +5,11 @@ export interface NotificationSendResult {
   /** Human-readable, already-sanitized failure reason (no secrets/URLs/tokens) - safe to store
    * in SecurityAuditLog.metadata. Omitted on success. */
   error?: string;
+  /** True when `ok` is a "nothing to do" success, not an actual delivery - no webhook URL
+   * configured, no address resolved to send to. dispatcher.ts uses this to keep
+   * SecurityAuditLog.metadata.channels_sent honest: a channel that was skipped must not be
+   * reported as having delivered the alert. Omitted (falsy) on a real send. */
+  noop?: boolean;
 }
 
 /**
