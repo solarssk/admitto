@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - The production container image now runs `apt-get upgrade` when installing its base packages, picking up Debian's own bookworm-security point-fixes (e.g. CVE-2026-86145, a high-severity libpcre2-8-0 issue Docker Scout flagged in the v0.6.8 image) instead of shipping whatever version the base image tag happened to bake in until its own next rebuild.
+- Every database query now has a 30-second Postgres `statement_timeout` by default - previously nothing bounded how long an in-flight query could run once it reached the database (only connection acquisition had a timeout), so a query stuck behind a lock during a burst of writes could hang indefinitely instead of failing fast. The handful of deploy-time backfill scripts that intentionally run one long-running statement over an entire table use a separate, longer timeout instead, matching the external bound the deploy entrypoint already gives them. The worker's two dedicated Postgres connections (advisory-lock coordination and job-wake `LISTEN`) get the same 30-second bound, since they connect directly and never went through the timeout above.
 
 ## [0.6.8] - 2026-09-05
 

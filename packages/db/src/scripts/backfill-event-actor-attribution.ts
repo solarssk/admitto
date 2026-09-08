@@ -1,5 +1,7 @@
-import { prisma } from "../index.js";
+import { createBackfillPrismaClient } from "./backfillClient.js";
 import { backfillEventArchivedByUserId, backfillEventCreatedByUserId } from "../backfill-event-actor-attribution.js";
+
+const prisma = createBackfillPrismaClient();
 
 /** Deploy/CLI entrypoint: idempotent Event.created_by_user_id/archived_by_user_id backfill after migrations. */
 async function main(): Promise<void> {
