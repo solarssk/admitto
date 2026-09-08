@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - My Account's passkey management now sends a best-effort WebAuthn Signal API notification when removing a passkey or security key. Supported browsers and password managers can then stop offering the deleted credential for future sign-ins. The "Add" button for passkeys is also now disabled on browsers that report no passkey support, instead of only failing after the setup prompt is attempted.
+- Reports' Wallets tab time-to-install charts ("Time to wallet install" and "Time to install after reminder", both in the live tab and the printable/exportable report) now label their fastest bucket "Within 24h" instead of "Same day" - the bucket has always meant "installed within a day of the email", not "the same calendar date", and an install that happened the next morning could still land there, which the old label made look like a mismatch.
 
 ### Fixed
 
