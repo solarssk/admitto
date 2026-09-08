@@ -89,6 +89,23 @@ jobs:
             fi
           done < "$rx_file"
 
+          # The files-list endpoint below caps out at 3000 entries and silently returns a
+          # truncated list past that - no error, no pagination past the cap - so a denylisted
+          # value in an alphabetically later file could sail through unscanned on a huge PR
+          # while this job still reports success. `changed_files` on the PR itself is the true
+          # total, independent of that cap - check it first and fail closed if it could exceed
+          # what the files endpoint can actually return.
+          changed_files_count="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.changed_files')"
+          cf_rc=$?
+          if [ "$cf_rc" -ne 0 ] || [ -z "$changed_files_count" ]; then
+            echo "::error::Privacy guard: failed to determine this PR's changed-file count (exit $cf_rc). Failing closed rather than risking a silently truncated scan."
+            exit 1
+          fi
+          if [ "$changed_files_count" -ge 3000 ]; then
+            echo "::error::Privacy guard: this PR changes $changed_files_count files - the GitHub API caps the file list at 3000 and returns it silently truncated beyond that. Failing closed rather than accepting a partial scan; split this PR into smaller ones."
+            exit 1
+          fi
+
           # Diff via the API, not git: each entry's `patch` is the unified diff text for that
           # file (omitted by GitHub for binary or very large files - a known, accepted gap).
           # `.filename` is prefixed with a marker so it can be pulled back out below - it's the
