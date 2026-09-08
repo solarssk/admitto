@@ -80,6 +80,7 @@ export default defineConfig({
       "packages/wallet/vitest.config.ts",
       "packages/import/vitest.config.ts",
       "packages/mail-delivery/vitest.config.ts",
+      "packages/notifications/vitest.config.ts",
       "packages/mailer-config/vitest.config.ts",
       "packages/mail-templates/vitest.config.ts",
       "packages/crypto/vitest.config.ts",

@@ -1,0 +1,40 @@
+{
+  "name": "@admitto/notifications",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Admitto notifications module — staff security/ops alerts via email, webhook, in-app (ADR 0038, ADR 0044)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/location -w @admitto/wallet -w @admitto/mail-templates -w @admitto/tickets -w @admitto/mailer -w @admitto/mailer-config -w @admitto/mail-delivery",
+    "precoverage": "npm run pretest",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@admitto/crypto": "*",
+    "@admitto/db": "*",
+    "@admitto/mail-delivery": "*",
+    "@admitto/mail-templates": "*",
+    "@admitto/mailer": "*",
+    "@admitto/mailer-config": "*",
+    "@admitto/shared": "*"
+  },
+  "devDependencies": {
+    "@prisma/client": "^7.10.0",
+    "@types/node": "^24.0.0",
+    "prisma": "^7.10.0",
+    "typescript": "^7.0.2",
+    "vitest": "5.0.0"
+  }
+}
