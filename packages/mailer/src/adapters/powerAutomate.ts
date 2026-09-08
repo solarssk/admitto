@@ -36,6 +36,12 @@ export class PowerAutomateAdapter implements MailerAdapter {
       return rejectedSendResult(this.provider, validationError, message.idempotencyKey);
     }
 
+    const base: SendResult = {
+      status: "failed",
+      provider: this.provider,
+      idempotencyKey: message.idempotencyKey,
+    };
+
     const hostname = new URL(this.config.url).hostname;
     // Bounds both the DNS-rebinding recheck below (dns.lookup takes no signal of its own -
     // see awaitWithAbortSignal's doc comment) and the send itself. Matches GraphAdapter's
@@ -45,6 +51,20 @@ export class PowerAutomateAdapter implements MailerAdapter {
     try {
       records = await awaitWithAbortSignal(resolveSafeMailDestination(hostname), signal);
     } catch (e) {
+      // A stalled lookup (dns.lookup has no signal of its own, hence awaitWithAbortSignal
+      // above) is a transient network condition, not a destination policy decision - map it
+      // the same way as a timed-out send below instead of the terminal, non-retryable
+      // "destination blocked" branch. Same isTimeoutError check as
+      // apps/web/src/maps/nominatim-provider.ts (AbortSignal.timeout uses "TimeoutError";
+      // an externally-aborted signal would be "AbortError").
+      if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) {
+        const mapped = mapNetworkError();
+        emitSystemLog("mail", "error", "mail_send_failed", {
+          provider: this.provider,
+          error: e.message,
+        });
+        return { ...base, status: mapped.status, retryable: mapped.retryable, error: e.message };
+      }
       // Fixed category, not `error` - see the same note in smtp.ts.
       emitSystemLog("security", "warn", "mail_destination_blocked", {
         provider: this.provider,
@@ -56,12 +76,6 @@ export class PowerAutomateAdapter implements MailerAdapter {
       const error = e instanceof Error ? e.message : "mail transport destination is not permitted";
       return rejectedSendResult(this.provider, error, message.idempotencyKey);
     }
-
-    const base: SendResult = {
-      status: "failed",
-      provider: this.provider,
-      idempotencyKey: message.idempotencyKey,
-    };
 
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (this.config.key) headers["x-admitto-key"] = this.config.key;
