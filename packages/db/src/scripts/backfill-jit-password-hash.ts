@@ -1,5 +1,7 @@
-import { prisma } from "../index.js";
+import { createBackfillPrismaClient } from "./backfillClient.js";
 import { backfillJitPasswordHash } from "../backfill-jit-password-hash.js";
+
+const prisma = createBackfillPrismaClient();
 
 /** Deploy/CLI entrypoint: idempotent JIT-provisioned User.password_hash backfill after migrations. */
 async function main(): Promise<void> {

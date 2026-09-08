@@ -3,6 +3,7 @@
  * Uses a dedicated `pg` connection so the lock survives across Prisma pool checkouts.
  */
 import pg from "pg";
+import { DEFAULT_STATEMENT_TIMEOUT_MS } from "@admitto/db/adapter";
 
 const { Client } = pg;
 
@@ -32,7 +33,7 @@ export type WorkerLockClient = {
  * Open a dedicated DB client for advisory locks. Caller must `close()` on shutdown.
  */
 export async function openWorkerLockClient(connectionString: string): Promise<WorkerLockClient> {
-  const client = new Client({ connectionString });
+  const client = new Client({ connectionString, statement_timeout: DEFAULT_STATEMENT_TIMEOUT_MS });
   await client.connect();
   const held = new Set<WorkerLockJob>();
 

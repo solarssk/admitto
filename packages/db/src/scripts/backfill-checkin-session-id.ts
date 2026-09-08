@@ -1,5 +1,7 @@
-import { prisma } from "../index.js";
+import { createBackfillPrismaClient } from "./backfillClient.js";
 import { backfillCheckInSessionIds } from "../backfill-checkin-session-id.js";
+
+const prisma = createBackfillPrismaClient();
 
 /** Deploy/CLI entrypoint: idempotent CheckIn.session_id backfill after migrations. */
 async function main(): Promise<void> {
