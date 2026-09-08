@@ -17,5 +17,17 @@ export { resolveEnabledChannels } from "./preferences.js";
 export { sanitizeNotificationText, sanitizeNotificationMetadata } from "./sanitize.js";
 export { notify, type DispatchDeps } from "./dispatcher.js";
 export { EmailChannel, type EmailChannelOptions } from "./channels/email.js";
-export { WebhookChannel, type WebhookChannelOptions, type WebhookKind } from "./channels/webhook.js";
+export {
+  WebhookChannel,
+  assertSafeWebhookUrl,
+  BlockedWebhookUrlError,
+  type WebhookChannelOptions,
+  type WebhookKind,
+} from "./channels/webhook.js";
 export { InAppChannel } from "./channels/inApp.js";
+export {
+  describeNotificationSettings,
+  patchNotificationSettings,
+  type NotificationSettingsPublic,
+  type NotificationSettingsPatch,
+} from "./settings.js";

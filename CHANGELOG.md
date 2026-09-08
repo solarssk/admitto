@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - The `app` container now shuts down gracefully on `docker stop`/`docker compose down` instead of terminating immediately: it stops accepting new requests, lets in-flight ones (including open Reports/check-in live-update streams) finish for up to 6 seconds before forcing them closed, then gives the database disconnect up to 3 more seconds - 9 seconds combined, comfortably inside Docker's default 10-second stop window, so a routine restart or host maintenance no longer risks cutting off a request that was already in progress. The background worker container already did this; this closes the same gap for the web server.
+- Organisation Settings has a new **Notifications** tab for security alerts to admin staff: a team webhook (Discord, Slack, or generic JSON), a list of extra email recipients who receive every enabled alert regardless of their own personal opt-out, and a per-type on/off toggle for each of the four foundation alert types (repeated failed logins, MFA break-glass use, login/security settings changed, admin login from a new country). A **Send test** button fires all three channels (webhook, email, in-app) against the saved settings - the webhook goes to the shared team destination, while the test email and in-app notification go only to the requesting superadmin's own account, not the whole admin team. Turning a type off only stops active delivery; the underlying security event is still recorded either way.
 
 ### Changed
 

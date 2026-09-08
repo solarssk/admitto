@@ -1317,6 +1317,40 @@ export type ExternalServicesConnectionTestResponse = ConnectionTestResponse & {
   latency_ms?: number;
 };
 
+export type NotificationWebhookKind = "discord" | "slack" | "generic";
+
+export interface NotificationTypeDto {
+  id: string;
+  label: string;
+  default_severity: string;
+}
+
+export interface NotificationSettingsResponse {
+  webhook: { set: boolean; kind: NotificationWebhookKind };
+  extra_email_recipients: string[];
+  disabled_types: string[];
+  notification_types: NotificationTypeDto[];
+}
+
+export interface SaveNotificationSettingsBody {
+  /** Omit to keep; empty string clears the stored webhook URL. */
+  webhookUrl?: string;
+  webhookKind?: NotificationWebhookKind;
+  extraEmailRecipients?: string[];
+  disabledTypes?: string[];
+}
+
+export interface NotificationSettingsTestChannelResult {
+  ok: boolean;
+  error?: string;
+}
+
+export interface NotificationSettingsTestResponse {
+  webhook: NotificationSettingsTestChannelResult;
+  email: NotificationSettingsTestChannelResult;
+  in_app: NotificationSettingsTestChannelResult;
+}
+
 export type SessionRole = "superadmin" | "admin" | "operator";
 export type SettingSource = "env" | "db" | "default";
 

@@ -403,6 +403,13 @@ export const RATE_POLICIES = {
    * outbound call" shape as the mail-transport/diagnostics probes above, and openmeteo's baseUrl
    * is caller-supplied, so this also bounds how often an admin can point it at an arbitrary host. */
   "admin:weather-test": authUserScopedPolicy("admin:weather-test", "admin_weather_test"),
+  /** Settings → Notifications' test-send button - same "no ceiling on a live outbound call"
+   * shape as the weather/maps probes above; it also actually sends a real webhook POST/email/
+   * in-app row (not just a connectivity probe), so bounding it matters even more. */
+  "admin:notification-settings-test": authUserScopedPolicy(
+    "admin:notification-settings-test",
+    "admin_notification_settings_test",
+  ),
   /** On-demand live health probes (Nominatim / OIDC) from Settings → Health check. */
   "admin:health-live": {
     checks: [
