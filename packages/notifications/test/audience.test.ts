@@ -15,6 +15,18 @@ describe("resolveAudienceCandidates", () => {
     ).rejects.toThrow(NotImplementedError);
   });
 
+  it("throws on an unrecognized strategy (defensive - unreachable through the real type system)", async () => {
+    const db = createStubDb();
+    await expect(
+      resolveAudienceCandidates(
+        db as unknown as PrismaClient,
+        // @ts-expect-error - deliberately invalid, exercising the exhaustive-switch guard
+        "not-a-real-strategy",
+        { organizationId: ORG_ID },
+      ),
+    ).rejects.toThrow("Unknown notification audience strategy");
+  });
+
   describe('"org-staff"', () => {
     it("returns active superadmins and active org-admins, deduplicated", async () => {
       const db = createStubDb();

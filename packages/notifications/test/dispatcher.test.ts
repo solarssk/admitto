@@ -255,4 +255,113 @@ describe("notify()", () => {
 
     await expect(notify(db as unknown as PrismaClient, TYPE, EVENT)).resolves.toBeUndefined();
   });
+
+  it("never throws when a non-Error value is thrown", async () => {
+    db.notificationSettings.findUnique.mockRejectedValue("connection reset");
+
+    await expect(notify(db as unknown as PrismaClient, TYPE, EVENT)).resolves.toBeUndefined();
+  });
+
+  it("rethrows (into the outer catch, never to the caller) a throttle-claim error that isn't a unique-constraint race", async () => {
+    db.notificationSettings.findUnique.mockResolvedValue(null);
+    db.notificationThrottle.create.mockRejectedValue(new Error("connection reset"));
+    const email = stubChannel();
+
+    await expect(
+      notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email } }),
+    ).resolves.toBeUndefined();
+
+    expect(email.send).not.toHaveBeenCalled();
+    expect(db.notificationThrottle.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not throw when writing the audit log itself fails", async () => {
+    stubHappyPath(db);
+    db.securityAuditLog.create.mockRejectedValue(new Error("audit table unavailable"));
+
+    await expect(
+      notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("does not throw when writing the audit log fails with a non-Error value", async () => {
+    stubHappyPath(db);
+    db.securityAuditLog.create.mockRejectedValue("audit table unavailable");
+
+    await expect(
+      notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("constructs real channel instances (not stubs) when no channels override is supplied", async () => {
+    stubHappyPath(db);
+
+    // No `channels` deps at all - exercises EmailChannel/WebhookChannel/InAppChannel's real
+    // default construction. The stub db has no mailSettings/user mocks wired up, so the real
+    // channels are expected to fail internally and get recorded as failures - the point of this
+    // test is only that notify() never throws and actually reaches that code path.
+    await expect(notify(db as unknown as PrismaClient, TYPE, EVENT)).resolves.toBeUndefined();
+
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event_type: expect.stringMatching(/^notification\.dispatch\.(sent|failed)$/),
+        }),
+      }),
+    );
+  });
+
+  it("skips a candidate entirely when they opted out of every per-user channel", async () => {
+    db.notificationSettings.findUnique.mockResolvedValue(null);
+    db.notificationThrottle.create.mockResolvedValue({});
+    db.roleAssignment.findMany.mockResolvedValue([
+      { user_id: "u-1", user: { is_active: true } },
+      { user_id: "u-2", user: { is_active: true } },
+    ]);
+    db.notificationPreference.findMany.mockResolvedValue([
+      { user_id: "u-2", channel: "email", enabled: false },
+      { user_id: "u-2", channel: "in_app", enabled: false },
+    ]);
+    const email = stubChannel();
+    const inApp = stubChannel();
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email, in_app: inApp, webhook: stubChannel() },
+    });
+
+    expect(email.send).toHaveBeenCalledWith(expect.anything(), ["u-1"]);
+    expect(inApp.send).toHaveBeenCalledWith(expect.anything(), ["u-1"]);
+  });
+});
+
+describe("reportUnknownType() console output", () => {
+  it("skips the extra dev-loud console.error in production (emitSystemLog's own logging still fires)", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const db = createStubDb();
+
+    try {
+      await notify(db as unknown as PrismaClient, "not.a.real.type", EVENT);
+      const messages = consoleError.mock.calls.map((call) => String(call[0]));
+      expect(messages.some((msg) => msg.includes("this is a bug"))).toBe(false);
+    } finally {
+      consoleError.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("adds the extra dev-loud console.error outside production", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const db = createStubDb();
+
+    try {
+      await notify(db as unknown as PrismaClient, "not.a.real.type", EVENT);
+      const messages = consoleError.mock.calls.map((call) => String(call[0]));
+      expect(messages.some((msg) => msg.includes("this is a bug"))).toBe(true);
+    } finally {
+      consoleError.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
 });

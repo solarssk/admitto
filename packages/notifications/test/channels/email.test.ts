@@ -120,4 +120,60 @@ describe("EmailChannel", () => {
     expect(result.ok).toBe(false);
     expect(result.error).toBeTruthy();
   });
+
+  it("renders with an empty metadata line when the event carries no metadata", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    await channel.send({ ...EVENT, metadata: undefined }, ["u-1"]);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0].html).not.toContain("country:");
+  });
+
+  it("treats a non-array extra_email_recipients as none configured", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([]);
+    db.notificationSettings.findUnique.mockResolvedValue({ extra_email_recipients: null });
+    const channel = new EmailChannel(db as unknown as PrismaClient, { includeExtraRecipients: true });
+
+    const result = await channel.send(EVENT, []);
+
+    expect(result).toEqual({ ok: true });
+    expect(createMailer).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a generic failure message when the mailer error has nothing to sanitize", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    send.mockResolvedValue({ status: "failed", provider: "smtp", error: "" });
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, ["u-1"]);
+
+    expect(result).toEqual({ ok: false, error: "Send failed." });
+  });
+
+  it("stringifies a non-Error thrown value before sanitizing it", async () => {
+    resolveMailConfigForOrg.mockRejectedValue("not an Error instance");
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, ["u-1"]);
+
+    expect(result).toEqual({ ok: false, error: "not an Error instance" });
+  });
+
+  it("falls back to a generic failure message when an unexpected throw has nothing to sanitize", async () => {
+    resolveMailConfigForOrg.mockRejectedValue(new Error(""));
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, ["u-1"]);
+
+    expect(result).toEqual({ ok: false, error: "Send failed." });
+  });
 });

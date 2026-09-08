@@ -7,6 +7,10 @@ describe("sanitizeNotificationText", () => {
       "attacker@example.com",
     );
   });
+
+  it("falls back to an empty string when there is nothing to sanitize", () => {
+    expect(sanitizeNotificationText("")).toBe("");
+  });
 });
 
 describe("sanitizeNotificationMetadata", () => {

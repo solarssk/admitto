@@ -1,9 +1,51 @@
 import type { PrismaClient } from "@admitto/db";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { resolveEnabledChannels, resolveEnabledChannelsForUsers } from "../src/preferences.js";
 import { createStubDb } from "./stubDb.js";
 
 const TYPE = "auth.login.repeated_failures";
+
+// vi.mock is hoisted above regular top-level consts - anything the factory below references must
+// itself be declared via vi.hoisted() to avoid a temporal-dead-zone ReferenceError.
+const { WEBHOOK_ONLY_TYPE, MANDATORY_TYPE } = vi.hoisted(() => ({
+  WEBHOOK_ONLY_TYPE: "test.webhook_only",
+  MANDATORY_TYPE: "test.mandatory",
+}));
+
+// Real registry types stay real for every existing test below; two synthetic entries are added
+// for edge cases the real 4-type foundation registry can't exercise on its own (a type with only
+// a webhook channel, and a non-userConfigurable type) - see notifications-module-foundation plan
+// decision #6 for why userConfigurable:false exists at all.
+vi.mock("../src/registry.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/registry.js")>();
+  const synthetic = {
+    ...actual.NOTIFICATION_TYPES,
+    [WEBHOOK_ONLY_TYPE]: {
+      category: "system",
+      label: "Webhook-only test type",
+      defaultSeverity: "info",
+      availableChannels: ["webhook"],
+      audience: "org-staff",
+      userConfigurable: true,
+      orgDisableable: true,
+    },
+    [MANDATORY_TYPE]: {
+      category: "system",
+      label: "Mandatory test type",
+      defaultSeverity: "warn",
+      availableChannels: ["email", "in_app"],
+      audience: "self",
+      userConfigurable: false,
+      orgDisableable: false,
+    },
+  };
+  return {
+    ...actual,
+    NOTIFICATION_TYPES: synthetic,
+    getNotificationTypeDef: (type: string) =>
+      Object.getOwnPropertyDescriptor(synthetic, type)?.value,
+  };
+});
 
 describe("resolveEnabledChannels", () => {
   it("returns every non-webhook channel when no preference rows exist (opt-out default)", async () => {
@@ -49,6 +91,33 @@ describe("resolveEnabledChannels", () => {
     const db = createStubDb();
     const enabled = await resolveEnabledChannels(db as unknown as PrismaClient, "user-1", "not.real");
     expect(enabled).toEqual([]);
+    expect(db.notificationPreference.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns [] without querying for a type whose only channel is webhook", async () => {
+    const db = createStubDb();
+    const enabled = await resolveEnabledChannels(
+      db as unknown as PrismaClient,
+      "user-1",
+      WEBHOOK_ONLY_TYPE,
+    );
+    expect(enabled).toEqual([]);
+    expect(db.notificationPreference.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns the full channel set for a non-userConfigurable type, ignoring any stored row", async () => {
+    const db = createStubDb();
+    db.notificationPreference.findMany.mockResolvedValue([
+      { user_id: "user-1", channel: "email", enabled: false },
+    ]);
+
+    const enabled = await resolveEnabledChannels(
+      db as unknown as PrismaClient,
+      "user-1",
+      MANDATORY_TYPE,
+    );
+
+    expect(enabled.toSorted((a, b) => a.localeCompare(b))).toEqual(["email", "in_app"]);
     expect(db.notificationPreference.findMany).not.toHaveBeenCalled();
   });
 });

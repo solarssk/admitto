@@ -63,4 +63,24 @@ describe("InAppChannel", () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain("connection lost");
   });
+
+  it("falls back to a generic failure message when the driver error has nothing to sanitize", async () => {
+    const db = createStubDb();
+    db.notification.createMany.mockRejectedValue(new Error(""));
+    const channel = new InAppChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, ["u-1"]);
+
+    expect(result).toEqual({ ok: false, error: "In-app write failed." });
+  });
+
+  it("stringifies a non-Error thrown value before sanitizing it", async () => {
+    const db = createStubDb();
+    db.notification.createMany.mockRejectedValue("db pool exhausted");
+    const channel = new InAppChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, ["u-1"]);
+
+    expect(result).toEqual({ ok: false, error: "db pool exhausted" });
+  });
 });

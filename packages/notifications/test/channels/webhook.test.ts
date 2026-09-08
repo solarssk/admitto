@@ -13,11 +13,12 @@ vi.mock("@admitto/mailer", () => ({
 // Real SSRF blocking logic stays real (that's what several tests below verify) - only the actual
 // DNS lookup is stubbed, so a public hostname like "discord.com" doesn't need real network access
 // in CI and can't flake on it.
+const resolveSafeHostname = vi.fn().mockResolvedValue([{ address: "203.0.113.10", family: 4 }]);
 vi.mock("@admitto/shared/ssrf-guard", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@admitto/shared/ssrf-guard")>();
   return {
     ...actual,
-    resolveSafeHostname: vi.fn().mockResolvedValue([{ address: "203.0.113.10", family: 4 }]),
+    resolveSafeHostname: (...args: unknown[]) => resolveSafeHostname(...args),
   };
 });
 
@@ -43,6 +44,7 @@ function mockResponse(status: number) {
 describe("WebhookChannel", () => {
   beforeEach(() => {
     withPinnedFetch.mockReset();
+    resolveSafeHostname.mockReset().mockResolvedValue([{ address: "203.0.113.10", family: 4 }]);
   });
 
   it("is a silent no-op success when no webhook URL is configured", async () => {
@@ -53,6 +55,17 @@ describe("WebhookChannel", () => {
     const result = await channel.send(EVENT, []);
 
     expect(result).toEqual({ ok: true });
+    expect(withPinnedFetch).not.toHaveBeenCalled();
+  });
+
+  it("blocks a webhook URL that isn't a valid URL at all", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(settingsWith("not a url"));
+    const channel = new WebhookChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, []);
+
+    expect(result).toEqual({ ok: false, error: "Webhook URL is invalid." });
     expect(withPinnedFetch).not.toHaveBeenCalled();
   });
 
@@ -156,5 +169,146 @@ describe("WebhookChannel", () => {
     await channel.send(EVENT, []);
 
     expect(response.text).toHaveBeenCalled();
+  });
+
+  it("sends a Slack text payload for webhook_kind slack", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(
+      settingsWith("https://hooks.slack.com/services/x", "slack"),
+    );
+    withPinnedFetch.mockImplementation(async (_url, _hostname, _records, _init, handler) =>
+      handler(mockResponse(200)),
+    );
+    const channel = new WebhookChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, []);
+
+    expect(result).toEqual({ ok: true });
+    const [, , , init] = withPinnedFetch.mock.calls[0]!;
+    const payload = JSON.parse((init as { body: string }).body);
+    expect(payload).toEqual({ text: `*${EVENT.title}*\n${EVENT.body}` });
+  });
+
+  it("allows an IPv4 loopback URL over HTTP outside production, skipping DNS resolution", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(
+      settingsWith("http://127.0.0.1:9000/hook"),
+    );
+    withPinnedFetch.mockImplementation(async (_url, _hostname, records, _init, handler) => {
+      expect(records).toEqual([{ address: "127.0.0.1", family: 4 }]);
+      return handler(mockResponse(200));
+    });
+    const channel = new WebhookChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, []);
+
+    expect(result).toEqual({ ok: true });
+    expect(resolveSafeHostname).not.toHaveBeenCalled();
+  });
+
+  it("allows an IPv6 loopback URL over HTTP outside production, skipping DNS resolution", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(
+      settingsWith("http://[::1]:9000/hook"),
+    );
+    withPinnedFetch.mockImplementation(async (_url, _hostname, records, _init, handler) => {
+      expect(records).toEqual([{ address: "::1", family: 6 }]);
+      return handler(mockResponse(200));
+    });
+    const channel = new WebhookChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, []);
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("sanitizes a generic error from a non-SSRF failure (e.g. DNS resolution) without throwing", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(
+      settingsWith("https://hooks.example.com/x"),
+    );
+    resolveSafeHostname.mockRejectedValue(new Error("lookup failed for secret@internal.example.com"));
+    const channel = new WebhookChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, []);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).not.toContain("secret@internal.example.com");
+    expect(withPinnedFetch).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a generic failure message when a non-SSRF error has nothing to sanitize", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(
+      settingsWith("https://hooks.example.com/x"),
+    );
+    resolveSafeHostname.mockRejectedValue(new Error(""));
+    const channel = new WebhookChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, []);
+
+    expect(result).toEqual({ ok: false, error: "Webhook send failed." });
+  });
+
+  it("stringifies a non-Error thrown value before sanitizing it", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(
+      settingsWith("https://hooks.example.com/x"),
+    );
+    withPinnedFetch.mockRejectedValue("network exploded");
+    const channel = new WebhookChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, []);
+
+    expect(result).toEqual({ ok: false, error: "network exploded" });
+  });
+
+  it("defaults webhook_kind to generic when the stored value is null", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(settingsWith("https://hooks.example.com/x", null));
+    withPinnedFetch.mockImplementation(async (_url, _hostname, _records, _init, handler) =>
+      handler(mockResponse(200)),
+    );
+    const channel = new WebhookChannel(db as unknown as PrismaClient);
+
+    await channel.send(EVENT, []);
+
+    const [, , , init] = withPinnedFetch.mock.calls[0]!;
+    const payload = JSON.parse((init as { body: string }).body);
+    expect(payload).toMatchObject({ type: EVENT.type });
+  });
+
+  it("omits metadata fields for a Discord payload when the event carries no metadata", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(
+      settingsWith("https://discord.com/api/webhooks/x/y", "discord"),
+    );
+    withPinnedFetch.mockImplementation(async (_url, _hostname, _records, _init, handler) =>
+      handler(mockResponse(204)),
+    );
+    const channel = new WebhookChannel(db as unknown as PrismaClient);
+
+    await channel.send({ ...EVENT, metadata: undefined }, []);
+
+    const [, , , init] = withPinnedFetch.mock.calls[0]!;
+    const payload = JSON.parse((init as { body: string }).body);
+    expect(payload.embeds[0].fields).toEqual([]);
+  });
+
+  it("defaults metadata to an empty object for a generic payload when the event carries none", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(
+      settingsWith("https://hooks.example.com/x", "generic"),
+    );
+    withPinnedFetch.mockImplementation(async (_url, _hostname, _records, _init, handler) =>
+      handler(mockResponse(200)),
+    );
+    const channel = new WebhookChannel(db as unknown as PrismaClient);
+
+    await channel.send({ ...EVENT, metadata: undefined }, []);
+
+    const [, , , init] = withPinnedFetch.mock.calls[0]!;
+    const payload = JSON.parse((init as { body: string }).body);
+    expect(payload.metadata).toEqual({});
   });
 });
