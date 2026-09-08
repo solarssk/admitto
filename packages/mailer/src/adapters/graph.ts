@@ -147,6 +147,10 @@ export class GraphAdapter implements MailerAdapter {
         // Same reasoning as the token request above: a 307/308 would replay the bearer token
         // and message body against an unintended host.
         redirect: "error",
+        // Same 15s deadline as the token request above - without a signal here, a Graph
+        // endpoint that accepts the connection and then never responds would hang this call
+        // (and its caller) forever.
+        signal: AbortSignal.timeout(15_000),
       });
 
       if (res.status === 202) {

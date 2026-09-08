@@ -69,6 +69,9 @@ describe("GraphAdapter", () => {
     // Works around a Node process bug where an unrelated undici import elsewhere corrupts
     // global fetch's gzip decompression over HTTP/2 - see NO_COMPRESSION_HEADERS' doc comment.
     expect(sendCall.init.headers["Accept-Encoding"]).toBe("identity");
+    // A stalled sendMail call must not hang the caller indefinitely - see the token request's
+    // own signal a few lines below.
+    expect(sendCall.init.signal).toBeInstanceOf(AbortSignal);
     const tokenCall = calls.find((c) => c.url.includes("/oauth2/v2.0/token"))!;
     expect(tokenCall.init.headers["Accept-Encoding"]).toBe("identity");
     const body = JSON.parse(sendCall.init.body);

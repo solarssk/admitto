@@ -196,6 +196,29 @@ describe("PowerAutomateAdapter", () => {
     spy.mockRestore();
   });
 
+  it("treats a stalled DNS lookup as failed+retryable, not a permanent destination block", async () => {
+    // dns.lookup (inside resolveSafeMailDestination) has no signal of its own - a stalled
+    // resolver rejects via awaitWithAbortSignal with this same DOMException shape once the
+    // adapter's AbortSignal.timeout fires. Mocking the rejection directly keeps the test fast
+    // instead of waiting out the real 15s deadline.
+    const spy = vi
+      .spyOn(ssrfGuard, "resolveSafeMailDestination")
+      .mockRejectedValueOnce(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+    const fetchFn = vi.fn();
+    const adapter = new PowerAutomateAdapter(config, fetchFn as unknown as typeof fetch);
+    const res = await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+
+    expect(res.status).toBe("failed");
+    expect(res.retryable).toBe(true);
+    expect(res.error).toContain("timeout");
+    expect(fetchFn).not.toHaveBeenCalled();
+
+    const logs = querySystemLogs({ source: "mail" });
+    expect(logs.some((entry) => entry.message === "mail_send_failed" && entry.level === "error")).toBe(true);
+    expect(querySystemLogs({ source: "security" })).toHaveLength(0);
+    spy.mockRestore();
+  });
+
   it("sends with redirect: 'error' so the fetch itself refuses to follow a redirect", async () => {
     let captured: any;
     const fetchFn = vi.fn(async (_url: string, init: any) => {
@@ -205,6 +228,17 @@ describe("PowerAutomateAdapter", () => {
     const adapter = new PowerAutomateAdapter(config, fetchFn as unknown as typeof fetch);
     await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
     expect(captured.redirect).toBe("error");
+  });
+
+  it("bounds the send with an abort signal so a stalled flow cannot hang the caller", async () => {
+    let captured: any;
+    const fetchFn = vi.fn(async (_url: string, init: any) => {
+      captured = init;
+      return { ok: true, status: 200, text: async () => "", headers: { get: () => null } };
+    });
+    const adapter = new PowerAutomateAdapter(config, fetchFn as unknown as typeof fetch);
+    await adapter.send({ to: "x@example.com", subject: "S", html: "<p>h</p>" });
+    expect(captured.signal).toBeInstanceOf(AbortSignal);
   });
 
   describe("DNS pinning (no fetchFn injected — production path)", () => {
@@ -228,7 +262,11 @@ describe("PowerAutomateAdapter", () => {
       });
       expect(mockedUndiciFetch).toHaveBeenCalledWith(
         config.url,
-        expect.objectContaining({ redirect: "error", dispatcher: expect.any(Object) }),
+        expect.objectContaining({
+          redirect: "error",
+          dispatcher: expect.any(Object),
+          signal: expect.any(AbortSignal),
+        }),
       );
     });
 

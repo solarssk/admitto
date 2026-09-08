@@ -10,6 +10,7 @@ import { MailDestinationError, resolveSafeMailDestination } from "../ssrfGuard.j
 import { isSendSuccess, type FetchFn, type MailMessage, type MailerAdapter, type SendResult } from "../types.js";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import { redactEmail } from "@admitto/shared";
+import { awaitWithAbortSignal } from "@admitto/shared/ssrf-guard";
 
 /**
  * Power Automate — sends via an HTTP-triggered flow (Admitto POSTs a ready-to-send
@@ -35,28 +36,20 @@ export class PowerAutomateAdapter implements MailerAdapter {
       return rejectedSendResult(this.provider, validationError, message.idempotencyKey);
     }
 
-    const hostname = new URL(this.config.url).hostname;
-    let records: LookupAddress[];
-    try {
-      records = await resolveSafeMailDestination(hostname);
-    } catch (e) {
-      // Fixed category, not `error` - see the same note in smtp.ts.
-      emitSystemLog("security", "warn", "mail_destination_blocked", {
-        provider: this.provider,
-        error: "destination blocked or unresolvable",
-      });
-      // Propagate typed destination failures so ticket send/resend can map them to 422
-      // instead of a soft-failed delivery with opaque copy.
-      if (e instanceof MailDestinationError) throw e;
-      const error = e instanceof Error ? e.message : "mail transport destination is not permitted";
-      return rejectedSendResult(this.provider, error, message.idempotencyKey);
-    }
-
     const base: SendResult = {
       status: "failed",
       provider: this.provider,
       idempotencyKey: message.idempotencyKey,
     };
+
+    const hostname = new URL(this.config.url).hostname;
+    // Bounds both the DNS-rebinding recheck below (dns.lookup takes no signal of its own -
+    // see awaitWithAbortSignal's doc comment) and the send itself. Matches GraphAdapter's
+    // token/sendMail deadline and MAIL_PROBE_TIMEOUT_MS.
+    const signal = AbortSignal.timeout(15_000);
+    const destination = await this.resolveDestination(hostname, signal, base, message.idempotencyKey);
+    if (!destination.ok) return destination.result;
+    const { records } = destination;
 
     const headers: Record<string, string> = { "content-type": "application/json" };
     if (this.config.key) headers["x-admitto-key"] = this.config.key;
@@ -100,14 +93,18 @@ export class PowerAutomateAdapter implements MailerAdapter {
       // Reject outright rather than follow a redirect — a same-host-looking URL that
       // 302s to an internal target would otherwise bypass the destination check above.
       const result = this.fetchFn
-        ? await this.fetchFn(this.config.url, { method: "POST", headers, redirect: "error", body }).then(
-            processResponse,
-          )
+        ? await this.fetchFn(this.config.url, {
+            method: "POST",
+            headers,
+            redirect: "error",
+            body,
+            signal,
+          }).then(processResponse)
         : await withPinnedFetch(
             this.config.url,
             hostname,
             records,
-            { method: "POST", headers, body },
+            { method: "POST", headers, body, signal },
             processResponse,
           );
       if (isSendSuccess(result.status)) {
@@ -133,6 +130,48 @@ export class PowerAutomateAdapter implements MailerAdapter {
         retryable: mapped.retryable,
         error,
       };
+    }
+  }
+
+  /** Resolves and validates the send destination for `send`, translating a stalled DNS
+   * lookup or a blocked/unresolvable host into a terminal SendResult. */
+  private async resolveDestination(
+    hostname: string,
+    signal: AbortSignal,
+    base: SendResult,
+    idempotencyKey: string | undefined,
+  ): Promise<{ ok: true; records: LookupAddress[] } | { ok: false; result: SendResult }> {
+    try {
+      const records = await awaitWithAbortSignal(resolveSafeMailDestination(hostname), signal);
+      return { ok: true, records };
+    } catch (e) {
+      // A stalled lookup (dns.lookup has no signal of its own, hence awaitWithAbortSignal
+      // above) is a transient network condition, not a destination policy decision - map it
+      // the same way as a timed-out send instead of the terminal, non-retryable "destination
+      // blocked" branch. Same isTimeoutError check as apps/web/src/maps/nominatim-provider.ts
+      // (AbortSignal.timeout uses "TimeoutError"; an externally-aborted signal would be
+      // "AbortError").
+      if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) {
+        const mapped = mapNetworkError();
+        emitSystemLog("mail", "error", "mail_send_failed", {
+          provider: this.provider,
+          error: e.message,
+        });
+        return {
+          ok: false,
+          result: { ...base, status: mapped.status, retryable: mapped.retryable, error: e.message },
+        };
+      }
+      // Fixed category, not `error` - see the same note in smtp.ts.
+      emitSystemLog("security", "warn", "mail_destination_blocked", {
+        provider: this.provider,
+        error: "destination blocked or unresolvable",
+      });
+      // Propagate typed destination failures so ticket send/resend can map them to 422
+      // instead of a soft-failed delivery with opaque copy.
+      if (e instanceof MailDestinationError) throw e;
+      const error = e instanceof Error ? e.message : "mail transport destination is not permitted";
+      return { ok: false, result: rejectedSendResult(this.provider, error, idempotencyKey) };
     }
   }
 }
