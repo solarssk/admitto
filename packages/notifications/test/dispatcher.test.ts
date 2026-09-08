@@ -22,18 +22,18 @@ function stubChannel(result: { ok: boolean; error?: string; noop?: boolean } = S
   return { channel: "email" as const, send } satisfies NotificationChannel;
 }
 
-function p2002(): Prisma.PrismaClientKnownRequestError {
-  return new Prisma.PrismaClientKnownRequestError("unique constraint", {
-    code: "P2002",
-    clientVersion: "test",
-  });
+/** claimThrottleSlot's `db.$queryRaw` returns one row on a successful claim (fresh insert or
+ * stale-row reclaim - both indistinguishable to the caller by design), zero rows when another
+ * claimant already holds this window. */
+function queryRawClaims(db: ReturnType<typeof createStubDb>, claimed: boolean): void {
+  db.$queryRaw.mockResolvedValue(claimed ? [{ id: "throttle-1" }] : []);
 }
 
 /** Default happy-path stubbing: throttle claims on first try, one active org-staff candidate,
  * that candidate has every channel enabled. */
 function stubHappyPath(db: ReturnType<typeof createStubDb>) {
   db.notificationSettings.findUnique.mockResolvedValue(null); // no disabled_types row
-  db.notificationThrottle.create.mockResolvedValue({});
+  queryRawClaims(db, true);
   db.roleAssignment.findMany.mockResolvedValue([{ user_id: "u-1", user: { is_active: true } }]);
   db.notificationPreference.findMany.mockResolvedValue([]);
   db.securityAuditLog.create.mockResolvedValue({});
@@ -74,10 +74,9 @@ describe("notify()", () => {
     );
   });
 
-  it("skips when the throttle window has not elapsed (create races into P2002, updateMany finds no stale row)", async () => {
+  it("skips when the throttle window has not elapsed (claim query returns no row)", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
-    db.notificationThrottle.create.mockRejectedValue(p2002());
-    db.notificationThrottle.updateMany.mockResolvedValue({ count: 0 });
+    queryRawClaims(db, false);
     const email = stubChannel();
 
     await notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email } });
@@ -90,10 +89,9 @@ describe("notify()", () => {
     );
   });
 
-  it("proceeds when a stale throttle row is reclaimed via updateMany", async () => {
+  it("proceeds when the claim query returns a row (fresh insert or stale-row reclaim)", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
-    db.notificationThrottle.create.mockRejectedValue(p2002());
-    db.notificationThrottle.updateMany.mockResolvedValue({ count: 1 });
+    queryRawClaims(db, true);
     db.roleAssignment.findMany.mockResolvedValue([{ user_id: "u-1", user: { is_active: true } }]);
     db.notificationPreference.findMany.mockResolvedValue([]);
     const email = stubChannel();
@@ -110,12 +108,11 @@ describe("notify()", () => {
       channels: { email: stubChannel() },
     });
 
-    expect(db.notificationThrottle.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        event_type: TYPE,
-        dedupe_key: `${ORG_ID}:attacked-user-42`,
-      }),
-    });
+    // db.$queryRaw is called as a tagged template - mock.calls[0] is [strings, ...interpolated
+    // values] in source order: eventType, dedupeKey, now, now, cutoff (see claimThrottleSlot).
+    const [, calledEventType, calledDedupeKey] = db.$queryRaw.mock.calls[0] as unknown[];
+    expect(calledEventType).toBe(TYPE);
+    expect(calledDedupeKey).toBe(`${ORG_ID}:attacked-user-42`);
   });
 
   it("falls back to an org-only dedupe key when the call site supplies no dedupeKey", async () => {
@@ -123,14 +120,13 @@ describe("notify()", () => {
 
     await notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } });
 
-    expect(db.notificationThrottle.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ dedupe_key: `${ORG_ID}:org` }),
-    });
+    const [, , calledDedupeKey] = db.$queryRaw.mock.calls[0] as unknown[];
+    expect(calledDedupeKey).toBe(`${ORG_ID}:org`);
   });
 
   it("skips with skipped_empty_audience when org-staff resolves to zero active admins", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
-    db.notificationThrottle.create.mockResolvedValue({});
+    queryRawClaims(db, true);
     db.roleAssignment.findMany.mockResolvedValue([]);
     const email = stubChannel();
 
@@ -148,7 +144,7 @@ describe("notify()", () => {
 
   it("releases the throttle claim when the audience resolves to nobody, so a later real occurrence isn't silently suppressed", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
-    db.notificationThrottle.create.mockResolvedValue({});
+    queryRawClaims(db, true);
     db.roleAssignment.findMany.mockResolvedValue([]);
 
     await notify(db as unknown as PrismaClient, TYPE, EVENT, { channels: { email: stubChannel() } });
@@ -188,7 +184,7 @@ describe("notify()", () => {
 
   it("only sends to candidates whose per-user preference has that channel enabled", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
-    db.notificationThrottle.create.mockResolvedValue({});
+    queryRawClaims(db, true);
     db.roleAssignment.findMany.mockResolvedValue([
       { user_id: "u-1", user: { is_active: true } },
       { user_id: "u-2", user: { is_active: true } },
@@ -209,7 +205,7 @@ describe("notify()", () => {
 
   it("still invokes the email channel (with zero user recipients) when every org-staff candidate opted out, so a configured team distro address still gets it", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
-    db.notificationThrottle.create.mockResolvedValue({});
+    queryRawClaims(db, true);
     db.roleAssignment.findMany.mockResolvedValue([{ user_id: "u-1", user: { is_active: true } }]);
     db.notificationPreference.findMany.mockResolvedValue([
       { user_id: "u-1", channel: "email", enabled: false },
@@ -272,7 +268,24 @@ describe("notify()", () => {
     );
   });
 
-  it("releases the throttle claim when a channel fails, so a real later occurrence can still alert", async () => {
+  it("releases the throttle claim when every channel fails, so a real later occurrence can still alert", async () => {
+    stubHappyPath(db);
+    const email = stubChannel({ ok: false, error: "Send failed." });
+    const webhook = stubChannel({ ok: false, error: "Send failed." });
+    const inApp = stubChannel({ ok: false, error: "Send failed." });
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email, webhook, in_app: inApp },
+    });
+
+    expect(db.notificationThrottle.delete).toHaveBeenCalledWith({
+      where: {
+        event_type_dedupe_key: { event_type: TYPE, dedupe_key: `${ORG_ID}:org` },
+      },
+    });
+  });
+
+  it("keeps the throttle claim when at least one channel succeeded despite another failing, so already-delivered channels don't resend/spam next occurrence", async () => {
     stubHappyPath(db);
     const email = stubChannel({ ok: false, error: "Send failed." });
 
@@ -280,6 +293,31 @@ describe("notify()", () => {
       channels: { email, webhook: stubChannel(), in_app: stubChannel() },
     });
 
+    expect(db.notificationThrottle.delete).not.toHaveBeenCalled();
+  });
+
+  it("records a fully-empty dispatch (every channel a legitimate noop) as skipped, not sent, and releases the throttle claim", async () => {
+    stubHappyPath(db);
+    const email = stubChannel({ ok: true, noop: true });
+    const webhook = stubChannel({ ok: true, noop: true });
+    const inApp = stubChannel({ ok: true, noop: true });
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email, webhook, in_app: inApp },
+    });
+
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event_type: "notification.dispatch.skipped_no_recipients",
+        }),
+      }),
+    );
+    expect(db.securityAuditLog.create).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ event_type: "notification.dispatch.sent" }),
+      }),
+    );
     expect(db.notificationThrottle.delete).toHaveBeenCalledWith({
       where: {
         event_type_dedupe_key: { event_type: TYPE, dedupe_key: `${ORG_ID}:org` },
@@ -371,9 +409,9 @@ describe("notify()", () => {
     await expect(notify(db as unknown as PrismaClient, TYPE, EVENT)).resolves.toBeUndefined();
   });
 
-  it("rethrows (into the outer catch, never to the caller) a throttle-claim error that isn't a unique-constraint race", async () => {
+  it("propagates a throttle-claim query failure into the outer catch, never to the caller", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
-    db.notificationThrottle.create.mockRejectedValue(new Error("connection reset"));
+    db.$queryRaw.mockRejectedValue(new Error("connection reset"));
     const email = stubChannel();
 
     await expect(
@@ -381,7 +419,6 @@ describe("notify()", () => {
     ).resolves.toBeUndefined();
 
     expect(email.send).not.toHaveBeenCalled();
-    expect(db.notificationThrottle.updateMany).not.toHaveBeenCalled();
   });
 
   it("does not throw when writing the audit log itself fails", async () => {
@@ -422,7 +459,7 @@ describe("notify()", () => {
 
   it("skips a candidate entirely when they opted out of every per-user channel", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
-    db.notificationThrottle.create.mockResolvedValue({});
+    queryRawClaims(db, true);
     db.roleAssignment.findMany.mockResolvedValue([
       { user_id: "u-1", user: { is_active: true } },
       { user_id: "u-2", user: { is_active: true } },

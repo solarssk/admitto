@@ -4,6 +4,7 @@ import type { Prisma, PrismaClient } from "@admitto/db";
 import { withPinnedFetch } from "@admitto/mailer";
 import { sanitizeDeliveryError } from "@admitto/mail-delivery";
 import {
+  awaitWithAbortSignal,
   isBlockedPrivateOrMetadataHost,
   isLoopbackHost,
   resolveSafeHostname,
@@ -129,10 +130,15 @@ export class WebhookChannel implements NotificationChannel {
       const url = assertSafeWebhookUrl(rawUrl, env);
       const kind = (settings.webhook_kind as WebhookKind | null) ?? "generic";
 
+      // One shared deadline for DNS resolution + the POST, not one each - dns.lookup() (inside
+      // resolveSafeHostname) takes no AbortSignal of its own and would otherwise hang past this
+      // budget on a stalled resolver, so awaitWithAbortSignal races it against the same signal
+      // passed to withPinnedFetch below (packages/shared/src/ssrfGuard.ts).
+      const signal = AbortSignal.timeout(this.options.timeoutMs ?? WEBHOOK_SEND_TIMEOUT_MS);
       const hostname = unbracketHostname(url.hostname);
       const records: LookupAddress[] = isLoopbackHost(hostname)
         ? [{ address: hostname, family: hostname.includes(":") ? 6 : 4 }]
-        : await resolveSafeHostname(hostname);
+        : await awaitWithAbortSignal(resolveSafeHostname(hostname), signal);
 
       const payload = buildPayload(kind, event);
       const status = await withPinnedFetch(
@@ -143,7 +149,7 @@ export class WebhookChannel implements NotificationChannel {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(payload),
-          signal: AbortSignal.timeout(this.options.timeoutMs ?? WEBHOOK_SEND_TIMEOUT_MS),
+          signal,
         },
         async (res) => {
           // withPinnedFetch's own contract (packages/mailer/src/pinnedFetch.ts): the handler must

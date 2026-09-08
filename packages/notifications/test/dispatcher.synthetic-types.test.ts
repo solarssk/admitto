@@ -68,7 +68,7 @@ describe("notify() with synthetic type shapes", () => {
   beforeEach(() => {
     db = createStubDb();
     db.notificationSettings.findUnique.mockResolvedValue(null);
-    db.notificationThrottle.create.mockResolvedValue({});
+    db.$queryRaw.mockResolvedValue([{ id: "throttle-1" }]);
     db.securityAuditLog.create.mockResolvedValue({});
   });
 
@@ -84,11 +84,7 @@ describe("notify() with synthetic type shapes", () => {
     );
 
     expect(email.send).not.toHaveBeenCalled();
-    expect(db.notificationThrottle.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ last_sent_at: expect.any(Date) }),
-      }),
-    );
+    expect(db.$queryRaw).toHaveBeenCalled();
     expect(db.securityAuditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -116,7 +112,7 @@ describe("notify() with synthetic type shapes", () => {
     expect(email.send).toHaveBeenCalledWith(expect.anything(), ["u-1"]);
   });
 
-  it("calls no channel at all for a type with an empty availableChannels list, and still reports success", async () => {
+  it("calls no channel at all for a type with an empty availableChannels list, records it as skipped (not sent), and releases the throttle claim", async () => {
     db.roleAssignment.findMany.mockResolvedValue([{ user_id: "u-1", user: { is_active: true } }]);
     const email = stubChannel();
     const webhook = stubChannel();
@@ -132,10 +128,10 @@ describe("notify() with synthetic type shapes", () => {
     expect(db.securityAuditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          event_type: "notification.dispatch.sent",
-          metadata: expect.objectContaining({ channels_sent: [] }),
+          event_type: "notification.dispatch.skipped_no_recipients",
         }),
       }),
     );
+    expect(db.notificationThrottle.delete).toHaveBeenCalled();
   });
 });

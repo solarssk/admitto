@@ -42,10 +42,6 @@ function reportUnknownType(type: string): void {
   }
 }
 
-function isUniqueConstraintError(err: unknown): boolean {
-  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
-}
-
 /** Sanitized text safe for a console.error/operational log - a raw Prisma/driver error can
  * include rendered query arguments, connection details, or addresses (same reasoning as every
  * channel's own error handling, AGENTS.md's "no PII in logs" rule). */
@@ -57,10 +53,13 @@ function formatDispatchError(err: unknown): string {
 /**
  * Atomically claims the right to send for (eventType, dedupeKey) within the throttle window.
  * True = caller may send (and this claim already recorded last_sent_at = now); false = another
- * send already claimed this window, caller must skip. The `create`-then-conditional-`updateMany`
- * pair is race-safe: a concurrent claimant either wins the create (unique constraint) or the
- * updateMany's `last_sent_at: { lt: cutoff }` guard (only a stale row can be reclaimed, and only
- * one concurrent updateMany can match+update a given row).
+ * send already claimed this window, caller must skip. A single `INSERT ... ON CONFLICT ... DO
+ * UPDATE ... WHERE ... RETURNING` statement handles both the fresh-row and stale-row-reclaim
+ * cases natively in Postgres: unlike a `create()` that deliberately relies on catching a P2002
+ * unique-constraint violation, `ON CONFLICT` never raises an error on conflict, so this is safe
+ * to call with a caller-supplied `Prisma.TransactionClient` - a raised P2002 would otherwise abort
+ * the whole surrounding Postgres transaction even after being caught in JS, poisoning every
+ * statement the caller runs afterwards in that same transaction.
  */
 async function claimThrottleSlot(
   db: Db,
@@ -69,21 +68,16 @@ async function claimThrottleSlot(
   windowMinutes: number,
   now: Date,
 ): Promise<boolean> {
-  try {
-    await db.notificationThrottle.create({
-      data: { event_type: eventType, dedupe_key: dedupeKey, last_sent_at: now },
-    });
-    return true;
-  } catch (err) {
-    if (!isUniqueConstraintError(err)) throw err;
-  }
-
   const cutoff = new Date(now.getTime() - windowMinutes * 60_000);
-  const claimed = await db.notificationThrottle.updateMany({
-    where: { event_type: eventType, dedupe_key: dedupeKey, last_sent_at: { lt: cutoff } },
-    data: { last_sent_at: now },
-  });
-  return claimed.count === 1;
+  const claimed = await db.$queryRaw<Array<{ id: string }>>`
+    INSERT INTO "NotificationThrottle" (id, event_type, dedupe_key, last_sent_at)
+    VALUES (gen_random_uuid()::text, ${eventType}, ${dedupeKey}, ${now})
+    ON CONFLICT (event_type, dedupe_key)
+    DO UPDATE SET last_sent_at = ${now}
+    WHERE "NotificationThrottle".last_sent_at < ${cutoff}
+    RETURNING id
+  `;
+  return claimed.length === 1;
 }
 
 /**
@@ -334,12 +328,28 @@ export async function notify(
       deps,
     );
 
-    if (failures.length > 0) {
+    // Nothing was actually delivered on any channel - either every channel failed, or every
+    // channel was a legitimate noop (nothing configured/nobody opted in). Release so a real
+    // later occurrence of this incident isn't silently suppressed by a claim that never
+    // communicated anything. A *partial* success (some channels sent, one failed) keeps the
+    // claim: releasing there would let the channels that already delivered resend/spam on the
+    // next occurrence while only the genuinely-still-broken channel needed a retry.
+    if (channelsSent.length === 0) {
       await releaseThrottleSlot(db, type, throttleKey);
+    }
+
+    if (failures.length > 0) {
       await writeDispatchAuditLog(db, "notification.dispatch.failed", {
         notification_type: type,
         channels_sent: channelsSent,
         failures,
+      });
+      return;
+    }
+
+    if (channelsSent.length === 0) {
+      await writeDispatchAuditLog(db, "notification.dispatch.skipped_no_recipients", {
+        notification_type: type,
       });
       return;
     }
