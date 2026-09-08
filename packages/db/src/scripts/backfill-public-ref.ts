@@ -1,5 +1,7 @@
-import { prisma } from "../index.js";
+import { createBackfillPrismaClient } from "./backfillClient.js";
 import { backfillAgencyPublicRefs } from "../backfill-public-ref.js";
+
+const prisma = createBackfillPrismaClient();
 
 /** Deploy/CLI entrypoint: idempotent agency `public_ref` backfill after migrations. */
 async function main(): Promise<void> {

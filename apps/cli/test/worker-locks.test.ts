@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const query = vi.fn();
 const connect = vi.fn();
 const end = vi.fn();
+let lastClientConfig: Record<string, unknown> | undefined;
 
 vi.mock("pg", () => ({
   default: {
@@ -10,11 +11,15 @@ vi.mock("pg", () => ({
       query = query;
       connect = connect;
       end = end;
+      constructor(config: Record<string, unknown>) {
+        lastClientConfig = config;
+      }
     },
   },
 }));
 
 const { openWorkerLockClient, WORKER_LOCK_KEYS } = await import("../src/commands/worker-locks.js");
+const { DEFAULT_STATEMENT_TIMEOUT_MS } = await import("@admitto/db/adapter");
 
 describe("WORKER_LOCK_KEYS", () => {
   it("exposes stable per-job lock names", () => {
@@ -37,6 +42,13 @@ describe("openWorkerLockClient", () => {
     end.mockReset();
     connect.mockResolvedValue(undefined);
     end.mockResolvedValue(undefined);
+    lastClientConfig = undefined;
+  });
+
+  it("bounds the advisory-lock connection with a statement_timeout", async () => {
+    const locks = await openWorkerLockClient("postgresql://example/db");
+    await locks.close();
+    expect(lastClientConfig).toMatchObject({ statement_timeout: DEFAULT_STATEMENT_TIMEOUT_MS });
   });
 
   it("acquires, skips duplicate release, and unlocks on close", async () => {
