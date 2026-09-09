@@ -58,6 +58,13 @@ function hasHostBinary(command: string): Promise<boolean> {
   return cached;
 }
 
+/** Once a host binary is confirmed incompatible with the target server (see runPg below), every
+ * later call to that same command skips straight to the Docker fallback instead of re-attempting
+ * and re-failing against the host binary each time. */
+const forcedDockerCommands = new Set<string>();
+
+type PgCommand = "pg_dump" | "psql";
+
 /**
  * Resolves `pg_dump`/`psql` to either the host binary directly, or the same command run inside
  * the already-running `db` compose service - mirrors infra/scripts/create-test-dbs.sh's own
@@ -70,11 +77,11 @@ function hasHostBinary(command: string): Promise<boolean> {
  * exactly that supported workstation.
  */
 async function pgClient(
-  command: "pg_dump" | "psql",
+  command: PgCommand,
   args: string[],
 ): Promise<{ file: string; args: string[]; env: NodeJS.ProcessEnv }> {
   const { host, port, user, password } = pgArgsFromUrl(WEB_TEST_DATABASE_URL);
-  if (await hasHostBinary(command)) {
+  if (!forcedDockerCommands.has(command) && (await hasHostBinary(command))) {
     return {
       file: command,
       args: ["-h", host, "-p", port, "-U", user, ...args],
@@ -111,6 +118,28 @@ function run(file: string, args: string[], env: NodeJS.ProcessEnv, input?: strin
   });
 }
 
+/** pg_dump refuses to run against a server newer than itself ("aborting because of server version
+ * mismatch" - see PostgreSQL's own pg_dump docs) - a real gap the host-binary-exists check above
+ * can't catch, since `pg_dump --version` never talks to any server. A developer on the documented
+ * Docker-backed Postgres setup with an older host-installed client would otherwise hit this and
+ * fail the whole integration run, even though the container's own (version-matched) pg_dump would
+ * work fine. Runs the resolved command; on that specific failure against a host binary, retries
+ * the same command through Docker instead and remembers that for the rest of this run. */
+async function runPg(command: PgCommand, args: string[], input?: string): Promise<string> {
+  const resolved = await pgClient(command, args);
+  try {
+    return await run(resolved.file, resolved.args, resolved.env, input);
+  } catch (err) {
+    const isHostVersionMismatch =
+      resolved.file !== "docker" && err instanceof Error && /server version mismatch/i.test(err.message);
+    if (!isHostVersionMismatch) throw err;
+
+    forcedDockerCommands.add(command);
+    const dockerResolved = await pgClient(command, args);
+    return run(dockerResolved.file, dockerResolved.args, dockerResolved.env, input);
+  }
+}
+
 /**
  * Builds each worker's isolated schema by dumping the canonical `public` schema's CURRENT
  * structure (already migrated by ensureIntegrationTestSchema) and replaying it, schema-qualified,
@@ -130,8 +159,7 @@ export async function provisionWorkerSchemas(workerCount: number): Promise<void>
   assertTestDatabaseUrl(WEB_TEST_DATABASE_URL);
   const { database, user } = pgArgsFromUrl(WEB_TEST_DATABASE_URL);
 
-  const dumpCmd = await pgClient("pg_dump", ["-d", database, "-n", "public", "--schema-only"]);
-  const dump = await run(dumpCmd.file, dumpCmd.args, dumpCmd.env);
+  const dump = await runPg("pg_dump", ["-d", database, "-n", "public", "--schema-only"]);
 
   // Drop the dump's own `public` schema bootstrap (this repo's schema always exists already) -
   // everything else is fully `public.`-qualified by pg_dump (confirmed: it sets
@@ -154,7 +182,7 @@ export async function provisionWorkerSchemas(workerCount: number): Promise<void>
       assertSafeIdentifier(schema);
       const rewritten = strippedDump.replace(/\bpublic\./g, `${schema}.`);
 
-      const createCmd = await pgClient("psql", [
+      await runPg("psql", [
         "-d",
         database,
         "-v",
@@ -162,10 +190,8 @@ export async function provisionWorkerSchemas(workerCount: number): Promise<void>
         "-c",
         `DROP SCHEMA IF EXISTS "${schema}" CASCADE; CREATE SCHEMA "${schema}" AUTHORIZATION "${user}";`,
       ]);
-      await run(createCmd.file, createCmd.args, createCmd.env);
 
-      const replayCmd = await pgClient("psql", ["-d", database, "-v", "ON_ERROR_STOP=1", "-f", "-"]);
-      await run(replayCmd.file, replayCmd.args, replayCmd.env, rewritten);
+      await runPg("psql", ["-d", database, "-v", "ON_ERROR_STOP=1", "-f", "-"], rewritten);
     }),
   );
 }
