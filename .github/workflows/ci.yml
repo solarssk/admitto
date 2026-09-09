@@ -32,6 +32,16 @@ env:
   REDIS_URL: redis://localhost:6379
   # Fixed test key — 32 bytes. Not a production secret; used only in CI test runs.
   ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  # ip-location-api (apps/web/src/rate-limit/ip-location.ts) runs its own randomized-jitter
+  # auto-update check at import time unless told not to (apps/web/.env.example sets this same
+  # value for local dev, for the same reason) - without it, any test-web run can hit a real
+  # outbound network call to refresh its IP-to-country database, and a malformed row in that
+  # live download crashes the whole importing test file with an uncaught exception unrelated to
+  # anything under test (confirmed in CI: "AddressError: Invalid IPv4 address" from
+  # ip-location-api's own CSV parser, a different test file each time depending on which worker's
+  # randomized check happened to fire). More concurrent web-unit workers (see maxWorkers) directly
+  # raises the odds that at least one of them rolls that check during a run.
+  ILA_AUTO_UPDATE: "false"
 
 jobs:
   wiki-docs:
@@ -185,10 +195,12 @@ jobs:
       # root build once (a build with no @admitto/* rebuild needed is a fast no-op for tsc).
       # Confirmed by removing this step: apps/db's own build failed on a missing @admitto/shared
       # type (apps/admin's pretest builds @admitto/db before @admitto/shared, the reverse of what
-      # @admitto/db's own build needs), and apps/web's pretest builds @admitto/ui directly without
-      # first building crypto/db/location/wallet/mail-templates/tickets/auth that @admitto/ui
-      # itself depends on. Don't repeat this optimization attempt without first making every
-      # workspace's own pretest/precoverage chain independently, correctly topologically complete.
+      # @admitto/db's own build needs), and apps/web's own package.json depends directly on
+      # @admitto/import, @admitto/mail-delivery, @admitto/mailer, and @admitto/storage, none of
+      # which its pretest (shared/ui/admin only) or @admitto/ui's own prebuild chain (which covers
+      # crypto/db/location/wallet/mail-templates/tickets/auth, not those four) ever builds. Don't
+      # repeat this optimization attempt without first making every workspace's own
+      # pretest/precoverage chain independently, correctly topologically complete.
       - run: npm run build
       - name: Create test databases
         run: bash infra/scripts/create-test-dbs.sh

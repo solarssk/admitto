@@ -1,5 +1,5 @@
-import type { PrismaClient } from "@admitto/db";
-import { hasScope } from "@admitto/db";
+import type { PrismaClient } from "@admitto/db/client";
+import { hasScope } from "@admitto/db/roles";
 import { assertPasswordMeetsPolicy } from "./password-policy.js";
 import { createUser } from "./user.js";
 import { logSuperadminBootstrapCli } from "./audit.js";
