@@ -92,6 +92,7 @@ export default defineConfig({
       "packages/auth/vitest.integration.config.ts",
       "apps/web/vitest.unit.config.ts",
       "apps/web/vitest.integration.config.ts",
+      "apps/web/vitest.integration-parallel.config.ts",
       "apps/admin/vitest.config.ts",
       "apps/cli/vitest.config.ts",
     ],
