@@ -29,7 +29,16 @@ jobs:
           GUARD_PATTERNS: ${{ secrets.PII_DENYLIST }}
           IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
         run: |
-          set -uo pipefail   # deliberately not -e: every exit code is handled explicitly below
+          set -uo pipefail
+          # deliberately not -e ourselves, BUT GitHub Actions' default bash invocation for a
+          # `run:` step is `bash --noprofile --norc -eo pipefail {0}` regardless of what this
+          # script sets — -e IS active here whether we ask for it or not. Every "run a command,
+          # then inspect $? on the next line" spot below therefore needs the command itself to be
+          # the left side of a `||`, since a bare failing command not otherwise exempted from -e
+          # (not an if/while condition, not already part of && / ||) kills the whole step
+          # immediately, with no output — before the very next line ever reads $?. Confirmed
+          # empirically: `printf '' | grep -Eq -- "$pat"` returning 1 (the ordinary "no match"
+          # outcome, not an error) took the entire job down silently on every single PR.
 
           # Forced explicitly: under the C/POSIX locale, grep does not reliably match character
           # classes or case-fold accented letters (e.g. Polish [oó]) — confirmed empirically on
@@ -81,8 +90,8 @@ jobs:
           # (exit >=2) get silently swallowed into "no match"
           while IFS= read -r pat; do
             [ -z "$pat" ] && continue
-            printf '' | grep -Eq -- "$pat" 2>/dev/null
-            rc=$?
+            rc=0
+            printf '' | grep -Eq -- "$pat" 2>/dev/null || rc=$?
             if [ "$rc" -ge 2 ]; then
               echo "::error::Privacy guard: malformed regex pattern in PII_DENYLIST secret (content withheld). Fix the secret before this check can run."
               exit 1
@@ -95,8 +104,8 @@ jobs:
           # while this job still reports success. `changed_files` on the PR itself is the true
           # total, independent of that cap - check it first and fail closed if it could exceed
           # what the files endpoint can actually return.
-          changed_files_count="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.changed_files')"
-          cf_rc=$?
+          cf_rc=0
+          changed_files_count="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.changed_files')" || cf_rc=$?
           if [ "$cf_rc" -ne 0 ] || [ -z "$changed_files_count" ]; then
             echo "::error::Privacy guard: failed to determine this PR's changed-file count (exit $cf_rc). Failing closed rather than risking a silently truncated scan."
             exit 1
@@ -117,30 +126,34 @@ jobs:
           # unscanned) - but only for statuses that introduce or keep that path in the tree.
           # A "removed" entry's `.filename` is the path being deleted: flagging it as a hit would
           # block a PR that's cleaning up an old leak, exactly backwards from the intent here.
+          api_rc=0
           raw_scan="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '
             .[] |
             (if .status != "removed" then "FILENAME:" + .filename else empty end),
             (if .patch == null and (.additions // 0) > 0 then "UNSCANNABLE:" + .filename else (.patch // empty) end)
-          ')"
-          api_rc=$?
+          ')" || api_rc=$?
           if [ "$api_rc" -ne 0 ]; then
             echo "::error::Privacy guard: failed to fetch the PR diff via the GitHub API (exit $api_rc). Failing closed rather than merging unscanned."
             exit 1
           fi
 
-          unscannable="$(printf '%s\n' "$raw_scan" | grep '^UNSCANNABLE:' | sed 's/^UNSCANNABLE://')"
+          # `|| true`: with pipefail, a pipeline's status is its rightmost non-zero exit code even
+          # when a later stage (sed here) itself succeeds - grep finding zero matches (the normal
+          # case whenever nothing is UNSCANNABLE/FILENAME/added) is not an error, just an empty
+          # result, and must not be allowed to trip -e the same way the spots above did.
+          unscannable="$(printf '%s\n' "$raw_scan" | grep '^UNSCANNABLE:' | sed 's/^UNSCANNABLE://')" || true
           if [ -n "$unscannable" ]; then
             echo "::error::Privacy guard: GitHub omitted the diff for the following file(s) with added content (too large or binary) - cannot verify they're clean. Failing closed; review manually before merging: $unscannable"
             exit 1
           fi
 
-          filenames="$(printf '%s\n' "$raw_scan" | grep '^FILENAME:' | sed 's/^FILENAME://')"
+          filenames="$(printf '%s\n' "$raw_scan" | grep '^FILENAME:' | sed 's/^FILENAME://')" || true
           # exactly one leading "+" stripped - it's the diff marker, not part of the real content.
           # An anchored pattern like `^value$` in the denylist would otherwise never match (every
           # added line's actual first character is shifted one position by the marker), and a
           # value whose own real content starts with "+" would be scanned with a synthetic extra
           # one prepended.
-          added_lines="$(printf '%s\n' "$raw_scan" | grep -Ev '^(FILENAME|UNSCANNABLE):' | grep -E '^\+' | sed 's/^+//')"
+          added_lines="$(printf '%s\n' "$raw_scan" | grep -Ev '^(FILENAME|UNSCANNABLE):' | grep -E '^\+' | sed 's/^+//')" || true
           scan_targets="$(printf '%s\n%s\n' "$filenames" "$added_lines")"
 
           if [ -z "$(printf '%s' "$scan_targets" | tr -d '[:space:]')" ]; then
@@ -151,14 +164,14 @@ jobs:
           blocked=0
 
           if [ -s "$lit_file" ]; then
-            printf '%s\n' "$scan_targets" | grep -Fqi -f "$lit_file"
-            rc=$?
+            rc=0
+            printf '%s\n' "$scan_targets" | grep -Fqi -f "$lit_file" || rc=$?
             { [ "$rc" -eq 0 ] || [ "$rc" -ge 2 ]; } && blocked=1
           fi
 
           if [ -s "$rx_file" ]; then
-            printf '%s\n' "$scan_targets" | grep -Eqi -f "$rx_file"
-            rc=$?
+            rc=0
+            printf '%s\n' "$scan_targets" | grep -Eqi -f "$rx_file" || rc=$?
             { [ "$rc" -eq 0 ] || [ "$rc" -ge 2 ]; } && blocked=1
           fi
 
