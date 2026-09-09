@@ -1,6 +1,8 @@
 import type { PrismaClient } from "@admitto/db";
+import { EMAIL_ASSET_VERSION } from "@admitto/mail-templates";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EMAIL_SEND_CONCURRENCY, EmailChannel } from "../../src/channels/email.js";
+import { SEVERITY_COLOR, SEVERITY_LABEL } from "../../src/channels/emailTemplate.js";
 import type { DispatchedNotification } from "../../src/types.js";
 import { createStubDb } from "../stubDb.js";
 
@@ -59,6 +61,9 @@ describe("EmailChannel", () => {
       "a@example.com",
       "b@example.com",
     ]);
+    // No organization stubbed here - this is buildSystemEmailSubject's own "Admitto" fallback
+    // when org.name can't be resolved, not a literal brand prefix - see the dedicated org-name
+    // test below for the everyday case.
     expect(messages[0].subject).toBe(`[Admitto] ${EVENT.title}`);
     expect(messages[0].html).toContain(EVENT.title);
     expect(messages[0].html).toContain(EVENT.body);
@@ -66,11 +71,29 @@ describe("EmailChannel", () => {
     expect(closeMailer).toHaveBeenCalledTimes(1);
   });
 
-  it("includes NotificationSettings.extra_email_recipients only when includeExtraRecipients is set", async () => {
+  it("includes NotificationSettings.extra_email_recipients (object shape: {email, description}) only when includeExtraRecipients is set", async () => {
     const db = createStubDb();
     db.user.findMany.mockResolvedValue([]);
     db.notificationSettings.findUnique.mockResolvedValue({
-      extra_email_recipients: ["ops@example.com", "ops@example.com"],
+      extra_email_recipients: [
+        { email: "ops@example.com", description: "Ops team" },
+        { email: "ops@example.com", description: "Ops team" },
+      ],
+    });
+    const channel = new EmailChannel(db as unknown as PrismaClient, { includeExtraRecipients: true });
+
+    const result = await channel.send(EVENT, []);
+
+    expect(result).toEqual({ ok: true });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0].to).toBe("ops@example.com");
+  });
+
+  it("also accepts extra_email_recipients as plain strings - packages/db/prisma/schema.prisma's own column comment documents this shape", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([]);
+    db.notificationSettings.findUnique.mockResolvedValue({
+      extra_email_recipients: ["ops@example.com", ""],
     });
     const channel = new EmailChannel(db as unknown as PrismaClient, { includeExtraRecipients: true });
 
@@ -219,6 +242,28 @@ describe("EmailChannel", () => {
     // never does. See EMAIL_SEND_TIMEOUT_MS's own doc comment for that tradeoff.
   });
 
+  it("passes exportSink through to createMailer() - required for export_only providers", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    const exportSink = vi.fn();
+    const channel = new EmailChannel(db as unknown as PrismaClient, { exportSink });
+
+    await channel.send(EVENT, ["u-1"]);
+
+    expect(createMailer).toHaveBeenCalledWith(expect.anything(), { exportSink });
+  });
+
+  it("sanitizes createMailer's own internal 'requires exportSink' guard message instead of leaking it, e.g. when the org is export_only and no exportSink was wired in", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    createMailer.mockRejectedValue(new Error("export_only provider requires exportSink in createMailer deps"));
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    const result = await channel.send(EVENT, ["u-1"]);
+
+    expect(result).toEqual({ ok: false, error: "Send failed." });
+  });
+
   it("bounds createMailer() itself, not just the later send - e.g. SmtpAdapter resolving its destination at construction time", async () => {
     const db = createStubDb();
     db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
@@ -253,6 +298,79 @@ describe("EmailChannel", () => {
 
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0]![0].html).not.toContain("country:");
+  });
+
+  it("shows the organization's own logo in the email header when the org has one set", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    db.organization.findUnique.mockResolvedValue({
+      name: "Acme",
+      logo_url: "https://cdn.example.com/logo.png",
+    });
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    await channel.send(EVENT, ["u-1"]);
+
+    const html = send.mock.calls[0]![0].html;
+    expect(html).toContain('src="https://cdn.example.com/logo.png"');
+    expect(html).toContain('alt="Acme"');
+  });
+
+  it("uses the organization's name (not the product name) as the Subject prefix - the recipient already knows this is Admitto, they need which org the alert concerns", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    db.organization.findUnique.mockResolvedValue({ name: "Acme", logo_url: null });
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    await channel.send(EVENT, ["u-1"]);
+
+    expect(send.mock.calls[0]![0].subject).toBe(`[Acme] ${EVENT.title}`);
+  });
+
+  it("falls back to the bundled Admitto PNG logo when the org has no logo - the SVG wordmark can't render as an <img> in classic Outlook", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    db.organization.findUnique.mockResolvedValue({ name: "Acme", logo_url: null });
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    await channel.send(EVENT, ["u-1"]);
+
+    const html = send.mock.calls[0]![0].html;
+    expect(html).toContain(
+      `src="https://admitto.example.com/assets/admitto-logo.png?v=${EMAIL_ASSET_VERSION}"`,
+    );
+    expect(html).toContain('alt="Admitto"');
+  });
+
+  it.each(["info", "warn", "error"] as const)(
+    "renders the %s severity's color, label, and badge image",
+    async (severity) => {
+      const db = createStubDb();
+      db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+      const channel = new EmailChannel(db as unknown as PrismaClient);
+
+      await channel.send({ ...EVENT, severity }, ["u-1"]);
+
+      const html = send.mock.calls[0]![0].html;
+      expect(html).toContain(SEVERITY_COLOR[severity]);
+      expect(html).toContain(SEVERITY_LABEL[severity]);
+      expect(html).toContain(
+        `src="https://admitto.example.com/assets/notification-badge-${severity}.png?v=${EMAIL_ASSET_VERSION}"`,
+      );
+    },
+  );
+
+  it("renders the CTA button linking to /account, not the superadmin-only org settings page - org-staff recipients include plain admins too", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    await channel.send(EVENT, ["u-1"]);
+
+    const html = send.mock.calls[0]![0].html;
+    expect(html).toContain("Manage notifications");
+    expect(html).toMatch(/href="[^"]*\/account"/);
+    expect(html).not.toContain("/admin/settings?tab=notifications");
   });
 
   it("treats a non-array extra_email_recipients as none configured", async () => {
@@ -298,5 +416,58 @@ describe("EmailChannel", () => {
     const result = await channel.send(EVENT, ["u-1"]);
 
     expect(result).toEqual({ ok: false, error: "Send failed." });
+  });
+
+  describe("sendToAddress", () => {
+    it("sends directly to the given address without any user lookup", async () => {
+      const db = createStubDb();
+      const channel = new EmailChannel(db as unknown as PrismaClient);
+
+      const result = await channel.sendToAddress(EVENT, "ops@example.com");
+
+      expect(result).toEqual({ ok: true });
+      expect(db.user.findMany).not.toHaveBeenCalled();
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send.mock.calls[0]![0].to).toBe("ops@example.com");
+    });
+
+    it("never includes NotificationSettings.extra_email_recipients, even when includeExtraRecipients is set - a one-off test must not cc the real team distro", async () => {
+      const db = createStubDb();
+      const channel = new EmailChannel(db as unknown as PrismaClient, { includeExtraRecipients: true });
+
+      await channel.sendToAddress(EVENT, "ops@example.com");
+
+      expect(db.notificationSettings.findUnique).not.toHaveBeenCalled();
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns a sanitized failure when the mailer reports a failed send, without throwing", async () => {
+      const db = createStubDb();
+      send.mockResolvedValue({
+        status: "failed",
+        provider: "smtp",
+        error: "SMTP said no for secret@internal.example.com",
+      });
+      const channel = new EmailChannel(db as unknown as PrismaClient);
+
+      const result = await channel.sendToAddress(EVENT, "ops@example.com");
+
+      expect(result.ok).toBe(false);
+      expect(result.error).not.toContain("secret@internal.example.com");
+    });
+
+    it("returns a sanitized failure instead of throwing when something upstream of the actual send rejects", async () => {
+      const db = createStubDb();
+      resolveMailConfigForOrg.mockRejectedValue(
+        new Error("Cannot resolve mail provider for https://leak.example.com/secret-org-id"),
+      );
+      const channel = new EmailChannel(db as unknown as PrismaClient);
+
+      const result = await channel.sendToAddress(EVENT, "ops@example.com");
+
+      expect(result.ok).toBe(false);
+      expect(result.error).not.toContain("leak.example.com");
+      expect(send).not.toHaveBeenCalled();
+    });
   });
 });

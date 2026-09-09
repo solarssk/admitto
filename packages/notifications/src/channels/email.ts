@@ -1,22 +1,36 @@
 import type { PrismaClient } from "@admitto/db";
 import {
-  compileTemplate,
-  escapeHtmlAttribute,
-  escapeHtmlText,
+  buildSystemEmailHtml,
+  buildSystemEmailSubject,
+  EMAIL_ASSET_VERSION,
+  resolveEmailShellHeaderLogo,
   resolvePublicBaseUrl,
 } from "@admitto/mail-templates";
-import { closeMailer, createMailer, type MailerAdapter, type MailMessage, type SendResult } from "@admitto/mailer";
+import {
+  closeMailer,
+  createMailer,
+  type ExportSink,
+  type MailerAdapter,
+  type MailMessage,
+  type SendResult,
+} from "@admitto/mailer";
 import { resolveMailConfigForOrg } from "@admitto/mailer-config";
-import { sanitizeDeliveryError } from "@admitto/mail-delivery";
+import { clientSafeDeliveryError } from "@admitto/mail-delivery";
 import { awaitWithAbortSignal } from "@admitto/shared/ssrf-guard";
 import type { NotificationChannel, NotificationSendResult } from "../channel.js";
 import type { DispatchedNotification } from "../types.js";
-import { SEVERITY_COLOR, SEVERITY_LABEL, SYSTEM_NOTIFICATION_EMAIL_MJML } from "./emailTemplate.js";
+import { buildNotificationEmailBodyHtml } from "./emailContent.js";
+
+const NOTIFICATION_EMAIL_TITLE = "Admitto system notification";
 
 // Never Prisma.TransactionClient - see the Db comment in ../dispatcher.ts.
 type Db = PrismaClient;
 
-const SETTINGS_NOTIFICATIONS_PATH = "/admin/settings/notifications";
+// /admin/settings?tab=notifications (org-wide webhook/email config) is superadmin-only, but
+// org-staff recipients also include plain admins (audience.ts's resolveOrgStaff) - /account is
+// reachable by anyone with a staff session. A personal, per-recipient notification preferences
+// section there is planned (PR4, not built yet); this CTA already points at its future home.
+const NOTIFICATION_CTA_PATH = "/account";
 const GENERIC_SEND_FAILED = "Send failed.";
 
 /**
@@ -87,17 +101,12 @@ export interface EmailChannelOptions {
   includeExtraRecipients?: boolean;
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
-}
-
-type PlaceholderValue = { value: string; attribute: boolean };
-
-function substitute(html: string, values: Record<string, PlaceholderValue>): string {
-  let out = html;
-  for (const [key, { value, attribute }] of Object.entries(values)) {
-    const escaped = attribute ? escapeHtmlAttribute(value) : escapeHtmlText(value);
-    out = out.replaceAll(`{{${key}}}`, escaped);
-  }
-  return out;
+  /** Passed straight through to createMailer() - required when the org's provider is
+   * export_only (dev/test only, see MailTransportCard's own copy); without it createMailer()
+   * throws its own internal "requires exportSink in createMailer deps" guard, which every OTHER
+   * mail-sending call site in the repo (drain.ts, retry.ts, testSend.ts, send.ts,
+   * transportTest.ts) already avoids by passing this same dependency through. */
+  exportSink?: ExportSink;
 }
 
 /** One composed, server-side line of text - never a table (prompt 86 "CZYTAJ NAJPIERW": every
@@ -110,6 +119,9 @@ function buildMetadataLine(metadata: Record<string, unknown> | undefined): strin
     .join(" · ");
 }
 
+/** extra_email_recipients entries are {email, description, added_at, added_by_*} objects
+ * (settings.ts's NotificationEmailRecipient) - only the address is relevant to actually sending
+ * mail, so this pulls just that out rather than importing settings.ts's own normalizer here. */
 async function resolveExtraRecipients(db: Db, organizationId: string): Promise<string[]> {
   const settings = await db.notificationSettings.findUnique({
     where: { scope_type_scope_id: { scope_type: "organization", scope_id: organizationId } },
@@ -117,13 +129,24 @@ async function resolveExtraRecipients(db: Db, organizationId: string): Promise<s
   });
   const raw = settings?.extra_email_recipients;
   if (!Array.isArray(raw)) return [];
-  return raw.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+  const addresses: string[] = [];
+  for (const entry of raw) {
+    // Accepts both the schema-documented plain string[] shape (packages/db/prisma/schema.prisma's
+    // own comment on this column) and the richer {email, description, ...} object shape a later
+    // PR in this stack writes (adds a per-recipient description/audit trail) - a reader that only
+    // accepted one shape would silently drop every recipient if the other shape is what's
+    // actually persisted (review finding).
+    const email = typeof entry === "string" ? entry : (entry as Record<string, unknown> | null)?.email;
+    if (typeof email === "string" && email.trim().length > 0) addresses.push(email);
+  }
+  return addresses;
 }
 
 /**
- * Email delivery for the notification module. Every registered type renders through the single
- * shared layout (ADR 0044 §7, SYSTEM_NOTIFICATION_EMAIL_MJML) - no per-type visual design. One
- * message per resolved address (mailer contract is one-recipient-per-message).
+ * Email delivery for the notification module. Every registered type renders through the same
+ * shared system-email shell as the mail transport test (@admitto/mail-templates's
+ * buildSystemEmailHtml, ADR 0044 §7) - no per-type visual design. One message per resolved
+ * address (mailer contract is one-recipient-per-message).
  */
 export class EmailChannel implements NotificationChannel {
   readonly channel = "email" as const;
@@ -149,7 +172,26 @@ export class EmailChannel implements NotificationChannel {
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return { ok: false, error: sanitizeDeliveryError(message) ?? GENERIC_SEND_FAILED };
+      return { ok: false, error: clientSafeDeliveryError(message) };
+    }
+  }
+
+  /**
+   * One-off send to a single, caller-supplied address - the Organisation Settings → Notifications
+   * "Send test" action's "test email address" override. Deliberately bypasses recipientUserIds/
+   * includeExtraRecipients entirely (never cc's the real team distro for a personal test) and
+   * shares every other step (mail config, template, timeout, error sanitizing) with send() via
+   * sendToAddressesInternal, so this stays a thin variant rather than a parallel implementation.
+   */
+  async sendToAddress(event: DispatchedNotification, address: string): Promise<NotificationSendResult> {
+    try {
+      return await awaitWithAbortSignal(
+        this.sendToAddressesInternal(event, [address]),
+        AbortSignal.timeout(this.options.timeoutMs ?? EMAIL_SEND_TIMEOUT_MS),
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: clientSafeDeliveryError(message) };
     }
   }
 
@@ -171,34 +213,52 @@ export class EmailChannel implements NotificationChannel {
 
     const addresses = [...new Set([...users.map((u) => u.email), ...extraRecipients])];
     if (addresses.length === 0) return { ok: true, noop: true };
+    return this.sendToAddressesInternal(event, addresses);
+  }
 
-    const mailConfig = await resolveMailConfigForOrg(
-      event.organizationId,
-      this.db as PrismaClient,
-      this.options.env,
-    );
-    const mailer = await createMailer(mailConfig);
+  private async sendToAddressesInternal(
+    event: DispatchedNotification,
+    addresses: string[],
+  ): Promise<NotificationSendResult> {
+    const [mailConfig, org] = await Promise.all([
+      resolveMailConfigForOrg(event.organizationId, this.db as PrismaClient, this.options.env),
+      this.db.organization.findUnique({
+        where: { id: event.organizationId },
+        select: { name: true, logo_url: true },
+      }),
+    ]);
+    const mailer = await createMailer(mailConfig, { exportSink: this.options.exportSink });
 
     try {
-      // Substitute into the raw MJML source, not the compiled HTML: mjml2html's
-      // validationLevel "strict" validates certain attribute values by type at compile time
-      // (e.g. mj-section background-color as a CSS Color) - a still-literal "{{severity_color}}"
-      // token fails that validation before substitution ever gets a chance to run.
       const baseUrl = resolvePublicBaseUrl(this.options.env);
-      const substituted = substitute(SYSTEM_NOTIFICATION_EMAIL_MJML, {
-        severity_color: { value: SEVERITY_COLOR[event.severity], attribute: true },
-        severity_label: { value: SEVERITY_LABEL[event.severity], attribute: false },
-        title: { value: event.title, attribute: false },
-        body: { value: event.body, attribute: false },
-        metadata_line: { value: buildMetadataLine(event.metadata), attribute: false },
-        cta_url: { value: `${baseUrl}${SETTINGS_NOTIFICATIONS_PATH}`, attribute: true },
-        cta_label: { value: "Manage notifications", attribute: false },
+      const headerLogo = resolveEmailShellHeaderLogo(org?.logo_url, this.options.env);
+      const bodyHtml = buildNotificationEmailBodyHtml({
+        severity: event.severity,
+        title: event.title,
+        body: event.body,
+        metadataLine: buildMetadataLine(event.metadata),
+        ctaUrl: `${baseUrl}${NOTIFICATION_CTA_PATH}`,
+        ctaLabel: "Manage notifications",
+        badgeImageUrl: `${baseUrl}/assets/notification-badge-${event.severity}.png?v=${EMAIL_ASSET_VERSION}`,
       });
-      const html = await compileTemplate(substituted, "mjml");
+      const html = buildSystemEmailHtml({
+        titleText: NOTIFICATION_EMAIL_TITLE,
+        logoUrl: headerLogo?.url ?? null,
+        logoKind: headerLogo?.kind,
+        altFallbackName: org?.name ?? undefined,
+        bodyHtml,
+        footerText:
+          "Automated system notification from Admitto - sent because your account has the admin or superadmin role on this instance.",
+      });
 
+      // Org name prefix, not "Admitto" - a self-hosted instance's own admins already know who's
+      // sending; what they need at a glance in their inbox is which organization the alert
+      // concerns (PO report). Same shared builder/fallback-to-"Admitto" precedence as
+      // mail-delivery's transport test subject - see buildSystemEmailSubject's own doc comment.
+      const subject = buildSystemEmailSubject(org?.name?.trim() || "Admitto", event.title);
       const messages: MailMessage[] = addresses.map((to) => ({
         to,
-        subject: `[Admitto] ${event.title}`,
+        subject,
         html,
       }));
 
@@ -218,10 +278,10 @@ export class EmailChannel implements NotificationChannel {
         if (outcome.status === "rejected") {
           failedCount++;
           const message = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason);
-          firstErrorDetail ??= sanitizeDeliveryError(message) ?? GENERIC_SEND_FAILED;
+          firstErrorDetail ??= clientSafeDeliveryError(message);
         } else if (outcome.value.status === "failed" || outcome.value.status === "rejected") {
           failedCount++;
-          firstErrorDetail ??= sanitizeDeliveryError(outcome.value.error) ?? GENERIC_SEND_FAILED;
+          firstErrorDetail ??= clientSafeDeliveryError(outcome.value.error);
         }
       }
 
