@@ -2958,6 +2958,58 @@
   font-size: var(--fs-sm);
 }
 
+/* Removable chip list - one entry per string value the user adds to a short list (Security's
+ * trusted script origins). Shared here instead of living in one feature's own CSS file, in case
+ * a second panel wants the same look. */
+.removable-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.removable-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.removable-chip__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: none;
+  background: var(--at-gray-200);
+  color: var(--text-secondary);
+  padding: 0;
+  cursor: pointer;
+}
+
+/* Expands the tappable/clickable area to 24x24 (WCAG 2.5.8) without growing the 16px visible
+ * circle - an invisible, absolutely-positioned hit zone doesn't affect layout or the chip's gap. */
+.removable-chip__remove::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+}
+
+.removable-chip__remove:hover:not(:disabled) {
+  background: var(--status-error-tint);
+  color: var(--status-error-fg);
+}
+
 /* Identity & SSO panels (Settings → Identity tab, #266) */
 .identity-providers__list {
   display: flex;
