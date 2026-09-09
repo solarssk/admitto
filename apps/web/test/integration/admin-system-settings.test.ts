@@ -5,6 +5,19 @@ import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
+import {
+  SETTING_SESSION_TTL,
+  SETTING_OPERATOR_SESSION_TTL,
+  SETTING_SESSION_IDLE_TIMEOUT,
+  SETTING_OPERATOR_SESSION_IDLE_TIMEOUT,
+  SETTING_TRUSTED_DEVICE_DAYS,
+  SETTING_MFA_REQUIRED_ROLES,
+  SETTING_INSTANCE_URL,
+  SETTING_CSP_TRUSTED_ORIGINS,
+  SETTING_WEBAUTHN_ENABLED,
+  SETTING_PASSKEY_LOGIN_ENABLED,
+  SETTING_PASSKEY_CONDITIONAL_UI_ENABLED,
+} from "@admitto/auth";
 import { createApp } from "../../src/app.js";
 import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -16,6 +29,23 @@ const ORG_SYSSETTINGS = "org-sys-settings-test";
 const EMAIL_SUPER = "syssettings-super@example.com";
 const EMAIL_ADMIN = "syssettings-admin@example.com";
 const PASSWORD = "syssettings-pass-123";
+
+// Every key GET/PATCH /api/admin/system-settings reads or writes (system-settings-routes.ts's
+// own SETTING_KEY_MAP) — the complete, precise scope of what this file's tests can touch, instead
+// of every row in the (unscoped, instance-wide) SystemSettings table.
+const MANAGED_SETTING_KEYS = [
+  SETTING_SESSION_TTL,
+  SETTING_OPERATOR_SESSION_TTL,
+  SETTING_SESSION_IDLE_TIMEOUT,
+  SETTING_OPERATOR_SESSION_IDLE_TIMEOUT,
+  SETTING_TRUSTED_DEVICE_DAYS,
+  SETTING_MFA_REQUIRED_ROLES,
+  SETTING_INSTANCE_URL,
+  SETTING_CSP_TRUSTED_ORIGINS,
+  SETTING_WEBAUTHN_ENABLED,
+  SETTING_PASSKEY_LOGIN_ENABLED,
+  SETTING_PASSKEY_CONDITIONAL_UI_ENABLED,
+];
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -29,7 +59,7 @@ let prevBaseUrlForSuite: string | undefined;
 
 async function seed(client: PrismaClient) {
   await client.adminAuditLog.deleteMany({ where: { organization_id: ORG_SYSSETTINGS } });
-  await client.systemSettings.deleteMany();
+  await client.systemSettings.deleteMany({ where: { key: { in: MANAGED_SETTING_KEYS } } });
   await client.session.deleteMany({
     where: { user: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } },
   });
@@ -102,7 +132,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await prisma.adminAuditLog.deleteMany({ where: { organization_id: ORG_SYSSETTINGS } });
-  await prisma.systemSettings.deleteMany();
+  await prisma.systemSettings.deleteMany({ where: { key: { in: MANAGED_SETTING_KEYS } } });
   // Restore any env var changes
 });
 
