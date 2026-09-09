@@ -1,10 +1,13 @@
 import type { PrismaClient } from "@admitto/db";
 import {
-  escapeHtmlAttribute,
+  buildEmailBoxedSectionHtml,
+  buildEmailStatusBadgeHtml,
+  buildSystemEmailHtml,
+  buildSystemEmailSubject,
   escapeHtmlText,
   resolveBranding,
-  resolveBrandingAssetUrlForRender,
-  resolvePublicBaseUrl,
+  resolveEmailShellHeaderLogo,
+  type EmailShellLogoKind,
 } from "@admitto/mail-templates";
 import { closeMailer, createMailer, type MailerConfig, type MailerProvider, type SendResult } from "@admitto/mailer";
 import { resolveMailConfig, resolveMailConfigForOrg } from "@admitto/mailer-config";
@@ -14,10 +17,8 @@ import type { MailDeliveryDeps } from "./send.js";
 import { sanitizeDeliveryError } from "./sanitizeError.js";
 
 const TRANSPORT_TEST_SUBJECT_PREFIX = "Admitto mail transport test";
-/** Public product wordmark served by apps/web (same allowlist as the ticket mark). */
-const ADMITTO_LOGO_PATH = "/assets/admitto-logo.svg";
 
-export type TransportTestLogoKind = "branding" | "admitto";
+export type TransportTestLogoKind = EmailShellLogoKind;
 
 export type TransportTestMessageContext = {
   scope: "organization" | "event";
@@ -95,58 +96,12 @@ export function transportTestFieldsFromConfig(
   };
 }
 
-/** Best-effort absolutize of a stored branding logo for email HTML. */
-export function absolutizeTransportTestLogo(
-  logoUrl: string | null | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): string | null {
-  const raw = logoUrl?.trim() ?? "";
-  if (!raw) return null;
-  try {
-    const baseUrl = resolvePublicBaseUrl(env);
-    const abs = resolveBrandingAssetUrlForRender("logo_url", raw, baseUrl);
-    return abs || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Org/event branding logo when set; otherwise the Admitto wordmark under BASE_URL.
- * Shared by organisation Send test, event Send test, and bounce probe.
- */
-export function resolveTransportTestHeaderLogo(
-  brandingLogoUrl: string | null | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): { url: string; kind: TransportTestLogoKind } | null {
-  const branded = absolutizeTransportTestLogo(brandingLogoUrl, env);
-  if (branded) return { url: branded, kind: "branding" };
-
-  try {
-    // resolvePublicBaseUrl always returns a non-empty URL or throws — no empty-string guard.
-    const base = resolvePublicBaseUrl(env).replace(/\/$/, "");
-    return { url: `${base}${ADMITTO_LOGO_PATH}`, kind: "admitto" };
-  } catch {
-    return null;
-  }
-}
-
-function buildTransportTestHeaderInner(ctx: TransportTestMessageContext): string {
-  const logoUrl = ctx.logoUrl?.trim() || "";
-  if (!logoUrl) {
-    return `<span style="font-size:20px;font-weight:700;color:#1f2937;letter-spacing:-0.02em;">Admitto</span>`;
-  }
-
-  const alt =
-    ctx.logoKind === "admitto"
-      ? "Admitto"
-      : ctx.organizationName?.trim() || ctx.eventTitle?.trim() || "Admitto";
-  const width = ctx.logoKind === "admitto" ? 118 : 140;
-  return (
-    `<img src="${escapeHtmlAttribute(logoUrl)}" alt="${escapeHtmlAttribute(alt)}" width="${width}" ` +
-    `style="display:block;border:0;outline:none;text-decoration:none;max-width:${width}px;height:auto;" />`
-  );
-}
+/** @see resolveEmailShellHeaderLogo in @admitto/mail-templates - re-exported under this
+ * package's existing names for backward compatibility with existing callers/tests. */
+export {
+  absolutizeEmailShellLogo as absolutizeTransportTestLogo,
+  resolveEmailShellHeaderLogo as resolveTransportTestHeaderLogo,
+} from "@admitto/mail-templates";
 
 type DiagRow = [string, string | readonly string[]];
 
@@ -209,14 +164,13 @@ function buildTransportTestDiagRows(
 
 /** Modest green check in a circle - table-based for Outlook. */
 function buildTransportOkBadge(): string {
-  return (
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;">` +
-    `<tr><td align="center" valign="middle" bgcolor="#dcfce7" width="44" height="44" ` +
-    `style="width:44px;height:44px;border-radius:22px;background-color:#dcfce7;` +
-    `color:#16a34a;font-size:20px;line-height:44px;text-align:center;font-family:Arial,Helvetica,sans-serif;">&#10003;</td></tr>` +
-    `</table>` +
-    `<div style="margin-top:10px;font-size:13px;font-weight:600;line-height:18px;color:#16a34a;text-align:center;">Transport OK</div>`
-  );
+  return buildEmailStatusBadgeHtml({
+    circleBackground: "#dcfce7",
+    circleColor: "#16a34a",
+    glyphHtml: "&#10003;",
+    labelColor: "#16a34a",
+    labelText: "Transport OK",
+  });
 }
 
 function buildTransportTestHtml(
@@ -224,7 +178,6 @@ function buildTransportTestHtml(
   stamp: string,
   ctx: TransportTestMessageContext,
 ): string {
-  const headerInner = buildTransportTestHeaderInner(ctx);
   const diagHtml = buildTransportTestDiagRows(nonce, stamp, ctx)
     .map(
       ([label, value]) =>
@@ -235,18 +188,7 @@ function buildTransportTestHtml(
     )
     .join("");
 
-  return (
-    `<!DOCTYPE html>` +
-    `<html lang="en">` +
-    `<head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" />` +
-    `<meta name="viewport" content="width=device-width, initial-scale=1.0" />` +
-    `<title>${escapeHtmlText(TRANSPORT_TEST_SUBJECT_PREFIX)}</title></head>` +
-    `<body style="margin:0;padding:0;background-color:#f4f4f4;">` +
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;padding:24px 12px;">` +
-    `<tr><td align="center">` +
-    `<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#ffffff;border:1px solid #e5e7eb;border-radius:8px;">` +
-    // Header
-    `<tr><td style="padding:24px 28px 16px 28px;border-bottom:1px solid #f3f4f6;">${headerInner}</td></tr>` +
+  const bodyHtml =
     // Status + title (centered under divider)
     `<tr><td align="center" style="padding:28px 28px 8px 28px;font-family:Arial,Helvetica,sans-serif;">` +
     buildTransportOkBadge() +
@@ -258,19 +200,20 @@ function buildTransportTestHtml(
     `</td></tr>` +
     // Diagnostics
     `<tr><td style="padding:20px 28px 28px 28px;font-family:Arial,Helvetica,sans-serif;">` +
-    `<div style="background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:14px 16px;">` +
-    `<div style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#6b7280;margin-bottom:8px;">Diagnostics</div>` +
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;">${diagHtml}</table>` +
-    `</div>` +
-    `</td></tr>` +
-    // Footer
-    `<tr><td align="center" style="padding:0 28px 24px 28px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#9ca3af;text-align:center;">` +
-    `Automated message from Admitto. No reply needed.` +
-    `</td></tr>` +
-    `</table>` +
-    `</td></tr></table>` +
-    `</body></html>`
-  );
+    buildEmailBoxedSectionHtml({
+      label: "Diagnostics",
+      innerHtml: `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;">${diagHtml}</table>`,
+    }) +
+    `</td></tr>`;
+
+  return buildSystemEmailHtml({
+    titleText: TRANSPORT_TEST_SUBJECT_PREFIX,
+    logoUrl: ctx.logoUrl,
+    logoKind: ctx.logoKind,
+    altFallbackName: ctx.organizationName?.trim() || ctx.eventTitle?.trim() || undefined,
+    bodyHtml,
+    footerText: "Automated message from Admitto. No reply needed.",
+  });
 }
 
 /** Unique per send so SMTP relays that suppress identical From/To/Subject/body
@@ -287,8 +230,11 @@ export function buildTransportTestMessage(
   const messageCtx = ctx ?? { scope: "organization" as const };
   const stamp = now.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
   const nonce = randomBytes(4).toString("hex");
+  // Same org-name-first, event-title-fallback precedence as the header's altFallbackName below -
+  // "Admitto" only when neither is available (e.g. a lookup failure), not the everyday case.
+  const prefixName = messageCtx.organizationName?.trim() || messageCtx.eventTitle?.trim() || "Admitto";
   return {
-    subject: `${TRANSPORT_TEST_SUBJECT_PREFIX} (${stamp} - ${nonce})`,
+    subject: buildSystemEmailSubject(prefixName, `mail transport test (${stamp} - ${nonce})`),
     html: buildTransportTestHtml(nonce, stamp, messageCtx),
     nonce,
     stamp,
@@ -349,7 +295,7 @@ export async function sendTransportTestEmail(
     where: { id: params.organizationId },
     select: { name: true, logo_url: true },
   });
-  const headerLogo = resolveTransportTestHeaderLogo(org?.logo_url, env);
+  const headerLogo = resolveEmailShellHeaderLogo(org?.logo_url, env);
   return sendTransportTestEmailWithConfig(mailConfig, params.toAddress, deps, {
     scope: "organization",
     organizationName: org?.name ?? undefined,
@@ -376,7 +322,7 @@ export async function sendEventTransportTestEmail(
     select: { title: true, organization: { select: { name: true } } },
   });
   const branding = await resolveBranding(params.eventId, prisma);
-  const headerLogo = resolveTransportTestHeaderLogo(branding.logo_url, env);
+  const headerLogo = resolveEmailShellHeaderLogo(branding.logo_url, env);
   return sendTransportTestEmailWithConfig(mailConfig, params.toAddress, deps, {
     scope: "event",
     eventTitle: event?.title ?? undefined,
@@ -417,7 +363,7 @@ export async function buildEventTransportTestMessage(
     select: { title: true, organization: { select: { name: true } } },
   });
   const branding = await resolveBranding(eventId, prisma);
-  const headerLogo = resolveTransportTestHeaderLogo(branding.logo_url, env);
+  const headerLogo = resolveEmailShellHeaderLogo(branding.logo_url, env);
   return buildTransportTestMessage(extras.now ?? new Date(), {
     scope: "event",
     eventTitle: event?.title ?? undefined,
