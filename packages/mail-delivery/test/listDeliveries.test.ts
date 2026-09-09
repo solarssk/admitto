@@ -4,7 +4,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setMailSettings } from "@admitto/mailer-config";
 import type { ExportPayload } from "@admitto/mailer";
 import { resetDb } from "./resetDb.js";
-import { getDeliveryWithTimeline, getRenderedDelivery, listDeliveries } from "../src/listDeliveries.js";
+import {
+  countDeliveries,
+  getDeliveryWithTimeline,
+  getRenderedDelivery,
+  listDeliveries,
+} from "../src/listDeliveries.js";
 import { sendTicketEmails } from "../src/index.js";
 
 const prisma = createTestPrismaClient();
@@ -257,6 +262,23 @@ describe("listDeliveries", () => {
       prisma,
     );
     expect(items.map((r) => r.id)).toEqual(["dlv-list-a-forwarded"]);
+  });
+});
+
+describe("countDeliveries", () => {
+  it("matches listDeliveries' own total for the same filters, without fetching rows", async () => {
+    const { total } = await listDeliveries({ eventId: EVENT_A }, prisma);
+    expect(await countDeliveries({ eventId: EVENT_A }, prisma)).toBe(total);
+  });
+
+  it("applies the same filters as listDeliveries", async () => {
+    const { total: failedTotal } = await listDeliveries(
+      { eventId: EVENT_A, filters: { status: "failed" } },
+      prisma,
+    );
+    expect(await countDeliveries({ eventId: EVENT_A, filters: { status: "failed" } }, prisma)).toBe(
+      failedTotal,
+    );
   });
 });
 
