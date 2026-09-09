@@ -611,6 +611,7 @@ export function NotificationsPanel() {
               hint={WEBHOOK_URL_HINT}
               field={{ set: data.webhook.set, masked: data.webhook.set ? "••••" : null, source: "db", locked: false }}
               edit={draft.webhookEdit}
+              disabled={saving}
               onReplace={() => setDraft((d) => (d ? { ...d, webhookEdit: { mode: "replace", value: "" } } : d))}
               onClear={() => setDraft((d) => (d ? { ...d, webhookEdit: { mode: "clear", value: "" } } : d))}
               onValueChange={(value) =>
@@ -632,6 +633,7 @@ export function NotificationsPanel() {
                 value={draft.webhookKind}
                 options={WEBHOOK_KIND_OPTIONS}
                 hint={WEBHOOK_KIND_DESCRIPTIONS[draft.webhookKind]}
+                disabled={saving}
                 onChange={(id) => setDraft((d) => (d ? { ...d, webhookKind: id as NotificationWebhookKind } : d))}
               />
             </div>
@@ -674,6 +676,7 @@ export function NotificationsPanel() {
               placeholder="ops@example.com"
               invalid={Boolean(emailInputError)}
               error={emailInputError ?? undefined}
+              disabled={saving}
               {...NO_AUTOFILL_PROPS}
               onChange={(e) => {
                 setEmailInput(e.target.value);
@@ -692,6 +695,7 @@ export function NotificationsPanel() {
               placeholder="e.g. Finance team"
               maxLength={RECIPIENT_DESCRIPTION_MAX}
               value={descriptionInput}
+              disabled={saving}
               onChange={(e) => setDescriptionInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
@@ -703,6 +707,7 @@ export function NotificationsPanel() {
             <Button
               type="button"
               variant="secondary"
+              disabled={saving}
               icon={<i className="ti ti-plus" aria-hidden="true" />}
               onClick={handleAddEmail}
             >
@@ -774,6 +779,7 @@ export function NotificationsPanel() {
                                   label={`Edit ${recipient.email}`}
                                   size="sm"
                                   icon={<i className="ti ti-pencil" aria-hidden="true" />}
+                                  disabled={saving}
                                   onClick={() => startEditRecipient(recipient)}
                                 />
                               </Tooltip>
@@ -782,6 +788,7 @@ export function NotificationsPanel() {
                                   label={`Remove ${recipient.email}`}
                                   size="sm"
                                   icon={<i className="ti ti-trash" aria-hidden="true" />}
+                                  disabled={saving}
                                   onClick={() => setRemoveTarget(recipient.email)}
                                 />
                               </Tooltip>
@@ -881,6 +888,7 @@ export function NotificationsPanel() {
                             id={`notifications-type-${type.id}-${col.key}`}
                             aria-label={`${type.label} - ${col.label}`}
                             checked={!draft.disabledChannels[type.id]?.includes(col.key)}
+                            disabled={saving}
                             onChange={(e) => toggleTypeChannel(type.id, col.key, e.target.checked)}
                           />
                         </td>

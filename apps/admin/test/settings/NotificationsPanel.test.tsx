@@ -614,6 +614,31 @@ describe("NotificationsPanel", () => {
     expect(el<HTMLInputElement>("notifications-type-auth.mfa.break_glass-webhook").checked).toBe(true);
   });
 
+  it("disables the recipient input, Add, Edit, Remove, and the type matrix while a save is in flight, so a later edit can't be silently lost", async () => {
+    mockFetch.mockResolvedValueOnce(sampleResponse({ extra_email_recipients: [sampleRecipient("ops@example.com")] }));
+    await renderLoaded();
+    let resolveSave: (value: Awaited<ReturnType<typeof saveNotificationSettings>>) => void = () => {};
+    mockSave.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }),
+    );
+
+    fireEvent.click(el<HTMLInputElement>("notifications-type-auth.mfa.break_glass-webhook"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(el<HTMLInputElement>("notifications-extra-recipient-input")).toHaveProperty("disabled", true);
+    expect(el<HTMLInputElement>("notifications-extra-recipient-description")).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Add" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Edit ops@example.com" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Remove ops@example.com" })).toHaveProperty("disabled", true);
+    expect(el<HTMLInputElement>("notifications-type-auth.mfa.break_glass-email")).toHaveProperty("disabled", true);
+
+    await act(async () => {
+      resolveSave(sampleResponse());
+    });
+  });
+
   it("shows an operator-safe error toast when saving fails", async () => {
     mockSave.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     await renderLoaded();
