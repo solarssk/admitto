@@ -35,6 +35,7 @@ import {
 import { enabledWalletPlatforms, type EventWalletToggles } from "@admitto/shared";
 import {
   listDeliveries,
+  countDeliveries,
   getDeliveryWithTimeline,
   getRenderedDelivery,
   resolveAttendeeMailLinks,
@@ -871,16 +872,24 @@ export async function handleExportEventDeliveries(c: Context, db: PrismaClient):
   const filters = buildDeliveryFilters(c);
   if (filters instanceof Response) return filters;
 
-  const { items, total } = await listDeliveries(
-    {
-      eventId,
-      filters: Object.keys(filters).length > 0 ? filters : undefined,
-      take: EXPORT_ROW_CAP,
-    },
-    db,
-  );
+  const listParams = { eventId, filters: Object.keys(filters).length > 0 ? filters : undefined };
+
+  // Count first and reject before fetching - matches handleExportAttendees'/handleExportAuditLog's
+  // own cap check. listDeliveries itself always fetches `take` full (joined) rows alongside its
+  // own count, so calling it directly with take: EXPORT_ROW_CAP paid for up to 50,000 joined rows
+  // on every over-cap export, just to discard them below.
+  const total = await countDeliveries(listParams, db);
   if (total > EXPORT_ROW_CAP) {
     return c.json({ error: "export_too_large", count: total, cap: EXPORT_ROW_CAP }, 400);
+  }
+
+  // listDeliveries runs its own count alongside the fetch (see its own Promise.all) - re-check it
+  // rather than trusting the one above: a delivery inserted between that count and this fetch
+  // could push the real total over the cap, and take: EXPORT_ROW_CAP would silently truncate the
+  // export to the cap's worth of rows instead of rejecting it as oversized.
+  const { items, total: totalAtFetch } = await listDeliveries({ ...listParams, take: EXPORT_ROW_CAP }, db);
+  if (totalAtFetch > EXPORT_ROW_CAP) {
+    return c.json({ error: "export_too_large", count: totalAtFetch, cap: EXPORT_ROW_CAP }, 400);
   }
 
   const csv = buildDeliveryLogCsv(items.map(toDeliveryDto));

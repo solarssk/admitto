@@ -62,6 +62,17 @@ async function seed(client: PrismaClient) {
   await client.user.deleteMany({ where: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } });
   await client.systemSettings.deleteMany({ where: { key: SETTING_SETUP_COMPLETE } });
 
+  // This whole file assumes an "org_default" organization exists (resolveInstanceOrganizationId's
+  // documented fallback chain) without ever creating one itself - previously papered over by
+  // whatever leftover Organization row another already-run file happened to leave behind in the
+  // shared schema. upsert, not create: safe whether this worker's schema is freshly provisioned
+  // (empty) or this file runs more than once against it.
+  await client.organization.upsert({
+    where: { id: "org_default" },
+    create: { id: "org_default", name: "Default Org", slug: "org-default-setup-wizard-test" },
+    update: {},
+  });
+
   const password_hash = await hashPassword(PASSWORD);
   const superUser = await client.user.create({ data: { email: EMAIL_SUPER, password_hash } });
   const adminUser = await client.user.create({
@@ -137,6 +148,7 @@ afterAll(async () => {
   });
   await prisma.user.deleteMany({ where: { email: { in: [EMAIL_SUPER, EMAIL_ADMIN] } } });
   await prisma.systemSettings.deleteMany({ where: { key: SETTING_SETUP_COMPLETE } });
+  await prisma.organization.deleteMany({ where: { id: "org_default" } });
   await prisma?.$disconnect();
 });
 
