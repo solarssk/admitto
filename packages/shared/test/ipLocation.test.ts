@@ -5,7 +5,7 @@ vi.mock("ip-location-api", () => ({
 }));
 
 import { lookup } from "ip-location-api";
-import { resolveIpLocation } from "../src/rate-limit/ip-location.js";
+import { resolveIpLocation } from "../src/ipLocation.js";
 
 const mockedLookup = vi.mocked(lookup);
 
