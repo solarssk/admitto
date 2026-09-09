@@ -8,7 +8,7 @@
 // command timeout, as RedisRateLimitStore/RedisTtlStringCache: this must never make a local
 // publish() wait on a hung Redis, since a subscriber in this same process already has the
 // listener it needs.
-import { createClient, type RedisClientType } from "redis";
+import { AbortError, createClient, type RedisClientType } from "redis";
 import { recordSystemLog } from "@admitto/shared/system-log";
 import {
   eventIdFromSseChannel,
@@ -189,6 +189,25 @@ export function publish(eventId: string, event: SseEvent): void {
       .withAbortSignal(AbortSignal.timeout(COMMAND_TIMEOUT_MS))
       .publish(sseChannelName(eventId), JSON.stringify(event))
       .catch((err) => {
+        // node-redis rejects with its own AbortError (not the timeout's DOMException) once
+        // COMMAND_TIMEOUT_MS elapses waiting for a reply - by then the command may already be on
+        // its way to (or processed by) Redis, so redisSub's own psubscribe on this same channel
+        // could still deliver it back to this process. Deliberately do NOT call
+        // dropRedisConnection() here: it destroys redisSub too, and doing that while this exact
+        // message might still be in flight to it would drop the message entirely, since we're
+        // also skipping the compensating dispatchLocal below to avoid double-delivering the
+        // common case where the round-trip *does* arrive (see the matching integration test and
+        // "does not double-deliver locally..." unit test). A connection that's actually dead gets
+        // caught by its own 'error' event handler (createSseRedisClient), which still runs the
+        // full dropRedisConnection() + fail-open path independently of this one.
+        if (err instanceof AbortError) {
+          warnFailOpen(`SSE Redis publish timed out waiting for a reply after ${COMMAND_TIMEOUT_MS}ms`);
+          return;
+        }
+        // Any other rejection means the command itself never made it to Redis (dead/broken
+        // connection) - no round-trip is coming, so this local dispatch is the only way this
+        // process's own subscriber ever sees the event, and cycling both connections is safe
+        // since there's nothing in flight on redisSub to lose.
         dropRedisConnection(`SSE Redis publish failed (${String(err)})`);
         dispatchLocal(eventId, event);
       });
