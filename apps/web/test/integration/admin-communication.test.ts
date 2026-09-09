@@ -17,6 +17,7 @@ import {
 import type { ExportPayload } from "@admitto/mailer";
 import { EXPORT_ROW_CAP, generateToken } from "@admitto/tickets";
 import { encryptToString } from "@admitto/crypto";
+import { countDeliveries, listDeliveries } from "@admitto/mail-delivery";
 import { createApp } from "../../src/app.js";
 import {
   handleExportEventDeliveries,
@@ -30,6 +31,20 @@ import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
 import { seedOrgAndEvent, createAdminAndOp } from "../helpers/seed-org-and-event.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
+
+// Real implementations by default (every other test in this file exercises the genuine DB-backed
+// behavior) - only the one TOCTOU test below overrides these for a single call each via
+// mockResolvedValueOnce, to simulate the real total changing between handleExportEventDeliveries'
+// count-before-fetch cap check and its own fetch, which no amount of real concurrent inserts in a
+// single-threaded test process can otherwise reproduce deterministically.
+vi.mock("@admitto/mail-delivery", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@admitto/mail-delivery")>();
+  return {
+    ...actual,
+    countDeliveries: vi.fn(actual.countDeliveries),
+    listDeliveries: vi.fn(actual.listDeliveries),
+  };
+});
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -1374,24 +1389,30 @@ describe("GET /api/admin/events/:eventId/deliveries/export", () => {
   it(
     "rejects an export whose result would exceed the row cap",
     async () => {
-      const CHUNK = 5000;
       const totalRows = EXPORT_ROW_CAP + 1;
-      for (let start = 0; start < totalRows; start += CHUNK) {
-        const end = Math.min(start + CHUNK, totalRows);
-        await prisma.emailDelivery.createMany({
-          data: Array.from({ length: end - start }, (_, j) => ({
-            id: `dlv-admin-comm-cap-${start + j}`,
-            organization_id: ORG_A,
-            event_id: EVENT_C,
-            attendee_id: ATT_C1,
-            // EmailDelivery_initial_unique allows only one purpose="initial" row per
-            // attendee/event - "resend" has no such constraint, and purpose is irrelevant to
-            // the row-cap check itself.
-            purpose: "resend",
-            provider: "export_only",
-          })),
-        });
-      }
+      // A single server-side bulk insert, not createMany() in chunks: seeding 50,001 rows one
+      // Prisma round trip per 5,000-row chunk was slow enough under this suite's now-concurrent
+      // integration workers (see vitest.integration.config.ts) to intermittently blow this test's
+      // own 30s budget in CI, even though the actual code path under test - the export handler's
+      // count-before-fetch cap check - is fast (see handleExportEventDeliveries). generate_series
+      // computes every row server-side in one statement instead.
+      //
+      // status: "sent", not the column's own "queued" default - admitto_email_delivery_wake (see
+      // schema.prisma) fires AFTER INSERT for every row whose status is "queued" and issues a
+      // real pg_notify(). With no worker LISTENing in this test process, 50,001 unconsumed
+      // notifications made even a single bulk INSERT dramatically slower (confirmed locally: the
+      // exact same insert dropped from 30s+ to under a second once no row here was "queued").
+      // These rows only need to exist and be counted - "sent" also matches what a real resend log
+      // entry looks like once actually delivered, which "queued" (still pending) does not.
+      await prisma.$executeRaw`
+        INSERT INTO "EmailDelivery" (id, organization_id, event_id, attendee_id, purpose, provider, status, attempts, updated_at)
+        SELECT 'dlv-admin-comm-cap-' || gs, ${ORG_A}, ${EVENT_C}, ${ATT_C1},
+          -- EmailDelivery_initial_unique allows only one purpose="initial" row per
+          -- attendee/event - "resend" has no such constraint, and purpose is irrelevant to
+          -- the row-cap check itself.
+          'resend', 'export_only', 'sent', 1, now()
+        FROM generate_series(0, ${totalRows - 1}) AS gs
+      `;
 
       const res = await app.request(
         `/api/admin/events/${EVENT_C}/deliveries/export?format=csv`,
@@ -1403,8 +1424,34 @@ describe("GET /api/admin/events/:eventId/deliveries/export", () => {
       expect(body.cap).toBe(EXPORT_ROW_CAP);
       expect(body.count).toBe(totalRows);
     },
-    30_000,
+    // Already double the file's default before this: genuinely inserting/counting 50,001+ rows
+    // is heavier than a typical test, and this suite's integration project no longer runs one
+    // file at a time (see vitest.integration.config.ts) - it now shares the same Postgres
+    // instance with up to 3 other concurrent workers, so this test's own wall-clock has more
+    // legitimate variance than before even after removing the wasted 50k-row fetch this test used
+    // to also pay for (see handleExportEventDeliveries). This bump doesn't touch maxWorkers/
+    // concurrency at all - it only gives this one already-known-heavy test more headroom.
+    60_000,
   );
+
+  it("rejects an export whose real total grows between the cap check and the fetch (TOCTOU)", async () => {
+    // countDeliveries (the cap check) sees an under-cap count; listDeliveries' own count (run at
+    // fetch time - see its own Promise.all) sees the cap already exceeded, simulating a delivery
+    // inserted in the window between the two. Both mocks are single-use (mockResolvedValueOnce) -
+    // every other test in this file still exercises the real, unmocked implementations.
+    vi.mocked(countDeliveries).mockResolvedValueOnce(1);
+    vi.mocked(listDeliveries).mockResolvedValueOnce({ items: [], total: EXPORT_ROW_CAP + 1 });
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/export?format=csv`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; count: number; cap: number };
+    expect(body.error).toBe("export_too_large");
+    expect(body.cap).toBe(EXPORT_ROW_CAP);
+    expect(body.count).toBe(EXPORT_ROW_CAP + 1);
+  });
 });
 
 describe("delivery route handlers - missing :eventId/:deliveryId guards", () => {

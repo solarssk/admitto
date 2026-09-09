@@ -43,7 +43,7 @@ export {
   serializeConfigDescriptionForCli,
 } from "./configDescribe.js";
 export type { CliConfigDescriptor, SecretPresenceField } from "./configDescribe.js";
-export { listDeliveries, getDeliveryWithTimeline, getRenderedDelivery } from "./listDeliveries.js";
+export { listDeliveries, countDeliveries, getDeliveryWithTimeline, getRenderedDelivery } from "./listDeliveries.js";
 export type {
   DeliveryLogEntry,
   ListDeliveriesParams,

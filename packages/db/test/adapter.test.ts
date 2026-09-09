@@ -38,4 +38,19 @@ describe("createPrismaAdapter", () => {
     });
     await expect(prisma.$queryRaw`SELECT pg_sleep(1)`).rejects.toThrow();
   });
+
+  it("scopes the connection's search_path to an explicit schema option", async () => {
+    // Doesn't need the schema to actually exist - search_path is just a session GUC, and this
+    // only asserts the adapter wires the option through to the pg-level connection (the half a
+    // raw $queryRaw/$executeRaw call resolves unqualified table names against). The other half -
+    // PrismaPg's own `schema` constructor arg, which scopes Prisma's *generated* queries the same
+    // way - is exercised by the same call (both read the same `options.schema`), and functionally
+    // by apps/web's per-worker integration schemas (packages/db/src/testing.ts) using both halves
+    // together against real generated queries.
+    prisma = new PrismaClient({
+      adapter: createPrismaAdapter(process.env.DATABASE_URL, { schema: "adapter_schema_option_test" }),
+    });
+    const [row] = await prisma.$queryRaw<Array<{ search_path: string }>>`SHOW search_path`;
+    expect(row?.search_path).toBe("adapter_schema_option_test");
+  });
 });
