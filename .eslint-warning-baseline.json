@@ -45,6 +45,16 @@
     "message": "Unsafe Regular Expression"
   },
   {
+    "ruleId": "security/detect-non-literal-fs-filename",
+    "filePath": "apps/web/src/notification-email-assets.ts",
+    "message": "Found existsSync from package \"node:fs\" with non literal argument at index 0"
+  },
+  {
+    "ruleId": "security/detect-non-literal-fs-filename",
+    "filePath": "apps/web/src/notification-email-assets.ts",
+    "message": "Found readFileSync from package \"node:fs\" with non literal argument at index 0"
+  },
+  {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/location/src/addressComponents.ts",
     "message": "Generic Object Injection Sink"
