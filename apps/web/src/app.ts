@@ -1424,7 +1424,7 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminNotificationSettingsTestRateLimit,
-    (c) => handlePostNotificationSettingsTest(c, db),
+    (c) => handlePostNotificationSettingsTest(c, db, mailDeliveryDeps),
   );
   app.post(
     "/api/admin/events/:eventId/branding-upload",

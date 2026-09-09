@@ -198,6 +198,13 @@ describe("NotificationsPanel", () => {
     expect(screen.getByText(/by Jane Admin/)).toBeTruthy();
   });
 
+  it("does nothing when Add is clicked with a blank email input", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(screen.queryByText("Enter a valid email address.")).toBeNull();
+    expect(screen.queryByText("Not saved yet")).toBeNull();
+  });
+
   it("rejects an invalid email in the recipient input without adding it", async () => {
     await renderLoaded();
     fireEvent.change(el<HTMLInputElement>("notifications-extra-recipient-input"), {
@@ -408,6 +415,11 @@ describe("NotificationsPanel", () => {
     expect(screen.getByText("Showing 11–12 of 12")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Send test to colleague-10@example.com" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Send test to colleague-0@example.com" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+
+    expect(screen.getByText("Showing 1–10 of 12")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Send test to colleague-0@example.com" })).toBeTruthy();
   });
 
   it("opens the edit modal prefilled with a recipient's current email and description", async () => {
@@ -512,5 +524,298 @@ describe("NotificationsPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit ops@example.com" }));
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("heading", { name: "Edit recipient" })).toBeNull();
+  });
+
+  it("loads an already-disabled channel from the server as unchecked", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({ disabled_channels: { "auth.mfa.break_glass": ["webhook"] } }),
+    );
+    await renderLoaded();
+    expect(el<HTMLInputElement>("notifications-type-auth.mfa.break_glass-webhook").checked).toBe(false);
+    expect(el<HTMLInputElement>("notifications-type-auth.mfa.break_glass-email").checked).toBe(true);
+  });
+
+  it("re-enabling the only disabled channel for a type drops it from the saved disabledChannels entirely", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({ disabled_channels: { "auth.mfa.break_glass": ["webhook"] } }),
+    );
+    await renderLoaded();
+    fireEvent.click(el<HTMLInputElement>("notifications-type-auth.mfa.break_glass-webhook"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({ disabledChannels: {} }));
+    });
+  });
+
+  it("retrying after a failed load fetches again", async () => {
+    mockFetch.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    renderWithToastAndRouter(<NotificationsPanel />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    });
+    mockFetch.mockResolvedValueOnce(sampleResponse());
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect(screen.queryByText("Notification types")).toBeTruthy();
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("discards unsaved changes and clears the recipient input when Reset is clicked", async () => {
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("notifications-extra-recipient-input"), {
+      target: { value: "not-an-email" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(screen.getByText("Enter a valid email address.")).toBeTruthy();
+    fireEvent.click(el<HTMLInputElement>("notifications-type-auth.mfa.break_glass-webhook"));
+    expect(screen.getByRole("button", { name: "Reset" })).not.toHaveProperty("disabled", true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    expect(el<HTMLInputElement>("notifications-extra-recipient-input").value).toBe("");
+    expect(screen.queryByText("Enter a valid email address.")).toBeNull();
+    expect(el<HTMLInputElement>("notifications-type-auth.mfa.break_glass-webhook").checked).toBe(true);
+  });
+
+  it("shows an operator-safe error toast when saving fails", async () => {
+    mockSave.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    await renderLoaded();
+    fireEvent.click(el<HTMLInputElement>("notifications-type-auth.mfa.break_glass-webhook"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Failed to save notification settings.")).toBeTruthy();
+  });
+
+  it("shows an operator-safe error toast when a test-send call itself fails (not a per-channel result)", async () => {
+    mockTest.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
+    await renderLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Send test (webhook)" }));
+    expect(await screen.findByText("Could not send a test notification.")).toBeTruthy();
+  });
+
+  it("shows a combined failure message when both webhook and in-app fail, falling back to a generic subtitle when the webhook carries no error text", async () => {
+    mockTest.mockResolvedValueOnce({
+      webhook: { ok: false },
+      email: { ok: true, skipped: true },
+      in_app: { ok: false, error: "Write failed." },
+    });
+    await renderLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Send test (webhook)" }));
+    await waitFor(() => {
+      expect(screen.getByText("Test notification failed")).toBeTruthy();
+    });
+    expect(screen.getByText("Could not deliver it.")).toBeTruthy();
+    expect(await screen.findByText("Test failed - check the details below.")).toBeTruthy();
+  });
+
+  it("falls back to a generic subtitle when a failed webhook-only test carries no error text", async () => {
+    mockTest.mockResolvedValueOnce({
+      webhook: { ok: false },
+      email: { ok: true, skipped: true },
+      in_app: { ok: true },
+    });
+    await renderLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Send test (webhook)" }));
+    await waitFor(() => {
+      expect(screen.getByText("Webhook test failed")).toBeTruthy();
+    });
+    expect(
+      screen.getByText("Could not reach the webhook. It was still saved as a notification on your account."),
+    ).toBeTruthy();
+  });
+
+  it("shows an in-app-only failure message when the webhook succeeds but saving as a notification fails", async () => {
+    mockTest.mockResolvedValueOnce({
+      webhook: { ok: true },
+      email: { ok: true, skipped: true },
+      in_app: { ok: false, error: "Write failed." },
+    });
+    await renderLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Send test (webhook)" }));
+    await waitFor(() => {
+      expect(screen.getByText("Saving it as a notification failed")).toBeTruthy();
+    });
+    expect(screen.getByText("Write failed. The webhook still received it.")).toBeTruthy();
+  });
+
+  it("falls back to a generic subtitle when a failed in-app-only test carries no error text", async () => {
+    mockTest.mockResolvedValueOnce({
+      webhook: { ok: true },
+      email: { ok: true, skipped: true },
+      in_app: { ok: false },
+    });
+    await renderLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Send test (webhook)" }));
+    await waitFor(() => {
+      expect(screen.getByText("Saving it as a notification failed")).toBeTruthy();
+    });
+    expect(screen.getByText("Could not save it. The webhook still received it.")).toBeTruthy();
+  });
+
+  it("shows the email error text (or a fallback) on a failed recipient test-send", async () => {
+    mockFetch.mockResolvedValueOnce(sampleResponse({ extra_email_recipients: [sampleRecipient("ops@example.com")] }));
+    mockTest.mockResolvedValueOnce({
+      webhook: { ok: true, skipped: true },
+      email: { ok: false, error: "Mailbox not found." },
+      in_app: { ok: true, skipped: true },
+    });
+    await renderLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Send test to ops@example.com" }));
+    expect(await screen.findByText("Mailbox not found.")).toBeTruthy();
+  });
+
+  it("falls back to a generic message when a failed email test carries no error text", async () => {
+    mockFetch.mockResolvedValueOnce(sampleResponse({ extra_email_recipients: [sampleRecipient("ops@example.com")] }));
+    mockTest.mockResolvedValueOnce({
+      webhook: { ok: true, skipped: true },
+      email: { ok: false },
+      in_app: { ok: true, skipped: true },
+    });
+    await renderLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Send test to ops@example.com" }));
+    expect(await screen.findByText("Test email failed")).toBeTruthy();
+  });
+
+  it("cancels an in-progress webhook URL edit without changing anything", async () => {
+    mockFetch.mockResolvedValueOnce(sampleResponse({ webhook: { set: true, kind: "discord" } }));
+    await renderLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    fireEvent.change(el<HTMLInputElement>("notifications-webhook-url"), {
+      target: { value: "https://discord.com/api/webhooks/x/y" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByText("•••••••• set")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it("changes the webhook payload format and saves the new kind", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Payload format, Generic JSON" }));
+    fireEvent.click(screen.getByRole("button", { name: "Slack" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({ webhookKind: "slack" }));
+    });
+  });
+
+  it("adds an email recipient when Enter is pressed in the email field, but not on any other key", async () => {
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("notifications-extra-recipient-input"), {
+      target: { value: "ops@example.com" },
+    });
+    fireEvent.keyDown(el<HTMLInputElement>("notifications-extra-recipient-input"), { key: "a" });
+    expect(screen.queryByText("ops@example.com")).toBeNull();
+
+    fireEvent.keyDown(el<HTMLInputElement>("notifications-extra-recipient-input"), { key: "Enter" });
+    expect(screen.getByText("ops@example.com")).toBeTruthy();
+  });
+
+  it("adds an email recipient when Enter is pressed in the description field, but not on any other key", async () => {
+    await renderLoaded();
+    fireEvent.change(el<HTMLInputElement>("notifications-extra-recipient-input"), {
+      target: { value: "ops@example.com" },
+    });
+    fireEvent.change(el<HTMLInputElement>("notifications-extra-recipient-description"), {
+      target: { value: "Ops team" },
+    });
+    fireEvent.keyDown(el<HTMLInputElement>("notifications-extra-recipient-description"), { key: "Tab" });
+    expect(screen.queryByText("ops@example.com")).toBeNull();
+
+    fireEvent.keyDown(el<HTMLInputElement>("notifications-extra-recipient-description"), { key: "Enter" });
+    expect(screen.getByText("ops@example.com")).toBeTruthy();
+    expect(screen.getByText("Ops team")).toBeTruthy();
+  });
+
+  it("changes the recipients page size and resets back to page 1", async () => {
+    const recipients = Array.from({ length: 12 }, (_, i) => sampleRecipient(`colleague-${i}@example.com`));
+    mockFetch.mockResolvedValueOnce(sampleResponse({ extra_email_recipients: recipients }));
+    await renderLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("Showing 11–12 of 12")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rows per page, 10" }));
+    fireEvent.click(screen.getByRole("button", { name: "25" }));
+
+    expect(screen.getByText("Showing 1–12 of 12")).toBeTruthy();
+  });
+
+  it("saving an edit to one of several recipients leaves the others untouched", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({
+        extra_email_recipients: [
+          sampleRecipient("ops@example.com", { description: "Ops" }),
+          sampleRecipient("finance@example.com", { description: "Finance" }),
+        ],
+      }),
+    );
+    await renderLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "Edit ops@example.com" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Email address"), { target: { value: "ops2@example.com" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(screen.getByText("ops2@example.com")).toBeTruthy();
+    expect(screen.getByText("finance@example.com")).toBeTruthy();
+    expect(screen.getByText("Finance")).toBeTruthy();
+  });
+
+  it("shows no 'by' attribution when a saved recipient has neither a display name nor an email on file", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({
+        extra_email_recipients: [
+          sampleRecipient("ops@example.com", { added_by_display_name: null, added_by_email: null }),
+        ],
+      }),
+    );
+    await renderLoaded();
+    const muted = document.querySelector(".notifications-recipients-table__muted");
+    expect(muted?.textContent).not.toMatch(/ by /);
+  });
+
+  it("falls back to a generic icon and description for a notification type outside the known list", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({
+        notification_types: [
+          {
+            id: "some.future.type",
+            label: "Some future type",
+            default_severity: "unknown_severity",
+            available_channels: ["webhook"],
+          },
+        ],
+      }),
+    );
+    await renderLoaded();
+    expect(screen.getByText("Some future type")).toBeTruthy();
+    expect(screen.getByText("Alerts admin staff when this event occurs.")).toBeTruthy();
+  });
+
+  it("discards a settings response that resolves after the panel has already unmounted", async () => {
+    let resolveFetch: (value: NotificationSettingsResponse) => void = () => {};
+    mockFetch.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+    const { unmount } = renderWithToastAndRouter(<NotificationsPanel />);
+    unmount();
+    await act(async () => {
+      resolveFetch(sampleResponse());
+    });
+  });
+
+  it("discards a load failure that resolves after the panel has already unmounted", async () => {
+    let rejectFetch: (err: unknown) => void = () => {};
+    mockFetch.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectFetch = reject;
+      }),
+    );
+    const { unmount } = renderWithToastAndRouter(<NotificationsPanel />);
+    unmount();
+    await act(async () => {
+      rejectFetch(new ApiError(500, "secret_internal"));
+    });
   });
 });

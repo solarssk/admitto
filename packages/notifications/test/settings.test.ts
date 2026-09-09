@@ -146,6 +146,20 @@ describe("describeNotificationSettings", () => {
     expect(result.disabled_channels).toEqual({});
   });
 
+  it("ignores a type entry whose channel value isn't an array (malformed per-type shape)", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue({
+      webhook_url_enc: null,
+      webhook_kind: null,
+      extra_email_recipients: [],
+      disabled_channels: { "auth.settings.changed": "webhook", "auth.mfa.break_glass": ["email"] },
+    });
+
+    const result = await describeNotificationSettings(db as unknown as PrismaClient, ORG_ID);
+
+    expect(result.disabled_channels).toEqual({ "auth.mfa.break_glass": ["email"] });
+  });
+
   it("treats a stored array (legacy disabled_types shape) as empty, not crashing", async () => {
     const db = createStubDb();
     db.notificationSettings.findUnique.mockResolvedValue({
@@ -255,6 +269,25 @@ describe("patchNotificationSettings", () => {
         added_by_timezone: null,
       },
     ]);
+  });
+
+  it("drops a patch entry whose email is blank/whitespace-only, without touching the actor lookup", async () => {
+    const db = createStubDb();
+    db.notificationSettings.upsert.mockResolvedValue({});
+    db.notificationSettings.findUnique.mockResolvedValue(null);
+
+    await patchNotificationSettings(
+      db as unknown as PrismaClient,
+      ORG_ID,
+      { extraEmailRecipients: [{ email: "   ", description: "Ghost" }] },
+      ACTOR_ID,
+    );
+
+    expect(db.user.findUnique).not.toHaveBeenCalled();
+    const call = db.notificationSettings.upsert.mock.calls[0]![0] as {
+      update: { extra_email_recipients: unknown[] };
+    };
+    expect(call.update.extra_email_recipients).toEqual([]);
   });
 
   it("stamps the acting user's timezone onto a genuinely new recipient when supplied", async () => {

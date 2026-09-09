@@ -107,6 +107,26 @@ describe("notify()", () => {
   });
 
 
+  it("ignores malformed disabled_channels entries (non-array value, or array that filters to empty) - treated as fully enabled", async () => {
+    db.notificationSettings.findUnique.mockResolvedValue({
+      disabled_channels: { [TYPE]: [123, null, true], "some.other.type": "webhook" },
+    });
+    queryRawClaims(db, true);
+    db.roleAssignment.findMany.mockResolvedValue([{ user_id: "u-1", user: { is_active: true } }]);
+    db.notificationPreference.findMany.mockResolvedValue([]);
+    const webhook = stubChannel();
+    const email = stubChannel();
+    const inApp = stubChannel();
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email, webhook, in_app: inApp },
+    });
+
+    expect(webhook.send).toHaveBeenCalled();
+    expect(email.send).toHaveBeenCalledWith(expect.anything(), ["u-1"]);
+    expect(inApp.send).toHaveBeenCalledWith(expect.anything(), ["u-1"]);
+  });
+
   it("skips when the throttle window has not elapsed (claim query returns no row)", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
     queryRawClaims(db, false);

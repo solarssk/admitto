@@ -177,6 +177,16 @@ describe("notification-settings GET/PUT routes", () => {
     expect(patchNotificationSettings).not.toHaveBeenCalled();
   });
 
+  it("rethrows an unexpected (non-BlockedWebhookUrlError) failure from assertSafeWebhookUrl", async () => {
+    assertSafeWebhookUrl.mockImplementation(() => {
+      throw new Error("dns lookup failed");
+    });
+    await expect(
+      handlePutNotificationSettings(mockContext({ webhookUrl: "https://hooks.example.com/x" }), db),
+    ).rejects.toThrow("dns lookup failed");
+    expect(patchNotificationSettings).not.toHaveBeenCalled();
+  });
+
   it("does not validate the webhook URL when it is empty (clearing, not setting)", async () => {
     const res = await handlePutNotificationSettings(mockContext({ webhookUrl: "" }), db);
     expect(res.status).toBe(200);
