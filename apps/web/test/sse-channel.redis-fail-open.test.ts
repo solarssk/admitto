@@ -101,8 +101,44 @@ describe("sse-channel Redis fail-open", () => {
     onMessage?.(JSON.stringify({ type: "activity_changed" }), sseChannelName("evt-1"));
     expect(listener).toHaveBeenCalledTimes(1);
 
-    // Let publish()'s own rejected-promise handler run too - it must not add a second delivery.
-    await vi.waitFor(() => expect(pub.destroy).toHaveBeenCalledOnce());
+    // Let publish()'s own rejected-promise handler run too - it must not add a second delivery,
+    // and must not tear down redisSub either (see the next test for why that matters).
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(sub.destroy).not.toHaveBeenCalled();
+  });
+
+  it("still delivers locally through the round-trip after an abort, even when the timeout is handled first", async () => {
+    const sub = fakeClient();
+    const pub = fakeClient();
+    let onMessage: ((message: string, channel: string) => void) | undefined;
+    sub.pSubscribe.mockImplementation((_pattern: string, cb: (message: string, channel: string) => void) => {
+      onMessage = cb;
+      return Promise.resolve();
+    });
+    // A real destroyed socket can no longer deliver anything - simulate that here too, so this
+    // test actually catches a fix that destroys redisSub on an abort instead of leaving it alone.
+    sub.destroy.mockImplementation(() => {
+      onMessage = undefined;
+    });
+    pub.publish.mockRejectedValueOnce(new AbortError());
+    redisMock.createClient.mockReturnValueOnce(sub).mockReturnValueOnce(pub);
+    const { publish, subscribe, waitForSseRedisReadyForTests } = await import("../src/admin/sse-channel.js");
+    const listener = vi.fn();
+
+    subscribe("evt-1", listener);
+    await expect(waitForSseRedisReadyForTests()).resolves.toBe(true);
+    publish("evt-1", { type: "activity_changed" });
+
+    // Let the rejected-publish handler run to completion BEFORE Redis's own echo arrives - the
+    // reverse order from the previous test. The command can still be in flight to Redis at this
+    // point, so tearing down redisSub here (as dropRedisConnection() would) must not happen, or
+    // the still-pending echo below would have nothing left to deliver it and the event is lost.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sub.destroy).not.toHaveBeenCalled();
+    expect(listener).not.toHaveBeenCalled();
+
+    onMessage?.(JSON.stringify({ type: "activity_changed" }), sseChannelName("evt-1"));
     expect(listener).toHaveBeenCalledTimes(1);
   });
 });
