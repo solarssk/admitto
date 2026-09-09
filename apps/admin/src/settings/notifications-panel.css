@@ -1,0 +1,145 @@
+/* Organisation Settings → Notifications. Reuses the shared Settings visual language (table,
+   add-attendee-modal skeleton, and Requirements' own requirements-item-cell/event-item-modal__*
+   classes for the recipients table + its edit modal) from staff.css/add-attendee-modal.css/
+   requirements.css - only classes unique to this panel live here (AGENTS.md: a lazy-chunk
+   component's CSS must live in its own file, not just "somewhere already loaded"). */
+
+/* Webhook URL (SecretFieldRow), Payload format, and Send test all as flex siblings, not the
+   shared mail-transport-section grid - that grid's 2 columns previously put the button INSIDE
+   Payload format's own column (shared with the select), so the select only ever got
+   column-width-minus-button, making it visibly narrower than Webhook URL's full-column input even
+   though the two grid columns were themselves equal (PO report - "50/50" was already true at the
+   grid level, just not at the visible-control level). flex-basis 0 on both fields (not auto, same
+   reasoning as .notifications-input-row below) with the button as a third, fixed-width sibling
+   gives both fields the same visible width, matching the Email/Description/Add row's pattern. */
+.notifications-webhook-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.notifications-webhook-row > .mail-secret-field,
+.notifications-webhook-row > .at-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.notifications-webhook-row > .at-btn {
+  flex: 0 0 auto;
+  margin-top: calc(var(--fs-sm) * var(--lh-normal) + var(--space-1));
+  height: var(--control-h);
+}
+
+@media (max-width: 480px) {
+  .notifications-webhook-row {
+    flex-wrap: wrap;
+  }
+
+  .notifications-webhook-row > .at-btn {
+    width: 100%;
+    margin-top: 0;
+  }
+}
+
+/* Labeled input + trailing button (extra-recipient add), the input carrying its own hint below
+   the control. Can't reuse the global .mail-test-send__row/controls/send-control trio
+   (SendTestEmailCard's own version of this pattern): that trio pins the button via align-items:
+   flex-end against the tallest sibling, which is correct only when the Input has no hint of its
+   own - with one, the button ends up flush with the hint's bottom edge instead of the control's.
+   Same technique as CspTrustedOriginsModal's .csp-origin-row instead: margin-top offsets exactly
+   the label line's own height, so the button anchors to the control regardless of what renders
+   below it (hint or error). */
+.notifications-input-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+/* flex-basis 0 (not auto) on both fields - with `auto`, each field's initial size came from its
+   own content's max-content width, and a long unbroken error message (e.g. "This address is
+   already in the list.") under Email address inflated only that field's basis; once the row ran
+   out of room both fields shrank proportionally to their (unequal) basis, so the field WITH the
+   error visibly lost more width to its sibling instead of staying 50/50 (PO report). Basis 0 +
+   equal flex-grow is the standard idiom for a guaranteed even split regardless of content. */
+.notifications-input-row .at-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.notifications-input-row > .at-btn {
+  flex: 0 0 auto;
+  margin-top: calc(var(--fs-sm) * var(--lh-normal) + var(--space-1));
+  height: var(--control-h);
+}
+
+@media (max-width: 480px) {
+  .notifications-input-row {
+    flex-wrap: wrap;
+  }
+
+  .notifications-input-row > .at-btn {
+    width: 100%;
+    margin-top: 0;
+  }
+}
+
+/* Extra-recipients table (Send test / Edit / Remove per row) - same edge-to-edge scroll wrap as
+   the type × channel matrix below. */
+.notifications-recipients-table-wrap {
+  overflow-x: auto;
+  margin: 0 calc(-1 * var(--pad-card)) var(--space-2);
+}
+
+/* The actions cell's real right-alignment comes from .requirements-item-actions__wrap itself
+   (display: flex + justify-content: flex-end, requirements.css) - that wrapper is a block-level
+   flex box, so it already fills this td's full width and pushes its icons to the td's own right
+   edge regardless of the table's own auto column-width distribution. text-align here is only a
+   belt-and-suspenders fallback for the cell itself, not what actually does the aligning. */
+.notifications-recipients-table-wrap td:last-child {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.notifications-recipients-table__muted {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+/* Type × channel matrix - reuses the shared .table base (staff.css, same standard as
+   EventArchivingPanel's own table) for row/border/font rhythm and the same edge-to-edge scroll
+   wrap (negative margin bleeds to the card's own padding); only the column layout below is
+   unique to this grid. */
+.notifications-type-matrix-wrap {
+  overflow-x: auto;
+  margin: 0 calc(-1 * var(--pad-card)) var(--space-2);
+}
+
+.notifications-type-matrix th:not(:first-child),
+.notifications-type-matrix td:not(:first-child) {
+  text-align: center;
+}
+
+.notifications-type-matrix__label-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.notifications-type-matrix td:first-child p {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+
+.notifications-type-matrix__na {
+  color: var(--text-muted);
+}
+
+/* This test result box never has body content below the head (no per-channel breakdown - PO
+   feedback) - the shared .mail-preview__head's border-bottom only makes sense when it separates
+   the head from something under it (e.g. the mail transport test's Recipient/Transport/Host
+   grid); with nothing below it here it just reads as a stray line. */
+.notifications-test-preview .mail-preview__head {
+  border-bottom: none;
+  padding-bottom: 0;
+}

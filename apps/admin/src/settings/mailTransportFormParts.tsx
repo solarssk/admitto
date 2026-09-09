@@ -973,7 +973,11 @@ export function PowerAutomateCard({
   );
 }
 
-function mailPreviewModifierClass(
+/** Shared by every "test send" result box that reuses the .mail-preview* classes (Send test
+ * email card, Communication's TestSendResultPreview, Organisation Settings → Notifications) so
+ * they all pick ok/warn/error modifier classes the same way instead of each hand-rolling a
+ * ternary. */
+export function mailPreviewModifierClass(
   base: string,
   previewKind: "ok" | "error" | "warn",
 ): string {

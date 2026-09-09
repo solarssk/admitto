@@ -32,8 +32,9 @@ export interface NotificationTypeDef {
    */
   userConfigurable: boolean;
   /**
-   * Whether an organization may disable this type entirely via NotificationSettings.disabled_types.
-   * false for the same mandatory self-audience types as userConfigurable, for the same reason.
+   * Whether an organization may disable this type's channels via
+   * NotificationSettings.disabled_channels. false for the same mandatory self-audience types as
+   * userConfigurable, for the same reason.
    */
   orgDisableable: boolean;
 }

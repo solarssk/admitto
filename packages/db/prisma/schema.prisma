@@ -772,13 +772,18 @@ model NotificationSettings {
 
   webhook_url_enc        String? // AES-256-GCM via @admitto/crypto (ADR 0006); never returned in GET
   webhook_kind           String? // "discord" | "slack" | "generic"
-  extra_email_recipients Json? // string[] of raw email addresses, org-staff-audience types only
+  // Array<{ email, description, added_at, added_by_email, added_by_display_name,
+  // added_by_timezone }>, org-staff-audience types only. added_at/added_by_* are a write-time
+  // actor snapshot (never re-derived at read time), see packages/notifications/src/settings.ts.
+  extra_email_recipients Json?
 
-  // notification_type keys this organization has turned off entirely (dispatch skipped, but the
-  // underlying SecurityAuditLog write still always happens, see dispatcher.ts). Only applies to
-  // types with NotificationTypeDef.orgDisableable: true; ASVS V2.5.5 self-audience receipts
-  // ignore this list by design.
-  disabled_types Json?
+  // notification_type -> array of channels ("webhook" | "email" | "in_app") this organization
+  // has turned off for that type (dispatch skipped on just those channels, but the underlying
+  // SecurityAuditLog write still always happens either way, see dispatcher.ts). Omitted type or
+  // empty array = fully enabled on every channel (opt-out default, same convention as
+  // NotificationPreference below). Only applies to types with NotificationTypeDef.orgDisableable:
+  // true; ASVS V2.5.5 self-audience receipts ignore this by design.
+  disabled_channels Json?
 
   created_at DateTime @default(now())
   updated_at DateTime @updatedAt

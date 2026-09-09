@@ -26,6 +26,7 @@ const EXPECTED_POLICIES: Record<
   "admin:mail-diagnostics": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:health-live": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:weather-test": { windowMs: [60_000], max: [5], checks: 1 },
+  "admin:notification-settings-test": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:event-mail-transport-test": { windowMs: [60_000, 3_600_000], max: [3, 10], checks: 2 },
   "admin:event-mail-diagnostics": { windowMs: [60_000], max: [5], checks: 1 },
   "admin:client-error": { windowMs: [60_000], max: [30], checks: 1 },

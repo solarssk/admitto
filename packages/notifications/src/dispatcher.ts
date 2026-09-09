@@ -4,11 +4,17 @@ import { getNotificationTypeDef } from "./registry.js";
 import { resolveAudienceCandidates } from "./audience.js";
 import { resolveEnabledChannelsForUsers } from "./preferences.js";
 import { sanitizeNotificationMetadata, sanitizeNotificationText } from "./sanitize.js";
+import type { ExportSink } from "@admitto/mailer";
 import { EmailChannel } from "./channels/email.js";
 import { WebhookChannel } from "./channels/webhook.js";
 import { InAppChannel } from "./channels/inApp.js";
 import type { NotificationChannel, NotificationSendResult } from "./channel.js";
-import type { DispatchedNotification, NotificationEvent, NotificationTypeDef } from "./types.js";
+import type {
+  DispatchedNotification,
+  NotificationChannelKey,
+  NotificationEvent,
+  NotificationTypeDef,
+} from "./types.js";
 
 /**
  * Deliberately a standalone `PrismaClient`, never a `Prisma.TransactionClient` - webhook/email
@@ -29,6 +35,11 @@ export interface DispatchDeps {
   channels?: Partial<Record<"email" | "webhook" | "in_app", NotificationChannel>>;
   now?: () => Date;
   env?: NodeJS.ProcessEnv;
+  /** Forwarded to the default EmailChannel's own createMailer() call - required when the org's
+   * mail provider is export_only (dev/test only). Without it, a real dispatch on an export_only
+   * instance would throw createMailer's own internal guard instead of delivering through the
+   * dev export sink like every other mail-sending path in the repo already does. */
+  exportSink?: ExportSink;
 }
 
 interface DispatchOutcome {
@@ -169,15 +180,21 @@ async function writeDispatchAuditLog(
 async function readOrgSettings(
   db: Db,
   organizationId: string,
-): Promise<{ disabledTypes: string[] }> {
+): Promise<{ disabledChannelsByType: Record<string, NotificationChannelKey[]> }> {
   const settings = await db.notificationSettings.findUnique({
     where: { scope_type_scope_id: { scope_type: "organization", scope_id: organizationId } },
-    select: { disabled_types: true },
+    select: { disabled_channels: true },
   });
-  const disabledTypes = Array.isArray(settings?.disabled_types)
-    ? settings.disabled_types.filter((entry): entry is string => typeof entry === "string")
-    : [];
-  return { disabledTypes };
+  const raw = settings?.disabled_channels;
+  const disabledChannelsByType: Record<string, NotificationChannelKey[]> = {};
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [type, channels] of Object.entries(raw as Record<string, unknown>)) {
+      if (!Array.isArray(channels)) continue;
+      const normalized = channels.filter((entry): entry is string => typeof entry === "string");
+      if (normalized.length > 0) disabledChannelsByType[type] = normalized as NotificationChannelKey[];
+    }
+  }
+  return { disabledChannelsByType };
 }
 
 /** Resolves the audience. Only "self" with no valid target is treated as a dispatch failure that
@@ -244,12 +261,14 @@ async function dispatchToChannels(
   candidates: string[],
   type: string,
   deps: DispatchDeps,
+  disabledChannels: NotificationChannelKey[],
 ): Promise<DispatchOutcome> {
   // extra_email_recipients (org-staff-audience types only) is a team-wide address list
   // independent of any individual admin's personal opt-out.
   const includeExtraRecipients = typeDef.audience === "org-staff";
   const emailChannel =
-    deps.channels?.email ?? new EmailChannel(db, { includeExtraRecipients, env: deps.env });
+    deps.channels?.email ??
+    new EmailChannel(db, { includeExtraRecipients, env: deps.env, exportSink: deps.exportSink });
   const webhookChannel = deps.channels?.webhook ?? new WebhookChannel(db, { env: deps.env });
   const inAppChannel = deps.channels?.in_app ?? new InAppChannel(db);
 
@@ -282,7 +301,7 @@ async function dispatchToChannels(
     );
   };
 
-  if (typeDef.availableChannels.includes("webhook")) {
+  if (typeDef.availableChannels.includes("webhook") && !disabledChannels.includes("webhook")) {
     dispatch("webhook", webhookChannel.send(dispatched, []));
   }
 
@@ -295,8 +314,15 @@ async function dispatchToChannels(
     recipients = await splitRecipientsByChannel(db, candidates, type);
   } catch (err) {
     const error = formatDispatchError(err);
-    if (typeDef.availableChannels.includes("email")) outcome.failures.push({ channel: "email", error });
-    if (typeDef.availableChannels.includes("in_app")) outcome.failures.push({ channel: "in_app", error });
+    // Same disabledChannels guard as the two dispatch() calls below - a channel the org disabled
+    // for this type was never going to be attempted, so a failure here must not report it as a
+    // failed delivery (misleading audit trail) alongside channels that genuinely couldn't run.
+    if (typeDef.availableChannels.includes("email") && !disabledChannels.includes("email")) {
+      outcome.failures.push({ channel: "email", error });
+    }
+    if (typeDef.availableChannels.includes("in_app") && !disabledChannels.includes("in_app")) {
+      outcome.failures.push({ channel: "in_app", error });
+    }
     recipients = { emailRecipients: [], inAppRecipients: [] };
   }
 
@@ -305,11 +331,16 @@ async function dispatchToChannels(
   // extras might apply is never wasted beyond one lightweight settings lookup.
   if (
     typeDef.availableChannels.includes("email") &&
+    !disabledChannels.includes("email") &&
     (emailRecipients.length > 0 || includeExtraRecipients)
   ) {
     dispatch("email", emailChannel.send(dispatched, emailRecipients));
   }
-  if (typeDef.availableChannels.includes("in_app") && inAppRecipients.length > 0) {
+  if (
+    typeDef.availableChannels.includes("in_app") &&
+    !disabledChannels.includes("in_app") &&
+    inAppRecipients.length > 0
+  ) {
     dispatch("in_app", inAppChannel.send(dispatched, inAppRecipients));
   }
 
@@ -357,8 +388,19 @@ export async function notify(
       return;
     }
 
-    const { disabledTypes } = await readOrgSettings(db, event.organizationId);
-    if (typeDef.orgDisableable && disabledTypes.includes(type)) {
+    const { disabledChannelsByType } = await readOrgSettings(db, event.organizationId);
+    const disabledChannels = typeDef.orgDisableable ? (disabledChannelsByType[type] ?? []) : [];
+    // Fully disabled across every channel this type can even use - same fast path as before the
+    // per-channel matrix: skip audience resolution and the throttle claim entirely, not just the
+    // channel sends, since nothing downstream would do anything either way. The length check
+    // guards a type with zero availableChannels: Array.every() on an empty array is vacuously
+    // true, which would otherwise misreport "org disabled" for a type that was never wired to any
+    // channel in the first place (and has nothing configured to disable).
+    if (
+      typeDef.orgDisableable &&
+      typeDef.availableChannels.length > 0 &&
+      typeDef.availableChannels.every((ch) => disabledChannels.includes(ch))
+    ) {
       await writeDispatchAuditLog(db, "notification.dispatch.skipped_org_disabled", event.organizationId, {
         notification_type: type,
       });
@@ -391,6 +433,7 @@ export async function notify(
       candidates,
       type,
       deps,
+      disabledChannels,
     );
 
     // Nothing was actually delivered on any channel - either every channel failed, or every
@@ -422,6 +465,7 @@ export async function notify(
     await writeDispatchAuditLog(db, "notification.dispatch.sent", event.organizationId, {
       notification_type: type,
       channels_sent: channelsSent,
+      ...(disabledChannels.length > 0 ? { disabled_channels: disabledChannels } : {}),
     });
   } catch (err) {
     if (activeClaim) {
