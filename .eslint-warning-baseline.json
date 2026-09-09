@@ -1,0 +1,267 @@
+[
+  {
+    "ruleId": "react-hooks/exhaustive-deps",
+    "filePath": "apps/admin/src/components/LogoUploadZone.tsx",
+    "message": "The ref value 'provisionalUrlsRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'provisionalUrlsRef.current' to a variable inside the effect, and use that variable in the cleanup function."
+  },
+  {
+    "ruleId": null,
+    "filePath": "apps/admin/src/hooks/useEventStream.ts",
+    "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-possible-timing-attacks')."
+  },
+  {
+    "ruleId": null,
+    "filePath": "apps/admin/src/hooks/useEventStream.ts",
+    "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-possible-timing-attacks')."
+  },
+  {
+    "ruleId": "react-hooks/exhaustive-deps",
+    "filePath": "apps/admin/src/pages/ReportsPage.tsx",
+    "message": "React Hook useMemo has a missing dependency: 'event'. Either include it or remove the dependency array."
+  },
+  {
+    "ruleId": "react-hooks/exhaustive-deps",
+    "filePath": "apps/admin/src/settings/FontFamilyModal.tsx",
+    "message": "The ref value 'rowGenerationRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'rowGenerationRef.current' to a variable inside the effect, and use that variable in the cleanup function."
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "apps/admin/src/settings/mailSettingsValidation.ts",
+    "message": "Unsafe Regular Expression"
+  },
+  {
+    "ruleId": null,
+    "filePath": "apps/web/src/admin/admin-build-meta.ts",
+    "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-non-literal-fs-filename')."
+  },
+  {
+    "ruleId": null,
+    "filePath": "apps/web/src/admin/health-check-routes.ts",
+    "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-non-literal-fs-filename')."
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "apps/web/src/admin/sse-channel.ts",
+    "message": "Unsafe Regular Expression"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/location/src/addressComponents.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/location/src/addressComponents.ts",
+    "message": "Variable Assigned to Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "packages/location/src/addressComponents.ts",
+    "message": "Unsafe Regular Expression"
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "packages/location/src/addressComponents.ts",
+    "message": "Unsafe Regular Expression"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/location/src/validation.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/mail-delivery/src/bounceIngest/extractMimeText.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "packages/mail-delivery/src/bounceIngest/extractMimeText.ts",
+    "message": "Unsafe Regular Expression"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/mail-delivery/src/bounceIngest/lastRun.ts",
+    "message": "Variable Assigned to Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor"
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Unsafe Regular Expression"
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "packages/shared/src/timezones.ts",
+    "message": "Unsafe Regular Expression"
+  },
+  {
+    "ruleId": null,
+    "filePath": "packages/storage/src/adapters/local.ts",
+    "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-non-literal-fs-filename')."
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "packages/storage/src/keys.ts",
+    "message": "Unsafe Regular Expression"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/resolve.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/resolve.ts",
+    "message": "Variable Assigned to Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "packages/tickets/src/wallet-pass-input.ts",
+    "message": "Unsafe Regular Expression"
+  },
+  {
+    "ruleId": null,
+    "filePath": "packages/ui/src/components/Tooltip.tsx",
+    "message": "Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')."
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/wallet/src/passcreator-mapper.ts",
+    "message": "Generic Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/wallet/src/passcreator-mapper.ts",
+    "message": "Variable Assigned to Object Injection Sink"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/wallet/src/passcreator-mapper.ts",
+    "message": "Variable Assigned to Object Injection Sink"
+  }
+]
