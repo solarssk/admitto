@@ -85,6 +85,59 @@ jobs:
         if: github.event_name == 'pull_request'
         run: npm run docs:pr-check
 
+  # Classifies this push/PR's changed files so test-web/test-admin/test-rest can skip their own
+  # expensive test-execution step on a docs-only diff (the highest-confidence, lowest-risk slice of
+  # "path-aware CI" for this repo). Deliberately NOT a `paths:` filter on the workflow trigger
+  # itself: this repo already got burned once by exactly that shape of mistake (see the
+  # `pull_request: {}` comment at the top of this file) - a
+  # trigger-level filter can make an entire required-check workflow run simply not fire for a given
+  # PR, which GitHub then shows as "Expected - waiting for status" and blocks merge on forever, not
+  # skip-and-pass. Every job below still runs unconditionally; only specific steps inside them are
+  # conditioned on this job's output, so a docs-only PR still gets a real "success" result on every
+  # job GitHub actually gates on.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      # dorny/paths-filter fetches the PR's changed-file list via the GitHub REST API on
+      # `pull_request` runs (not a local git diff) - contents: read alone isn't enough; the action
+      # needs pull-requests: read too (see its own README's "Supported workflows" section, v4.0.3).
+      # Without it the filter step fails before producing `code`, all three dependent test jobs'
+      # coverage steps are skipped as a result, and build-test's own "all shards succeeded" gate
+      # then fails on those skipped results.
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d  # v4.0.3
+        id: filter
+        with:
+          # 'some-with-excludes': a file matches `code` if it matches the leading `**` AND none of
+          # the negated patterns below - i.e. "any file that isn't one of these known doc paths".
+          # The default quantifier ('some') would NOT exclude correctly here (each `!pattern`
+          # would just become its own independently-OR'd condition instead of a true exclusion).
+          predicate-quantifier: "some-with-excludes"
+          filters: |
+            code:
+              - "**"
+              - "!README.md"
+              - "!CHANGELOG.md"
+              - "!SECURITY.md"
+              - "!VERSIONING.md"
+              - "!DATA-PROTECTION.md"
+              - "!THIRD-PARTY-NOTICES.md"
+              - "!AGENTS.md"
+              - "!CLAUDE.md"
+              - "!LICENSE"
+              - "!NOTICE"
+              - "!docs/**"
+              - "!**/README.md"
+              - "!.github/*.md"
+
   # build-test used to be one sequential job (~7-8 min, mostly the coverage step across all 14
   # workspaces). Split into 4 parallel jobs so they run concurrently instead of one after another
   # - free on this public repo (unlimited Actions minutes), only wall-clock time is at stake.
@@ -153,6 +206,7 @@ jobs:
   test-web:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: [changes]
     permissions:
       contents: read
     services:
@@ -224,10 +278,14 @@ jobs:
         # --no-install: use only the already-installed, lockfile-pinned prisma binary, never an
         # on-demand npx download (SonarCloud githubactions:S6505 / S8543).
         run: npx --no-install prisma migrate deploy
+      # Skipped entirely on a docs-only diff (see the `changes` job above) - a docs-only PR still
+      # needs this job to report a real "success" (build-test's aggregator needs that), it just
+      # skips the ~7 minute part.
       - name: Run coverage (also emits JUnit XML for Test Analytics)
+        if: needs.changes.outputs.code == 'true'
         run: npm run coverage -w @admitto/web --if-present -- --reporter=default --reporter=junit --outputFile.junit=./junit.xml
       - name: Upload coverage to Codecov
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -237,7 +295,7 @@ jobs:
             apps/**/coverage-integration/lcov.info
           fail_ci_if_error: false
       - name: Upload test results to Codecov
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3  # v1.2.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -246,7 +304,7 @@ jobs:
       # Handed off to the sonarcloud job below (needs all three test-* jobs' LCOV together, and
       # this repo's fork PRs never receive secrets - see that job's own comment).
       - name: Upload coverage artifact for SonarCloud
-        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: coverage-web
@@ -260,6 +318,7 @@ jobs:
   test-admin:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: [changes]
     permissions:
       contents: read
     steps:
@@ -289,10 +348,13 @@ jobs:
       # test-web's own comment on its equivalent build step for why (found the hard way: this
       # exact job failed on it first).
       - run: npm run build
+      # Skipped entirely on a docs-only diff (see the `changes` job above) - see test-web's
+      # matching comment on its own "Run coverage" step for why.
       - name: Run coverage (also emits JUnit XML for Test Analytics)
+        if: needs.changes.outputs.code == 'true'
         run: npm run coverage -w @admitto/admin --if-present -- --reporter=default --reporter=junit --outputFile.junit=./junit.xml
       - name: Upload coverage to Codecov
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -302,14 +364,14 @@ jobs:
             apps/**/coverage-integration/lcov.info
           fail_ci_if_error: false
       - name: Upload test results to Codecov
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3  # v1.2.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: admin
           fail_ci_if_error: false
       - name: Upload coverage artifact for SonarCloud
-        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: coverage-admin
@@ -330,6 +392,7 @@ jobs:
   test-rest:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: [changes]
     permissions:
       contents: read
     services:
@@ -392,7 +455,10 @@ jobs:
         # --no-install: use only the already-installed, lockfile-pinned prisma binary, never an
         # on-demand npx download (SonarCloud githubactions:S6505 / S8543).
         run: npx --no-install prisma migrate deploy
+      # Skipped entirely on a docs-only diff (see the `changes` job above) - see test-web's
+      # matching comment on its own "Run coverage" step for why.
       - name: Run coverage (also emits JUnit XML per workspace for Test Analytics)
+        if: needs.changes.outputs.code == 'true'
         run: >-
           npm run coverage --if-present
           -w @admitto/db -w @admitto/tickets -w @admitto/auth -w @admitto/import
@@ -401,7 +467,7 @@ jobs:
           -w @admitto/shared
           -- --reporter=default --reporter=junit --outputFile.junit=./junit.xml
       - name: Upload coverage to Codecov
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -413,14 +479,14 @@ jobs:
             apps/**/coverage-integration/lcov.info
           fail_ci_if_error: false
       - name: Upload test results to Codecov
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
         uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3  # v1.2.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: rest
           fail_ci_if_error: false
       - name: Upload coverage artifact for SonarCloud
-        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
+        if: ${{ !cancelled() && needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false) }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: coverage-rest
@@ -439,7 +505,7 @@ jobs:
   sonarcloud:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [test-web, test-admin, test-rest]
+    needs: [changes, test-web, test-admin, test-rest]
     # Fork PRs never receive repo secrets, and unlike Codecov's upload action this scanner has no
     # fail_ci_if_error-style soft-fail - an empty SONAR_TOKEN errors the step for real. Means fork
     # PRs get no SonarCloud analysis post-migration (Automatic Analysis covered them today, just
@@ -447,8 +513,10 @@ jobs:
     # Dependabot PRs hit the same empty-SONAR_TOKEN failure even though head.repo.fork is false -
     # GitHub withholds repo secrets from Dependabot-triggered runs regardless of fork status. Skip
     # by PR author (not github.actor, which a human re-run would set to themselves) - same pattern
-    # as wiki-docs above.
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.user.login != 'dependabot[bot]')) }}
+    # as wiki-docs above. Also skipped on a docs-only diff (needs.changes.outputs.code): the
+    # test-* jobs above never produced a coverage-* artifact to download in that case (their own
+    # upload step is skipped too), and there's no new code for Sonar to analyze anyway.
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.user.login != 'dependabot[bot]')) }}
     permissions:
       contents: read
     steps:

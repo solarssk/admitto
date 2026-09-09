@@ -1317,6 +1317,63 @@ export type ExternalServicesConnectionTestResponse = ConnectionTestResponse & {
   latency_ms?: number;
 };
 
+export type NotificationWebhookKind = "discord" | "slack" | "generic";
+
+export type NotificationChannelKind = "webhook" | "email" | "in_app";
+
+export interface NotificationTypeDto {
+  id: string;
+  label: string;
+  default_severity: string;
+  available_channels: NotificationChannelKind[];
+}
+
+export interface NotificationEmailRecipientDto {
+  email: string;
+  description: string;
+  /** Server-resolved write-time snapshot - never sent back by the client. null only for
+   * legacy/corrupt data that predates these fields. */
+  added_at: string | null;
+  added_by_email: string | null;
+  added_by_display_name: string | null;
+  /** Acting admin's IANA timezone at the moment this recipient was added, when known - null for
+   * legacy data or when the browser didn't report one. */
+  added_by_timezone: string | null;
+}
+
+export interface NotificationSettingsResponse {
+  webhook: { set: boolean; kind: NotificationWebhookKind };
+  extra_email_recipients: NotificationEmailRecipientDto[];
+  /** notification_type -> channels this organization has turned off for that type. Omitted type
+   * or empty array = fully enabled on every channel. */
+  disabled_channels: Record<string, NotificationChannelKind[]>;
+  notification_types: NotificationTypeDto[];
+}
+
+export interface SaveNotificationSettingsBody {
+  /** Omit to keep; empty string clears the stored webhook URL. */
+  webhookUrl?: string;
+  webhookKind?: NotificationWebhookKind;
+  /** Whole-list replace. added_at/added_by are always server-resolved - only email+description
+   * are read from this. */
+  extraEmailRecipients?: Array<{ email: string; description?: string }>;
+  disabledChannels?: Record<string, NotificationChannelKind[]>;
+}
+
+export interface NotificationSettingsTestChannelResult {
+  ok: boolean;
+  error?: string;
+  /** True when this particular test click didn't exercise this channel at all (e.g. a
+   * recipient row's own "Send test to X" never touches the shared webhook or in-app). */
+  skipped?: boolean;
+}
+
+export interface NotificationSettingsTestResponse {
+  webhook: NotificationSettingsTestChannelResult;
+  email: NotificationSettingsTestChannelResult;
+  in_app: NotificationSettingsTestChannelResult;
+}
+
 export type SessionRole = "superadmin" | "admin" | "operator";
 export type SettingSource = "env" | "db" | "default";
 

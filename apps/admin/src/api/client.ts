@@ -83,6 +83,9 @@ import type {
   ExternalServicesConnectionTestResponse,
   SaveWeatherSettingsBody,
   SaveMapsSettingsBody,
+  NotificationSettingsResponse,
+  SaveNotificationSettingsBody,
+  NotificationSettingsTestResponse,
   DeliveryDetailDto,
   RenderedDeliveryDto,
   SessionsResponse,
@@ -2277,6 +2280,37 @@ export async function testMapsConnection(
 ): Promise<ExternalServicesConnectionTestResponse> {
   const res = await fetch("/api/admin/external-services/maps/test", jsonPostInit(body));
   return parseJson<ExternalServicesConnectionTestResponse>(res);
+}
+
+export async function fetchNotificationSettings(
+  signal?: AbortSignal,
+): Promise<NotificationSettingsResponse> {
+  const res = await fetch("/api/admin/notification-settings", {
+    credentials: "same-origin",
+    signal,
+  });
+  return parseJson<NotificationSettingsResponse>(res);
+}
+
+export async function saveNotificationSettings(
+  body: SaveNotificationSettingsBody,
+): Promise<NotificationSettingsResponse> {
+  const res = await fetch("/api/admin/notification-settings", jsonPutInit(body));
+  return parseJson<NotificationSettingsResponse>(res);
+}
+
+/** Fires webhook/email/in-app against the already-saved settings (server rejects while there are
+ * unsaved changes it can't see - the panel disables the button client-side too). `testEmail`
+ * overrides only the email leg's target address; omit it to test against the requesting
+ * superadmin's own account instead. */
+export async function testNotificationSettings(
+  testEmail?: string,
+): Promise<NotificationSettingsTestResponse> {
+  const res = await fetch(
+    "/api/admin/notification-settings/test",
+    jsonPostInit(testEmail ? { testEmail } : {}),
+  );
+  return parseJson<NotificationSettingsTestResponse>(res);
 }
 
 /** Probe an event's PassCreator API key + Template ID from a draft body (no persist). Empty/
