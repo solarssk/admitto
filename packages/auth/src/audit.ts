@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { resolveInstanceOrganizationId, type Prisma, type PrismaClient } from "@admitto/db";
+import type { Prisma, PrismaClient } from "@admitto/db/client";
+import { resolveInstanceOrganizationId } from "@admitto/db/instance-org";
 import { redactEmail } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
 import { notify } from "@admitto/notifications";

@@ -27,6 +27,10 @@
       "types": "./dist/roles.d.ts",
       "default": "./dist/roles.js"
     },
+    "./instance-org": {
+      "types": "./dist/instanceOrg.d.ts",
+      "default": "./dist/instanceOrg.js"
+    },
     "./errors": {
       "types": "./dist/errors.d.ts",
       "default": "./dist/errors.js"
