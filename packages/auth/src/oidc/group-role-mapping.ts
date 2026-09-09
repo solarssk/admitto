@@ -1,9 +1,10 @@
 import { randomInt } from "node:crypto";
-import { Prisma, type PrismaClient } from "@admitto/db";
-import { hasScope, isSerializationFailure } from "@admitto/db";
+import { Prisma, type PrismaClient } from "@admitto/db/client";
+import { hasScope } from "@admitto/db/roles";
+import { isSerializationFailure } from "@admitto/db/errors";
 import { logOidcSuperadminRevokeBlocked } from "../audit.js";
 
-export { isSerializationFailure } from "@admitto/db";
+export { isSerializationFailure } from "@admitto/db/errors";
 
 /** RoleAssignment requires NULL scope_id for instance scope (DB CHECK). */
 export function roleAssignmentScopeId(scopeType: string, scopeId: string | null): string | null {
