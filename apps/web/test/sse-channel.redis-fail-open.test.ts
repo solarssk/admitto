@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AbortError } from "redis";
+import { sseChannelName } from "@admitto/shared/sse-events";
 
 const redisMock = vi.hoisted(() => ({ createClient: vi.fn() }));
 
-vi.mock("redis", () => ({ createClient: redisMock.createClient }));
+vi.mock("redis", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("redis")>()),
+  createClient: redisMock.createClient,
+}));
 
 type FakeRedisClient = {
   destroy: ReturnType<typeof vi.fn>;
@@ -70,5 +75,34 @@ describe("sse-channel Redis fail-open", () => {
     expect(pub.withAbortSignal).toHaveBeenCalledOnce();
     expect(pub.destroy).toHaveBeenCalledOnce();
     expect(sub.destroy).toHaveBeenCalledOnce();
+  });
+
+  it("does not double-deliver locally when a publish times out but the command still reaches Redis", async () => {
+    const sub = fakeClient();
+    const pub = fakeClient();
+    let onMessage: ((message: string, channel: string) => void) | undefined;
+    sub.pSubscribe.mockImplementation((_pattern: string, cb: (message: string, channel: string) => void) => {
+      onMessage = cb;
+      return Promise.resolve();
+    });
+    // AbortError, not a generic failure - this is what node-redis rejects with when
+    // COMMAND_TIMEOUT_MS elapses waiting for the reply (see withAbortSignal in sse-channel.ts).
+    pub.publish.mockRejectedValueOnce(new AbortError());
+    redisMock.createClient.mockReturnValueOnce(sub).mockReturnValueOnce(pub);
+    const { publish, subscribe, waitForSseRedisReadyForTests } = await import("../src/admin/sse-channel.js");
+    const listener = vi.fn();
+
+    subscribe("evt-1", listener);
+    await expect(waitForSseRedisReadyForTests()).resolves.toBe(true);
+    publish("evt-1", { type: "activity_changed" });
+
+    // The command actually reached Redis despite the client giving up on the reply - simulate
+    // its own psubscribe round-trip delivering it back first, same as the real integration test.
+    onMessage?.(JSON.stringify({ type: "activity_changed" }), sseChannelName("evt-1"));
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // Let publish()'s own rejected-promise handler run too - it must not add a second delivery.
+    await vi.waitFor(() => expect(pub.destroy).toHaveBeenCalledOnce());
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });

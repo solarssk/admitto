@@ -8,7 +8,7 @@
 // command timeout, as RedisRateLimitStore/RedisTtlStringCache: this must never make a local
 // publish() wait on a hung Redis, since a subscriber in this same process already has the
 // listener it needs.
-import { createClient, type RedisClientType } from "redis";
+import { AbortError, createClient, type RedisClientType } from "redis";
 import { recordSystemLog } from "@admitto/shared/system-log";
 import {
   eventIdFromSseChannel,
@@ -190,7 +190,15 @@ export function publish(eventId: string, event: SseEvent): void {
       .publish(sseChannelName(eventId), JSON.stringify(event))
       .catch((err) => {
         dropRedisConnection(`SSE Redis publish failed (${String(err)})`);
-        dispatchLocal(eventId, event);
+        // node-redis rejects with its own AbortError (not the timeout's DOMException) once
+        // COMMAND_TIMEOUT_MS elapses waiting for a reply - by then the command has almost
+        // certainly already been flushed to the socket, so Redis may still deliver it back to
+        // this process via redisSub's own psubscribe on this same channel. Compensating with a
+        // direct dispatchLocal here too would then double-deliver to this process's own
+        // listeners (see the matching integration test). Any other rejection means the command
+        // itself never made it to Redis (dead/broken connection), so this local dispatch is the
+        // only way this process's own subscriber ever sees the event.
+        if (!(err instanceof AbortError)) dispatchLocal(eventId, event);
       });
     return;
   }
