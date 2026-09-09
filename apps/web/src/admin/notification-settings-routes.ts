@@ -218,12 +218,11 @@ export async function handlePostNotificationSettingsTest(
     testingOneEmailAddress ? null : inAppChannel.send(testEvent, [auth.userId]),
   ]);
 
-  const toResult = (result: { ok: boolean; error?: string; noop?: boolean } | null): TestChannelResult =>
-    result === null
-      ? { ok: true, skipped: true }
-      : result.noop
-        ? { ok: false, error: "Not configured." }
-        : { ok: result.ok, error: result.error };
+  const toResult = (result: { ok: boolean; error?: string; noop?: boolean } | null): TestChannelResult => {
+    if (result === null) return { ok: true, skipped: true };
+    if (result.noop) return { ok: false, error: "Not configured." };
+    return { ok: result.ok, error: result.error };
+  };
 
   const results = { webhook: toResult(webhook), email: toResult(email), in_app: toResult(inApp) };
 

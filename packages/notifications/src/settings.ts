@@ -193,12 +193,14 @@ export async function patchNotificationSettings(
   actorUserId: string,
   actorTimezone?: string,
 ): Promise<NotificationSettingsPublic> {
-  const webhookUrlEnc =
-    patch.webhookUrl === undefined
-      ? undefined
-      : patch.webhookUrl.trim() === ""
-        ? null
-        : encryptToString(patch.webhookUrl.trim());
+  let webhookUrlEnc: string | null | undefined;
+  if (patch.webhookUrl === undefined) {
+    webhookUrlEnc = undefined;
+  } else if (patch.webhookUrl.trim() === "") {
+    webhookUrlEnc = null;
+  } else {
+    webhookUrlEnc = encryptToString(patch.webhookUrl.trim());
+  }
 
   let nextRecipients: NotificationEmailRecipient[] | undefined;
   if (patch.extraEmailRecipients !== undefined) {

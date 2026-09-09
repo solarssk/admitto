@@ -120,7 +120,12 @@ describe("GET /api/admin/notification-settings", () => {
       headers: { Cookie: superCookie },
     });
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as {
+      webhook: { set: boolean; kind: string };
+      extra_email_recipients: unknown[];
+      disabled_channels: Record<string, unknown>;
+      notification_types: unknown[];
+    };
     expect(body.webhook).toEqual({ set: false, kind: "generic" });
     expect(body.extra_email_recipients).toEqual([]);
     expect(body.disabled_channels).toEqual({});
@@ -140,7 +145,11 @@ describe("PUT /api/admin/notification-settings", () => {
       }),
     });
     expect(putRes.status).toBe(200);
-    const putBody = await putRes.json();
+    const putBody = (await putRes.json()) as {
+      webhook: { kind: string };
+      extra_email_recipients: Array<{ email: string; description: string }>;
+      disabled_channels: Record<string, string[]>;
+    };
     expect(putBody.webhook.kind).toBe("slack");
     expect(putBody.extra_email_recipients).toHaveLength(1);
     expect(putBody.extra_email_recipients[0]).toMatchObject({ email: "ops@example.com", description: "Ops team" });
@@ -149,7 +158,7 @@ describe("PUT /api/admin/notification-settings", () => {
     const getRes = await app.request("/api/admin/notification-settings", {
       headers: { Cookie: superCookie },
     });
-    const getBody = await getRes.json();
+    const getBody = (await getRes.json()) as { disabled_channels: Record<string, string[]> };
     expect(getBody.disabled_channels).toEqual({ "auth.login.repeated_failures": ["webhook"] });
   });
 });
@@ -162,7 +171,11 @@ describe("POST /api/admin/notification-settings/test", () => {
       body: JSON.stringify({}),
     });
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as {
+      webhook: { ok: boolean; error?: string };
+      email: { ok: boolean; skipped?: boolean };
+      in_app: { ok: boolean };
+    };
     // No webhook URL configured for this org - the route reports that as a channel failure
     // (ok:false, "Not configured."), not a 500 - see handlePostNotificationSettingsTest's toResult.
     expect(body.webhook).toEqual({ ok: false, error: "Not configured." });

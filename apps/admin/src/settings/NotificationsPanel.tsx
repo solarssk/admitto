@@ -136,8 +136,8 @@ function sameDisabledChannels(
 ): boolean {
   const typeIds = new Set([...Object.keys(a), ...Object.keys(b)]);
   for (const typeId of typeIds) {
-    const aSorted = [...(a[typeId] ?? [])].sort();
-    const bSorted = [...(b[typeId] ?? [])].sort();
+    const aSorted = [...(a[typeId] ?? [])].sort((x, y) => x.localeCompare(y));
+    const bSorted = [...(b[typeId] ?? [])].sort((x, y) => x.localeCompare(y));
     if (!sameStringList(aSorted, bSorted)) return false;
   }
   return true;
@@ -169,7 +169,9 @@ function buildSaveBody(draft: NotificationsDraft, saved: NotificationsDraft): Sa
   return body;
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Domain segment is lazy (+?), not greedy, so the engine finds the required "." in linear time
+// instead of backtracking through every possible split point when a candidate string has no dot.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+?\.[^\s@]+$/;
 
 type TestTone = "ok" | "warn" | "error";
 
@@ -870,8 +872,9 @@ export function NotificationsPanel() {
                           />
                         </td>
                       ) : (
-                        <td key={col.key} className="notifications-type-matrix__na" aria-hidden="true">
-                          -
+                        <td key={col.key} className="notifications-type-matrix__na">
+                          <span aria-hidden="true">-</span>
+                          <span className="sr-only">Not applicable</span>
                         </td>
                       ),
                     )}

@@ -791,7 +791,7 @@ describe("NotificationsPanel", () => {
     expect(screen.getByText("Alerts admin staff when this event occurs.")).toBeTruthy();
   });
 
-  it("discards a settings response that resolves after the panel has already unmounted", async () => {
+  it("discards a settings response that resolves after the panel has already unmounted, without a React state-update warning", async () => {
     let resolveFetch: (value: NotificationSettingsResponse) => void = () => {};
     mockFetch.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -800,12 +800,15 @@ describe("NotificationsPanel", () => {
     );
     const { unmount } = renderWithToastAndRouter(<NotificationsPanel />);
     unmount();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     await act(async () => {
       resolveFetch(sampleResponse());
     });
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
-  it("discards a load failure that resolves after the panel has already unmounted", async () => {
+  it("discards a load failure that resolves after the panel has already unmounted, without a React state-update warning", async () => {
     let rejectFetch: (err: unknown) => void = () => {};
     mockFetch.mockReturnValueOnce(
       new Promise((_resolve, reject) => {
@@ -814,8 +817,11 @@ describe("NotificationsPanel", () => {
     );
     const { unmount } = renderWithToastAndRouter(<NotificationsPanel />);
     unmount();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     await act(async () => {
       rejectFetch(new ApiError(500, "secret_internal"));
     });
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 });

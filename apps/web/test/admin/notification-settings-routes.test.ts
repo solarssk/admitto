@@ -118,7 +118,7 @@ describe("notification-settings GET/PUT routes", () => {
     const body = (await res.json()) as {
       notification_types: Array<{ id: string; label: string; available_channels: string[] }>;
     };
-    expect(body.notification_types.length).toBe(4);
+    expect(body.notification_types).toHaveLength(4);
     expect(body.notification_types.map((t) => t.id)).toContain("auth.login.repeated_failures");
     const repeatedFailures = body.notification_types.find((t) => t.id === "auth.login.repeated_failures");
     expect(repeatedFailures?.available_channels).toEqual(
