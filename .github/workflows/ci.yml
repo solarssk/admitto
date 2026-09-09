@@ -182,10 +182,12 @@ jobs:
       # root build once (a build with no @admitto/* rebuild needed is a fast no-op for tsc).
       # Confirmed by removing this step: apps/db's own build failed on a missing @admitto/shared
       # type (apps/admin's pretest builds @admitto/db before @admitto/shared, the reverse of what
-      # @admitto/db's own build needs), and apps/web's pretest builds @admitto/ui directly without
-      # first building crypto/db/location/wallet/mail-templates/tickets/auth that @admitto/ui
-      # itself depends on. Don't repeat this optimization attempt without first making every
-      # workspace's own pretest/precoverage chain independently, correctly topologically complete.
+      # @admitto/db's own build needs), and apps/web's own package.json depends directly on
+      # @admitto/import, @admitto/mail-delivery, @admitto/mailer, and @admitto/storage, none of
+      # which its pretest (shared/ui/admin only) or @admitto/ui's own prebuild chain (which covers
+      # crypto/db/location/wallet/mail-templates/tickets/auth, not those four) ever builds. Don't
+      # repeat this optimization attempt without first making every workspace's own
+      # pretest/precoverage chain independently, correctly topologically complete.
       - run: npm run build
       - name: Create test databases
         run: bash infra/scripts/create-test-dbs.sh
