@@ -124,7 +124,7 @@ function buildPayload(kind: WebhookKind, event: DispatchedNotification): Record<
  * "Ip" not "IP") - a small, deliberate gap rather than a lookup table for a handful of cases. */
 function humanizeMetadataKey(key: string): string {
   const words = key
-    .replace(/_/g, " ")
+    .replaceAll("_", " ")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .split(" ")
     .filter(Boolean);
