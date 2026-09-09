@@ -157,6 +157,19 @@ interface TestChannelResult {
 
 const testBodySchema = z.object({ testEmail: z.string().trim().email().optional() }).strict();
 
+/** Empty or whitespace-only body parses as `{}` (the common case - the client only sends one when
+ * testEmail is set); a genuinely malformed JSON body returns 400 instead of silently falling back
+ * to `{}` (same distinction as attendees-api-routes.ts's own parseOptionalJsonBody). */
+async function parseOptionalTestBody(c: Context): Promise<unknown | Response> {
+  try {
+    const text = await c.req.text();
+    if (!text.trim()) return {};
+    return JSON.parse(text);
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+}
+
 /**
  * POST /api/admin/notification-settings/test - fires directly against the ALREADY-SAVED
  * settings, bypassing notify()'s throttle and org-staff audience resolution entirely: a real
@@ -180,15 +193,9 @@ export async function handlePostNotificationSettingsTest(
   const forbidden = await requireSuperadmin(c, db);
   if (forbidden) return forbidden;
 
-  let body: unknown = {};
-  try {
-    body = await c.req.json();
-  } catch {
-    // No body (or an empty one) is the common case - the client only sends one when testEmail is
-    // set. Only a genuinely malformed JSON body should reach the validation error below, not a
-    // simply-absent one, so this catch keeps body as {} rather than failing the request outright.
-  }
-  const parsed = testBodySchema.safeParse(body);
+  const bodyOrRes = await parseOptionalTestBody(c);
+  if (bodyOrRes instanceof Response) return bodyOrRes;
+  const parsed = testBodySchema.safeParse(bodyOrRes);
   if (!parsed.success) {
     return c.json({ error: "validation_failed", details: parsed.error.flatten() }, 400);
   }

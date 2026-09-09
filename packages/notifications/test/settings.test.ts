@@ -353,6 +353,51 @@ describe("patchNotificationSettings", () => {
     ]);
   });
 
+  it("recognizes a mixed-case stored email as the same recipient a lowercase patch entry refers to, keeping its stamp", async () => {
+    const db = createStubDb();
+    db.notificationSettings.upsert.mockResolvedValue({});
+    db.notificationSettings.findUnique.mockResolvedValue({
+      webhook_url_enc: null,
+      webhook_kind: null,
+      extra_email_recipients: [
+        {
+          email: "Ops@Example.com",
+          description: "Old description",
+          added_at: "2026-01-01T00:00:00.000Z",
+          added_by_email: "someone-else@example.com",
+          added_by_display_name: "Someone Else",
+          added_by_timezone: "America/New_York",
+        },
+      ],
+      disabled_channels: {},
+    });
+
+    await patchNotificationSettings(
+      db as unknown as PrismaClient,
+      ORG_ID,
+      { extraEmailRecipients: [{ email: "ops@example.com", description: "New description" }] },
+      ACTOR_ID,
+      "Europe/Warsaw",
+    );
+
+    // Recognized as the SAME recipient (case-insensitive match) - no actor lookup for a "new"
+    // entry, and the original added_at/added_by stamp survives instead of being replaced.
+    expect(db.user.findUnique).not.toHaveBeenCalled();
+    const call = db.notificationSettings.upsert.mock.calls[0]![0] as {
+      update: { extra_email_recipients: Array<Record<string, unknown>> };
+    };
+    expect(call.update.extra_email_recipients).toEqual([
+      {
+        email: "ops@example.com",
+        description: "New description",
+        added_at: "2026-01-01T00:00:00.000Z",
+        added_by_email: "someone-else@example.com",
+        added_by_display_name: "Someone Else",
+        added_by_timezone: "America/New_York",
+      },
+    ]);
+  });
+
   it("resolves the acting user at most once even when several new recipients are added in one call", async () => {
     const db = createStubDb();
     db.notificationSettings.upsert.mockResolvedValue({});

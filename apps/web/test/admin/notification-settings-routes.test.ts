@@ -69,6 +69,9 @@ import {
 } from "../../src/admin/notification-settings-routes.js";
 import { BlockedWebhookUrlError, EmailChannel } from "@admitto/notifications";
 
+/** `body === undefined` simulates a genuinely malformed request: `req.json()` (used by the PUT
+ * handler) throws SyntaxError, and `req.text()` (used by the test-send handler's
+ * parseOptionalTestBody) returns a non-empty, non-JSON string that fails to parse the same way. */
 function mockContext(body?: unknown): Context {
   return {
     get: () => ({ userId: "user-1" }),
@@ -77,6 +80,7 @@ function mockContext(body?: unknown): Context {
         if (body === undefined) throw new SyntaxError("bad json");
         return body;
       },
+      text: async () => (body === undefined ? "not json" : JSON.stringify(body)),
     },
     json: (payload: unknown, status?: number) => Response.json(payload, { status: status ?? 200 }),
   } as unknown as Context;
@@ -297,6 +301,26 @@ describe("notification-settings test-send route", () => {
     };
     expect(body.webhook).toEqual({ ok: true, skipped: true });
     expect(body.in_app).toEqual({ ok: true, skipped: true });
+  });
+
+  it("rejects a genuinely malformed JSON test-send body, instead of silently defaulting to {}", async () => {
+    const res = await handlePostNotificationSettingsTest(mockContext(undefined), db);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalid_json" });
+    expect(webhookSend).not.toHaveBeenCalled();
+    expect(emailSend).not.toHaveBeenCalled();
+    expect(emailSendToAddress).not.toHaveBeenCalled();
+  });
+
+  it("treats a whitespace-only body the same as no body at all", async () => {
+    const ctx = {
+      get: () => ({ userId: "user-1" }),
+      req: { text: async () => "   " },
+      json: (payload: unknown, status?: number) => Response.json(payload, { status: status ?? 200 }),
+    } as unknown as Parameters<typeof handlePostNotificationSettingsTest>[0];
+    const res = await handlePostNotificationSettingsTest(ctx, db);
+    expect(res.status).toBe(200);
+    expect(webhookSend).toHaveBeenCalledWith(expect.anything(), []);
   });
 
   it("rejects an invalid testEmail without sending anything", async () => {

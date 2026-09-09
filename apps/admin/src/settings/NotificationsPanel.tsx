@@ -169,9 +169,10 @@ function buildSaveBody(draft: NotificationsDraft, saved: NotificationsDraft): Sa
   return body;
 }
 
-// Domain segment is lazy (+?), not greedy, so the engine finds the required "." in linear time
-// instead of backtracking through every possible split point when a candidate string has no dot.
-const EMAIL_RE = /^[^\s@]+@[^\s@]+?\.[^\s@]+$/;
+// Each domain label explicitly excludes "." from its own character class, so no quantified group
+// overlaps with the literal that follows it - the split points are the string's actual dot
+// positions, not a search space the engine has to backtrack through (Sonar S8786).
+const EMAIL_RE = /^[^\s@]+@([^\s@.]+\.)+[^\s@.]+$/;
 
 type TestTone = "ok" | "warn" | "error";
 
@@ -377,6 +378,14 @@ export function NotificationsPanel() {
   const [draft, setDraft] = useState<NotificationsDraft | null>(null);
   const savedRef = useRef<NotificationsDraft | null>(null);
   const validationErrorsRef = useRef<HTMLUListElement | null>(null);
+  // Test buttons deliberately stay independently clickable while another target's test is in
+  // flight (see isTestDisabledFor) - but testResult/lastEmailTestAddress are still single, shared
+  // state. Without this guard, an OLDER call that resolves after a NEWER one has already started
+  // would overwrite the newer call's still-pending placeholder with its own stale result, which a
+  // reader could easily misattribute to the button they most recently clicked (e.g. a webhook
+  // test's own skipped:true email/in-app fields rendering as if the webhook itself had just
+  // succeeded, reviewer report). A stale response is simply discarded instead.
+  const testRequestSeqRef = useRef(0);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -564,11 +573,15 @@ export function NotificationsPanel() {
   }
 
   async function handleTest(testEmail?: string) {
+    const seq = ++testRequestSeqRef.current;
     setTestingTarget(testEmail ?? "webhook");
     setTestResult(null);
     setLastEmailTestAddress(testEmail ?? null);
     try {
       const result = await testNotificationSettings(testEmail);
+      // A newer test started (and reset the shared state above) while this one was in flight -
+      // applying this stale response now would misattribute it to whatever the newer click owns.
+      if (testRequestSeqRef.current !== seq) return;
       setTestResult(result);
       // Only the channel(s) this button actually owns - the shared endpoint always exercises
       // every channel, but a recipient row's email-only test shouldn't report success/failure
@@ -580,9 +593,10 @@ export function NotificationsPanel() {
         tone === "error" ? "error" : "success",
       );
     } catch (err) {
+      if (testRequestSeqRef.current !== seq) return;
       addToast(operatorApiErrorMessage(err, "Could not send a test notification."), "error");
     } finally {
-      setTestingTarget(null);
+      if (testRequestSeqRef.current === seq) setTestingTarget(null);
     }
   }
 

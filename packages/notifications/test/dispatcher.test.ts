@@ -443,6 +443,31 @@ describe("notify()", () => {
     );
   });
 
+  it("does not report an org-disabled channel as failed when resolving per-user channel preferences fails", async () => {
+    stubHappyPath(db);
+    db.notificationSettings.findUnique.mockResolvedValue({ disabled_channels: { [TYPE]: ["in_app"] } });
+    db.notificationPreference.findMany.mockRejectedValue(new Error("connection reset"));
+    const webhook = stubChannel();
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { webhook, email: stubChannel(), in_app: stubChannel() },
+    });
+
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event_type: "notification.dispatch.failed",
+          // in_app was never going to be attempted (org-disabled) - only email, which genuinely
+          // couldn't be resolved, is reported. Reporting in_app too would misleadingly suggest a
+          // real delivery attempt failed on a channel the organization intentionally turned off.
+          metadata: expect.objectContaining({
+            failures: [{ channel: "email", error: expect.any(String) }],
+          }),
+        }),
+      }),
+    );
+  });
+
   it("still attempts the email channel for a configured team distro when resolving per-user preferences fails, since extra_email_recipients doesn't depend on them", async () => {
     stubHappyPath(db);
     db.notificationPreference.findMany.mockRejectedValue(new Error("connection reset"));

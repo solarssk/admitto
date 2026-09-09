@@ -401,6 +401,42 @@ describe("NotificationsPanel", () => {
     });
   });
 
+  it("discards a stale test response that resolves after a newer test has already started, instead of misattributing it", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleResponse({ extra_email_recipients: [sampleRecipient("colleague@example.com")] }),
+    );
+    await renderLoaded();
+    let resolveWebhookTest: (value: Awaited<ReturnType<typeof testNotificationSettings>>) => void = () => {};
+    let resolveEmailTest: (value: Awaited<ReturnType<typeof testNotificationSettings>>) => void = () => {};
+    mockTest.mockReturnValueOnce(new Promise((resolve) => (resolveWebhookTest = resolve)));
+    mockTest.mockReturnValueOnce(new Promise((resolve) => (resolveEmailTest = resolve)));
+
+    fireEvent.click(screen.getByRole("button", { name: "Send test (webhook)" }));
+    await waitFor(() => expect(mockTest).toHaveBeenNthCalledWith(1, undefined));
+    fireEvent.click(screen.getByRole("button", { name: "Send test to colleague@example.com" }));
+    await waitFor(() => expect(mockTest).toHaveBeenNthCalledWith(2, "colleague@example.com"));
+
+    await act(async () => {
+      resolveEmailTest({
+        webhook: { ok: true, skipped: true },
+        email: { ok: true },
+        in_app: { ok: true, skipped: true },
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByText("Test email sent")).toBeTruthy();
+    });
+
+    await act(async () => {
+      // Stale: this call started BEFORE the email test above, and its own skipped:true
+      // webhook/in-app fields must never render as if the webhook itself had just succeeded.
+      resolveWebhookTest({ webhook: { ok: true }, email: { ok: true, skipped: true }, in_app: { ok: true } });
+    });
+
+    expect(screen.getByText("Test email sent")).toBeTruthy();
+    expect(screen.queryByText("Test notification sent")).toBeNull();
+  });
+
   it("paginates the recipients table at 10 per page, by default", async () => {
     const recipients = Array.from({ length: 12 }, (_, i) => sampleRecipient(`colleague-${i}@example.com`));
     mockFetch.mockResolvedValueOnce(sampleResponse({ extra_email_recipients: recipients }));

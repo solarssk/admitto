@@ -314,8 +314,15 @@ async function dispatchToChannels(
     recipients = await splitRecipientsByChannel(db, candidates, type);
   } catch (err) {
     const error = formatDispatchError(err);
-    if (typeDef.availableChannels.includes("email")) outcome.failures.push({ channel: "email", error });
-    if (typeDef.availableChannels.includes("in_app")) outcome.failures.push({ channel: "in_app", error });
+    // Same disabledChannels guard as the two dispatch() calls below - a channel the org disabled
+    // for this type was never going to be attempted, so a failure here must not report it as a
+    // failed delivery (misleading audit trail) alongside channels that genuinely couldn't run.
+    if (typeDef.availableChannels.includes("email") && !disabledChannels.includes("email")) {
+      outcome.failures.push({ channel: "email", error });
+    }
+    if (typeDef.availableChannels.includes("in_app") && !disabledChannels.includes("in_app")) {
+      outcome.failures.push({ channel: "in_app", error });
+    }
     recipients = { emailRecipients: [], inAppRecipients: [] };
   }
 

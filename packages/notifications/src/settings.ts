@@ -152,7 +152,11 @@ async function buildNextRecipients(
   actorUserId: string,
   actorTimezone: string | undefined,
 ): Promise<NotificationEmailRecipient[]> {
-  const currentByEmail = new Map(current.map((r) => [r.email, r]));
+  // Keyed the same way patchEntries are looked up below (trim+lowercase) - current's own entries
+  // are already normalized going forward (see the create-branch below), but this guards a
+  // mixed-case legacy/corrupt row from silently losing its actor stamp on the next edit instead of
+  // being recognized as the same recipient.
+  const currentByEmail = new Map(current.map((r) => [r.email.trim().toLowerCase(), r]));
   const byEmail = new Map<string, NotificationEmailRecipient>();
   let actorSnapshot: { email: string; display_name: string | null } | null | undefined;
 
@@ -162,7 +166,9 @@ async function buildNextRecipients(
     const description = (entry.description ?? "").trim();
     const existing = currentByEmail.get(email);
     if (existing) {
-      byEmail.set(email, { ...existing, description });
+      // Also normalizes existing.email itself (not just the lookup key) - a mixed-case
+      // legacy/corrupt stored value self-heals to lowercase the next time it's touched.
+      byEmail.set(email, { ...existing, email, description });
       continue;
     }
     if (actorSnapshot === undefined) actorSnapshot = await resolveActorSnapshot(db, actorUserId);
