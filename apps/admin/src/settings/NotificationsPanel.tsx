@@ -293,8 +293,7 @@ function EditRecipientModal({
           <div className="event-item-modal__header">
             <div>
               <h2 className="event-item-modal__title" id={titleId}>
-                <i className="ti ti-mail" aria-hidden="true" />
-                Edit recipient
+                <i className="ti ti-mail" aria-hidden="true" /> Edit recipient
               </h2>
               <p className="event-item-modal__subtitle">Update this recipient's email address or description.</p>
             </div>
