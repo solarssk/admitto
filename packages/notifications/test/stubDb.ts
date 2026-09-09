@@ -10,7 +10,7 @@ export function createStubDb() {
     roleAssignment: { findMany: vi.fn(), count: vi.fn() },
     user: { findUnique: vi.fn(), findMany: vi.fn() },
     organization: { findUnique: vi.fn() },
-    notificationSettings: { findUnique: vi.fn() },
+    notificationSettings: { findUnique: vi.fn(), upsert: vi.fn() },
     notificationPreference: { findMany: vi.fn() },
     notificationThrottle: { deleteMany: vi.fn() },
     notification: { createMany: vi.fn() },

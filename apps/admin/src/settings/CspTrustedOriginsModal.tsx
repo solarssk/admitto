@@ -118,13 +118,13 @@ export function CspTrustedOriginsModal({
             {origins.length === 0 ? (
               <p className="at-hint">No trusted origins yet.</p>
             ) : (
-              <div className="csp-origin-chips">
+              <div className="removable-chip-list">
                 {origins.map((origin) => (
-                  <span className="csp-origin-chip" key={origin}>
+                  <span className="removable-chip" key={origin}>
                     {origin}
                     <button
                       type="button"
-                      className="csp-origin-chip-remove"
+                      className="removable-chip__remove"
                       onClick={() => removeOrigin(origin)}
                       aria-label={`Remove ${origin}`}
                     >

@@ -13,6 +13,8 @@ export const CODE_MESSAGES: Record<string, string> = {
     "API key is required for the Open-Meteo customer API (customer-api.open-meteo.com).",
   invalid_base_url: "Weather base URL must be a valid public http(s) URL.",
   invalid_geocoding_base_url: "Geocoding base URL must be a valid public http(s) URL.",
+  invalid_webhook_url:
+    "That webhook URL is not allowed. Check it's a valid HTTPS URL and not pointing at a private or local network address.",
   url_host_blocked:
     "That URL must not point at a private or local network address.",
   url_host_unresolved: "Could not resolve that hostname. Check the URL and try again.",

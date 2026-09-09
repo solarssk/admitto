@@ -1,5 +1,5 @@
-import type { PrismaClient, Prisma } from "@admitto/db";
-import { hasScope } from "@admitto/db";
+import type { PrismaClient, Prisma } from "@admitto/db/client";
+import { hasScope } from "@admitto/db/roles";
 import { decryptFromString } from "@admitto/crypto";
 
 /** High-level permission names used by HTTP middleware and future admin UI. */

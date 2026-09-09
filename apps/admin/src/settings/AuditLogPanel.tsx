@@ -78,6 +78,8 @@ const ACTION_LABELS: Record<string, string> = {
   mail_smtp_probed: "SMTP connection probed",
   mail_transport_tested: "Mail transport tested",
   maps_settings_updated: "Maps settings updated",
+  notification_settings_tested: "Notification settings tested",
+  notification_settings_updated: "Notification settings updated",
   operator_sessions_bulk_revoked: "Operator sessions revoked",
   org_branding_logo_uploaded: "Organization branding logo uploaded",
   retention_run: "Retention job run",
