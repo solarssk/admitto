@@ -42,6 +42,22 @@ env:
   # randomized check happened to fire). More concurrent web-unit workers (see maxWorkers) directly
   # raises the odds that at least one of them rolls that check during a run.
   ILA_AUTO_UPDATE: "false"
+  # ILA_AUTO_UPDATE only gates the PERIODIC re-check above - it does not gate the SEPARATE,
+  # unconditional "build the local database if its files don't exist yet" bootstrap
+  # (ip-location-api's own src/main.mjs: a top-level `await reload(true)` runs on every import,
+  # and reload() calls the exact same network-dependent updateDb()/updatedb.mjs whenever
+  # data/4-1.dat is missing - which it always is on a fresh CI checkout, cache or no cache, since
+  # this repo's `npm ci --ignore-scripts` deliberately skips every dependency's postinstall,
+  # ip-location-api's included, so nothing pre-builds this file at install time). Confirmed this
+  # was still crashing test-web even after ILA_AUTO_UPDATE=false landed (a different test file
+  # each time, same "AddressError: Invalid IPv4 address" root cause, just via the initial-build
+  # path instead of the periodic one). ILA_SKIP_INITIAL_RELOAD=true skips that top-level call
+  # entirely - confirmed safe: apps/web/src/rate-limit/ip-location.ts's own resolveIpLocation()
+  # already treats a lookup() miss as "unknown" and is documented to "never throw", and
+  # ip-location-api's lookup() itself returns null (not a throw) when its in-memory database was
+  # never loaded (the very first bounds check, `ip >= db.firstIp`, is false when firstIp is
+  # undefined).
+  ILA_SKIP_INITIAL_RELOAD: "true"
 
 jobs:
   wiki-docs:
