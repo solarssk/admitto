@@ -33,6 +33,19 @@ export type { MjmlRawError } from "./errors.js";
 export { friendlyMjmlErrorMessage } from "./mjmlErrorMessages.js";
 export { compileTemplate } from "./compile.js";
 export {
+  absolutizeEmailShellLogo,
+  EMAIL_ASSET_VERSION,
+  resolveBundledEmailAssetUrl,
+  resolveEmailShellHeaderLogo,
+  buildSystemEmailHtml,
+  buildSystemEmailSubject,
+  buildEmailStatusBadgeHtml,
+  buildEmailStatusBadgeImageHtml,
+  buildEmailBoxedSectionHtml,
+  buildBulletproofButtonHtml,
+} from "./emailShell.js";
+export type { EmailShellLogoKind, EmailShellHeaderLogo, EmailShellParams } from "./emailShell.js";
+export {
   renderTemplate,
   renderTemplateTrusted,
   renderTemplateTrustedForStorage,

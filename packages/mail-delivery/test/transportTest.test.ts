@@ -2,6 +2,7 @@ import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setMailSettings } from "@admitto/mailer-config";
+import { EMAIL_ASSET_VERSION } from "@admitto/mail-templates";
 import type { ExportPayload, MailerConfig } from "@admitto/mailer";
 import { resetDb } from "./resetDb.js";
 import {
@@ -84,7 +85,7 @@ describe("buildTransportTestMessage", () => {
     });
 
     expect(msg.subject).toMatch(
-      /^Admitto mail transport test \(2026-08-04 20:09:47 UTC - [a-f0-9]{8}\)$/,
+      /^\[Acme <Org>\] mail transport test \(2026-08-04 20:09:47 UTC - [a-f0-9]{8}\)$/,
     );
     expect(msg.html).toContain("Mail transport test");
     expect(msg.html).toContain("Diagnostics");
@@ -135,7 +136,7 @@ describe("buildTransportTestMessage", () => {
   it("uses default organization scope when ctx is omitted", () => {
     const msg = buildTransportTestMessage();
     expect(msg.html).toContain("Organization mail settings");
-    expect(msg.subject).toMatch(/^Admitto mail transport test \(/);
+    expect(msg.subject).toMatch(/^\[Admitto\] mail transport test \(/);
   });
 
   it("includes envelopeFrom, mailbox, host-only, and event organization row", () => {
@@ -205,13 +206,13 @@ describe("resolveTransportTestHeaderLogo", () => {
     });
   });
 
-  it("falls back to the Admitto wordmark under BASE_URL when branding is missing", () => {
-    expect(resolveTransportTestHeaderLogo(null, { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" })).toEqual(
-      {
-        url: "https://tickets.example.com/assets/admitto-logo.svg",
-        kind: "admitto",
-      },
-    );
+  it("falls back to the bundled Admitto PNG logo when branding is missing - the SVG wordmark can't render as an <img> in classic Outlook", () => {
+    expect(
+      resolveTransportTestHeaderLogo(null, { NODE_ENV: "test", BASE_URL: "https://tickets.example.com" }),
+    ).toEqual({
+      url: `https://tickets.example.com/assets/admitto-logo.png?v=${EMAIL_ASSET_VERSION}`,
+      kind: "admitto",
+    });
   });
 
   it("returns null when BASE_URL cannot be resolved", () => {
@@ -235,7 +236,7 @@ describe("sendTransportTestEmail (org-scoped)", () => {
     expect(result.provider).toBe("export_only");
     expect(exported).toHaveLength(1);
     expect(exported[0]?.message.to).toBe("operator@example.com");
-    expect(exported[0]?.message.subject).toMatch(/^Admitto mail transport test \(/);
+    expect(exported[0]?.message.subject).toMatch(/^\[Transport Test Org\] mail transport test \(/);
     expect(exported[0]?.message.html).toContain("Test id");
     expect(exported[0]?.message.html).toContain("Mail transport test");
     expect(exported[0]?.message.html).toContain(
@@ -328,7 +329,7 @@ describe("buildEventTransportTestMessage", () => {
       },
     );
 
-    expect(msg.subject).toMatch(/^Admitto mail transport test \(2026-08-04 20:09:47 UTC - /);
+    expect(msg.subject).toMatch(/^\[Transport Test Org\] mail transport test \(2026-08-04 20:09:47 UTC - /);
     expect(msg.html).toContain("Event: Transport Test Event Override");
     expect(msg.html).toContain("Transport Test Org");
     expect(msg.html).toContain("operator@example.com");
