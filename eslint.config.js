@@ -75,6 +75,31 @@ export default [
     },
   },
   {
+    // Importing bare "@admitto/db" runtime-executes packages/db/src/index.ts, which constructs a
+    // live PrismaClient singleton at module load time — every unit test file that imports
+    // @admitto/auth (even just for a type or for hasScope/isSerializationFailure) then pays that
+    // construction cost, real or not. cli.ts is excluded: it's a genuine CLI entrypoint that needs
+    // the actual `prisma` singleton. Type-only imports stay allowed (allowTypeImports) since they're
+    // erased at compile time and never trigger the side effect regardless of source module.
+    files: ["packages/auth/src/**/*.ts"],
+    ignores: ["packages/auth/src/cli.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@admitto/db",
+              message:
+                "Use '@admitto/db/client' for Prisma types, '@admitto/db/roles' for hasScope, or '@admitto/db/errors' for isSerializationFailure — the bare barrel constructs a live PrismaClient at import time.",
+              allowTypeImports: true,
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // packages/ui is a React component library — same shape as apps/*/src below.
     files: ["packages/*/src/**/*.tsx"],
     ...reactTsxConfig,

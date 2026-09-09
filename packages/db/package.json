@@ -23,6 +23,14 @@
       "types": "./dist/status.d.ts",
       "default": "./dist/status.js"
     },
+    "./roles": {
+      "types": "./dist/roles.d.ts",
+      "default": "./dist/roles.js"
+    },
+    "./errors": {
+      "types": "./dist/errors.d.ts",
+      "default": "./dist/errors.js"
+    },
     "./test-db-guard": {
       "types": "./dist/testDbGuard.d.ts",
       "default": "./dist/testDbGuard.js"
