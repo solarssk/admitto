@@ -6,6 +6,7 @@ import { prisma } from "@admitto/db";
 import { createApp } from "./app.js";
 import { validateCfAccessBootConfig } from "./config.js";
 import { devConsoleExportSink, warnExportOnlyProductionEnv } from "./dev-export-sink.js";
+import { installGracefulShutdown, type CloseableServer } from "./graceful-shutdown.js";
 import { logger } from "./logger.js";
 
 type HttpsServerOptions = { cert: Buffer; key: Buffer };
@@ -73,8 +74,10 @@ export function crashLogFields(reason: unknown): { message: string; stack?: stri
   return { message: err.message, stack: err.stack };
 }
 
-/** Boot the Admitto web server; wires a dev-only export_only sink when NODE_ENV is development. */
-async function main(): Promise<void> {
+/** Boot the Admitto web server; wires a dev-only export_only sink when NODE_ENV is development.
+ * Returns the listening server(s) so the caller can wire graceful shutdown once startup succeeds -
+ * normally just one, but the dev-only dual-loopback branch below binds both 127.0.0.1 and ::1. */
+async function main(): Promise<readonly CloseableServer[]> {
   await validateCfAccessBootConfig(prisma);
   warnExportOnlyProductionEnv();
 
@@ -111,7 +114,7 @@ async function main(): Promise<void> {
   const loopbackHosts = resolveDevServeHostnames(isDevelopment, useHttps);
 
   if (httpsCerts) {
-    serve(
+    const server = serve(
       {
         fetch: app.fetch,
         port,
@@ -123,10 +126,11 @@ async function main(): Promise<void> {
         console.log(`Admitto web running at https://localhost:${port}`);
       },
     );
-    return;
+    return [server];
   }
 
   if (loopbackHosts) {
+    const servers: CloseableServer[] = [];
     for (const hostname of loopbackHosts) {
       const optional = hostname === "::1";
       const server = serve({ fetch: app.fetch, port, hostname }, () => {
@@ -143,13 +147,15 @@ async function main(): Promise<void> {
         console.error(err);
         process.exit(1);
       });
+      servers.push(server);
     }
-    return;
+    return servers;
   }
 
-  serve({ fetch: app.fetch, port }, () => {
+  const server = serve({ fetch: app.fetch, port }, () => {
     console.log(`Admitto web running at http://0.0.0.0:${port}`);
   });
+  return [server];
 }
 
 // Don't boot a real server (or connect to Prisma) when this file is imported by a
@@ -174,7 +180,8 @@ if (process.env.NODE_ENV !== "test") {
   });
 
   try {
-    await main();
+    const servers = await main();
+    installGracefulShutdown(servers, () => prisma.$disconnect());
   } catch (err) {
     console.error(err);
     process.exit(1);
