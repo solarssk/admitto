@@ -1,7 +1,4 @@
-import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 import { WEB_TEST_DATABASE_URL } from "./testEnv.js";
@@ -29,14 +26,89 @@ function assertSafeIdentifier(name: string): void {
   }
 }
 
-function pgArgsFromUrl(databaseUrl: string): { host: string; port: string; user: string; database: string } {
+function pgArgsFromUrl(
+  databaseUrl: string,
+): { host: string; port: string; user: string; database: string; password: string } {
   const url = new URL(databaseUrl);
   return {
     host: url.hostname,
     port: url.port || "5432",
     user: decodeURIComponent(url.username),
     database: url.pathname.replace(/^\//, ""),
+    password: decodeURIComponent(url.password || ""),
   };
+}
+
+const COMPOSE_FILE = process.env.COMPOSE_FILE ?? "infra/docker-compose.yml";
+const DB_SERVICE = process.env.DB_SERVICE ?? "db";
+
+const hostBinaryCache = new Map<string, Promise<boolean>>();
+
+function hasHostBinary(command: string): Promise<boolean> {
+  let cached = hostBinaryCache.get(command);
+  if (!cached) {
+    cached = execFileAsync(command, ["--version"])
+      .then(() => true)
+      .catch((err: NodeJS.ErrnoException) => {
+        if (err.code === "ENOENT") return false;
+        throw err;
+      });
+    hostBinaryCache.set(command, cached);
+  }
+  return cached;
+}
+
+/**
+ * Resolves `pg_dump`/`psql` to either the host binary directly, or the same command run inside
+ * the already-running `db` compose service - mirrors infra/scripts/create-test-dbs.sh's own
+ * run_psql/run_createdb fallback exactly, including that its Docker branch drops -h/-p/PGPASSWORD:
+ * running inside the same container as the server, both commands connect over the local socket,
+ * which the official postgres image trusts unconditionally regardless of POSTGRES_PASSWORD.
+ * README.md's documented Docker-only setup (Postgres in Docker, no host Postgres client required)
+ * relies on that create-test-dbs.sh fallback already - calling either binary directly here (as
+ * this file previously did) instead aborted every integration run with `spawn pg_dump ENOENT` on
+ * exactly that supported workstation.
+ */
+async function pgClient(
+  command: "pg_dump" | "psql",
+  args: string[],
+): Promise<{ file: string; args: string[]; env: NodeJS.ProcessEnv }> {
+  const { host, port, user, password } = pgArgsFromUrl(WEB_TEST_DATABASE_URL);
+  if (await hasHostBinary(command)) {
+    return {
+      file: command,
+      args: ["-h", host, "-p", port, "-U", user, ...args],
+      env: { ...process.env, PGPASSWORD: password },
+    };
+  }
+  return {
+    file: "docker",
+    args: ["compose", "-f", COMPOSE_FILE, "exec", "-T", DB_SERVICE, command, "-U", user, ...args],
+    env: process.env,
+  };
+}
+
+/** Runs a resolved pgClient() command, optionally piping `input` to its stdin (used instead of a
+ * temp file for the schema replay below, so the Docker fallback above never needs the container to
+ * see a path on the host filesystem). */
+function run(file: string, args: string[], env: NodeJS.ProcessEnv, input?: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(file, args, { env });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString("utf8");
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve(stdout);
+      else reject(new Error(`${file} ${args.join(" ")} exited with code ${code}: ${stderr}`));
+    });
+    child.stdin.end(input);
+  });
 }
 
 /**
@@ -56,15 +128,10 @@ function pgArgsFromUrl(databaseUrl: string): { host: string; port: string; user:
  */
 export async function provisionWorkerSchemas(workerCount: number): Promise<void> {
   assertTestDatabaseUrl(WEB_TEST_DATABASE_URL);
-  const { host, port, user, database } = pgArgsFromUrl(WEB_TEST_DATABASE_URL);
-  const psqlArgs = ["-h", host, "-p", port, "-U", user, "-d", database, "-v", "ON_ERROR_STOP=1"];
-  const env = { ...process.env, PGPASSWORD: decodeURIComponent(new URL(WEB_TEST_DATABASE_URL).password || "") };
+  const { database, user } = pgArgsFromUrl(WEB_TEST_DATABASE_URL);
 
-  const { stdout: dump } = await execFileAsync(
-    "pg_dump",
-    ["-h", host, "-p", port, "-U", user, "-d", database, "-n", "public", "--schema-only"],
-    { env, maxBuffer: 64 * 1024 * 1024 },
-  );
+  const dumpCmd = await pgClient("pg_dump", ["-d", database, "-n", "public", "--schema-only"]);
+  const dump = await run(dumpCmd.file, dumpCmd.args, dumpCmd.env);
 
   // Drop the dump's own `public` schema bootstrap (this repo's schema always exists already) -
   // everything else is fully `public.`-qualified by pg_dump (confirmed: it sets
@@ -81,25 +148,24 @@ export async function provisionWorkerSchemas(workerCount: number): Promise<void>
     )
     .join("\n");
 
-  const tmpDir = await mkdtemp(join(tmpdir(), "admitto-worker-schema-"));
-  try {
-    await Promise.all(
-      Array.from({ length: workerCount }, (_, i) => i + 1).map(async (workerId) => {
-        const schema = workerSchemaName(workerId);
-        assertSafeIdentifier(schema);
-        const replayFile = join(tmpDir, `${schema}.sql`);
-        const rewritten = strippedDump.replace(/\bpublic\./g, `${schema}.`);
-        await writeFile(replayFile, rewritten);
+  await Promise.all(
+    Array.from({ length: workerCount }, (_, i) => i + 1).map(async (workerId) => {
+      const schema = workerSchemaName(workerId);
+      assertSafeIdentifier(schema);
+      const rewritten = strippedDump.replace(/\bpublic\./g, `${schema}.`);
 
-        await execFileAsync(
-          "psql",
-          [...psqlArgs, "-c", `DROP SCHEMA IF EXISTS "${schema}" CASCADE; CREATE SCHEMA "${schema}" AUTHORIZATION "${user}";`],
-          { env },
-        );
-        await execFileAsync("psql", [...psqlArgs, "-f", replayFile], { env });
-      }),
-    );
-  } finally {
-    await rm(tmpDir, { recursive: true, force: true });
-  }
+      const createCmd = await pgClient("psql", [
+        "-d",
+        database,
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-c",
+        `DROP SCHEMA IF EXISTS "${schema}" CASCADE; CREATE SCHEMA "${schema}" AUTHORIZATION "${user}";`,
+      ]);
+      await run(createCmd.file, createCmd.args, createCmd.env);
+
+      const replayCmd = await pgClient("psql", ["-d", database, "-v", "ON_ERROR_STOP=1", "-f", "-"]);
+      await run(replayCmd.file, replayCmd.args, replayCmd.env, rewritten);
+    }),
+  );
 }
