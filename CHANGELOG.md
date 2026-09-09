@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The `app` container now shuts down gracefully on `docker stop`/`docker compose down` instead of terminating immediately: it stops accepting new requests, lets in-flight ones (including open Reports/check-in live-update streams) finish for up to 6 seconds before forcing them closed, then gives the database disconnect up to 3 more seconds - 9 seconds combined, comfortably inside Docker's default 10-second stop window, so a routine restart or host maintenance no longer risks cutting off a request that was already in progress. The background worker container already did this; this closes the same gap for the web server.
+
 ### Changed
 
 - My Account's passkey management now sends a best-effort WebAuthn Signal API notification when removing a passkey or security key. Supported browsers and password managers can then stop offering the deleted credential for future sign-ins. The "Add" button for passkeys is also now disabled on browsers that report no passkey support, instead of only failing after the setup prompt is attempted.
@@ -23,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The production container image now runs `apt-get upgrade` when installing its base packages, picking up Debian's own bookworm-security point-fixes (e.g. CVE-2026-86145, a high-severity libpcre2-8-0 issue Docker Scout flagged in the v0.6.8 image) instead of shipping whatever version the base image tag happened to bake in until its own next rebuild.
 - Every database query now has a 30-second Postgres `statement_timeout` by default - previously nothing bounded how long an in-flight query could run once it reached the database (only connection acquisition had a timeout), so a query stuck behind a lock during a burst of writes could hang indefinitely instead of failing fast. The handful of deploy-time backfill scripts that intentionally run one long-running statement over an entire table use a separate, longer timeout instead, matching the external bound the deploy entrypoint already gives them. The worker's two dedicated Postgres connections (advisory-lock coordination and job-wake `LISTEN`) get the same 30-second bound, since they connect directly and never went through the timeout above.
+- Bumped two transitive dependencies carrying newly-disclosed high-severity advisories: `js-yaml` (GHSA-2883-xcg3-v3hh, unbounded CPU use parsing certain YAML) and `svgo` (GHSA-w27v-7q3p-w38r and GHSA-4vpr-x523-8j87, `removeScripts` incompletely sanitizing SVG content) - both pulled in via the mail template renderer's `mjml`/`htmlnano` pipeline, `svgo` also via the admin icon-font build tooling. Also bumped `hono` to pick up a moderate-severity fix (GHSA-gqvv-2mrq-wpjv, GHSA-g6gw-c38x-mqfc, GHSA-crvj-82cr-hjcx) while addressing the others. No code changes - all three stayed within their already-declared version ranges.
 
 ## [0.6.8] - 2026-09-05
 
