@@ -17,6 +17,7 @@ import {
 import type { ExportPayload } from "@admitto/mailer";
 import { EXPORT_ROW_CAP, generateToken } from "@admitto/tickets";
 import { encryptToString } from "@admitto/crypto";
+import { countDeliveries, listDeliveries } from "@admitto/mail-delivery";
 import { createApp } from "../../src/app.js";
 import {
   handleExportEventDeliveries,
@@ -30,6 +31,20 @@ import { createRateLimitStore } from "../../src/rate-limit/index.js";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
 import { seedOrgAndEvent, createAdminAndOp } from "../helpers/seed-org-and-event.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
+
+// Real implementations by default (every other test in this file exercises the genuine DB-backed
+// behavior) - only the one TOCTOU test below overrides these for a single call each via
+// mockResolvedValueOnce, to simulate the real total changing between handleExportEventDeliveries'
+// count-before-fetch cap check and its own fetch, which no amount of real concurrent inserts in a
+// single-threaded test process can otherwise reproduce deterministically.
+vi.mock("@admitto/mail-delivery", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@admitto/mail-delivery")>();
+  return {
+    ...actual,
+    countDeliveries: vi.fn(actual.countDeliveries),
+    listDeliveries: vi.fn(actual.listDeliveries),
+  };
+});
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
 const sameOrigin = { Origin: "http://localhost" };
@@ -1418,6 +1433,25 @@ describe("GET /api/admin/events/:eventId/deliveries/export", () => {
     // concurrency at all - it only gives this one already-known-heavy test more headroom.
     60_000,
   );
+
+  it("rejects an export whose real total grows between the cap check and the fetch (TOCTOU)", async () => {
+    // countDeliveries (the cap check) sees an under-cap count; listDeliveries' own count (run at
+    // fetch time - see its own Promise.all) sees the cap already exceeded, simulating a delivery
+    // inserted in the window between the two. Both mocks are single-use (mockResolvedValueOnce) -
+    // every other test in this file still exercises the real, unmocked implementations.
+    vi.mocked(countDeliveries).mockResolvedValueOnce(1);
+    vi.mocked(listDeliveries).mockResolvedValueOnce({ items: [], total: EXPORT_ROW_CAP + 1 });
+
+    const res = await app.request(
+      `/api/admin/events/${EVENT_A}/deliveries/export?format=csv`,
+      { headers: { Cookie: adminCookie } },
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; count: number; cap: number };
+    expect(body.error).toBe("export_too_large");
+    expect(body.cap).toBe(EXPORT_ROW_CAP);
+    expect(body.count).toBe(EXPORT_ROW_CAP + 1);
+  });
 });
 
 describe("delivery route handlers - missing :eventId/:deliveryId guards", () => {
