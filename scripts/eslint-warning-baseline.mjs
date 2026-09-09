@@ -6,11 +6,13 @@
  * fails a run on warnings alone, without `--max-warnings`), so CI treats that run as green
  * regardless of whether a PR quietly adds a new warning while fixing an old one - the raw warning
  * count can stay flat while the actual set of warnings shifts underneath it. This script tracks a
- * committed baseline of warning "fingerprints" and fails only when the CURRENT tree contains a
- * fingerprint that isn't in the baseline; fixing an existing warning (which only shrinks the
- * current set) is always fine and never blocks anything.
+ * committed baseline of warning "fingerprints" and requires the CURRENT tree to match it exactly:
+ * every current warning must have a baseline entry, and every baseline entry must still match a
+ * current warning. Fixing a warning and adding a new (reviewed) one both require the same one
+ * step - `npm run lint:baseline:update` - to re-sync the baseline; neither is free, on purpose
+ * (see the "stale entries" paragraph below for why fixing used to be free and no longer is).
  *
- * A fingerprint is `{ ruleId, filePath, message, codeLine, contextBefore, contextAfter }` -
+ * A fingerprint is `{ ruleId, filePath, message, codeLine, column, contextBefore, contextAfter }` -
  * deliberately EXCLUDING the line NUMBER, so a line shifting elsewhere in a file (e.g. someone
  * adds a blank line above an untouched warning) never produces a false "new warning". `codeLine`
  * (the warned line's own trimmed source text) stands in for the line number instead of being
@@ -26,10 +28,29 @@
  * trimmed line text (e.g. a common `obj[key]` idiom repeated verbatim), which lets the same
  * warning-for-warning swap happen *within* an already-duplicated signature - remove one, introduce
  * a different one elsewhere with an identical line, and the multiset still just sees "same count".
- * `contextBefore`/`contextAfter` (the immediately adjacent lines' own trimmed text) break that
- * remaining tie: they change only when code next to the warning actually changes, not when
+ * `contextBefore`/`contextAfter` (the immediately adjacent lines' own trimmed text) break most of
+ * that remaining tie: they change only when code next to the warning actually changes, not when
  * anything elsewhere in the file shifts, so they keep the line-number-independence property above
  * while still telling apart two textually-identical warned lines living in different code.
+ *
+ * `column` closes the last gap context can't: five signatures in that same file still collide even
+ * WITH context, because they're not actually two different call sites at all - they're a single
+ * line with two separate object-injection expressions (e.g.
+ * `doc.text(cells[i] ?? "", x, y, cellOptions(plan.contentWidths[i]!, rowHeight))` flags both
+ * `cells[i]` and `plan.contentWidths[i]`), which ESLint reports as two messages sharing one `line`
+ * but different `column`s. Column, like codeLine/context, is purely a property of that one line's
+ * own content - unaffected by anything shifting elsewhere in the file - so it keeps the same
+ * independence property while finally telling these apart.
+ *
+ * Stale entries: a baseline is committed at some point and never *required* to shrink again on its
+ * own - if `check` only looked for new warnings, fixing one without regenerating the baseline
+ * would leave its old fingerprint sitting there unconsumed, and a LATER, unrelated PR could
+ * reintroduce that exact warning at the same source context and have it silently match the stale
+ * entry - a genuine "fixed warning comes back unnoticed" gap, not hypothetical: nothing about the
+ * multiset comparison distinguishes "still present" from "removed and never cleaned up". `check`
+ * therefore fails on unconsumed baseline entries too, not just unmatched current ones - the
+ * baseline must be an exact mirror of the current warning set, not a ceiling it can safely drift
+ * below.
  *
  * Only ESLint messages with severity 1 (warning) are fingerprinted; severity 2 (error) already
  * fails `npm run lint`'s own exit code and needs no separate gate here.
@@ -42,8 +63,9 @@
  *
  * Modes:
  *   generate  - lints the current tree and writes a fresh `.eslint-warning-baseline.json`.
- *   check     - lints the current tree and fails (exit 1) if it contains any warning fingerprint
- *               not present in the committed baseline. This is the default with no args.
+ *   check     - lints the current tree and fails (exit 1) unless it matches the committed baseline
+ *               exactly (no new fingerprints, no stale ones left over). This is the default with
+ *               no args.
  *
  * Usage:
  *   node scripts/eslint-warning-baseline.mjs [check|generate]
@@ -96,8 +118,8 @@ async function runEslint() {
  * Converts raw ESLint results into warning-only fingerprints (severity 1, no line number).
  * Reads each flagged file's own source once (not via ESLint's own `result.source`, which is only
  * populated in some configurations) to capture the warned line's own trimmed text plus its
- * immediate neighbors - see the module doc comment above for why a fingerprint needs all three
- * and not just {ruleId, filePath, message}.
+ * immediate neighbors - see the module doc comment above for why a fingerprint needs all of these
+ * fields and not just {ruleId, filePath, message}.
  */
 export function toFingerprints(results) {
   const fingerprints = [];
@@ -116,6 +138,7 @@ export function toFingerprints(results) {
         filePath: relPath,
         message: msg.message,
         codeLine,
+        column: msg.column,
         contextBefore,
         contextAfter,
       });
@@ -130,12 +153,13 @@ export function fingerprintKey(fp) {
     fp.filePath,
     fp.message,
     fp.codeLine,
+    fp.column,
     fp.contextBefore,
     fp.contextAfter,
   ]);
 }
 
-const SORT_FIELDS = ["filePath", "ruleId", "message", "codeLine", "contextBefore", "contextAfter"];
+const SORT_FIELDS = ["filePath", "ruleId", "message", "codeLine", "column", "contextBefore", "contextAfter"];
 
 export function sortFingerprints(fingerprints) {
   return [...fingerprints].sort((a, b) => {
@@ -149,11 +173,14 @@ export function sortFingerprints(fingerprints) {
 }
 
 /**
- * Multiset (count-based) comparison rather than a plain Set difference: two genuinely distinct
- * warned lines can still produce an identical fingerprint (same rule, message, code text, AND
- * surrounding context - e.g. a repeated boilerplate block). Counting occurrences means a THIRD
- * occurrence of a signature the baseline only saw twice is still correctly caught as new. Returns
- * the current fingerprints with no matching baseline slot left.
+ * Multiset (count-based), bidirectional comparison: two genuinely distinct warned lines can still
+ * produce an identical fingerprint (same rule, message, code text, column, AND surrounding context
+ * - e.g. a repeated boilerplate block), so occurrences are counted rather than just checked for
+ * presence - a THIRD occurrence of a signature the baseline only saw twice is still correctly
+ * caught as new. Returns `{ newWarnings, staleWarnings }`: current fingerprints with no matching
+ * baseline slot left (new, unreviewed), and baseline fingerprints with no matching current slot
+ * (stale - the warning they describe no longer exists, and leaving them in place would let an
+ * unrelated later PR reintroduce that exact warning unnoticed).
  */
 export function diffFingerprints(baseline, current) {
   const remainingBaselineCounts = new Map();
@@ -172,7 +199,18 @@ export function diffFingerprints(baseline, current) {
       newWarnings.push(fp);
     }
   }
-  return newWarnings;
+
+  const staleWarnings = baseline.filter((fp) => (remainingBaselineCounts.get(fingerprintKey(fp)) ?? 0) > 0);
+  // Each stale key should only be reported once, not once per remaining count.
+  const seenStaleKeys = new Set();
+  const dedupedStale = staleWarnings.filter((fp) => {
+    const key = fingerprintKey(fp);
+    if (seenStaleKeys.has(key)) return false;
+    seenStaleKeys.add(key);
+    return true;
+  });
+
+  return { newWarnings, staleWarnings: dedupedStale };
 }
 
 async function generate() {
@@ -195,7 +233,7 @@ async function check() {
 
   const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
   const current = sortFingerprints(toFingerprints(await runEslint()));
-  const newWarnings = diffFingerprints(baseline, current);
+  const { newWarnings, staleWarnings } = diffFingerprints(baseline, current);
 
   if (newWarnings.length > 0) {
     console.error(`Found ${newWarnings.length} new ESLint warning(s) not present in the baseline:\n`);
@@ -204,14 +242,29 @@ async function check() {
       console.error(`    ${fp.message}`);
       console.error(`    > ${fp.codeLine}\n`);
     }
+  }
+
+  if (staleWarnings.length > 0) {
     console.error(
-      "If each of these is an expected, reviewed warning, run \"npm run lint:baseline:update\" to"
-      + ` refresh ${relative(REPO_ROOT, BASELINE_PATH)} and commit the result. Otherwise, fix it.`,
+      `Found ${staleWarnings.length} baseline entr${staleWarnings.length === 1 ? "y" : "ies"} `
+      + "that no longer match any current warning (already fixed, but the baseline wasn't refreshed):\n",
+    );
+    for (const fp of staleWarnings) {
+      console.error(`  ${fp.ruleId ?? "(no ruleId)"}  ${fp.filePath}`);
+      console.error(`    ${fp.message}`);
+      console.error(`    > ${fp.codeLine}\n`);
+    }
+  }
+
+  if (newWarnings.length > 0 || staleWarnings.length > 0) {
+    console.error(
+      `Run "npm run lint:baseline:update" to refresh ${relative(REPO_ROOT, BASELINE_PATH)} and`
+      + " commit the result - review any new warnings first; a stale entry alone just needs the refresh.",
     );
     process.exit(1);
   }
 
-  console.log(`No new ESLint warnings (${baseline.length} baseline, ${current.length} current)`);
+  console.log(`No new or stale ESLint warnings (${baseline.length} baseline, ${current.length} current)`);
 }
 
 // Only run the CLI when this file is executed directly (`node scripts/eslint-warning-baseline.mjs
