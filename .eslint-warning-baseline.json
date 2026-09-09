@@ -41,6 +41,14 @@
   },
   {
     "ruleId": "security/detect-unsafe-regex",
+    "filePath": "apps/admin/src/settings/NotificationsPanel.tsx",
+    "message": "Unsafe Regular Expression",
+    "codeLine": "const EMAIL_RE = /^[^\\s@]+@([^\\s@.]+\\.)+[^\\s@.]+$/;",
+    "contextBefore": "// positions, not a search space the engine has to backtrack through (Sonar S8786).",
+    "contextAfter": ""
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
     "filePath": "apps/admin/src/settings/mailSettingsValidation.ts",
     "message": "Unsafe Regular Expression",
     "codeLine": "return /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label);",
@@ -230,6 +238,30 @@
     "codeLine": "for (const block of normalized.split(/\\n(?:[ \\t]*\\n)+/)) {",
     "contextBefore": "// Split on blank lines into header-like field groups (RFC 3464 §2).",
     "contextAfter": "parseOneDsnBlock(block, out, seen);"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/notifications/src/dispatcher.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "const disabledChannels = typeDef.orgDisableable ? (disabledChannelsByType[type] ?? []) : [];",
+    "contextBefore": "const { disabledChannelsByType } = await readOrgSettings(db, event.organizationId);",
+    "contextAfter": "// Fully disabled across every channel this type can even use - same fast path as before the"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/notifications/src/dispatcher.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "if (normalized.length > 0) disabledChannelsByType[type] = normalized as NotificationChannelKey[];",
+    "contextBefore": "const normalized = channels.filter((entry): entry is string => typeof entry === \"string\");",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/notifications/src/settings.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "if (normalized.length > 0) result[type] = normalized;",
+    "contextBefore": "const normalized = normalizeStringArray(channels) as NotificationChannelKey[];",
+    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-unsafe-regex",
