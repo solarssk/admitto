@@ -32,13 +32,16 @@ export const WEBHOOK_SEND_TIMEOUT_MS = 15_000;
 
 const GENERIC_SEND_FAILED = "Webhook send failed.";
 
-class BlockedWebhookUrlError extends Error {}
+export class BlockedWebhookUrlError extends Error {}
 
 /** Same SSRF posture as packages/auth/src/oidc/safe-url.ts's assertSafeOidcFetchUrl - HTTPS
  * required (loopback+HTTP allowed outside production for local testing), private/link-local/
  * metadata hosts blocked (ADR 0016 SEC-1). No allowlist: unlike OIDC/mail, a self-hosted
- * private-network webhook target is not an expected use case for Discord/Slack/generic alerts. */
-function assertSafeWebhookUrl(urlString: string, env: NodeJS.ProcessEnv): URL {
+ * private-network webhook target is not an expected use case for Discord/Slack/generic alerts.
+ * Exported so the Settings route can reject an obviously bad/blocked URL at save time - the DNS
+ * re-check at actual send time (WebhookChannel.send()) still stands, since a save-time-valid host
+ * could resolve differently later (rebinding), but early feedback beats a silent later failure. */
+export function assertSafeWebhookUrl(urlString: string, env: NodeJS.ProcessEnv): URL {
   let url: URL;
   try {
     url = new URL(urlString);
@@ -75,16 +78,27 @@ function resolveLoopbackRecord(hostname: string): LookupAddress {
   return { address: hostname, family: hostname.includes(":") ? 6 : 4 };
 }
 
+/** Matches emailTemplate.ts's SEVERITY_LABEL (info/warn/error) - Discord-only, since the emoji
+ * is prefixed onto the embed title, a shape only the Discord payload has. */
+const SEVERITY_EMOJI: Record<"info" | "warn" | "error", string> = {
+  info: "ℹ️",
+  warn: "⚠️",
+  error: "🚨",
+};
+
 function buildPayload(kind: WebhookKind, event: DispatchedNotification): Record<string, unknown> {
   switch (kind) {
     case "discord":
       return {
         embeds: [
           {
-            title: event.title,
+            title: `${SEVERITY_EMOJI[event.severity]} ${event.title}`,
             description: event.body,
             color: hexToDecimalColor(SEVERITY_COLOR[event.severity]),
             fields: buildMetadataFields(event.metadata),
+            // Discord renders this as a readable local timestamp in the embed's own corner - the
+            // same "when did this happen" cue Uptime Kuma's embeds show (PO comparison).
+            timestamp: new Date().toISOString(),
           },
         ],
       };
@@ -104,13 +118,28 @@ function buildPayload(kind: WebhookKind, event: DispatchedNotification): Record<
   }
 }
 
+/** "user_agent"/"userAgent" -> "User Agent" - Discord embed field names read raw metadata keys
+ * verbatim otherwise (PO comparison against Uptime Kuma's own "Service Name"/"Went Offline"
+ * labels, which are hand-written strings, not raw field keys). No acronym dictionary (would stay
+ * "Ip" not "IP") - a small, deliberate gap rather than a lookup table for a handful of cases. */
+function humanizeMetadataKey(key: string): string {
+  const words = key
+    .replace(/_/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(" ")
+    .filter(Boolean);
+  return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(" ");
+}
+
 function buildMetadataFields(
   metadata: Record<string, unknown> | undefined,
 ): Array<{ name: string; value: string; inline: boolean }> {
   if (!metadata) return [];
   return Object.entries(metadata)
     .filter(([, value]) => value !== undefined && value !== null && value !== "")
-    .map(([key, value]) => ({ name: key, value: String(value), inline: true }));
+    // Not inline - Discord packs inline fields 3-per-row, which crowds out longer values (a URL,
+    // a user agent string); full-width, one per line, is what makes Kuma's embeds easy to read.
+    .map(([key, value]) => ({ name: humanizeMetadataKey(key), value: String(value), inline: false }));
 }
 
 /**

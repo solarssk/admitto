@@ -55,6 +55,9 @@ import {
   handleGetAppleWalletBadgePng,
   handleGetGoogleWalletBadge,
   handleGetGoogleWalletBadgePng,
+  handleGetNotificationBadgeError,
+  handleGetNotificationBadgeInfo,
+  handleGetNotificationBadgeWarn,
   handleGetSamsungWalletBadge,
   handleGetSamsungWalletBadgePng,
 } from "./wallet-badges.js";
@@ -1226,6 +1229,9 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/assets/apple-wallet-badge.png", handleGetAppleWalletBadgePng);
   app.get("/assets/google-wallet-badge.png", handleGetGoogleWalletBadgePng);
   app.get("/assets/samsung-wallet-badge.png", handleGetSamsungWalletBadgePng);
+  app.get("/assets/notification-badge-info.png", handleGetNotificationBadgeInfo);
+  app.get("/assets/notification-badge-warn.png", handleGetNotificationBadgeWarn);
+  app.get("/assets/notification-badge-error.png", handleGetNotificationBadgeError);
   app.get("/readyz", readyzRateLimit, (c) =>
     handleReadyz(c, {
       db,

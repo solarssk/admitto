@@ -112,9 +112,54 @@ describe("WebhookChannel", () => {
     expect(result).toEqual({ ok: true });
     const [, , , init] = withPinnedFetch.mock.calls[0]!;
     const payload = JSON.parse((init as { body: string }).body);
-    expect(payload.embeds[0].title).toBe(EVENT.title);
+    expect(payload.embeds[0].title).toBe(`🚨 ${EVENT.title}`);
     expect(payload.embeds[0].color).toBe(0xd63939);
-    expect(payload.embeds[0].fields).toEqual([{ name: "user", value: "admin@example.com", inline: true }]);
+    expect(payload.embeds[0].fields).toEqual([{ name: "User", value: "admin@example.com", inline: false }]);
+    expect(payload.embeds[0].timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  });
+
+  it.each([
+    ["info", "ℹ️"],
+    ["warn", "⚠️"],
+    ["error", "🚨"],
+  ] as const)("prefixes the Discord embed title with the %s severity's emoji", async (severity, emoji) => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(
+      settingsWith("https://discord.com/api/webhooks/x/y", "discord"),
+    );
+    withPinnedFetch.mockImplementation(async (_url, _hostname, _records, _init, handler) =>
+      handler(mockResponse(204)),
+    );
+    const channel = new WebhookChannel(db as unknown as PrismaClient);
+
+    await channel.send({ ...EVENT, severity }, []);
+
+    const [, , , init] = withPinnedFetch.mock.calls[0]!;
+    const payload = JSON.parse((init as { body: string }).body);
+    expect(payload.embeds[0].title).toBe(`${emoji} ${EVENT.title}`);
+  });
+
+  it("humanizes snake_case and camelCase metadata keys into Title Case field names", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(
+      settingsWith("https://discord.com/api/webhooks/x/y", "discord"),
+    );
+    withPinnedFetch.mockImplementation(async (_url, _hostname, _records, _init, handler) =>
+      handler(mockResponse(204)),
+    );
+    const channel = new WebhookChannel(db as unknown as PrismaClient);
+
+    await channel.send(
+      { ...EVENT, metadata: { ip_address: "203.0.113.7", userAgent: "Chrome / macOS" } },
+      [],
+    );
+
+    const [, , , init] = withPinnedFetch.mock.calls[0]!;
+    const payload = JSON.parse((init as { body: string }).body);
+    expect(payload.embeds[0].fields).toEqual([
+      { name: "Ip Address", value: "203.0.113.7", inline: false },
+      { name: "User Agent", value: "Chrome / macOS", inline: false },
+    ]);
   });
 
   it("sends a flat generic JSON payload for webhook_kind generic", async () => {

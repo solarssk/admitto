@@ -6,8 +6,8 @@ import type { Context } from "hono";
 /** Exact public ticket assets: keep the allowlist tight so these routes never shadow SPA `/assets/*`.
  * PNG wallet badges exist alongside the SVGs for email use only (classic Outlook desktop's Word
  * rendering engine does not display SVG `<img>` sources at all) - the ticket page keeps the SVGs.
- * admitto-logo.png is email-only too, for the same reason - see
- * scripts/generate-notification-email-assets.mjs for how it's produced. */
+ * admitto-logo.png and the notification-badge-*.png files are email-only too, for the same
+ * reason - see scripts/generate-notification-email-assets.mjs for how they're produced. */
 const ASSET_NAMES = new Set([
   "admitto-mark.svg",
   "admitto-logo.svg",
@@ -18,6 +18,9 @@ const ASSET_NAMES = new Set([
   "apple-wallet-badge.png",
   "google-wallet-badge.png",
   "samsung-wallet-badge.png",
+  "notification-badge-info.png",
+  "notification-badge-warn.png",
+  "notification-badge-error.png",
 ]);
 const assetCache = new Map<string, Buffer>();
 
@@ -110,4 +113,18 @@ export function handleGetGoogleWalletBadgePng(c: Context): Response | Promise<Re
 
 export function handleGetSamsungWalletBadgePng(c: Context): Response | Promise<Response> {
   return serveTicketAsset(c, "samsung-wallet-badge.png");
+}
+
+/** Severity badge PNGs (colored circle + icon, baked into one raster image) for the notification
+ * email - see the `ASSET_NAMES` comment above. */
+export function handleGetNotificationBadgeInfo(c: Context): Response | Promise<Response> {
+  return serveTicketAsset(c, "notification-badge-info.png");
+}
+
+export function handleGetNotificationBadgeWarn(c: Context): Response | Promise<Response> {
+  return serveTicketAsset(c, "notification-badge-warn.png");
+}
+
+export function handleGetNotificationBadgeError(c: Context): Response | Promise<Response> {
+  return serveTicketAsset(c, "notification-badge-error.png");
 }
