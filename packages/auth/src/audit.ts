@@ -31,15 +31,28 @@ function isPlainPrismaClient(db: Db): db is PrismaClient {
  * comment in packages/notifications/src/dispatcher.ts) - every real call site here already passes
  * a plain PrismaClient today, so this is a defensive backstop, not an expected path.
  *
- * Every call site below fires this WITHOUT awaiting it (`void dispatchSecurityNotification(...)`),
- * deliberately: a configured email/webhook delivery can take up to 15 seconds (this repo's own
- * mail-transport timeout), and awaiting it here would make that latency part of the caller's own
- * response - on the failed-login path in particular, that turns "did this 5th wrong-password
- * attempt hit a privileged account with a channel configured" into a timing side-channel an
- * unauthenticated caller could use to enumerate privileged accounts, defeating the same
- * enumeration-safety property `login.ts`'s failure path was already built to protect (bot review
- * finding, P1). The durable `SecurityAuditLog` write above is unaffected either way - it always
- * completes, and completes first, before this fires.
+ * Call sites below are a deliberate MIX of awaited and fire-and-forget, per how each one is
+ * actually reached:
+ * - `logRepeatedFailedLogins` and `logAuthSettingsChanged` fire this WITHOUT awaiting it (`void
+ *   dispatchSecurityNotification(...)`): both are reached from an HTTP request handler with a
+ *   long-running server process behind it, so a background dispatch can safely finish after the
+ *   response is sent. A configured email/webhook delivery can take up to 15 seconds (this repo's
+ *   own mail-transport timeout), and awaiting it here would make that latency part of the
+ *   caller's own response - on the failed-login path specifically, that turns "did this 5th
+ *   wrong-password attempt hit a privileged account with a channel configured" into a timing
+ *   side-channel an unauthenticated caller could use to enumerate privileged accounts, defeating
+ *   the same enumeration-safety property `login.ts`'s failure path was already built to protect
+ *   (bot review finding, P1).
+ * - `logMfaBreakGlass` AWAITS it instead: its only real caller, `logMfaBreakGlassCli`, runs
+ *   inside a one-shot CLI process (`packages/auth/src/cli.ts`, `apps/cli/src/index.ts`) that
+ *   calls `prisma.$disconnect()` immediately after its command handler returns, then exits - a
+ *   fire-and-forget dispatch here would race that disconnect and could be cut off mid-flight
+ *   (bot review finding, P1). There's no enumeration-timing concern to trade off on this path
+ *   (the caller is a trusted local operator running an authenticated CLI command, not an
+ *   unauthenticated HTTP client), and the command's own useful work already blocks the terminal
+ *   for as long as the whole invocation takes.
+ * The durable `SecurityAuditLog` write above is unaffected either way - it always completes, and
+ * completes first, before this fires.
  */
 async function dispatchSecurityNotification(
   db: Db,
@@ -160,6 +173,19 @@ async function writeSecurityAuditLog(
 /** Short SHA-256 fingerprint for IDs in audit logs (no raw UUIDs). */
 export function fingerprint(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 12);
+}
+
+/** Safe-for-delivery identifier for an email address inside a notification title/body: the same
+ * `a***@example.com` masking as `redactEmail`, but with the `@` replaced so the result can never
+ * match `sanitizeNotificationText`'s email-shape redaction (packages/notifications/src/sanitize.ts,
+ * delegating to `@admitto/mail-delivery`'s `sanitizeDeliveryError`) - every notify() title/body/
+ * metadata string passes through that redactor before any channel sees it, and an email-shaped
+ * substring collapses to the literal "[redacted]", which would make the delivered alert unable to
+ * say which account it's about. Structural, not incidental: with no "@" character left in the
+ * result, there is nothing for an at-symbol-scanning redactor - this one, or a future one - to
+ * match, so this doesn't depend on today's exact character-class behavior of that scanner. */
+function maskedAccountLabel(email: string): string {
+  return redactEmail(email).replace("@", " at ");
 }
 
 // Events naming an outright failure, rejection, or blocked action get "warn" in the live
@@ -367,9 +393,9 @@ export async function logMfaBreakGlass(
     metadata: { action: ctx.action },
   });
   const actionVerb = BREAK_GLASS_ACTION_VERB[ctx.action] ?? `used the emergency bypass (${ctx.action}) on`;
-  void dispatchSecurityNotification(db, "auth.mfa.break_glass", {
+  await dispatchSecurityNotification(db, "auth.mfa.break_glass", {
     title: "Emergency two-factor bypass used",
-    body: `An operator ${actionVerb} ${ctx.email} via the emergency CLI bypass.`,
+    body: `An operator ${actionVerb} ${maskedAccountLabel(ctx.email)} via the emergency CLI bypass.`,
     dedupeKey: ctx.userId ?? ctx.email,
     metadata: { action: ctx.action },
   });
@@ -677,7 +703,7 @@ export async function logRepeatedFailedLogins(
   });
   void dispatchSecurityNotification(db, "auth.login.repeated_failures", {
     title: "Repeated failed sign-in attempts",
-    body: `${ctx.streak} consecutive failed sign-in attempts on ${ctx.email}.`,
+    body: `${ctx.streak} consecutive failed sign-in attempts on ${maskedAccountLabel(ctx.email)}.`,
     dedupeKey: ctx.userId,
     metadata: { streak: ctx.streak },
   });
@@ -738,7 +764,7 @@ export async function logAuthSettingsChanged(
     target_id: input.targetId ?? null,
   });
   const actor = await resolveUserIdentitySnapshot(db, input.actorUserId);
-  const actorLabel = actor?.display_name ?? actor?.email ?? "An admin";
+  const actorLabel = actor?.display_name ?? (actor?.email ? maskedAccountLabel(actor.email) : "An admin");
   void dispatchSecurityNotification(db, "auth.settings.changed", {
     title: "Login or security settings changed",
     body: `${actorLabel} changed ${AUTH_SETTINGS_RESOURCE_LABEL[input.resource]} settings (${input.action}).`,

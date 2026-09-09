@@ -448,46 +448,42 @@ describe("audit", () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const db = fakeDb();
       await logMfaBreakGlass(db, { action: "reset_mfa", email: "admin@example.com", userId: "user-1" });
-      // Fire-and-forget (not awaited by logMfaBreakGlass itself - see dispatchSecurityNotification's
-      // own doc comment on why), so the mock call lands a microtask or two after the await above.
-      await vi.waitFor(() => {
-        expect(notify).toHaveBeenCalledWith(
-          db,
-          "auth.mfa.break_glass",
-          expect.objectContaining({
-            organizationId: "org_default",
-            dedupeKey: "user-1",
-            body: expect.stringContaining("admin@example.com"),
-            metadata: { action: "reset_mfa" },
-          }),
-        );
-      });
+      // Awaited by logMfaBreakGlass itself, unlike the other two dispatch call sites - its only
+      // real caller runs inside a one-shot CLI process that disconnects right after it returns
+      // (see dispatchSecurityNotification's own doc comment) - so the mock call has already
+      // landed by the time the await above resolves; no vi.waitFor needed.
+      expect(notify).toHaveBeenCalledWith(
+        db,
+        "auth.mfa.break_glass",
+        expect.objectContaining({
+          organizationId: "org_default",
+          dedupeKey: "user-1",
+          body: expect.stringContaining("a*** at example.com"),
+          metadata: { action: "reset_mfa" },
+        }),
+      );
     });
 
     it("falls back to a generic phrase naming the raw action for an unrecognized break-glass action", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const db = fakeDb();
       await logMfaBreakGlass(db, { action: "some_future_action", email: "admin@example.com", userId: "user-1" });
-      await vi.waitFor(() => {
-        expect(notify).toHaveBeenCalledWith(
-          db,
-          "auth.mfa.break_glass",
-          expect.objectContaining({ body: expect.stringContaining("some_future_action") }),
-        );
-      });
+      expect(notify).toHaveBeenCalledWith(
+        db,
+        "auth.mfa.break_glass",
+        expect.objectContaining({ body: expect.stringContaining("some_future_action") }),
+      );
     });
 
     it("falls back to the email as dedupeKey when no target user id was resolved", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const db = fakeDb();
       await logMfaBreakGlass(db, { action: "reset_mfa", email: "admin@example.com" });
-      await vi.waitFor(() => {
-        expect(notify).toHaveBeenCalledWith(
-          db,
-          "auth.mfa.break_glass",
-          expect.objectContaining({ dedupeKey: "admin@example.com" }),
-        );
-      });
+      expect(notify).toHaveBeenCalledWith(
+        db,
+        "auth.mfa.break_glass",
+        expect.objectContaining({ dedupeKey: "admin@example.com" }),
+      );
     });
 
     it("skips notify() (without throwing) when db is a transaction client, not a plain PrismaClient", async () => {
@@ -848,7 +844,7 @@ describe("audit", () => {
             organizationId: "org_default",
             dedupeKey: "user-1",
             title: expect.any(String),
-            body: expect.stringContaining("admin@example.com"),
+            body: expect.stringContaining("a*** at example.com"),
             metadata: { streak: 5 },
           }),
         );
@@ -993,7 +989,7 @@ describe("audit", () => {
         expect(notify).toHaveBeenCalledWith(
           dbWithEmail,
           "auth.settings.changed",
-          expect.objectContaining({ body: expect.stringContaining("jane@example.com") }),
+          expect.objectContaining({ body: expect.stringContaining("j*** at example.com") }),
         );
       });
 
