@@ -291,7 +291,7 @@ export async function handleApiCreateProvider(
     return c.json({ error: "save_failed" }, 500);
   }
 
-  logAuthSettingsChanged({
+  await logAuthSettingsChanged(db, {
     actorUserId: actorUserId(c),
     resource: "oidc_provider",
     action: "create",
@@ -342,7 +342,7 @@ export async function handleApiUpdateProvider(
     return c.json({ error: "save_failed" }, 500);
   }
 
-  logAuthSettingsChanged({
+  await logAuthSettingsChanged(db, {
     actorUserId: actorUserId(c),
     resource: "oidc_provider",
     action: "update",
@@ -379,7 +379,7 @@ export async function handleApiToggleProvider(c: Context, db: PrismaClient): Pro
   if (result.count === 0) {
     return c.json({ error: "toggle_race" }, 409);
   }
-  logAuthSettingsChanged({
+  await logAuthSettingsChanged(db, {
     actorUserId: actorUserId(c),
     resource: "oidc_provider",
     action: provider.enabled ? "disable" : "enable",
@@ -442,7 +442,7 @@ export async function handleApiDiscoverProvider(
     return c.json({ ok: false, error: "save_failed" }, 500);
   }
 
-  logAuthSettingsChanged({
+  await logAuthSettingsChanged(db, {
     actorUserId: actorUserId(c),
     resource: "oidc_provider",
     action: "discover",
@@ -673,7 +673,7 @@ export async function handleApiUpdateCfAccess(c: Context, db: PrismaClient): Pro
 
   const enabledChangeAction = resolved.enabled ? "enable" : "disable";
   const settingsAction = wasEnabled === resolved.enabled ? "update" : enabledChangeAction;
-  logAuthSettingsChanged({
+  await logAuthSettingsChanged(db, {
     actorUserId: actorUserId(c),
     resource: "cf_access",
     action: settingsAction,

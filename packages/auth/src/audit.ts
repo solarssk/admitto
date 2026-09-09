@@ -1,11 +1,88 @@
 import { createHash } from "node:crypto";
-import type { Prisma, PrismaClient } from "@admitto/db";
+import type { Prisma, PrismaClient } from "@admitto/db/client";
+import { resolveInstanceOrganizationId } from "@admitto/db/instance-org";
 import { redactEmail } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
+import { notify } from "@admitto/notifications";
 
 export { redactEmail };
 
 type Db = PrismaClient | Prisma.TransactionClient;
+
+/** True for a plain `PrismaClient`, false for a `Prisma.TransactionClient` - the two share almost
+ * every model delegate, but only the top-level client exposes its own `$transaction` (a tx
+ * callback's client can't itself start a nested transaction). Used by `dispatchSecurityNotification`
+ * below since narrowing this module's shared `Db` union to `PrismaClient` would otherwise cascade
+ * into every caller's own `Db`-typed signature (privileged-login-alert.ts, login.ts) well beyond
+ * what this change needs to touch - a runtime check here is more surgical than a type-level one. */
+function isPlainPrismaClient(db: Db): db is PrismaClient {
+  return typeof (db as Partial<PrismaClient>).$transaction === "function";
+}
+
+/**
+ * Resolves the instance organization and dispatches a real alert (webhook/email/in-app, per
+ * Organisation Settings → Notifications) for one of this module's security events - on top of the
+ * durable `SecurityAuditLog` row `writeSecurityAuditLog` already writes unconditionally. Never
+ * throws: `notify()` itself never throws (packages/notifications/src/dispatcher.ts), but resolving
+ * the instance organization can (unseeded instance, misconfigured INSTANCE_ORG_ID) - a failure
+ * here must not break the caller's own flow (login, MFA CLI commands) or the audit write above,
+ * which already happened. Silently skips (logging why) when `db` is a transaction client: notify()
+ * does irreversible external I/O and must never run inside one still-open transaction (see the Db
+ * comment in packages/notifications/src/dispatcher.ts) - every real call site here already passes
+ * a plain PrismaClient today, so this is a defensive backstop, not an expected path.
+ *
+ * Call sites below are a deliberate MIX of awaited and fire-and-forget, per how each one is
+ * actually reached:
+ * - `logRepeatedFailedLogins` and `logAuthSettingsChanged` fire this WITHOUT awaiting it (`void
+ *   dispatchSecurityNotification(...)`): both are reached from an HTTP request handler with a
+ *   long-running server process behind it, so a background dispatch can safely finish after the
+ *   response is sent. A configured email/webhook delivery can take up to 15 seconds (this repo's
+ *   own mail-transport timeout), and awaiting it here would make that latency part of the
+ *   caller's own response - on the failed-login path specifically, that turns "did this 5th
+ *   wrong-password attempt hit a privileged account with a channel configured" into a timing
+ *   side-channel an unauthenticated caller could use to enumerate privileged accounts, defeating
+ *   the same enumeration-safety property `login.ts`'s failure path was already built to protect
+ *   (bot review finding, P1).
+ * - `logMfaBreakGlass` AWAITS it instead: its only real caller, `logMfaBreakGlassCli`, runs
+ *   inside a one-shot CLI process (`packages/auth/src/cli.ts`, `apps/cli/src/index.ts`) that
+ *   calls `prisma.$disconnect()` immediately after its command handler returns, then exits - a
+ *   fire-and-forget dispatch here would race that disconnect and could be cut off mid-flight
+ *   (bot review finding, P1). There's no enumeration-timing concern to trade off on this path
+ *   (the caller is a trusted local operator running an authenticated CLI command, not an
+ *   unauthenticated HTTP client), and the command's own useful work already blocks the terminal
+ *   for as long as the whole invocation takes.
+ * The durable `SecurityAuditLog` write above is unaffected either way - it always completes, and
+ * completes first, before this fires.
+ */
+async function dispatchSecurityNotification(
+  db: Db,
+  type: string,
+  event: { title: string; body: string; dedupeKey: string; metadata?: Record<string, unknown> },
+): Promise<void> {
+  if (!isPlainPrismaClient(db)) {
+    console.error(
+      JSON.stringify({
+        event: "auth.notify_dispatch_skipped_transaction_client",
+        target_event: type,
+        ts: new Date().toISOString(),
+      }),
+    );
+    return;
+  }
+  try {
+    const organizationId = await resolveInstanceOrganizationId(db);
+    await notify(db, type, { organizationId, ...event });
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "auth.notify_dispatch_failed",
+        target_event: type,
+        error: err instanceof Error ? err.message : String(err),
+        ts: new Date().toISOString(),
+      }),
+    );
+  }
+}
 
 type UserIdentitySnapshot = { email: string; display_name: string | null };
 
@@ -96,6 +173,19 @@ async function writeSecurityAuditLog(
 /** Short SHA-256 fingerprint for IDs in audit logs (no raw UUIDs). */
 export function fingerprint(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 12);
+}
+
+/** Safe-for-delivery identifier for an email address inside a notification title/body: the same
+ * `a***@example.com` masking as `redactEmail`, but with the `@` replaced so the result can never
+ * match `sanitizeNotificationText`'s email-shape redaction (packages/notifications/src/sanitize.ts,
+ * delegating to `@admitto/mail-delivery`'s `sanitizeDeliveryError`) - every notify() title/body/
+ * metadata string passes through that redactor before any channel sees it, and an email-shaped
+ * substring collapses to the literal "[redacted]", which would make the delivered alert unable to
+ * say which account it's about. Structural, not incidental: with no "@" character left in the
+ * result, there is nothing for an at-symbol-scanning redactor - this one, or a future one - to
+ * match, so this doesn't depend on today's exact character-class behavior of that scanner. */
+function maskedAccountLabel(email: string): string {
+  return redactEmail(email).replace("@", " at ");
 }
 
 // Events naming an outright failure, rejection, or blocked action get "warn" in the live
@@ -262,6 +352,21 @@ export async function logLoginFailure(
   });
 }
 
+/** Human-readable verb phrase for each real `ctx.action` value the break-glass CLI commands pass
+ * (`packages/auth/src/cli.ts`, `apps/cli/src/commands/auth.ts`) - used only in the notification
+ * body below, not the stdout/SecurityAuditLog shape. Neither operation is the target account
+ * *signing in* - both are an operator with server/CLI access acting ON that account - so the
+ * alert text must say that plainly instead of implying a bypassed sign-in (bot review finding: a
+ * misleading "signed in using..." wording could trigger an incorrect account-compromise response
+ * for what's actually an administrative CLI action). Falls back to a generic phrasing including
+ * the raw action for any value this map doesn't recognize (defensive, not expected in practice -
+ * `ctx.action` is a plain `string`, not a literal union, precisely so this file doesn't need
+ * updating every time a new break-glass CLI command is added). */
+const BREAK_GLASS_ACTION_VERB: Record<string, string> = {
+  reset_mfa: "reset two-factor authentication for",
+  generate_emergency_recovery: "generated an emergency recovery code for",
+};
+
 /** Emit `auth.mfa.break_glass` audit (no codes/secrets) and persist a durable `SecurityAuditLog`
  * row. `userId` is the target superadmin resolved by `verifyTargetUserPassword` at every call
  * site; kept optional here since the stdout/ring-buffer emit above doesn't require it. Unlike
@@ -285,6 +390,13 @@ export async function logMfaBreakGlass(
     event_type: "auth.mfa.break_glass",
     user_id: ctx.userId ?? null,
     ip: ctx.ip ?? null,
+    metadata: { action: ctx.action },
+  });
+  const actionVerb = BREAK_GLASS_ACTION_VERB[ctx.action] ?? `used the emergency bypass (${ctx.action}) on`;
+  await dispatchSecurityNotification(db, "auth.mfa.break_glass", {
+    title: "Emergency two-factor bypass used",
+    body: `An operator ${actionVerb} ${maskedAccountLabel(ctx.email)} via the emergency CLI bypass.`,
+    dedupeKey: ctx.userId ?? ctx.email,
     metadata: { action: ctx.action },
   });
 }
@@ -589,6 +701,12 @@ export async function logRepeatedFailedLogins(
     ip: ctx.ip ?? null,
     metadata: { streak: ctx.streak },
   });
+  void dispatchSecurityNotification(db, "auth.login.repeated_failures", {
+    title: "Repeated failed sign-in attempts",
+    body: `${ctx.streak} consecutive failed sign-in attempts on ${maskedAccountLabel(ctx.email)}.`,
+    dedupeKey: ctx.userId,
+    metadata: { streak: ctx.streak },
+  });
 }
 
 /** Emit `auth.mfa.repeated_failures` once consecutive failed MFA verification attempts against a
@@ -619,17 +737,38 @@ export async function logRepeatedFailedMfaAttempts(
 /** Superadmin identity settings resources tracked in `auth.settings.changed`. */
 export type AuthSettingsResource = "oidc_provider" | "cf_access";
 
-/** Emit `auth.settings.changed` when superadmin mutates identity-provider configuration. */
-export function logAuthSettingsChanged(input: {
-  actorUserId: string;
-  resource: AuthSettingsResource;
-  action: string;
-  targetId?: string;
-}): void {
+const AUTH_SETTINGS_RESOURCE_LABEL: Record<AuthSettingsResource, string> = {
+  oidc_provider: "SSO provider",
+  cf_access: "Cloudflare Access",
+};
+
+/** Emit `auth.settings.changed` when superadmin mutates identity-provider configuration, and
+ * dispatch a real alert - `db` is new (this function previously took none); every one of its 5
+ * call sites in apps/web/src/admin/identity-api-routes.ts already has a plain PrismaClient in
+ * scope right next to the existing writeAdminAuditLogBestEffort call. Still stdout/ring-buffer
+ * only for `SecurityAuditLog` purposes (unchanged - "already durable via AdminAuditLog", see the
+ * module doc comment above), the alert dispatch is the only thing that was missing. */
+export async function logAuthSettingsChanged(
+  db: PrismaClient,
+  input: {
+    actorUserId: string;
+    resource: AuthSettingsResource;
+    action: string;
+    targetId?: string;
+  },
+): Promise<void> {
   emitAuditEvent("auth.settings.changed", {
     actor_fingerprint: fingerprint(input.actorUserId),
     resource: input.resource,
     action: input.action,
     target_id: input.targetId ?? null,
+  });
+  const actor = await resolveUserIdentitySnapshot(db, input.actorUserId);
+  const actorLabel = actor?.display_name ?? (actor?.email ? maskedAccountLabel(actor.email) : "An admin");
+  void dispatchSecurityNotification(db, "auth.settings.changed", {
+    title: "Login or security settings changed",
+    body: `${actorLabel} changed ${AUTH_SETTINGS_RESOURCE_LABEL[input.resource]} settings (${input.action}).`,
+    dedupeKey: input.actorUserId,
+    metadata: { resource: input.resource, action: input.action, target_id: input.targetId ?? null },
   });
 }

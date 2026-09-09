@@ -1,9 +1,14 @@
 import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 import type { PrismaClient } from "@admitto/db";
+
+const { notify } = vi.hoisted(() => ({ notify: vi.fn(async () => undefined) }));
+vi.mock("@admitto/notifications", () => ({ notify }));
+
 import {
   emitAuditEvent,
   fingerprint,
   logAccessDenied,
+  logAuthSettingsChanged,
   logLoginFailure,
   logLoginSuccess,
   logLogout,
@@ -26,7 +31,10 @@ import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/sy
 
 const STAFF_SNAPSHOT = { email: "staff@example.com", display_name: "Staff User" };
 
-/** Fake `db` implementing `securityAuditLog.create` and optional `user.findUnique`. */
+/** Fake `db` implementing `securityAuditLog.create`, optional `user.findUnique`, and enough of
+ * `organization`/`$transaction` for the notify()-dispatch path (dispatchSecurityNotification's
+ * resolveInstanceOrganizationId call + its isPlainPrismaClient check) to run for real rather than
+ * silently skip - existing tests below never assert on `notify`, so this is a safe default. */
 function fakeDb(
   create: ReturnType<typeof vi.fn> = vi.fn().mockResolvedValue({}),
   userSnapshot: { email: string; display_name: string | null } | null = STAFF_SNAPSHOT,
@@ -34,12 +42,16 @@ function fakeDb(
   return {
     securityAuditLog: { create },
     user: { findUnique: vi.fn().mockResolvedValue(userSnapshot) },
+    organization: { findUnique: vi.fn().mockResolvedValue({ id: "org_default" }), findFirst: vi.fn() },
+    $transaction: vi.fn(),
   } as unknown as PrismaClient;
 }
 
 describe("audit", () => {
   beforeEach(() => {
     resetSystemLogBufferForTest();
+    notify.mockClear();
+    notify.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -431,6 +443,63 @@ describe("audit", () => {
         },
       });
     });
+
+    it("dispatches a real notification, deduped on the admin who performed break-glass", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb();
+      await logMfaBreakGlass(db, { action: "reset_mfa", email: "admin@example.com", userId: "user-1" });
+      // Awaited by logMfaBreakGlass itself, unlike the other two dispatch call sites - its only
+      // real caller runs inside a one-shot CLI process that disconnects right after it returns
+      // (see dispatchSecurityNotification's own doc comment) - so the mock call has already
+      // landed by the time the await above resolves; no vi.waitFor needed.
+      expect(notify).toHaveBeenCalledWith(
+        db,
+        "auth.mfa.break_glass",
+        expect.objectContaining({
+          organizationId: "org_default",
+          dedupeKey: "user-1",
+          body: expect.stringContaining("a*** at example.com"),
+          metadata: { action: "reset_mfa" },
+        }),
+      );
+    });
+
+    it("falls back to a generic phrase naming the raw action for an unrecognized break-glass action", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb();
+      await logMfaBreakGlass(db, { action: "some_future_action", email: "admin@example.com", userId: "user-1" });
+      expect(notify).toHaveBeenCalledWith(
+        db,
+        "auth.mfa.break_glass",
+        expect.objectContaining({ body: expect.stringContaining("some_future_action") }),
+      );
+    });
+
+    it("falls back to the email as dedupeKey when no target user id was resolved", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb();
+      await logMfaBreakGlass(db, { action: "reset_mfa", email: "admin@example.com" });
+      expect(notify).toHaveBeenCalledWith(
+        db,
+        "auth.mfa.break_glass",
+        expect.objectContaining({ dedupeKey: "admin@example.com" }),
+      );
+    });
+
+    it("skips notify() (without throwing) when db is a transaction client, not a plain PrismaClient", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      // A real Prisma.TransactionClient has no $transaction of its own (can't nest transactions).
+      const tx = {
+        securityAuditLog: { create },
+        user: { findUnique: vi.fn().mockResolvedValue(STAFF_SNAPSHOT) },
+      } as unknown as PrismaClient;
+      await logMfaBreakGlass(tx, { action: "reset_mfa", email: "admin@example.com", userId: "user-1" });
+      expect(create).toHaveBeenCalledOnce();
+      expect(notify).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("auth.notify_dispatch_skipped_transaction_client"));
+    });
   });
 
   describe("logMfaBreakGlassCli", () => {
@@ -759,6 +828,68 @@ describe("audit", () => {
       expect(entries[0]?.level).toBe("warn");
       expect(entries[0]?.message).toBe("auth.login.repeated_failures");
     });
+
+    it("dispatches a real notification, deduped on the attacked account's user id", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb();
+      await logRepeatedFailedLogins(db, { userId: "user-1", email: "admin@example.com", streak: 5 });
+      // Fire-and-forget (not awaited by logRepeatedFailedLogins itself, so the failed-login
+      // response path never waits on notification delivery - see dispatchSecurityNotification's
+      // own doc comment), so the mock call lands a microtask or two after the await above.
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.repeated_failures",
+          expect.objectContaining({
+            organizationId: "org_default",
+            dedupeKey: "user-1",
+            title: expect.any(String),
+            body: expect.stringContaining("a*** at example.com"),
+            metadata: { streak: 5 },
+          }),
+        );
+      });
+    });
+
+    it("does not throw and skips notify() when the instance organization can't be resolved (audit write already happened)", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      const db = {
+        securityAuditLog: { create },
+        user: { findUnique: vi.fn().mockResolvedValue(null) },
+        organization: { findUnique: vi.fn().mockResolvedValue(null), findFirst: vi.fn().mockResolvedValue(null) },
+        $transaction: vi.fn(),
+      } as unknown as PrismaClient;
+      await expect(
+        logRepeatedFailedLogins(db, { userId: "user-1", email: "admin@example.com", streak: 5 }),
+      ).resolves.toBeUndefined();
+      expect(create).toHaveBeenCalledOnce();
+      await vi.waitFor(() => {
+        expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("auth.notify_dispatch_failed"));
+      });
+      expect(notify).not.toHaveBeenCalled();
+    });
+
+    it("stringifies a non-Error organization-resolution failure instead of reading .message off it", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const create = vi.fn().mockResolvedValue({});
+      const db = {
+        securityAuditLog: { create },
+        user: { findUnique: vi.fn().mockResolvedValue(null) },
+        organization: {
+          findUnique: vi.fn().mockRejectedValue("connection reset"),
+          findFirst: vi.fn(),
+        },
+        $transaction: vi.fn(),
+      } as unknown as PrismaClient;
+      await logRepeatedFailedLogins(db, { userId: "user-1", email: "admin@example.com", streak: 5 });
+      await vi.waitFor(() => {
+        const payload = JSON.parse(String(errorSpy.mock.calls[0]?.[0]));
+        expect(payload.error).toBe("connection reset");
+      });
+    });
   });
 
   describe("logRepeatedFailedMfaAttempts", () => {
@@ -797,6 +928,98 @@ describe("audit", () => {
       const entries = querySystemLogs({ source: "security" });
       expect(entries[0]?.level).toBe("warn");
       expect(entries[0]?.message).toBe("auth.mfa.repeated_failures");
+    });
+  });
+
+  describe("logAuthSettingsChanged", () => {
+    it("emits the stdout/System-log event unchanged (still not a durable SecurityAuditLog row)", async () => {
+      const spy = vi.spyOn(console, "info").mockImplementation(() => {});
+      const create = vi.fn();
+      await logAuthSettingsChanged(fakeDb(create), {
+        actorUserId: "user-1",
+        resource: "oidc_provider",
+        action: "create",
+        targetId: "prov-1",
+      });
+      expect(create).not.toHaveBeenCalled();
+      const payload = JSON.parse(String(spy.mock.calls[0]?.[0]));
+      expect(payload.event).toBe("auth.settings.changed");
+      expect(payload.resource).toBe("oidc_provider");
+      expect(payload.action).toBe("create");
+      expect(payload.target_id).toBe("prov-1");
+      expect(payload.actor_fingerprint).toBe(fingerprint("user-1"));
+    });
+
+    it("dispatches a real notification, deduped on the acting admin, naming them and the resource in the body", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb(vi.fn(), { email: "jane@example.com", display_name: "Jane Admin" });
+      await logAuthSettingsChanged(db, {
+        actorUserId: "user-1",
+        resource: "oidc_provider",
+        action: "update",
+        targetId: "prov-1",
+      });
+      // Fire-and-forget (not awaited by logAuthSettingsChanged itself, so the PUT response commits
+      // its durable AdminAuditLog row before waiting on notification delivery - see
+      // dispatchSecurityNotification's own doc comment), so the mock call lands a microtask or two
+      // after the await above.
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.settings.changed",
+          expect.objectContaining({
+            organizationId: "org_default",
+            dedupeKey: "user-1",
+            body: expect.stringContaining("Jane Admin"),
+            metadata: { resource: "oidc_provider", action: "update", target_id: "prov-1" },
+          }),
+        );
+      });
+    });
+
+    it("falls back to the actor's email, then a generic label, when no display name/snapshot is available", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const dbWithEmail = fakeDb(vi.fn(), { email: "jane@example.com", display_name: null });
+      await logAuthSettingsChanged(dbWithEmail, {
+        actorUserId: "user-1",
+        resource: "cf_access",
+        action: "update",
+      });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          dbWithEmail,
+          "auth.settings.changed",
+          expect.objectContaining({ body: expect.stringContaining("j*** at example.com") }),
+        );
+      });
+
+      notify.mockClear();
+      const dbNoSnapshot = fakeDb(vi.fn(), null);
+      await logAuthSettingsChanged(dbNoSnapshot, {
+        actorUserId: "user-1",
+        resource: "cf_access",
+        action: "update",
+      });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          dbNoSnapshot,
+          "auth.settings.changed",
+          expect.objectContaining({ body: expect.stringContaining("An admin") }),
+        );
+      });
+    });
+
+    it("labels the cf_access resource distinctly from oidc_provider in the notification body", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb(vi.fn(), { email: "jane@example.com", display_name: "Jane Admin" });
+      await logAuthSettingsChanged(db, { actorUserId: "user-1", resource: "cf_access", action: "update" });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.settings.changed",
+          expect.objectContaining({ body: expect.stringContaining("Cloudflare Access") }),
+        );
+      });
     });
   });
 });
