@@ -3,8 +3,11 @@ import { encryptToString } from "@admitto/crypto";
 import type { WebhookKind } from "./channels/webhook.js";
 import type { NotificationChannelKey } from "./types.js";
 
-// Never Prisma.TransactionClient - see the Db comment in ./dispatcher.ts.
-type Db = PrismaClient;
+// Unlike dispatcher.ts's own Db (deliberately never a transaction client, since notify() mixes DB
+// writes with irreversible external I/O), everything in this file is pure database work - safe
+// for a caller to run inside its own transaction, e.g. to commit the settings write and its
+// AdminAuditLog row atomically (apps/web/src/admin/notification-settings-routes.ts).
+type Db = PrismaClient | Prisma.TransactionClient;
 
 export interface NotificationEmailRecipient {
   email: string;

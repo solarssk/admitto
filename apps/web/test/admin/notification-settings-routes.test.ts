@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Context } from "hono";
 import type { PrismaClient } from "@admitto/db";
+import { InMemoryRateLimitStore } from "../../src/rate-limit/in-memory.js";
+import { checkMailTestRecipientRateLimit } from "../../src/rate-limit/policies.js";
 
 const {
   canManageInstance,
   writeAdminAuditLog,
+  writeAdminAuditLogBestEffort,
   adminAuditFromContext,
   resolveInstanceOrganizationId,
   describeNotificationSettings,
@@ -17,6 +20,7 @@ const {
 } = vi.hoisted(() => ({
   canManageInstance: vi.fn(async () => true),
   writeAdminAuditLog: vi.fn(async () => undefined),
+  writeAdminAuditLogBestEffort: vi.fn(async () => undefined),
   adminAuditFromContext: vi.fn(() => ({
     operator: "user-1",
     sessionId: "sess-1",
@@ -33,8 +37,11 @@ const {
   inAppSend: vi.fn(async () => ({ ok: true })),
 }));
 
-vi.mock("@admitto/auth", () => ({ canManageInstance }));
-vi.mock("@admitto/tickets", () => ({ writeAdminAuditLog }));
+vi.mock("@admitto/auth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@admitto/auth")>();
+  return { ...actual, canManageInstance };
+});
+vi.mock("@admitto/tickets", () => ({ writeAdminAuditLog, writeAdminAuditLogBestEffort }));
 
 vi.mock("../../src/admin/admin-helpers.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/admin/admin-helpers.js")>();
@@ -86,7 +93,12 @@ function mockContext(body?: unknown): Context {
   } as unknown as Context;
 }
 
-const db = {} as PrismaClient;
+// $transaction passes the SAME db object through as "tx" - every existing assertion below
+// (toHaveBeenCalledWith(db, ...)) stays valid unchanged, since patchNotificationSettings/
+// writeAdminAuditLog are mocked functions, not real Prisma calls that need a real tx client.
+const db = { $transaction: vi.fn(async (cb: (tx: PrismaClient) => unknown) => cb(db)) } as unknown as PrismaClient;
+
+let rateLimitStore: InMemoryRateLimitStore;
 
 const settingsPublic = {
   webhook: { set: false, kind: "generic" as const },
@@ -259,17 +271,18 @@ describe("notification-settings test-send route", () => {
     emailSend.mockResolvedValue({ ok: true });
     emailSendToAddress.mockResolvedValue({ ok: true });
     inAppSend.mockResolvedValue({ ok: true });
+    rateLimitStore = new InMemoryRateLimitStore();
   });
 
   it("forbids test-send for non-superadmins", async () => {
     canManageInstance.mockResolvedValueOnce(false);
-    const res = await handlePostNotificationSettingsTest(mockContext({}), db);
+    const res = await handlePostNotificationSettingsTest(mockContext({}), db, rateLimitStore);
     expect(res.status).toBe(403);
     expect(webhookSend).not.toHaveBeenCalled();
   });
 
   it("fires webhook + in-app (targeting the requesting user) when tested with no testEmail, but skips email entirely", async () => {
-    const res = await handlePostNotificationSettingsTest(mockContext({}), db);
+    const res = await handlePostNotificationSettingsTest(mockContext({}), db, rateLimitStore);
     expect(webhookSend).toHaveBeenCalledWith(expect.anything(), []);
     expect(inAppSend).toHaveBeenCalledWith(expect.anything(), ["user-1"]);
     expect(emailSend).not.toHaveBeenCalled();
@@ -280,7 +293,7 @@ describe("notification-settings test-send route", () => {
 
   it("passes the mail delivery deps' exportSink through to EmailChannel, so an export_only org can test-send", async () => {
     const exportSink = vi.fn();
-    await handlePostNotificationSettingsTest(mockContext({}), db, { exportSink });
+    await handlePostNotificationSettingsTest(mockContext({}), db, rateLimitStore, { exportSink });
     expect(EmailChannel).toHaveBeenCalledWith(
       db,
       expect.objectContaining({ includeExtraRecipients: false, exportSink }),
@@ -288,7 +301,11 @@ describe("notification-settings test-send route", () => {
   });
 
   it("sends only to the given testEmail address, never touching the shared webhook or this admin's own in-app notification", async () => {
-    const res = await handlePostNotificationSettingsTest(mockContext({ testEmail: "ops@example.com" }), db);
+    const res = await handlePostNotificationSettingsTest(
+      mockContext({ testEmail: "ops@example.com" }),
+      db,
+      rateLimitStore,
+    );
     expect(emailSendToAddress).toHaveBeenCalledWith(expect.anything(), "ops@example.com");
     expect(emailSend).not.toHaveBeenCalled();
     // A recipient row's own test-send button must never fire a real message into the team's
@@ -304,7 +321,7 @@ describe("notification-settings test-send route", () => {
   });
 
   it("rejects a genuinely malformed JSON test-send body, instead of silently defaulting to {}", async () => {
-    const res = await handlePostNotificationSettingsTest(mockContext(undefined), db);
+    const res = await handlePostNotificationSettingsTest(mockContext(undefined), db, rateLimitStore);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "invalid_json" });
     expect(webhookSend).not.toHaveBeenCalled();
@@ -318,13 +335,17 @@ describe("notification-settings test-send route", () => {
       req: { text: async () => "   " },
       json: (payload: unknown, status?: number) => Response.json(payload, { status: status ?? 200 }),
     } as unknown as Parameters<typeof handlePostNotificationSettingsTest>[0];
-    const res = await handlePostNotificationSettingsTest(ctx, db);
+    const res = await handlePostNotificationSettingsTest(ctx, db, rateLimitStore);
     expect(res.status).toBe(200);
     expect(webhookSend).toHaveBeenCalledWith(expect.anything(), []);
   });
 
   it("rejects an invalid testEmail without sending anything", async () => {
-    const res = await handlePostNotificationSettingsTest(mockContext({ testEmail: "not-an-email" }), db);
+    const res = await handlePostNotificationSettingsTest(
+      mockContext({ testEmail: "not-an-email" }),
+      db,
+      rateLimitStore,
+    );
     expect(res.status).toBe(400);
     expect(webhookSend).not.toHaveBeenCalled();
     expect(emailSend).not.toHaveBeenCalled();
@@ -333,14 +354,14 @@ describe("notification-settings test-send route", () => {
 
   it("reports a noop channel as a failure with a 'not configured' message, not as ok", async () => {
     webhookSend.mockResolvedValue({ ok: true, noop: true });
-    const res = await handlePostNotificationSettingsTest(mockContext({}), db);
+    const res = await handlePostNotificationSettingsTest(mockContext({}), db, rateLimitStore);
     const body = (await res.json()) as { webhook: { ok: boolean; error?: string } };
     expect(body.webhook).toEqual({ ok: false, error: "Not configured." });
   });
 
   it("reports per-channel results independently on partial failure", async () => {
     webhookSend.mockResolvedValue({ ok: false, error: "Webhook target responded with HTTP 500." });
-    const res = await handlePostNotificationSettingsTest(mockContext({}), db);
+    const res = await handlePostNotificationSettingsTest(mockContext({}), db, rateLimitStore);
     const body = (await res.json()) as {
       webhook: { ok: boolean; error?: string };
       email: { ok: boolean };
@@ -351,9 +372,13 @@ describe("notification-settings test-send route", () => {
     expect(body.in_app.ok).toBe(true);
   });
 
-  it("writes an admin audit log entry with the per-channel results, marking the untested channel as skipped", async () => {
-    await handlePostNotificationSettingsTest(mockContext({}), db);
-    expect(writeAdminAuditLog).toHaveBeenCalledWith(
+  it("writes a best-effort admin audit log entry with the per-channel results, marking the untested channel as skipped", async () => {
+    await handlePostNotificationSettingsTest(mockContext({}), db, rateLimitStore);
+    // Best-effort, not the throwing writeAdminAuditLog - the webhook/in-app sends above are
+    // already irreversible, so a transient audit-write failure must not turn a real, completed
+    // send into a client-visible 500 (bot review finding).
+    expect(writeAdminAuditLog).not.toHaveBeenCalled();
+    expect(writeAdminAuditLogBestEffort).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         organizationId: "org-1",
@@ -365,5 +390,29 @@ describe("notification-settings test-send route", () => {
         }),
       }),
     );
+  });
+
+  it("rejects a testEmail send once the shared instance-wide recipient budget is exhausted, without sending", async () => {
+    const testEmail = "ops@example.com";
+    // Same budget every other mail test-send route shares (guardMailTestRecipientRateLimit,
+    // max 5/hour per recipient) - exhaust it via the same exported check the guard itself calls,
+    // rather than guessing its internal (HMAC-hashed) store key.
+    for (let i = 0; i < 5; i++) {
+      await checkMailTestRecipientRateLimit(rateLimitStore, testEmail, undefined);
+    }
+    const res = await handlePostNotificationSettingsTest(mockContext({ testEmail }), db, rateLimitStore);
+    expect(res.status).toBe(429);
+    expect(emailSendToAddress).not.toHaveBeenCalled();
+  });
+
+  it("does not apply the per-recipient budget to the webhook-only test, which has no caller-supplied recipient", async () => {
+    const testEmail = "ops@example.com";
+    for (let i = 0; i < 5; i++) {
+      await checkMailTestRecipientRateLimit(rateLimitStore, testEmail, undefined);
+    }
+    // Same store, same exhausted recipient - but this call has no testEmail, so the guard never runs.
+    const res = await handlePostNotificationSettingsTest(mockContext({}), db, rateLimitStore);
+    expect(res.status).toBe(200);
+    expect(webhookSend).toHaveBeenCalled();
   });
 });

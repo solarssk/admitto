@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
@@ -100,6 +100,10 @@ afterAll(async () => {
   await prisma?.$disconnect();
 });
 
+beforeEach(() => {
+  rateLimitStore.reset();
+});
+
 describe("GET /api/admin/notification-settings", () => {
   it("returns 401 without auth", async () => {
     const res = await app.request("/api/admin/notification-settings");
@@ -186,5 +190,23 @@ describe("POST /api/admin/notification-settings/test", () => {
       where: { organization_id: ORG_ID, user_id: superId },
     });
     expect(notification).not.toBeNull();
+  });
+
+  it("rejects a testEmail send once the shared instance-wide recipient budget is exhausted (real HTTP round-trip)", async () => {
+    const testEmail = "recipient-budget-test@example.com";
+    const sendOnce = () =>
+      app.request("/api/admin/notification-settings/test", {
+        method: "POST",
+        headers: { Cookie: superCookie, "Content-Type": "application/json", ...sameOrigin },
+        body: JSON.stringify({ testEmail }),
+      });
+    // Same 5/hour budget every mail test-send route in the app shares - real key derivation
+    // (HMAC over the recipient address) can only be exercised through a real request.
+    for (let i = 0; i < 5; i++) {
+      const res = await sendOnce();
+      expect(res.status).toBe(200);
+    }
+    const limited = await sendOnce();
+    expect(limited.status).toBe(429);
   });
 });

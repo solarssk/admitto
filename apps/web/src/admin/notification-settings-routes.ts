@@ -8,7 +8,7 @@
 import type { Context } from "hono";
 import { z } from "zod";
 import type { PrismaClient } from "@admitto/db";
-import { writeAdminAuditLog } from "@admitto/tickets";
+import { writeAdminAuditLog, writeAdminAuditLogBestEffort } from "@admitto/tickets";
 import type { MailDeliveryDeps } from "@admitto/mail-delivery";
 import {
   assertSafeWebhookUrl,
@@ -24,6 +24,8 @@ import {
 } from "@admitto/notifications";
 import { adminAuditFromContext, requireSuperadmin } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
+import { guardMailTestRecipientRateLimit } from "../rate-limit/policies.js";
+import type { RateLimitStore } from "../rate-limit/types.js";
 
 const WEBHOOK_KINDS = ["discord", "slack", "generic"] as const;
 const CHANNEL_KINDS = ["webhook", "email", "in_app"] as const;
@@ -116,32 +118,40 @@ export async function handlePutNotificationSettings(
   const auth = c.get("auth");
   const orgId = await resolveInstanceOrganizationId(db, process.env);
   const audit = adminAuditFromContext(c);
-  const settings = await patchNotificationSettings(
-    db,
-    orgId,
-    {
-      webhookUrl: parsed.data.webhookUrl,
-      webhookKind: parsed.data.webhookKind,
-      extraEmailRecipients: parsed.data.extraEmailRecipients,
-      disabledChannels,
-    },
-    auth.userId,
-    audit.timezone,
-  );
 
-  await writeAdminAuditLog(db, {
-    organizationId: orgId,
-    actorUserId: audit.operator!,
-    sessionId: audit.sessionId,
-    ip: audit.ip,
-    timezone: audit.timezone,
-    actionType: "notification_settings_updated",
-    metadata: {
-      webhook_set: settings.webhook.set,
-      webhook_kind: settings.webhook.kind,
-      extra_email_recipients_count: settings.extra_email_recipients.length,
-      disabled_channels: settings.disabled_channels,
-    },
+  // Same shape as mail-settings-routes.ts's handlePutMailSettings: the setting write and its
+  // AdminAuditLog row commit atomically, so an audit-write failure can never leave a changed
+  // webhook secret/recipient list/channel matrix with no audit trail (bot review finding).
+  const settings = await db.$transaction(async (tx) => {
+    const result = await patchNotificationSettings(
+      tx,
+      orgId,
+      {
+        webhookUrl: parsed.data.webhookUrl,
+        webhookKind: parsed.data.webhookKind,
+        extraEmailRecipients: parsed.data.extraEmailRecipients,
+        disabledChannels,
+      },
+      auth.userId,
+      audit.timezone,
+    );
+
+    await writeAdminAuditLog(tx, {
+      organizationId: orgId,
+      actorUserId: audit.operator!,
+      sessionId: audit.sessionId,
+      ip: audit.ip,
+      timezone: audit.timezone,
+      actionType: "notification_settings_updated",
+      metadata: {
+        webhook_set: result.webhook.set,
+        webhook_kind: result.webhook.kind,
+        extra_email_recipients_count: result.extra_email_recipients.length,
+        disabled_channels: result.disabled_channels,
+      },
+    });
+
+    return result;
   });
 
   return c.json(serializeNotificationSettings(settings));
@@ -188,6 +198,7 @@ async function parseOptionalTestBody(c: Context): Promise<unknown> {
 export async function handlePostNotificationSettingsTest(
   c: Context,
   db: PrismaClient,
+  rateLimitStore: RateLimitStore,
   mailDeliveryDeps: MailDeliveryDeps = {},
 ): Promise<Response> {
   const forbidden = await requireSuperadmin(c, db);
@@ -198,6 +209,16 @@ export async function handlePostNotificationSettingsTest(
   const parsed = testBodySchema.safeParse(bodyOrRes);
   if (!parsed.success) {
     return c.json({ error: "validation_failed", details: parsed.error.flatten() }, 400);
+  }
+
+  // Only a testEmail-scoped test sends to a caller-supplied address at all - the webhook-only
+  // test always targets the org's own configured webhook, not an arbitrary recipient. Same shared
+  // instance-wide recipient budget every other mail test-send route already applies, so this
+  // endpoint can't be used to round-robin real messages past the per-user rate limit above it
+  // (bot review finding).
+  if (parsed.data.testEmail) {
+    const recipientLimited = await guardMailTestRecipientRateLimit(c, rateLimitStore, parsed.data.testEmail);
+    if (recipientLimited) return recipientLimited;
   }
 
   const auth = c.get("auth");
@@ -233,8 +254,14 @@ export async function handlePostNotificationSettingsTest(
 
   const results = { webhook: toResult(webhook), email: toResult(email), in_app: toResult(inApp) };
 
+  // Best-effort: the webhook/email send above may already be irreversible, so a transient audit-
+  // write failure must not turn that real (already-sent) attempt into a client-visible error -
+  // the admin would otherwise be misled into retrying and sending a duplicate (bot review
+  // finding). writeAdminAuditLog itself always throws on failure; this is the same
+  // never-throws wrapper other best-effort call sites already use (identity-api-routes.ts,
+  // change-password-routes.ts, uploads-api-routes.ts).
   const audit = adminAuditFromContext(c);
-  await writeAdminAuditLog(db, {
+  await writeAdminAuditLogBestEffort(db, {
     organizationId: orgId,
     actorUserId: audit.operator!,
     sessionId: audit.sessionId,
