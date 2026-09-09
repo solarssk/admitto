@@ -45,10 +45,12 @@ Most of the staff-facing account actions you might expect to send an email do no
 | A Superadmin resets someone's two-factor, or force-ends their sessions | **No** | The action is recorded in the Audit log and Security audit log; the affected person is not notified automatically |
 | A "remember this device" cookie is created or used to skip two-factor at sign-in | **No** | Recorded only in the Security audit log ([Logs and Audit](Logs-and-Audit)) - visible if a Superadmin looks, not pushed to anyone |
 | An event's mail keeps bouncing or failing | **No email or push to anyone** | An in-app banner appears on the Communication page and on that event's Overview page while you have them open - see [Email Delivery Statuses](Email-Delivery-Statuses) |
-| Repeated failed sign-ins or two-factor attempts against an admin/superadmin account | **No** | Recorded in the Security audit log only; no admin is alerted unless they go and look |
-| A break-glass emergency CLI action is used (bootstrap a superadmin, force-reset MFA) | **No** | The one-time result is shown only on the operator's own terminal; the action is recorded in the Security audit log for later review |
+| Repeated failed sign-in attempts against an admin/superadmin account | **Yes, if configured** | Recorded in the Security audit log, and also fires the alert configured for this type in Organisation Settings → Notifications (webhook/email/in-app) |
+| Repeated failed two-factor attempts against an admin/superadmin account (past the password step) | **No** | Recorded in the Security audit log only; no admin is alerted unless they go and look |
+| A break-glass emergency CLI action is used (bootstrap a superadmin, force-reset MFA) | **Yes, if configured** | The one-time result is still shown only on the operator's own terminal, and the action is recorded in the Security audit log - it also fires the same configured alert as the two rows above |
+| An organisation's SSO provider or Cloudflare Access settings are changed | **Yes, if configured** | Recorded in the Audit log; also fires the configured alert, naming who made the change |
 
-**In short:** anything that happens to a staff account or to Admitto's own security state today leaves a record in [Logs and Audit](Logs-and-Audit) for a Superadmin to review - it does not push a notification to anyone. If you need to know about one of these events as it happens, someone has to be watching that log.
+**In short:** everything above leaves a record in [Logs and Audit](Logs-and-Audit) for a Superadmin to review. The rows marked "Yes, if configured" also push a real-time alert, but only for the type and channel(s) a Superadmin has turned on in Organisation Settings → Notifications - nothing is pushed anywhere until that's configured. Every other row leaves an audit trail only; if you need to know about one of those as it happens, someone has to be watching the log.
 
 ## Related pages
 

@@ -51,19 +51,20 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "pretest": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/location -w @admitto/wallet -w @admitto/mail-templates -w @admitto/tickets",
+    "pretest": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/location -w @admitto/wallet -w @admitto/mail-templates -w @admitto/tickets -w @admitto/mailer -w @admitto/mailer-config -w @admitto/mail-delivery -w @admitto/notifications",
     "precoverage": "npm run pretest",
     "test": "vitest run --project auth-unit && vitest run --project auth-integration",
     "coverage": "vitest run --coverage -c vitest.unit.config.ts && vitest run --coverage -c vitest.integration.config.ts",
     "test:unit": "vitest run --project auth-unit",
     "test:integration": "vitest run --project auth-integration",
-    "precli": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/mail-templates -w @admitto/tickets -w @admitto/auth",
+    "precli": "npm run build -w @admitto/shared -w @admitto/crypto -w @admitto/db -w @admitto/mail-templates -w @admitto/tickets -w @admitto/mailer -w @admitto/mailer-config -w @admitto/mail-delivery -w @admitto/notifications -w @admitto/auth",
     "cli": "node --env-file-if-exists=.env --env-file-if-exists=../../packages/db/.env --env-file-if-exists=../../.env dist/cli.js"
   },
   "dependencies": {
     "@admitto/crypto": "*",
     "@admitto/db": "*",
     "@admitto/mail-templates": "*",
+    "@admitto/notifications": "*",
     "@admitto/shared": "*",
     "@admitto/tickets": "*",
     "@simplewebauthn/server": "^14.0.0",

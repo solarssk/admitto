@@ -2,10 +2,64 @@ import { createHash } from "node:crypto";
 import type { Prisma, PrismaClient } from "@admitto/db";
 import { redactEmail } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
+import { notify } from "@admitto/notifications";
+import { resolveInstanceOrganizationId } from "./settings/instance-org.js";
 
 export { redactEmail };
 
 type Db = PrismaClient | Prisma.TransactionClient;
+
+/** True for a plain `PrismaClient`, false for a `Prisma.TransactionClient` - the two share almost
+ * every model delegate, but only the top-level client exposes its own `$transaction` (a tx
+ * callback's client can't itself start a nested transaction). Used by `dispatchSecurityNotification`
+ * below since narrowing this module's shared `Db` union to `PrismaClient` would otherwise cascade
+ * into every caller's own `Db`-typed signature (privileged-login-alert.ts, login.ts) well beyond
+ * what this change needs to touch - a runtime check here is more surgical than a type-level one. */
+function isPlainPrismaClient(db: Db): db is PrismaClient {
+  return typeof (db as Partial<PrismaClient>).$transaction === "function";
+}
+
+/**
+ * Resolves the instance organization and dispatches a real alert (webhook/email/in-app, per
+ * Organisation Settings → Notifications) for one of this module's security events - on top of the
+ * durable `SecurityAuditLog` row `writeSecurityAuditLog` already writes unconditionally. Never
+ * throws: `notify()` itself never throws (packages/notifications/src/dispatcher.ts), but resolving
+ * the instance organization can (unseeded instance, misconfigured INSTANCE_ORG_ID) - a failure
+ * here must not break the caller's own flow (login, MFA CLI commands) or the audit write above,
+ * which already happened. Silently skips (logging why) when `db` is a transaction client: notify()
+ * does irreversible external I/O and must never run inside one still-open transaction (see the Db
+ * comment in packages/notifications/src/dispatcher.ts) - every real call site here already passes
+ * a plain PrismaClient today, so this is a defensive backstop, not an expected path.
+ */
+async function dispatchSecurityNotification(
+  db: Db,
+  type: string,
+  event: { title: string; body: string; dedupeKey: string; metadata?: Record<string, unknown> },
+): Promise<void> {
+  if (!isPlainPrismaClient(db)) {
+    console.error(
+      JSON.stringify({
+        event: "auth.notify_dispatch_skipped_transaction_client",
+        target_event: type,
+        ts: new Date().toISOString(),
+      }),
+    );
+    return;
+  }
+  try {
+    const organizationId = await resolveInstanceOrganizationId(db);
+    await notify(db, type, { organizationId, ...event });
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "auth.notify_dispatch_failed",
+        target_event: type,
+        error: err instanceof Error ? err.message : String(err),
+        ts: new Date().toISOString(),
+      }),
+    );
+  }
+}
 
 type UserIdentitySnapshot = { email: string; display_name: string | null };
 
@@ -285,6 +339,12 @@ export async function logMfaBreakGlass(
     event_type: "auth.mfa.break_glass",
     user_id: ctx.userId ?? null,
     ip: ctx.ip ?? null,
+    metadata: { action: ctx.action },
+  });
+  await dispatchSecurityNotification(db, "auth.mfa.break_glass", {
+    title: "Emergency two-factor bypass used",
+    body: `${ctx.email} signed in using the emergency two-factor bypass (${ctx.action}).`,
+    dedupeKey: ctx.userId ?? ctx.email,
     metadata: { action: ctx.action },
   });
 }
@@ -589,6 +649,12 @@ export async function logRepeatedFailedLogins(
     ip: ctx.ip ?? null,
     metadata: { streak: ctx.streak },
   });
+  await dispatchSecurityNotification(db, "auth.login.repeated_failures", {
+    title: "Repeated failed sign-in attempts",
+    body: `${ctx.streak} consecutive failed sign-in attempts on ${ctx.email}.`,
+    dedupeKey: ctx.userId,
+    metadata: { streak: ctx.streak },
+  });
 }
 
 /** Emit `auth.mfa.repeated_failures` once consecutive failed MFA verification attempts against a
@@ -619,17 +685,38 @@ export async function logRepeatedFailedMfaAttempts(
 /** Superadmin identity settings resources tracked in `auth.settings.changed`. */
 export type AuthSettingsResource = "oidc_provider" | "cf_access";
 
-/** Emit `auth.settings.changed` when superadmin mutates identity-provider configuration. */
-export function logAuthSettingsChanged(input: {
-  actorUserId: string;
-  resource: AuthSettingsResource;
-  action: string;
-  targetId?: string;
-}): void {
+const AUTH_SETTINGS_RESOURCE_LABEL: Record<AuthSettingsResource, string> = {
+  oidc_provider: "SSO provider",
+  cf_access: "Cloudflare Access",
+};
+
+/** Emit `auth.settings.changed` when superadmin mutates identity-provider configuration, and
+ * dispatch a real alert - `db` is new (this function previously took none); every one of its 5
+ * call sites in apps/web/src/admin/identity-api-routes.ts already has a plain PrismaClient in
+ * scope right next to the existing writeAdminAuditLogBestEffort call. Still stdout/ring-buffer
+ * only for `SecurityAuditLog` purposes (unchanged - "already durable via AdminAuditLog", see the
+ * module doc comment above), the alert dispatch is the only thing that was missing. */
+export async function logAuthSettingsChanged(
+  db: PrismaClient,
+  input: {
+    actorUserId: string;
+    resource: AuthSettingsResource;
+    action: string;
+    targetId?: string;
+  },
+): Promise<void> {
   emitAuditEvent("auth.settings.changed", {
     actor_fingerprint: fingerprint(input.actorUserId),
     resource: input.resource,
     action: input.action,
     target_id: input.targetId ?? null,
+  });
+  const actor = await resolveUserIdentitySnapshot(db, input.actorUserId);
+  const actorLabel = actor?.display_name ?? actor?.email ?? "An admin";
+  await dispatchSecurityNotification(db, "auth.settings.changed", {
+    title: "Login or security settings changed",
+    body: `${actorLabel} changed ${AUTH_SETTINGS_RESOURCE_LABEL[input.resource]} settings (${input.action}).`,
+    dedupeKey: input.actorUserId,
+    metadata: { resource: input.resource, action: input.action, target_id: input.targetId ?? null },
   });
 }
