@@ -8,6 +8,7 @@ import { SecurityPanel } from "../settings/SecurityPanel.js";
 import { AuditLogPanel } from "../settings/AuditLogPanel.js";
 import { HealthCheckPanel } from "../settings/HealthCheckPanel.js";
 import { ExternalServicesPanel } from "../settings/ExternalServicesPanel.js";
+import { NotificationsPanel } from "../settings/NotificationsPanel.js";
 import { inPageTabFromSearch, type SettingsTab } from "../settings/settingsTabs.js";
 
 interface SettingsTabPanelProps {
@@ -94,6 +95,15 @@ export function SettingsTabContent() {
         className="settings-sections"
       >
         <ExternalServicesPanel />
+      </SettingsTabPanel>
+      <SettingsTabPanel
+        tab="notifications"
+        activeTab={tab}
+        visited={visitedTabs}
+        label="Notifications"
+        className="settings-sections"
+      >
+        <NotificationsPanel />
       </SettingsTabPanel>
       <SettingsTabPanel
         tab="security"

@@ -197,6 +197,7 @@ export type RateLimitScope =
   | "admin_mail_diagnostics"
   | "admin_event_mail_diagnostics"
   | "admin_weather_test"
+  | "admin_notification_settings_test"
   | "passkey_login_ip"
   | "admin_bulk_send_cancel";
 

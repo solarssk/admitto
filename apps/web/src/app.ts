@@ -327,6 +327,11 @@ import {
   handlePostWeatherTest,
   handlePostMapsTest,
 } from "./admin/external-services-routes.js";
+import {
+  handleGetNotificationSettings,
+  handlePutNotificationSettings,
+  handlePostNotificationSettingsTest,
+} from "./admin/notification-settings-routes.js";
 import { buildGeocodingUserAgent } from "./maps/user-agent.js";
 import { NominatimProvider } from "./maps/nominatim-provider.js";
 import { createGeocodingCache } from "./maps/geocoding-cache.js";
@@ -673,6 +678,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminEventMailSettingsRateLimit = rateLimit(rateLimitStore, "admin:event-mail-transport-test");
   const adminMailDiagnosticsRateLimit = rateLimit(rateLimitStore, "admin:mail-diagnostics");
   const adminWeatherTestRateLimit = rateLimit(rateLimitStore, "admin:weather-test");
+  const adminNotificationSettingsTestRateLimit = rateLimit(rateLimitStore, "admin:notification-settings-test");
   const adminEventMailDiagnosticsRateLimit = rateLimit(rateLimitStore, "admin:event-mail-diagnostics");
   const adminHealthLiveRateLimit = rateLimit(rateLimitStore, "admin:health-live");
   const adminImportPreviewRateLimit = rateLimit(rateLimitStore, "admin:import-preview");
@@ -1401,6 +1407,24 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     (c) => handlePostMapsTest(c, db),
+  );
+  app.get("/api/admin/notification-settings", staffAdminGate, (c) =>
+    handleGetNotificationSettings(c, db),
+  );
+  app.put(
+    "/api/admin/notification-settings",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    (c) => handlePutNotificationSettings(c, db),
+  );
+  app.post(
+    "/api/admin/notification-settings/test",
+    mailSettingsBodyLimit,
+    jsonPostCsrf,
+    staffAdminGate,
+    adminNotificationSettingsTestRateLimit,
+    (c) => handlePostNotificationSettingsTest(c, db, rateLimitStore, mailDeliveryDeps),
   );
   app.post(
     "/api/admin/events/:eventId/branding-upload",
