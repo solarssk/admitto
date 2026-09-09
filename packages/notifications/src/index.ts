@@ -28,6 +28,7 @@ export { InAppChannel } from "./channels/inApp.js";
 export {
   describeNotificationSettings,
   patchNotificationSettings,
+  type NotificationEmailRecipient,
   type NotificationSettingsPublic,
   type NotificationSettingsPatch,
 } from "./settings.js";

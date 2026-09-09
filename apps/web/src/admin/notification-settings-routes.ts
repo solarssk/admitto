@@ -1,14 +1,15 @@
 /**
  * Organisation Settings → Notifications (notifications-module-foundation plan, PR2).
- * Team webhook (Discord/Slack/generic) + extra email recipients + per-type org disable toggle.
- * Superadmin-only; the webhook URL is never returned in clear text (same convention as
- * MailSettings/weather/maps secrets).
+ * Team webhook (Discord/Slack/generic) + extra email recipients + a per-type × per-channel org
+ * disable matrix. Superadmin-only; the webhook URL is never returned in clear text (same
+ * convention as MailSettings/weather/maps secrets).
  */
 
 import type { Context } from "hono";
 import { z } from "zod";
 import type { PrismaClient } from "@admitto/db";
 import { writeAdminAuditLog } from "@admitto/tickets";
+import type { MailDeliveryDeps } from "@admitto/mail-delivery";
 import {
   assertSafeWebhookUrl,
   BlockedWebhookUrlError,
@@ -25,13 +26,19 @@ import { adminAuditFromContext, requireSuperadmin } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 const WEBHOOK_KINDS = ["discord", "slack", "generic"] as const;
+const CHANNEL_KINDS = ["webhook", "email", "in_app"] as const;
 
 const putBodySchema = z
   .object({
     webhookUrl: z.string().max(2048).optional(),
     webhookKind: z.enum(WEBHOOK_KINDS).optional(),
-    extraEmailRecipients: z.array(z.string().trim().email()).max(50).optional(),
-    disabledTypes: z.array(z.string()).max(50).optional(),
+    extraEmailRecipients: z
+      .array(
+        z.object({ email: z.string().trim().email(), description: z.string().trim().max(200).optional() }).strict(),
+      )
+      .max(50)
+      .optional(),
+    disabledChannels: z.record(z.string(), z.array(z.enum(CHANNEL_KINDS)).max(3)).optional(),
   })
   .strict();
 
@@ -46,11 +53,12 @@ function serializeNotificationSettings(settings: NotificationSettingsPublic) {
   return {
     webhook: settings.webhook,
     extra_email_recipients: settings.extra_email_recipients,
-    disabled_types: settings.disabled_types,
+    disabled_channels: settings.disabled_channels,
     notification_types: orgDisableableTypeIds().map((id) => ({
       id,
       label: NOTIFICATION_TYPES[id]!.label,
       default_severity: NOTIFICATION_TYPES[id]!.defaultSeverity,
+      available_channels: NOTIFICATION_TYPES[id]!.availableChannels,
     })),
   };
 }
@@ -99,17 +107,28 @@ export async function handlePutNotificationSettings(
   }
 
   const validDisableableIds = new Set(orgDisableableTypeIds());
-  const disabledTypes = parsed.data.disabledTypes?.filter((id) => validDisableableIds.has(id));
+  const disabledChannels = parsed.data.disabledChannels
+    ? Object.fromEntries(
+        Object.entries(parsed.data.disabledChannels).filter(([id]) => validDisableableIds.has(id)),
+      )
+    : undefined;
 
+  const auth = c.get("auth");
   const orgId = await resolveInstanceOrganizationId(db, process.env);
-  const settings = await patchNotificationSettings(db, orgId, {
-    webhookUrl: parsed.data.webhookUrl,
-    webhookKind: parsed.data.webhookKind,
-    extraEmailRecipients: parsed.data.extraEmailRecipients,
-    disabledTypes,
-  });
-
   const audit = adminAuditFromContext(c);
+  const settings = await patchNotificationSettings(
+    db,
+    orgId,
+    {
+      webhookUrl: parsed.data.webhookUrl,
+      webhookKind: parsed.data.webhookKind,
+      extraEmailRecipients: parsed.data.extraEmailRecipients,
+      disabledChannels,
+    },
+    auth.userId,
+    audit.timezone,
+  );
+
   await writeAdminAuditLog(db, {
     organizationId: orgId,
     actorUserId: audit.operator!,
@@ -121,7 +140,7 @@ export async function handlePutNotificationSettings(
       webhook_set: settings.webhook.set,
       webhook_kind: settings.webhook.kind,
       extra_email_recipients_count: settings.extra_email_recipients.length,
-      disabled_types: settings.disabled_types,
+      disabled_channels: settings.disabled_channels,
     },
   });
 
@@ -131,22 +150,48 @@ export async function handlePutNotificationSettings(
 interface TestChannelResult {
   ok: boolean;
   error?: string;
+  /** True when this channel wasn't exercised at all by this particular test click - see the
+   * scoping note below. Never appears alongside `error`. */
+  skipped?: boolean;
 }
 
+const testBodySchema = z.object({ testEmail: z.string().trim().email().optional() }).strict();
+
 /**
- * POST /api/admin/notification-settings/test — fires webhook/email/in-app directly against the
- * ALREADY-SAVED settings, bypassing notify()'s throttle and org-staff audience resolution
- * entirely: a real notify() call would risk being silently deduped against a recent real
- * occurrence of the same type, and org-staff audience would fan a test out to every admin
- * instead of just the person who clicked the button. Email/in-app target only the requesting
- * superadmin; the webhook is inherently team-wide (no per-user targeting exists for it).
+ * POST /api/admin/notification-settings/test - fires directly against the ALREADY-SAVED
+ * settings, bypassing notify()'s throttle and org-staff audience resolution entirely: a real
+ * notify() call would risk being silently deduped against a recent real occurrence of the same
+ * type, and org-staff audience would fan a test out to every admin instead of just the person who
+ * clicked the button.
+ *
+ * Scoped to only the channel(s) the click actually owns, not every channel this endpoint could
+ * exercise - a `testEmail` in the body means a recipient row's "Send test to X" was clicked
+ * (tests only that address; the shared team webhook and this admin's own in-app notification are
+ * both left untouched, since clicking a personal test-email button firing a real message into
+ * the team's Discord/Slack channel is a real bug, not a feature - PO report), otherwise it's the
+ * Webhook card's own "Send test" (tests webhook + in-app; email is skipped, since that card
+ * doesn't show or care about an email result either).
  */
 export async function handlePostNotificationSettingsTest(
   c: Context,
   db: PrismaClient,
+  mailDeliveryDeps: MailDeliveryDeps = {},
 ): Promise<Response> {
   const forbidden = await requireSuperadmin(c, db);
   if (forbidden) return forbidden;
+
+  let body: unknown = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    // No body (or an empty one) is the common case - the client only sends one when testEmail is
+    // set. Only a genuinely malformed JSON body should reach the validation error below, not a
+    // simply-absent one, so this catch keeps body as {} rather than failing the request outright.
+  }
+  const parsed = testBodySchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "validation_failed", details: parsed.error.flatten() }, 400);
+  }
 
   const auth = c.get("auth");
   const orgId = await resolveInstanceOrganizationId(db, process.env);
@@ -155,21 +200,30 @@ export async function handlePostNotificationSettingsTest(
     severity: "info",
     organizationId: orgId,
     title: "Test notification",
-    body: "This is a test notification sent from Organisation Settings → Notifications.",
+    body: "This is a test notification, sent from the Notifications tab in Organisation Settings.",
   };
 
   const webhookChannel = new WebhookChannel(db);
-  const emailChannel = new EmailChannel(db, { includeExtraRecipients: false });
+  const emailChannel = new EmailChannel(db, {
+    includeExtraRecipients: false,
+    exportSink: mailDeliveryDeps.exportSink,
+  });
   const inAppChannel = new InAppChannel(db);
 
+  const testingOneEmailAddress = Boolean(parsed.data.testEmail);
+
   const [webhook, email, inApp] = await Promise.all([
-    webhookChannel.send(testEvent, []),
-    emailChannel.send(testEvent, [auth.userId]),
-    inAppChannel.send(testEvent, [auth.userId]),
+    testingOneEmailAddress ? null : webhookChannel.send(testEvent, []),
+    testingOneEmailAddress ? emailChannel.sendToAddress(testEvent, parsed.data.testEmail!) : null,
+    testingOneEmailAddress ? null : inAppChannel.send(testEvent, [auth.userId]),
   ]);
 
-  const toResult = (result: { ok: boolean; error?: string; noop?: boolean }): TestChannelResult =>
-    result.noop ? { ok: false, error: "Not configured." } : { ok: result.ok, error: result.error };
+  const toResult = (result: { ok: boolean; error?: string; noop?: boolean } | null): TestChannelResult =>
+    result === null
+      ? { ok: true, skipped: true }
+      : result.noop
+        ? { ok: false, error: "Not configured." }
+        : { ok: result.ok, error: result.error };
 
   const results = { webhook: toResult(webhook), email: toResult(email), in_app: toResult(inApp) };
 

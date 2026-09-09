@@ -12,6 +12,7 @@ const {
   assertSafeWebhookUrl,
   webhookSend,
   emailSend,
+  emailSendToAddress,
   inAppSend,
 } = vi.hoisted(() => ({
   canManageInstance: vi.fn(async () => true),
@@ -28,6 +29,7 @@ const {
   assertSafeWebhookUrl: vi.fn(),
   webhookSend: vi.fn(async (): Promise<{ ok: boolean; error?: string; noop?: boolean }> => ({ ok: true })),
   emailSend: vi.fn(async (): Promise<{ ok: boolean; error?: string; noop?: boolean }> => ({ ok: true })),
+  emailSendToAddress: vi.fn(async (): Promise<{ ok: boolean; error?: string; noop?: boolean }> => ({ ok: true })),
   inAppSend: vi.fn(async () => ({ ok: true })),
 }));
 
@@ -52,7 +54,7 @@ vi.mock("@admitto/notifications", async (importOriginal) => {
       return { send: webhookSend };
     }),
     EmailChannel: vi.fn().mockImplementation(function EmailChannel() {
-      return { send: emailSend };
+      return { send: emailSend, sendToAddress: emailSendToAddress };
     }),
     InAppChannel: vi.fn().mockImplementation(function InAppChannel() {
       return { send: inAppSend };
@@ -65,7 +67,7 @@ import {
   handlePostNotificationSettingsTest,
   handlePutNotificationSettings,
 } from "../../src/admin/notification-settings-routes.js";
-import { BlockedWebhookUrlError } from "@admitto/notifications";
+import { BlockedWebhookUrlError, EmailChannel } from "@admitto/notifications";
 
 function mockContext(body?: unknown): Context {
   return {
@@ -84,8 +86,14 @@ const db = {} as PrismaClient;
 
 const settingsPublic = {
   webhook: { set: false, kind: "generic" as const },
-  extra_email_recipients: [] as string[],
-  disabled_types: [] as string[],
+  extra_email_recipients: [] as Array<{
+    email: string;
+    description: string;
+    added_at: string | null;
+    added_by_email: string | null;
+    added_by_display_name: string | null;
+  }>,
+  disabled_channels: {} as Record<string, string[]>,
 };
 
 describe("notification-settings GET/PUT routes", () => {
@@ -104,12 +112,18 @@ describe("notification-settings GET/PUT routes", () => {
     expect(describeNotificationSettings).not.toHaveBeenCalled();
   });
 
-  it("returns settings plus the full org-disableable notification type list on GET", async () => {
+  it("returns settings plus the full org-disableable notification type list on GET, each with its available channels", async () => {
     const res = await handleGetNotificationSettings(mockContext({}), db);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { notification_types: Array<{ id: string; label: string }> };
+    const body = (await res.json()) as {
+      notification_types: Array<{ id: string; label: string; available_channels: string[] }>;
+    };
     expect(body.notification_types.length).toBe(4);
     expect(body.notification_types.map((t) => t.id)).toContain("auth.login.repeated_failures");
+    const repeatedFailures = body.notification_types.find((t) => t.id === "auth.login.repeated_failures");
+    expect(repeatedFailures?.available_channels).toEqual(
+      expect.arrayContaining(["webhook", "email", "in_app"]),
+    );
     expect(describeNotificationSettings).toHaveBeenCalledWith(db, "org-1");
   });
 
@@ -127,11 +141,27 @@ describe("notification-settings GET/PUT routes", () => {
 
   it("rejects an invalid extra_email_recipients entry", async () => {
     const res = await handlePutNotificationSettings(
-      mockContext({ extraEmailRecipients: ["not-an-email"] }),
+      mockContext({ extraEmailRecipients: [{ email: "not-an-email" }] }),
       db,
     );
     expect(res.status).toBe(400);
     expect(patchNotificationSettings).not.toHaveBeenCalled();
+  });
+
+  it("saves extra_email_recipients with a description and passes the acting user's id as the actor", async () => {
+    await handlePutNotificationSettings(
+      mockContext({ extraEmailRecipients: [{ email: "ops@example.com", description: "Ops team" }] }),
+      db,
+    );
+    expect(patchNotificationSettings).toHaveBeenCalledWith(
+      db,
+      "org-1",
+      expect.objectContaining({
+        extraEmailRecipients: [{ email: "ops@example.com", description: "Ops team" }],
+      }),
+      "user-1",
+      "UTC",
+    );
   });
 
   it("rejects a webhook URL assertSafeWebhookUrl blocks, without persisting anything", async () => {
@@ -153,30 +183,52 @@ describe("notification-settings GET/PUT routes", () => {
     expect(assertSafeWebhookUrl).not.toHaveBeenCalled();
   });
 
-  it("silently drops a disabledTypes entry that is not a real org-disableable registry key", async () => {
+  it("rejects an unknown channel name inside disabledChannels (enum-validated)", async () => {
+    const res = await handlePutNotificationSettings(
+      mockContext({ disabledChannels: { "auth.settings.changed": ["carrier_pigeon"] } }),
+      db,
+    );
+    expect(res.status).toBe(400);
+    expect(patchNotificationSettings).not.toHaveBeenCalled();
+  });
+
+  it("silently drops a disabledChannels key that is not a real org-disableable registry type id", async () => {
     await handlePutNotificationSettings(
-      mockContext({ disabledTypes: ["auth.settings.changed", "not.a.real.type"] }),
+      mockContext({
+        disabledChannels: { "auth.settings.changed": ["webhook"], "not.a.real.type": ["email"] },
+      }),
       db,
     );
     expect(patchNotificationSettings).toHaveBeenCalledWith(
       db,
       "org-1",
-      expect.objectContaining({ disabledTypes: ["auth.settings.changed"] }),
+      expect.objectContaining({ disabledChannels: { "auth.settings.changed": ["webhook"] } }),
+      "user-1",
+      "UTC",
     );
   });
 
-  it("saves and writes an admin audit log entry on a valid PUT", async () => {
+  it("saves and writes an admin audit log entry on a valid PUT with per-channel disables", async () => {
     const res = await handlePutNotificationSettings(
-      mockContext({ webhookKind: "slack", disabledTypes: ["auth.mfa.break_glass"] }),
+      mockContext({
+        webhookKind: "slack",
+        disabledChannels: { "auth.mfa.break_glass": ["webhook", "email"] },
+      }),
       db,
     );
     expect(res.status).toBe(200);
-    expect(patchNotificationSettings).toHaveBeenCalledWith(db, "org-1", {
-      webhookUrl: undefined,
-      webhookKind: "slack",
-      extraEmailRecipients: undefined,
-      disabledTypes: ["auth.mfa.break_glass"],
-    });
+    expect(patchNotificationSettings).toHaveBeenCalledWith(
+      db,
+      "org-1",
+      {
+        webhookUrl: undefined,
+        webhookKind: "slack",
+        extraEmailRecipients: undefined,
+        disabledChannels: { "auth.mfa.break_glass": ["webhook", "email"] },
+      },
+      "user-1",
+      "UTC",
+    );
     expect(writeAdminAuditLog).toHaveBeenCalledWith(
       db,
       expect.objectContaining({ organizationId: "org-1", actionType: "notification_settings_updated" }),
@@ -191,6 +243,7 @@ describe("notification-settings test-send route", () => {
     resolveInstanceOrganizationId.mockResolvedValue("org-1");
     webhookSend.mockResolvedValue({ ok: true });
     emailSend.mockResolvedValue({ ok: true });
+    emailSendToAddress.mockResolvedValue({ ok: true });
     inAppSend.mockResolvedValue({ ok: true });
   });
 
@@ -201,11 +254,47 @@ describe("notification-settings test-send route", () => {
     expect(webhookSend).not.toHaveBeenCalled();
   });
 
-  it("fires all three channels targeting only the requesting user for email/in-app, webhook with no recipient list", async () => {
-    await handlePostNotificationSettingsTest(mockContext({}), db);
+  it("fires webhook + in-app (targeting the requesting user) when tested with no testEmail, but skips email entirely", async () => {
+    const res = await handlePostNotificationSettingsTest(mockContext({}), db);
     expect(webhookSend).toHaveBeenCalledWith(expect.anything(), []);
-    expect(emailSend).toHaveBeenCalledWith(expect.anything(), ["user-1"]);
     expect(inAppSend).toHaveBeenCalledWith(expect.anything(), ["user-1"]);
+    expect(emailSend).not.toHaveBeenCalled();
+    expect(emailSendToAddress).not.toHaveBeenCalled();
+    const body = (await res.json()) as { email: { ok: boolean; skipped?: boolean } };
+    expect(body.email).toEqual({ ok: true, skipped: true });
+  });
+
+  it("passes the mail delivery deps' exportSink through to EmailChannel, so an export_only org can test-send", async () => {
+    const exportSink = vi.fn();
+    await handlePostNotificationSettingsTest(mockContext({}), db, { exportSink });
+    expect(EmailChannel).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ includeExtraRecipients: false, exportSink }),
+    );
+  });
+
+  it("sends only to the given testEmail address, never touching the shared webhook or this admin's own in-app notification", async () => {
+    const res = await handlePostNotificationSettingsTest(mockContext({ testEmail: "ops@example.com" }), db);
+    expect(emailSendToAddress).toHaveBeenCalledWith(expect.anything(), "ops@example.com");
+    expect(emailSend).not.toHaveBeenCalled();
+    // A recipient row's own test-send button must never fire a real message into the team's
+    // shared Discord/Slack webhook, or into this admin's own in-app notifications - PO report.
+    expect(webhookSend).not.toHaveBeenCalled();
+    expect(inAppSend).not.toHaveBeenCalled();
+    const body = (await res.json()) as {
+      webhook: { ok: boolean; skipped?: boolean };
+      in_app: { ok: boolean; skipped?: boolean };
+    };
+    expect(body.webhook).toEqual({ ok: true, skipped: true });
+    expect(body.in_app).toEqual({ ok: true, skipped: true });
+  });
+
+  it("rejects an invalid testEmail without sending anything", async () => {
+    const res = await handlePostNotificationSettingsTest(mockContext({ testEmail: "not-an-email" }), db);
+    expect(res.status).toBe(400);
+    expect(webhookSend).not.toHaveBeenCalled();
+    expect(emailSend).not.toHaveBeenCalled();
+    expect(emailSendToAddress).not.toHaveBeenCalled();
   });
 
   it("reports a noop channel as a failure with a 'not configured' message, not as ok", async () => {
@@ -228,14 +317,18 @@ describe("notification-settings test-send route", () => {
     expect(body.in_app.ok).toBe(true);
   });
 
-  it("writes an admin audit log entry with the per-channel results", async () => {
+  it("writes an admin audit log entry with the per-channel results, marking the untested channel as skipped", async () => {
     await handlePostNotificationSettingsTest(mockContext({}), db);
     expect(writeAdminAuditLog).toHaveBeenCalledWith(
       db,
       expect.objectContaining({
         organizationId: "org-1",
         actionType: "notification_settings_tested",
-        metadata: expect.objectContaining({ webhook: { ok: true }, email: { ok: true }, in_app: { ok: true } }),
+        metadata: expect.objectContaining({
+          webhook: { ok: true },
+          email: { ok: true, skipped: true },
+          in_app: { ok: true },
+        }),
       }),
     );
   });

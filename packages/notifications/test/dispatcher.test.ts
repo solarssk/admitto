@@ -31,7 +31,7 @@ function queryRawClaims(db: ReturnType<typeof createStubDb>, claimed: boolean): 
 /** Default happy-path stubbing: throttle claims on first try, one active org-staff candidate,
  * that candidate has every channel enabled. */
 function stubHappyPath(db: ReturnType<typeof createStubDb>) {
-  db.notificationSettings.findUnique.mockResolvedValue(null); // no disabled_types row
+  db.notificationSettings.findUnique.mockResolvedValue(null); // no disabled_channels row
   queryRawClaims(db, true);
   db.roleAssignment.findMany.mockResolvedValue([{ user_id: "u-1", user: { is_active: true } }]);
   db.notificationPreference.findMany.mockResolvedValue([]);
@@ -53,8 +53,10 @@ describe("notify()", () => {
     expect(db.securityAuditLog.create).not.toHaveBeenCalled();
   });
 
-  it("skips dispatch (but still calls no channel) when the org disabled this type", async () => {
-    db.notificationSettings.findUnique.mockResolvedValue({ disabled_types: [TYPE] });
+  it("skips dispatch entirely (no channel, no throttle claim) when the org disabled every channel this type has", async () => {
+    db.notificationSettings.findUnique.mockResolvedValue({
+      disabled_channels: { [TYPE]: ["webhook", "email", "in_app"] },
+    });
     const webhook = stubChannel();
     const inApp = stubChannel();
     const email = stubChannel();
@@ -66,12 +68,44 @@ describe("notify()", () => {
     expect(email.send).not.toHaveBeenCalled();
     expect(webhook.send).not.toHaveBeenCalled();
     expect(inApp.send).not.toHaveBeenCalled();
+    expect(db.$queryRaw).not.toHaveBeenCalled();
     expect(db.securityAuditLog.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ event_type: "notification.dispatch.skipped_org_disabled" }),
       }),
     );
   });
+
+  it("skips only the channel(s) the org disabled for this type, still sending on every other channel and still claiming the throttle", async () => {
+    db.notificationSettings.findUnique.mockResolvedValue({ disabled_channels: { [TYPE]: ["webhook"] } });
+    queryRawClaims(db, true);
+    db.roleAssignment.findMany.mockResolvedValue([{ user_id: "u-1", user: { is_active: true } }]);
+    db.notificationPreference.findMany.mockResolvedValue([]);
+    const webhook = stubChannel();
+    const email = stubChannel();
+    const inApp = stubChannel();
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email, webhook, in_app: inApp },
+    });
+
+    expect(webhook.send).not.toHaveBeenCalled();
+    expect(email.send).toHaveBeenCalledWith(expect.anything(), ["u-1"]);
+    expect(inApp.send).toHaveBeenCalledWith(expect.anything(), ["u-1"]);
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event_type: "notification.dispatch.sent",
+          metadata: expect.objectContaining({
+            channels_sent: expect.arrayContaining(["email", "in_app"]),
+            disabled_channels: ["webhook"],
+          }),
+        }),
+      }),
+    );
+    expect(db.notificationThrottle.deleteMany).not.toHaveBeenCalled();
+  });
+
 
   it("skips when the throttle window has not elapsed (claim query returns no row)", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
