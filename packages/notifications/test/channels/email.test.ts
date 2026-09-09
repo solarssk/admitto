@@ -71,7 +71,7 @@ describe("EmailChannel", () => {
     expect(closeMailer).toHaveBeenCalledTimes(1);
   });
 
-  it("includes NotificationSettings.extra_email_recipients only when includeExtraRecipients is set", async () => {
+  it("includes NotificationSettings.extra_email_recipients (object shape: {email, description}) only when includeExtraRecipients is set", async () => {
     const db = createStubDb();
     db.user.findMany.mockResolvedValue([]);
     db.notificationSettings.findUnique.mockResolvedValue({
@@ -79,6 +79,21 @@ describe("EmailChannel", () => {
         { email: "ops@example.com", description: "Ops team" },
         { email: "ops@example.com", description: "Ops team" },
       ],
+    });
+    const channel = new EmailChannel(db as unknown as PrismaClient, { includeExtraRecipients: true });
+
+    const result = await channel.send(EVENT, []);
+
+    expect(result).toEqual({ ok: true });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0].to).toBe("ops@example.com");
+  });
+
+  it("also accepts extra_email_recipients as plain strings - packages/db/prisma/schema.prisma's own column comment documents this shape", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([]);
+    db.notificationSettings.findUnique.mockResolvedValue({
+      extra_email_recipients: ["ops@example.com", ""],
     });
     const channel = new EmailChannel(db as unknown as PrismaClient, { includeExtraRecipients: true });
 
@@ -439,6 +454,20 @@ describe("EmailChannel", () => {
 
       expect(result.ok).toBe(false);
       expect(result.error).not.toContain("secret@internal.example.com");
+    });
+
+    it("returns a sanitized failure instead of throwing when something upstream of the actual send rejects", async () => {
+      const db = createStubDb();
+      resolveMailConfigForOrg.mockRejectedValue(
+        new Error("Cannot resolve mail provider for https://leak.example.com/secret-org-id"),
+      );
+      const channel = new EmailChannel(db as unknown as PrismaClient);
+
+      const result = await channel.sendToAddress(EVENT, "ops@example.com");
+
+      expect(result.ok).toBe(false);
+      expect(result.error).not.toContain("leak.example.com");
+      expect(send).not.toHaveBeenCalled();
     });
   });
 });

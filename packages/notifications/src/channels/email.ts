@@ -131,8 +131,12 @@ async function resolveExtraRecipients(db: Db, organizationId: string): Promise<s
   if (!Array.isArray(raw)) return [];
   const addresses: string[] = [];
   for (const entry of raw) {
-    if (!entry || typeof entry !== "object") continue;
-    const email = (entry as Record<string, unknown>).email;
+    // Accepts both the schema-documented plain string[] shape (packages/db/prisma/schema.prisma's
+    // own comment on this column) and the richer {email, description, ...} object shape a later
+    // PR in this stack writes (adds a per-recipient description/audit trail) - a reader that only
+    // accepted one shape would silently drop every recipient if the other shape is what's
+    // actually persisted (review finding).
+    const email = typeof entry === "string" ? entry : (entry as Record<string, unknown> | null)?.email;
     if (typeof email === "string" && email.trim().length > 0) addresses.push(email);
   }
   return addresses;
