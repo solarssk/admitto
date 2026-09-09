@@ -29,15 +29,29 @@ export const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000;
  * request/worker-path queries, several of those run one unbatched statement over an entire table
  * every deploy (by design - see e.g. backfill-event-actor-attribution.ts) and are already bounded
  * at the process level instead (docker-entrypoint.sh wraps each in `timeout 120`).
+ *
+ * `schema` targets a non-default Postgres schema within the same database (used only by
+ * @admitto/db/testing's per-worker test isolation - never set in application code, so production
+ * behavior is unchanged). Needs BOTH halves to actually take effect, confirmed empirically -
+ * neither alone is enough: (1) `options: "-c search_path=<schema>"` in the `pg.Pool` config,
+ * which is what a raw `$queryRaw`/`$executeRaw` call actually resolves unqualified table names
+ * against (Prisma's own `schema` adapter option below has no effect on raw SQL - it only
+ * schema-qualifies the SQL Prisma's *own* query builder generates); and (2) the adapter's
+ * `schema` option, so Prisma's generated queries are explicitly qualified too, independent of
+ * whatever `search_path` the connection happens to have.
  */
 export function createPrismaAdapter(
   connectionString: string | undefined,
-  options?: { statementTimeoutMs?: number },
+  options?: { statementTimeoutMs?: number; schema?: string },
 ) {
-  return new PrismaPg({
-    connectionString,
-    connectionTimeoutMillis: 5_000,
-    idleTimeoutMillis: 300_000,
-    statement_timeout: options?.statementTimeoutMs ?? DEFAULT_STATEMENT_TIMEOUT_MS,
-  });
+  return new PrismaPg(
+    {
+      connectionString,
+      connectionTimeoutMillis: 5_000,
+      idleTimeoutMillis: 300_000,
+      statement_timeout: options?.statementTimeoutMs ?? DEFAULT_STATEMENT_TIMEOUT_MS,
+      ...(options?.schema ? { options: `-c search_path=${options.schema}` } : {}),
+    },
+    options?.schema ? { schema: options.schema } : undefined,
+  );
 }
