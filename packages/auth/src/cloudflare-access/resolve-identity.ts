@@ -1,5 +1,6 @@
 import { randomInt } from "node:crypto";
-import { isSerializationFailure, Prisma, type IdentityProvider, type PrismaClient } from "@admitto/db";
+import { Prisma, type IdentityProvider, type PrismaClient } from "@admitto/db/client";
+import { isSerializationFailure } from "@admitto/db/errors";
 import type { JWTPayload } from "jose";
 import {
   ExternalIdentityLinkError,
