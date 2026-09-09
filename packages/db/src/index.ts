@@ -70,6 +70,11 @@ export {
 } from './roles.js';
 
 export {
+  INSTANCE_ORG_DEFAULT_ID,
+  resolveInstanceOrganizationId,
+} from './instanceOrg.js';
+
+export {
   backfillAgencyPublicRefs,
   isAgencyAttendee,
 } from './backfill-public-ref.js';

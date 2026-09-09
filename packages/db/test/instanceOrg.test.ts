@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INSTANCE_ORG_DEFAULT_ID, resolveInstanceOrganizationId } from "../src/settings/instance-org.js";
+import { INSTANCE_ORG_DEFAULT_ID, resolveInstanceOrganizationId } from "../src/instanceOrg.js";
 
 function stubDb(overrides: {
   findUniqueResults?: Record<string, { id: string } | null>;

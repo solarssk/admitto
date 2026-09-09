@@ -1,9 +1,8 @@
 import { createHash } from "node:crypto";
-import type { Prisma, PrismaClient } from "@admitto/db";
+import { resolveInstanceOrganizationId, type Prisma, type PrismaClient } from "@admitto/db";
 import { redactEmail } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
 import { notify } from "@admitto/notifications";
-import { resolveInstanceOrganizationId } from "./settings/instance-org.js";
 
 export { redactEmail };
 
@@ -30,6 +29,16 @@ function isPlainPrismaClient(db: Db): db is PrismaClient {
  * does irreversible external I/O and must never run inside one still-open transaction (see the Db
  * comment in packages/notifications/src/dispatcher.ts) - every real call site here already passes
  * a plain PrismaClient today, so this is a defensive backstop, not an expected path.
+ *
+ * Every call site below fires this WITHOUT awaiting it (`void dispatchSecurityNotification(...)`),
+ * deliberately: a configured email/webhook delivery can take up to 15 seconds (this repo's own
+ * mail-transport timeout), and awaiting it here would make that latency part of the caller's own
+ * response - on the failed-login path in particular, that turns "did this 5th wrong-password
+ * attempt hit a privileged account with a channel configured" into a timing side-channel an
+ * unauthenticated caller could use to enumerate privileged accounts, defeating the same
+ * enumeration-safety property `login.ts`'s failure path was already built to protect (bot review
+ * finding, P1). The durable `SecurityAuditLog` write above is unaffected either way - it always
+ * completes, and completes first, before this fires.
  */
 async function dispatchSecurityNotification(
   db: Db,
@@ -316,6 +325,21 @@ export async function logLoginFailure(
   });
 }
 
+/** Human-readable verb phrase for each real `ctx.action` value the break-glass CLI commands pass
+ * (`packages/auth/src/cli.ts`, `apps/cli/src/commands/auth.ts`) - used only in the notification
+ * body below, not the stdout/SecurityAuditLog shape. Neither operation is the target account
+ * *signing in* - both are an operator with server/CLI access acting ON that account - so the
+ * alert text must say that plainly instead of implying a bypassed sign-in (bot review finding: a
+ * misleading "signed in using..." wording could trigger an incorrect account-compromise response
+ * for what's actually an administrative CLI action). Falls back to a generic phrasing including
+ * the raw action for any value this map doesn't recognize (defensive, not expected in practice -
+ * `ctx.action` is a plain `string`, not a literal union, precisely so this file doesn't need
+ * updating every time a new break-glass CLI command is added). */
+const BREAK_GLASS_ACTION_VERB: Record<string, string> = {
+  reset_mfa: "reset two-factor authentication for",
+  generate_emergency_recovery: "generated an emergency recovery code for",
+};
+
 /** Emit `auth.mfa.break_glass` audit (no codes/secrets) and persist a durable `SecurityAuditLog`
  * row. `userId` is the target superadmin resolved by `verifyTargetUserPassword` at every call
  * site; kept optional here since the stdout/ring-buffer emit above doesn't require it. Unlike
@@ -341,9 +365,10 @@ export async function logMfaBreakGlass(
     ip: ctx.ip ?? null,
     metadata: { action: ctx.action },
   });
-  await dispatchSecurityNotification(db, "auth.mfa.break_glass", {
+  const actionVerb = BREAK_GLASS_ACTION_VERB[ctx.action] ?? `used the emergency bypass (${ctx.action}) on`;
+  void dispatchSecurityNotification(db, "auth.mfa.break_glass", {
     title: "Emergency two-factor bypass used",
-    body: `${ctx.email} signed in using the emergency two-factor bypass (${ctx.action}).`,
+    body: `An operator ${actionVerb} ${ctx.email} via the emergency CLI bypass.`,
     dedupeKey: ctx.userId ?? ctx.email,
     metadata: { action: ctx.action },
   });
@@ -649,7 +674,7 @@ export async function logRepeatedFailedLogins(
     ip: ctx.ip ?? null,
     metadata: { streak: ctx.streak },
   });
-  await dispatchSecurityNotification(db, "auth.login.repeated_failures", {
+  void dispatchSecurityNotification(db, "auth.login.repeated_failures", {
     title: "Repeated failed sign-in attempts",
     body: `${ctx.streak} consecutive failed sign-in attempts on ${ctx.email}.`,
     dedupeKey: ctx.userId,
@@ -713,7 +738,7 @@ export async function logAuthSettingsChanged(
   });
   const actor = await resolveUserIdentitySnapshot(db, input.actorUserId);
   const actorLabel = actor?.display_name ?? actor?.email ?? "An admin";
-  await dispatchSecurityNotification(db, "auth.settings.changed", {
+  void dispatchSecurityNotification(db, "auth.settings.changed", {
     title: "Login or security settings changed",
     body: `${actorLabel} changed ${AUTH_SETTINGS_RESOURCE_LABEL[input.resource]} settings (${input.action}).`,
     dedupeKey: input.actorUserId,

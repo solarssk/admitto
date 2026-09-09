@@ -448,27 +448,46 @@ describe("audit", () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const db = fakeDb();
       await logMfaBreakGlass(db, { action: "reset_mfa", email: "admin@example.com", userId: "user-1" });
-      expect(notify).toHaveBeenCalledWith(
-        db,
-        "auth.mfa.break_glass",
-        expect.objectContaining({
-          organizationId: "org_default",
-          dedupeKey: "user-1",
-          body: expect.stringContaining("admin@example.com"),
-          metadata: { action: "reset_mfa" },
-        }),
-      );
+      // Fire-and-forget (not awaited by logMfaBreakGlass itself - see dispatchSecurityNotification's
+      // own doc comment on why), so the mock call lands a microtask or two after the await above.
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.mfa.break_glass",
+          expect.objectContaining({
+            organizationId: "org_default",
+            dedupeKey: "user-1",
+            body: expect.stringContaining("admin@example.com"),
+            metadata: { action: "reset_mfa" },
+          }),
+        );
+      });
+    });
+
+    it("falls back to a generic phrase naming the raw action for an unrecognized break-glass action", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb();
+      await logMfaBreakGlass(db, { action: "some_future_action", email: "admin@example.com", userId: "user-1" });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.mfa.break_glass",
+          expect.objectContaining({ body: expect.stringContaining("some_future_action") }),
+        );
+      });
     });
 
     it("falls back to the email as dedupeKey when no target user id was resolved", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const db = fakeDb();
       await logMfaBreakGlass(db, { action: "reset_mfa", email: "admin@example.com" });
-      expect(notify).toHaveBeenCalledWith(
-        db,
-        "auth.mfa.break_glass",
-        expect.objectContaining({ dedupeKey: "admin@example.com" }),
-      );
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.mfa.break_glass",
+          expect.objectContaining({ dedupeKey: "admin@example.com" }),
+        );
+      });
     });
 
     it("skips notify() (without throwing) when db is a transaction client, not a plain PrismaClient", async () => {
@@ -818,17 +837,22 @@ describe("audit", () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const db = fakeDb();
       await logRepeatedFailedLogins(db, { userId: "user-1", email: "admin@example.com", streak: 5 });
-      expect(notify).toHaveBeenCalledWith(
-        db,
-        "auth.login.repeated_failures",
-        expect.objectContaining({
-          organizationId: "org_default",
-          dedupeKey: "user-1",
-          title: expect.any(String),
-          body: expect.stringContaining("admin@example.com"),
-          metadata: { streak: 5 },
-        }),
-      );
+      // Fire-and-forget (not awaited by logRepeatedFailedLogins itself, so the failed-login
+      // response path never waits on notification delivery - see dispatchSecurityNotification's
+      // own doc comment), so the mock call lands a microtask or two after the await above.
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.repeated_failures",
+          expect.objectContaining({
+            organizationId: "org_default",
+            dedupeKey: "user-1",
+            title: expect.any(String),
+            body: expect.stringContaining("admin@example.com"),
+            metadata: { streak: 5 },
+          }),
+        );
+      });
     });
 
     it("does not throw and skips notify() when the instance organization can't be resolved (audit write already happened)", async () => {
@@ -845,8 +869,10 @@ describe("audit", () => {
         logRepeatedFailedLogins(db, { userId: "user-1", email: "admin@example.com", streak: 5 }),
       ).resolves.toBeUndefined();
       expect(create).toHaveBeenCalledOnce();
+      await vi.waitFor(() => {
+        expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("auth.notify_dispatch_failed"));
+      });
       expect(notify).not.toHaveBeenCalled();
-      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("auth.notify_dispatch_failed"));
     });
 
     it("stringifies a non-Error organization-resolution failure instead of reading .message off it", async () => {
@@ -863,8 +889,10 @@ describe("audit", () => {
         $transaction: vi.fn(),
       } as unknown as PrismaClient;
       await logRepeatedFailedLogins(db, { userId: "user-1", email: "admin@example.com", streak: 5 });
-      const payload = JSON.parse(String(errorSpy.mock.calls[0]?.[0]));
-      expect(payload.error).toBe("connection reset");
+      await vi.waitFor(() => {
+        const payload = JSON.parse(String(errorSpy.mock.calls[0]?.[0]));
+        expect(payload.error).toBe("connection reset");
+      });
     });
   });
 
@@ -935,16 +963,22 @@ describe("audit", () => {
         action: "update",
         targetId: "prov-1",
       });
-      expect(notify).toHaveBeenCalledWith(
-        db,
-        "auth.settings.changed",
-        expect.objectContaining({
-          organizationId: "org_default",
-          dedupeKey: "user-1",
-          body: expect.stringContaining("Jane Admin"),
-          metadata: { resource: "oidc_provider", action: "update", target_id: "prov-1" },
-        }),
-      );
+      // Fire-and-forget (not awaited by logAuthSettingsChanged itself, so the PUT response commits
+      // its durable AdminAuditLog row before waiting on notification delivery - see
+      // dispatchSecurityNotification's own doc comment), so the mock call lands a microtask or two
+      // after the await above.
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.settings.changed",
+          expect.objectContaining({
+            organizationId: "org_default",
+            dedupeKey: "user-1",
+            body: expect.stringContaining("Jane Admin"),
+            metadata: { resource: "oidc_provider", action: "update", target_id: "prov-1" },
+          }),
+        );
+      });
     });
 
     it("falls back to the actor's email, then a generic label, when no display name/snapshot is available", async () => {
@@ -955,11 +989,13 @@ describe("audit", () => {
         resource: "cf_access",
         action: "update",
       });
-      expect(notify).toHaveBeenCalledWith(
-        dbWithEmail,
-        "auth.settings.changed",
-        expect.objectContaining({ body: expect.stringContaining("jane@example.com") }),
-      );
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          dbWithEmail,
+          "auth.settings.changed",
+          expect.objectContaining({ body: expect.stringContaining("jane@example.com") }),
+        );
+      });
 
       notify.mockClear();
       const dbNoSnapshot = fakeDb(vi.fn(), null);
@@ -968,22 +1004,26 @@ describe("audit", () => {
         resource: "cf_access",
         action: "update",
       });
-      expect(notify).toHaveBeenCalledWith(
-        dbNoSnapshot,
-        "auth.settings.changed",
-        expect.objectContaining({ body: expect.stringContaining("An admin") }),
-      );
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          dbNoSnapshot,
+          "auth.settings.changed",
+          expect.objectContaining({ body: expect.stringContaining("An admin") }),
+        );
+      });
     });
 
     it("labels the cf_access resource distinctly from oidc_provider in the notification body", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const db = fakeDb(vi.fn(), { email: "jane@example.com", display_name: "Jane Admin" });
       await logAuthSettingsChanged(db, { actorUserId: "user-1", resource: "cf_access", action: "update" });
-      expect(notify).toHaveBeenCalledWith(
-        db,
-        "auth.settings.changed",
-        expect.objectContaining({ body: expect.stringContaining("Cloudflare Access") }),
-      );
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.settings.changed",
+          expect.objectContaining({ body: expect.stringContaining("Cloudflare Access") }),
+        );
+      });
     });
   });
 });

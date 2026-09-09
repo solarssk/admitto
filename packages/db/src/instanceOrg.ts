@@ -1,11 +1,6 @@
-import type { PrismaClient } from "@admitto/db";
+import type { PrismaClient } from "./generated/prisma/client.js";
 
-/** Stable default organization id from tenant_foundation migration / seed. Mirrors
- * apps/web/src/admin/instance-org.ts's own constant/resolver - duplicated rather than imported
- * (packages/auth cannot depend on apps/web) since this is small enough that consolidating it into
- * a shared package isn't worth the extra indirection yet. Needed here so audit.ts's notify()
- * call sites (which require an organizationId) can resolve one without threading it as a new
- * parameter through login.ts's whole call chain. */
+/** Stable default organization id from tenant_foundation migration / seed. */
 export const INSTANCE_ORG_DEFAULT_ID = "org_default";
 
 const NO_ORG_MESSAGE = "No organization found. Run seed or set INSTANCE_ORG_ID.";
@@ -13,6 +8,12 @@ const NO_ORG_MESSAGE = "No organization found. Run seed or set INSTANCE_ORG_ID."
 /**
  * Resolves the deployment's instance organization id.
  * Precedence: INSTANCE_ORG_ID env → org_default row → first org by id.
+ *
+ * Lives here (not apps/web, where it originated) so packages/auth can call it too without
+ * depending on apps/web - the wrong direction for a foundational package to depend in. Both
+ * apps/web/src/admin/instance-org.ts and packages/auth/src/settings/instance-org.ts re-export this
+ * verbatim rather than each keeping their own copy (SonarCloud's new-code duplication gate caught
+ * the two near-identical implementations when packages/auth first needed this).
  */
 export async function resolveInstanceOrganizationId(
   prisma: PrismaClient,
