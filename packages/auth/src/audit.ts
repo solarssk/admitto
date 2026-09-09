@@ -102,7 +102,7 @@ async function resolveUserIdentitySnapshot(
   }
 }
 
-/** The 15 auth/security event types persisted to the durable `SecurityAuditLog` table (issue
+/** The 16 auth/security event types persisted to the durable `SecurityAuditLog` table (issue
  * #473), in addition to the stdout/ring-buffer emit every event in this module already gets.
  * Deliberately narrower than this module's full event surface: `auth.rate_limit.exceeded` (11
  * call sites spanning login, MFA, OIDC, admin imports, check-in — an infra/throttle signal better
@@ -112,6 +112,7 @@ export type SecurityAuditEventType =
   | "auth.login.success"
   | "auth.login.fail"
   | "auth.login.repeated_failures"
+  | "auth.login.new_country"
   | "auth.mfa.success"
   | "auth.mfa.fail"
   | "auth.mfa.break_glass"
@@ -184,7 +185,7 @@ export function fingerprint(value: string): string {
  * say which account it's about. Structural, not incidental: with no "@" character left in the
  * result, there is nothing for an at-symbol-scanning redactor - this one, or a future one - to
  * match, so this doesn't depend on today's exact character-class behavior of that scanner. */
-function maskedAccountLabel(email: string): string {
+export function maskedAccountLabel(email: string): string {
   return redactEmail(email).replace("@", " at ");
 }
 
@@ -770,5 +771,38 @@ export async function logAuthSettingsChanged(
     body: `${actorLabel} changed ${AUTH_SETTINGS_RESOURCE_LABEL[input.resource]} settings (${input.action}).`,
     dedupeKey: input.actorUserId,
     metadata: { resource: input.resource, action: input.action, target_id: input.targetId ?? null },
+  });
+}
+
+/**
+ * Record and alert on a successful admin/superadmin login from a country not seen among that
+ * account's recent successful logins - the decision of WHETHER a login qualifies (role gate,
+ * geolocation, history comparison) lives in `new-country-login.ts`'s `checkNewCountryLogin`, the
+ * only caller of this function; this is just the shared "write the audit row, dispatch the
+ * alert" tail every other event type in this module also goes through. Fire-and-forget on the
+ * notify() dispatch (`void`, not `await`) for the same reason as `logRepeatedFailedLogins` and
+ * `logAuthSettingsChanged`: this runs on a successful login's own response path, and a
+ * configured email/webhook delivery can take up to 15 seconds - a legitimate admin logging in
+ * from a new city on a business trip shouldn't have their login hang on that.
+ */
+export async function logLoginNewCountry(
+  db: Db,
+  ctx: { userId: string; email: string; ip?: string; countryCode: string },
+): Promise<void> {
+  emitAuditEvent("auth.login.new_country", { email: ctx.email, country: ctx.countryCode, ip: ctx.ip ?? null });
+  await writeSecurityAuditLog(db, {
+    event_type: "auth.login.new_country",
+    user_id: ctx.userId,
+    ip: ctx.ip ?? null,
+    metadata: { country: ctx.countryCode },
+  });
+  void dispatchSecurityNotification(db, "auth.login.new_country", {
+    title: "Admin login from a new country",
+    body: `${maskedAccountLabel(ctx.email)} signed in from ${ctx.countryCode}, a country not seen on this account before.`,
+    // Composite, not just userId: the same admin logging in from two different new countries
+    // within the 15-minute throttle window is two distinct signals worth two alerts, not one
+    // suppressed by the other - see checkNewCountryLogin's own doc comment.
+    dedupeKey: `${ctx.userId}:${ctx.countryCode}`,
+    metadata: { country: ctx.countryCode },
   });
 }
