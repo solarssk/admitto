@@ -100,6 +100,13 @@ jobs:
     timeout-minutes: 3
     permissions:
       contents: read
+      # dorny/paths-filter fetches the PR's changed-file list via the GitHub REST API on
+      # `pull_request` runs (not a local git diff) - contents: read alone isn't enough; the action
+      # needs pull-requests: read too (see its own README's "Supported workflows" section, v4.0.3).
+      # Without it the filter step fails before producing `code`, all three dependent test jobs'
+      # coverage steps are skipped as a result, and build-test's own "all shards succeeded" gate
+      # then fails on those skipped results.
+      pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
