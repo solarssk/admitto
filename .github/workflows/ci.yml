@@ -190,6 +190,11 @@ jobs:
       - name: Release doc version markers match package.json
         run: python3 scripts/sync-release-docs.py --check
       - run: npm run lint
+      - name: Unit tests for repo scripts (scripts/*.test.mjs)
+        run: npm run test:scripts
+      - name: New ESLint warnings vs baseline (report-only - see scripts/eslint-warning-baseline.mjs)
+        continue-on-error: true
+        run: npm run lint:baseline:check
       - run: npm run typecheck --workspaces --if-present
 
   actionlint:

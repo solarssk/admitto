@@ -1,0 +1,533 @@
+[
+  {
+    "ruleId": "react-hooks/exhaustive-deps",
+    "filePath": "apps/admin/src/components/LogoUploadZone.tsx",
+    "message": "The ref value 'provisionalUrlsRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'provisionalUrlsRef.current' to a variable inside the effect, and use that variable in the cleanup function.",
+    "codeLine": "for (const url of provisionalUrlsRef.current) {",
+    "column": 44,
+    "contextBefore": "}",
+    "contextAfter": "void deleteUploadedFile(url);"
+  },
+  {
+    "ruleId": null,
+    "filePath": "apps/admin/src/hooks/useEventStream.ts",
+    "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-possible-timing-attacks').",
+    "codeLine": "// eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret probe status string",
+    "column": 11,
+    "contextBefore": "if (cancelled) return;",
+    "contextAfter": "if (probeResult === \"denied\") {"
+  },
+  {
+    "ruleId": null,
+    "filePath": "apps/admin/src/hooks/useEventStream.ts",
+    "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-possible-timing-attacks').",
+    "codeLine": "// eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret probe status string",
+    "column": 11,
+    "contextBefore": "}",
+    "contextAfter": "if (probeResult === \"rate_limited\") {"
+  },
+  {
+    "ruleId": "react-hooks/exhaustive-deps",
+    "filePath": "apps/admin/src/pages/ReportsPage.tsx",
+    "message": "React Hook useMemo has a missing dependency: 'event'. Either include it or remove the dependency array.",
+    "codeLine": "[",
+    "column": 5,
+    "contextBefore": "() => enabledWalletPlatforms(event),",
+    "contextAfter": "event.wallet_enabled,"
+  },
+  {
+    "ruleId": "react-hooks/exhaustive-deps",
+    "filePath": "apps/admin/src/settings/FontFamilyModal.tsx",
+    "message": "The ref value 'rowGenerationRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'rowGenerationRef.current' to a variable inside the effect, and use that variable in the cleanup function.",
+    "codeLine": "rowGenerationRef.current.set(id, gen + 1);",
+    "column": 26,
+    "contextBefore": "for (const [id, gen] of rowGenerationRef.current) {",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "apps/admin/src/settings/NotificationsPanel.tsx",
+    "message": "Unsafe Regular Expression",
+    "codeLine": "const EMAIL_RE = /^[^\\s@]+@([^\\s@.]+\\.)+[^\\s@.]+$/;",
+    "column": 18,
+    "contextBefore": "// positions, not a search space the engine has to backtrack through (Sonar S8786).",
+    "contextAfter": ""
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "apps/admin/src/settings/mailSettingsValidation.ts",
+    "message": "Unsafe Regular Expression",
+    "codeLine": "return /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label);",
+    "column": 10,
+    "contextBefore": "if (label.length === 0 || label.length > 63) return false;",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": null,
+    "filePath": "apps/web/src/admin/admin-build-meta.ts",
+    "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-non-literal-fs-filename').",
+    "codeLine": "// eslint-disable-next-line security/detect-non-literal-fs-filename -- path from trusted dist root candidates",
+    "column": 7,
+    "contextBefore": "try {",
+    "contextAfter": "accessSync(join(root, \"index.html\"), constants.R_OK);"
+  },
+  {
+    "ruleId": null,
+    "filePath": "apps/web/src/admin/health-check-routes.ts",
+    "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-non-literal-fs-filename').",
+    "codeLine": "// eslint-disable-next-line security/detect-non-literal-fs-filename",
+    "column": 5,
+    "contextBefore": "// X_OK: directory must be searchable so children can be created (Unix).",
+    "contextAfter": "await access(uploadPath, constants.R_OK | constants.W_OK | constants.X_OK);"
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "apps/web/src/admin/sse-channel.ts",
+    "message": "Unsafe Regular Expression",
+    "codeLine": "return host === \"localhost\" || host === \"redis\" || host === \"::1\" || /^127(?:\\.\\d{1,3}){3}$/.test(host);",
+    "column": 72,
+    "contextBefore": "const host = url.hostname.toLowerCase();",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "security/detect-non-literal-fs-filename",
+    "filePath": "apps/web/src/notification-email-assets.ts",
+    "message": "Found existsSync from package \"node:fs\" with non literal argument at index 0",
+    "codeLine": "if (existsSync(join(candidate, \"packages/ui/src/assets/admitto-logo.svg\"))) return candidate;",
+    "column": 9,
+    "contextBefore": "for (const candidate of [join(here, \"../../..\"), join(here, \"../../../..\")]) {",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "security/detect-non-literal-fs-filename",
+    "filePath": "apps/web/src/notification-email-assets.ts",
+    "message": "Found readFileSync from package \"node:fs\" with non literal argument at index 0",
+    "codeLine": "const logoSvg = readFileSync(join(root, \"packages/ui/src/assets/admitto-logo.svg\"));",
+    "column": 19,
+    "contextBefore": "// Logo: rasterize the real product lockup, 3x for retina (displayed at width=118 in email HTML).",
+    "contextAfter": "const logoOut = join(targetDir, \"admitto-logo.png\");"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/location/src/addressComponents.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "const housenumber = parts[numberIdx]!;",
+    "column": 25,
+    "contextBefore": "if (numberIdx >= 0 && parts.length >= 2) {",
+    "contextAfter": "const streetName = parts.find((s, i) => i !== numberIdx && !HOUSE_NUMBER_RE.test(s));"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/location/src/addressComponents.ts",
+    "message": "Variable Assigned to Object Injection Sink",
+    "codeLine": "const v = raw[key];",
+    "column": 15,
+    "contextBefore": "const read = (key: keyof AddressComponents): string | null => {",
+    "contextAfter": "if (v === null || v === undefined) return null;"
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "packages/location/src/addressComponents.ts",
+    "message": "Unsafe Regular Expression",
+    "codeLine": "const HOUSE_NUMBER_RE = /^\\d+[a-zA-Z]?(?:[/-]\\d+[a-zA-Z]?)?$/;",
+    "column": 25,
+    "contextBefore": "/** Standalone house-number token: `12`, `12A`, `12/14`, `1-3`. */",
+    "contextAfter": "/** \"Wybrzeże Szczecińskie 1\" - number glued to the street name in one Nominatim segment. */"
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "packages/location/src/addressComponents.ts",
+    "message": "Unsafe Regular Expression",
+    "codeLine": "const TRAILING_NUMBER_IN_SEGMENT_RE = /^(.*\\S)\\s+(\\d+[a-zA-Z]?(?:[/-]\\d+[a-zA-Z]?)?)$/;",
+    "column": 39,
+    "contextBefore": "/** \"Wybrzeże Szczecińskie 1\" - number glued to the street name in one Nominatim segment. */",
+    "contextAfter": ""
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/location/src/validation.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "if (value !== undefined) result[key] = value;",
+    "column": 28,
+    "contextBefore": "): void {",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/mail-delivery/src/bounceIngest/extractMimeText.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "const seg = segments[i] ?? \"\";",
+    "column": 19,
+    "contextBefore": "for (let i = 1; i < segments.length; i++) {",
+    "contextAfter": "if (seg.startsWith(\"--\")) break;"
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "packages/mail-delivery/src/bounceIngest/extractMimeText.ts",
+    "message": "Unsafe Regular Expression",
+    "codeLine": "const withoutTags = withLineBreaks.replace(/<\\/?[a-zA-Z][a-zA-Z0-9-]*(?:\\s[^<>]*)?\\/?>/g, \" \");",
+    "column": 46,
+    "contextBefore": ".replace(/<\\/(p|div|li|tr|h[1-6])>/gi, \"\\n\");",
+    "contextAfter": "return decodeHtmlEntities(withoutTags)"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/mail-delivery/src/bounceIngest/lastRun.ts",
+    "message": "Variable Assigned to Object Injection Sink",
+    "codeLine": "const raw = env[key];",
+    "column": 15,
+    "contextBefore": ": \"BOUNCE_INGEST_INTERVAL_SECONDS\";",
+    "contextAfter": "if (raw === undefined || raw === \"\") return;"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor",
+    "codeLine": "const RE_ANGLE_EMAIL = new RegExp(`<${EMAIL_RE}>`, \"i\");",
+    "column": 24,
+    "contextBefore": "",
+    "contextAfter": "const RE_BARE_EMAIL = new RegExp(`^${EMAIL_RE}$`, \"i\");"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor",
+    "codeLine": "const RE_ANGLE_EMAIL_GI = new RegExp(`<${EMAIL_RE}>`, \"gi\");",
+    "column": 27,
+    "contextBefore": ");",
+    "contextAfter": ""
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor",
+    "codeLine": "const RE_ANY_EMAIL = new RegExp(EMAIL_RE, \"i\");",
+    "column": 22,
+    "contextBefore": "const RE_BARE_EMAIL = new RegExp(`^${EMAIL_RE}$`, \"i\");",
+    "contextAfter": "const RE_STATUS = /^(\\d)\\.(\\d+)\\.(\\d+)/;"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor",
+    "codeLine": "const RE_BARE_EMAIL = new RegExp(`^${EMAIL_RE}$`, \"i\");",
+    "column": 23,
+    "contextBefore": "const RE_ANGLE_EMAIL = new RegExp(`<${EMAIL_RE}>`, \"i\");",
+    "contextAfter": "const RE_ANY_EMAIL = new RegExp(EMAIL_RE, \"i\");"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor",
+    "codeLine": "const RE_NEAR_ORPHAN = new RegExp(",
+    "column": 24,
+    "contextBefore": "const RE_DIAG_ENHANCED = /\\b(\\d\\.\\d\\.\\d)\\b/;",
+    "contextAfter": "String.raw`${EMAIL_RE}\\s*(?:\\n[^\\n]*){0,6}\\nfailed:\\s+host\\s+`,"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor",
+    "codeLine": "pattern: new RegExp(",
+    "column": 14,
+    "contextBefore": "id: \"failed-host-said\",",
+    "contextAfter": "String.raw`<?${EMAIL_RE}>?\\s*failed:\\s+${HOST_SAID}(\\d{3})\\s+(?:(\\d\\.\\d\\.\\d)\\s+)?(?:\\S+:\\s+)?(.+?)${REPLY_TAIL}`,"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor",
+    "codeLine": "pattern: new RegExp(",
+    "column": 14,
+    "contextBefore": "id: \"orphan-failed\",",
+    "contextAfter": "String.raw`(?:^|\\n)failed:\\s+${HOST_SAID}(\\d{3})\\s+(?:(\\d\\.\\d\\.\\d)\\s+)?:?\\s*(.+?)${REPLY_TAIL}`,"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor",
+    "codeLine": "pattern: new RegExp(",
+    "column": 14,
+    "contextBefore": "id: \"postfix-angle-bracket\",",
+    "contextAfter": "String.raw`<${EMAIL_RE}>:\\s+${HOST_SAID}(\\d{3})\\s+(?:(\\d\\.\\d\\.\\d)\\s+)?(?:<[^>]+>:\\s+)?(.+?)${REPLY_TAIL}`,"
+  },
+  {
+    "ruleId": "security/detect-non-literal-regexp",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Found non-literal argument to RegExp Constructor",
+    "codeLine": "pattern: new RegExp(",
+    "column": 14,
+    "contextBefore": "id: \"postfix-enhanced\",",
+    "contextAfter": "String.raw`${EMAIL_RE}\\s+failed:\\s+${HOST_SAID}(\\d{3})\\s+(\\d\\.\\d\\.\\d)\\s+\\S+:\\s+(.+?)${REPLY_TAIL}`,"
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
+    "message": "Unsafe Regular Expression",
+    "codeLine": "for (const block of normalized.split(/\\n(?:[ \\t]*\\n)+/)) {",
+    "column": 40,
+    "contextBefore": "// Split on blank lines into header-like field groups (RFC 3464 §2).",
+    "contextAfter": "parseOneDsnBlock(block, out, seen);"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/notifications/src/dispatcher.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "const disabledChannels = typeDef.orgDisableable ? (disabledChannelsByType[type] ?? []) : [];",
+    "column": 56,
+    "contextBefore": "const { disabledChannelsByType } = await readOrgSettings(db, event.organizationId);",
+    "contextAfter": "// Fully disabled across every channel this type can even use - same fast path as before the"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/notifications/src/dispatcher.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "if (normalized.length > 0) disabledChannelsByType[type] = normalized as NotificationChannelKey[];",
+    "column": 34,
+    "contextBefore": "const normalized = channels.filter((entry): entry is string => typeof entry === \"string\");",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/notifications/src/settings.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "if (normalized.length > 0) result[type] = normalized;",
+    "column": 32,
+    "contextBefore": "const normalized = normalizeStringArray(channels) as NotificationChannelKey[];",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "packages/shared/src/timezones.ts",
+    "message": "Unsafe Regular Expression",
+    "codeLine": "const GMT_OFFSET_RE = /^GMT([+-])(\\d{1,2})(?::(\\d{2}))?$/;",
+    "column": 23,
+    "contextBefore": "const NICE_ABBREVIATION_RE = /^[A-Za-z]{2,5}$/;",
+    "contextAfter": ""
+  },
+  {
+    "ruleId": null,
+    "filePath": "packages/storage/src/adapters/local.ts",
+    "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-non-literal-fs-filename').",
+    "codeLine": "// eslint-disable-next-line security/detect-non-literal-fs-filename",
+    "column": 5,
+    "contextBefore": "// dir is always under root (starts at root, descends via readdir join).",
+    "contextAfter": "entries = await resolved.readdir(dir, { withFileTypes: true });"
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "packages/storage/src/keys.ts",
+    "message": "Unsafe Regular Expression",
+    "codeLine": "const re = /\\/uploads\\/([a-z0-9][a-z0-9_-]{0,63}(?:\\/(?:theme|events\\/[a-z0-9][a-z0-9_-]{0,127}))?\\/[0-9a-f-]{36}\\.(?:png|jpg|webp|woff2|woff|ttf|otf))/gi;",
+    "column": 14,
+    "contextBefore": "// Capture path after /uploads/ until whitespace, quote, or HTML/CSS delimiter.",
+    "contextAfter": "for (const match of text.matchAll(re)) {"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "const value = cells[i] ?? \"\";",
+    "column": 21,
+    "contextBefore": "for (let i = 0; i < metrics.length; i++) {",
+    "contextAfter": "metrics[i]!.maxWidth = Math.max(metrics[i]!.maxWidth, doc.widthOfString(value));"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "doc.text(cells[i] ?? \"\", x, y, cellOptions(plan.contentWidths[i]!, rowHeight));",
+    "column": 16,
+    "contextBefore": "for (let i = 0; i < cells.length; i++) {",
+    "contextAfter": "x += plan.slotWidths[i]!;"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "doc.text(cells[i] ?? \"\", x, y, cellOptions(plan.contentWidths[i]!, rowHeight));",
+    "column": 50,
+    "contextBefore": "for (let i = 0; i < cells.length; i++) {",
+    "contextAfter": "x += plan.slotWidths[i]!;"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "doc.text(exportColumns[i]!, x, y, cellOptions(plan.contentWidths[i]!, headerHeight));",
+    "column": 16,
+    "contextBefore": "for (let i = 0; i < exportColumns.length; i++) {",
+    "contextAfter": "x += plan.slotWidths[i]!;"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "doc.text(exportColumns[i]!, x, y, cellOptions(plan.contentWidths[i]!, headerHeight));",
+    "column": 53,
+    "contextBefore": "for (let i = 0; i < exportColumns.length; i++) {",
+    "contextAfter": "x += plan.slotWidths[i]!;"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "height = Math.max(height, doc.heightOfString(cells[i] ?? \"\", { width: contentWidths[i]! }));",
+    "column": 50,
+    "contextBefore": "for (let i = 0; i < cells.length; i++) {",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "height = Math.max(height, doc.heightOfString(cells[i] ?? \"\", { width: contentWidths[i]! }));",
+    "column": 75,
+    "contextBefore": "for (let i = 0; i < cells.length; i++) {",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "if (scaled[i]! > widestWidth) {",
+    "column": 11,
+    "contextBefore": "for (let i = 0; i < scaled.length; i++) {",
+    "contextAfter": "widestWidth = scaled[i]!;"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "metrics[i]!.maxWidth = Math.max(metrics[i]!.maxWidth, doc.widthOfString(value));",
+    "column": 7,
+    "contextBefore": "const value = cells[i] ?? \"\";",
+    "contextAfter": "metrics[i]!.minWidth = Math.max(metrics[i]!.minWidth, widestTokenWidth(doc, value));"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "metrics[i]!.maxWidth = Math.max(metrics[i]!.maxWidth, doc.widthOfString(value));",
+    "column": 39,
+    "contextBefore": "const value = cells[i] ?? \"\";",
+    "contextAfter": "metrics[i]!.minWidth = Math.max(metrics[i]!.minWidth, widestTokenWidth(doc, value));"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "metrics[i]!.minWidth = Math.max(metrics[i]!.minWidth, widestTokenWidth(doc, value));",
+    "column": 7,
+    "contextBefore": "metrics[i]!.maxWidth = Math.max(metrics[i]!.maxWidth, doc.widthOfString(value));",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "metrics[i]!.minWidth = Math.max(metrics[i]!.minWidth, widestTokenWidth(doc, value));",
+    "column": 39,
+    "contextBefore": "metrics[i]!.maxWidth = Math.max(metrics[i]!.maxWidth, doc.widthOfString(value));",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "scaled[widest]!--;",
+    "column": 5,
+    "contextBefore": "if (widest < 0) break;",
+    "contextAfter": "scaledTotal--;"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "widestWidth = scaled[i]!;",
+    "column": 23,
+    "contextBefore": "if (scaled[i]! > widestWidth) {",
+    "contextAfter": "widest = i;"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "x += plan.slotWidths[i]!;",
+    "column": 12,
+    "contextBefore": "doc.text(cells[i] ?? \"\", x, y, cellOptions(plan.contentWidths[i]!, rowHeight));",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/attendees-export-pdf.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "x += plan.slotWidths[i]!;",
+    "column": 12,
+    "contextBefore": "doc.text(exportColumns[i]!, x, y, cellOptions(plan.contentWidths[i]!, headerHeight));",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/resolve.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "if (typeof v === \"string\" && v.trim()) out[key] = v.trim();",
+    "column": 44,
+    "contextBefore": "for (const [key, v] of Object.entries(value as Record<string, unknown>)) {",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/tickets/src/resolve.ts",
+    "message": "Variable Assigned to Object Injection Sink",
+    "codeLine": "const v = raw[key];",
+    "column": 15,
+    "contextBefore": "const read = (key: string): string | null => {",
+    "contextAfter": "if (typeof v !== \"string\") return null;"
+  },
+  {
+    "ruleId": "security/detect-unsafe-regex",
+    "filePath": "packages/tickets/src/wallet-pass-input.ts",
+    "message": "Unsafe Regular Expression",
+    "codeLine": "const match = /^GMT([+-])(\\d{1,2})(?::?(\\d{2}))?$/.exec(part);",
+    "column": 17,
+    "contextBefore": "if (!part || part === \"GMT\") return \"Z\";",
+    "contextAfter": "if (!match) return \"Z\";"
+  },
+  {
+    "ruleId": null,
+    "filePath": "packages/ui/src/components/Tooltip.tsx",
+    "message": "Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps').",
+    "codeLine": "// eslint-disable-next-line react-hooks/exhaustive-deps -- hide/show are stable per render, not deps",
+    "column": 5,
+    "contextBefore": "return () => observer.disconnect();",
+    "contextAfter": "}, [visible]);"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/wallet/src/passcreator-mapper.ts",
+    "message": "Generic Object Injection Sink",
+    "codeLine": "if (value) custom[key] = value;",
+    "column": 16,
+    "contextBefore": "const value = values[placeholder];",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/wallet/src/passcreator-mapper.ts",
+    "message": "Variable Assigned to Object Injection Sink",
+    "codeLine": "const placeholders = table[field];",
+    "column": 24,
+    "contextBefore": "): boolean {",
+    "contextAfter": "if (placeholders === undefined) return true;"
+  },
+  {
+    "ruleId": "security/detect-object-injection",
+    "filePath": "packages/wallet/src/passcreator-mapper.ts",
+    "message": "Variable Assigned to Object Injection Sink",
+    "codeLine": "const value = values[placeholder];",
+    "column": 19,
+    "contextBefore": "for (const [key, placeholder] of Object.entries(fieldMapping)) {",
+    "contextAfter": "if (value) custom[key] = value;"
+  }
+]
