@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The `app` container now shuts down gracefully on `docker stop`/`docker compose down` instead of terminating immediately: it stops accepting new requests, lets in-flight ones (including open Reports/check-in live-update streams) finish for up to 6 seconds before forcing them closed, then gives the database disconnect up to 3 more seconds - 9 seconds combined, comfortably inside Docker's default 10-second stop window, so a routine restart or host maintenance no longer risks cutting off a request that was already in progress. The background worker container already did this; this closes the same gap for the web server.
+
 ### Changed
 
 - My Account's passkey management now sends a best-effort WebAuthn Signal API notification when removing a passkey or security key. Supported browsers and password managers can then stop offering the deleted credential for future sign-ins. The "Add" button for passkeys is also now disabled on browsers that report no passkey support, instead of only failing after the setup prompt is attempted.
