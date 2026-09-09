@@ -135,16 +135,15 @@ export function fingerprintKey(fp) {
   ]);
 }
 
+const SORT_FIELDS = ["filePath", "ruleId", "message", "codeLine", "contextBefore", "contextAfter"];
+
 export function sortFingerprints(fingerprints) {
   return [...fingerprints].sort((a, b) => {
-    if (a.filePath !== b.filePath) return a.filePath < b.filePath ? -1 : 1;
-    const aRule = a.ruleId ?? "";
-    const bRule = b.ruleId ?? "";
-    if (aRule !== bRule) return aRule < bRule ? -1 : 1;
-    if (a.message !== b.message) return a.message < b.message ? -1 : 1;
-    if (a.codeLine !== b.codeLine) return a.codeLine < b.codeLine ? -1 : 1;
-    if (a.contextBefore !== b.contextBefore) return a.contextBefore < b.contextBefore ? -1 : 1;
-    if (a.contextAfter !== b.contextAfter) return a.contextAfter < b.contextAfter ? -1 : 1;
+    for (const field of SORT_FIELDS) {
+      const av = a[field] ?? "";
+      const bv = b[field] ?? "";
+      if (av !== bv) return av < bv ? -1 : 1;
+    }
     return 0;
   });
 }
