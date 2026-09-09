@@ -160,7 +160,7 @@ const testBodySchema = z.object({ testEmail: z.string().trim().email().optional(
 /** Empty or whitespace-only body parses as `{}` (the common case - the client only sends one when
  * testEmail is set); a genuinely malformed JSON body returns 400 instead of silently falling back
  * to `{}` (same distinction as attendees-api-routes.ts's own parseOptionalJsonBody). */
-async function parseOptionalTestBody(c: Context): Promise<unknown | Response> {
+async function parseOptionalTestBody(c: Context): Promise<unknown> {
   try {
     const text = await c.req.text();
     if (!text.trim()) return {};
