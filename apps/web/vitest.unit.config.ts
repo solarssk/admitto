@@ -27,5 +27,8 @@ export default defineConfig({
     pool: "forks",
     maxWorkers: 4,
     env: sharedTestEnv,
+    // A known Vitest teardown race can surface at this concurrency - see the root
+    // apps/web/vitest.config.ts's `onUnhandledError` for the suppression (onUnhandledError is a
+    // root-only option; Vitest ignores it if set on a project config like this one).
   },
 });
