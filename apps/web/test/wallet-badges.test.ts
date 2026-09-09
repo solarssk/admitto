@@ -39,6 +39,7 @@ describe("wallet / ticket mark assets", () => {
       "/assets/apple-wallet-badge.png",
       "/assets/google-wallet-badge.png",
       "/assets/samsung-wallet-badge.png",
+      "/assets/admitto-logo.png",
     ]) {
       const res = await app.request(path);
       expect(res.status, path).toBe(200);

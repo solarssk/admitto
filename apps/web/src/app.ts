@@ -49,6 +49,7 @@ import {
 } from "./maps/static-map-route.js";
 import {
   handleGetAdmittoLogo,
+  handleGetAdmittoLogoPng,
   handleGetAdmittoMark,
   handleGetAppleWalletBadge,
   handleGetAppleWalletBadgePng,
@@ -1218,6 +1219,7 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/apple-touch-icon-precomposed.png", handleGetAppleTouchIconPrecomposed);
   app.get("/assets/admitto-mark.svg", handleGetAdmittoMark);
   app.get("/assets/admitto-logo.svg", handleGetAdmittoLogo);
+  app.get("/assets/admitto-logo.png", handleGetAdmittoLogoPng);
   app.get("/assets/apple-wallet-badge.svg", handleGetAppleWalletBadge);
   app.get("/assets/google-wallet-badge.svg", handleGetGoogleWalletBadge);
   app.get("/assets/samsung-wallet-badge.svg", handleGetSamsungWalletBadge);

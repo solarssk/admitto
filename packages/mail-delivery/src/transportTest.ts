@@ -1,6 +1,5 @@
 import type { PrismaClient } from "@admitto/db";
 import {
-  absolutizeEmailShellLogo,
   buildEmailBoxedSectionHtml,
   buildEmailStatusBadgeHtml,
   buildSystemEmailHtml,
@@ -99,8 +98,10 @@ export function transportTestFieldsFromConfig(
 
 /** @see resolveEmailShellHeaderLogo in @admitto/mail-templates - re-exported under this
  * package's existing names for backward compatibility with existing callers/tests. */
-export const absolutizeTransportTestLogo = absolutizeEmailShellLogo;
-export const resolveTransportTestHeaderLogo = resolveEmailShellHeaderLogo;
+export {
+  absolutizeEmailShellLogo as absolutizeTransportTestLogo,
+  resolveEmailShellHeaderLogo as resolveTransportTestHeaderLogo,
+} from "@admitto/mail-templates";
 
 type DiagRow = [string, string | readonly string[]];
 
@@ -294,7 +295,7 @@ export async function sendTransportTestEmail(
     where: { id: params.organizationId },
     select: { name: true, logo_url: true },
   });
-  const headerLogo = resolveTransportTestHeaderLogo(org?.logo_url, env);
+  const headerLogo = resolveEmailShellHeaderLogo(org?.logo_url, env);
   return sendTransportTestEmailWithConfig(mailConfig, params.toAddress, deps, {
     scope: "organization",
     organizationName: org?.name ?? undefined,
@@ -321,7 +322,7 @@ export async function sendEventTransportTestEmail(
     select: { title: true, organization: { select: { name: true } } },
   });
   const branding = await resolveBranding(params.eventId, prisma);
-  const headerLogo = resolveTransportTestHeaderLogo(branding.logo_url, env);
+  const headerLogo = resolveEmailShellHeaderLogo(branding.logo_url, env);
   return sendTransportTestEmailWithConfig(mailConfig, params.toAddress, deps, {
     scope: "event",
     eventTitle: event?.title ?? undefined,
@@ -362,7 +363,7 @@ export async function buildEventTransportTestMessage(
     select: { title: true, organization: { select: { name: true } } },
   });
   const branding = await resolveBranding(eventId, prisma);
-  const headerLogo = resolveTransportTestHeaderLogo(branding.logo_url, env);
+  const headerLogo = resolveEmailShellHeaderLogo(branding.logo_url, env);
   return buildTransportTestMessage(extras.now ?? new Date(), {
     scope: "event",
     eventTitle: event?.title ?? undefined,

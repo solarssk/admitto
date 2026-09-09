@@ -5,10 +5,13 @@ import type { Context } from "hono";
 
 /** Exact public ticket assets: keep the allowlist tight so these routes never shadow SPA `/assets/*`.
  * PNG wallet badges exist alongside the SVGs for email use only (classic Outlook desktop's Word
- * rendering engine does not display SVG `<img>` sources at all) - the ticket page keeps the SVGs. */
+ * rendering engine does not display SVG `<img>` sources at all) - the ticket page keeps the SVGs.
+ * admitto-logo.png is email-only too, for the same reason - see
+ * scripts/generate-notification-email-assets.mjs for how it's produced. */
 const ASSET_NAMES = new Set([
   "admitto-mark.svg",
   "admitto-logo.svg",
+  "admitto-logo.png",
   "apple-wallet-badge.svg",
   "google-wallet-badge.svg",
   "samsung-wallet-badge.svg",
@@ -75,6 +78,11 @@ export function handleGetAdmittoMark(c: Context): Response | Promise<Response> {
 
 export function handleGetAdmittoLogo(c: Context): Response | Promise<Response> {
   return serveTicketAsset(c, "admitto-logo.svg");
+}
+
+/** PNG variant of the logo for email markup - see the `ASSET_NAMES` comment above. */
+export function handleGetAdmittoLogoPng(c: Context): Response | Promise<Response> {
+  return serveTicketAsset(c, "admitto-logo.png");
 }
 
 export function handleGetAppleWalletBadge(c: Context): Response | Promise<Response> {
