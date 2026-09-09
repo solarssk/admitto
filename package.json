@@ -17,6 +17,7 @@
     "lint": "eslint 'packages/*/src/**/*.{ts,tsx}' 'apps/*/src/**/*.{ts,tsx}'",
     "lint:baseline:check": "node scripts/eslint-warning-baseline.mjs check",
     "lint:baseline:update": "node scripts/eslint-warning-baseline.mjs generate",
+    "test:scripts": "node --test scripts/*.test.mjs",
     "db:migrate": "npm run db:migrate -w @admitto/db",
     "db:migrate:status": "npm run db:migrate:status -w @admitto/db",
     "db:seed": "npm run db:seed -w @admitto/db",

@@ -10,16 +10,27 @@
  * fingerprint that isn't in the baseline; fixing an existing warning (which only shrinks the
  * current set) is always fine and never blocks anything.
  *
- * A fingerprint is `{ ruleId, filePath, message, codeLine }` - deliberately EXCLUDING the line
- * NUMBER, so a line shifting elsewhere in a file (e.g. someone adds a blank line above an
- * untouched warning) never produces a false "new warning". `codeLine` (the warned line's own
- * trimmed source text) stands in for the line number instead of being dropped outright: without
- * it, a PR that removes one occurrence of a {rule, file, message} signature and introduces a
- * *different* occurrence of the exact same signature elsewhere in the same file would just
- * consume the removed one's slot in the multiset comparison below and pass silently - exactly the
- * warning-for-warning swap this gate exists to catch. This is a real, not hypothetical, case here:
- * the committed baseline has 16 identical `security/detect-object-injection` /
- * "Generic Object Injection Sink" entries for packages/tickets/src/attendees-export-pdf.ts alone.
+ * A fingerprint is `{ ruleId, filePath, message, codeLine, contextBefore, contextAfter }` -
+ * deliberately EXCLUDING the line NUMBER, so a line shifting elsewhere in a file (e.g. someone
+ * adds a blank line above an untouched warning) never produces a false "new warning". `codeLine`
+ * (the warned line's own trimmed source text) stands in for the line number instead of being
+ * dropped outright: without it, a PR that removes one occurrence of a {rule, file, message}
+ * signature and introduces a *different* occurrence of the exact same signature elsewhere in the
+ * same file would just consume the removed one's slot in the multiset comparison below and pass
+ * silently - exactly the warning-for-warning swap this gate exists to catch. This is a real, not
+ * hypothetical, case here: the committed baseline has 16 identical
+ * `security/detect-object-injection` / "Generic Object Injection Sink" entries for
+ * packages/tickets/src/attendees-export-pdf.ts alone.
+ *
+ * `codeLine` alone is not enough, though: two of those 16 entries can also share the exact same
+ * trimmed line text (e.g. a common `obj[key]` idiom repeated verbatim), which lets the same
+ * warning-for-warning swap happen *within* an already-duplicated signature - remove one, introduce
+ * a different one elsewhere with an identical line, and the multiset still just sees "same count".
+ * `contextBefore`/`contextAfter` (the immediately adjacent lines' own trimmed text) break that
+ * remaining tie: they change only when code next to the warning actually changes, not when
+ * anything elsewhere in the file shifts, so they keep the line-number-independence property above
+ * while still telling apart two textually-identical warned lines living in different code.
+ *
  * Only ESLint messages with severity 1 (warning) are fingerprinted; severity 2 (error) already
  * fails `npm run lint`'s own exit code and needs no separate gate here.
  *
@@ -52,7 +63,7 @@ const BASELINE_PATH = join(REPO_ROOT, ".eslint-warning-baseline.json");
  * script is a plain `eslint '<glob>' '<glob>' ...` with no flags - if that ever grows flags or
  * unquoted globs, extend this tokenizer rather than special-casing around it.
  */
-function getLintGlobs() {
+export function getLintGlobs() {
   const pkg = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8"));
   const lintScript = pkg.scripts?.lint;
   if (!lintScript) {
@@ -84,11 +95,11 @@ async function runEslint() {
 /**
  * Converts raw ESLint results into warning-only fingerprints (severity 1, no line number).
  * Reads each flagged file's own source once (not via ESLint's own `result.source`, which is only
- * populated in some configurations) to capture the warned line's trimmed text as `codeLine` - see
- * the module doc comment above for why a fingerprint needs this and not just {ruleId, filePath,
- * message}.
+ * populated in some configurations) to capture the warned line's own trimmed text plus its
+ * immediate neighbors - see the module doc comment above for why a fingerprint needs all three
+ * and not just {ruleId, filePath, message}.
  */
-function toFingerprints(results) {
+export function toFingerprints(results) {
   const fingerprints = [];
   for (const result of results) {
     const warnings = result.messages.filter((msg) => msg.severity === 1);
@@ -98,17 +109,33 @@ function toFingerprints(results) {
     const lines = readFileSync(result.filePath, "utf8").split("\n");
     for (const msg of warnings) {
       const codeLine = (lines[msg.line - 1] ?? "").trim();
-      fingerprints.push({ ruleId: msg.ruleId, filePath: relPath, message: msg.message, codeLine });
+      const contextBefore = (lines[msg.line - 2] ?? "").trim();
+      const contextAfter = (lines[msg.line] ?? "").trim();
+      fingerprints.push({
+        ruleId: msg.ruleId,
+        filePath: relPath,
+        message: msg.message,
+        codeLine,
+        contextBefore,
+        contextAfter,
+      });
     }
   }
   return fingerprints;
 }
 
-function fingerprintKey(fp) {
-  return JSON.stringify([fp.ruleId, fp.filePath, fp.message, fp.codeLine]);
+export function fingerprintKey(fp) {
+  return JSON.stringify([
+    fp.ruleId,
+    fp.filePath,
+    fp.message,
+    fp.codeLine,
+    fp.contextBefore,
+    fp.contextAfter,
+  ]);
 }
 
-function sortFingerprints(fingerprints) {
+export function sortFingerprints(fingerprints) {
   return [...fingerprints].sort((a, b) => {
     if (a.filePath !== b.filePath) return a.filePath < b.filePath ? -1 : 1;
     const aRule = a.ruleId ?? "";
@@ -116,8 +143,37 @@ function sortFingerprints(fingerprints) {
     if (aRule !== bRule) return aRule < bRule ? -1 : 1;
     if (a.message !== b.message) return a.message < b.message ? -1 : 1;
     if (a.codeLine !== b.codeLine) return a.codeLine < b.codeLine ? -1 : 1;
+    if (a.contextBefore !== b.contextBefore) return a.contextBefore < b.contextBefore ? -1 : 1;
+    if (a.contextAfter !== b.contextAfter) return a.contextAfter < b.contextAfter ? -1 : 1;
     return 0;
   });
+}
+
+/**
+ * Multiset (count-based) comparison rather than a plain Set difference: two genuinely distinct
+ * warned lines can still produce an identical fingerprint (same rule, message, code text, AND
+ * surrounding context - e.g. a repeated boilerplate block). Counting occurrences means a THIRD
+ * occurrence of a signature the baseline only saw twice is still correctly caught as new. Returns
+ * the current fingerprints with no matching baseline slot left.
+ */
+export function diffFingerprints(baseline, current) {
+  const remainingBaselineCounts = new Map();
+  for (const fp of baseline) {
+    const key = fingerprintKey(fp);
+    remainingBaselineCounts.set(key, (remainingBaselineCounts.get(key) ?? 0) + 1);
+  }
+
+  const newWarnings = [];
+  for (const fp of current) {
+    const key = fingerprintKey(fp);
+    const remaining = remainingBaselineCounts.get(key) ?? 0;
+    if (remaining > 0) {
+      remainingBaselineCounts.set(key, remaining - 1);
+    } else {
+      newWarnings.push(fp);
+    }
+  }
+  return newWarnings;
 }
 
 async function generate() {
@@ -140,28 +196,7 @@ async function check() {
 
   const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
   const current = sortFingerprints(toFingerprints(await runEslint()));
-
-  // Multiset (count-based) comparison rather than a plain Set difference: two genuinely distinct
-  // warned lines can still produce an identical fingerprint (same rule, message, AND code text -
-  // e.g. two call sites in the same file both literally reading `obj[key]`). Counting occurrences
-  // means a THIRD occurrence of a signature the baseline only saw twice is still correctly caught
-  // as new.
-  const remainingBaselineCounts = new Map();
-  for (const fp of baseline) {
-    const key = fingerprintKey(fp);
-    remainingBaselineCounts.set(key, (remainingBaselineCounts.get(key) ?? 0) + 1);
-  }
-
-  const newWarnings = [];
-  for (const fp of current) {
-    const key = fingerprintKey(fp);
-    const remaining = remainingBaselineCounts.get(key) ?? 0;
-    if (remaining > 0) {
-      remainingBaselineCounts.set(key, remaining - 1);
-    } else {
-      newWarnings.push(fp);
-    }
-  }
+  const newWarnings = diffFingerprints(baseline, current);
 
   if (newWarnings.length > 0) {
     console.error(`Found ${newWarnings.length} new ESLint warning(s) not present in the baseline:\n`);
@@ -180,16 +215,21 @@ async function check() {
   console.log(`No new ESLint warnings (${baseline.length} baseline, ${current.length} current)`);
 }
 
-const mode = process.argv[2] ?? "check";
-try {
-  if (mode === "generate") {
-    await generate();
-  } else if (mode === "check") {
-    await check();
-  } else {
-    throw new Error(`Unknown mode "${mode}". Usage: node scripts/eslint-warning-baseline.mjs [check|generate]`);
+// Only run the CLI when this file is executed directly (`node scripts/eslint-warning-baseline.mjs
+// ...`), not when imported - scripts/eslint-warning-baseline.test.mjs imports the pure functions
+// above to test them without linting the whole repo or calling process.exit().
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const mode = process.argv[2] ?? "check";
+  try {
+    if (mode === "generate") {
+      await generate();
+    } else if (mode === "check") {
+      await check();
+    } else {
+      throw new Error(`Unknown mode "${mode}". Usage: node scripts/eslint-warning-baseline.mjs [check|generate]`);
+    }
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
   }
-} catch (err) {
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
 }

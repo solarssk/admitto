@@ -3,330 +3,440 @@
     "ruleId": "react-hooks/exhaustive-deps",
     "filePath": "apps/admin/src/components/LogoUploadZone.tsx",
     "message": "The ref value 'provisionalUrlsRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'provisionalUrlsRef.current' to a variable inside the effect, and use that variable in the cleanup function.",
-    "codeLine": "for (const url of provisionalUrlsRef.current) {"
+    "codeLine": "for (const url of provisionalUrlsRef.current) {",
+    "contextBefore": "}",
+    "contextAfter": "void deleteUploadedFile(url);"
   },
   {
     "ruleId": null,
     "filePath": "apps/admin/src/hooks/useEventStream.ts",
     "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-possible-timing-attacks').",
-    "codeLine": "// eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret probe status string"
+    "codeLine": "// eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret probe status string",
+    "contextBefore": "if (cancelled) return;",
+    "contextAfter": "if (probeResult === \"denied\") {"
   },
   {
     "ruleId": null,
     "filePath": "apps/admin/src/hooks/useEventStream.ts",
     "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-possible-timing-attacks').",
-    "codeLine": "// eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret probe status string"
+    "codeLine": "// eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret probe status string",
+    "contextBefore": "}",
+    "contextAfter": "if (probeResult === \"rate_limited\") {"
   },
   {
     "ruleId": "react-hooks/exhaustive-deps",
     "filePath": "apps/admin/src/pages/ReportsPage.tsx",
     "message": "React Hook useMemo has a missing dependency: 'event'. Either include it or remove the dependency array.",
-    "codeLine": "["
+    "codeLine": "[",
+    "contextBefore": "() => enabledWalletPlatforms(event),",
+    "contextAfter": "event.wallet_enabled,"
   },
   {
     "ruleId": "react-hooks/exhaustive-deps",
     "filePath": "apps/admin/src/settings/FontFamilyModal.tsx",
     "message": "The ref value 'rowGenerationRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'rowGenerationRef.current' to a variable inside the effect, and use that variable in the cleanup function.",
-    "codeLine": "rowGenerationRef.current.set(id, gen + 1);"
+    "codeLine": "rowGenerationRef.current.set(id, gen + 1);",
+    "contextBefore": "for (const [id, gen] of rowGenerationRef.current) {",
+    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-unsafe-regex",
     "filePath": "apps/admin/src/settings/mailSettingsValidation.ts",
     "message": "Unsafe Regular Expression",
-    "codeLine": "return /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label);"
+    "codeLine": "return /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label);",
+    "contextBefore": "if (label.length === 0 || label.length > 63) return false;",
+    "contextAfter": "}"
   },
   {
     "ruleId": null,
     "filePath": "apps/web/src/admin/admin-build-meta.ts",
     "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-non-literal-fs-filename').",
-    "codeLine": "// eslint-disable-next-line security/detect-non-literal-fs-filename -- path from trusted dist root candidates"
+    "codeLine": "// eslint-disable-next-line security/detect-non-literal-fs-filename -- path from trusted dist root candidates",
+    "contextBefore": "try {",
+    "contextAfter": "accessSync(join(root, \"index.html\"), constants.R_OK);"
   },
   {
     "ruleId": null,
     "filePath": "apps/web/src/admin/health-check-routes.ts",
     "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-non-literal-fs-filename').",
-    "codeLine": "// eslint-disable-next-line security/detect-non-literal-fs-filename"
+    "codeLine": "// eslint-disable-next-line security/detect-non-literal-fs-filename",
+    "contextBefore": "// X_OK: directory must be searchable so children can be created (Unix).",
+    "contextAfter": "await access(uploadPath, constants.R_OK | constants.W_OK | constants.X_OK);"
   },
   {
     "ruleId": "security/detect-unsafe-regex",
     "filePath": "apps/web/src/admin/sse-channel.ts",
     "message": "Unsafe Regular Expression",
-    "codeLine": "return host === \"localhost\" || host === \"redis\" || host === \"::1\" || /^127(?:\\.\\d{1,3}){3}$/.test(host);"
+    "codeLine": "return host === \"localhost\" || host === \"redis\" || host === \"::1\" || /^127(?:\\.\\d{1,3}){3}$/.test(host);",
+    "contextBefore": "const host = url.hostname.toLowerCase();",
+    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-non-literal-fs-filename",
     "filePath": "apps/web/src/notification-email-assets.ts",
     "message": "Found existsSync from package \"node:fs\" with non literal argument at index 0",
-    "codeLine": "if (existsSync(join(candidate, \"packages/ui/src/assets/admitto-logo.svg\"))) return candidate;"
+    "codeLine": "if (existsSync(join(candidate, \"packages/ui/src/assets/admitto-logo.svg\"))) return candidate;",
+    "contextBefore": "for (const candidate of [join(here, \"../../..\"), join(here, \"../../../..\")]) {",
+    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-non-literal-fs-filename",
     "filePath": "apps/web/src/notification-email-assets.ts",
     "message": "Found readFileSync from package \"node:fs\" with non literal argument at index 0",
-    "codeLine": "const logoSvg = readFileSync(join(root, \"packages/ui/src/assets/admitto-logo.svg\"));"
+    "codeLine": "const logoSvg = readFileSync(join(root, \"packages/ui/src/assets/admitto-logo.svg\"));",
+    "contextBefore": "// Logo: rasterize the real product lockup, 3x for retina (displayed at width=118 in email HTML).",
+    "contextAfter": "const logoOut = join(targetDir, \"admitto-logo.png\");"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/location/src/addressComponents.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "const housenumber = parts[numberIdx]!;"
+    "codeLine": "const housenumber = parts[numberIdx]!;",
+    "contextBefore": "if (numberIdx >= 0 && parts.length >= 2) {",
+    "contextAfter": "const streetName = parts.find((s, i) => i !== numberIdx && !HOUSE_NUMBER_RE.test(s));"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/location/src/addressComponents.ts",
     "message": "Variable Assigned to Object Injection Sink",
-    "codeLine": "const v = raw[key];"
+    "codeLine": "const v = raw[key];",
+    "contextBefore": "const read = (key: keyof AddressComponents): string | null => {",
+    "contextAfter": "if (v === null || v === undefined) return null;"
   },
   {
     "ruleId": "security/detect-unsafe-regex",
     "filePath": "packages/location/src/addressComponents.ts",
     "message": "Unsafe Regular Expression",
-    "codeLine": "const HOUSE_NUMBER_RE = /^\\d+[a-zA-Z]?(?:[/-]\\d+[a-zA-Z]?)?$/;"
+    "codeLine": "const HOUSE_NUMBER_RE = /^\\d+[a-zA-Z]?(?:[/-]\\d+[a-zA-Z]?)?$/;",
+    "contextBefore": "/** Standalone house-number token: `12`, `12A`, `12/14`, `1-3`. */",
+    "contextAfter": "/** \"Wybrzeże Szczecińskie 1\" - number glued to the street name in one Nominatim segment. */"
   },
   {
     "ruleId": "security/detect-unsafe-regex",
     "filePath": "packages/location/src/addressComponents.ts",
     "message": "Unsafe Regular Expression",
-    "codeLine": "const TRAILING_NUMBER_IN_SEGMENT_RE = /^(.*\\S)\\s+(\\d+[a-zA-Z]?(?:[/-]\\d+[a-zA-Z]?)?)$/;"
+    "codeLine": "const TRAILING_NUMBER_IN_SEGMENT_RE = /^(.*\\S)\\s+(\\d+[a-zA-Z]?(?:[/-]\\d+[a-zA-Z]?)?)$/;",
+    "contextBefore": "/** \"Wybrzeże Szczecińskie 1\" - number glued to the street name in one Nominatim segment. */",
+    "contextAfter": ""
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/location/src/validation.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "if (value !== undefined) result[key] = value;"
+    "codeLine": "if (value !== undefined) result[key] = value;",
+    "contextBefore": "): void {",
+    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/mail-delivery/src/bounceIngest/extractMimeText.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "const seg = segments[i] ?? \"\";"
+    "codeLine": "const seg = segments[i] ?? \"\";",
+    "contextBefore": "for (let i = 1; i < segments.length; i++) {",
+    "contextAfter": "if (seg.startsWith(\"--\")) break;"
   },
   {
     "ruleId": "security/detect-unsafe-regex",
     "filePath": "packages/mail-delivery/src/bounceIngest/extractMimeText.ts",
     "message": "Unsafe Regular Expression",
-    "codeLine": "const withoutTags = withLineBreaks.replace(/<\\/?[a-zA-Z][a-zA-Z0-9-]*(?:\\s[^<>]*)?\\/?>/g, \" \");"
+    "codeLine": "const withoutTags = withLineBreaks.replace(/<\\/?[a-zA-Z][a-zA-Z0-9-]*(?:\\s[^<>]*)?\\/?>/g, \" \");",
+    "contextBefore": ".replace(/<\\/(p|div|li|tr|h[1-6])>/gi, \"\\n\");",
+    "contextAfter": "return decodeHtmlEntities(withoutTags)"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/mail-delivery/src/bounceIngest/lastRun.ts",
     "message": "Variable Assigned to Object Injection Sink",
-    "codeLine": "const raw = env[key];"
+    "codeLine": "const raw = env[key];",
+    "contextBefore": ": \"BOUNCE_INGEST_INTERVAL_SECONDS\";",
+    "contextAfter": "if (raw === undefined || raw === \"\") return;"
   },
   {
     "ruleId": "security/detect-non-literal-regexp",
     "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
     "message": "Found non-literal argument to RegExp Constructor",
-    "codeLine": "const RE_ANGLE_EMAIL = new RegExp(`<${EMAIL_RE}>`, \"i\");"
+    "codeLine": "const RE_ANGLE_EMAIL = new RegExp(`<${EMAIL_RE}>`, \"i\");",
+    "contextBefore": "",
+    "contextAfter": "const RE_BARE_EMAIL = new RegExp(`^${EMAIL_RE}$`, \"i\");"
   },
   {
     "ruleId": "security/detect-non-literal-regexp",
     "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
     "message": "Found non-literal argument to RegExp Constructor",
-    "codeLine": "const RE_ANGLE_EMAIL_GI = new RegExp(`<${EMAIL_RE}>`, \"gi\");"
+    "codeLine": "const RE_ANGLE_EMAIL_GI = new RegExp(`<${EMAIL_RE}>`, \"gi\");",
+    "contextBefore": ");",
+    "contextAfter": ""
   },
   {
     "ruleId": "security/detect-non-literal-regexp",
     "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
     "message": "Found non-literal argument to RegExp Constructor",
-    "codeLine": "const RE_ANY_EMAIL = new RegExp(EMAIL_RE, \"i\");"
+    "codeLine": "const RE_ANY_EMAIL = new RegExp(EMAIL_RE, \"i\");",
+    "contextBefore": "const RE_BARE_EMAIL = new RegExp(`^${EMAIL_RE}$`, \"i\");",
+    "contextAfter": "const RE_STATUS = /^(\\d)\\.(\\d+)\\.(\\d+)/;"
   },
   {
     "ruleId": "security/detect-non-literal-regexp",
     "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
     "message": "Found non-literal argument to RegExp Constructor",
-    "codeLine": "const RE_BARE_EMAIL = new RegExp(`^${EMAIL_RE}$`, \"i\");"
+    "codeLine": "const RE_BARE_EMAIL = new RegExp(`^${EMAIL_RE}$`, \"i\");",
+    "contextBefore": "const RE_ANGLE_EMAIL = new RegExp(`<${EMAIL_RE}>`, \"i\");",
+    "contextAfter": "const RE_ANY_EMAIL = new RegExp(EMAIL_RE, \"i\");"
   },
   {
     "ruleId": "security/detect-non-literal-regexp",
     "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
     "message": "Found non-literal argument to RegExp Constructor",
-    "codeLine": "const RE_NEAR_ORPHAN = new RegExp("
+    "codeLine": "const RE_NEAR_ORPHAN = new RegExp(",
+    "contextBefore": "const RE_DIAG_ENHANCED = /\\b(\\d\\.\\d\\.\\d)\\b/;",
+    "contextAfter": "String.raw`${EMAIL_RE}\\s*(?:\\n[^\\n]*){0,6}\\nfailed:\\s+host\\s+`,"
   },
   {
     "ruleId": "security/detect-non-literal-regexp",
     "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
     "message": "Found non-literal argument to RegExp Constructor",
-    "codeLine": "pattern: new RegExp("
+    "codeLine": "pattern: new RegExp(",
+    "contextBefore": "id: \"failed-host-said\",",
+    "contextAfter": "String.raw`<?${EMAIL_RE}>?\\s*failed:\\s+${HOST_SAID}(\\d{3})\\s+(?:(\\d\\.\\d\\.\\d)\\s+)?(?:\\S+:\\s+)?(.+?)${REPLY_TAIL}`,"
   },
   {
     "ruleId": "security/detect-non-literal-regexp",
     "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
     "message": "Found non-literal argument to RegExp Constructor",
-    "codeLine": "pattern: new RegExp("
+    "codeLine": "pattern: new RegExp(",
+    "contextBefore": "id: \"orphan-failed\",",
+    "contextAfter": "String.raw`(?:^|\\n)failed:\\s+${HOST_SAID}(\\d{3})\\s+(?:(\\d\\.\\d\\.\\d)\\s+)?:?\\s*(.+?)${REPLY_TAIL}`,"
   },
   {
     "ruleId": "security/detect-non-literal-regexp",
     "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
     "message": "Found non-literal argument to RegExp Constructor",
-    "codeLine": "pattern: new RegExp("
+    "codeLine": "pattern: new RegExp(",
+    "contextBefore": "id: \"postfix-angle-bracket\",",
+    "contextAfter": "String.raw`<${EMAIL_RE}>:\\s+${HOST_SAID}(\\d{3})\\s+(?:(\\d\\.\\d\\.\\d)\\s+)?(?:<[^>]+>:\\s+)?(.+?)${REPLY_TAIL}`,"
   },
   {
     "ruleId": "security/detect-non-literal-regexp",
     "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
     "message": "Found non-literal argument to RegExp Constructor",
-    "codeLine": "pattern: new RegExp("
+    "codeLine": "pattern: new RegExp(",
+    "contextBefore": "id: \"postfix-enhanced\",",
+    "contextAfter": "String.raw`${EMAIL_RE}\\s+failed:\\s+${HOST_SAID}(\\d{3})\\s+(\\d\\.\\d\\.\\d)\\s+\\S+:\\s+(.+?)${REPLY_TAIL}`,"
   },
   {
     "ruleId": "security/detect-unsafe-regex",
     "filePath": "packages/mail-delivery/src/bounceIngest/parseBounceLine.ts",
     "message": "Unsafe Regular Expression",
-    "codeLine": "for (const block of normalized.split(/\\n(?:[ \\t]*\\n)+/)) {"
+    "codeLine": "for (const block of normalized.split(/\\n(?:[ \\t]*\\n)+/)) {",
+    "contextBefore": "// Split on blank lines into header-like field groups (RFC 3464 §2).",
+    "contextAfter": "parseOneDsnBlock(block, out, seen);"
   },
   {
     "ruleId": "security/detect-unsafe-regex",
     "filePath": "packages/shared/src/timezones.ts",
     "message": "Unsafe Regular Expression",
-    "codeLine": "const GMT_OFFSET_RE = /^GMT([+-])(\\d{1,2})(?::(\\d{2}))?$/;"
+    "codeLine": "const GMT_OFFSET_RE = /^GMT([+-])(\\d{1,2})(?::(\\d{2}))?$/;",
+    "contextBefore": "const NICE_ABBREVIATION_RE = /^[A-Za-z]{2,5}$/;",
+    "contextAfter": ""
   },
   {
     "ruleId": null,
     "filePath": "packages/storage/src/adapters/local.ts",
     "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-non-literal-fs-filename').",
-    "codeLine": "// eslint-disable-next-line security/detect-non-literal-fs-filename"
+    "codeLine": "// eslint-disable-next-line security/detect-non-literal-fs-filename",
+    "contextBefore": "// dir is always under root (starts at root, descends via readdir join).",
+    "contextAfter": "entries = await resolved.readdir(dir, { withFileTypes: true });"
   },
   {
     "ruleId": "security/detect-unsafe-regex",
     "filePath": "packages/storage/src/keys.ts",
     "message": "Unsafe Regular Expression",
-    "codeLine": "const re = /\\/uploads\\/([a-z0-9][a-z0-9_-]{0,63}(?:\\/(?:theme|events\\/[a-z0-9][a-z0-9_-]{0,127}))?\\/[0-9a-f-]{36}\\.(?:png|jpg|webp|woff2|woff|ttf|otf))/gi;"
+    "codeLine": "const re = /\\/uploads\\/([a-z0-9][a-z0-9_-]{0,63}(?:\\/(?:theme|events\\/[a-z0-9][a-z0-9_-]{0,127}))?\\/[0-9a-f-]{36}\\.(?:png|jpg|webp|woff2|woff|ttf|otf))/gi;",
+    "contextBefore": "// Capture path after /uploads/ until whitespace, quote, or HTML/CSS delimiter.",
+    "contextAfter": "for (const match of text.matchAll(re)) {"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/attendees-export-pdf.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "const value = cells[i] ?? \"\";"
+    "codeLine": "const value = cells[i] ?? \"\";",
+    "contextBefore": "for (let i = 0; i < metrics.length; i++) {",
+    "contextAfter": "metrics[i]!.maxWidth = Math.max(metrics[i]!.maxWidth, doc.widthOfString(value));"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/attendees-export-pdf.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "doc.text(cells[i] ?? \"\", x, y, cellOptions(plan.contentWidths[i]!, rowHeight));"
+    "codeLine": "doc.text(cells[i] ?? \"\", x, y, cellOptions(plan.contentWidths[i]!, rowHeight));",
+    "contextBefore": "for (let i = 0; i < cells.length; i++) {",
+    "contextAfter": "x += plan.slotWidths[i]!;"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/attendees-export-pdf.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "doc.text(cells[i] ?? \"\", x, y, cellOptions(plan.contentWidths[i]!, rowHeight));"
+    "codeLine": "doc.text(cells[i] ?? \"\", x, y, cellOptions(plan.contentWidths[i]!, rowHeight));",
+    "contextBefore": "for (let i = 0; i < cells.length; i++) {",
+    "contextAfter": "x += plan.slotWidths[i]!;"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/attendees-export-pdf.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "doc.text(exportColumns[i]!, x, y, cellOptions(plan.contentWidths[i]!, headerHeight));"
+    "codeLine": "doc.text(exportColumns[i]!, x, y, cellOptions(plan.contentWidths[i]!, headerHeight));",
+    "contextBefore": "for (let i = 0; i < exportColumns.length; i++) {",
+    "contextAfter": "x += plan.slotWidths[i]!;"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/attendees-export-pdf.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "doc.text(exportColumns[i]!, x, y, cellOptions(plan.contentWidths[i]!, headerHeight));"
+    "codeLine": "doc.text(exportColumns[i]!, x, y, cellOptions(plan.contentWidths[i]!, headerHeight));",
+    "contextBefore": "for (let i = 0; i < exportColumns.length; i++) {",
+    "contextAfter": "x += plan.slotWidths[i]!;"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/attendees-export-pdf.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "height = Math.max(height, doc.heightOfString(cells[i] ?? \"\", { width: contentWidths[i]! }));"
+    "codeLine": "height = Math.max(height, doc.heightOfString(cells[i] ?? \"\", { width: contentWidths[i]! }));",
+    "contextBefore": "for (let i = 0; i < cells.length; i++) {",
+    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/attendees-export-pdf.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "height = Math.max(height, doc.heightOfString(cells[i] ?? \"\", { width: contentWidths[i]! }));"
+    "codeLine": "height = Math.max(height, doc.heightOfString(cells[i] ?? \"\", { width: contentWidths[i]! }));",
+    "contextBefore": "for (let i = 0; i < cells.length; i++) {",
+    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/attendees-export-pdf.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "if (scaled[i]! > widestWidth) {"
+    "codeLine": "if (scaled[i]! > widestWidth) {",
+    "contextBefore": "for (let i = 0; i < scaled.length; i++) {",
+    "contextAfter": "widestWidth = scaled[i]!;"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/attendees-export-pdf.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "metrics[i]!.maxWidth = Math.max(metrics[i]!.maxWidth, doc.widthOfString(value));"
+    "codeLine": "metrics[i]!.maxWidth = Math.max(metrics[i]!.maxWidth, doc.widthOfString(value));",
+    "contextBefore": "const value = cells[i] ?? \"\";",
+    "contextAfter": "metrics[i]!.minWidth = Math.max(metrics[i]!.minWidth, widestTokenWidth(doc, value));"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/attendees-export-pdf.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "metrics[i]!.maxWidth = Math.max(metrics[i]!.maxWidth, doc.widthOfString(value));"
+    "codeLine": "metrics[i]!.maxWidth = Math.max(metrics[i]!.maxWidth, doc.widthOfString(value));",
+    "contextBefore": "const value = cells[i] ?? \"\";",
+    "contextAfter": "metrics[i]!.minWidth = Math.max(metrics[i]!.minWidth, widestTokenWidth(doc, value));"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/attendees-export-pdf.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "metrics[i]!.minWidth = Math.max(metrics[i]!.minWidth, widestTokenWidth(doc, value));"
+    "codeLine": "metrics[i]!.minWidth = Math.max(metrics[i]!.minWidth, widestTokenWidth(doc, value));",
+    "contextBefore": "metrics[i]!.maxWidth = Math.max(metrics[i]!.maxWidth, doc.widthOfString(value));",
+    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/attendees-export-pdf.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "metrics[i]!.minWidth = Math.max(metrics[i]!.minWidth, widestTokenWidth(doc, value));"
+    "codeLine": "metrics[i]!.minWidth = Math.max(metrics[i]!.minWidth, widestTokenWidth(doc, value));",
+    "contextBefore": "metrics[i]!.maxWidth = Math.max(metrics[i]!.maxWidth, doc.widthOfString(value));",
+    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/attendees-export-pdf.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "scaled[widest]!--;"
+    "codeLine": "scaled[widest]!--;",
+    "contextBefore": "if (widest < 0) break;",
+    "contextAfter": "scaledTotal--;"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/attendees-export-pdf.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "widestWidth = scaled[i]!;"
+    "codeLine": "widestWidth = scaled[i]!;",
+    "contextBefore": "if (scaled[i]! > widestWidth) {",
+    "contextAfter": "widest = i;"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/attendees-export-pdf.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "x += plan.slotWidths[i]!;"
+    "codeLine": "x += plan.slotWidths[i]!;",
+    "contextBefore": "doc.text(cells[i] ?? \"\", x, y, cellOptions(plan.contentWidths[i]!, rowHeight));",
+    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/attendees-export-pdf.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "x += plan.slotWidths[i]!;"
+    "codeLine": "x += plan.slotWidths[i]!;",
+    "contextBefore": "doc.text(exportColumns[i]!, x, y, cellOptions(plan.contentWidths[i]!, headerHeight));",
+    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/resolve.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "if (typeof v === \"string\" && v.trim()) out[key] = v.trim();"
+    "codeLine": "if (typeof v === \"string\" && v.trim()) out[key] = v.trim();",
+    "contextBefore": "for (const [key, v] of Object.entries(value as Record<string, unknown>)) {",
+    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/resolve.ts",
     "message": "Variable Assigned to Object Injection Sink",
-    "codeLine": "const v = raw[key];"
+    "codeLine": "const v = raw[key];",
+    "contextBefore": "const read = (key: string): string | null => {",
+    "contextAfter": "if (typeof v !== \"string\") return null;"
   },
   {
     "ruleId": "security/detect-unsafe-regex",
     "filePath": "packages/tickets/src/wallet-pass-input.ts",
     "message": "Unsafe Regular Expression",
-    "codeLine": "const match = /^GMT([+-])(\\d{1,2})(?::?(\\d{2}))?$/.exec(part);"
+    "codeLine": "const match = /^GMT([+-])(\\d{1,2})(?::?(\\d{2}))?$/.exec(part);",
+    "contextBefore": "if (!part || part === \"GMT\") return \"Z\";",
+    "contextAfter": "if (!match) return \"Z\";"
   },
   {
     "ruleId": null,
     "filePath": "packages/ui/src/components/Tooltip.tsx",
     "message": "Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps').",
-    "codeLine": "// eslint-disable-next-line react-hooks/exhaustive-deps -- hide/show are stable per render, not deps"
+    "codeLine": "// eslint-disable-next-line react-hooks/exhaustive-deps -- hide/show are stable per render, not deps",
+    "contextBefore": "return () => observer.disconnect();",
+    "contextAfter": "}, [visible]);"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/wallet/src/passcreator-mapper.ts",
     "message": "Generic Object Injection Sink",
-    "codeLine": "if (value) custom[key] = value;"
+    "codeLine": "if (value) custom[key] = value;",
+    "contextBefore": "const value = values[placeholder];",
+    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/wallet/src/passcreator-mapper.ts",
     "message": "Variable Assigned to Object Injection Sink",
-    "codeLine": "const placeholders = table[field];"
+    "codeLine": "const placeholders = table[field];",
+    "contextBefore": "): boolean {",
+    "contextAfter": "if (placeholders === undefined) return true;"
   },
   {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/wallet/src/passcreator-mapper.ts",
     "message": "Variable Assigned to Object Injection Sink",
-    "codeLine": "const value = values[placeholder];"
+    "codeLine": "const value = values[placeholder];",
+    "contextBefore": "for (const [key, placeholder] of Object.entries(fieldMapping)) {",
+    "contextAfter": "if (value) custom[key] = value;"
   }
 ]
