@@ -32,6 +32,16 @@ env:
   REDIS_URL: redis://localhost:6379
   # Fixed test key — 32 bytes. Not a production secret; used only in CI test runs.
   ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  # ip-location-api (apps/web/src/rate-limit/ip-location.ts) runs its own randomized-jitter
+  # auto-update check at import time unless told not to (apps/web/.env.example sets this same
+  # value for local dev, for the same reason) - without it, any test-web run can hit a real
+  # outbound network call to refresh its IP-to-country database, and a malformed row in that
+  # live download crashes the whole importing test file with an uncaught exception unrelated to
+  # anything under test (confirmed in CI: "AddressError: Invalid IPv4 address" from
+  # ip-location-api's own CSV parser, a different test file each time depending on which worker's
+  # randomized check happened to fire). More concurrent web-unit workers (see maxWorkers) directly
+  # raises the odds that at least one of them rolls that check during a run.
+  ILA_AUTO_UPDATE: "false"
 
 jobs:
   wiki-docs:
