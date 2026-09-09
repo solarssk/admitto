@@ -27,7 +27,11 @@ export type GracefulShutdownDeps = {
   log?: Pick<typeof logger, "info" | "warn">;
 };
 
-const DEFAULT_TIMEOUT_MS = 8_000;
+// The two budgets below run sequentially (disconnect only starts once the drain/force-close step
+// settles), so their sum - not either one alone - is what must stay under
+// deploy/docker-compose.yml's default 10s stop_grace_period, with margin for the rest of this
+// function's own overhead (logging, promise scheduling).
+const DEFAULT_TIMEOUT_MS = 6_000;
 const DEFAULT_DISCONNECT_TIMEOUT_MS = 3_000;
 
 function closeServer(server: CloseableServer): Promise<void> {
@@ -53,7 +57,9 @@ function raceTimeout(promise: Promise<void>, ms: number): Promise<"done" | "time
  * (apps/cli/src/index.ts, commands/worker.ts), this server has other long-lived resources (the
  * rate-limit store's and SSE fan-out's Redis clients, cache-sweep timers) that aren't torn down
  * here, so the event loop won't drain on its own; the caller must exit explicitly once the
- * returned function resolves. Guards against a second signal re-entering mid-shutdown.
+ * returned function resolves. A second signal arriving mid-shutdown gets back the *same* promise
+ * as the first, rather than a fresh, already-resolved one - the caller's `.then(() => exit())`
+ * must wait for the one real cleanup in progress, not fire early and cut it off.
  */
 export function createGracefulShutdown(
   deps: GracefulShutdownDeps,
@@ -61,11 +67,9 @@ export function createGracefulShutdown(
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const disconnectTimeoutMs = deps.disconnectTimeoutMs ?? DEFAULT_DISCONNECT_TIMEOUT_MS;
   const log = deps.log ?? logger;
-  let shuttingDown = false;
+  let shutdownPromise: Promise<void> | undefined;
 
-  return async function shutdown(signal: string): Promise<void> {
-    if (shuttingDown) return;
-    shuttingDown = true;
+  async function runShutdown(signal: string): Promise<void> {
     log.info("shutdown signal received", { signal });
 
     const closed = Promise.all(deps.servers.map(closeServer)).then(() => undefined);
@@ -87,6 +91,11 @@ export function createGracefulShutdown(
     }
 
     log.info("shutdown complete", { signal });
+  }
+
+  return function shutdown(signal: string): Promise<void> {
+    shutdownPromise ??= runShutdown(signal);
+    return shutdownPromise;
   };
 }
 
@@ -100,8 +109,16 @@ export function installGracefulShutdown(
   exit: (code: number) => void = process.exit,
 ): void {
   const shutdown = createGracefulShutdown({ servers, disconnect });
+  // Every signal's own onSignal closure chains its own `.then()` onto the *same* shutdown
+  // promise (createGracefulShutdown only runs the real work once) - without this guard, two
+  // signals would still call exit() twice, once per attached `.then()`.
+  let exited = false;
   const onSignal = (signal: NodeJS.Signals): void => {
-    void shutdown(signal).then(() => exit(0));
+    void shutdown(signal).then(() => {
+      if (exited) return;
+      exited = true;
+      exit(0);
+    });
   };
   process.on("SIGTERM", onSignal);
   process.on("SIGINT", onSignal);

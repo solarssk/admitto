@@ -85,6 +85,33 @@ describe("createGracefulShutdown", () => {
     expect(disconnect).toHaveBeenCalledOnce();
   });
 
+  it("returns the same promise to a second signal instead of one that resolves early", async () => {
+    let releaseClose: (() => void) | undefined;
+    const server: CloseableServer = {
+      close: (cb) => {
+        releaseClose = cb;
+      },
+    };
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    const shutdown = createGracefulShutdown({ servers: [server], disconnect, log: fakeLog() });
+
+    const first = shutdown("SIGTERM");
+    const second = shutdown("SIGINT");
+    expect(second).toBe(first);
+
+    let secondResolved = false;
+    void second.then(() => {
+      secondResolved = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(secondResolved).toBe(false);
+
+    releaseClose?.();
+    await second;
+    expect(secondResolved).toBe(true);
+  });
+
   it("does not block exit when the database disconnect times out", async () => {
     vi.useFakeTimers();
     const server = instantServer();
@@ -183,5 +210,32 @@ describe("installGracefulShutdown", () => {
 
     expect(disconnect).toHaveBeenCalledOnce();
     expect(exit).toHaveBeenCalledWith(0);
+  });
+
+  it("does not exit early when a second signal arrives mid-shutdown", async () => {
+    const server = hangingServer();
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    const exit = vi.fn();
+
+    const beforeTerm = process.listeners("SIGTERM");
+    const beforeInt = process.listeners("SIGINT");
+    installGracefulShutdown([server], disconnect, exit);
+    const addedTerm = process.listeners("SIGTERM").filter((l) => !beforeTerm.includes(l));
+    const addedInt = process.listeners("SIGINT").filter((l) => !beforeInt.includes(l));
+
+    process.emit("SIGTERM");
+    process.emit("SIGINT");
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(exit).not.toHaveBeenCalled();
+
+    server.closeAllConnections?.();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(disconnect).toHaveBeenCalledOnce();
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(exit).toHaveBeenCalledWith(0);
+
+    for (const listener of addedTerm) process.removeListener("SIGTERM", listener as () => void);
+    for (const listener of addedInt) process.removeListener("SIGINT", listener as () => void);
   });
 });
