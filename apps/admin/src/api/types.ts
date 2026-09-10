@@ -1374,6 +1374,46 @@ export interface NotificationSettingsTestResponse {
   in_app: NotificationSettingsTestChannelResult;
 }
 
+/** Personal (per-account) notification preferences - unlike NotificationChannelKind above, never
+ * includes "webhook": it's a team-wide destination configured once per organization, not
+ * personalized per user. */
+export type PersonalNotificationChannelKind = "email" | "in_app";
+
+export interface PersonalNotificationTypeDto {
+  id: string;
+  label: string;
+  default_severity: string;
+  available_channels: PersonalNotificationChannelKind[];
+  /** Only keys present in available_channels are set. */
+  channels: Partial<Record<PersonalNotificationChannelKind, boolean>>;
+}
+
+export interface PersonalNotificationPreferencesResponse {
+  notification_types: PersonalNotificationTypeDto[];
+}
+
+export interface PatchNotificationPreferenceBody {
+  notification_type: string;
+  channel: PersonalNotificationChannelKind;
+  enabled: boolean;
+}
+
+export interface NotificationDto {
+  id: string;
+  organization_name: string | null;
+  notification_type: string;
+  severity: string;
+  title: string;
+  body: string;
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface NotificationsListResponse {
+  notifications: NotificationDto[];
+  unread_count: number;
+}
+
 export type SessionRole = "superadmin" | "admin" | "operator";
 export type SettingSource = "env" | "db" | "default";
 

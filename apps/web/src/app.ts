@@ -401,6 +401,14 @@ import {
   MAX_WEBAUTHN_BODY_BYTES,
 } from "./admin/account-routes.js";
 import {
+  handleGetAccountNotificationPreferences,
+  handlePatchAccountNotificationPreference,
+  handleGetAccountNotifications,
+  handleGetAccountNotificationsUnreadCount,
+  handlePatchAccountNotificationRead,
+  handlePostAccountNotificationsMarkAllRead,
+} from "./admin/account-notifications-routes.js";
+import {
   handleGetSystemSettings,
   handlePatchSystemSettings,
 } from "./admin/system-settings-routes.js";
@@ -2124,6 +2132,22 @@ export function createApp(options: CreateAppOptions = {}) {
   app.get("/api/account/sessions", requireSession, (c) => handleGetAccountSessions(c, db));
   app.delete("/api/account/sessions/:sessionId", jsonPostCsrf, requireSession, (c) =>
     handleDeleteAccountSession(c, db),
+  );
+  app.get("/api/account/notifications/preferences", requireSession, (c) =>
+    handleGetAccountNotificationPreferences(c, db),
+  );
+  app.patch("/api/account/notifications/preferences", jsonPostCsrf, requireSession, (c) =>
+    handlePatchAccountNotificationPreference(c, db),
+  );
+  app.get("/api/account/notifications/unread-count", requireSession, (c) =>
+    handleGetAccountNotificationsUnreadCount(c, db),
+  );
+  app.get("/api/account/notifications", requireSession, (c) => handleGetAccountNotifications(c, db));
+  app.patch("/api/account/notifications/:id/read", jsonPostCsrf, requireSession, (c) =>
+    handlePatchAccountNotificationRead(c, db),
+  );
+  app.post("/api/account/notifications/mark-all-read", jsonPostCsrf, requireSession, (c) =>
+    handlePostAccountNotificationsMarkAllRead(c, db),
   );
   app.delete("/api/account/mfa/trusted-devices", jsonPostCsrf, requireSession, (c) =>
     handleDeleteAccountTrustedDevices(c, db),

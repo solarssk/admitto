@@ -13,6 +13,11 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     ...actual,
     fetchAccount: vi.fn(),
     fetchAccountSessions: vi.fn(),
+    // Defaults to an empty grid (not overridden per-test like fetchAccount/fetchAccountSessions)
+    // so it never errors and renders a stray "Retry" button that would collide with the Sessions
+    // card's own - tests that specifically exercise the notifications card override this.
+    fetchAccountNotificationPreferences: vi.fn().mockResolvedValue({ notification_types: [] }),
+    patchAccountNotificationPreference: vi.fn(),
     patchAccountProfile: vi.fn(),
     patchAccountPassword: vi.fn(),
     enrollMfaTotp: vi.fn(),
@@ -63,7 +68,9 @@ vi.mock("../../src/account/TotpQrCode.js", () => ({
 
 import {
   fetchAccount,
+  fetchAccountNotificationPreferences,
   fetchAccountSessions,
+  patchAccountNotificationPreference,
   patchAccountProfile,
   patchAccountPassword,
   enrollMfaTotp,
@@ -87,6 +94,8 @@ const mockDeleteSession = vi.mocked(deleteAccountSession);
 
 const mockFetchAccount = vi.mocked(fetchAccount);
 const mockFetchSessions = vi.mocked(fetchAccountSessions);
+const mockFetchNotificationPreferences = vi.mocked(fetchAccountNotificationPreferences);
+const mockPatchNotificationPreference = vi.mocked(patchAccountNotificationPreference);
 const mockPatchProfile = vi.mocked(patchAccountProfile);
 const mockPatchPassword = vi.mocked(patchAccountPassword);
 const mockEnrollMfaTotp = vi.mocked(enrollMfaTotp);
@@ -3902,5 +3911,87 @@ describe("AccountPage: Backup codes", () => {
     fireEvent.click(document.querySelector(".at-modal-backdrop")!);
 
     expect(screen.getByRole("dialog", { name: "Manage backup codes" })).toBeTruthy();
+  });
+});
+
+describe("AccountPage: Notifications", () => {
+  const TYPE_A = {
+    id: "auth.login.repeated_failures",
+    label: "Repeated failed logins on an admin account",
+    default_severity: "error",
+    available_channels: ["email", "in_app"] as const,
+    channels: { email: true, in_app: true },
+  };
+
+  it("renders the grid with the loaded preferences", async () => {
+    mockLoadedAccount();
+    mockFetchNotificationPreferences.mockResolvedValue({ notification_types: [TYPE_A] });
+
+    renderWithToast(<AccountPage />);
+
+    await screen.findByText(TYPE_A.label);
+    const emailSwitch = screen.getByRole("switch", {
+      name: `${TYPE_A.label} - Email`,
+    }) as HTMLInputElement;
+    const inAppSwitch = screen.getByRole("switch", {
+      name: `${TYPE_A.label} - In-app`,
+    }) as HTMLInputElement;
+    expect(emailSwitch.checked).toBe(true);
+    expect(inAppSwitch.checked).toBe(true);
+  });
+
+  it("saves a toggle immediately and reflects the server's response", async () => {
+    mockLoadedAccount();
+    mockFetchNotificationPreferences.mockResolvedValue({ notification_types: [TYPE_A] });
+    mockPatchNotificationPreference.mockResolvedValue({
+      notification_types: [{ ...TYPE_A, channels: { email: false, in_app: true } }],
+    });
+
+    renderWithToast(<AccountPage />);
+    await screen.findByText(TYPE_A.label);
+
+    fireEvent.click(screen.getByRole("switch", { name: `${TYPE_A.label} - Email` }));
+
+    expect(mockPatchNotificationPreference).toHaveBeenCalledWith({
+      notification_type: TYPE_A.id,
+      channel: "email",
+      enabled: false,
+    });
+    await waitFor(() => {
+      expect((screen.getByRole("switch", { name: `${TYPE_A.label} - Email` }) as HTMLInputElement).checked).toBe(
+        false,
+      );
+    });
+  });
+
+  it("reverts the toggle and shows a toast when the save fails", async () => {
+    mockLoadedAccount();
+    mockFetchNotificationPreferences.mockResolvedValue({ notification_types: [TYPE_A] });
+    mockPatchNotificationPreference.mockRejectedValue(new Error("network down"));
+
+    renderWithToast(<AccountPage />);
+    await screen.findByText(TYPE_A.label);
+
+    fireEvent.click(screen.getByRole("switch", { name: `${TYPE_A.label} - Email` }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Failed to update notification preference.")).toBeTruthy();
+    });
+    expect((screen.getByRole("switch", { name: `${TYPE_A.label} - Email` }) as HTMLInputElement).checked).toBe(
+      true,
+    );
+  });
+
+  it("shows a retry action when the initial load fails", async () => {
+    mockLoadedAccount();
+    mockFetchNotificationPreferences.mockRejectedValueOnce(new Error("boom"));
+
+    renderWithToast(<AccountPage />);
+    await screen.findByText("Could not load notification preferences.");
+
+    mockFetchNotificationPreferences.mockResolvedValue({ notification_types: [TYPE_A] });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await screen.findByText(TYPE_A.label);
   });
 });

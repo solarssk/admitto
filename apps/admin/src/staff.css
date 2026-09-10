@@ -713,6 +713,115 @@
   color: var(--primary);
 }
 
+/* ── Topbar: NotificationBell ────────────────────────────────────── */
+.notif-bell__icon-wrap {
+  position: relative;
+  display: inline-flex;
+  font-size: 1.1rem;
+}
+
+.notif-bell__badge {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--surface-card);
+}
+
+.notif-bell__panel {
+  width: 340px;
+  max-width: calc(100vw - 24px);
+}
+
+.notif-bell__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 4px 10px 8px;
+}
+
+.notif-bell__head strong {
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+}
+
+.notif-bell__mark-all {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--primary);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.notif-bell__mark-all:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.notif-bell__mark-all:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.notif-bell__status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.notif-bell__status i {
+  font-size: 1.5rem;
+}
+
+.notif-bell__retry {
+  border: 1px solid var(--border);
+  background: none;
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.notif-bell__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.notif-bell__row {
+  align-items: flex-start;
+}
+
+.notif-bell__row--unread .user-menu__item-text strong {
+  font-weight: 700;
+}
+
+.notif-bell__row--unread::after {
+  content: "";
+  flex: none;
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
 /* ─── Page header ─────────────────────────────────────────────────────────── */
 .placeholder-note {
   color: var(--text-secondary);

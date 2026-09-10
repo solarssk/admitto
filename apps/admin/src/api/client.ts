@@ -86,6 +86,9 @@ import type {
   NotificationSettingsResponse,
   SaveNotificationSettingsBody,
   NotificationSettingsTestResponse,
+  PersonalNotificationPreferencesResponse,
+  PatchNotificationPreferenceBody,
+  NotificationsListResponse,
   DeliveryDetailDto,
   RenderedDeliveryDto,
   SessionsResponse,
@@ -2757,6 +2760,48 @@ export async function fetchAccountSessions(signal?: AbortSignal): Promise<Sessio
 export async function deleteAccountSession(sessionId: string): Promise<void> {
   const res = await fetch(`/api/account/sessions/${encodeURIComponent(sessionId)}`, jsonDeleteInit());
   await parseJson<unknown>(res);
+}
+
+export async function fetchAccountNotificationPreferences(
+  signal?: AbortSignal,
+): Promise<PersonalNotificationPreferencesResponse> {
+  const res = await fetch("/api/account/notifications/preferences", { credentials: "same-origin", signal });
+  return parseJson<PersonalNotificationPreferencesResponse>(res);
+}
+
+export async function patchAccountNotificationPreference(
+  body: PatchNotificationPreferenceBody,
+): Promise<PersonalNotificationPreferencesResponse> {
+  const res = await fetch("/api/account/notifications/preferences", jsonPatchInit(body));
+  return parseJson<PersonalNotificationPreferencesResponse>(res);
+}
+
+export async function fetchAccountNotifications(signal?: AbortSignal): Promise<NotificationsListResponse> {
+  const res = await fetch("/api/account/notifications", { credentials: "same-origin", signal });
+  return parseJson<NotificationsListResponse>(res);
+}
+
+export async function fetchAccountNotificationsUnreadCount(
+  signal?: AbortSignal,
+): Promise<{ unread_count: number }> {
+  const res = await fetch("/api/account/notifications/unread-count", { credentials: "same-origin", signal });
+  return parseJson<{ unread_count: number }>(res);
+}
+
+export async function markAccountNotificationRead(id: string): Promise<{ unread_count: number }> {
+  const res = await fetch(
+    `/api/account/notifications/${encodeURIComponent(id)}/read`,
+    jsonPatchInit({}),
+  );
+  return parseJson<{ unread_count: number }>(res);
+}
+
+export async function markAllAccountNotificationsRead(): Promise<{
+  updated_count: number;
+  unread_count: number;
+}> {
+  const res = await fetch("/api/account/notifications/mark-all-read", jsonPostInit({}));
+  return parseJson<{ updated_count: number; unread_count: number }>(res);
 }
 
 export async function forgetAllTrustedDevices(): Promise<{ devices_revoked: number }> {

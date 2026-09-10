@@ -1,6 +1,11 @@
 import type { PrismaClient } from "@admitto/db";
 import { describe, expect, it, vi } from "vitest";
-import { resolveEnabledChannels, resolveEnabledChannelsForUsers } from "../src/preferences.js";
+import {
+  resolveEnabledChannels,
+  resolveEnabledChannelsForUsers,
+  resolvePersonalPreferences,
+  setNotificationPreference,
+} from "../src/preferences.js";
 import { createStubDb } from "./stubDb.js";
 
 const TYPE = "auth.login.repeated_failures";
@@ -148,5 +153,91 @@ describe("resolveEnabledChannelsForUsers", () => {
     );
     expect(result.get("user-1")!.toSorted((a, b) => a.localeCompare(b))).toEqual(["email", "in_app"]);
     expect(result.get("user-2")).toEqual(["in_app"]);
+  });
+});
+
+describe("resolvePersonalPreferences", () => {
+  it("maps every userConfigurable type to its full non-webhook channel set when no rows exist", async () => {
+    const db = createStubDb();
+    db.notificationPreference.findMany.mockResolvedValue([]);
+
+    const result = await resolvePersonalPreferences(db as unknown as PrismaClient, "user-1");
+
+    expect(result.get(TYPE)!.toSorted((a, b) => a.localeCompare(b))).toEqual(["email", "in_app"]);
+    expect(result.get("auth.mfa.break_glass")!.toSorted((a, b) => a.localeCompare(b))).toEqual([
+      "email",
+      "in_app",
+    ]);
+  });
+
+  it("queries once across every userConfigurable type for the one user", async () => {
+    const db = createStubDb();
+    db.notificationPreference.findMany.mockResolvedValue([]);
+
+    await resolvePersonalPreferences(db as unknown as PrismaClient, "user-1");
+
+    expect(db.notificationPreference.findMany).toHaveBeenCalledTimes(1);
+    const call = db.notificationPreference.findMany.mock.calls[0]![0] as {
+      where: { user_id: string; notification_type: { in: string[] } };
+    };
+    expect(call.where.user_id).toBe("user-1");
+    expect(call.where.notification_type.in.toSorted()).toEqual(
+      [
+        "auth.login.repeated_failures",
+        "auth.mfa.break_glass",
+        "auth.settings.changed",
+        "auth.login.new_country",
+        WEBHOOK_ONLY_TYPE,
+      ].toSorted(),
+    );
+  });
+
+  it("narrows just the explicitly-disabled channel for one type, leaving other types untouched", async () => {
+    const db = createStubDb();
+    db.notificationPreference.findMany.mockResolvedValue([
+      { notification_type: TYPE, channel: "email", enabled: false },
+    ]);
+
+    const result = await resolvePersonalPreferences(db as unknown as PrismaClient, "user-1");
+
+    expect(result.get(TYPE)).toEqual(["in_app"]);
+    expect(result.get("auth.mfa.break_glass")!.toSorted((a, b) => a.localeCompare(b))).toEqual([
+      "email",
+      "in_app",
+    ]);
+  });
+
+  it("omits a non-userConfigurable type from the map entirely - nothing for the grid to toggle", async () => {
+    const db = createStubDb();
+    db.notificationPreference.findMany.mockResolvedValue([]);
+
+    const result = await resolvePersonalPreferences(db as unknown as PrismaClient, "user-1");
+
+    expect(result.has(MANDATORY_TYPE)).toBe(false);
+  });
+
+  it("maps a webhook-only type to an empty personal channel list", async () => {
+    const db = createStubDb();
+    db.notificationPreference.findMany.mockResolvedValue([]);
+
+    const result = await resolvePersonalPreferences(db as unknown as PrismaClient, "user-1");
+
+    expect(result.get(WEBHOOK_ONLY_TYPE)).toEqual([]);
+  });
+});
+
+describe("setNotificationPreference", () => {
+  it("upserts the given cell with the composite unique key", async () => {
+    const db = createStubDb();
+
+    await setNotificationPreference(db as unknown as PrismaClient, "user-1", TYPE, "email", false);
+
+    expect(db.notificationPreference.upsert).toHaveBeenCalledWith({
+      where: {
+        user_id_notification_type_channel: { user_id: "user-1", notification_type: TYPE, channel: "email" },
+      },
+      create: { user_id: "user-1", notification_type: TYPE, channel: "email", enabled: false },
+      update: { enabled: false },
+    });
   });
 });

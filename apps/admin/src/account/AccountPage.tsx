@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { browserSupportsPasskeys, sendSignal, startRegistration } from "@simplewebauthn/browser";
-import { Badge, Button, Card, Checkbox, EmptyState, HintLabel, Input, Notice, PasswordStrengthMeter, Spinner, useToast } from "@admitto/ui";
+import { Badge, Button, Card, Checkbox, EmptyState, HintLabel, Input, Notice, PasswordStrengthMeter, Spinner, Switch, useToast } from "@admitto/ui";
 import {
   ApiError,
   beginWebauthnRegistration,
@@ -11,10 +11,12 @@ import {
   deleteWebauthnCredential,
   enrollMfaTotp,
   fetchAccount,
+  fetchAccountNotificationPreferences,
   fetchAccountSessions,
   fetchBackupCodesStatus,
   finishWebauthnRegistration,
   forgetAllTrustedDevices,
+  patchAccountNotificationPreference,
   patchAccountPassword,
   patchAccountProfile,
   regenerateBackupCodes,
@@ -29,6 +31,8 @@ import type {
   AccountRoleDto,
   BackupCodesStatusResponse,
   MfaEnrollResponse,
+  PersonalNotificationChannelKind,
+  PersonalNotificationTypeDto,
   SessionListDto,
   StepUpProofBody,
   WebauthnAttachment,
@@ -40,7 +44,9 @@ import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
+import { NOTIFICATION_SEVERITY_ICON } from "../components/notificationSeverity.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
+import "../settings/notifications-panel.css";
 import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { ActorOrViewerLocalTimeLine } from "../components/ActorOrViewerLocalTimeLine.js";
@@ -444,6 +450,12 @@ export function AccountPage() {
   const [sessions, setSessions] = useState<SessionListDto[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const [notifPrefs, setNotifPrefs] = useState<PersonalNotificationTypeDto[]>([]);
+  const [notifPrefsLoading, setNotifPrefsLoading] = useState(true);
+  const [notifPrefsError, setNotifPrefsError] = useState<string | null>(null);
+  // `${notification_type}:${channel}` of the cell currently in flight, or null - disables just
+  // that one Switch while its own PATCH is out, not the whole grid.
+  const [notifPrefSaving, setNotifPrefSaving] = useState<string | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<SessionListDto | null>(null);
   const [revoking, setRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
@@ -542,6 +554,21 @@ export function AccountPage() {
     }
   }, []);
 
+  const loadNotificationPreferences = useCallback(async (signal?: AbortSignal) => {
+    setNotifPrefsLoading(true);
+    setNotifPrefsError(null);
+    try {
+      const data = await fetchAccountNotificationPreferences(signal);
+      setNotifPrefs(data.notification_types);
+    } catch (err) {
+      if (signal?.aborted) return;
+      if (redirectToLoginIfUnauthorized(err)) return;
+      setNotifPrefsError(operatorApiErrorMessage(err, "Could not load notification preferences."));
+    } finally {
+      if (!signal?.aborted) setNotifPrefsLoading(false);
+    }
+  }, []);
+
   /** GET /api/account/mfa/backup-codes doesn't come for free with loadAccount() (unlike
    * webauthn credentials, which ride along on AccountDto.mfa_methods) - fetched once on mount
    * the same way sessions are. A failure here just leaves the Backup codes row's count blank;
@@ -561,8 +588,9 @@ export function AccountPage() {
     void loadAccount(controller.signal);
     void loadSessions(controller.signal);
     void loadBackupCodesStatus(controller.signal);
+    void loadNotificationPreferences(controller.signal);
     return () => controller.abort();
-  }, [loadAccount, loadSessions, loadBackupCodesStatus]);
+  }, [loadAccount, loadSessions, loadBackupCodesStatus, loadNotificationPreferences]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1799,6 +1827,116 @@ export function AccountPage() {
     );
   }
 
+  /** Instant-save, one cell at a time - GitHub/Slack-style, unlike Organisation Settings'
+   * draft+Save flow (that panel edits shared org state where an accidental partial save matters
+   * much more; this is a personal on/off toggle with nothing to accidentally lose). Optimistic:
+   * flips immediately, reverts + toasts on failure. */
+  async function toggleNotificationPreference(
+    typeId: string,
+    channel: PersonalNotificationChannelKind,
+    enabled: boolean,
+  ) {
+    const key = `${typeId}:${channel}`;
+    setNotifPrefSaving(key);
+    setNotifPrefs((prev) =>
+      prev.map((t) => (t.id === typeId ? { ...t, channels: { ...t.channels, [channel]: enabled } } : t)),
+    );
+    try {
+      const result = await patchAccountNotificationPreference({
+        notification_type: typeId,
+        channel,
+        enabled,
+      });
+      setNotifPrefs(result.notification_types);
+    } catch (err) {
+      setNotifPrefs((prev) =>
+        prev.map((t) => (t.id === typeId ? { ...t, channels: { ...t.channels, [channel]: !enabled } } : t)),
+      );
+      if (!redirectToLoginIfUnauthorized(err)) {
+        addToast(operatorApiErrorMessage(err, "Failed to update notification preference."), "error");
+      }
+    } finally {
+      setNotifPrefSaving(null);
+    }
+  }
+
+  function renderNotificationsCard() {
+    return (
+      <Card title="Notifications">
+        <div className="settings-card-stack">
+          <p className="settings-card-intro">
+            Choose which of your enabled security alert types you receive by email or see in-app.
+            The shared team webhook (if configured) is managed separately in Organisation Settings.
+          </p>
+          {notifPrefsLoading && (
+            <div className="sessions-status">
+              <Spinner label="Loading notification preferences" />
+            </div>
+          )}
+          {!notifPrefsLoading && notifPrefsError && (
+            <div className="sessions-status">
+              <p>{notifPrefsError}</p>
+              <Button type="button" variant="secondary" onClick={() => void loadNotificationPreferences()}>
+                Retry
+              </Button>
+            </div>
+          )}
+          {!notifPrefsLoading && !notifPrefsError && (
+            <div className="notifications-type-matrix-wrap">
+              <table className="table notifications-type-matrix">
+                <thead>
+                  <tr>
+                    <th scope="col">Type</th>
+                    <th scope="col">Email</th>
+                    <th scope="col">In-app</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {notifPrefs.map((type) => (
+                    <tr key={type.id}>
+                      <td>
+                        <div className="notifications-type-matrix__label-row">
+                          <span
+                            className={`status-circle status-circle--sm status-circle--${type.default_severity}`}
+                            aria-hidden="true"
+                          >
+                            <i
+                              className={`ti ${NOTIFICATION_SEVERITY_ICON[type.default_severity] ?? "ti-info-circle"}`}
+                              aria-hidden="true"
+                            />
+                          </span>
+                          <strong>{type.label}</strong>
+                        </div>
+                      </td>
+                      {(["email", "in_app"] as const).map((channel) =>
+                        type.available_channels.includes(channel) ? (
+                          <td key={channel}>
+                            <Switch
+                              id={`account-notif-${type.id}-${channel}`}
+                              aria-label={`${type.label} - ${channel === "email" ? "Email" : "In-app"}`}
+                              checked={type.channels[channel] ?? true}
+                              disabled={notifPrefSaving === `${type.id}:${channel}`}
+                              onChange={(e) => void toggleNotificationPreference(type.id, channel, e.target.checked)}
+                            />
+                          </td>
+                        ) : (
+                          <td key={channel} className="notifications-type-matrix__na">
+                            <span aria-hidden="true">-</span>
+                            <span className="sr-only">Not applicable</span>
+                          </td>
+                        ),
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </Card>
+    );
+  }
+
   function renderSessionsCard() {
     return (
       <Card title="Active sessions" actions={otherSessions.length > 0 ? <Button type="button" variant="danger" size="sm" onClick={() => { setRevokeError(null); setRevokeAllOpen(true); }}>Revoke all other sessions</Button> : undefined}>
@@ -2023,6 +2161,8 @@ export function AccountPage() {
       </div>
 
       {renderSessionsCard()}
+
+      {renderNotificationsCard()}
 
       <ConfirmDialog open={!!revokeTarget} icon={<i className="ti ti-device-laptop-off" aria-hidden="true" />} title="Revoke session" message={revokeTarget ? `Revoke this session? Last active ${formatRelativeTime(revokeTarget.lastSeenAt)}.` : ""} confirmLabel="Revoke" confirmVariant="danger" loading={revoking} errorMessage={revokeError ?? undefined} onConfirm={handleRevokeConfirm} onCancel={handleRevokeCancel} />
 

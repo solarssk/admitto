@@ -13,7 +13,11 @@ export {
   NotImplementedError,
   type AudienceContext,
 } from "./audience.js";
-export { resolveEnabledChannels } from "./preferences.js";
+export {
+  resolveEnabledChannels,
+  resolvePersonalPreferences,
+  setNotificationPreference,
+} from "./preferences.js";
 export { notify, type DispatchDeps } from "./dispatcher.js";
 export { EmailChannel, type EmailChannelOptions } from "./channels/email.js";
 export {
@@ -31,3 +35,10 @@ export {
   type NotificationSettingsPublic,
   type NotificationSettingsPatch,
 } from "./settings.js";
+export {
+  describePersonalNotifications,
+  countUnreadNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+  type PersonalNotification,
+} from "./inbox.js";
