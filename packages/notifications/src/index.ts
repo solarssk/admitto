@@ -14,7 +14,6 @@ export {
   type AudienceContext,
 } from "./audience.js";
 export { resolveEnabledChannels } from "./preferences.js";
-export { sanitizeNotificationText, sanitizeNotificationMetadata } from "./sanitize.js";
 export { notify, type DispatchDeps } from "./dispatcher.js";
 export { EmailChannel, type EmailChannelOptions } from "./channels/email.js";
 export {

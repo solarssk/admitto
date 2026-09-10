@@ -95,6 +95,25 @@ describe("GraphAdapter", () => {
     ).toBe(true);
   });
 
+  it("logs the real, unmasked recipient when the message opts in via logRecipientUnmasked", async () => {
+    const fetchFn = vi.fn(async (url: string) =>
+      url.includes("/oauth2/v2.0/token") ? tokenResponse() : acceptedResponse(),
+    );
+    const adapter = new GraphAdapter(config, fetchFn as unknown as typeof fetch);
+
+    await adapter.send({
+      to: "jan@example.com",
+      subject: "Admin login from a new country",
+      html: "<p>hello</p>",
+      logRecipientUnmasked: true,
+    });
+
+    const logs = querySystemLogs({ source: "mail" });
+    expect(
+      logs.some((entry) => entry.message === "mail_sent" && entry.fields?.to === "jan@example.com"),
+    ).toBe(true);
+  });
+
   it("parses RFC5322 cc with quoted commas into Graph recipients", async () => {
     const calls: { url: string; init: any }[] = [];
     const fetchFn = vi.fn(async (url: string, init: any) => {

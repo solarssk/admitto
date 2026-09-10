@@ -58,12 +58,11 @@ export interface NotificationEvent {
    * still needs a per-incident subject so two different admins' incidents don't collapse into
    * one throttled notification. Falls back to a per-organization-only key when omitted.
    *
-   * Deliberately NOT sanitized/redacted like title/body/metadata (see sanitize.ts): its whole job
-   * is distinguishing incident subjects, so redacting an email-shaped value here (the way
-   * sanitizeNotificationText does for display text) would collapse different real subjects into
-   * the same throttle bucket and defeat per-subject deduping. It IS persisted verbatim and
-   * indefinitely in NotificationThrottle.dedupe_key with no purge job, so prefer a stable internal
-   * id over a raw free-text/PII value where the call site already has one.
+   * Persisted verbatim and indefinitely in NotificationThrottle.dedupe_key with no purge job, so
+   * prefer a stable internal id over a raw free-text/PII value where the call site already has
+   * one - not because it's redacted before storage (it isn't - nothing passed to notify() is, see
+   * buildDispatchedNotification's own doc comment in dispatcher.ts), just because an id is a
+   * smaller, more stable thing to keep around forever than an email that could change.
    */
   dedupeKey?: string;
 }

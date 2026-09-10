@@ -186,7 +186,9 @@ export class EmailChannel implements NotificationChannel {
   async sendToAddress(event: DispatchedNotification, address: string): Promise<NotificationSendResult> {
     try {
       return await awaitWithAbortSignal(
-        this.sendToAddressesInternal(event, [address]),
+        // unmaskInLogs: false - a caller-supplied test address, not a verified Admitto staff
+        // account (same reasoning as extra_email_recipients in sendInternal above).
+        this.sendToAddressesInternal(event, [{ email: address, unmaskInLogs: false }]),
         AbortSignal.timeout(this.options.timeoutMs ?? EMAIL_SEND_TIMEOUT_MS),
       );
     } catch (err) {
@@ -211,14 +213,26 @@ export class EmailChannel implements NotificationChannel {
         : Promise.resolve([]),
     ]);
 
-    const addresses = [...new Set([...users.map((u) => u.email), ...extraRecipients])];
-    if (addresses.length === 0) return { ok: true, noop: true };
-    return this.sendToAddressesInternal(event, addresses);
+    // unmaskInLogs only for a resolved User row's own email - extra_email_recipients is an
+    // admin-typed, arbitrary address list (a vendor, a personal inbox, anything), not a verified
+    // Admitto staff account, so it gets the same default-redacted treatment as any other
+    // externally-supplied address (bot review finding, P2). A staff match wins on collision (the
+    // Map write order below: users first, extras only added via `??=`-style guard) - if the same
+    // address is both a real user's own email and separately listed as an extra recipient, it's
+    // still that same real, already-identifiable staff account either way.
+    const recipients = new Map<string, boolean>();
+    for (const u of users) recipients.set(u.email, true);
+    for (const email of extraRecipients) if (!recipients.has(email)) recipients.set(email, false);
+    if (recipients.size === 0) return { ok: true, noop: true };
+    return this.sendToAddressesInternal(
+      event,
+      [...recipients].map(([email, unmaskInLogs]) => ({ email, unmaskInLogs })),
+    );
   }
 
   private async sendToAddressesInternal(
     event: DispatchedNotification,
-    addresses: string[],
+    addresses: Array<{ email: string; unmaskInLogs: boolean }>,
   ): Promise<NotificationSendResult> {
     const [mailConfig, org] = await Promise.all([
       resolveMailConfigForOrg(event.organizationId, this.db as PrismaClient, this.options.env),
@@ -256,10 +270,18 @@ export class EmailChannel implements NotificationChannel {
       // concerns (PO report). Same shared builder/fallback-to-"Admitto" precedence as
       // mail-delivery's transport test subject - see buildSystemEmailSubject's own doc comment.
       const subject = buildSystemEmailSubject(org?.name?.trim() || "Admitto", event.title);
-      const messages: MailMessage[] = addresses.map((to) => ({
-        to,
+      const messages: MailMessage[] = addresses.map(({ email, unmaskInLogs }) => ({
+        to: email,
         subject,
         html,
+        // Only for a verified Admitto staff account's own email (a resolved User row) - already
+        // fully visible to any Superadmin reading this log via the rest of the admin panel, so
+        // masking it added no real privacy protection (see MailMessage's own doc comment for the
+        // fuller GDPR reasoning) while making it impossible to verify a security alert actually
+        // reached the right person from the System logs view alone. extra_email_recipients and
+        // sendToAddress's caller-supplied test address are NOT staff accounts - could be any
+        // external address an admin typed in - and stay masked by default (bot review finding).
+        logRecipientUnmasked: unmaskInLogs,
       }));
 
       // Bounded concurrency (EMAIL_SEND_CONCURRENCY), Promise.allSettled result shape: SmtpAdapter

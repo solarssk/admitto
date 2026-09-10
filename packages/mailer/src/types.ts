@@ -49,6 +49,22 @@ export interface MailMessage {
    * Dedup is the caller's responsibility; this field is used for log correlation.
    */
   idempotencyKey?: string;
+  /**
+   * Log the real recipient address in `mail_sent` (System logs live view + stdout) instead of
+   * the default `redactEmail()`-masked form. Off by default because most callers of this
+   * interface send to attendees/external recipients - people who aren't the instance's own
+   * staff, sent in bulk (hundreds per send), where GDPR's data-minimization principle argues for
+   * keeping full addresses out of an operational log whose purpose (confirming sends succeed)
+   * doesn't need them. `@admitto/notifications`' EmailChannel sets this to `true` only for a
+   * resolved `User.email` — a verified instance admin/superadmin, already fully visible to
+   * whichever Superadmin can see this log via the rest of the admin panel (Users & roles, the
+   * Attendees list, etc. - masking here added no real privacy protection, only made verifying a
+   * security alert actually reached the right person harder). It stays `false` for
+   * `extra_email_recipients` and the "Send test" caller-supplied address: admin-typed, arbitrary
+   * addresses with no relationship to a real Admitto account, same as any other externally-
+   * supplied recipient. See that package's own email.ts for the fuller reasoning.
+   */
+  logRecipientUnmasked?: boolean;
 }
 
 export interface SendResult {

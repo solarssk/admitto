@@ -52,7 +52,7 @@ export class ExportOnlyAdapter implements MailerAdapter {
       }
     }
 
-    logMailSent(this.provider, redactEmail(message.to));
+    logMailSent(this.provider, message.logRecipientUnmasked ? message.to : redactEmail(message.to));
     return {
       status: "accepted",
       provider: this.provider,

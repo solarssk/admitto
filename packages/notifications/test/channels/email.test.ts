@@ -89,6 +89,43 @@ describe("EmailChannel", () => {
     expect(send.mock.calls[0]![0].to).toBe("ops@example.com");
   });
 
+  it("opts a resolved staff user's own message into logRecipientUnmasked - already fully visible elsewhere in the admin panel", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    await channel.send(EVENT, ["u-a"]);
+
+    expect(send.mock.calls[0]![0].logRecipientUnmasked).toBe(true);
+  });
+
+  it("keeps extra_email_recipients masked - an admin-typed, arbitrary address list, not a verified staff account", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([]);
+    db.notificationSettings.findUnique.mockResolvedValue({
+      extra_email_recipients: [{ email: "ops@example.com", description: "Ops team" }],
+    });
+    const channel = new EmailChannel(db as unknown as PrismaClient, { includeExtraRecipients: true });
+
+    await channel.send(EVENT, []);
+
+    expect(send.mock.calls[0]![0].logRecipientUnmasked).toBe(false);
+  });
+
+  it("unmasks a collision in favor of the verified staff account, when the same address is both a resolved user and an extra recipient", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    db.notificationSettings.findUnique.mockResolvedValue({
+      extra_email_recipients: [{ email: "a@example.com", description: "Also an admin's own address" }],
+    });
+    const channel = new EmailChannel(db as unknown as PrismaClient, { includeExtraRecipients: true });
+
+    await channel.send(EVENT, ["u-a"]);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0].logRecipientUnmasked).toBe(true);
+  });
+
   it("also accepts extra_email_recipients as plain strings - packages/db/prisma/schema.prisma's own column comment documents this shape", async () => {
     const db = createStubDb();
     db.user.findMany.mockResolvedValue([]);

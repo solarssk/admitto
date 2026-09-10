@@ -155,7 +155,7 @@ export class GraphAdapter implements MailerAdapter {
 
       if (res.status === 202) {
         const requestId = res.headers.get("request-id") ?? undefined;
-        logMailSent(this.provider, redactEmail(message.to));
+        logMailSent(this.provider, message.logRecipientUnmasked ? message.to : redactEmail(message.to));
         return {
           status: "accepted",
           provider: this.provider,

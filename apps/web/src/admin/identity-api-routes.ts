@@ -296,6 +296,7 @@ export async function handleApiCreateProvider(
     resource: "oidc_provider",
     action: "create",
     targetId: provider.id,
+    targetLabel: provider.display_name,
   });
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
@@ -347,6 +348,7 @@ export async function handleApiUpdateProvider(
     resource: "oidc_provider",
     action: "update",
     targetId: id,
+    targetLabel: updated.display_name,
   });
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
@@ -384,6 +386,7 @@ export async function handleApiToggleProvider(c: Context, db: PrismaClient): Pro
     resource: "oidc_provider",
     action: provider.enabled ? "disable" : "enable",
     targetId: id,
+    targetLabel: provider.display_name,
   });
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);
@@ -447,6 +450,7 @@ export async function handleApiDiscoverProvider(
     resource: "oidc_provider",
     action: "discover",
     targetId: id,
+    targetLabel: provider.display_name,
   });
   const orgId = await resolveInstanceOrganizationId(db);
   const audit = adminAuditFromContext(c);

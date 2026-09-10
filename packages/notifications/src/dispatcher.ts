@@ -3,7 +3,7 @@ import { Prisma, type PrismaClient } from "@admitto/db";
 import { getNotificationTypeDef } from "./registry.js";
 import { resolveAudienceCandidates } from "./audience.js";
 import { resolveEnabledChannelsForUsers } from "./preferences.js";
-import { sanitizeNotificationMetadata, sanitizeNotificationText } from "./sanitize.js";
+import { sanitizeDeliveryError } from "@admitto/mail-delivery";
 import type { ExportSink } from "@admitto/mailer";
 import { EmailChannel } from "./channels/email.js";
 import { WebhookChannel } from "./channels/webhook.js";
@@ -65,10 +65,13 @@ function reportUnknownType(type: string): void {
 
 /** Sanitized text safe for a console.error/operational log - a raw Prisma/driver error can
  * include rendered query arguments, connection details, or addresses (same reasoning as every
- * channel's own error handling, AGENTS.md's "no PII in logs" rule). */
+ * channel's own error handling, AGENTS.md's "no PII in logs" rule). Genuinely uncontrolled text
+ * (a database driver's own error message), unlike the developer-authored title/body/metadata a
+ * caller passes to notify() itself - see buildDispatchedNotification's own doc note on why those
+ * are no longer sanitized here. */
 function formatDispatchError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
-  return sanitizeNotificationText(message);
+  return sanitizeDeliveryError(message) ?? "";
 }
 
 /**
@@ -228,6 +231,20 @@ async function resolveCandidatesOrLogSkip(
   return null;
 }
 
+/**
+ * `title`/`body`/`metadata` pass through unchanged - this used to run them through an
+ * email/token/URL-redacting sanitizer as defense-in-depth, but notify()'s only real caller is
+ * packages/auth/src/audit.ts's own fixed, developer-authored templates (verified: no other
+ * package calls notify() with free-form or externally-derived text) - every value interpolated
+ * into them is a resolved account identifier, a fixed enum-derived label, or a machine-resolved
+ * value (streak count, ISO country code), never attacker- or third-party-controlled text. Running
+ * that content through an email-shape scanner did real, active harm instead: it collapsed the
+ * actor/target identifier every one of these alerts exists to convey into the literal string
+ * "[redacted]", defeating the alert's whole purpose (a security notification an admin can't
+ * attribute to an account is not actionable). Removed rather than special-cased per-field - see
+ * git history for the prior sanitizeNotificationText/sanitizeNotificationMetadata implementation
+ * if a future caller genuinely needs it back for less-trusted content.
+ */
 function buildDispatchedNotification(
   event: NotificationEvent,
   type: string,
@@ -237,9 +254,6 @@ function buildDispatchedNotification(
     ...event,
     type,
     severity: typeDef.defaultSeverity,
-    title: sanitizeNotificationText(event.title),
-    body: sanitizeNotificationText(event.body),
-    metadata: sanitizeNotificationMetadata(event.metadata),
   };
 }
 
@@ -367,8 +381,8 @@ async function splitRecipientsByChannel(
 /**
  * Dispatches one notification event through every applicable channel for its registered type.
  * Steps (ADR 0038/0044, prompt 86 §2.A, amended per the notifications-module-foundation plan):
- * registry lookup → org-disabled check → throttle claim → audience resolution → sanitize
- * content → webhook (once, team-wide) → email/in-app (per candidate, per-user preferences) →
+ * registry lookup → org-disabled check → throttle claim → audience resolution →
+ * webhook (once, team-wide) → email/in-app (per candidate, per-user preferences) →
  * SecurityAuditLog write. Never throws - every failure mode is caught, logged, and swallowed so
  * a dispatch bug can never break the call site (a login, an MFA check, a settings save).
  */
