@@ -81,6 +81,28 @@ describe("PowerAutomateAdapter", () => {
     ).toBe(true);
   });
 
+  it("logs the real, unmasked recipient when the message opts in via logRecipientUnmasked", async () => {
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => '{"status":"sent"}',
+      headers: { get: () => null },
+    }));
+
+    const adapter = new PowerAutomateAdapter(config, fetchFn as unknown as typeof fetch);
+    await adapter.send({
+      to: "jan@example.com",
+      subject: "Admin login from a new country",
+      html: "<p>hello</p>",
+      logRecipientUnmasked: true,
+    });
+
+    const logs = querySystemLogs({ source: "mail" });
+    expect(
+      logs.some((entry) => entry.message === "mail_sent" && entry.fields?.to === "jan@example.com"),
+    ).toBe(true);
+  });
+
   it("omits key header when key is not configured", async () => {
     let captured: any;
     const fetchFn = vi.fn(async (_url: string, init: any) => {

@@ -1,6 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExportOnlyAdapter } from "../src/adapters/exportOnly.js";
 import { createMailer } from "../src/index.js";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
+import { resetMailSentThrottleForTest } from "../src/adapterUtils.js";
+
+beforeEach(() => {
+  resetSystemLogBufferForTest();
+  resetMailSentThrottleForTest();
+});
 
 describe("ExportOnlyAdapter", () => {
   it("returns accepted without sending and invokes exportSink", async () => {
@@ -56,6 +63,25 @@ describe("ExportOnlyAdapter", () => {
     );
     expect(mailer.provider).toBe("export_only");
     expect(mailer.capabilities.supportsTestConnection).toBe(true);
+  });
+
+  it("logs the real, unmasked recipient when the message opts in via logRecipientUnmasked", async () => {
+    const adapter = new ExportOnlyAdapter(
+      { provider: "export_only", fromAddress: "events@example.com", fromName: "Events" },
+      vi.fn(),
+    );
+
+    await adapter.send({
+      to: "jan@example.com",
+      subject: "Admin login from a new country",
+      html: "<p>hello</p>",
+      logRecipientUnmasked: true,
+    });
+
+    const logs = querySystemLogs({ source: "mail" });
+    expect(
+      logs.some((entry) => entry.message === "mail_sent" && entry.fields?.to === "jan@example.com"),
+    ).toBe(true);
   });
 
   it("close() resolves (no persistent connection to release)", async () => {
