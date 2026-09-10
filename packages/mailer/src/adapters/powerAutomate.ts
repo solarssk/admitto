@@ -108,7 +108,7 @@ export class PowerAutomateAdapter implements MailerAdapter {
             processResponse,
           );
       if (isSendSuccess(result.status)) {
-        logMailSent(this.provider, redactEmail(message.to));
+        logMailSent(this.provider, message.logRecipientUnmasked ? message.to : redactEmail(message.to));
       } else {
         // Drop the response-body suffix - `processResponse` includes up to 200 raw chars
         // of the flow's HTTP response, which could echo the message we just posted

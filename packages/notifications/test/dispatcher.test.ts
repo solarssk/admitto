@@ -663,6 +663,12 @@ describe("notify()", () => {
     await expect(notify(db as unknown as PrismaClient, TYPE, EVENT)).resolves.toBeUndefined();
   });
 
+  it("never throws when the rejected Error has an empty message (sanitizeDeliveryError's own falsy-input fallback)", async () => {
+    db.notificationSettings.findUnique.mockRejectedValue(new Error(""));
+
+    await expect(notify(db as unknown as PrismaClient, TYPE, EVENT)).resolves.toBeUndefined();
+  });
+
   it("propagates a throttle-claim query failure into the outer catch, never to the caller", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
     db.$queryRaw.mockRejectedValue(new Error("connection reset"));

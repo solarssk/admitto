@@ -128,7 +128,7 @@ export class SmtpAdapter implements MailerAdapter {
 
     try {
       const info = await this.transporter.sendMail(mail);
-      logMailSent(this.provider, redactEmail(message.to));
+      logMailSent(this.provider, message.logRecipientUnmasked ? message.to : redactEmail(message.to));
       return {
         status: "accepted",
         provider: this.provider,

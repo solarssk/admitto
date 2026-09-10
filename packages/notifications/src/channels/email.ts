@@ -260,6 +260,12 @@ export class EmailChannel implements NotificationChannel {
         to,
         subject,
         html,
+        // Every recipient here is the instance's own admin/superadmin staff, not an attendee -
+        // already fully visible to any Superadmin reading this log via the rest of the admin
+        // panel, so masking added no real privacy protection (see MailMessage's own doc comment
+        // for the fuller GDPR reasoning) while making it impossible to verify a security alert
+        // actually reached the right person from the System logs view alone.
+        logRecipientUnmasked: true,
       }));
 
       // Bounded concurrency (EMAIL_SEND_CONCURRENCY), Promise.allSettled result shape: SmtpAdapter

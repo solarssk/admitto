@@ -81,6 +81,26 @@ describe("SmtpAdapter", () => {
     }
   });
 
+  it("logs the real, unmasked recipient when the message opts in via logRecipientUnmasked", async () => {
+    const transporter = nodemailer.createTransport({ jsonTransport: true });
+    const adapter = new SmtpAdapter(config, transporter);
+
+    await adapter.send({
+      to: "jan@example.com",
+      subject: "Admin login from a new country",
+      html: "<p>hello</p>",
+      logRecipientUnmasked: true,
+    });
+
+    const mailLogs = querySystemLogs({ source: "mail" });
+    expect(mailLogs).toContainEqual(
+      expect.objectContaining({
+        message: "mail_sent",
+        fields: expect.objectContaining({ to: "jan@example.com" }),
+      }),
+    );
+  });
+
   it("formats From header and envelope.from from sender config", async () => {
     const sendMail = vi.fn(async () => ({ messageId: "<id@test>" }));
     const adapter = new SmtpAdapter(config, { sendMail } as unknown as nodemailer.Transporter);

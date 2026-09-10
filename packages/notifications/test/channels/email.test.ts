@@ -89,6 +89,19 @@ describe("EmailChannel", () => {
     expect(send.mock.calls[0]![0].to).toBe("ops@example.com");
   });
 
+  it("opts every message into logRecipientUnmasked - every recipient here is the instance's own staff, already fully visible elsewhere in the admin panel", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([]);
+    db.notificationSettings.findUnique.mockResolvedValue({
+      extra_email_recipients: [{ email: "ops@example.com", description: "Ops team" }],
+    });
+    const channel = new EmailChannel(db as unknown as PrismaClient, { includeExtraRecipients: true });
+
+    await channel.send(EVENT, []);
+
+    expect(send.mock.calls[0]![0].logRecipientUnmasked).toBe(true);
+  });
+
   it("also accepts extra_email_recipients as plain strings - packages/db/prisma/schema.prisma's own column comment documents this shape", async () => {
     const db = createStubDb();
     db.user.findMany.mockResolvedValue([]);
