@@ -20,7 +20,7 @@ export const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000;
  * name (apps/web/test/provisionWorkerSchemas.ts's own workerSchemaName()), so this is
  * defense-in-depth against a future caller skipping that step, not a fix for a reachable bug. */
 function assertSafeSchemaIdentifier(name: string): void {
-  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+  if (!/^[a-zA-Z_]\w*$/.test(name)) {
     throw new Error(`Refusing to use "${name}" as a Postgres schema name - not a plain identifier.`);
   }
 }

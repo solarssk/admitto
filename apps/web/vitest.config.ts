@@ -30,7 +30,7 @@ export default defineConfig({
     // (a different message) still fails the run as normal - verified by throwing both messages
     // from a scratch test and confirming only the matching one changes the exit code (0 vs the
     // correct 1), then deleting that scratch test.
-    // TODO: once vitest-dev/vitest#11153 is closed, bump Vitest and check whether this is still
+    // Once vitest-dev/vitest#11153 is closed, bump Vitest and check whether this is still
     // reproducible before removing the suppression.
     onUnhandledError(error) {
       if (error.message?.includes('Closing rpc while "onUserConsoleLog" was pending')) return false;
