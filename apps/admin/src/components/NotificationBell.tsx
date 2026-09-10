@@ -173,14 +173,13 @@ export function NotificationBell() {
             </div>
           )}
           {!listError && notifications.length > 0 && (
-            <div className="notif-bell__list">
+            <div className="notif-bell__list at-scroll">
               {notifications.map((n) => (
                 <button
                   key={n.id}
                   type="button"
                   role="menuitem"
                   className={`user-menu__item notif-bell__row${n.read_at ? "" : " notif-bell__row--unread"}`}
-                  title={n.body}
                   onClick={() => void handleRowClick(n)}
                 >
                   <span
@@ -191,6 +190,7 @@ export function NotificationBell() {
                   </span>
                   <span className="user-menu__item-text">
                     <strong>{n.title}</strong>
+                    <span className="notif-bell__row-body">{n.body}</span>
                     <span>
                       {n.organization_name ? `${n.organization_name} · ` : ""}
                       {formatRelativeTime(n.created_at)}
