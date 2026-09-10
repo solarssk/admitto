@@ -53,4 +53,10 @@ describe("createPrismaAdapter", () => {
     const [row] = await prisma.$queryRaw<Array<{ search_path: string }>>`SHOW search_path`;
     expect(row?.search_path).toBe("adapter_schema_option_test");
   });
+
+  it("rejects a schema option that isn't a plain identifier", () => {
+    expect(() => createPrismaAdapter(process.env.DATABASE_URL, { schema: "public; drop table users;" })).toThrow(
+      /not a plain identifier/,
+    );
+  });
 });

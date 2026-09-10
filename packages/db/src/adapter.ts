@@ -14,6 +14,17 @@ import { PrismaPg } from '@prisma/adapter-pg';
  */
 export const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000;
 
+/** `options.schema` below is interpolated directly into a `-c search_path=<schema>` connection
+ * string - reject anything that isn't a plain Postgres identifier so a bad value can't smuggle
+ * SQL into that position. No caller currently passes anything but a generated, already-validated
+ * name (apps/web/test/provisionWorkerSchemas.ts's own workerSchemaName()), so this is
+ * defense-in-depth against a future caller skipping that step, not a fix for a reachable bug. */
+function assertSafeSchemaIdentifier(name: string): void {
+  if (!/^[a-zA-Z_]\w*$/.test(name)) {
+    throw new Error(`Refusing to use "${name}" as a Postgres schema name - not a plain identifier.`);
+  }
+}
+
 /**
  * Builds the Postgres driver adapter Prisma ORM v7 requires for every PrismaClient instance
  * (no more implicit query engine). connectionTimeoutMillis/idleTimeoutMillis restore the
@@ -44,6 +55,7 @@ export function createPrismaAdapter(
   connectionString: string | undefined,
   options?: { statementTimeoutMs?: number; schema?: string },
 ) {
+  if (options?.schema) assertSafeSchemaIdentifier(options.schema);
   return new PrismaPg(
     {
       connectionString,
