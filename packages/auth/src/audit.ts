@@ -798,7 +798,7 @@ export async function logLoginNewCountry(
   });
   void dispatchSecurityNotification(db, "auth.login.new_country", {
     title: "Admin login from a new country",
-    body: `${maskedAccountLabel(ctx.email)} signed in from ${ctx.countryCode}, a country not seen on this account before.`,
+    body: `${maskedAccountLabel(ctx.email)} signed in from ${ctx.countryCode}, not seen in this account's recent successful logins.`,
     // Composite, not just userId: the same admin logging in from two different new countries
     // within the 15-minute throttle window is two distinct signals worth two alerts, not one
     // suppressed by the other - see checkNewCountryLogin's own doc comment.
