@@ -27,7 +27,7 @@ import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { localeDateInputPattern, utcDayEndIso, utcDayStartIso, zonedTimeLabel } from "../utils/event-dates.js";
 import { getPreferredLocale } from "../utils/locale-store.js";
 import { MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
-import { POLL_DEGRADED_THRESHOLD, POLL_INTERVAL_MS, SystemLogsPanel, type SystemLogsPanelHandle } from "./SystemLogsPanel.js";
+import { getPollIntervalMs, POLL_DEGRADED_THRESHOLD, SystemLogsPanel, type SystemLogsPanelHandle } from "./SystemLogsPanel.js";
 
 /** Human-readable labels for `AdminAuditLog.action_type` (current + planned IAM types). */
 const ACTION_LABELS: Record<string, string> = {
@@ -1353,7 +1353,7 @@ function useLogQuery<TEntry, TFilters extends { search: string; start: string; e
     // Resuming Live always starts the degraded-state tracking fresh.
     pollFailureCountRef.current = 0;
     setPollDegraded(false);
-    const intervalId = window.setInterval(() => void load({ silent: true }), POLL_INTERVAL_MS);
+    const intervalId = window.setInterval(() => void load({ silent: true }), getPollIntervalMs());
     return () => window.clearInterval(intervalId);
   }, [live, hasLoadedOnce, isVisible, load]);
 
