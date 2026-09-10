@@ -68,6 +68,7 @@ export async function handleGetAccountNotificationPreferences(
   db: PrismaClient,
 ): Promise<Response> {
   const userId = c.get("auth").userId;
+  c.header("Cache-Control", "no-store");
   return c.json(await serializePersonalPreferences(db, userId));
 }
 
@@ -137,6 +138,7 @@ async function serializePersonalNotifications(db: PrismaClient, userId: string) 
 /** GET /api/account/notifications - latest 30 (read + unread), for the bell dropdown. */
 export async function handleGetAccountNotifications(c: Context, db: PrismaClient): Promise<Response> {
   const userId = c.get("auth").userId;
+  c.header("Cache-Control", "no-store");
   return c.json(await serializePersonalNotifications(db, userId));
 }
 
@@ -146,6 +148,7 @@ export async function handleGetAccountNotificationsUnreadCount(
   db: PrismaClient,
 ): Promise<Response> {
   const userId = c.get("auth").userId;
+  c.header("Cache-Control", "no-store");
   const unreadCount = await countUnreadNotifications(db, userId);
   return c.json({ unread_count: unreadCount });
 }
@@ -174,5 +177,11 @@ export async function handlePostAccountNotificationsMarkAllRead(
 ): Promise<Response> {
   const userId = c.get("auth").userId;
   const updatedCount = await markAllNotificationsRead(db, userId);
-  return c.json({ updated_count: updatedCount, unread_count: 0 });
+  // Not hardcoded to 0: InAppChannel can insert a fresh unread notification between the update
+  // above and this response (a genuinely concurrent alert, however unlikely) - re-querying keeps
+  // the response honest instead of a client trusting a count that's already wrong the moment it
+  // arrives (bot review finding). Still only a point-in-time read - a later concurrent insert can
+  // change the real count before the response actually reaches the client either way.
+  const unreadCount = await countUnreadNotifications(db, userId);
+  return c.json({ updated_count: updatedCount, unread_count: unreadCount });
 }

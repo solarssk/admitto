@@ -210,10 +210,17 @@ describe("NotificationBell dropdown", () => {
   });
 
   it("shows a toast and keeps the row unread when marking one as read fails", async () => {
-    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 2 });
     fetchAccountNotifications.mockResolvedValue({
-      notifications: [makeNotification()],
-      unread_count: 1,
+      notifications: [
+        makeNotification(),
+        makeNotification({
+          id: "notif-2",
+          title: "MFA break-glass used",
+          body: "An operator used the emergency two-factor bypass.",
+        }),
+      ],
+      unread_count: 2,
     });
     markAccountNotificationRead.mockRejectedValue(new Error("network down"));
 
@@ -225,6 +232,58 @@ describe("NotificationBell dropdown", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /5 consecutive failed sign-in attempts/ }));
 
     expect(await screen.findByText("Failed to mark notification as read.")).toBeTruthy();
+    // Both optimistic updates (the row's read_at and the badge count) must roll back on
+    // rejection - previously only the toast fired, leaving the row shown as read and the badge
+    // decremented even though the server never confirmed it (bot review finding).
+    expect(screen.getByRole("button", { name: "Notifications, 2 unread" })).toBeTruthy();
+    expect(
+      screen.getByRole("menuitem", { name: /5 consecutive failed sign-in attempts/ }).className,
+    ).toContain("notif-bell__row--unread");
+    // The other notification, never clicked, must stay exactly as it was.
+    expect(
+      screen.getByRole("menuitem", { name: /MFA break-glass used/ }).className,
+    ).toContain("notif-bell__row--unread");
+  });
+
+  it("discards a poll response that resolves after a newer mark-read already updated the count", async () => {
+    // No waitFor/findBy* below (they poll via real setTimeout internally, which never fires
+    // under fake timers and just times the test out) - every async settle point uses a direct
+    // act() instead, same convention as the "NotificationBell polling" describe block below.
+    vi.useFakeTimers();
+    fetchAccountNotificationsUnreadCount.mockResolvedValueOnce({ unread_count: 2 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [makeNotification()],
+      unread_count: 2,
+    });
+    markAccountNotificationRead.mockResolvedValue({ unread_count: 1 });
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    expect(screen.getByRole("button", { name: "Notifications, 2 unread" })).toBeTruthy();
+
+    // The next poll tick (30s later) starts a request that stays pending until resolvePoll runs -
+    // simulates it being in flight when a newer, user-initiated count change happens.
+    let resolvePoll: (value: { unread_count: number }) => void = () => {};
+    fetchAccountNotificationsUnreadCount.mockImplementationOnce(
+      () => new Promise((resolve) => { resolvePoll = resolve; }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Notifications, 2 unread" }));
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("menuitem", { name: /5 consecutive failed sign-in attempts/ }));
+    await act(async () => {});
+
+    expect(screen.getByRole("button", { name: "Notifications, 1 unread" })).toBeTruthy();
+
+    // The stale poll (started before the mark-read click) finally resolves with the old count -
+    // it must be discarded rather than stomping the newer, already-applied value.
+    await act(async () => {
+      resolvePoll({ unread_count: 2 });
+    });
+    expect(screen.getByRole("button", { name: "Notifications, 1 unread" })).toBeTruthy();
   });
 
   it("shows a toast when 'Mark all as read' fails", async () => {

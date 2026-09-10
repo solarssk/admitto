@@ -3919,7 +3919,7 @@ describe("AccountPage: Notifications", () => {
     id: "auth.login.repeated_failures",
     label: "Repeated failed logins on an admin account",
     default_severity: "error",
-    available_channels: ["email", "in_app"] as const,
+    available_channels: ["email", "in_app"] as ("email" | "in_app")[],
     channels: { email: true, in_app: true },
   };
 
@@ -3952,13 +3952,63 @@ describe("AccountPage: Notifications", () => {
 
     fireEvent.click(screen.getByRole("switch", { name: `${TYPE_A.label} - Email` }));
 
-    expect(mockPatchNotificationPreference).toHaveBeenCalledWith({
-      notification_type: TYPE_A.id,
-      channel: "email",
-      enabled: false,
+    // The actual PATCH is queued onto a shared chain (fired on the next microtask, not
+    // synchronously in the click handler) so overlapping saves can never resolve out of order -
+    // await it instead of asserting the call happened within the same tick as the click.
+    await waitFor(() => {
+      expect(mockPatchNotificationPreference).toHaveBeenCalledWith({
+        notification_type: TYPE_A.id,
+        channel: "email",
+        enabled: false,
+      });
     });
     await waitFor(() => {
       expect((screen.getByRole("switch", { name: `${TYPE_A.label} - Email` }) as HTMLInputElement).checked).toBe(
+        false,
+      );
+    });
+  });
+
+  it("queues a second toggle behind a still-pending first one, instead of firing both at once", async () => {
+    const TYPE_B = {
+      ...TYPE_A,
+      id: "auth.mfa.break_glass",
+      label: "MFA break-glass used",
+    };
+    mockLoadedAccount();
+    mockFetchNotificationPreferences.mockResolvedValue({ notification_types: [TYPE_A, TYPE_B] });
+
+    let resolveFirst: (value: { notification_types: typeof TYPE_A[] }) => void = () => {};
+    const firstCall = new Promise<{ notification_types: typeof TYPE_A[] }>((resolve) => {
+      resolveFirst = resolve;
+    });
+    mockPatchNotificationPreference.mockImplementationOnce(() => firstCall);
+
+    renderWithToast(<AccountPage />);
+    await screen.findByText(TYPE_A.label);
+
+    fireEvent.click(screen.getByRole("switch", { name: `${TYPE_A.label} - Email` }));
+    await waitFor(() => expect(mockPatchNotificationPreference).toHaveBeenCalledTimes(1));
+
+    mockPatchNotificationPreference.mockResolvedValueOnce({
+      notification_types: [
+        { ...TYPE_A, channels: { email: false, in_app: true } },
+        { ...TYPE_B, channels: { email: false, in_app: true } },
+      ],
+    });
+    fireEvent.click(screen.getByRole("switch", { name: `${TYPE_B.label} - Email` }));
+
+    // The second click's own network call must stay queued - not fired concurrently - while the
+    // first one is still pending (bot review finding: two responses racing let an older one's
+    // full-grid snapshot land after, and overwrite, a newer choice).
+    await act(async () => {});
+    expect(mockPatchNotificationPreference).toHaveBeenCalledTimes(1);
+
+    resolveFirst({ notification_types: [{ ...TYPE_A, channels: { email: false, in_app: true } }, TYPE_B] });
+
+    await waitFor(() => expect(mockPatchNotificationPreference).toHaveBeenCalledTimes(2));
+    await waitFor(() => {
+      expect((screen.getByRole("switch", { name: `${TYPE_B.label} - Email` }) as HTMLInputElement).checked).toBe(
         false,
       );
     });

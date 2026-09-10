@@ -453,9 +453,17 @@ export function AccountPage() {
   const [notifPrefs, setNotifPrefs] = useState<PersonalNotificationTypeDto[]>([]);
   const [notifPrefsLoading, setNotifPrefsLoading] = useState(true);
   const [notifPrefsError, setNotifPrefsError] = useState<string | null>(null);
-  // `${notification_type}:${channel}` of the cell currently in flight, or null - disables just
-  // that one Switch while its own PATCH is out, not the whole grid.
-  const [notifPrefSaving, setNotifPrefSaving] = useState<string | null>(null);
+  // `${notification_type}:${channel}` keys currently in flight (queued or awaiting a response) -
+  // disables just those Switches, not the whole grid. A Set, not a single string: with only one
+  // key tracked, toggling a second cell while the first was still saving silently re-enabled the
+  // first cell's own Switch, letting it be clicked again before its own request had even queued
+  // (bot review finding).
+  const [notifPrefSaving, setNotifPrefSaving] = useState<Set<string>>(new Set());
+  // Chains preference PATCH requests one at a time in click order, so an earlier request's
+  // response (the full grid) can never resolve after and overwrite a later one's - two switches
+  // toggled before the first PATCH finishes used to race, and whichever response arrived last won
+  // regardless of which was actually the newer choice (bot review finding).
+  const notifPrefSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [revokeTarget, setRevokeTarget] = useState<SessionListDto | null>(null);
   const [revoking, setRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
@@ -1837,27 +1845,40 @@ export function AccountPage() {
     enabled: boolean,
   ) {
     const key = `${typeId}:${channel}`;
-    setNotifPrefSaving(key);
+    setNotifPrefSaving((prev) => new Set(prev).add(key));
     setNotifPrefs((prev) =>
       prev.map((t) => (t.id === typeId ? { ...t, channels: { ...t.channels, [channel]: enabled } } : t)),
     );
-    try {
-      const result = await patchAccountNotificationPreference({
-        notification_type: typeId,
-        channel,
-        enabled,
-      });
-      setNotifPrefs(result.notification_types);
-    } catch (err) {
-      setNotifPrefs((prev) =>
-        prev.map((t) => (t.id === typeId ? { ...t, channels: { ...t.channels, [channel]: !enabled } } : t)),
-      );
-      if (!redirectToLoginIfUnauthorized(err)) {
-        addToast(operatorApiErrorMessage(err, "Failed to update notification preference."), "error");
+
+    // Queued onto the shared chain (not fired immediately) so this request's own network
+    // round-trip only starts once every earlier-clicked cell's request has already resolved -
+    // the response each PATCH returns is the *entire* grid, so two in flight at once could let
+    // an older one's snapshot land after (and overwrite) a newer choice.
+    const run = async () => {
+      try {
+        const result = await patchAccountNotificationPreference({
+          notification_type: typeId,
+          channel,
+          enabled,
+        });
+        setNotifPrefs(result.notification_types);
+      } catch (err) {
+        setNotifPrefs((prev) =>
+          prev.map((t) => (t.id === typeId ? { ...t, channels: { ...t.channels, [channel]: !enabled } } : t)),
+        );
+        if (!redirectToLoginIfUnauthorized(err)) {
+          addToast(operatorApiErrorMessage(err, "Failed to update notification preference."), "error");
+        }
+      } finally {
+        setNotifPrefSaving((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
       }
-    } finally {
-      setNotifPrefSaving(null);
-    }
+    };
+    notifPrefSaveQueueRef.current = notifPrefSaveQueueRef.current.then(run, run);
+    await notifPrefSaveQueueRef.current;
   }
 
   function renderNotificationsCard() {
@@ -1915,7 +1936,7 @@ export function AccountPage() {
                               id={`account-notif-${type.id}-${channel}`}
                               aria-label={`${type.label} - ${channel === "email" ? "Email" : "In-app"}`}
                               checked={type.channels[channel] ?? true}
-                              disabled={notifPrefSaving === `${type.id}:${channel}`}
+                              disabled={notifPrefSaving.has(`${type.id}:${channel}`)}
                               onChange={(e) => void toggleNotificationPreference(type.id, channel, e.target.checked)}
                             />
                           </td>

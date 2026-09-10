@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge, Spinner, useToast } from "@admitto/ui";
 import {
   fetchAccountNotifications,
@@ -50,10 +50,20 @@ export function NotificationBell() {
   const [listError, setListError] = useState<string | null>(null);
   const [markingAll, setMarkingAll] = useState(false);
 
-  // Every server-confirmed count (poll tick, list load, mark-read, mark-all-read) goes through
-  // here so the cache never drifts from what's on screen - missing even one call site would mean
-  // a stale count flashing back in on the next remount (see unreadCountCache's own doc comment).
-  function setConfirmedUnreadCount(value: number) {
+  // Every count-changing operation (poll tick, list load, mark-read, mark-all-read) claims the
+  // next generation the moment it starts, before its own network round-trip - whichever one
+  // started most recently always wins. Without this, a poll tick already in flight when the user
+  // marks something read could resolve afterward with its own now-stale count and silently
+  // overwrite the newer, user-confirmed value (bot review finding).
+  const countGenerationRef = useRef(0);
+
+  // Every server-confirmed count goes through here so the cache never drifts from what's on
+  // screen - missing even one call site would mean a stale count flashing back in on the next
+  // remount (see unreadCountCache's own doc comment). `gen` must be the value countGenerationRef
+  // held at the moment this operation started; a result from an operation superseded by a later
+  // one is silently discarded instead of applied.
+  function setConfirmedUnreadCount(value: number, gen: number) {
+    if (gen !== countGenerationRef.current) return;
     setUnreadCount(value);
     unreadCountCache = { value, expiresAt: Date.now() + UNREAD_POLL_MS };
   }
@@ -70,6 +80,7 @@ export function NotificationBell() {
     // first-fetch-only basis. A failed tick (poll or initial) just keeps the last-known value;
     // retried by the next interval tick.
     async function loadCount(silent: boolean) {
+      const gen = ++countGenerationRef.current;
       if (!silent && unreadCountCache && unreadCountCache.expiresAt > Date.now()) {
         setUnreadCount(unreadCountCache.value);
         return;
@@ -79,7 +90,7 @@ export function NotificationBell() {
       try {
         const data = await fetchAccountNotificationsUnreadCount(ac.signal);
         if (ac.signal.aborted) return;
-        setConfirmedUnreadCount(data.unread_count);
+        setConfirmedUnreadCount(data.unread_count, gen);
       } catch {
         // Keep the last-known value; retried by the next interval tick.
       }
@@ -96,11 +107,12 @@ export function NotificationBell() {
   const loadList = useCallback(async (signal?: AbortSignal) => {
     setListLoading(true);
     setListError(null);
+    const gen = ++countGenerationRef.current;
     try {
       const data = await fetchAccountNotifications(signal);
       if (signal?.aborted) return;
       setNotifications(data.notifications);
-      setConfirmedUnreadCount(data.unread_count);
+      setConfirmedUnreadCount(data.unread_count, gen);
       setListLoaded(true);
     } catch (err) {
       if (signal?.aborted) return;
@@ -119,24 +131,33 @@ export function NotificationBell() {
 
   async function handleRowClick(notification: NotificationDto) {
     if (notification.read_at) return;
+    const gen = ++countGenerationRef.current;
     setNotifications((prev) =>
       prev.map((n) => (n.id === notification.id ? { ...n, read_at: new Date().toISOString() } : n)),
     );
     setUnreadCount((c) => Math.max(0, c - 1));
     try {
       const result = await markAccountNotificationRead(notification.id);
-      setConfirmedUnreadCount(result.unread_count);
+      setConfirmedUnreadCount(result.unread_count, gen);
     } catch (err) {
+      // Undo both optimistic updates - the row was never actually confirmed read server-side, so
+      // leaving it displayed as read (and the badge decremented) would contradict the failure
+      // toast until the next list reload or poll tick (bot review finding).
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notification.id ? { ...n, read_at: null } : n)),
+      );
+      setUnreadCount((c) => c + 1);
       addToast(operatorApiErrorMessage(err, "Failed to mark notification as read."), "error");
     }
   }
 
   async function handleMarkAllRead() {
     setMarkingAll(true);
+    const gen = ++countGenerationRef.current;
     try {
       const result = await markAllAccountNotificationsRead();
       setNotifications((prev) => prev.map((n) => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })));
-      setConfirmedUnreadCount(result.unread_count);
+      setConfirmedUnreadCount(result.unread_count, gen);
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Failed to mark all as read."), "error");
     } finally {
