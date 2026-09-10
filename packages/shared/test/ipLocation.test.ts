@@ -5,7 +5,7 @@ vi.mock("ip-location-api", () => ({
 }));
 
 import { lookup } from "ip-location-api";
-import { resolveIpLocation } from "../src/rate-limit/ip-location.js";
+import { resolveIpLocation } from "../src/ipLocation.js";
 
 const mockedLookup = vi.mocked(lookup);
 
@@ -43,5 +43,12 @@ describe("resolveIpLocation", () => {
       throw new Error("boom");
     });
     expect(resolveIpLocation("203.0.113.5")).toEqual({ kind: "unknown" });
+  });
+
+  it("returns unknown and logs instead of misreading a Promise as a result (ILA_SMALL_MEMORY=true, unsupported)", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockedLookup.mockReturnValue(Promise.resolve({ country: "US" }) as unknown as ReturnType<typeof lookup>);
+    expect(resolveIpLocation("8.8.8.8")).toEqual({ kind: "unknown" });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("ILA_SMALL_MEMORY=true"));
   });
 });

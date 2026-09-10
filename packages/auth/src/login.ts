@@ -37,6 +37,7 @@ import {
   recordFailedMfaFailureSideEffects,
   resetFailedMfaFailureStreak,
 } from "./privileged-login-alert.js";
+import { checkNewCountryLogin } from "./new-country-login.js";
 import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
 
 /** Credentials and request metadata for `login()`. */
@@ -201,6 +202,9 @@ async function finalizeLoginSession(
     timezone: input.timezone,
   });
 
+  // Runs before logLoginSuccess persists this login's own SecurityAuditLog row - see
+  // checkNewCountryLogin's own doc comment for why that ordering matters.
+  await checkNewCountryLogin(prisma, { userId: user.id, ip: input.ip });
   await logLoginSuccess(prisma, { ...auditCtx, userId: user.id, method });
   await resetFailedLoginStreak(prisma, user.id);
 

@@ -88,7 +88,7 @@ const TYPE_DESCRIPTIONS: Record<string, string> = {
   "auth.mfa.break_glass":
     "An operator used a break-glass CLI command to reset another admin account's two-factor authentication or generate an emergency recovery code for it.",
   "auth.settings.changed": "Organisation-wide login or security settings changed, such as MFA policy or SSO.",
-  "auth.login.new_country": "An admin account signed in from a country not seen before on that account.",
+  "auth.login.new_country": "An admin account signed in from a country not seen among its recent successful logins.",
 };
 
 const RECIPIENT_DESCRIPTION_MAX = 200;
