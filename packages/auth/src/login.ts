@@ -204,7 +204,7 @@ async function finalizeLoginSession(
 
   // Runs before logLoginSuccess persists this login's own SecurityAuditLog row - see
   // checkNewCountryLogin's own doc comment for why that ordering matters.
-  await checkNewCountryLogin(prisma, { userId: user.id, email: auditCtx.email, ip: input.ip });
+  await checkNewCountryLogin(prisma, { userId: user.id, ip: input.ip });
   await logLoginSuccess(prisma, { ...auditCtx, userId: user.id, method });
   await resetFailedLoginStreak(prisma, user.id);
 

@@ -1027,12 +1027,7 @@ describe("audit", () => {
   describe("logLoginNewCountry", () => {
     it("records into the System logs buffer at info level (not a failure/denial event)", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
-      await logLoginNewCountry(fakeDb(), {
-        userId: "user-1",
-        email: "admin@example.com",
-        ip: "203.0.113.5",
-        countryCode: "FR",
-      });
+      await logLoginNewCountry(fakeDb(), { userId: "user-1", ip: "203.0.113.5", countryCode: "FR" });
       const entries = querySystemLogs({ source: "security" });
       expect(entries[0]?.level).toBe("info");
       expect(entries[0]?.message).toBe("auth.login.new_country");
@@ -1041,12 +1036,9 @@ describe("audit", () => {
     it("writes a durable SecurityAuditLog row with the resolved country in metadata", async () => {
       const create = vi.fn().mockResolvedValue({});
       vi.spyOn(console, "info").mockImplementation(() => {});
-      await logLoginNewCountry(fakeDb(create), {
-        userId: "user-1",
-        email: "admin@example.com",
-        ip: "203.0.113.5",
-        countryCode: "FR",
-      });
+      // Takes no email - resolves the account's own identity snapshot itself (same db.user.findUnique
+      // fakeDb() already stubs for writeSecurityAuditLog's own internal resolution).
+      await logLoginNewCountry(fakeDb(create), { userId: "user-1", ip: "203.0.113.5", countryCode: "FR" });
       expect(create).toHaveBeenCalledWith({
         data: {
           event_type: "auth.login.new_country",
@@ -1060,15 +1052,10 @@ describe("audit", () => {
       });
     });
 
-    it("dispatches a real notification, deduped on the user+country pair, with the email masked in the body", async () => {
+    it("dispatches a real notification, deduped on the user+country pair, with the resolved email masked in the body", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
-      const db = fakeDb();
-      await logLoginNewCountry(db, {
-        userId: "user-1",
-        email: "admin@example.com",
-        ip: "203.0.113.5",
-        countryCode: "FR",
-      });
+      const db = fakeDb(vi.fn(), { email: "admin@example.com", display_name: null });
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", countryCode: "FR" });
       await vi.waitFor(() => {
         expect(notify).toHaveBeenCalledWith(
           db,
@@ -1086,6 +1073,19 @@ describe("audit", () => {
       expect((event as { body: string }).body).not.toContain("admin@example.com");
     });
 
+    it("falls back to a generic account label when no identity snapshot is available", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb(vi.fn(), null);
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", countryCode: "FR" });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.new_country",
+          expect.objectContaining({ body: expect.stringContaining("An admin account") }),
+        );
+      });
+    });
+
     it("does not throw when the instance organization can't be resolved (audit write already happened)", async () => {
       const create = vi.fn().mockResolvedValue({});
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -1097,7 +1097,7 @@ describe("audit", () => {
         $transaction: vi.fn(),
       } as unknown as PrismaClient;
       await expect(
-        logLoginNewCountry(db, { userId: "user-1", email: "admin@example.com", ip: "203.0.113.5", countryCode: "FR" }),
+        logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", countryCode: "FR" }),
       ).resolves.toBeUndefined();
       expect(create).toHaveBeenCalledOnce();
       await vi.waitFor(() => {

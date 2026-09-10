@@ -165,7 +165,6 @@ describe("login privileged failure tracking", () => {
     expect(result.ok).toBe(true);
     expect(mocks.checkNewCountryLogin).toHaveBeenCalledWith(prisma, {
       userId: testUser.id,
-      email: testUser.email,
       ip: "203.0.113.5",
     });
     // Ordering matters: checkNewCountryLogin's own "recent logins" query must read only prior
@@ -186,7 +185,6 @@ describe("login privileged failure tracking", () => {
     expect(result).toMatchObject({ ok: true, next: "mfa_required" });
     expect(mocks.checkNewCountryLogin).toHaveBeenCalledWith(prisma, {
       userId: testUser.id,
-      email: testUser.email,
       ip: undefined,
     });
   });

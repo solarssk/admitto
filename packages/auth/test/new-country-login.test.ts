@@ -29,7 +29,7 @@ function fakeDb(opts: {
   } as unknown as PrismaClient;
 }
 
-const ctx = { userId: "user-1", email: "admin@example.com", ip: "203.0.113.5" };
+const ctx = { userId: "user-1", ip: "203.0.113.5" };
 
 describe("checkNewCountryLogin", () => {
   beforeEach(() => {
@@ -39,7 +39,7 @@ describe("checkNewCountryLogin", () => {
 
   it("no-ops without querying anything when no ip is given", async () => {
     const db = fakeDb();
-    await checkNewCountryLogin(db, { userId: "user-1", email: "admin@example.com" });
+    await checkNewCountryLogin(db, { userId: "user-1" });
     expect(mocks.resolveIpLocation).not.toHaveBeenCalled();
     expect(db.roleAssignment.findMany).not.toHaveBeenCalled();
     expect(mocks.logLoginNewCountry).not.toHaveBeenCalled();
@@ -69,12 +69,12 @@ describe("checkNewCountryLogin", () => {
     expect(mocks.logLoginNewCountry).not.toHaveBeenCalled();
   });
 
-  it("queries the last 5 successful logins for this user, most recent first", async () => {
+  it("queries the last 5 successful logins for this user (both local and OIDC event types), most recent first", async () => {
     mocks.resolveIpLocation.mockReturnValue({ kind: "resolved", countryCode: "FR" });
     const db = fakeDb({ priorLoginIps: ["1.2.3.4"] });
     await checkNewCountryLogin(db, ctx);
     expect(db.securityAuditLog.findMany).toHaveBeenCalledWith({
-      where: { user_id: "user-1", event_type: "auth.login.success" },
+      where: { user_id: "user-1", event_type: { in: ["auth.login.success", "auth.oidc.success"] } },
       orderBy: { created_at: "desc" },
       take: 5,
       select: { ip: true },
@@ -117,7 +117,6 @@ describe("checkNewCountryLogin", () => {
     await checkNewCountryLogin(db, ctx);
     expect(mocks.logLoginNewCountry).toHaveBeenCalledWith(db, {
       userId: "user-1",
-      email: "admin@example.com",
       ip: "203.0.113.5",
       countryCode: "FR",
     });
