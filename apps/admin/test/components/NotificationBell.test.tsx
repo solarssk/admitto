@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NotificationBell } from "../../src/components/NotificationBell.js";
+import { NotificationBell, resetNotificationBellCache } from "../../src/components/NotificationBell.js";
 import type { NotificationDto } from "../../src/api/types.js";
 import { renderWithToast } from "../test-utils.js";
 
@@ -43,6 +43,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.useRealTimers();
+  resetNotificationBellCache();
 });
 
 describe("NotificationBell trigger", () => {
@@ -64,6 +65,24 @@ describe("NotificationBell trigger", () => {
 
     expect(screen.getByRole("button", { name: "Notifications, 3 unread" })).toBeTruthy();
     expect(screen.getByText("3")).toBeTruthy();
+  });
+
+  it("keeps showing the last-known count across a remount instead of flashing back to 0", async () => {
+    // StaffShell (this component's parent) is mounted separately by each top-level shell
+    // (EventsListShell/AdminShell/OperatorShell/InstanceSettingsShell), so NotificationBell
+    // genuinely remounts on every switch between them - the bug this cache fixes (PO report).
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 5 });
+
+    const { unmount } = renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    expect(screen.getByRole("button", { name: "Notifications, 5 unread" })).toBeTruthy();
+    unmount();
+
+    fetchAccountNotificationsUnreadCount.mockClear();
+    renderWithToast(<NotificationBell />);
+
+    expect(screen.getByRole("button", { name: "Notifications, 5 unread" })).toBeTruthy();
+    expect(fetchAccountNotificationsUnreadCount).not.toHaveBeenCalled();
   });
 
   it("caps a large unread count at 99+", async () => {
@@ -133,6 +152,29 @@ describe("NotificationBell dropdown", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Notifications" })).toBeTruthy();
     });
+  });
+
+  it("carries the decremented count into a later remount, not the stale pre-read value", async () => {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [makeNotification()],
+      unread_count: 1,
+    });
+    markAccountNotificationRead.mockResolvedValue({ unread_count: 0 });
+
+    const { unmount } = renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+    fireEvent.click(screen.getByRole("menuitem", { name: /5 consecutive failed sign-in attempts/ }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Notifications" })).toBeTruthy());
+    unmount();
+
+    fetchAccountNotificationsUnreadCount.mockClear();
+    renderWithToast(<NotificationBell />);
+
+    expect(screen.getByRole("button", { name: "Notifications" })).toBeTruthy();
+    expect(fetchAccountNotificationsUnreadCount).not.toHaveBeenCalled();
   });
 
   it("does not re-mark an already-read notification on click", async () => {

@@ -17,13 +17,23 @@ import { useDropdownMenu } from "./useDropdownMenu.js";
  * for the number, not the same constant reused. */
 const UNREAD_POLL_MS = 30_000;
 
+/** In-memory cache for the unread count, same reasoning and shape as SystemStatus's own
+ * checksCache: StaffShell (which renders this component) is mounted separately by each top-level
+ * shell (EventsListShell/AdminShell/OperatorShell/InstanceSettingsShell aren't nested under one
+ * another), so NotificationBell remounts on every switch between them - without this, the badge
+ * would flash back to 0 on every navigation until the next fetch resolved (PO report). Use
+ * `resetNotificationBellCache()` between tests to avoid leaking state across cases. */
+let unreadCountCache: { value: number; expiresAt: number } | null = null;
+
+export function resetNotificationBellCache(): void {
+  unreadCountCache = null;
+}
+
 /**
  * Topbar notification bell (notifications-module-foundation plan, PR4) - unlike SystemStatus,
  * which vanishes entirely when it has nothing to report (rows.length === 0 → null, a healthy
  * signal), the bell always renders: a vanishing bell at 0 unread would read as broken, not as
- * "nothing wrong". No module-level cache the way SystemStatus's checksCache is - that exists to
- * dedupe re-fetches across SystemStatus's own frequent remounts (StaffShell switches), but this
- * component lives in that same always-mounted shell location and never remounts that way.
+ * "nothing wrong".
  */
 export function NotificationBell() {
   const { addToast } = useToast();
@@ -31,12 +41,22 @@ export function NotificationBell() {
     align: "end",
     gap: 8,
   });
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(
+    unreadCountCache && unreadCountCache.expiresAt > Date.now() ? unreadCountCache.value : 0,
+  );
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
   const [listLoaded, setListLoaded] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const [markingAll, setMarkingAll] = useState(false);
+
+  // Every server-confirmed count (poll tick, list load, mark-read, mark-all-read) goes through
+  // here so the cache never drifts from what's on screen - missing even one call site would mean
+  // a stale count flashing back in on the next remount (see unreadCountCache's own doc comment).
+  function setConfirmedUnreadCount(value: number) {
+    setUnreadCount(value);
+    unreadCountCache = { value, expiresAt: Date.now() + UNREAD_POLL_MS };
+  }
 
   // Poll the cheap unread-count endpoint continuously; the fuller list is fetched lazily below,
   // only when the dropdown is actually opened - no reason to re-render its list every 30s while
@@ -44,23 +64,29 @@ export function NotificationBell() {
   useEffect(() => {
     let currentAbort: AbortController | null = null;
 
-    // No distinct silent/non-silent branches, unlike SystemStatus's own poll: there's no
-    // error/degraded state on the bell to gate on a first-fetch-only basis - a failed tick (poll
-    // or initial) just keeps the last-known count and the next tick 30s later tries again.
-    async function loadCount() {
+    // `silent` here means "skip the network round-trip if the cache is still fresh" (a remount
+    // right after a previous one), not an error-display distinction like SystemStatus's own
+    // silent/non-silent split - there's no error/degraded state on the bell to gate on a
+    // first-fetch-only basis. A failed tick (poll or initial) just keeps the last-known value;
+    // retried by the next interval tick.
+    async function loadCount(silent: boolean) {
+      if (!silent && unreadCountCache && unreadCountCache.expiresAt > Date.now()) {
+        setUnreadCount(unreadCountCache.value);
+        return;
+      }
       const ac = new AbortController();
       currentAbort = ac;
       try {
         const data = await fetchAccountNotificationsUnreadCount(ac.signal);
         if (ac.signal.aborted) return;
-        setUnreadCount(data.unread_count);
+        setConfirmedUnreadCount(data.unread_count);
       } catch {
         // Keep the last-known value; retried by the next interval tick.
       }
     }
 
-    void loadCount();
-    const intervalId = setInterval(() => void loadCount(), UNREAD_POLL_MS);
+    void loadCount(false);
+    const intervalId = setInterval(() => void loadCount(true), UNREAD_POLL_MS);
     return () => {
       currentAbort?.abort();
       clearInterval(intervalId);
@@ -74,7 +100,7 @@ export function NotificationBell() {
       const data = await fetchAccountNotifications(signal);
       if (signal?.aborted) return;
       setNotifications(data.notifications);
-      setUnreadCount(data.unread_count);
+      setConfirmedUnreadCount(data.unread_count);
       setListLoaded(true);
     } catch (err) {
       if (signal?.aborted) return;
@@ -99,7 +125,7 @@ export function NotificationBell() {
     setUnreadCount((c) => Math.max(0, c - 1));
     try {
       const result = await markAccountNotificationRead(notification.id);
-      setUnreadCount(result.unread_count);
+      setConfirmedUnreadCount(result.unread_count);
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Failed to mark notification as read."), "error");
     }
@@ -110,7 +136,7 @@ export function NotificationBell() {
     try {
       const result = await markAllAccountNotificationsRead();
       setNotifications((prev) => prev.map((n) => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })));
-      setUnreadCount(result.unread_count);
+      setConfirmedUnreadCount(result.unread_count);
     } catch (err) {
       addToast(operatorApiErrorMessage(err, "Failed to mark all as read."), "error");
     } finally {
