@@ -459,7 +459,7 @@ describe("audit", () => {
         expect.objectContaining({
           organizationId: "org_default",
           dedupeKey: "user-1",
-          body: expect.stringContaining("a*** at example.com"),
+          body: expect.stringContaining("Staff User"),
           metadata: { action: "reset_mfa" },
         }),
       );
@@ -845,7 +845,7 @@ describe("audit", () => {
             organizationId: "org_default",
             dedupeKey: "user-1",
             title: expect.any(String),
-            body: expect.stringContaining("a*** at example.com"),
+            body: expect.stringContaining("admin@example.com"),
             metadata: { streak: 5 },
           }),
         );
@@ -972,13 +972,13 @@ describe("audit", () => {
             organizationId: "org_default",
             dedupeKey: "user-1",
             body: expect.stringContaining("Jane Admin"),
-            metadata: { resource: "oidc_provider", action: "update", target_id: "prov-1" },
+            metadata: { resource: "oidc_provider", action: "update", target_id: "prov-1", target_label: null },
           }),
         );
       });
     });
 
-    it("falls back to the actor's email, then a generic label, when no display name/snapshot is available", async () => {
+    it("falls back to the actor's real (unmasked) email, then a generic label, when no display name/snapshot is available", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const dbWithEmail = fakeDb(vi.fn(), { email: "jane@example.com", display_name: null });
       await logAuthSettingsChanged(dbWithEmail, {
@@ -990,7 +990,7 @@ describe("audit", () => {
         expect(notify).toHaveBeenCalledWith(
           dbWithEmail,
           "auth.settings.changed",
-          expect.objectContaining({ body: expect.stringContaining("j*** at example.com") }),
+          expect.objectContaining({ body: expect.stringContaining("jane@example.com") }),
         );
       });
 
@@ -1019,6 +1019,54 @@ describe("audit", () => {
           db,
           "auth.settings.changed",
           expect.objectContaining({ body: expect.stringContaining("Cloudflare Access") }),
+        );
+      });
+    });
+
+    it("names the target in both body and metadata when a human-readable targetLabel is given", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb(vi.fn(), { email: "jane@example.com", display_name: "Jane Admin" });
+      await logAuthSettingsChanged(db, {
+        actorUserId: "user-1",
+        resource: "oidc_provider",
+        action: "disable",
+        targetId: "prov-1",
+        targetLabel: "Company SSO (Okta)",
+      });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.settings.changed",
+          expect.objectContaining({
+            body: expect.stringContaining('"Company SSO (Okta)"'),
+            metadata: {
+              resource: "oidc_provider",
+              action: "disable",
+              target_id: "prov-1",
+              target_label: "Company SSO (Okta)",
+            },
+          }),
+        );
+      });
+    });
+
+    it("omits the target suffix and stores a null target_label when none is given", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb(vi.fn(), { email: "jane@example.com", display_name: "Jane Admin" });
+      await logAuthSettingsChanged(db, {
+        actorUserId: "user-1",
+        resource: "oidc_provider",
+        action: "update",
+        targetId: "prov-1",
+      });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.settings.changed",
+          expect.objectContaining({
+            body: "Jane Admin changed SSO provider settings (update).",
+            metadata: { resource: "oidc_provider", action: "update", target_id: "prov-1", target_label: null },
+          }),
         );
       });
     });
@@ -1052,7 +1100,7 @@ describe("audit", () => {
       });
     });
 
-    it("dispatches a real notification, deduped on the user+country pair, with the resolved email masked in the body", async () => {
+    it("dispatches a real notification, deduped on the user+country pair, naming the account by its real email", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const db = fakeDb(vi.fn(), { email: "admin@example.com", display_name: null });
       await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", countryCode: "FR" });
@@ -1063,14 +1111,24 @@ describe("audit", () => {
           expect.objectContaining({
             organizationId: "org_default",
             dedupeKey: "user-1:FR",
-            body: expect.stringContaining("a*** at example.com"),
+            body: expect.stringContaining("admin@example.com"),
             metadata: { country: "FR" },
           }),
         );
       });
-      // Never a raw, unmasked email in the delivered body.
-      const [, , event] = notify.mock.calls[0]!;
-      expect((event as { body: string }).body).not.toContain("admin@example.com");
+    });
+
+    it("prefers the account's display name over its email when both are known", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb(vi.fn(), { email: "admin@example.com", display_name: "Admin User" });
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", countryCode: "FR" });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.new_country",
+          expect.objectContaining({ body: expect.stringContaining("Admin User") }),
+        );
+      });
     });
 
     it("falls back to a generic account label when no identity snapshot is available", async () => {

@@ -176,17 +176,22 @@ export function fingerprint(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 12);
 }
 
-/** Safe-for-delivery identifier for an email address inside a notification title/body: the same
- * `a***@example.com` masking as `redactEmail`, but with the `@` replaced so the result can never
- * match `sanitizeNotificationText`'s email-shape redaction (packages/notifications/src/sanitize.ts,
- * delegating to `@admitto/mail-delivery`'s `sanitizeDeliveryError`) - every notify() title/body/
- * metadata string passes through that redactor before any channel sees it, and an email-shaped
- * substring collapses to the literal "[redacted]", which would make the delivered alert unable to
- * say which account it's about. Structural, not incidental: with no "@" character left in the
- * result, there is nothing for an at-symbol-scanning redactor - this one, or a future one - to
- * match, so this doesn't depend on today's exact character-class behavior of that scanner. */
-export function maskedAccountLabel(email: string): string {
-  return redactEmail(email).replace("@", " at ");
+/** Human-identifiable label for a notification title/body: display name when the account has one,
+ * else its real email, else `fallback`. Unmasked - these alerts exist specifically so a Superadmin
+ * can tell which account an incident concerns, delivered only to the organization's own configured
+ * webhook/email destinations (never a third party the org didn't choose), so redacting the one
+ * piece of information every one of these alerts is actually FOR would defeat their purpose (see
+ * `dispatcher.ts`'s own `buildDispatchedNotification` doc comment for why notify() no longer runs
+ * this kind of content through an email-redacting sanitizer at all). `userId` is optional because
+ * `logMfaBreakGlass` doesn't always have a resolved id for its target (see that call site). */
+async function resolveAccountLabel(
+  db: Db,
+  userId: string | null | undefined,
+  fallbackEmail: string | undefined,
+  fallback: string,
+): Promise<string> {
+  const identity = userId ? await resolveUserIdentitySnapshot(db, userId) : null;
+  return identity?.display_name ?? identity?.email ?? fallbackEmail ?? fallback;
 }
 
 // Events naming an outright failure, rejection, or blocked action get "warn" in the live
@@ -394,9 +399,10 @@ export async function logMfaBreakGlass(
     metadata: { action: ctx.action },
   });
   const actionVerb = BREAK_GLASS_ACTION_VERB[ctx.action] ?? `used the emergency bypass (${ctx.action}) on`;
+  const targetLabel = await resolveAccountLabel(db, ctx.userId, ctx.email, ctx.email);
   await dispatchSecurityNotification(db, "auth.mfa.break_glass", {
     title: "Emergency two-factor bypass used",
-    body: `An operator ${actionVerb} ${maskedAccountLabel(ctx.email)} via the emergency CLI bypass.`,
+    body: `An operator ${actionVerb} ${targetLabel} via the emergency CLI bypass.`,
     dedupeKey: ctx.userId ?? ctx.email,
     metadata: { action: ctx.action },
   });
@@ -702,9 +708,15 @@ export async function logRepeatedFailedLogins(
     ip: ctx.ip ?? null,
     metadata: { streak: ctx.streak },
   });
+  // ctx.email directly, not resolveAccountLabel's display-name lookup: this fires on the
+  // enumeration-timing-sensitive failed-login path (see dispatchSecurityNotification's own doc
+  // comment on why this call is fire-and-forget) - an extra awaited DB query here to prefer a
+  // display name would add that same latency back for exactly the account this function only
+  // ever runs for (a real, elevated-role account), the same class of side channel PR3a's original
+  // review already fixed. writeSecurityAuditLog above already looked this account up regardless.
   void dispatchSecurityNotification(db, "auth.login.repeated_failures", {
     title: "Repeated failed sign-in attempts",
-    body: `${ctx.streak} consecutive failed sign-in attempts on ${maskedAccountLabel(ctx.email)}.`,
+    body: `${ctx.streak} consecutive failed sign-in attempts on ${ctx.email}.`,
     dedupeKey: ctx.userId,
     metadata: { streak: ctx.streak },
   });
@@ -748,7 +760,15 @@ const AUTH_SETTINGS_RESOURCE_LABEL: Record<AuthSettingsResource, string> = {
  * call sites in apps/web/src/admin/identity-api-routes.ts already has a plain PrismaClient in
  * scope right next to the existing writeAdminAuditLogBestEffort call. Still stdout/ring-buffer
  * only for `SecurityAuditLog` purposes (unchanged - "already durable via AdminAuditLog", see the
- * module doc comment above), the alert dispatch is the only thing that was missing. */
+ * module doc comment above), the alert dispatch is the only thing that was missing.
+ *
+ * `targetId` is the target row's raw database id - correct for a durable audit column (immutable,
+ * stable even if the row is later renamed), but meaningless to a Superadmin reading the delivered
+ * alert: there's no "look up this id" affordance anywhere in the admin UI. `targetLabel` is the
+ * same target's human-readable name at the moment of the change (e.g. an OIDC provider's own
+ * `display_name`) - optional because not every resource has one (`cf_access` is a single
+ * org-wide setting, not a named row) - included in the body/metadata alongside, never instead of,
+ * `targetId`. */
 export async function logAuthSettingsChanged(
   db: PrismaClient,
   input: {
@@ -756,6 +776,7 @@ export async function logAuthSettingsChanged(
     resource: AuthSettingsResource;
     action: string;
     targetId?: string;
+    targetLabel?: string;
   },
 ): Promise<void> {
   emitAuditEvent("auth.settings.changed", {
@@ -764,13 +785,18 @@ export async function logAuthSettingsChanged(
     action: input.action,
     target_id: input.targetId ?? null,
   });
-  const actor = await resolveUserIdentitySnapshot(db, input.actorUserId);
-  const actorLabel = actor?.display_name ?? (actor?.email ? maskedAccountLabel(actor.email) : "An admin");
+  const actorLabel = await resolveAccountLabel(db, input.actorUserId, undefined, "An admin");
+  const targetSuffix = input.targetLabel ? ` ("${input.targetLabel}")` : "";
   void dispatchSecurityNotification(db, "auth.settings.changed", {
     title: "Login or security settings changed",
-    body: `${actorLabel} changed ${AUTH_SETTINGS_RESOURCE_LABEL[input.resource]} settings (${input.action}).`,
+    body: `${actorLabel} changed ${AUTH_SETTINGS_RESOURCE_LABEL[input.resource]} settings (${input.action})${targetSuffix}.`,
     dedupeKey: input.actorUserId,
-    metadata: { resource: input.resource, action: input.action, target_id: input.targetId ?? null },
+    metadata: {
+      resource: input.resource,
+      action: input.action,
+      target_id: input.targetId ?? null,
+      target_label: input.targetLabel ?? null,
+    },
   });
 }
 
@@ -807,7 +833,7 @@ export async function logLoginNewCountry(
     ip: ctx.ip ?? null,
     metadata: { country: ctx.countryCode },
   });
-  const accountLabel = identity?.email ? maskedAccountLabel(identity.email) : "An admin account";
+  const accountLabel = identity?.display_name ?? identity?.email ?? "An admin account";
   void dispatchSecurityNotification(db, "auth.login.new_country", {
     title: "Admin login from a new country",
     body: `${accountLabel} signed in from ${ctx.countryCode}, not seen in this account's recent successful logins.`,

@@ -629,7 +629,7 @@ describe("notify()", () => {
     expect(db.notificationThrottle.deleteMany).toHaveBeenCalled();
   });
 
-  it("sanitizes title/body before any channel sees them", async () => {
+  it("passes title/body/metadata through unchanged - notify()'s only real caller is our own developer-authored templates, not free-form text", async () => {
     stubHappyPath(db);
     let captured: DispatchedNotification | undefined;
     const email: NotificationChannel = {
@@ -643,12 +643,12 @@ describe("notify()", () => {
     await notify(
       db as unknown as PrismaClient,
       TYPE,
-      { ...EVENT, body: "Contact attacker-controlled-handle@example.com for details." },
+      { ...EVENT, body: "admin@example.com signed in from FR.", metadata: { country: "FR" } },
       { channels: { email } },
     );
 
-    expect(captured?.body).not.toContain("attacker-controlled-handle@example.com");
-    expect(captured?.body).toContain("[redacted]");
+    expect(captured?.body).toBe("admin@example.com signed in from FR.");
+    expect(captured?.metadata).toEqual({ country: "FR" });
   });
 
   it("never throws even when every DB call rejects", async () => {
