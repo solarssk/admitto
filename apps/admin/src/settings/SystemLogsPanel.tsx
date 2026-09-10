@@ -11,14 +11,34 @@ type LevelFilter = "" | SystemLogEntryDto["level"];
 type SourceFilter = "" | SystemLogEntryDto["source"];
 
 const SEARCH_DEBOUNCE_MS = 300;
-// Exported for AuditLogPanel's own live-refresh (Audit/Security views) - one shared cadence for
-// every "Live" toggle on this page, rather than a second magic number that could drift from
-// this one.
-export const POLL_INTERVAL_MS = 1750;
+const DEFAULT_POLL_INTERVAL_MS = 1750;
+// Not exported directly (SonarCloud typescript:S6861 - an exported mutable `let` binding can be
+// reassigned by any importer, not just through the two test-only functions below meant to be the
+// only way to change it): getPollIntervalMs()/setPollIntervalMsForTests() are the real module
+// boundary. Shared with AuditLogPanel's own live-refresh (Audit/Security views) - one cadence for
+// every "Live" toggle on this page, rather than a second magic number that could drift from this one.
+let pollIntervalMs = DEFAULT_POLL_INTERVAL_MS;
 const MAX_RENDERED_ENTRIES = 1000;
 // A single missed tick is normal network noise and never surfaced; this many in a row (~9s at
 // the interval above) means the endpoint is genuinely down, not just one slow request.
 export const POLL_DEGRADED_THRESHOLD = 5;
+
+export function getPollIntervalMs(): number {
+  return pollIntervalMs;
+}
+
+/** Test-only: shortens the live-poll interval so a test can wait through several real ticks
+ * without the real ~1.75s-per-tick cost - `setInterval`'s delay is captured once when each panel's
+ * polling effect starts, so call this before rendering. Production code never calls this. */
+export function setPollIntervalMsForTests(ms: number): void {
+  pollIntervalMs = ms;
+}
+
+/** Test-only: restores the real production interval - call in afterEach so a shortened interval
+ * from one test can't leak into the next. */
+export function resetPollIntervalMsForTests(): void {
+  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS;
+}
 
 const SOURCE_LABELS: Record<SystemLogEntryDto["source"], string> = {
   api: "API",
@@ -289,7 +309,7 @@ export const SystemLogsPanel = forwardRef<SystemLogsPanelHandle, SystemLogsPanel
       }
     };
 
-    const intervalId = window.setInterval(() => void pollOnce(), POLL_INTERVAL_MS);
+    const intervalId = window.setInterval(() => void pollOnce(), getPollIntervalMs());
     return () => {
       currentAbort?.abort();
       window.clearInterval(intervalId);
