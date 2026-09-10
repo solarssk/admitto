@@ -22,7 +22,7 @@ import {
 import { AuditLogPanel } from "../../src/settings/AuditLogPanel.js";
 import { EventArchivingPanel } from "../../src/settings/EventArchivingPanel.js";
 import {
-  POLL_INTERVAL_MS,
+  getPollIntervalMs,
   resetPollIntervalMsForTests,
   setPollIntervalMsForTests,
 } from "../../src/settings/SystemLogsPanel.js";
@@ -1263,7 +1263,7 @@ describe("AuditLogPanel rendering", () => {
 
     // The first, aborted non-silent request must not clear the guard owned by the second one.
     // If it did, this tick would start a third request and abort the reload the operator awaits.
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS + 250));
+    await new Promise((resolve) => setTimeout(resolve, getPollIntervalMs() + 250));
     expect(fetchAuditLog).toHaveBeenCalledTimes(2);
 
     await act(async () => resolveNewestLoad({ entries: [makeAuditEntry()], total: 50, page: 1, pageSize: 25 }));
@@ -1291,7 +1291,7 @@ describe("AuditLogPanel rendering", () => {
     const callsAfterPause = vi.mocked(fetchAuditLog).mock.calls.length;
 
     // Long enough to cross at least one interval tick, proving it did NOT fire while paused.
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS + 750));
+    await new Promise((resolve) => setTimeout(resolve, getPollIntervalMs() + 750));
     expect(vi.mocked(fetchAuditLog).mock.calls).toHaveLength(callsAfterPause);
 
     fireEvent.click(screen.getByRole("button", { name: "Paused" }));
@@ -2020,7 +2020,7 @@ describe("AuditLogPanel Security view rendering", () => {
     const callsAfterPause = vi.mocked(fetchSecurityAuditLog).mock.calls.length;
 
     // Long enough to cross at least one interval tick, proving it did NOT fire while paused.
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS + 750));
+    await new Promise((resolve) => setTimeout(resolve, getPollIntervalMs() + 750));
     expect(vi.mocked(fetchSecurityAuditLog).mock.calls).toHaveLength(callsAfterPause);
 
     fireEvent.click(screen.getByRole("button", { name: "Paused" }));
@@ -2515,7 +2515,7 @@ describe("SystemLogsPanel rendering", () => {
     const callsAfterPause = vi.mocked(fetchSystemLogs).mock.calls.length;
 
     // Long enough to cross at least one interval tick, proving it did NOT fire while paused.
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS + 750));
+    await new Promise((resolve) => setTimeout(resolve, getPollIntervalMs() + 750));
 
     expect(vi.mocked(fetchSystemLogs).mock.calls).toHaveLength(callsAfterPause);
   }, 10000);
