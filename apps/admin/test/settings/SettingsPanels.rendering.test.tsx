@@ -2442,7 +2442,12 @@ describe("SystemLogsPanel rendering", () => {
   }, 10000);
 
   it("replaces the view with a fresh snapshot when the server cursor resets (restart recovery)", async () => {
-    setPollIntervalMsForTests(50); // see AuditLogPanel's own "silently re-fetches on a timer" above
+    // 500ms, not the usual 50ms: unlike the other tests here, this one must actually observe
+    // "before-restart" before the next tick replaces it with "after-restart" - at 50ms that
+    // window was tight enough for a loaded CI runner to jump straight from empty to
+    // "after-restart" without ever committing the intermediate render, failing the
+    // findByText("before-restart") assertion below (seen on CI, not reproducible locally).
+    setPollIntervalMsForTests(500);
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     vi.mocked(fetchSystemLogs)
       .mockResolvedValueOnce({
