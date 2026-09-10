@@ -117,13 +117,6 @@ beforeEach(() => {
   // AuditLogPanel picks table vs. mobile cards via useIsDesktop() - default to desktop so
   // these tests exercise the <table> markup they assert against.
   mockMatchMedia(true);
-  // Real timers throughout this file (fake timers deadlock here - confirmed empirically, React's
-  // own scheduler needs genuine time to pass), so every test that waits through one or more live
-  // polls pays POLL_INTERVAL_MS in real wall-clock time. Shortening the interval itself (not the
-  // waits, which stay expressed as multiples of it or as findBy*/waitFor timeout ceilings - those
-  // only bound how long a check may take, not how long it actually waits) is what makes those
-  // tests fast: they resolve as soon as the state change they're checking for actually happens.
-  setPollIntervalMsForTests(50);
 });
 
 /** Opens a SearchableSelect filter (Action/Event, both converted from a plain <select>) and
@@ -1218,6 +1211,12 @@ describe("AuditLogPanel rendering", () => {
   });
 
   it("silently re-fetches on a timer and shows newly arrived rows", async () => {
+    // Only this test (and the other ones below that explicitly wait through a live-poll tick)
+    // shortens the interval - doing it file-wide in beforeEach let an unrelated extra tick sneak
+    // into tests that don't expect any polling at all (e.g. a "called N times" assertion in a
+    // retry test), which is exactly as flaky on a real interval as it would have been on a fake
+    // one, just for a different reason. See setPollIntervalMsForTests' own doc comment.
+    setPollIntervalMsForTests(50);
     vi.mocked(fetchAuditLog)
       .mockResolvedValueOnce({ entries: [makeAuditEntry()], total: 1, page: 1, pageSize: 25 })
       .mockResolvedValueOnce({
@@ -1271,6 +1270,7 @@ describe("AuditLogPanel rendering", () => {
   }, 10000);
 
   it("clears an initial load error when a live poll recovers", async () => {
+    setPollIntervalMsForTests(50); // see "silently re-fetches on a timer" above
     vi.mocked(fetchAuditLog).mockRejectedValueOnce(new Error("network error")).mockResolvedValueOnce(emptyAuditLog());
 
     renderAuditPanel();
@@ -1280,6 +1280,7 @@ describe("AuditLogPanel rendering", () => {
   }, 10000);
 
   it("stops polling once Live is turned off, and resumes when clicked again", async () => {
+    setPollIntervalMsForTests(50); // see "silently re-fetches on a timer" above
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
 
     renderAuditPanel();
@@ -1302,6 +1303,7 @@ describe("AuditLogPanel rendering", () => {
   }, 10000);
 
   it("surfaces a banner after sustained live-poll failures, and clears it on the next success", async () => {
+    setPollIntervalMsForTests(50); // see "silently re-fetches on a timer" above
     vi.mocked(fetchAuditLog)
       .mockResolvedValueOnce(emptyAuditLog()) // initial load
       .mockRejectedValueOnce(new Error("network error")) // poll 1
@@ -1976,6 +1978,7 @@ describe("AuditLogPanel Security view rendering", () => {
   });
 
   it("silently re-fetches on a timer and shows newly arrived rows", async () => {
+    setPollIntervalMsForTests(50); // see AuditLogPanel's own "silently re-fetches on a timer" above
     vi.mocked(fetchSecurityAuditLog)
       .mockResolvedValueOnce({ entries: [makeSecurityEntry()], total: 1, page: 1, pageSize: 25 })
       .mockResolvedValueOnce({
@@ -1994,6 +1997,7 @@ describe("AuditLogPanel Security view rendering", () => {
   }, 10000);
 
   it("clears an initial load error when a live poll recovers", async () => {
+    setPollIntervalMsForTests(50); // see AuditLogPanel's own "silently re-fetches on a timer" above
     vi.mocked(fetchSecurityAuditLog)
       .mockRejectedValueOnce(new Error("network error"))
       .mockResolvedValueOnce(emptySecurityLog());
@@ -2005,6 +2009,7 @@ describe("AuditLogPanel Security view rendering", () => {
   }, 10000);
 
   it("stops polling once Live is turned off, and resumes when clicked again", async () => {
+    setPollIntervalMsForTests(50); // see AuditLogPanel's own "silently re-fetches on a timer" above
     vi.mocked(fetchSecurityAuditLog).mockResolvedValue(emptySecurityLog());
 
     renderSecurityPanel();
@@ -2028,6 +2033,7 @@ describe("AuditLogPanel Security view rendering", () => {
   }, 10000);
 
   it("surfaces a banner after sustained live-poll failures, and clears it on the next success", async () => {
+    setPollIntervalMsForTests(50); // see AuditLogPanel's own "silently re-fetches on a timer" above
     vi.mocked(fetchSecurityAuditLog)
       .mockResolvedValueOnce(emptySecurityLog()) // initial load
       .mockRejectedValueOnce(new Error("network error")) // poll 1
@@ -2410,9 +2416,7 @@ describe("SystemLogsPanel rendering", () => {
   });
 
   it("polls with the last cursor as since, appending new lines without resetting existing ones", async () => {
-    // Real timers throughout - the poll interval is created at real mount time, so faking
-    // timers only around the wait (as elsewhere in this file) wouldn't control it; this is a
-    // genuine ~2s real-time wait, not a fake-timer fast-forward.
+    setPollIntervalMsForTests(50); // see AuditLogPanel's own "silently re-fetches on a timer" above
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     vi.mocked(fetchSystemLogs)
       .mockResolvedValueOnce({
@@ -2438,8 +2442,7 @@ describe("SystemLogsPanel rendering", () => {
   }, 10000);
 
   it("replaces the view with a fresh snapshot when the server cursor resets (restart recovery)", async () => {
-    // Real timers throughout, same reasoning as the test above - the poll interval is created
-    // at real mount time.
+    setPollIntervalMsForTests(50); // see AuditLogPanel's own "silently re-fetches on a timer" above
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     vi.mocked(fetchSystemLogs)
       .mockResolvedValueOnce({
@@ -2473,6 +2476,7 @@ describe("SystemLogsPanel rendering", () => {
   }, 10000);
 
   it("surfaces a banner after sustained live-poll failures, and clears it on the next success", async () => {
+    setPollIntervalMsForTests(50); // see AuditLogPanel's own "silently re-fetches on a timer" above
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     vi.mocked(fetchSystemLogs)
       .mockResolvedValueOnce(emptySystemLog()) // initial snapshot
@@ -2498,6 +2502,7 @@ describe("SystemLogsPanel rendering", () => {
   }, 20000);
 
   it("stops polling once Live is turned off", async () => {
+    setPollIntervalMsForTests(50); // see AuditLogPanel's own "silently re-fetches on a timer" above
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     vi.mocked(fetchSystemLogs).mockResolvedValue(emptySystemLog());
 
