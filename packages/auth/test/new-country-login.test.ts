@@ -121,4 +121,30 @@ describe("checkNewCountryLogin", () => {
       countryCode: "FR",
     });
   });
+
+  it("swallows and logs a role-query failure instead of propagating it (the caller's session already exists)", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.resolveIpLocation.mockReturnValue({ kind: "resolved", countryCode: "FR" });
+    const db = {
+      roleAssignment: { findMany: vi.fn().mockRejectedValue(new Error("connection reset")) },
+      securityAuditLog: { findMany: vi.fn() },
+    } as unknown as PrismaClient;
+
+    await expect(checkNewCountryLogin(db, ctx)).resolves.toBeUndefined();
+    expect(mocks.logLoginNewCountry).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("auth.new_country_check_failed"));
+  });
+
+  it("swallows and logs a history-query failure instead of propagating it", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.resolveIpLocation.mockReturnValue({ kind: "resolved", countryCode: "FR" });
+    const db = {
+      roleAssignment: { findMany: vi.fn().mockResolvedValue([{ role: "admin" }]) },
+      securityAuditLog: { findMany: vi.fn().mockRejectedValue(new Error("query timeout")) },
+    } as unknown as PrismaClient;
+
+    await expect(checkNewCountryLogin(db, ctx)).resolves.toBeUndefined();
+    expect(mocks.logLoginNewCountry).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("auth.new_country_check_failed"));
+  });
 });

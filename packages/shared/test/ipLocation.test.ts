@@ -44,4 +44,11 @@ describe("resolveIpLocation", () => {
     });
     expect(resolveIpLocation("203.0.113.5")).toEqual({ kind: "unknown" });
   });
+
+  it("returns unknown and logs instead of misreading a Promise as a result (ILA_SMALL_MEMORY=true, unsupported)", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockedLookup.mockReturnValue(Promise.resolve({ country: "US" }) as unknown as ReturnType<typeof lookup>);
+    expect(resolveIpLocation("8.8.8.8")).toEqual({ kind: "unknown" });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("ILA_SMALL_MEMORY=true"));
+  });
 });

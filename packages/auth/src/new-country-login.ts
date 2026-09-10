@@ -62,12 +62,17 @@ async function hasElevatedRole(db: Db, userId: string): Promise<boolean> {
  * "new" against); every one of the last `RECENT_LOGIN_HISTORY_SIZE` logins also failed to resolve
  * to a country (no reliable baseline - an account that always signs in from a VPN/private range
  * would otherwise see every login flagged "new", which is noise, not signal); or the current
- * country is already among those seen. Matches `privileged-login-alert.ts`'s own precedent: the
- * queries below are unwrapped, not defensively try/caught - a genuine database failure here is
- * allowed to propagate and fail the login attempt itself, the same as `resetFailedLoginStreak`'s
- * unwrapped write immediately after this runs on the local login path; only `logLoginNewCountry`'s
- * own audit-log write and notification dispatch (both already never-throwing) are reached once
- * this decides to fire.
+ * country is already among those seen.
+ *
+ * The role/history queries ARE wrapped in try/catch (unlike `privileged-login-alert.ts`'s own
+ * unwrapped queries, which this module originally copied that pattern from): unlike
+ * `resetFailedLoginStreak`'s single write right after this runs, this function's caller has
+ * already both created the session AND (on the local path) set the session cookie by the time
+ * this executes - a query failure here must not turn an otherwise-successful login into an HTTP
+ * error response with a session already persisted server-side but no cookie the client can use to
+ * reach it (bot review finding, Major). A failure is logged and swallowed the same
+ * never-breaks-the-caller way `dispatchSecurityNotification`/`writeSecurityAuditLog` already
+ * handle their own failures elsewhere in this module.
  */
 export async function checkNewCountryLogin(db: Db, ctx: { userId: string; ip?: string }): Promise<void> {
   if (!ctx.ip) return;
@@ -82,23 +87,33 @@ export async function checkNewCountryLogin(db: Db, ctx: { userId: string; ip?: s
   const current = resolveIpLocation(ctx.ip);
   if (current.kind !== "resolved" || !current.countryCode) return;
 
-  if (!(await hasElevatedRole(db, ctx.userId))) return;
+  try {
+    if (!(await hasElevatedRole(db, ctx.userId))) return;
 
-  const priorLogins = await db.securityAuditLog.findMany({
-    where: { user_id: ctx.userId, event_type: { in: [...LOGIN_SUCCESS_EVENT_TYPES] } },
-    orderBy: { created_at: "desc" },
-    take: RECENT_LOGIN_HISTORY_SIZE,
-    select: { ip: true },
-  });
-  if (priorLogins.length === 0) return;
+    const priorLogins = await db.securityAuditLog.findMany({
+      where: { user_id: ctx.userId, event_type: { in: [...LOGIN_SUCCESS_EVENT_TYPES] } },
+      orderBy: { created_at: "desc" },
+      take: RECENT_LOGIN_HISTORY_SIZE,
+      select: { ip: true },
+    });
+    if (priorLogins.length === 0) return;
 
-  const seenCountries = new Set(
-    priorLogins
-      .map((row) => resolveIpLocation(row.ip))
-      .filter((loc) => loc.kind === "resolved" && loc.countryCode)
-      .map((loc) => loc.countryCode),
-  );
-  if (seenCountries.size === 0 || seenCountries.has(current.countryCode)) return;
+    const seenCountries = new Set(
+      priorLogins
+        .map((row) => resolveIpLocation(row.ip))
+        .filter((loc) => loc.kind === "resolved" && loc.countryCode)
+        .map((loc) => loc.countryCode),
+    );
+    if (seenCountries.size === 0 || seenCountries.has(current.countryCode)) return;
 
-  await logLoginNewCountry(db, { userId: ctx.userId, ip: ctx.ip, countryCode: current.countryCode });
+    await logLoginNewCountry(db, { userId: ctx.userId, ip: ctx.ip, countryCode: current.countryCode });
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "auth.new_country_check_failed",
+        error: err instanceof Error ? err.message : String(err),
+        ts: new Date().toISOString(),
+      }),
+    );
+  }
 }

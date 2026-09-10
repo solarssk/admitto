@@ -30,10 +30,22 @@ export function resolveIpLocation(ip: string | null): IpLocation {
   if (isBlockedPrivateOrMetadataHost(ip)) return { kind: "internal" };
 
   try {
-    // lookup()'s declared type covers ip-location-api's async (ILA_SMALL_MEMORY) mode too; this
-    // repo never sets that env var, so the call is always synchronous in practice.
-    const result = lookup(ip) as { country?: string } | null;
-    return result?.country ? { kind: "resolved", countryCode: result.country } : { kind: "unknown" };
+    // lookup()'s declared type covers ip-location-api's async (ILA_SMALL_MEMORY=true) mode too;
+    // this repo never sets that env var, so the call is always synchronous in practice - but if a
+    // deployment sets it anyway, lookup() returns a Promise instead of a result, and the type
+    // cast below would otherwise silently treat that Promise as a `{country?: string} | null`
+    // with no `country` property, permanently returning "unknown" for every IP with no error or
+    // diagnostic trail (bot review finding). Detect that shape explicitly and fail loudly instead.
+    const result: unknown = lookup(ip);
+    if (result && typeof (result as { then?: unknown }).then === "function") {
+      console.error(
+        "resolveIpLocation: ip-location-api's lookup() returned a Promise - ILA_SMALL_MEMORY=true "
+          + "(async mode) is not supported here. Country resolution is disabled until it's unset.",
+      );
+      return { kind: "unknown" };
+    }
+    const resolved = result as { country?: string } | null;
+    return resolved?.country ? { kind: "resolved", countryCode: resolved.country } : { kind: "unknown" };
   } catch {
     return { kind: "unknown" };
   }
