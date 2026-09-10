@@ -192,8 +192,7 @@ jobs:
       - run: npm run lint
       - name: Unit tests for repo scripts (scripts/*.test.mjs)
         run: npm run test:scripts
-      - name: New ESLint warnings vs baseline (report-only - see scripts/eslint-warning-baseline.mjs)
-        continue-on-error: true
+      - name: New ESLint warnings vs baseline (see scripts/eslint-warning-baseline.mjs)
         run: npm run lint:baseline:check
       - run: npm run typecheck --workspaces --if-present
 
