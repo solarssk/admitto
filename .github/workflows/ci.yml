@@ -744,7 +744,21 @@ jobs:
           # same hole it would be for a runtime dependency. Any future SHA bump still goes through
           # Dependabot + a human-reviewed PR (dependabot.yml's github-actions ecosystem), same as
           # every other action pin in this repo.
-          allow-dependencies-licenses: "pkg:githubactions/sonarsource/sonarqube-scan-action"
+          #
+          # ip-location-api IS a real npm runtime dependency (shipped in the container image via
+          # apps/web, and now packages/shared too) - normally exactly the case the paragraph above
+          # says belongs in REVIEWED_PACKAGE_VERSIONS instead, not here. It's here anyway because
+          # this action only re-evaluates a package when a PR's diff touches its manifest entry (a
+          # new `packages/shared/package.json` line is what first triggered this, even though the
+          # package/version were already present via apps/web/package.json unflagged) - unlike a
+          # global "X OR Y" compound license, there's no `allow-licenses` entry that could express
+          # "the actual license is fine," since the package.json field itself is the non-SPDX
+          # string "Multiple licenses" (see scripts/check-licenses.mjs's REVIEWED_PACKAGE_VERSIONS
+          # entry and THIRD-PARTY-NOTICES.md for the full review). Accepting the version-blindness
+          # this paragraph normally warns about: a future version bump here won't automatically
+          # fail this specific gate the way a sharp/libvips bump would - re-review manually, the
+          # same as a REVIEWED_PACKAGE_VERSIONS entry would need on a bump.
+          allow-dependencies-licenses: "pkg:githubactions/sonarsource/sonarqube-scan-action, pkg:npm/ip-location-api"
 
   docker-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
