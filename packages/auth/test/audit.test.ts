@@ -10,6 +10,7 @@ import {
   logAccessDenied,
   logAuthSettingsChanged,
   logLoginFailure,
+  logLoginNewCountry,
   logLoginSuccess,
   logLogout,
   logMfaBreakGlass,
@@ -1020,6 +1021,89 @@ describe("audit", () => {
           expect.objectContaining({ body: expect.stringContaining("Cloudflare Access") }),
         );
       });
+    });
+  });
+
+  describe("logLoginNewCountry", () => {
+    it("records into the System logs buffer at info level (not a failure/denial event)", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      await logLoginNewCountry(fakeDb(), { userId: "user-1", ip: "203.0.113.5", countryCode: "FR" });
+      const entries = querySystemLogs({ source: "security" });
+      expect(entries[0]?.level).toBe("info");
+      expect(entries[0]?.message).toBe("auth.login.new_country");
+    });
+
+    it("writes a durable SecurityAuditLog row with the resolved country in metadata", async () => {
+      const create = vi.fn().mockResolvedValue({});
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      // Takes no email - resolves the account's own identity snapshot itself (same db.user.findUnique
+      // fakeDb() already stubs for writeSecurityAuditLog's own internal resolution).
+      await logLoginNewCountry(fakeDb(create), { userId: "user-1", ip: "203.0.113.5", countryCode: "FR" });
+      expect(create).toHaveBeenCalledWith({
+        data: {
+          event_type: "auth.login.new_country",
+          user_id: "user-1",
+          user_email: STAFF_SNAPSHOT.email,
+          user_display_name: STAFF_SNAPSHOT.display_name,
+          ip: "203.0.113.5",
+          actor_timezone: null,
+          metadata: { country: "FR" },
+        },
+      });
+    });
+
+    it("dispatches a real notification, deduped on the user+country pair, with the resolved email masked in the body", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb(vi.fn(), { email: "admin@example.com", display_name: null });
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", countryCode: "FR" });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.new_country",
+          expect.objectContaining({
+            organizationId: "org_default",
+            dedupeKey: "user-1:FR",
+            body: expect.stringContaining("a*** at example.com"),
+            metadata: { country: "FR" },
+          }),
+        );
+      });
+      // Never a raw, unmasked email in the delivered body.
+      const [, , event] = notify.mock.calls[0]!;
+      expect((event as { body: string }).body).not.toContain("admin@example.com");
+    });
+
+    it("falls back to a generic account label when no identity snapshot is available", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb(vi.fn(), null);
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", countryCode: "FR" });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.new_country",
+          expect.objectContaining({ body: expect.stringContaining("An admin account") }),
+        );
+      });
+    });
+
+    it("does not throw when the instance organization can't be resolved (audit write already happened)", async () => {
+      const create = vi.fn().mockResolvedValue({});
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = {
+        securityAuditLog: { create },
+        user: { findUnique: vi.fn().mockResolvedValue(null) },
+        organization: { findUnique: vi.fn().mockResolvedValue(null), findFirst: vi.fn().mockResolvedValue(null) },
+        $transaction: vi.fn(),
+      } as unknown as PrismaClient;
+      await expect(
+        logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", countryCode: "FR" }),
+      ).resolves.toBeUndefined();
+      expect(create).toHaveBeenCalledOnce();
+      await vi.waitFor(() => {
+        expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("auth.notify_dispatch_failed"));
+      });
+      expect(notify).not.toHaveBeenCalled();
     });
   });
 });

@@ -214,6 +214,7 @@ export {
   type CompleteMfaWithWebauthnInput,
   type LoginWithPasskeyInput,
 } from "./login.js";
+export { checkNewCountryLogin } from "./new-country-login.js";
 export {
   beginPasskeyLogin,
   finishPasskeyLogin,

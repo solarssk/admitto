@@ -105,6 +105,14 @@ const REVIEWED_PACKAGE_VERSIONS = new Set([
   // used unmodified, not shipped in the runtime server image.
   "lightningcss@1.33.0",
   "lightningcss-darwin-arm64@1.33.0",
+  // ip-location-api - package.json reports the non-SPDX string "Multiple licenses" (its own
+  // LICENSE file: the library code itself is MIT; the rest documents licensing for the
+  // *alternative data sources* it can be configured to use, MaxMind GeoLite2 among them). This
+  // repo's own config (ILA_IP_LOCATION_DB=user, apps/web/.env.example + Dockerfile) deliberately
+  // selects the PDDL/CDLA-Permissive-licensed ip-location-db "user" dataset specifically to avoid
+  // GeoLite2's account/license-key requirement - the only data this deployment ever actually
+  // downloads and ships is fully permissive. See THIRD-PARTY-NOTICES.md.
+  "ip-location-api@5.0.2",
 ]);
 
 let raw;
