@@ -10,12 +10,16 @@ const fetchAccountNotificationsUnreadCount = vi.fn();
 const markAccountNotificationRead = vi.fn();
 const markAllAccountNotificationsRead = vi.fn();
 
-vi.mock("../../src/api/client.js", () => ({
-  fetchAccountNotifications: (...args: unknown[]) => fetchAccountNotifications(...args),
-  fetchAccountNotificationsUnreadCount: (...args: unknown[]) => fetchAccountNotificationsUnreadCount(...args),
-  markAccountNotificationRead: (...args: unknown[]) => markAccountNotificationRead(...args),
-  markAllAccountNotificationsRead: (...args: unknown[]) => markAllAccountNotificationsRead(...args),
-}));
+vi.mock("../../src/api/client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/api/client.js")>();
+  return {
+    ...actual,
+    fetchAccountNotifications: (...args: unknown[]) => fetchAccountNotifications(...args),
+    fetchAccountNotificationsUnreadCount: (...args: unknown[]) => fetchAccountNotificationsUnreadCount(...args),
+    markAccountNotificationRead: (...args: unknown[]) => markAccountNotificationRead(...args),
+    markAllAccountNotificationsRead: (...args: unknown[]) => markAllAccountNotificationsRead(...args),
+  };
+});
 
 function makeNotification(overrides: Partial<NotificationDto> = {}): NotificationDto {
   return {
@@ -92,7 +96,7 @@ describe("NotificationBell dropdown", () => {
     await act(async () => {});
     openBell();
 
-    await screen.findByText("You’re all caught up.");
+    expect(await screen.findByText("You’re all caught up.")).toBeTruthy();
   });
 
   it("lists notifications with their organization name and severity", async () => {
@@ -148,6 +152,57 @@ describe("NotificationBell dropdown", () => {
     expect(markAccountNotificationRead).not.toHaveBeenCalled();
   });
 
+  it("shows a retry action when the list fails to load, and retrying loads it", async () => {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 0 });
+    fetchAccountNotifications.mockRejectedValueOnce(new Error("boom"));
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    expect(await screen.findByText("Could not load notifications.")).toBeTruthy();
+
+    fetchAccountNotifications.mockResolvedValueOnce({ notifications: [], unread_count: 0 });
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("You’re all caught up.")).toBeTruthy();
+  });
+
+  it("shows a toast and keeps the row unread when marking one as read fails", async () => {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [makeNotification()],
+      unread_count: 1,
+    });
+    markAccountNotificationRead.mockRejectedValue(new Error("network down"));
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /5 consecutive failed sign-in attempts/ }));
+
+    expect(await screen.findByText("Failed to mark notification as read.")).toBeTruthy();
+  });
+
+  it("shows a toast when 'Mark all as read' fails", async () => {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [makeNotification()],
+      unread_count: 1,
+    });
+    markAllAccountNotificationsRead.mockRejectedValue(new Error("network down"));
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark all as read" }));
+
+    expect(await screen.findByText("Failed to mark all as read.")).toBeTruthy();
+  });
+
   it("marks every unread notification read via 'Mark all as read'", async () => {
     fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 2 });
     fetchAccountNotifications.mockResolvedValue({
@@ -171,6 +226,103 @@ describe("NotificationBell dropdown", () => {
       expect(screen.getByRole("button", { name: "Notifications" })).toBeTruthy();
       expect(screen.queryByRole("button", { name: "Mark all as read" })).toBeNull();
     });
+  });
+
+  it("leaves other notifications untouched when marking one read", async () => {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 2 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [
+        makeNotification({ id: "notif-1" }),
+        makeNotification({ id: "notif-2", title: "MFA break-glass used" }),
+      ],
+      unread_count: 2,
+    });
+    markAccountNotificationRead.mockResolvedValue({ unread_count: 1 });
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("MFA break-glass used");
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /^5 consecutive failed sign-in attempts/ }));
+
+    await waitFor(() => expect(markAccountNotificationRead).toHaveBeenCalledWith("notif-1"));
+    const otherRow = screen.getByRole("menuitem", { name: /MFA break-glass used/ });
+    expect(otherRow.className).toContain("notif-bell__row--unread");
+  });
+
+  it("falls back to a generic icon for a severity not in the icon map", async () => {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [makeNotification({ severity: "unknown" as NotificationDto["severity"] })],
+      unread_count: 1,
+    });
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+
+    expect(document.querySelector(".ti-info-circle")).toBeTruthy();
+  });
+
+  it("omits the organization prefix when a notification has no organization_name", async () => {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [makeNotification({ organization_name: null })],
+      unread_count: 1,
+    });
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+
+    expect(screen.queryByText(/Demo Org/)).toBeNull();
+  });
+});
+
+describe("NotificationBell abort races", () => {
+  it("does not update state after unmounting mid-poll", async () => {
+    let resolveCount: (value: { unread_count: number }) => void = () => {};
+    fetchAccountNotificationsUnreadCount.mockImplementation(
+      () => new Promise((resolve) => { resolveCount = resolve; }),
+    );
+
+    const { unmount } = renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    unmount();
+
+    await act(async () => {
+      resolveCount({ unread_count: 7 });
+      await Promise.resolve();
+    });
+    // No crash and nothing left to query - the effect's own AbortController was already
+    // aborted by unmount's cleanup, so the resolved promise's `if (ac.signal.aborted) return;`
+    // guard discards it instead of calling setState on an unmounted component.
+    expect(screen.queryByRole("button", { name: /Notifications/ })).toBeNull();
+  });
+
+  it("discards a list fetch that resolves after the dropdown has already closed", async () => {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    let resolveList: (value: { notifications: NotificationDto[]; unread_count: number }) => void = () => {};
+    fetchAccountNotifications.mockImplementation(
+      () => new Promise((resolve) => { resolveList = resolve; }),
+    );
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await act(async () => {});
+    openBell();
+
+    await act(async () => {
+      resolveList({ notifications: [makeNotification()], unread_count: 1 });
+      await Promise.resolve();
+    });
+    // Closed before the fetch resolved - the stale response must not reopen or repopulate the
+    // panel via the aborted request's own state updates.
+    expect(screen.queryByText("5 consecutive failed sign-in attempts")).toBeNull();
   });
 });
 

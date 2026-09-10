@@ -185,6 +185,16 @@ describe("PATCH /api/account/notifications/preferences", () => {
     expect(res.status).toBe(400);
   });
 
+  it("returns 400 for a malformed JSON body", async () => {
+    const res = await app.request("/api/account/notifications/preferences", {
+      method: "PATCH",
+      headers: { Cookie: cookieA, ...sameOrigin, "Content-Type": "application/json" },
+      body: "{not valid json",
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe("invalid_json");
+  });
+
   it("rejects a cross-site request with no Origin header", async () => {
     const res = await app.request("/api/account/notifications/preferences", {
       method: "PATCH",

@@ -90,7 +90,7 @@ export async function handlePatchAccountNotificationPreference(
   }
 
   const typeDef = getNotificationTypeDef(parsed.data.notification_type);
-  if (!typeDef || !typeDef.userConfigurable) {
+  if (!typeDef?.userConfigurable) {
     return c.json({ error: "invalid_notification_type" }, 400);
   }
   if (!typeDef.availableChannels.includes(parsed.data.channel as NotificationChannelKey)) {

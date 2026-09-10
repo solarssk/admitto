@@ -3987,11 +3987,11 @@ describe("AccountPage: Notifications", () => {
     mockFetchNotificationPreferences.mockRejectedValueOnce(new Error("boom"));
 
     renderWithToast(<AccountPage />);
-    await screen.findByText("Could not load notification preferences.");
+    expect(await screen.findByText("Could not load notification preferences.")).toBeTruthy();
 
     mockFetchNotificationPreferences.mockResolvedValue({ notification_types: [TYPE_A] });
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
-    await screen.findByText(TYPE_A.label);
+    expect(await screen.findByText(TYPE_A.label)).toBeTruthy();
   });
 });
