@@ -21,7 +21,11 @@ import {
 } from "../../src/api/client.js";
 import { AuditLogPanel } from "../../src/settings/AuditLogPanel.js";
 import { EventArchivingPanel } from "../../src/settings/EventArchivingPanel.js";
-import { POLL_INTERVAL_MS } from "../../src/settings/SystemLogsPanel.js";
+import {
+  POLL_INTERVAL_MS,
+  resetPollIntervalMsForTests,
+  setPollIntervalMsForTests,
+} from "../../src/settings/SystemLogsPanel.js";
 import { mockMatchMedia, renderWithToast, renderWithToastAndRouter } from "../test-utils.js";
 import { setPreferredLocale } from "../../src/utils/locale-store.js";
 
@@ -113,6 +117,13 @@ beforeEach(() => {
   // AuditLogPanel picks table vs. mobile cards via useIsDesktop() - default to desktop so
   // these tests exercise the <table> markup they assert against.
   mockMatchMedia(true);
+  // Real timers throughout this file (fake timers deadlock here - confirmed empirically, React's
+  // own scheduler needs genuine time to pass), so every test that waits through one or more live
+  // polls pays POLL_INTERVAL_MS in real wall-clock time. Shortening the interval itself (not the
+  // waits, which stay expressed as multiples of it or as findBy*/waitFor timeout ceilings - those
+  // only bound how long a check may take, not how long it actually waits) is what makes those
+  // tests fast: they resolve as soon as the state change they're checking for actually happens.
+  setPollIntervalMsForTests(50);
 });
 
 /** Opens a SearchableSelect filter (Action/Event, both converted from a plain <select>) and
@@ -135,6 +146,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   setPreferredLocale(null);
+  resetPollIntervalMsForTests();
 });
 
 describe("AuditLogPanel rendering", () => {
@@ -2497,7 +2509,8 @@ describe("SystemLogsPanel rendering", () => {
     fireEvent.click(screen.getByRole("button", { name: "Live" }));
     const callsAfterPause = vi.mocked(fetchSystemLogs).mock.calls.length;
 
-    await new Promise((resolve) => setTimeout(resolve, 2500));
+    // Long enough to cross at least one interval tick, proving it did NOT fire while paused.
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS + 750));
 
     expect(vi.mocked(fetchSystemLogs).mock.calls).toHaveLength(callsAfterPause);
   }, 10000);

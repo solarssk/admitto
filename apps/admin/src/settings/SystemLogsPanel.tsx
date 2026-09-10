@@ -11,14 +11,29 @@ type LevelFilter = "" | SystemLogEntryDto["level"];
 type SourceFilter = "" | SystemLogEntryDto["source"];
 
 const SEARCH_DEBOUNCE_MS = 300;
+const DEFAULT_POLL_INTERVAL_MS = 1750;
 // Exported for AuditLogPanel's own live-refresh (Audit/Security views) - one shared cadence for
 // every "Live" toggle on this page, rather than a second magic number that could drift from
-// this one.
-export const POLL_INTERVAL_MS = 1750;
+// this one. A `let`, not a `const`, only so setPollIntervalMsForTests() below can override it -
+// every real (non-test) code path only ever reads it, never assigns it.
+export let POLL_INTERVAL_MS = DEFAULT_POLL_INTERVAL_MS;
 const MAX_RENDERED_ENTRIES = 1000;
 // A single missed tick is normal network noise and never surfaced; this many in a row (~9s at
 // the interval above) means the endpoint is genuinely down, not just one slow request.
 export const POLL_DEGRADED_THRESHOLD = 5;
+
+/** Test-only: shortens the live-poll interval so a test can wait through several real ticks
+ * without the real ~1.75s-per-tick cost - `setInterval`'s delay is captured once when each panel's
+ * polling effect starts, so call this before rendering. Production code never calls this. */
+export function setPollIntervalMsForTests(ms: number): void {
+  POLL_INTERVAL_MS = ms;
+}
+
+/** Test-only: restores the real production interval - call in afterEach so a shortened interval
+ * from one test can't leak into the next. */
+export function resetPollIntervalMsForTests(): void {
+  POLL_INTERVAL_MS = DEFAULT_POLL_INTERVAL_MS;
+}
 
 const SOURCE_LABELS: Record<SystemLogEntryDto["source"], string> = {
   api: "API",
