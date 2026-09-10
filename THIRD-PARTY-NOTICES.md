@@ -33,3 +33,9 @@ This file is informational. Prefer package-local license files in `node_modules`
 - Packages: `lightningcss` and platform package `lightningcss-darwin-arm64`
 - License: MPL-2.0
 - Notes: CSS parser/transformer used unmodified as part of Vite's build pipeline (dev/build tooling, not shipped in the runtime server image). MPL-2.0 is also file-level copyleft - applies to modifications of lightningcss's own source, not to code that uses it as a library.
+
+## ip-location-api
+
+- Package: `ip-location-api`
+- License: package.json reports the non-SPDX string "Multiple licenses" - the package's own `LICENSE` file explains it covers the library code plus whichever data source it's configured to use: MIT for the library itself, and a separate license per optional dataset (MaxMind GeoLite2 by default, or the CC0-1.0/PDDL `ip-location-db` "user" dataset as an alternative)
+- Notes: Admitto sets `ILA_IP_LOCATION_DB=user` (see `apps/web/.env.example` and the Dockerfile) specifically to use the CC0-1.0/PDDL dataset instead of the default GeoLite2 one, which would otherwise require a MaxMind account/license key this project doesn't want to impose on self-hosters. The only data this deployment ever downloads or ships is under that fully permissive license; the library code itself is MIT. Full license text ships with the package (`node_modules/ip-location-api/LICENSE`).

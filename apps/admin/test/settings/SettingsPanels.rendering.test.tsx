@@ -1389,6 +1389,37 @@ describe("AuditLogPanel Security view rendering", () => {
     expect(within(table).getByText("192.0.2.10")).toBeTruthy();
   });
 
+  it("renders auth.login.new_country with its label and warn tone, not the raw machine code", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [makeSecurityEntry({ event_type: "auth.login.new_country" })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderSecurityPanel();
+
+    const table = await screen.findByRole("table");
+    const badge = within(table).getByText("Login from new country");
+    expect(badge.className).toContain("at-badge--warn");
+    expect(within(table).queryByText("auth.login.new_country")).toBeNull();
+  });
+
+  it("offers auth.login.new_country in the Event dropdown, filtering by it", async () => {
+    renderSecurityPanel();
+    await waitFor(() => expect(fetchSecurityAuditLog).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    pickSearchableOption("Event", "Login from new country");
+
+    await waitFor(() =>
+      expect(fetchSecurityAuditLog).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, eventType: "auth.login.new_country" }),
+        expect.anything(),
+      ),
+    );
+  });
+
   it("renders a safe fallback and no location line when a security entry has no IP address", async () => {
     vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
       entries: [makeSecurityEntry({ ip: null, country: { kind: "internal" } })],

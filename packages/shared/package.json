@@ -15,6 +15,10 @@
       "types": "./dist/ssrfGuard.d.ts",
       "default": "./dist/ssrfGuard.js"
     },
+    "./ip-location": {
+      "types": "./dist/ipLocation.d.ts",
+      "default": "./dist/ipLocation.js"
+    },
     "./system-log": {
       "types": "./dist/systemLog.d.ts",
       "default": "./dist/systemLog.js"
@@ -49,6 +53,7 @@
   },
   "dependencies": {
     "@vvo/tzdb": "^6.198.0",
+    "ip-location-api": "5.0.2",
     "tzdata": "^1.0.50",
     "undici": "^8.10.0"
   },

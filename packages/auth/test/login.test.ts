@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
   userRequiresMfa: vi.fn().mockResolvedValue(false),
   userHasConfirmedTotp: vi.fn(),
+  userHasAnyConfirmedMfaMethod: vi.fn(),
   userHasUnacknowledgedBackupCodes: vi.fn().mockResolvedValue(false),
   validateTrustedDevice: vi.fn(),
   verifyTotpOrRecoveryCodeDetailed: vi.fn(),
@@ -25,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   logMfaFailure: vi.fn().mockResolvedValue(undefined),
   logMfaRecoveryConsumed: vi.fn().mockResolvedValue(undefined),
   logTrustedDeviceCreated: vi.fn().mockResolvedValue(undefined),
+  checkNewCountryLogin: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../src/privileged-login-alert.js", () => ({
@@ -32,6 +34,10 @@ vi.mock("../src/privileged-login-alert.js", () => ({
   resetFailedLoginStreak: mocks.resetFailedLoginStreak,
   recordFailedMfaFailureSideEffects: mocks.recordFailedMfaFailureSideEffects,
   resetFailedMfaFailureStreak: mocks.resetFailedMfaFailureStreak,
+}));
+
+vi.mock("../src/new-country-login.js", () => ({
+  checkNewCountryLogin: mocks.checkNewCountryLogin,
 }));
 
 vi.mock("../src/user.js", () => ({
@@ -60,6 +66,7 @@ vi.mock("../src/session.js", () => ({
 vi.mock("../src/mfa/policy.js", () => ({
   userRequiresMfa: mocks.userRequiresMfa,
   userHasConfirmedTotp: mocks.userHasConfirmedTotp,
+  userHasAnyConfirmedMfaMethod: mocks.userHasAnyConfirmedMfaMethod,
   userHasUnacknowledgedBackupCodes: mocks.userHasUnacknowledgedBackupCodes,
 }));
 
@@ -147,6 +154,39 @@ describe("login privileged failure tracking", () => {
     expect(result.ok).toBe(true);
     expect(mocks.resetFailedLoginStreak).toHaveBeenCalledWith(prisma, testUser.id);
     expect(mocks.recordFailedLoginFailureSideEffects).not.toHaveBeenCalled();
+  });
+
+  it("runs the new-country check on every successful password login, before logLoginSuccess persists this login's own row", async () => {
+    mocks.findUserByEmail.mockResolvedValue(testUser);
+    mocks.verifyPasswordOrDummy.mockResolvedValue(true);
+
+    const result = await login(prisma, { email: testUser.email, password: "correct", ip: "203.0.113.5" });
+
+    expect(result.ok).toBe(true);
+    expect(mocks.checkNewCountryLogin).toHaveBeenCalledWith(prisma, {
+      userId: testUser.id,
+      ip: "203.0.113.5",
+    });
+    // Ordering matters: checkNewCountryLogin's own "recent logins" query must read only prior
+    // logins, never the current one - which only exists once logLoginSuccess writes it.
+    expect(mocks.checkNewCountryLogin.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.logLoginSuccess.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("still runs the new-country check when MFA is still pending, matching auth.login.success's own first-factor-success semantics", async () => {
+    mocks.findUserByEmail.mockResolvedValue(testUser);
+    mocks.verifyPasswordOrDummy.mockResolvedValue(true);
+    mocks.userRequiresMfa.mockResolvedValue(true);
+    mocks.userHasAnyConfirmedMfaMethod.mockResolvedValue(true);
+
+    const result = await login(prisma, { email: testUser.email, password: "correct" });
+
+    expect(result).toMatchObject({ ok: true, next: "mfa_required" });
+    expect(mocks.checkNewCountryLogin).toHaveBeenCalledWith(prisma, {
+      userId: testUser.id,
+      ip: undefined,
+    });
   });
 
   it("runs the same timing-parity side effects for a deactivated account as for a wrong password, with a distinguishable audit reason", async () => {

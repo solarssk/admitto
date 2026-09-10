@@ -17,6 +17,7 @@ import {
   OIDC_LINK_STEP_UP_MAX_AGE_MS,
   revokeSession,
   logOidcLoginSuccess,
+  checkNewCountryLogin,
   SESSION_COOKIE_NAME,
   type ConsumedOidcAuthState,
   type ExternalIdentityClaims,
@@ -193,6 +194,9 @@ async function finalizeOidcLogin(
     }
 
     setSessionCookie(c, rawToken);
+    // Before logOidcLoginSuccess persists this login's own SecurityAuditLog row - see
+    // checkNewCountryLogin's own doc comment for why that ordering matters.
+    await checkNewCountryLogin(db, { userId, ip: resolveClientIp(c) });
     await logOidcLoginSuccess(db, {
       providerId: provider.id,
       userId,
