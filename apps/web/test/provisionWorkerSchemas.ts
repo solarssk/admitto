@@ -1,6 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
+import { INSTANCE_ORG_DEFAULT_ID } from "@admitto/db/instance-org";
 import { WEB_TEST_DATABASE_URL } from "./testEnv.js";
 
 const execFileAsync = promisify(execFile);
@@ -153,6 +154,16 @@ async function runPg(command: PgCommand, args: string[], input?: string): Promis
  * second copy in another schema) - confirmed empirically, this reliably fails those two
  * migrations. A structure-only copy of *today's* schema never touches that historical code path.
  *
+ * Structure-only means a worker schema never gets the one row of actual *data* the historical
+ * migrations also seed: `tenant_foundation`'s `org_default` Organization row (see
+ * packages/db/prisma/migrations/20260611145853_tenant_foundation/migration.sql). Every real
+ * deployment - and, pre-worker-isolation, every test connecting to the shared `public` schema -
+ * always had at least that one org row, so `resolveInstanceOrganizationId()`'s org lookups
+ * (packages/db/src/instanceOrg.ts, used by ~15 apps/web admin route files for best-effort audit
+ * logging) never had to think about a completely org-less database. A bare structure clone breaks
+ * that assumption for every worker whose test files don't happen to create their own org first -
+ * copying just that one row back in below restores it.
+ *
  * Safe to re-run: each worker's schema is fully dropped and recreated every call.
  */
 export async function provisionWorkerSchemas(workerCount: number): Promise<void> {
@@ -192,6 +203,18 @@ export async function provisionWorkerSchemas(workerCount: number): Promise<void>
       ]);
 
       await runPg("psql", ["-d", database, "-v", "ON_ERROR_STOP=1", "-f", "-"], rewritten);
+
+      // Restore the one seed-data row structure-only cloning drops (see docstring above) - `public`
+      // is guaranteed to have it by now, since ensureIntegrationTestSchema() (which runs `prisma
+      // migrate deploy` against `public`) always completes before this function is called.
+      await runPg("psql", [
+        "-d",
+        database,
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-c",
+        `INSERT INTO "${schema}"."Organization" SELECT * FROM "public"."Organization" WHERE "id" = '${INSTANCE_ORG_DEFAULT_ID}';`,
+      ]);
     }),
   );
 }
