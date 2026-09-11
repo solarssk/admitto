@@ -401,8 +401,9 @@ async function emitMfaAudit(
     if (result.reason === "invalid_code") {
       await recordFailedMfaFailureSideEffects(db, input.userId, { ip: input.ip });
     }
-    // ASVS V2.8.5: the code itself was genuine, so its reuse - as opposed to an ordinary wrong
-    // guess - is a sign it may have been seen or intercepted by someone else. Fire-and-forget,
+    // The code itself was genuine, so its reuse - as opposed to an ordinary wrong guess - is a
+    // sign it may have been seen or intercepted by someone else (closest current ASVS analog:
+    // V6.3.5 - see notifyTotpCodeReused's own doc comment for why). Fire-and-forget,
     // same reasoning as every other HTTP-reached notify() dispatch in this module (login.ts's
     // own caller is a request awaiting this response) - never let a configured email/webhook
     // delivery (up to 15s) add latency to the failed-login response itself.

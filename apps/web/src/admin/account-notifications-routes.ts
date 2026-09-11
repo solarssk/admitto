@@ -33,7 +33,7 @@ const patchPreferenceBodySchema = z
   .strict();
 
 /** Registry keys the personal grid may show - a type the account owner can't opt out of (ASVS
- * V2.5.5 self-audience receipts, userConfigurable: false) is never listed, same reasoning as
+ * V6.3.7 self-audience receipts, userConfigurable: false) is never listed, same reasoning as
  * notification-settings-routes.ts's own orgDisableableTypeIds(), and the same defensive
  * own-property lookup via getNotificationTypeDef (not a direct NOTIFICATION_TYPES[id] index). */
 function userConfigurableTypeIds(): string[] {

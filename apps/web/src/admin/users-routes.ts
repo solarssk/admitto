@@ -146,7 +146,7 @@ async function handleAdminAssistedReset<T extends { ok: true } | { ok: false; co
     rateLimitAction: string;
     logAction: string;
     injectedBaseUrl?: string;
-    /** ASVS V2.5.5 self-audience receipt to the TARGET user (never the acting admin) once the
+    /** ASVS V6.3.7 self-audience receipt to the TARGET user (never the acting admin) once the
      * reset actually commits - see notifyAuthFactorChanged's own doc comment. */
     notifyTitle: string;
     notifyBody: string;
