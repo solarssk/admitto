@@ -399,6 +399,21 @@ describe("GET /api/admin/events/:eventId/attendees — ticket_type filter", () =
     expect(ids).not.toContain(ATT_STD);
   });
 
+  it("comma-separated ticket_type=vip,standard returns the union of both types (multi-select filter)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EX}/attendees?ticket_type=vip,standard`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { id: string }[]; total: number };
+    const ids = body.items.map((i) => i.id);
+    expect(body.total).toBe(6);
+    expect(ids.sort()).toEqual(
+      [ATT_VIP1, ATT_VIP2, ATT_INJ, ATT_MEGA_VIP, ATT_STD, ATT_MEGA_STD].sort(),
+    );
+    // Has no ticket_type at all - must not slip in just because the endpoint ignored the filter.
+    expect(ids).not.toContain("att-export-notype");
+  });
+
   it("ticket_type=vip + status=admitted returns subset", async () => {
     const res = await app.request(
       `/api/admin/events/${EVENT_EX}/attendees?ticket_type=vip&status=admitted`,
@@ -1083,7 +1098,7 @@ describe("mail_status filter — list + export (#522)", () => {
       orderBy: { created_at: "desc" },
     });
     const meta = log!.metadata as Record<string, unknown>;
-    expect(meta.filters).toMatchObject({ mail_status: "failed" });
+    expect(meta.filters).toMatchObject({ mail_status: ["failed"] });
   });
 
   it("the Mail column badge and the mail_status filter agree on 'latest' when two deliveries share a timestamp (#522 code review)", async () => {

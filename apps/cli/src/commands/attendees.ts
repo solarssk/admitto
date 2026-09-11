@@ -37,7 +37,7 @@ function parseAttendeesExportArgs(): {
     ...(statusFilter === "admitted" || statusFilter === "not_admitted"
       ? { status: statusFilter }
       : {}),
-    ...(arg("ticket_type") ? { ticket_type: arg("ticket_type") } : {}),
+    ...(arg("ticket_type") ? { ticket_type: [arg("ticket_type")!] } : {}),
     ...(arg("q") ? { q: arg("q") } : {}),
   };
 

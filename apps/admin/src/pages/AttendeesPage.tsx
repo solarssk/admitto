@@ -1009,9 +1009,9 @@ export function AttendeesPage() {
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "admitted" | "not_admitted">("all");
-  const [rsvpStatusFilter, setRsvpStatusFilter] = useState<"" | RsvpStatus>("");
-  const [mailStatusFilter, setMailStatusFilter] = useState<"" | AttendeeMailStatusFilter>("");
-  const [ticketTypeFilter, setTicketTypeFilter] = useState("");
+  const [rsvpStatusFilter, setRsvpStatusFilter] = useState<RsvpStatus[]>([]);
+  const [mailStatusFilter, setMailStatusFilter] = useState<AttendeeMailStatusFilter[]>([]);
+  const [ticketTypeFilter, setTicketTypeFilter] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<AttendeeSortBy>("name");
   const [sortDir, setSortDir] = useState<AttendeeSortDir>("asc");
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
@@ -1109,7 +1109,11 @@ export function AttendeesPage() {
 
   useEffect(() => {
     if (!eventId) return;
-    setTicketTypeFilter("");
+    // Functional form so an already-empty filter bails out to the same array reference instead
+    // of a fresh `[]` - a new reference here would change `loadList`'s own identity and re-fire
+    // it, doubling the initial fetch (a plain `useState("")` reset couldn't do this: primitives
+    // compare by value, so setting the same "" was already a no-op).
+    setTicketTypeFilter((current) => (current.length === 0 ? current : []));
     setTicketTypes([]);
     setTicketTypesError(null);
     const ac = new AbortController();
@@ -1165,9 +1169,9 @@ export function AttendeesPage() {
           pageSize,
           q: searchQuery || undefined,
           status: statusFilter,
-          ticket_type: ticketTypeFilter || undefined,
-          rsvp_status: rsvpStatusFilter || undefined,
-          mail_status: mailStatusFilter || undefined,
+          ticket_type: ticketTypeFilter,
+          rsvp_status: rsvpStatusFilter,
+          mail_status: mailStatusFilter,
           sortBy,
           sortDir,
         },
@@ -1226,9 +1230,9 @@ export function AttendeesPage() {
           {
             q: searchQuery || undefined,
             status: statusFilter,
-            ticket_type: ticketTypeFilter || undefined,
-            rsvp_status: rsvpStatusFilter || undefined,
-            mail_status: mailStatusFilter || undefined,
+            ticket_type: ticketTypeFilter,
+            rsvp_status: rsvpStatusFilter,
+            mail_status: mailStatusFilter,
           },
           format,
           ac.signal,
@@ -1859,9 +1863,9 @@ export function AttendeesPage() {
     total === 0 &&
     !searchQuery &&
     statusFilter === "all" &&
-    !ticketTypeFilter &&
-    !rsvpStatusFilter &&
-    !mailStatusFilter;
+    ticketTypeFilter.length === 0 &&
+    rsvpStatusFilter.length === 0 &&
+    mailStatusFilter.length === 0;
 
   // How many of the selection the bulk "Revoke check-in" confirm dialog would actually affect,
   // not the raw selection size — matches the bulk bar's own menu-item hint (PO review).
