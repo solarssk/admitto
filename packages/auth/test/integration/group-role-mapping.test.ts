@@ -93,6 +93,66 @@ describe("applyOidcGroupRoleMappings", () => {
     expect(roles.some((r) => r.role === "superadmin" && r.scope_id === null)).toBe(true);
   });
 
+  // onElevatedGrant lets a caller dispatch auth.role.elevated after its own transaction commits
+  // (bot review finding, PR #1312: gaining admin/superadmin through an IdP group-role sync
+  // previously raised no alert at all, unlike the same grant made through the admin UI).
+  it("calls onElevatedGrant for a newly created admin/superadmin grant, but not for operator", async () => {
+    await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.roleAssignment.deleteMany({ where: { user_id: USER_ID } });
+
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: PROVIDER_ID,
+        group: "admin-group",
+        role: "superadmin",
+        scope_type: "instance",
+        scope_id: "",
+      },
+    });
+    const onElevatedGrant = vi.fn();
+    const changed = await applyOidcGroupRoleMappings(
+      prisma,
+      PROVIDER_ID,
+      USER_ID,
+      ["admin-group"],
+      onElevatedGrant,
+    );
+    expect(changed).toBe(1);
+    expect(onElevatedGrant).toHaveBeenCalledExactlyOnceWith({
+      role: "superadmin",
+      scopeType: "instance",
+      scopeId: null,
+    });
+  });
+
+  it("does not call onElevatedGrant for an operator grant - out of auth.role.elevated's scope", async () => {
+    await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
+    await prisma.roleAssignment.deleteMany({ where: { user_id: USER_ID } });
+    await prisma.externalIdentity.deleteMany({ where: { provider_id: PROVIDER_ID } });
+
+    await prisma.oidcGroupRoleMapping.create({
+      data: {
+        provider_id: PROVIDER_ID,
+        group: "operators",
+        role: "operator",
+        scope_type: "event",
+        scope_id: EVENT_ID,
+      },
+    });
+    const onElevatedGrant = vi.fn();
+    const changed = await applyOidcGroupRoleMappings(
+      prisma,
+      PROVIDER_ID,
+      USER_ID,
+      ["operators"],
+      onElevatedGrant,
+    );
+    expect(changed).toBe(1);
+    expect(onElevatedGrant).not.toHaveBeenCalled();
+  });
+
   it("removes OIDC-granted role when group no longer matches", async () => {
     await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID } });
     await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID } });
