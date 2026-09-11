@@ -449,28 +449,13 @@
   font-size: 1.1rem;
 }
 
-/* Trailing group of the toolbar - keeps the outer toolbar at exactly two flex children (this
-   group + the leading label/arrow) so `justify-content: space-between` still splits left/right
-   instead of centering a third child between them. */
-.communication-mail-client__toolbar-trailing {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.communication-mail-client__toolbar-actions {
-  display: flex;
-  gap: var(--space-4);
-}
-
 /* Light/Dark preview toggle - a single shared "pill" frame around both buttons (segmented
-   control), not a plain glyph matching the decorative archive/trash/reply/dots icons next to
-   it - a zero-chrome version of this read as non-interactive (PO report: "doesn't look
-   clickable"). The ring/background use box-shadow, not border/padding-driven sizing, which adds
-   next to nothing to the toolbar's own row height (measured 1.2px, vs. ~10px for an earlier
-   padding-heavy pill version) while still reading clearly as a clickable control. Left unthemed
-   by the `--dark` modifier below - a light chip still reads fine floating on the dark toolbar
-   background. */
+   control), not a plain unadorned glyph - a zero-chrome version of this read as non-interactive
+   (PO report: "doesn't look clickable"). The ring/background use box-shadow, not border/padding-
+   driven sizing, which adds next to nothing to the toolbar's own row height (measured 1.2px, vs.
+   ~10px for an earlier padding-heavy pill version) while still reading clearly as a clickable
+   control. Left unthemed by the `--dark` modifier below - a light chip still reads fine floating
+   on the dark toolbar background. */
 .communication-mail-client__scheme-toggle {
   display: inline-flex;
   align-items: center;
@@ -503,9 +488,8 @@
   outline-offset: 2px;
 }
 
-/* Real (non-decorative) content sharing the toolbar's left slot with the archive/trash/reply/
-   dots icons - own smaller font-size since the bar's 1.1rem is sized for those icon glyphs,
-   not body text. */
+/* Real (non-decorative) content in the toolbar's left slot - own smaller font-size since the
+   bar's 1.1rem is sized for the leading icon glyph, not body text. */
 .communication-mail-client__toolbar-label {
   display: inline-flex;
   align-items: center;

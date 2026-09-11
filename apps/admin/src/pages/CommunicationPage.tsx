@@ -1343,39 +1343,33 @@ function PreviewBody({
         ) : (
           <i className="ti ti-arrow-left" aria-hidden="true" />
         )}
-        <span className="communication-mail-client__toolbar-trailing">
-          {/* Real control, not decorative chrome like the icons beside it - forces which side of
-           * the email's own `@media (prefers-color-scheme: dark)` rules the sandboxed preview
-           * iframe renders, since there's no script inside it to react to the browser's actual
-           * setting (see the Safari-vs-Brave report this was built for: two browsers can disagree
-           * on `prefers-color-scheme` for the same page). */}
-          <div className="communication-mail-client__scheme-toggle" role="group" aria-label="Preview color scheme">
-            <button
-              type="button"
-              className="communication-mail-client__scheme-toggle-btn"
-              aria-label="Light"
-              aria-pressed={colorScheme === "light"}
-              onClick={() => setColorScheme("light")}
-            >
-              <i className="ti ti-sun" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              className="communication-mail-client__scheme-toggle-btn"
-              aria-label="Dark"
-              aria-pressed={colorScheme === "dark"}
-              onClick={() => setColorScheme("dark")}
-            >
-              <i className="ti ti-moon" aria-hidden="true" />
-            </button>
-          </div>
-          <span className="communication-mail-client__toolbar-actions" aria-hidden="true">
-            <i className="ti ti-archive" aria-hidden="true" />
-            <i className="ti ti-trash" aria-hidden="true" />
-            <i className="ti ti-corner-up-left" aria-hidden="true" />
-            <i className="ti ti-dots" aria-hidden="true" />
-          </span>
-        </span>
+        {/* Forces which side of the email's own `@media (prefers-color-scheme: dark)` rules the
+         * sandboxed preview iframe renders, since there's no script inside it to react to the
+         * browser's actual setting (see the Safari-vs-Brave report this was built for: two
+         * browsers can disagree on `prefers-color-scheme` for the same page). The inert
+         * archive/trash/reply/dots icons this toolbar used to imitate a real inbox's chrome with
+         * were removed - sitting next to one real, clickable control, they read as more buttons
+         * that just don't work, not as decoration. */}
+        <div className="communication-mail-client__scheme-toggle" role="group" aria-label="Preview color scheme">
+          <button
+            type="button"
+            className="communication-mail-client__scheme-toggle-btn"
+            aria-label="Light"
+            aria-pressed={colorScheme === "light"}
+            onClick={() => setColorScheme("light")}
+          >
+            <i className="ti ti-sun" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="communication-mail-client__scheme-toggle-btn"
+            aria-label="Dark"
+            aria-pressed={colorScheme === "dark"}
+            onClick={() => setColorScheme("dark")}
+          >
+            <i className="ti ti-moon" aria-hidden="true" />
+          </button>
+        </div>
       </div>
       <div className="communication-mail-client__subject">{previewSubject}</div>
       <div className="communication-mail-client__from">
