@@ -3940,6 +3940,17 @@ describe("AccountPage: Notifications", () => {
     expect(inAppSwitch.checked).toBe(true);
   });
 
+  it("falls back to a generic description for a type not in the known description map", async () => {
+    const TYPE_UNMAPPED = { ...TYPE_A, id: "some.future.type", label: "Some future alert type" };
+    mockLoadedAccount();
+    mockFetchNotificationPreferences.mockResolvedValue({ notification_types: [TYPE_UNMAPPED] });
+
+    renderWithToast(<AccountPage />);
+
+    await screen.findByText(TYPE_UNMAPPED.label);
+    expect(screen.getByText("Alerts admin staff when this event occurs.")).toBeTruthy();
+  });
+
   it("saves a toggle immediately and reflects the server's response", async () => {
     mockLoadedAccount();
     mockFetchNotificationPreferences.mockResolvedValue({ notification_types: [TYPE_A] });

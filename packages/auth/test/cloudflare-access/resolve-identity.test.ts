@@ -205,7 +205,7 @@ describe("resolveCfAccessIdentityFromValidatedJwt notifies on a real new link", 
     expect(notifyOwnAuthFactorChanged).toHaveBeenCalledWith(
       prisma,
       "resolved-user",
-      "A new SSO connection was linked",
+      "A new single sign-on connection was linked",
       expect.any(String),
     );
   });

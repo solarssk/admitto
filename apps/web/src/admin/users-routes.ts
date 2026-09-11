@@ -1353,8 +1353,8 @@ export async function handleDeleteUserExternalIdentity(c: Context, db: PrismaCli
   void notifyAuthFactorChanged(
     db,
     user.id,
-    "Your SSO connection was removed",
-    "An administrator removed your SSO connection and set a temporary password on your account. If this wasn't expected, contact your organization's administrator immediately.",
+    "Your single sign-on connection was removed",
+    "An administrator removed your single sign-on connection and set a temporary password on your account. If this wasn't expected, contact your organization's administrator immediately.",
   );
 
   emitSystemLog("security", "info", "user_sso_unlinked", {
