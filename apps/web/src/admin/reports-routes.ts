@@ -1492,9 +1492,21 @@ async function loadMailReportsAggregates(
   // not_sent/pending/failed mail_status filter (that one classifies each attendee's LATEST
   // delivery only, and keeps queued as its own separate "pending" bucket) - this is an
   // ever-succeeded rollup across every attempt, matching reachedFilter's own definition above.
-  const NEVER_ATTEMPTED_STATUSES = ["queued", "cancelled"];
+  // Keyed on failed_at, not the row's current status: claim.ts's claimRetryExisting flips a
+  // "failed" row back to "queued" IN PLACE to retry it (same row id, failed_at left untouched),
+  // and cancel.ts's cancelBulkSendBatch can then flip that same still-queued row to "cancelled" -
+  // in both cases the row's current status reads as never-attempted even though a real send
+  // genuinely failed for it earlier. mapSendResult.ts/applyBounceResult.ts stamp failed_at on
+  // every failed/bounced/rejected outcome and nothing ever clears it afterward (not even a later
+  // successful retry on the same row), so it's the durable "a real attempt failed at some point"
+  // signal a point-in-time status column can't provide (bot review). Explicitly ANDs in
+  // `NOT: reachedFilter` - unlike the earlier status-based version, "no row has failed_at set" on
+  // its own is also true of an attendee whose very first attempt succeeded outright (a genuine
+  // success never sets failed_at either), so without this exclusion a reached attendee would
+  // double-count as never_sent too.
   const neverSentFilter: Prisma.AttendeeWhereInput = {
-    email_deliveries: { none: { status: { notIn: NEVER_ATTEMPTED_STATUSES } } },
+    NOT: reachedFilter,
+    email_deliveries: { none: { failed_at: { not: null } } },
   };
   // Narrower than reachedFilter above - the funnel's "Reached by email" stage is documented (UI
   // copy, wiki) as "got a ticket email" specifically, since it's the entry point of a causal

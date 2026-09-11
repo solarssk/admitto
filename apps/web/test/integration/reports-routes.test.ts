@@ -127,6 +127,8 @@ const ATT_MAIL_VIEWED_RECOVERED = "att-reports-mail-viewed-recovered";
 const ATT_MAIL_REACH_SPLIT_NEVER_SENT = "att-reports-mail-reach-split-never-sent";
 const ATT_MAIL_REACH_SPLIT_SEND_FAILED = "att-reports-mail-reach-split-send-failed";
 const ATT_MAIL_REACH_SPLIT_BOUNCED_THEN_REQUEUED = "att-reports-mail-reach-split-bounced-then-requeued";
+const ATT_MAIL_REACH_SPLIT_RETRIED_IN_PLACE_QUEUED = "att-reports-mail-reach-split-retried-in-place-queued";
+const ATT_MAIL_REACH_SPLIT_RETRIED_IN_PLACE_CANCELLED = "att-reports-mail-reach-split-retried-in-place-cancelled";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -1238,6 +1240,20 @@ async function seed(client: PrismaClient) {
         name: "Mail Reach Split Bounced Then Requeued",
         ...mkAttendeeToken(),
       },
+      {
+        id: ATT_MAIL_REACH_SPLIT_RETRIED_IN_PLACE_QUEUED,
+        event_id: EVENT_MAIL_REACH_SPLIT,
+        email: "mail-reach-split-retried-in-place-queued@example.com",
+        name: "Mail Reach Split Retried In Place Queued",
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_MAIL_REACH_SPLIT_RETRIED_IN_PLACE_CANCELLED,
+        event_id: EVENT_MAIL_REACH_SPLIT,
+        email: "mail-reach-split-retried-in-place-cancelled@example.com",
+        name: "Mail Reach Split Retried In Place Cancelled",
+        ...mkAttendeeToken(),
+      },
     ],
   });
   await client.emailDelivery.create({
@@ -1252,11 +1268,11 @@ async function seed(client: PrismaClient) {
     },
   });
   // Regression fixture for the trickiest never_sent/send_failed interaction (code review): an
-  // attendee whose FIRST attempt genuinely bounced, and whose resend is currently sitting
-  // "queued" (not yet resolved). neverSentFilter's `none: { status: { notIn: ["queued",
-  // "cancelled"] } }` must still read this as send_failed - the bounced row alone is enough to
-  // break the "none" condition - not never_sent just because the resend is still in flight and
-  // its own status happens to be one of the never-attempted statuses.
+  // attendee whose FIRST attempt genuinely bounced, and whose resend is a SEPARATE, currently
+  // "queued" row (not yet resolved). neverSentFilter's `none: { failed_at: { not: null } } }`
+  // must still read this as send_failed - the bounced row's own failed_at alone is enough to
+  // break the "none" condition - not never_sent just because the resend is a distinct, still
+  // in-flight row.
   await client.emailDelivery.createMany({
     data: [
       {
@@ -1275,6 +1291,36 @@ async function seed(client: PrismaClient) {
         purpose: "resend",
         provider: "export_only",
         status: "queued",
+      },
+    ],
+  });
+  // Regression fixture for the exact bug a code review caught in an earlier version of this
+  // filter: claim.ts's claimRetryExisting retries a "failed" row IN PLACE (same row id, status
+  // flipped straight back to "queued", failed_at left untouched from the original failure) rather
+  // than creating a new row - and cancel.ts's cancelBulkSendBatch can then flip that same
+  // still-queued row to "cancelled" without touching failed_at either. Both attendees here have
+  // exactly ONE EmailDelivery row whose CURRENT status alone would misread as never-attempted
+  // ("queued"/"cancelled"), but whose failed_at proves a real send genuinely failed for them
+  // first - they must count as send_failed, not never_sent.
+  await client.emailDelivery.createMany({
+    data: [
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL_REACH_SPLIT,
+        attendee_id: ATT_MAIL_REACH_SPLIT_RETRIED_IN_PLACE_QUEUED,
+        purpose: "initial",
+        provider: "export_only",
+        status: "queued",
+        failed_at: new Date("2027-09-08T09:00:00.000Z"),
+      },
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL_REACH_SPLIT,
+        attendee_id: ATT_MAIL_REACH_SPLIT_RETRIED_IN_PLACE_CANCELLED,
+        purpose: "initial",
+        provider: "export_only",
+        status: "cancelled",
+        failed_at: new Date("2027-09-08T09:00:00.000Z"),
       },
     ],
   });
@@ -3523,16 +3569,19 @@ describe("GET /api/admin/events/:eventId/reports/mail", () => {
     // ATT_MAIL_REACH_SPLIT_NEVER_SENT has no EmailDelivery row at all; ATT_MAIL_REACH_SPLIT_SEND_FAILED
     // has exactly one, and it never succeeded - both read as not_reached, but for different reasons,
     // and the aggregate must attribute each to the right one, not just leave never_sent at the
-    // EVENT_MAIL fixture's coincidental 0 above. ATT_MAIL_REACH_SPLIT_BOUNCED_THEN_REQUEUED covers the
-    // trickiest interaction (code review): its first attempt genuinely bounced, and its resend is
-    // currently "queued" (not yet resolved) - it must still count as send_failed, not never_sent,
-    // since a real send attempt already failed regardless of the in-flight resend's own status.
+    // EVENT_MAIL fixture's coincidental 0 above. The other three all cover interactions a code review
+    // caught: ATT_MAIL_REACH_SPLIT_BOUNCED_THEN_REQUEUED's first attempt genuinely bounced while its
+    // resend (a separate row) is currently "queued"; ATT_MAIL_REACH_SPLIT_RETRIED_IN_PLACE_QUEUED and
+    // _CANCELLED each have exactly ONE row whose current status alone reads as never-attempted
+    // ("queued"/"cancelled" - simulating claim.ts's claimRetryExisting retrying a failed row in place,
+    // then cancel.ts's cancelBulkSendBatch cancelling that same still-queued row) but whose failed_at
+    // proves a real send failed for them first. All four must count as send_failed, not never_sent.
     expect(body.attendee_reach).toEqual({
       reached: 0,
-      not_reached: 3,
+      not_reached: 5,
       reached_pct: 0,
       never_sent: 1,
-      send_failed: 2,
+      send_failed: 4,
     });
   });
 });
