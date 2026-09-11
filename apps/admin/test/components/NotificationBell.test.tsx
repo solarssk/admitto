@@ -506,6 +506,36 @@ describe("NotificationBell abort races", () => {
     expect(screen.queryByRole("button", { name: /Notifications/ })).toBeNull();
   });
 
+  it("does not update state after unmounting mid-clear-all", async () => {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [makeNotification()],
+      unread_count: 1,
+    });
+    let resolveClear: (value: { cleared_count: number; unread_count: number }) => void = () => {};
+    clearAllAccountNotifications.mockImplementation(
+      () => new Promise((resolve) => { resolveClear = resolve; }),
+    );
+
+    const { unmount } = renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    const dialog = await screen.findByRole("dialog", { name: "Clear all notifications?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear all notifications" }));
+    await act(async () => {});
+    unmount();
+
+    await act(async () => {
+      resolveClear({ cleared_count: 1, unread_count: 0 });
+      await Promise.resolve();
+    });
+    // No crash - the isMountedRef guard inside handleClearAll discards the late response
+    // instead of calling setState on an unmounted component.
+    expect(screen.queryByRole("button", { name: /Notifications/ })).toBeNull();
+  });
+
   it("discards a list fetch that resolves after the dropdown has already closed", async () => {
     fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
     let resolveList: (value: { notifications: NotificationDto[]; unread_count: number }) => void = () => {};
