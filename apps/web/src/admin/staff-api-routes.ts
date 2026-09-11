@@ -52,6 +52,7 @@ export async function handlePutStaffTheme(c: Context, db: PrismaClient): Promise
   const raw = body as Record<string, unknown>;
   await setBrandingTheme(db, {
     primary: typeof raw.primary === "string" ? raw.primary : undefined,
+    ticket_primary: typeof raw.ticket_primary === "string" ? raw.ticket_primary : undefined,
     font_family_name: typeof raw.font_family_name === "string" ? raw.font_family_name : undefined,
     ticket_font_family_name:
       typeof raw.ticket_font_family_name === "string" ? raw.ticket_font_family_name : undefined,

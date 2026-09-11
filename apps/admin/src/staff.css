@@ -3069,12 +3069,13 @@
   padding-top: 0;
 }
 
-/* Branding's Font-by-surface rows pair a two-line label+description with a single-line <select> -
-   .settings-row's own flex-start (correct for its other users, e.g. Mail transport's Switch rows,
-   where the control is meant to line up with the label specifically) left the select sitting flush
-   at the top instead of centered against the full two-line block beside it. Scoped here rather
-   than changed on .settings-row itself, which those other rows still rely on unchanged. */
-.font-surface-rows .settings-row {
+/* Branding's Theme-by-surface rows pair a two-line label+description with one or two single-line
+   controls - .settings-row's own flex-start (correct for its other users, e.g. Mail transport's
+   Switch rows, where the control is meant to line up with the label specifically) left the
+   controls sitting flush at the top instead of centered against the full two-line block beside
+   them. Scoped here rather than changed on .settings-row itself, which those other rows still
+   rely on unchanged. */
+.theme-surface-rows .settings-row {
   align-items: center;
 }
 
@@ -3087,6 +3088,13 @@
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--fs-sm);
+}
+
+.settings-row__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
 }
 
 /* Removable chip list - one entry per string value the user adds to a short list (Security's
@@ -3517,6 +3525,15 @@
     align-self: flex-start;
   }
 
+  /* Theme by surface's two paired controls (colour trigger + font select, each with its own
+     min-width) sit inside .settings-row__controls, one level below the column-stack above - that
+     alone still leaves them side by side and, on a narrow phone, wider than the card. Stack them
+     too instead of letting them overflow. */
+  .settings-row__controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   /* The generic column-stack above turns this row into 3 stacked blocks (icon+name,
      issuer URL, Edit+Switch) — the actions end up dangling on their own line below
      two lines of text. Un-nest the icon/name/issuer so they can share a line with
@@ -3703,6 +3720,120 @@
   width: 100%;
   height: 100%;
   cursor: pointer;
+}
+
+/* Compact per-surface colour picker (Theme by surface) - a pill trigger that opens a popover
+   reusing .theme-swatch-grid above, instead of inlining the full 12-swatch grid once per surface.
+   Trigger sizing/border/focus-visible mirrors .searchable-select__trigger (searchable-select.css)
+   so it reads as the same control family as the font picker sitting right next to it, just
+   pill-shaped to visually distinguish "opens a colour popover" from "opens a list". */
+.color-surface-control {
+  position: relative;
+}
+
+/* Same box as .searchable-select__trigger (font picker, right next to this one in the same row) -
+   only the colour dot inside is specific to this control, so the two read as one control family
+   instead of the colour picker looking like a different kind of widget. */
+.color-surface-control__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 160px;
+  height: var(--control-h);
+  box-sizing: border-box;
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.color-surface-control__trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.color-surface-control__trigger:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: var(--ring);
+}
+
+.color-surface-control__dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+.color-surface-control__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.color-surface-control__label--placeholder {
+  color: var(--text-muted);
+}
+
+.color-surface-control__chevron {
+  margin-left: auto;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.color-surface-control__panel {
+  z-index: var(--z-dropdown);
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 260px;
+  box-sizing: border-box;
+}
+
+.color-surface-control__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 32px;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+}
+
+.color-surface-control__option:hover,
+.color-surface-control__option:focus-visible {
+  background: var(--surface-sunken);
+}
+
+.color-surface-control__option--active {
+  background: var(--surface-sunken);
+  font-weight: var(--fw-semibold);
+}
+
+.color-surface-control__divider {
+  height: 1px;
+  background: var(--border);
+  margin: 2px 0;
 }
 
 .font-option-grid {
@@ -4054,7 +4185,7 @@
 }
 
 /* No card-within-a-card chrome (border/background/padding) - it read as a separate box and,
-   since that padding wasn't shared by "Primary colour"/"Font" above it, put "Live preview"
+   since that padding wasn't shared by "Font"/"Theme by surface" above it, put "Live preview"
    slightly out of horizontal alignment with them. Sits directly in the Theme card's own flow
    instead, at the same 20px section gap as Font. */
 .theme-preview {
@@ -4063,9 +4194,9 @@
   flex-direction: column;
 }
 
-/* Primary colour / Font / Font by surface — same rhythm as .theme-preview: tight label→hint,
-   10px to the control, 20px between sections. Do not wrap these in .settings-card-stack (its
-   uniform gap stacks with the section margins and blows out the spacing). */
+/* Font / Theme by surface: same rhythm as .theme-preview - tight label→hint, 10px to the
+   control, 20px between sections. Do not wrap these in .settings-card-stack (its uniform gap
+   stacks with the section margins and blows out the spacing). */
 .theme-section {
   display: flex;
   flex-direction: column;
@@ -4079,7 +4210,8 @@
   margin-bottom: 10px;
 }
 
-.theme-section > .at-label {
+.theme-section > .at-label,
+.theme-section > .overline {
   margin-bottom: 0;
 }
 
@@ -4095,13 +4227,14 @@
 }
 
 /* Same reasoning as .logo-upload: a uniform gap would also space the heading from its own
-   description below it - tight there to match Primary colour/Font, every other pair keeps the
+   description below it - tight there to match Font/Theme by surface, every other pair keeps the
    same 10px rhythm as before. */
 .theme-preview > *:not(:last-child) {
   margin-bottom: 10px;
 }
 
-.theme-preview > .at-label {
+.theme-preview > .at-label,
+.theme-preview > .overline {
   margin-bottom: 0;
 }
 
@@ -5253,7 +5386,7 @@ output.mail-field-hint {
 }
 
 /* Reuse toggle spans the full 2-column mail-transport-section row (same as TLS toggles).
-   Center the switch against the label+description block (same idea as .font-surface-rows). */
+   Center the switch against the label+description block (same idea as .theme-surface-rows). */
 .mail-transport-section > .event-bounce-ingest__reuse-row {
   grid-column: 1 / -1;
   align-items: center;
