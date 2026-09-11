@@ -38,6 +38,10 @@ vi.mock("../src/rate-limit/client-ip.js", () => ({
   resolveClientIp: vi.fn(() => "127.0.0.1"),
 }));
 
+vi.mock("../src/admin/notify-auth-factor-changed.js", () => ({
+  notifyAuthFactorChanged: vi.fn(async () => {}),
+}));
+
 import {
   hashPassword,
   isPasswordTooCommon,
@@ -47,6 +51,7 @@ import {
 import { writeAdminAuditLogBestEffort } from "@admitto/tickets";
 import { resolvePostLoginRedirectForUser } from "../src/auth/post-login-redirect.js";
 import { ensureEnrollmentBackupCodesStashed } from "../src/auth/ensure-backup-codes.js";
+import { notifyAuthFactorChanged } from "../src/admin/notify-auth-factor-changed.js";
 import {
   handleGetChangePassword,
   handlePostChangePassword,
@@ -59,6 +64,7 @@ const promote = vi.mocked(promoteSessionToFull);
 const audit = vi.mocked(writeAdminAuditLogBestEffort);
 const resolveLanding = vi.mocked(resolvePostLoginRedirectForUser);
 const stashBackup = vi.mocked(ensureEnrollmentBackupCodesStashed);
+const notifyAuthFactor = vi.mocked(notifyAuthFactorChanged);
 
 type Vars = {
   Variables: {
@@ -184,6 +190,15 @@ describe("change-password-routes", () => {
     expect(res.headers.get("location")).toBe("/admin");
     expect(audit).toHaveBeenCalled();
     expect(hashPw).toHaveBeenCalled();
+    // Same self-audience receipt as the self-service /api/account/password path - this is the
+    // account owner's own action, just reached via the forced-password-change flow instead of
+    // My Account (bot review finding, PR #1304).
+    expect(notifyAuthFactor).toHaveBeenCalledWith(
+      expect.anything(),
+      "u1",
+      "Your password was changed",
+      expect.any(String),
+    );
   });
 
   it("redirects to backup-codes when promotion lands on backup_codes_required", async () => {
@@ -211,6 +226,7 @@ describe("change-password-routes", () => {
     });
     expect(res.status).toBe(400);
     expect(await res.text()).toMatch(/could not be completed|try logging in again/i);
+    expect(notifyAuthFactor).not.toHaveBeenCalled();
     err.mockRestore();
   });
 

@@ -8,6 +8,7 @@ import {
 } from "../external-identity/resolve-user.js";
 import { applyOidcGroupRoleMappings } from "../oidc/group-role-mapping.js";
 import { parseStringArrayClaim } from "../oidc/claims.js";
+import { notifyOwnAuthFactorChanged } from "../audit.js";
 import type { CfAccessConfig } from "./config.js";
 
 /**
@@ -213,7 +214,7 @@ async function resolveCfAccessIdentityUncached(
     throw new ExternalIdentityLinkError("source_provider_not_configured");
   }
 
-  return runCfAccessIdentityTransaction(prisma, async (tx) => {
+  const result = await runCfAccessIdentityTransaction(prisma, async (tx) => {
     const sourceProvider = await lockSourceProvider(tx, sourceProviderId);
 
     const sourceIdentity = await tx.externalIdentity.findUnique({
@@ -274,7 +275,7 @@ async function resolveCfAccessIdentityUncached(
         where: { id: existingCfIdentity.id },
         data: { last_login_at: now },
       });
-      return { userId: sourceIdentity.user_id };
+      return { userId: sourceIdentity.user_id, linked: false };
     }
 
     await tx.externalIdentity.create({
@@ -291,6 +292,26 @@ async function resolveCfAccessIdentityUncached(
         last_login_at: now,
       },
     });
-    return { userId: sourceIdentity.user_id };
+    return { userId: sourceIdentity.user_id, linked: true };
   });
+
+  if (result.linked) {
+    // Fired here (once per actual DB write, inside resolveCfAccessIdentityUncached - called
+    // exactly once per resolutionCacheKey even when many concurrent requests share the same
+    // in-flight promise), not in the cached wrapper above - firing there would notify once per
+    // caller sharing the cache instead of once per real link. Fire-and-forget: this resolver runs
+    // on every Cloudflare-authenticated admin request, so this must never add mail-dispatch
+    // latency to that hot path. notifyOwnAuthFactorChanged's own dispatchSecurityNotification
+    // already no-ops (with a log, not a throw) when `prisma` here is a transaction client rather
+    // than the root PrismaClient - the correct outcome if this resolver was itself invoked from
+    // inside another caller's still-open transaction, since the identity row it just created
+    // hasn't durably committed yet in that case (bot review finding, PR #1308).
+    void notifyOwnAuthFactorChanged(
+      prisma,
+      result.userId,
+      "A new SSO connection was linked",
+      "A new single sign-on connection (Cloudflare Access) was linked to your account.",
+    );
+  }
+  return { userId: result.userId };
 }

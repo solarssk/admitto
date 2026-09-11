@@ -55,52 +55,9 @@ import {
 } from "@admitto/shared";
 import { writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
 import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
-import { notify } from "@admitto/notifications";
 import { adminAuditFromContext, resolveMailInstanceBaseUrl } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
-
-/**
- * ASVS V2.5.5 / NIST SP 800-63-4 §4.1.2.1-§4.4: every self-service credential/MFA/SSO change in
- * this file fires this same self-audience notification at the account owner - see
- * account.auth_factor.changed's own doc comment in packages/notifications/src/registry.ts.
- *
- * Always called with `db` (the plain client), never a `tx` - notify() requires a standalone
- * `PrismaClient` and must never run inside a still-open transaction (dispatcher.ts's own Db-type
- * comment), so every call site below fires this only after its own write transaction has already
- * committed, not from inside a `runInTransaction`/`withStepUpGate` body callback.
- *
- * Fired without awaiting (`void notifyAuthFactorChanged(...)` at each call site), matching
- * `dispatchSecurityNotification`'s own HTTP-reached call sites in packages/auth/src/audit.ts:
- * every caller here is a request handler with a live response to send, and a configured
- * email/webhook delivery can take up to 15 seconds (this repo's mail-transport timeout) - that
- * latency must not become part of the credential-change response itself. Never throws: resolving
- * the instance organization can fail (unseeded instance), notify() itself never can.
- */
-async function notifyAuthFactorChanged(
-  db: PrismaClient,
-  userId: string,
-  title: string,
-  body: string,
-): Promise<void> {
-  try {
-    const organizationId = await resolveInstanceOrganizationId(db);
-    await notify(db, "account.auth_factor.changed", {
-      organizationId,
-      title,
-      body,
-      targetUserId: userId,
-      dedupeKey: userId,
-    });
-  } catch (err) {
-    console.error(
-      JSON.stringify({
-        event: "account.notify_auth_factor_changed_failed",
-        error: err instanceof Error ? err.message : String(err),
-        ts: new Date().toISOString(),
-      }),
-    );
-  }
-}
+import { notifyAuthFactorChanged } from "./notify-auth-factor-changed.js";
 
 function hasLocalPassword(passwordHash: string | null): boolean {
   return passwordHash !== null;

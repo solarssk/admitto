@@ -10,6 +10,18 @@ import { startMockOidcIdp, stopMockOidcIdp, type MockOidcIdp } from "../helpers/
 import { encryptClientSecret } from "@admitto/auth";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
+/** Polls for the account.auth_factor.changed in-app Notification a successful SSO link fires
+ * (fire-and-forget, see notifyAuthFactorChanged's own doc comment) - it can still be in flight
+ * when the HTTP response returns. */
+async function expectAuthFactorChangedNotification(forUserId: string, expectedTitle: string): Promise<void> {
+  await vi.waitFor(async () => {
+    const rows = await prisma.notification.findMany({
+      where: { user_id: forUserId, notification_type: "account.auth_factor.changed", title: expectedTitle },
+    });
+    expect(rows).toHaveLength(1);
+  });
+}
+
 const PROVIDER_ID = "web-oidc-flow-provider";
 const BASE = "http://localhost";
 
@@ -501,5 +513,77 @@ describe("oidc routes", () => {
       headers: { Cookie: sessionCookie! },
     });
     expect(me.status).toBe(200);
+  });
+
+  it("successful link flow creates a new ExternalIdentity for an already-logged-in user and fires account.auth_factor.changed (bot review finding, PR #1304)", async () => {
+    // The mock IdP always issues the same subject ("mock-subject-oidc") - a still-linked row from
+    // an earlier test in this file (e.g. "happy path creates full session") would otherwise make
+    // resolveOrCreateUserFromExternalIdentity take the resync-existing-identity branch instead of
+    // the fresh-link one, same cleanup withOidcLinkedUser's own helper does at its own start.
+    await prisma.externalIdentity.deleteMany({ where: { provider_id: PROVIDER_ID } });
+
+    const linkUser = await prisma.user.create({
+      data: { email: "oidc-link-success@example.com", password_hash: await hashPassword("pw"), is_active: true },
+    });
+    const session = await createSession(prisma, { userId: linkUser.id, stage: SESSION_STAGE.FULL });
+
+    try {
+      const start = await app.request(`/api/auth/oidc/${PROVIDER_ID}/start`, { redirect: "manual" });
+      const authorizeUrl = new URL(start.headers.get("location")!);
+      const state = authorizeUrl.searchParams.get("state")!;
+
+      // Mirrors what oidc-link-routes.ts's own step-up-gated /account/oidc/:id/link flow sets on
+      // this same auth-state row before redirecting to the IdP - same shape the "callback rejects
+      // link flow..." tests above construct directly, just with fresh, valid values this time.
+      await prisma.oidcAuthState.update({
+        where: { state },
+        data: { link_user_id: linkUser.id, link_step_up_at: new Date() },
+      });
+
+      const callbackFromIdp = await fetch(authorizeUrl.toString(), { redirect: "manual" });
+      const callbackLocation = new URL(callbackFromIdp.headers.get("location")!);
+      const code = callbackLocation.searchParams.get("code")!;
+
+      const res = await app.request(
+        `/api/auth/oidc/${PROVIDER_ID}/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
+        {
+          redirect: "manual",
+          headers: {
+            Cookie: `${OIDC_FLOW_COOKIE_NAME}=${state}; ${SESSION_COOKIE_NAME}=${session.rawToken}`,
+          },
+        },
+      );
+      expect(res.status).toBe(302);
+
+      const identity = await prisma.externalIdentity.findFirst({
+        where: { provider_id: PROVIDER_ID, user_id: linkUser.id },
+      });
+      expect(identity).not.toBeNull();
+
+      await expectAuthFactorChangedNotification(linkUser.id, "A new SSO connection was linked");
+    } finally {
+      await prisma.externalIdentity.deleteMany({ where: { user_id: linkUser.id } });
+      await prisma.session.deleteMany({ where: { user_id: linkUser.id } });
+      await prisma.notification.deleteMany({ where: { user_id: linkUser.id } });
+      await prisma.user.delete({ where: { id: linkUser.id } });
+    }
+  });
+
+  it("does not fire account.auth_factor.changed for a plain login (existing identity, not a new link)", async () => {
+    await withOidcLinkedUser(
+      "oidc-plain-login-no-notify@example.com",
+      { role: "operator", scope_type: "event", scope_id: "ev-1" },
+      async () => {
+        const res = await runOidcCallback();
+        expect(res.status).toBe(302);
+        const user = await prisma.user.findUniqueOrThrow({
+          where: { email: "oidc-plain-login-no-notify@example.com" },
+        });
+        const rows = await prisma.notification.findMany({
+          where: { user_id: user.id, notification_type: "account.auth_factor.changed" },
+        });
+        expect(rows).toHaveLength(0);
+      },
+    );
   });
 });

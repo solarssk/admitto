@@ -6,6 +6,7 @@ import {
   generateEmergencyRecoveryCode,
   logMfaBreakGlassCli,
   normalizeEmail,
+  notifyOwnAuthFactorChanged,
   PASSWORD_MIN_LENGTH,
   PasswordPolicyError,
   resetUserMfa,
@@ -126,6 +127,12 @@ export async function runAuthResetMfa(db: PrismaClient): Promise<void> {
   const { userId } = await verifyTargetUserPassword(db, email);
   await resetUserMfa(db, userId);
   await logMfaBreakGlassCli(db, { action: "reset_mfa", email, userId });
+  await notifyOwnAuthFactorChanged(
+    db,
+    userId,
+    "Your two-factor authentication was reset",
+    "An administrator reset two-factor authentication on your account via the emergency CLI bypass. If this wasn't expected, contact your organization's administrator immediately.",
+  );
   console.log(`MFA reset for ${email} (sessions and trusted devices revoked).`);
 }
 

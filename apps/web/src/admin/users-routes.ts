@@ -35,6 +35,7 @@ import { withStepUpGate, stepUpProofFields } from "./account-routes.js";
 import type { RateLimitStore } from "../rate-limit/types.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { runSerializableTransaction } from "./event-items-api-routes.js";
+import { notifyAuthFactorChanged } from "./notify-auth-factor-changed.js";
 import {
   assertLastSuperadminDeactivationAllowed,
   assertLastSuperadminDeleteAllowed,
@@ -144,6 +145,10 @@ async function handleAdminAssistedReset<T extends { ok: true } | { ok: false; co
     rateLimitAction: string;
     logAction: string;
     injectedBaseUrl?: string;
+    /** ASVS V2.5.5 self-audience receipt to the TARGET user (never the acting admin) once the
+     * reset actually commits - see notifyAuthFactorChanged's own doc comment. */
+    notifyTitle: string;
+    notifyBody: string;
   },
   perform: (
     tx: Prisma.TransactionClient,
@@ -153,7 +158,8 @@ async function handleAdminAssistedReset<T extends { ok: true } | { ok: false; co
     actorUserId: string,
   ) => Promise<T>,
 ): Promise<Response> {
-  const { id, stepUpBody, ssoManagedCode, rateLimitAction, logAction, injectedBaseUrl } = params;
+  const { id, stepUpBody, ssoManagedCode, rateLimitAction, logAction, injectedBaseUrl, notifyTitle, notifyBody } =
+    params;
 
   const user = await db.user.findUnique({
     where: { id },
@@ -176,6 +182,8 @@ async function handleAdminAssistedReset<T extends { ok: true } | { ok: false; co
   if (!gated.ok) return gated.response;
   const outcome = gated.value;
   if (!outcome.ok) return c.json({ code: outcome.code }, 409);
+
+  void notifyAuthFactorChanged(db, user.id, notifyTitle, notifyBody);
 
   emitSystemLog("security", "info", logAction, {
     targetUserId: user.id,
@@ -1213,6 +1221,9 @@ export async function handlePostResetUserMfa(
       rateLimitAction: "admin-reset-2fa-superadmin",
       logAction: "user_mfa_reset",
       injectedBaseUrl,
+      notifyTitle: "Your two-factor authentication was reset",
+      notifyBody:
+        "An administrator reset two-factor authentication on your account. If this wasn't expected, contact your organization's administrator immediately.",
     },
     (tx, orgId, audit, requiresStepUp, actorUserId) =>
       performResetUserMfa(tx, id, orgId, audit, actorUserId, requiresStepUp),
@@ -1292,6 +1303,13 @@ export async function handleDeleteUserExternalIdentity(c: Context, db: PrismaCli
       metadata: { userId: id, reason: "sso_unlink" },
     });
   });
+
+  void notifyAuthFactorChanged(
+    db,
+    user.id,
+    "Your SSO connection was removed",
+    "An administrator removed your SSO connection and set a temporary password on your account. If this wasn't expected, contact your organization's administrator immediately.",
+  );
 
   emitSystemLog("security", "info", "user_sso_unlinked", {
     targetUserId: user.id,
@@ -1391,6 +1409,9 @@ export async function handlePostResetUserPassword(
       rateLimitAction: "admin-reset-password-superadmin",
       logAction: "user_password_reset",
       injectedBaseUrl,
+      notifyTitle: "Your password was changed",
+      notifyBody:
+        "An administrator reset your account password. If this wasn't expected, contact your organization's administrator immediately.",
     },
     (tx, orgId, audit, requiresStepUp, actorUserId) =>
       performResetUserPassword(tx, id, newPassword, orgId, audit, actorUserId, requiresStepUp),

@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { IdentityProvider, PrismaClient } from "@admitto/db";
 import { ExternalIdentityLinkError } from "../../src/external-identity/resolve-user.js";
+
+const notifyOwnAuthFactorChanged = vi.fn();
+vi.mock("../../src/audit.js", () => ({
+  notifyOwnAuthFactorChanged: (...args: unknown[]) => notifyOwnAuthFactorChanged(...args),
+}));
+
 import {
   clearCfAccessIdentityCacheForTests,
   extractCfAccessSourceGroups,
@@ -167,5 +173,66 @@ describe("resolveCfAccessIdentityFromValidatedJwt caching", () => {
     await expect(resolveCfAccessIdentityFromValidatedJwt(prisma, sameToken)).resolves.toEqual({
       userId: "resolved-user",
     });
+  });
+});
+
+describe("resolveCfAccessIdentityFromValidatedJwt notifies on a real new link", () => {
+  const input = {
+    config: { enabled: true, sourceProviderId: "source-provider" },
+    cloudflareProvider: {} as IdentityProvider,
+    cloudflareSubject: "edge-session-subject",
+    claims: {},
+  };
+
+  beforeEach(() => {
+    clearCfAccessIdentityCacheForTests();
+    notifyOwnAuthFactorChanged.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("notifies the account owner when a new Cloudflare Access ExternalIdentity was actually created (bot review finding, PR #1308)", async () => {
+    const transaction = vi.fn(async () => ({ userId: "resolved-user", linked: true }));
+    const prisma = { $transaction: transaction } as unknown as PrismaClient;
+
+    const result = await resolveCfAccessIdentityFromValidatedJwt(prisma, {
+      ...input,
+      payload: { sub: "cf-sub-notify-new", iat: 1000, custom: { admitto_identity: "source-subject" } },
+    });
+
+    expect(result).toEqual({ userId: "resolved-user" });
+    expect(notifyOwnAuthFactorChanged).toHaveBeenCalledWith(
+      prisma,
+      "resolved-user",
+      "A new SSO connection was linked",
+      expect.any(String),
+    );
+  });
+
+  it("does not notify when the Cloudflare Access identity already existed (a re-authentication, not a new link)", async () => {
+    const transaction = vi.fn(async () => ({ userId: "resolved-user", linked: false }));
+    const prisma = { $transaction: transaction } as unknown as PrismaClient;
+
+    await resolveCfAccessIdentityFromValidatedJwt(prisma, {
+      ...input,
+      payload: { sub: "cf-sub-notify-existing", iat: 1000, custom: { admitto_identity: "source-subject" } },
+    });
+
+    expect(notifyOwnAuthFactorChanged).not.toHaveBeenCalled();
+  });
+
+  it("fires notify only once when concurrent callers share the same coalesced transaction", async () => {
+    const transaction = vi.fn(async () => ({ userId: "resolved-user", linked: true }));
+    const prisma = { $transaction: transaction } as unknown as PrismaClient;
+    const sameToken = {
+      ...input,
+      payload: { sub: "cf-sub-notify-coalesced", iat: 1000, custom: { admitto_identity: "source-subject" } },
+    };
+
+    await Promise.all([
+      resolveCfAccessIdentityFromValidatedJwt(prisma, sameToken),
+      resolveCfAccessIdentityFromValidatedJwt(prisma, sameToken),
+    ]);
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(notifyOwnAuthFactorChanged).toHaveBeenCalledOnce();
   });
 });
