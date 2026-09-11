@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NotificationBell, resetNotificationBellCache } from "../../src/components/NotificationBell.js";
 import type { NotificationDto } from "../../src/api/types.js";
@@ -9,6 +9,7 @@ const fetchAccountNotifications = vi.fn();
 const fetchAccountNotificationsUnreadCount = vi.fn();
 const markAccountNotificationRead = vi.fn();
 const markAllAccountNotificationsRead = vi.fn();
+const clearAllAccountNotifications = vi.fn();
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -18,6 +19,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     fetchAccountNotificationsUnreadCount: (...args: unknown[]) => fetchAccountNotificationsUnreadCount(...args),
     markAccountNotificationRead: (...args: unknown[]) => markAccountNotificationRead(...args),
     markAllAccountNotificationsRead: (...args: unknown[]) => markAllAccountNotificationsRead(...args),
+    clearAllAccountNotifications: (...args: unknown[]) => clearAllAccountNotifications(...args),
   };
 });
 
@@ -575,5 +577,101 @@ describe("NotificationBell polling", () => {
     });
 
     expect(fetchAccountNotificationsUnreadCount).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Clear all", () => {
+  it("does not show a Clear all trigger when the list is empty", async () => {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 0 });
+    fetchAccountNotifications.mockResolvedValue({ notifications: [], unread_count: 0 });
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("You’re all caught up.");
+
+    expect(screen.queryByRole("button", { name: "Clear all" })).toBeNull();
+  });
+
+  it("shows a Clear all trigger even when every notification is already read", async () => {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 0 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [makeNotification({ read_at: "2026-09-10T11:00:00.000Z" })],
+      unread_count: 0,
+    });
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+
+    expect(screen.getByRole("button", { name: "Clear all" })).toBeTruthy();
+    // No unread rows - "Mark all as read" must not appear alongside it.
+    expect(screen.queryByRole("button", { name: "Mark all as read" })).toBeNull();
+  });
+
+  it("asks for confirmation before clearing, and does nothing on Cancel", async () => {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [makeNotification()],
+      unread_count: 1,
+    });
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    const dialog = await screen.findByRole("dialog", { name: "Clear all notifications?" });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(clearAllAccountNotifications).not.toHaveBeenCalled();
+    expect(screen.getByText("5 consecutive failed sign-in attempts")).toBeTruthy();
+  });
+
+  it("permanently clears the list and shows the empty state after confirming", async () => {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [makeNotification()],
+      unread_count: 1,
+    });
+    clearAllAccountNotifications.mockResolvedValue({ cleared_count: 1, unread_count: 0 });
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    const dialog = await screen.findByRole("dialog", { name: "Clear all notifications?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear all notifications" }));
+
+    await waitFor(() => expect(clearAllAccountNotifications).toHaveBeenCalled());
+    await screen.findByText("You’re all caught up.");
+    expect(screen.queryByText("5 consecutive failed sign-in attempts")).toBeNull();
+    expect(screen.getByRole("button", { name: "Notifications" })).toBeTruthy();
+  });
+
+  it("shows a toast and keeps the list when clearing fails", async () => {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [makeNotification()],
+      unread_count: 1,
+    });
+    clearAllAccountNotifications.mockRejectedValue(new Error("network down"));
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    const dialog = await screen.findByRole("dialog", { name: "Clear all notifications?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear all notifications" }));
+
+    expect(await screen.findByText("Failed to clear notifications.")).toBeTruthy();
+    expect(screen.getByText("5 consecutive failed sign-in attempts")).toBeTruthy();
   });
 });

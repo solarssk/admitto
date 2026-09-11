@@ -58,10 +58,19 @@ export async function describePersonalNotifications(
   }));
 }
 
-/** Count of the caller's own unread notifications - the bell's poll target, kept cheap (a single
- * indexed count, see the Notification model's @@index([user_id, read_at])). */
+/** Count of the caller's own unread notifications, capped to the same window
+ * describePersonalNotifications shows - an unbounded count would let the bell's badge climb past
+ * what the list can ever display or let the caller mark as read, once someone has more than
+ * PERSONAL_NOTIFICATIONS_LIMIT unread at once. Still a single indexed read (see the Notification
+ * model's @@index([user_id, read_at])), just capped after. */
 export async function countUnreadNotifications(db: Db, userId: string): Promise<number> {
-  return db.notification.count({ where: { user_id: userId, read_at: null } });
+  const rows = await db.notification.findMany({
+    where: { user_id: userId },
+    orderBy: { created_at: "desc" },
+    take: PERSONAL_NOTIFICATIONS_LIMIT,
+    select: { read_at: true },
+  });
+  return rows.filter((row) => row.read_at === null).length;
 }
 
 /**
@@ -94,5 +103,16 @@ export async function markAllNotificationsRead(db: Db, userId: string): Promise<
     where: { user_id: userId, read_at: null },
     data: { read_at: new Date() },
   });
+  return result.count;
+}
+
+/** Permanently deletes every one of the caller's own notifications, scoped by user_id - the same
+ * inherent isolation as markAllNotificationsRead. A real delete, not a hide/dismiss flag: the
+ * durable, compliance-relevant record of the underlying security event already lives in
+ * SecurityAuditLog (untouched here), so this table is purely the in-app delivery/inbox copy - safe
+ * to clear on request the same way purgeNotifications (retention.ts) clears it automatically after
+ * the retention window for whoever never does. */
+export async function clearAllNotifications(db: Db, userId: string): Promise<number> {
+  const result = await db.notification.deleteMany({ where: { user_id: userId } });
   return result.count;
 }

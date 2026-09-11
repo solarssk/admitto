@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@admitto/db";
 import { describe, expect, it } from "vitest";
 import {
+  clearAllNotifications,
   countUnreadNotifications,
   describePersonalNotifications,
   markAllNotificationsRead,
@@ -58,16 +59,44 @@ describe("describePersonalNotifications", () => {
 });
 
 describe("countUnreadNotifications", () => {
-  it("counts only the caller's own unread rows", async () => {
+  it("counts only the caller's own unread rows, within the same newest-30 window the list shows", async () => {
     const db = createStubDb();
-    db.notification.count.mockResolvedValue(3);
+    db.notification.findMany.mockResolvedValue([
+      { read_at: null },
+      { read_at: new Date("2026-09-10T09:00:00Z") },
+      { read_at: null },
+    ]);
 
     const count = await countUnreadNotifications(db as unknown as PrismaClient, "user-1");
 
-    expect(count).toBe(3);
-    expect(db.notification.count).toHaveBeenCalledWith({
-      where: { user_id: "user-1", read_at: null },
+    expect(count).toBe(2);
+    expect(db.notification.findMany).toHaveBeenCalledWith({
+      where: { user_id: "user-1" },
+      orderBy: { created_at: "desc" },
+      take: 30,
+      select: { read_at: true },
     });
+  });
+
+  it("never exceeds what describePersonalNotifications can ever show - more than 30 unread rows in the window still counts as at most 30", async () => {
+    const db = createStubDb();
+    db.notification.findMany.mockResolvedValue(Array.from({ length: 30 }, () => ({ read_at: null })));
+
+    const count = await countUnreadNotifications(db as unknown as PrismaClient, "user-1");
+
+    expect(count).toBe(30);
+  });
+});
+
+describe("clearAllNotifications", () => {
+  it("permanently deletes every one of the caller's own notifications and returns the count", async () => {
+    const db = createStubDb();
+    db.notification.deleteMany.mockResolvedValue({ count: 5 });
+
+    const cleared = await clearAllNotifications(db as unknown as PrismaClient, "user-1");
+
+    expect(cleared).toBe(5);
+    expect(db.notification.deleteMany).toHaveBeenCalledWith({ where: { user_id: "user-1" } });
   });
 });
 

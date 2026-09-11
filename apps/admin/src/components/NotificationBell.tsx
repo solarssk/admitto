@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Badge, Spinner, useToast } from "@admitto/ui";
+import { Badge, Spinner, Tooltip, useToast } from "@admitto/ui";
 import {
+  clearAllAccountNotifications,
   fetchAccountNotifications,
   fetchAccountNotificationsUnreadCount,
   markAccountNotificationRead,
@@ -11,6 +12,7 @@ import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { formatRelativeTime } from "../utils/event-dates.js";
 import { NOTIFICATION_SEVERITY_ICON } from "./notificationSeverity.js";
 import { useDropdownMenu } from "./useDropdownMenu.js";
+import { ConfirmDialog } from "./ConfirmDialog.js";
 
 /** Silent poll interval for the unread count - same cadence as SystemStatus's own health poll,
  * but independently defined (not imported) since it's a different concern with its own reason
@@ -49,6 +51,8 @@ export function NotificationBell() {
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const [markingAll, setMarkingAll] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   // Guards every queued operation below against running its state updates after unmount - a
   // StaffShell remount (see unreadCountCache's own doc comment) can happen while an operation is
@@ -212,6 +216,27 @@ export function NotificationBell() {
     });
   }
 
+  async function handleClearAll() {
+    setClearing(true);
+    await queueCountOperation(async () => {
+      if (!isMountedRef.current) return;
+      const gen = ++countGenerationRef.current;
+      try {
+        await clearAllAccountNotifications();
+        if (!isMountedRef.current) return;
+        setNotifications([]);
+        setConfirmedUnreadCount(0, gen);
+        setClearConfirmOpen(false);
+      } catch (err) {
+        if (isMountedRef.current) {
+          addToast(operatorApiErrorMessage(err, "Failed to clear notifications."), "error");
+        }
+      } finally {
+        if (isMountedRef.current) setClearing(false);
+      }
+    });
+  }
+
   return (
     <div className="user-menu" ref={rootRef}>
       <button
@@ -236,16 +261,34 @@ export function NotificationBell() {
         <div className="user-menu__panel sys-status__panel notif-bell__panel" role="menu" ref={panelRef} style={panelStyle}>
           <div className="notif-bell__head">
             <strong>Notifications</strong>
-            {unreadCount > 0 && (
-              <button
-                type="button"
-                className="notif-bell__mark-all"
-                disabled={markingAll}
-                onClick={() => void handleMarkAllRead()}
-              >
-                {markingAll ? "Marking…" : "Mark all as read"}
-              </button>
-            )}
+            <div className="notif-bell__head-actions">
+              {unreadCount > 0 && (
+                <Tooltip content="Mark all as read">
+                  <button
+                    type="button"
+                    className="notif-bell__icon-action"
+                    aria-label={markingAll ? "Marking…" : "Mark all as read"}
+                    disabled={markingAll}
+                    onClick={() => void handleMarkAllRead()}
+                  >
+                    {markingAll ? <Spinner size="sm" label="Marking" /> : <i className="ti ti-checks" aria-hidden="true" />}
+                  </button>
+                </Tooltip>
+              )}
+              {notifications.length > 0 && (
+                <Tooltip content="Clear all">
+                  <button
+                    type="button"
+                    className="notif-bell__icon-action"
+                    aria-label="Clear all"
+                    disabled={clearing}
+                    onClick={() => setClearConfirmOpen(true)}
+                  >
+                    <i className="ti ti-trash" aria-hidden="true" />
+                  </button>
+                </Tooltip>
+              )}
+            </div>
           </div>
           {listLoading && !listLoaded && (
             <div className="notif-bell__status">
@@ -296,6 +339,17 @@ export function NotificationBell() {
           )}
         </div>
       )}
+      <ConfirmDialog
+        open={clearConfirmOpen}
+        icon={<i className="ti ti-trash" />}
+        title="Clear all notifications?"
+        message="This permanently deletes your notification history. It does not affect your organisation's security audit log, and future alerts will still arrive normally."
+        confirmLabel="Clear all notifications"
+        confirmVariant="danger"
+        loading={clearing}
+        onConfirm={() => void handleClearAll()}
+        onCancel={() => setClearConfirmOpen(false)}
+      />
     </div>
   );
 }

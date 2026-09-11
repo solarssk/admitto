@@ -40,5 +40,12 @@ export {
   countUnreadNotifications,
   markNotificationRead,
   markAllNotificationsRead,
+  clearAllNotifications,
   type PersonalNotification,
 } from "./inbox.js";
+export {
+  purgeNotifications,
+  resolveNotificationRetentionDays,
+  type PurgeNotificationsOptions,
+  type PurgeNotificationsResult,
+} from "./retention.js";

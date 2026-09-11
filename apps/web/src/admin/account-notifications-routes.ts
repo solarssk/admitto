@@ -10,6 +10,7 @@ import type { Context } from "hono";
 import { z } from "zod";
 import type { PrismaClient } from "@admitto/db";
 import {
+  clearAllNotifications,
   countUnreadNotifications,
   describePersonalNotifications,
   getNotificationTypeDef,
@@ -184,4 +185,15 @@ export async function handlePostAccountNotificationsMarkAllRead(
   // change the real count before the response actually reaches the client either way.
   const unreadCount = await countUnreadNotifications(db, userId);
   return c.json({ updated_count: updatedCount, unread_count: unreadCount });
+}
+
+/** POST /api/account/notifications/clear-all - permanently deletes the caller's own notification
+ * history (in-app inbox copy only; SecurityAuditLog is untouched). */
+export async function handlePostAccountNotificationsClearAll(
+  c: Context,
+  db: PrismaClient,
+): Promise<Response> {
+  const userId = c.get("auth").userId;
+  const clearedCount = await clearAllNotifications(db, userId);
+  return c.json({ cleared_count: clearedCount, unread_count: 0 });
 }
