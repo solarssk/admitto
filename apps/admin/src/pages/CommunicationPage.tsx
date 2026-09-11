@@ -1327,6 +1327,14 @@ function PreviewBody({
   const displayName = senderName || eventTitle;
   const sampleTime = browserClockTime(new Date());
   const isDark = colorScheme === "dark";
+  // Computed once per render (not inline in the iframe below) - both the srcDoc content and
+  // whether to apply the whole-iframe invert filter depend on the same result, and the latter
+  // must be skipped for a template that already authors its own real dark palette (see
+  // forcePreviewColorScheme.ts) rather than just a cosmetic swap like a logo.
+  const preview = previewHtml
+    ? forcePreviewColorScheme(makeEmailPreviewInert(sanitizeSamplePreviewHtml(previewHtml)), colorScheme)
+    : null;
+  const applyDarkSim = isDark && !preview?.hasAuthoredDarkPalette;
   return (
     <div className={isDark ? "communication-mail-client communication-mail-client--dark" : "communication-mail-client"}>
       <div className="communication-mail-client__toolbar">
@@ -1390,12 +1398,12 @@ function PreviewBody({
           </span>
         </div>
       </div>
-      {previewHtml ? (
+      {preview ? (
         <iframe
-          className={isDark ? "communication-preview-frame communication-preview-frame--dark-sim" : "communication-preview-frame"}
+          className={applyDarkSim ? "communication-preview-frame communication-preview-frame--dark-sim" : "communication-preview-frame"}
           title="Email preview"
           sandbox=""
-          srcDoc={forcePreviewColorScheme(makeEmailPreviewInert(sanitizeSamplePreviewHtml(previewHtml)), colorScheme)}
+          srcDoc={preview.html}
         />
       ) : (
         <div className="communication-preview-frame communication-preview-frame--loading">
