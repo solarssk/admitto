@@ -226,8 +226,14 @@
    opaque background and its later DOM position (after this icon), that stacking context
    was painting the input's background over this absolutely-positioned icon, hiding it
    completely (confirmed via elementFromPoint at the icon's own coordinates returning the
-   input, not the icon). Desktop never applies that transform, so this was invisible there. */
-.at-inputgroup .at-inputgroup__icon { position: absolute; left: 0.65rem; top: 50%; transform: translateY(-50%); z-index: 1; color: var(--text-muted); font-size: 1.05rem; pointer-events: none; }
+   input, not the icon). Desktop never applies that transform, so this was invisible there.
+   :not(.at-inputgroup__icon--action) matters too - Input.tsx puts both this class and
+   `--action` on the same button when onIconClick is set (bot review), and the `--action`
+   rule further down switches it to `position: static; align-self: stretch` without ever
+   resetting a transform - this decorative centering would otherwise still apply on top of
+   that, shifting the full-height button up by half its own height and clipping most of it
+   inside the wrapper's `overflow: hidden`, on every device, not just touch ones. */
+.at-inputgroup .at-inputgroup__icon:not(.at-inputgroup__icon--action) { position: absolute; left: 0.65rem; top: 50%; transform: translateY(-50%); z-index: 1; color: var(--text-muted); font-size: 1.05rem; pointer-events: none; }
 .at-inputgroup .at-input { padding-left: 2.1rem; }
 
 /* Input's onIconClick opt-in (e.g. the Redirect URI copy button). Two prior attempts kept the
