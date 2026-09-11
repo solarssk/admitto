@@ -204,6 +204,32 @@ describe("AttendeesTable custom-field filter rows", () => {
     expect(onCustomFieldSelectChange).toHaveBeenLastCalledWith("dinner", []);
   });
 
+  it("shows No as the active toggle when the boolean field's own value is [\"false\"]", () => {
+    render(
+      <AttendeesTable
+        {...baseProps({
+          customFields: [booleanField()],
+          customFieldSelectValues: { dinner: ["false"] },
+        })}
+      />,
+    );
+    openFilters();
+
+    expect(screen.getByRole("radio", { name: "No" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: "Any" }).getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("renders a select field with no options at all as an empty (not crashing) multi-select", () => {
+    // The backend's own create-field validation never allows this in practice (a select field
+    // always has at least one option), but the DTO's own type (string[] | null) allows it, and
+    // this row must still render rather than throw on a null `.map()`.
+    render(<AttendeesTable {...baseProps({ customFields: [{ ...selectField(), options: null }] })} />);
+    openFilters();
+
+    fireEvent.click(screen.getByRole("button", { name: /^T-Shirt size,/ }));
+    expect(screen.getByText("No options found")).toBeTruthy();
+  });
+
   it("counts an active custom-field filter toward the Filters badge", () => {
     render(
       <AttendeesTable

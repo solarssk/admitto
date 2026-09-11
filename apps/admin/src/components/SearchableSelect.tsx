@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useDropdownMenu } from "./useDropdownMenu.js";
-import { useInlineOpenState } from "./InlineAccordionContext.js";
+import { usePanelOpenState } from "./InlineAccordionContext.js";
 import { SearchableSelectSearchBox } from "./SearchableSelectSearchBox.js";
 import { searchableSelectPanelClassName, searchableSelectTriggerClassName } from "./searchable-select-class-names.js";
 import "./searchable-select.css";
@@ -130,11 +130,8 @@ export function SearchableSelect({
     matchTriggerWidth: true,
     minWidth,
   });
-  const isInline = panelMode === "inline";
-  const [inlineOpen, setInlineOpen] = useInlineOpenState(id, isInline);
-  const open = isInline ? inlineOpen : dropdown.open;
-  const setOpen = isInline ? setInlineOpen : dropdown.setOpen;
-  const close = isInline ? () => setInlineOpen(false) : dropdown.close;
+  const { isInline, open, setOpen } = usePanelOpenState(dropdown, id, panelMode);
+  const close = isInline ? () => setOpen(false) : dropdown.close;
   const [query, setQuery] = useState("");
   const showSearch = options.length > SEARCH_THRESHOLD;
 

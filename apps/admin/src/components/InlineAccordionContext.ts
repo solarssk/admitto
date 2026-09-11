@@ -34,3 +34,24 @@ export function useInlineOpenState(
   };
   return [open, setOpen];
 }
+
+export interface PanelOpenState {
+  isInline: boolean;
+  open: boolean;
+  setOpen: Dispatch<SetStateAction<boolean>>;
+}
+
+/** Resolves `panelMode` to the open/setOpen pair SearchableSelect/MultiSelect actually render
+ * with - floating mode defers entirely to the given `useDropdownMenu` state, inline mode to
+ * `useInlineOpenState` above. Consolidates what would otherwise be 3 separate `isInline ? ... :
+ * ...` ternaries repeated in both components. */
+export function usePanelOpenState(
+  dropdown: { open: boolean; setOpen: Dispatch<SetStateAction<boolean>> },
+  id: string,
+  panelMode: "floating" | "inline",
+): PanelOpenState {
+  const isInline = panelMode === "inline";
+  const [inlineOpen, setInlineOpen] = useInlineOpenState(id, isInline);
+  if (isInline) return { isInline, open: inlineOpen, setOpen: setInlineOpen };
+  return { isInline, open: dropdown.open, setOpen: dropdown.setOpen };
+}

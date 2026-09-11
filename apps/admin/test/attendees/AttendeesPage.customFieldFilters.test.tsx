@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { fetchEventAttendees, fetchEventCustomFields, renderPage } from "./attendeesPageSetup.js";
+import {
+  exportAttendees,
+  fetchEventAttendees,
+  fetchEventCustomFields,
+  renderPage,
+} from "./attendeesPageSetup.js";
 import type { EventCustomFieldDto } from "../../src/api/types.js";
 
 function textField(sourceField: string, label: string): EventCustomFieldDto {
@@ -13,6 +18,19 @@ function textField(sourceField: string, label: string): EventCustomFieldDto {
     type: "text",
     required: false,
     options: null,
+    created_at: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+function selectField(sourceField: string, label: string, options: string[]): EventCustomFieldDto {
+  return {
+    id: sourceField,
+    source_field: sourceField,
+    label,
+    description: null,
+    type: "select",
+    required: false,
+    options,
     created_at: "2026-01-01T00:00:00.000Z",
   };
 }
@@ -73,5 +91,41 @@ describe("AttendeesPage custom-field text filter debounce", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("AttendeesPage custom-field select filter", () => {
+  it("re-fetches with the selected value and applies the same filter to the export request", async () => {
+    fetchEventCustomFields.mockResolvedValue([selectField("shirt_size", "T-Shirt size", ["S", "M", "L"])]);
+    fetchEventAttendees.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
+    exportAttendees.mockResolvedValue(undefined);
+
+    renderPage();
+    await screen.findByText(/No attendees yet/i);
+    fetchEventAttendees.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    fireEvent.click(screen.getByRole("button", { name: /^T-Shirt size,/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "M" }));
+
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith(
+        "evt-1",
+        expect.objectContaining({ customFieldParams: { cf_shirt_size: ["M"] } }),
+        expect.anything(),
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /CSV/i }));
+
+    await waitFor(() => {
+      expect(exportAttendees).toHaveBeenCalledWith(
+        "evt-1",
+        expect.objectContaining({ customFieldParams: { cf_shirt_size: ["M"] } }),
+        "csv",
+        expect.anything(),
+      );
+    });
   });
 });
