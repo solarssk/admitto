@@ -201,6 +201,33 @@ async function readOrgSettings(
 }
 
 /**
+ * Whether this type's org-level settings disable every channel it could even use - same fast
+ * path notify() always took, just pulled into its own function (SonarCloud cognitive-complexity
+ * split, PR #1304; no behavior change). A type with zero availableChannels is never reported as
+ * disabled (nothing was ever wired to a channel to disable in the first place). Writes the
+ * `notification.dispatch.skipped_org_disabled` audit row itself when true, mirroring
+ * claimThrottleOrLogSkip's own log-as-you-go shape below.
+ */
+async function isFullyOrgDisabled(
+  db: Db,
+  type: string,
+  typeDef: NotificationTypeDef,
+  organizationId: string,
+  disabledChannels: NotificationChannelKey[],
+): Promise<boolean> {
+  const fullyDisabled =
+    typeDef.orgDisableable &&
+    typeDef.availableChannels.length > 0 &&
+    typeDef.availableChannels.every((ch) => disabledChannels.includes(ch));
+  if (fullyDisabled) {
+    await writeDispatchAuditLog(db, "notification.dispatch.skipped_org_disabled", organizationId, {
+      notification_type: type,
+    });
+  }
+  return fullyDisabled;
+}
+
+/**
  * Claims this dispatch's throttle slot, or determines none is needed - pulled out of notify()
  * itself purely to keep that function's own cognitive complexity down (SonarCloud, PR #1304);
  * no behavior changed by this split.
@@ -438,22 +465,10 @@ export async function notify(
 
     const { disabledChannelsByType } = await readOrgSettings(db, event.organizationId);
     const disabledChannels = typeDef.orgDisableable ? (disabledChannelsByType[type] ?? []) : [];
-    // Fully disabled across every channel this type can even use - same fast path as before the
-    // per-channel matrix: skip audience resolution and the throttle claim entirely, not just the
-    // channel sends, since nothing downstream would do anything either way. The length check
-    // guards a type with zero availableChannels: Array.every() on an empty array is vacuously
-    // true, which would otherwise misreport "org disabled" for a type that was never wired to any
-    // channel in the first place (and has nothing configured to disable).
-    if (
-      typeDef.orgDisableable &&
-      typeDef.availableChannels.length > 0 &&
-      typeDef.availableChannels.every((ch) => disabledChannels.includes(ch))
-    ) {
-      await writeDispatchAuditLog(db, "notification.dispatch.skipped_org_disabled", event.organizationId, {
-        notification_type: type,
-      });
-      return;
-    }
+    // Fully disabled across every channel this type can even use - skip audience resolution and
+    // the throttle claim entirely, not just the channel sends, since nothing downstream would do
+    // anything either way.
+    if (await isFullyOrgDisabled(db, type, typeDef, event.organizationId, disabledChannels)) return;
 
     const claimResult = await claimThrottleOrLogSkip(db, type, typeDef, event, deps);
     if (claimResult === "skip") return;
