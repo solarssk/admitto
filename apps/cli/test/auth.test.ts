@@ -6,6 +6,7 @@ const findUserByEmail = vi.fn();
 const generateEmergencyRecoveryCode = vi.fn();
 const logMfaBreakGlassCli = vi.fn();
 const normalizeEmail = vi.fn((email: string) => email.toLowerCase());
+const notifyOwnAuthFactorChanged = vi.fn();
 const resetUserMfa = vi.fn();
 const superadminInstanceExists = vi.fn();
 const userIsInstanceSuperadmin = vi.fn();
@@ -23,6 +24,7 @@ vi.mock("@admitto/auth", () => ({
   generateEmergencyRecoveryCode: (...args: unknown[]) => generateEmergencyRecoveryCode(...args),
   logMfaBreakGlassCli: (...args: unknown[]) => logMfaBreakGlassCli(...args),
   normalizeEmail: (...args: unknown[]) => normalizeEmail(...args),
+  notifyOwnAuthFactorChanged: (...args: unknown[]) => notifyOwnAuthFactorChanged(...args),
   PASSWORD_MIN_LENGTH: 12,
   PasswordPolicyError,
   resetUserMfa: (...args: unknown[]) => resetUserMfa(...args),
@@ -48,7 +50,7 @@ vi.mock("../src/lib/confirm.js", () => ({
   confirmYes: (...args: unknown[]) => confirmYes(...args),
 }));
 
-const { runAuthBootstrapSuperadmin } = await import("../src/commands/auth.js");
+const { runAuthBootstrapSuperadmin, runAuthResetMfa } = await import("../src/commands/auth.js");
 
 function fakeDb(): PrismaClient {
   return {} as PrismaClient;
@@ -216,5 +218,57 @@ describe("runAuthBootstrapSuperadmin", () => {
 
     expect(readPasswordFromStdin).not.toHaveBeenCalled();
     expect(bootstrapSuperadmin).not.toHaveBeenCalled();
+  });
+});
+
+describe("runAuthResetMfa", () => {
+  const originalArgv = process.argv;
+
+  beforeEach(() => {
+    assertNoPasswordArgv.mockReset();
+    findUserByEmail.mockReset();
+    userIsInstanceSuperadmin.mockReset().mockResolvedValue(true);
+    readPasswordFromStdin.mockReset().mockResolvedValue("target-password");
+    verifyPassword.mockReset().mockResolvedValue(true);
+    resetUserMfa.mockReset().mockResolvedValue(undefined);
+    logMfaBreakGlassCli.mockReset().mockResolvedValue(undefined);
+    notifyOwnAuthFactorChanged.mockReset().mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    process.argv = originalArgv;
+  });
+
+  it("resets MFA and notifies the TARGET user, not the operator running the command (bot review finding, PR #1308)", async () => {
+    process.argv = ["node", "admitto", "auth", "reset-mfa", "--email", "target@example.com"];
+    findUserByEmail.mockResolvedValue({ id: "user-1", password_hash: "hash" });
+    const db = fakeDb();
+
+    await runAuthResetMfa(db);
+
+    expect(resetUserMfa).toHaveBeenCalledWith(db, "user-1");
+    expect(logMfaBreakGlassCli).toHaveBeenCalledWith(db, {
+      action: "reset_mfa",
+      email: "target@example.com",
+      userId: "user-1",
+    });
+    expect(notifyOwnAuthFactorChanged).toHaveBeenCalledWith(
+      db,
+      "user-1",
+      "Your two-factor authentication was reset",
+      expect.any(String),
+    );
+  });
+
+  it("does not reset MFA or notify when the target's password fails to verify", async () => {
+    process.argv = ["node", "admitto", "auth", "reset-mfa", "--email", "target@example.com"];
+    findUserByEmail.mockResolvedValue({ id: "user-1", password_hash: "hash" });
+    verifyPassword.mockResolvedValue(false);
+    const db = fakeDb();
+
+    await expect(runAuthResetMfa(db)).rejects.toThrow("Password verification failed.");
+
+    expect(resetUserMfa).not.toHaveBeenCalled();
+    expect(notifyOwnAuthFactorChanged).not.toHaveBeenCalled();
   });
 });

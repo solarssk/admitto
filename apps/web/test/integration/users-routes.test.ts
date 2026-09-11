@@ -268,6 +268,11 @@ afterEach(async () => {
       confirmed_at: new Date(),
     },
   });
+  // account.auth_factor.changed's own throttle claim (dedupe_key = userId) must not survive into
+  // the next test - targetId is reused across multiple reset-2fa/reset-password tests, same
+  // reasoning as account-routes.test.ts's own afterEach.
+  await prisma.notification.deleteMany({ where: { user_id: targetId } });
+  await prisma.notificationThrottle.deleteMany({ where: { event_type: "account.auth_factor.changed" } });
 });
 
 afterAll(async () => {
@@ -1032,9 +1037,13 @@ describe("DELETE /api/admin/users/:id/external-identity", () => {
 
       const revoked = await prisma.session.findUnique({ where: { id: session.session.id } });
       expect(revoked?.revoked_at).not.toBeNull();
+
+      // Target user, not the superadmin acting on their behalf (bot review finding, PR #1304).
+      await expectAuthFactorChangedNotification(created.id, "Your SSO connection was removed");
     } finally {
       await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
       await prisma.session.deleteMany({ where: { user_id: created.id } });
+      await prisma.notification.deleteMany({ where: { user_id: created.id } });
       await prisma.user.deleteMany({ where: { id: created.id } });
     }
   });
@@ -1380,6 +1389,8 @@ describe("POST /api/admin/users/:id/reset-2fa", () => {
     });
     expect(res.status).toBe(200);
     expect(await prisma.userMfaMethod.count({ where: { user_id: targetId } })).toBe(0);
+    // Target user, not the acting superadmin (bot review finding, PR #1304).
+    await expectAuthFactorChangedNotification(targetId, "Your two-factor authentication was reset");
   });
 
   it("returns 403 for a non-superadmin", async () => {
@@ -1418,6 +1429,11 @@ describe("POST /api/admin/users/:id/reset-2fa", () => {
       const body = (await res.json()) as { code: string };
       expect(body.code).toBe("cannot_reset_mfa_sso_managed");
       expect(await prisma.userMfaMethod.count({ where: { user_id: created.id } })).toBe(1);
+      expect(
+        await prisma.notification.count({
+          where: { user_id: created.id, notification_type: "account.auth_factor.changed" },
+        }),
+      ).toBe(0);
     } finally {
       await prisma.userMfaMethod.deleteMany({ where: { user_id: created.id } });
       await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
@@ -1454,6 +1470,9 @@ describe("POST /api/admin/users/:id/reset-password", () => {
 
     const revoked = await prisma.session.findUnique({ where: { id: session.session.id } });
     expect(revoked?.revoked_at).not.toBeNull();
+
+    // Target user, not the acting superadmin (bot review finding, PR #1304).
+    await expectAuthFactorChangedNotification(targetId, "Your password was changed");
   });
 
   it("returns 400 password_too_common for a blocklisted password", async () => {
@@ -1498,12 +1517,31 @@ describe("POST /api/admin/users/:id/reset-password", () => {
       const user = await prisma.user.findUnique({ where: { id: created.id } });
       expect(user?.password_hash).toBeNull();
       expect(user?.must_change_password).toBe(false);
+      expect(
+        await prisma.notification.count({
+          where: { user_id: created.id, notification_type: "account.auth_factor.changed" },
+        }),
+      ).toBe(0);
     } finally {
       await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
       await prisma.user.deleteMany({ where: { id: created.id } });
     }
   });
 });
+
+/** Polls for the account.auth_factor.changed in-app Notification an admin-assisted reset fires at
+ * the TARGET user (fire-and-forget, see notifyAuthFactorChanged's own doc comment) - it can still
+ * be in flight when the HTTP response returns. Each test in this file creates its own fresh
+ * target user, so there's no cross-test NotificationThrottle collision to guard against here
+ * (unlike account-routes.test.ts's shared fixture user). */
+async function expectAuthFactorChangedNotification(forUserId: string, expectedTitle: string): Promise<void> {
+  await vi.waitFor(async () => {
+    const rows = await prisma.notification.findMany({
+      where: { user_id: forUserId, notification_type: "account.auth_factor.changed", title: expectedTitle },
+    });
+    expect(rows).toHaveLength(1);
+  });
+}
 
 /** Drive `POST /api/account/mfa/webauthn/assert/begin` over the given session, then sign the
  * returned challenge with `authenticator`: the `{ webauthn }` fragment a step-up-gated action

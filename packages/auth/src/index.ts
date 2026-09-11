@@ -185,6 +185,7 @@ export {
   logLoginFailure,
   logMfaBreakGlass,
   logMfaBreakGlassCli,
+  notifyOwnAuthFactorChanged,
   logMfaSuccess,
   logMfaFailure,
   logMfaRecoveryConsumed,
