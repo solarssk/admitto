@@ -3591,6 +3591,9 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     });
     expect(screen.queryByTestId("at-toast")).toBeNull();
     expect(screen.getByRole("dialog")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("confirms and revokes all issued items, showing a pluralized success toast and reloading", async () => {
