@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Checkbox } from "@admitto/ui";
 import { useDropdownMenu } from "./useDropdownMenu.js";
+import { useInlineOpenState } from "./InlineAccordionContext.js";
 import { SearchableSelectSearchBox } from "./SearchableSelectSearchBox.js";
 import type { SearchableSelectOption } from "./SearchableSelect.js";
 import "./searchable-select.css";
@@ -41,6 +42,9 @@ interface MultiSelectProps {
    * where "select all" and "select the one option" are the same action. */
   selectAllLabel?: string;
   clearLabel?: string;
+  /** See `SearchableSelect`'s own prop of the same name - same floating-vs-inline choice, same
+   * reason (a FiltersMenu accordion stacking several of these). */
+  panelMode?: "floating" | "inline";
   onChange: (ids: string[]) => void;
 }
 
@@ -66,12 +70,18 @@ export function MultiSelect({
   minWidth = 260,
   selectAllLabel = "Select all",
   clearLabel = "Clear",
+  panelMode = "floating",
   onChange,
 }: Readonly<MultiSelectProps>) {
-  const { open, setOpen, openUpward, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<
-    HTMLButtonElement,
-    HTMLDivElement
-  >({ align: "start", matchTriggerWidth: true, minWidth });
+  const dropdown = useDropdownMenu<HTMLButtonElement, HTMLDivElement>({
+    align: "start",
+    matchTriggerWidth: true,
+    minWidth,
+  });
+  const isInline = panelMode === "inline";
+  const [inlineOpen, setInlineOpen] = useInlineOpenState(id, isInline);
+  const open = isInline ? inlineOpen : dropdown.open;
+  const setOpen = isInline ? setInlineOpen : dropdown.setOpen;
   const [query, setQuery] = useState("");
   const showSearch = options.length > SEARCH_THRESHOLD;
 
@@ -97,7 +107,7 @@ export function MultiSelect({
   const triggerDescribedBy = [describedBy, hintId].filter(Boolean).join(" ") || undefined;
 
   return (
-    <div className="at-field searchable-select" ref={rootRef}>
+    <div className="at-field searchable-select" ref={dropdown.rootRef}>
       {showLabel && (
         <label className="at-label" htmlFor={id}>
           {label}
@@ -106,8 +116,8 @@ export function MultiSelect({
       <button
         type="button"
         id={id}
-        ref={triggerRef}
-        className={`searchable-select__trigger${invalid ? " searchable-select__trigger--invalid" : ""}`}
+        ref={isInline ? undefined : dropdown.triggerRef}
+        className={`searchable-select__trigger${invalid ? " searchable-select__trigger--invalid" : ""}${isInline && open ? " searchable-select__trigger--open" : ""}`}
         disabled={disabled}
         title={title}
         aria-expanded={open}
@@ -127,9 +137,13 @@ export function MultiSelect({
       )}
       {open && (
         <div
-          className={`searchable-select__panel${openUpward ? " searchable-select__panel--up" : ""}`}
-          ref={panelRef}
-          style={panelStyle}
+          className={
+            isInline
+              ? "searchable-select__panel searchable-select__panel--inline"
+              : `searchable-select__panel${dropdown.openUpward ? " searchable-select__panel--up" : ""}`
+          }
+          ref={isInline ? undefined : dropdown.panelRef}
+          style={isInline ? undefined : dropdown.panelStyle}
         >
           {showSearch && (
             <SearchableSelectSearchBox
@@ -152,14 +166,23 @@ export function MultiSelect({
               </button>
             </div>
           )}
-          <ul className="searchable-select__list" aria-label={label}>
+          <ul className="searchable-select__list at-scroll" aria-label={label}>
             {results.length === 0 ? (
               <li className="searchable-select__empty">{emptyLabel}</li>
             ) : (
               results.map((o) => (
                 <li key={o.id} className="multi-select__option">
                   <Checkbox
-                    label={o.label}
+                    label={
+                      o.icon ? (
+                        <span className="multi-select__option-label">
+                          <i className={`ti ti-${o.icon}`} aria-hidden="true" />
+                          {o.label}
+                        </span>
+                      ) : (
+                        o.label
+                      )
+                    }
                     checked={selectedSet.has(o.id)}
                     onChange={() => toggle(o.id)}
                   />

@@ -3,6 +3,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -29,6 +30,7 @@ import {
   exportAttendees,
   exportSelectedAttendees,
   fetchEventAttendees,
+  fetchEventCustomFields,
   fetchEventItems,
   fetchTicketTypes,
   sendEventBulk,
@@ -42,6 +44,7 @@ import type {
   AttendeeSortBy,
   AttendeeSortDir,
   AttendeeMailStatusFilter,
+  EventCustomFieldDto,
   EventDto,
   RsvpStatus,
   TicketTypeDto,
@@ -1017,6 +1020,15 @@ export function AttendeesPage() {
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
   const [ticketTypesError, setTicketTypesError] = useState<string | null>(null);
   const [ticketTypesRetryToken, setTicketTypesRetryToken] = useState(0);
+  const [customFields, setCustomFields] = useState<EventCustomFieldDto[]>([]);
+  const [customFieldsError, setCustomFieldsError] = useState<string | null>(null);
+  const [customFieldsRetryToken, setCustomFieldsRetryToken] = useState(0);
+  // select/boolean fields: source_field -> selected option values (empty/absent = no filter).
+  const [customFieldSelectValues, setCustomFieldSelectValues] = useState<Record<string, string[]>>({});
+  // text fields: source_field -> contains-text query, committed after the same debounce as the
+  // main search box (below), not on every keystroke.
+  const [customFieldTextInputs, setCustomFieldTextInputs] = useState<Record<string, string>>({});
+  const [customFieldTextQueries, setCustomFieldTextQueries] = useState<Record<string, string>>({});
   // Only the count is ever used (gates the bulk "Revoke items" action) — no need to hold onto
   // the full item catalog here, unlike ticketTypes above (whose labels/colors ARE rendered).
   const [eventItemCount, setEventItemCount] = useState(0);
@@ -1132,6 +1144,48 @@ export function AttendeesPage() {
 
   useEffect(() => {
     if (!eventId) return;
+    // Same functional-bailout reasoning as ticketTypeFilter above - a fresh `{}` reference on an
+    // eventId change would otherwise re-fire loadList a second time for nothing.
+    setCustomFieldSelectValues((current) => (Object.keys(current).length === 0 ? current : {}));
+    setCustomFieldTextInputs((current) => (Object.keys(current).length === 0 ? current : {}));
+    setCustomFieldTextQueries((current) => (Object.keys(current).length === 0 ? current : {}));
+    // Same reference-churn concern as ticketTypeFilter above, but for `customFields` itself, not
+    // just the selected filter values - it feeds customFieldParams below, which is itself a
+    // loadList dependency, so a fresh `[]` here (or from the resolved fetch, when it happens to
+    // also come back empty) would double-fire loadList the same way an unguarded array reset did.
+    setCustomFields((current) => (current.length === 0 ? current : []));
+    setCustomFieldsError(null);
+    const ac = new AbortController();
+    fetchEventCustomFields(eventId, ac.signal)
+      .then((fields) => {
+        if (ac.signal.aborted) return;
+        setCustomFields((current) => (current.length === 0 && fields.length === 0 ? current : fields));
+      })
+      .catch((err: unknown) => {
+        if (ac.signal.aborted) return;
+        setCustomFields((current) => (current.length === 0 ? current : []));
+        setCustomFieldsError(operatorApiErrorMessage(err, "Could not load custom fields."));
+      });
+    return () => ac.abort();
+  }, [eventId, customFieldsRetryToken]);
+
+  // Commits each custom text field's typed value to its own query after the same pause the main
+  // search box uses, one independent timer per field so typing in one doesn't reset another's.
+  useEffect(() => {
+    const timers = Object.entries(customFieldTextInputs).map(([sourceField, value]) =>
+      window.setTimeout(() => {
+        const trimmed = value.trim();
+        setCustomFieldTextQueries((current) =>
+          current[sourceField] === trimmed ? current : { ...current, [sourceField]: trimmed },
+        );
+        setPage(1);
+      }, DEBOUNCE_MS),
+    );
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, [customFieldTextInputs]);
+
+  useEffect(() => {
+    if (!eventId) return;
     setEventItemCount(0);
     setEventItemsError(null);
     const ac = new AbortController();
@@ -1151,6 +1205,24 @@ export function AttendeesPage() {
   // Whether the header "Send tickets" button should work at all — shared with the Attendee
   // Detail page's "Resend ticket" gate via useMailConfigured.
   const mailConfigured = useMailConfigured(eventId);
+
+  // One `cf_<source_field>` query param per custom field with an active filter - keyed off the
+  // field's own type so a select/boolean's checked values join with a comma (the same convention
+  // ticket_type/rsvp_status/mail_status already use) while a text field's contains-query is sent
+  // as-is, never split on commas that might be part of the search term itself.
+  const customFieldParams = useMemo(() => {
+    const params: Record<string, string> = {};
+    for (const field of customFields) {
+      if (field.type === "text") {
+        const text = customFieldTextQueries[field.source_field];
+        if (text) params[`cf_${field.source_field}`] = text;
+      } else {
+        const values = customFieldSelectValues[field.source_field];
+        if (values && values.length > 0) params[`cf_${field.source_field}`] = values.join(",");
+      }
+    }
+    return params;
+  }, [customFields, customFieldSelectValues, customFieldTextQueries]);
 
   const loadList = useCallback(async () => {
     if (!eventId) return;
@@ -1172,6 +1244,7 @@ export function AttendeesPage() {
           ticket_type: ticketTypeFilter,
           rsvp_status: rsvpStatusFilter,
           mail_status: mailStatusFilter,
+          customFieldParams,
           sortBy,
           sortDir,
         },
@@ -1198,6 +1271,7 @@ export function AttendeesPage() {
     ticketTypeFilter,
     rsvpStatusFilter,
     mailStatusFilter,
+    customFieldParams,
     sortBy,
     sortDir,
     reportApiError,
@@ -1233,6 +1307,7 @@ export function AttendeesPage() {
             ticket_type: ticketTypeFilter,
             rsvp_status: rsvpStatusFilter,
             mail_status: mailStatusFilter,
+            customFieldParams,
           },
           format,
           ac.signal,
@@ -1243,7 +1318,17 @@ export function AttendeesPage() {
         if (!ac.signal.aborted) setExportingFormat(null);
       }
     },
-    [eventId, searchQuery, statusFilter, ticketTypeFilter, rsvpStatusFilter, mailStatusFilter, reportApiError, addToast],
+    [
+      eventId,
+      searchQuery,
+      statusFilter,
+      ticketTypeFilter,
+      rsvpStatusFilter,
+      mailStatusFilter,
+      customFieldParams,
+      reportApiError,
+      addToast,
+    ],
   );
 
   const handleCreated = (attendee: AttendeeDetailDto) => {
@@ -1865,7 +1950,8 @@ export function AttendeesPage() {
     statusFilter === "all" &&
     ticketTypeFilter.length === 0 &&
     rsvpStatusFilter.length === 0 &&
-    mailStatusFilter.length === 0;
+    mailStatusFilter.length === 0 &&
+    Object.keys(customFieldParams).length === 0;
 
   // How many of the selection the bulk "Revoke check-in" confirm dialog would actually affect,
   // not the raw selection size — matches the bulk bar's own menu-item hint (PO review).
@@ -1982,6 +2068,18 @@ export function AttendeesPage() {
         ticketTypes={ticketTypes}
         ticketTypesError={ticketTypesError}
         onRetryTicketTypes={() => setTicketTypesRetryToken((n) => n + 1)}
+        customFields={customFields}
+        customFieldsError={customFieldsError}
+        onRetryCustomFields={() => setCustomFieldsRetryToken((n) => n + 1)}
+        customFieldSelectValues={customFieldSelectValues}
+        onCustomFieldSelectChange={(sourceField, values) => {
+          setCustomFieldSelectValues((current) => ({ ...current, [sourceField]: values }));
+          setPage(1);
+        }}
+        customFieldTextInputs={customFieldTextInputs}
+        onCustomFieldTextInputChange={(sourceField, value) => {
+          setCustomFieldTextInputs((current) => ({ ...current, [sourceField]: value }));
+        }}
         onSearchChange={setSearchInput}
         onStatusFilterChange={(v) => {
           setStatusFilter(v);

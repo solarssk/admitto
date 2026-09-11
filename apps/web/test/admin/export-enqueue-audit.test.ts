@@ -36,6 +36,7 @@ describe("handleExportAttendees enqueue audit fields", () => {
     const c = {
       req: {
         query: (name: string) => (name === "format" ? "csv" : undefined),
+        url: "https://admitto.example.com/api/admin/events/evt-export-enqueue/attendees/export?format=csv",
       },
       json: (body: unknown, status?: number) =>
         new Response(JSON.stringify(body), { status: status ?? 200 }),
@@ -50,6 +51,7 @@ describe("handleExportAttendees enqueue audit fields", () => {
           organization_id: "org-1",
         }),
       },
+      eventCustomField: { findMany: vi.fn().mockResolvedValue([]) },
       adminJob: { create },
     };
 

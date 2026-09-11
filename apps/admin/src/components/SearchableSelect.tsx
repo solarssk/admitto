@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useDropdownMenu } from "./useDropdownMenu.js";
+import { useInlineOpenState } from "./InlineAccordionContext.js";
 import { SearchableSelectSearchBox } from "./SearchableSelectSearchBox.js";
 import "./searchable-select.css";
 
@@ -52,6 +53,14 @@ interface SearchableSelectProps {
    * no visible caption at all). Either way the button's own aria-label (below) carries the
    * accessible name. */
   showLabel?: boolean;
+  /** Default "floating": `useDropdownMenu`'s `position: fixed` overlay, escaping any scrolling
+   * ancestor - the right choice standalone, or as the *only* open picker in a panel. "inline":
+   * renders the option list in normal document flow directly under the trigger instead, with no
+   * border/shadow of its own - for a caller that stacks several of these inside one already-
+   * floating panel (a FiltersMenu accordion), where each picker's own floating overlay would
+   * cover the rows below it rather than making room for its content (PO report, design mockup:
+   * see AttendeesTable.tsx's FilterToolbar). */
+  panelMode?: "floating" | "inline";
   onChange: (id: string) => void;
 }
 
@@ -77,12 +86,19 @@ export function SearchableSelect({
   title,
   showLabel = true,
   minWidth = 260,
+  panelMode = "floating",
   onChange,
 }: Readonly<SearchableSelectProps>) {
-  const { open, setOpen, close, openUpward, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<
-    HTMLButtonElement,
-    HTMLDivElement
-  >({ align: "start", matchTriggerWidth: true, minWidth });
+  const dropdown = useDropdownMenu<HTMLButtonElement, HTMLDivElement>({
+    align: "start",
+    matchTriggerWidth: true,
+    minWidth,
+  });
+  const isInline = panelMode === "inline";
+  const [inlineOpen, setInlineOpen] = useInlineOpenState(id, isInline);
+  const open = isInline ? inlineOpen : dropdown.open;
+  const setOpen = isInline ? setInlineOpen : dropdown.setOpen;
+  const close = isInline ? () => setInlineOpen(false) : dropdown.close;
   const [query, setQuery] = useState("");
   const showSearch = options.length > SEARCH_THRESHOLD;
 
@@ -109,7 +125,7 @@ export function SearchableSelect({
   const triggerDescribedBy = [describedBy, hintId].filter(Boolean).join(" ") || undefined;
 
   return (
-    <div className="at-field searchable-select" ref={rootRef}>
+    <div className="at-field searchable-select" ref={dropdown.rootRef}>
       {/* Visible caption - the button's own aria-label above carries the accessible name (a
        * <label for> a button would lose to the button's own subtree content per the accname
        * spec), but sighted users still need to see what this field picks (PO report: "None"
@@ -123,8 +139,8 @@ export function SearchableSelect({
       <button
         type="button"
         id={id}
-        ref={triggerRef}
-        className={`searchable-select__trigger${invalid ? " searchable-select__trigger--invalid" : ""}`}
+        ref={isInline ? undefined : dropdown.triggerRef}
+        className={`searchable-select__trigger${invalid ? " searchable-select__trigger--invalid" : ""}${isInline && open ? " searchable-select__trigger--open" : ""}`}
         disabled={disabled}
         title={title}
         aria-expanded={open}
@@ -149,9 +165,13 @@ export function SearchableSelect({
       )}
       {open && (
         <div
-          className={`searchable-select__panel${openUpward ? " searchable-select__panel--up" : ""}`}
-          ref={panelRef}
-          style={panelStyle}
+          className={
+            isInline
+              ? "searchable-select__panel searchable-select__panel--inline"
+              : `searchable-select__panel${dropdown.openUpward ? " searchable-select__panel--up" : ""}`
+          }
+          ref={isInline ? undefined : dropdown.panelRef}
+          style={isInline ? undefined : dropdown.panelStyle}
         >
           {showSearch && (
             <SearchableSelectSearchBox
@@ -164,7 +184,7 @@ export function SearchableSelect({
               }}
             />
           )}
-          <ul className="searchable-select__list" aria-label={label}>
+          <ul className="searchable-select__list at-scroll" aria-label={label}>
             {results.length === 0 ? (
               <li className="searchable-select__empty">{emptyLabel}</li>
             ) : (

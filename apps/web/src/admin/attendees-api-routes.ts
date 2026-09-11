@@ -70,6 +70,7 @@ import {
   acquireEventTicketTypesLock,
   REVOCABLE_ITEM_STATES,
   type AdmitResult,
+  type AttendeeCustomFieldFilter,
   type AttendeeMailStatusFilter,
   type AttendeeSortBy,
   type AttendeeSortDir,
@@ -521,8 +522,39 @@ function parseCommaSeparatedTicketTypes(raw: string | undefined): string[] {
   return [...seen];
 }
 
-/** Parse and clamp list query params (`page`, `pageSize`, `q`, `status`, `ticket_type`, `mail_status`, `sortBy`, `sortDir`). */
-function parseListQuery(c: Context): {
+/** Reads every `cf_<source_field>` query param and matches it against the event's own custom
+ * field registry - `source_field` and `type` both come from the DB, never from the query string,
+ * so a filter can never be built against an unrelated custom_data key or the wrong control type
+ * for that field. An unrecognized `cf_*` param (a deleted/renamed field, or a stale bookmark)
+ * is silently ignored, same tolerance parseCommaSeparatedEnum already gives an unknown token. */
+function parseCustomFieldFilters(
+  c: Context,
+  fields: readonly { source_field: string; type: string }[],
+): AttendeeCustomFieldFilter[] {
+  const searchParams = new URL(c.req.url).searchParams;
+  const filters: AttendeeCustomFieldFilter[] = [];
+  for (const field of fields) {
+    const raw = searchParams.get(`cf_${field.source_field}`)?.trim();
+    if (!raw) continue;
+    if (field.type === "text") {
+      filters.push({ source_field: field.source_field, type: "text", text: raw.slice(0, 200) });
+      continue;
+    }
+    if (field.type !== "select" && field.type !== "boolean") continue;
+    const values = [...new Set(raw.split(",").map((v) => v.trim()).filter(Boolean))];
+    if (values.length > 0) filters.push({ source_field: field.source_field, type: field.type, values });
+  }
+  return filters;
+}
+
+/** Parse and clamp list query params (`page`, `pageSize`, `q`, `status`, `ticket_type`, `mail_status`,
+ * `cf_*`, `sortBy`, `sortDir`). Async since custom-field params need the event's own field registry
+ * to validate `source_field`/`type` against. */
+async function parseListQuery(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+): Promise<{
   page: number;
   pageSize: number;
   q?: string;
@@ -530,9 +562,10 @@ function parseListQuery(c: Context): {
   ticket_type: string[];
   rsvp_status: RsvpStatus[];
   mail_status: AttendeeMailStatusFilter[];
+  customFields: AttendeeCustomFieldFilter[];
   sortBy: AttendeeSortBy;
   sortDir: AttendeeSortDir;
-} {
+}> {
   const page = positiveIntQuery(c.req.query("page"), 1);
   const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 100);
   const qRaw = c.req.query("q")?.trim();
@@ -543,13 +576,18 @@ function parseListQuery(c: Context): {
   const ticket_type = parseCommaSeparatedTicketTypes(c.req.query("ticket_type"));
   const rsvp_status = parseCommaSeparatedEnum(c.req.query("rsvp_status"), RSVP_STATUSES);
   const mail_status = parseCommaSeparatedEnum(c.req.query("mail_status"), ATTENDEE_MAIL_STATUS_FILTERS);
+  const customFieldDefs = await db.eventCustomField.findMany({
+    where: { event_id: eventId },
+    select: { source_field: true, type: true },
+  });
+  const customFields = parseCustomFieldFilters(c, customFieldDefs);
   const sortByRaw = c.req.query("sortBy");
   const sortBy = ATTENDEE_SORT_COLUMNS.includes(sortByRaw as AttendeeSortBy)
     ? (sortByRaw as AttendeeSortBy)
     : "name";
   const sortDirRaw = c.req.query("sortDir");
   const sortDir: AttendeeSortDir = sortDirRaw === "desc" ? "desc" : "asc";
-  return { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, sortBy, sortDir };
+  return { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, customFields, sortBy, sortDir };
 }
 
 /** Latest email delivery status per attendee id (one entry per id). Tiebreak on `id` desc
@@ -965,9 +1003,10 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, sortBy, sortDir } = parseListQuery(c);
+  const { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, customFields, sortBy, sortDir } =
+    await parseListQuery(c, db, eventId);
 
-  const filterParams = { q, status, ticket_type, rsvp_status, mail_status };
+  const filterParams = { q, status, ticket_type, rsvp_status, mail_status, customFields };
 
   const [total, rows] = await Promise.all([
     countFilteredAttendees(db, eventId, filterParams),
@@ -1038,8 +1077,8 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
   }
   const format = formatRaw;
 
-  const { q, status, ticket_type, rsvp_status, mail_status } = parseListQuery(c);
-  const filterParams = { q, status, ticket_type, rsvp_status, mail_status };
+  const { q, status, ticket_type, rsvp_status, mail_status, customFields } = await parseListQuery(c, db, eventId);
+  const filterParams = { q, status, ticket_type, rsvp_status, mail_status, customFields };
 
   const event = await db.event.findUnique({
     where: { id: eventId },

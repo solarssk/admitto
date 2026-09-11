@@ -36,12 +36,25 @@ function mailFilterStatuses(filter: Exclude<AttendeeMailStatusFilter, "not_sent"
   }
 }
 
+/** One event-defined custom field's filter, resolved server-side against that event's own
+ * `EventCustomField` registry (never trust a client-supplied `source_field`/`type` pairing
+ * directly - see parseCustomFieldFilters in attendees-api-routes.ts). `select`/`boolean` match
+ * any of `values` (an IN clause, same OR-within-one-field convention as ticket_type/rsvp_status);
+ * `text` is a contains (ILIKE) match on `text`. */
+export type AttendeeCustomFieldFilter = {
+  source_field: string;
+  type: "text" | "select" | "boolean";
+  values?: string[];
+  text?: string;
+};
+
 export type AttendeeListFilterParams = {
   q?: string;
   status: "all" | "admitted" | "not_admitted";
   ticket_type?: string[];
   rsvp_status?: AttendeeExportRsvpStatus[];
   mail_status?: AttendeeMailStatusFilter[];
+  customFields?: AttendeeCustomFieldFilter[];
 };
 
 /** Whitelisted sortable columns for the attendee list — Ticket sorts by the catalog's curated
@@ -200,6 +213,27 @@ function attendeeMailStatusSql(mail_status?: readonly AttendeeMailStatusFilter[]
   return Prisma.sql`AND (${Prisma.join(mail_status.map(attendeeMailStatusBucketSql), " OR ")})`;
 }
 
+/** One custom field's own condition - `source_field` is interpolated as a bound parameter to
+ * the `->>` operator (same as countAttendeesByCustomFieldValue), never string-concatenated, so
+ * this is safe regardless of what the caller passes; the caller (parseCustomFieldFilters) is
+ * still responsible for only ever passing a `source_field` that's a real field on this event,
+ * so a filter can't be built against an unrelated custom_data key. */
+function attendeeCustomFieldSql(filter: AttendeeCustomFieldFilter): Prisma.Sql {
+  if (filter.type === "text") {
+    if (!filter.text) return Prisma.empty;
+    return Prisma.sql`AND (a.custom_data->>${filter.source_field}) ILIKE ${`%${filter.text}%`}`;
+  }
+  if (!filter.values || filter.values.length === 0) return Prisma.empty;
+  return Prisma.sql`AND (a.custom_data->>${filter.source_field}) IN (${Prisma.join(filter.values)})`;
+}
+
+/** AND across every active custom-field filter row - each one already carries its own leading
+ * `AND` (or is `Prisma.empty` when that field has nothing selected). */
+function attendeeCustomFieldsSql(customFields?: readonly AttendeeCustomFieldFilter[]): Prisma.Sql {
+  if (!customFields || customFields.length === 0) return Prisma.empty;
+  return Prisma.join(customFields.map(attendeeCustomFieldSql), " ");
+}
+
 /** Search OR (columns + custom_data json), inlined in SQL — no id materialization. Empty when
  * there's no search term (the raw-SQL branch also runs, unsearched, for ticket_type sorting). */
 function attendeeSearchOrSql(q?: string) {
@@ -220,10 +254,11 @@ export async function countFilteredAttendees(
   eventId: string,
   params: AttendeeListFilterParams,
 ): Promise<number> {
-  const { q, status, ticket_type, rsvp_status, mail_status } = params;
-  // The latest-delivery mail filter (like search) has no Prisma-where equivalent — either one
-  // routes the count through the raw-SQL branch so it stays in lockstep with the list query.
-  if (!q && (!mail_status || mail_status.length === 0)) {
+  const { q, status, ticket_type, rsvp_status, mail_status, customFields } = params;
+  // The latest-delivery mail filter and custom-field filters (like search) have no Prisma-where
+  // equivalent — any of the three routes the count through the raw-SQL branch so it stays in
+  // lockstep with the list query.
+  if (!q && (!mail_status || mail_status.length === 0) && (!customFields || customFields.length === 0)) {
     return db.attendee.count({ where: buildAttendeeListWhere(eventId, params) });
   }
   const [{ count }] = await db.$queryRaw<[{ count: bigint }]>`
@@ -233,6 +268,7 @@ export async function countFilteredAttendees(
       ${attendeeTicketTypeSql(ticket_type)}
       ${attendeeRsvpStatusSql(rsvp_status)}
       ${attendeeMailStatusSql(mail_status)}
+      ${attendeeCustomFieldsSql(customFields)}
       ${attendeeSearchOrSql(q)}
   `;
   return Number(count);
@@ -247,7 +283,7 @@ export async function findFilteredAttendeesForList(
   sortBy: AttendeeSortBy = "name",
   sortDir: AttendeeSortDir = "asc",
 ): Promise<AttendeeListSqlRow[]> {
-  const { q, status, ticket_type, rsvp_status, mail_status } = params;
+  const { q, status, ticket_type, rsvp_status, mail_status, customFields } = params;
   const skip = (page - 1) * pageSize;
   return db.$queryRaw<AttendeeListSqlRow[]>`
     SELECT a.id, a.name, a.email, a.company, a.department, a.custom_data, a.ticket_type, a.status, a.admitted_at, a.updated_at, a.rsvp_status
@@ -258,6 +294,7 @@ export async function findFilteredAttendeesForList(
       ${attendeeTicketTypeSql(ticket_type)}
       ${attendeeRsvpStatusSql(rsvp_status)}
       ${attendeeMailStatusSql(mail_status)}
+      ${attendeeCustomFieldsSql(customFields)}
       ${attendeeSearchOrSql(q)}
     ${attendeeOrderBySql(sortBy, sortDir)}
     LIMIT ${pageSize} OFFSET ${skip}
@@ -286,8 +323,8 @@ export async function findFilteredAttendeesForExport(
   eventId: string,
   params: AttendeeListFilterParams,
 ): Promise<ExportAttendeeSqlRow[]> {
-  const { q, status, ticket_type, rsvp_status, mail_status } = params;
-  if (!q && (!mail_status || mail_status.length === 0)) {
+  const { q, status, ticket_type, rsvp_status, mail_status, customFields } = params;
+  if (!q && (!mail_status || mail_status.length === 0) && (!customFields || customFields.length === 0)) {
     return db.attendee.findMany({
       where: buildAttendeeListWhere(eventId, params),
       select: EXPORT_ATTENDEE_SELECT,
@@ -303,6 +340,7 @@ export async function findFilteredAttendeesForExport(
       ${attendeeTicketTypeSql(ticket_type)}
       ${attendeeRsvpStatusSql(rsvp_status)}
       ${attendeeMailStatusSql(mail_status)}
+      ${attendeeCustomFieldsSql(customFields)}
       ${attendeeSearchOrSql(q)}
     ORDER BY a.name ASC
     LIMIT ${EXPORT_ROW_CAP}

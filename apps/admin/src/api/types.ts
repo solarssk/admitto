@@ -391,6 +391,11 @@ export interface AttendeesListParams {
   ticket_type?: string[];
   rsvp_status?: RsvpStatus[];
   mail_status?: AttendeeMailStatusFilter[];
+  /** One `cf_<source_field>` query param per active custom-field filter, already formatted as
+   * its final query-string value (comma-joined for select/boolean, raw text for `text`) - the
+   * caller (AttendeesPage) builds this from the event's own EventCustomField list, so this type
+   * doesn't need to know the field-type branching itself. */
+  customFieldParams?: Record<string, string>;
   sortBy?: AttendeeSortBy;
   sortDir?: AttendeeSortDir;
 }
