@@ -1481,6 +1481,21 @@ async function loadMailReportsAggregates(
   const reachedFilter: Prisma.AttendeeWhereInput = {
     email_deliveries: { some: { status: { in: successStatuses } } },
   };
+  // Splits reachedFilter's complement (not_reached) into why: never_sent means no delivery ever
+  // actually reached the mailer with a real outcome - either no row exists at all, or every row
+  // is still "queued" (not sent yet) or "cancelled" (an operator stopped it before it went out,
+  // same reasoning attendees-list-filters.ts's own not_sent bucket already documents: "nothing
+  // about their mail actually went wrong"). send_failed means at least one row's actual send
+  // attempt came back failed/bounced/rejected and none ever succeeded. "Not reached" alone reads
+  // as "the email didn't arrive", which is only true for the send_failed half - never_sent means
+  // nothing was ever actually sent (yet). Not the same bucket as attendees-list-filters.ts's own
+  // not_sent/pending/failed mail_status filter (that one classifies each attendee's LATEST
+  // delivery only, and keeps queued as its own separate "pending" bucket) - this is an
+  // ever-succeeded rollup across every attempt, matching reachedFilter's own definition above.
+  const NEVER_ATTEMPTED_STATUSES = ["queued", "cancelled"];
+  const neverSentFilter: Prisma.AttendeeWhereInput = {
+    email_deliveries: { none: { status: { notIn: NEVER_ATTEMPTED_STATUSES } } },
+  };
   // Narrower than reachedFilter above - the funnel's "Reached by email" stage is documented (UI
   // copy, wiki) as "got a ticket email" specifically, since it's the entry point of a causal
   // chain toward wallet install and attendance, not attendee_reach's general any-email
@@ -1518,6 +1533,7 @@ async function loadMailReportsAggregates(
     walletInstalledCount,
     attendedCount,
     ticketReachedAttendees,
+    neverSentAttendees,
   ] = await Promise.all([
     db.attendee.count({ where: { event_id: eventId } }),
     db.emailDelivery.groupBy({
@@ -1588,6 +1604,7 @@ async function loadMailReportsAggregates(
     db.attendee.count({ where: { event_id: eventId, ...everInstalledWalletFilter } }),
     db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
     db.attendee.count({ where: { event_id: eventId, ...ticketReachedFilter } }),
+    db.attendee.count({ where: { event_id: eventId, ...neverSentFilter } }),
   ]);
 
   const totalAttempts = byStatusRaw.reduce((sum, row) => sum + row._count._all, 0);
@@ -1625,6 +1642,8 @@ async function loadMailReportsAggregates(
       reached: reachedAttendees,
       not_reached: totalAttendees - reachedAttendees,
       reached_pct: oneDecimalPct(reachedAttendees, totalAttendees),
+      never_sent: neverSentAttendees,
+      send_failed: totalAttendees - reachedAttendees - neverSentAttendees,
     },
     by_purpose: {
       initial: purposeCounts.get("initial") ?? 0,
@@ -2674,7 +2693,8 @@ async function exportMailReportsPdf(
 
   const reachRows = `
     <tr><td>Reached</td><td>${aggregates.attendee_reach.reached}</td><td>${aggregates.attendee_reach.reached_pct}%</td></tr>
-    <tr><td>Not reached</td><td>${aggregates.attendee_reach.not_reached}</td><td>${oneDecimalPct(aggregates.attendee_reach.not_reached, aggregates.total_attendees)}%</td></tr>`;
+    <tr><td>Never sent</td><td>${aggregates.attendee_reach.never_sent}</td><td>${oneDecimalPct(aggregates.attendee_reach.never_sent, aggregates.total_attendees)}%</td></tr>
+    <tr><td>Send failed</td><td>${aggregates.attendee_reach.send_failed}</td><td>${oneDecimalPct(aggregates.attendee_reach.send_failed, aggregates.total_attendees)}%</td></tr>`;
 
   const purposeRows =
     aggregates.delivery.total_attempts === 0

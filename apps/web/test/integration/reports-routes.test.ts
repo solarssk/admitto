@@ -65,6 +65,10 @@ const EVENT_MAIL_DELIVERY_CAP = "evt-reports-mail-delivery-cap";
 // Minimal, separate event (not EVENT_MAIL_DELIVERY_CAP above) - regression fixture for the Mail
 // CSV export's own "Last delivery status" tie-break: two deliveries with an identical created_at.
 const EVENT_MAIL_DELIVERY_TIE = "evt-reports-mail-delivery-tie";
+// Minimal, separate event - regression fixture for attendee_reach.never_sent vs .send_failed:
+// EVENT_MAIL above has no zero-delivery attendee (its 4 not-reached attendees each have exactly
+// one failed/bounced/queued/cancelled row), so it can't tell the two reasons apart on its own.
+const EVENT_MAIL_REACH_SPLIT = "evt-reports-mail-reach-split";
 
 const EMAIL_ADMIN = "reports-admin@example.com";
 const EMAIL_ADMIN_B = "reports-admin-b@example.com";
@@ -120,6 +124,9 @@ const ATT_MAIL_QUEUED = "att-reports-mail-queued";
 const ATT_MAIL_CANCELLED = "att-reports-mail-cancelled";
 const ATT_MAIL_BOUNCED_AFTER_ACCEPT = "att-reports-mail-bounced-after-accept";
 const ATT_MAIL_VIEWED_RECOVERED = "att-reports-mail-viewed-recovered";
+const ATT_MAIL_REACH_SPLIT_NEVER_SENT = "att-reports-mail-reach-split-never-sent";
+const ATT_MAIL_REACH_SPLIT_SEND_FAILED = "att-reports-mail-reach-split-send-failed";
+const ATT_MAIL_REACH_SPLIT_BOUNCED_THEN_REQUEUED = "att-reports-mail-reach-split-bounced-then-requeued";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -184,6 +191,7 @@ async function seed(client: PrismaClient) {
     EVENT_MAIL,
     EVENT_MAIL_DELIVERY_CAP,
     EVENT_MAIL_DELIVERY_TIE,
+    EVENT_MAIL_REACH_SPLIT,
   ];
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -341,6 +349,13 @@ async function seed(client: PrismaClient) {
         title: "Mail Delivery Tie Event",
         slug: "reports-mail-delivery-tie",
         date: new Date("2027-09-07T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+      {
+        id: EVENT_MAIL_REACH_SPLIT,
+        title: "Mail Reach Split Event",
+        slug: "reports-mail-reach-split",
+        date: new Date("2027-09-08T12:00:00.000Z"),
         organization_id: ORG_REP,
       },
     ],
@@ -1192,6 +1207,74 @@ async function seed(client: PrismaClient) {
         status: "bounced",
         accepted_at: deliveryTieCreatedAt,
         created_at: deliveryTieCreatedAt,
+      },
+    ],
+  });
+
+  // Regression fixture for attendee_reach.never_sent vs .send_failed: EVENT_MAIL above never
+  // exercises a genuinely zero-delivery attendee (its own not-reached attendees each have exactly
+  // one failed/bounced/queued/cancelled row), so it can't prove the two reasons are actually
+  // counted separately rather than one of them silently always reading 0.
+  await client.attendee.createMany({
+    data: [
+      {
+        id: ATT_MAIL_REACH_SPLIT_NEVER_SENT,
+        event_id: EVENT_MAIL_REACH_SPLIT,
+        email: "mail-reach-split-never-sent@example.com",
+        name: "Mail Reach Split Never Sent",
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_MAIL_REACH_SPLIT_SEND_FAILED,
+        event_id: EVENT_MAIL_REACH_SPLIT,
+        email: "mail-reach-split-send-failed@example.com",
+        name: "Mail Reach Split Send Failed",
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_MAIL_REACH_SPLIT_BOUNCED_THEN_REQUEUED,
+        event_id: EVENT_MAIL_REACH_SPLIT,
+        email: "mail-reach-split-bounced-then-requeued@example.com",
+        name: "Mail Reach Split Bounced Then Requeued",
+        ...mkAttendeeToken(),
+      },
+    ],
+  });
+  await client.emailDelivery.create({
+    data: {
+      organization_id: ORG_REP,
+      event_id: EVENT_MAIL_REACH_SPLIT,
+      attendee_id: ATT_MAIL_REACH_SPLIT_SEND_FAILED,
+      purpose: "initial",
+      provider: "export_only",
+      status: "failed",
+      failed_at: new Date("2027-09-08T09:00:00.000Z"),
+    },
+  });
+  // Regression fixture for the trickiest never_sent/send_failed interaction (code review): an
+  // attendee whose FIRST attempt genuinely bounced, and whose resend is currently sitting
+  // "queued" (not yet resolved). neverSentFilter's `none: { status: { notIn: ["queued",
+  // "cancelled"] } }` must still read this as send_failed - the bounced row alone is enough to
+  // break the "none" condition - not never_sent just because the resend is still in flight and
+  // its own status happens to be one of the never-attempted statuses.
+  await client.emailDelivery.createMany({
+    data: [
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL_REACH_SPLIT,
+        attendee_id: ATT_MAIL_REACH_SPLIT_BOUNCED_THEN_REQUEUED,
+        purpose: "initial",
+        provider: "export_only",
+        status: "bounced",
+        failed_at: new Date("2027-09-08T09:00:00.000Z"),
+      },
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL_REACH_SPLIT,
+        attendee_id: ATT_MAIL_REACH_SPLIT_BOUNCED_THEN_REQUEUED,
+        purpose: "resend",
+        provider: "export_only",
+        status: "queued",
       },
     ],
   });
@@ -3316,7 +3399,13 @@ describe("GET /api/admin/events/:eventId/reports/mail", () => {
     const body = (await res.json()) as EventMailReportsResponse;
     expect(body.total_attendees).toBe(0);
     expect(body.delivery).toEqual({ total_attempts: 0, successful: 0, successful_pct: 0, by_status: [] });
-    expect(body.attendee_reach).toEqual({ reached: 0, not_reached: 0, reached_pct: 0 });
+    expect(body.attendee_reach).toEqual({
+      reached: 0,
+      not_reached: 0,
+      reached_pct: 0,
+      never_sent: 0,
+      send_failed: 0,
+    });
     expect(body.by_purpose).toEqual({ initial: 0, resend: 0 });
     expect(body.by_template).toEqual([]);
     expect(body.sent_by_day).toEqual([]);
@@ -3358,7 +3447,18 @@ describe("GET /api/admin/events/:eventId/reports/mail", () => {
     // each one's resend succeeded - both count as reached exactly once, not double-counted, and
     // not missed because the *first* attempt failed. ATT_MAIL_BOUNCED_AFTER_ACCEPT never reads as
     // reached either, despite its row having a real accepted_at - its current status is "bounced".
-    expect(body.attendee_reach).toEqual({ reached: 3, not_reached: 4, reached_pct: 42.9 });
+    // Of the 4 not-reached attendees: ATT_MAIL_QUEUED (still "queued") and ATT_MAIL_CANCELLED
+    // ("cancelled") never had a real send attempt resolve at all, so they count as never_sent;
+    // ATT_MAIL_FAILED ("failed") and ATT_MAIL_BOUNCED_AFTER_ACCEPT ("bounced") had a genuine
+    // attempt that came back failed, so they count as send_failed. See the
+    // EVENT_MAIL_REACH_SPLIT test below for a fixture that isolates a truly zero-delivery attendee.
+    expect(body.attendee_reach).toEqual({
+      reached: 3,
+      not_reached: 4,
+      reached_pct: 42.9,
+      never_sent: 2,
+      send_failed: 2,
+    });
 
     expect(body.by_purpose).toEqual({ initial: 7, resend: 2 });
 
@@ -3411,6 +3511,29 @@ describe("GET /api/admin/events/:eventId/reports/mail", () => {
     // attended (3) counts every admitted attendee regardless of reach, including ATT_MAIL_FAILED
     // from the admission_by_email case above.
     expect(body.funnel).toEqual({ total_attendees: 7, reached_by_email: 2, wallet_installed: 2, attended: 3 });
+  });
+
+  it("splits attendee_reach.not_reached into never_sent (zero deliveries) vs send_failed (attempted, all failed)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_MAIL_REACH_SPLIT}/reports/mail`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventMailReportsResponse;
+
+    // ATT_MAIL_REACH_SPLIT_NEVER_SENT has no EmailDelivery row at all; ATT_MAIL_REACH_SPLIT_SEND_FAILED
+    // has exactly one, and it never succeeded - both read as not_reached, but for different reasons,
+    // and the aggregate must attribute each to the right one, not just leave never_sent at the
+    // EVENT_MAIL fixture's coincidental 0 above. ATT_MAIL_REACH_SPLIT_BOUNCED_THEN_REQUEUED covers the
+    // trickiest interaction (code review): its first attempt genuinely bounced, and its resend is
+    // currently "queued" (not yet resolved) - it must still count as send_failed, not never_sent,
+    // since a real send attempt already failed regardless of the in-flight resend's own status.
+    expect(body.attendee_reach).toEqual({
+      reached: 0,
+      not_reached: 3,
+      reached_pct: 0,
+      never_sent: 1,
+      send_failed: 2,
+    });
   });
 });
 
@@ -3681,6 +3804,11 @@ describe("GET /api/admin/events/:eventId/reports/export?report=mail", () => {
     // 2 accepted, 1 sent, 1 failed, 3 bounced, 1 cancelled).
     expect(html).toContain("<td>bounced</td><td>3</td><td>33.3%</td>");
     expect(html).toContain("<td>queued</td><td>1</td>");
+    // Attendee reach: reached 3 (42.9%); never_sent 2 (ATT_MAIL_QUEUED, ATT_MAIL_CANCELLED) and
+    // send_failed 2 (ATT_MAIL_FAILED, ATT_MAIL_BOUNCED_AFTER_ACCEPT), each 2 of 7 = 28.6%.
+    expect(html).toContain("<tr><td>Reached</td><td>3</td><td>42.9%</td></tr>");
+    expect(html).toContain("<tr><td>Never sent</td><td>2</td><td>28.6%</td></tr>");
+    expect(html).toContain("<tr><td>Send failed</td><td>2</td><td>28.6%</td></tr>");
     // by_template: the default (null) template reads as "Default ticket email".
     expect(html).toContain("<td>Default ticket email</td><td>2</td><td>8</td><td>25%</td>");
     expect(html).toContain("<td>Reminder</td><td>1</td><td>1</td><td>100%</td>");
