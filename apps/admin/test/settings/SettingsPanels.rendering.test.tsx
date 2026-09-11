@@ -1216,7 +1216,10 @@ describe("AuditLogPanel rendering", () => {
     // into tests that don't expect any polling at all (e.g. a "called N times" assertion in a
     // retry test), which is exactly as flaky on a real interval as it would have been on a fake
     // one, just for a different reason. See setPollIntervalMsForTests' own doc comment.
-    setPollIntervalMsForTests(50);
+    // 500ms, not 50ms: at 50ms a loaded CI runner could let an extra tick sneak in before this
+    // assertion ran (mock exhausted, third call racing the "toHaveBeenCalledTimes(2)" check) -
+    // same class of bug as "replaces the view with a fresh snapshot..." below, fixed the same way.
+    setPollIntervalMsForTests(500);
     vi.mocked(fetchAuditLog)
       .mockResolvedValueOnce({ entries: [makeAuditEntry()], total: 1, page: 1, pageSize: 25 })
       .mockResolvedValueOnce({
@@ -1978,7 +1981,8 @@ describe("AuditLogPanel Security view rendering", () => {
   });
 
   it("silently re-fetches on a timer and shows newly arrived rows", async () => {
-    setPollIntervalMsForTests(50); // see AuditLogPanel's own "silently re-fetches on a timer" above
+    // 500ms, not 50ms: see AuditLogPanel's own "silently re-fetches on a timer" above.
+    setPollIntervalMsForTests(500);
     vi.mocked(fetchSecurityAuditLog)
       .mockResolvedValueOnce({ entries: [makeSecurityEntry()], total: 1, page: 1, pageSize: 25 })
       .mockResolvedValueOnce({
@@ -2416,7 +2420,9 @@ describe("SystemLogsPanel rendering", () => {
   });
 
   it("polls with the last cursor as since, appending new lines without resetting existing ones", async () => {
-    setPollIntervalMsForTests(50); // see AuditLogPanel's own "silently re-fetches on a timer" above
+    // 500ms, not 50ms: see "replaces the view with a fresh snapshot..." below - same class of bug,
+    // an extra/skipped tick racing this test's own state-transition assertions under CI load.
+    setPollIntervalMsForTests(500);
     vi.mocked(fetchAuditLog).mockResolvedValue(emptyAuditLog());
     vi.mocked(fetchSystemLogs)
       .mockResolvedValueOnce({

@@ -727,10 +727,10 @@ describe("IdentityProviderEditor — legacy invalid mapping scope_type (Codex P2
     // navigate() itself resolves - the same reason every other discard-prompt assertion in this
     // file and IdentityProviderEditor.test.tsx already retries here instead of asserting immediately.
     // Extended timeout (default 1000ms is occasionally too tight under CI load for this specific
-    // multi-tick transition - observed one flaky CI failure, never reproduced locally across
-    // repeated isolated and full-suite runs; same pattern already used in
+    // multi-tick transition - observed flaky CI failures at 3000ms too, never reproduced locally
+    // across repeated isolated and full-suite runs; same pattern already used in
     // SettingsPanels.rendering.test.tsx for comparable async-transition assertions).
-    await screen.findByRole("button", { name: "Discard" }, { timeout: 3000 });
+    await screen.findByRole("button", { name: "Discard" }, { timeout: 8000 });
   });
 });
 
