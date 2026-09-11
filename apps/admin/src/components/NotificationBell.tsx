@@ -54,6 +54,7 @@ export function NotificationBell() {
   const [listError, setListError] = useState<string | null>(null);
   const [markingAll, setMarkingAll] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
 
   // Guards every queued operation below against running its state updates after unmount - a
   // StaffShell remount (see unreadCountCache's own doc comment) can happen while an operation is
@@ -219,23 +220,41 @@ export function NotificationBell() {
 
   async function handleClearAll() {
     setClearing(true);
+    setClearError(null);
+    // Set inside the queued operation below, read after it resolves - loadList() itself calls
+    // queueCountOperation, so calling it while this very operation is still running (i.e. from
+    // inside the callback) would chain onto a queue promise that can't settle until this callback
+    // returns, deadlocking it.
+    let refetchNeeded = false;
     await queueCountOperation(async () => {
       if (!isMountedRef.current) return;
       const gen = ++countGenerationRef.current;
       try {
         const result = await clearAllAccountNotifications();
         if (!isMountedRef.current) return;
-        setNotifications([]);
         setConfirmedUnreadCount(result.unread_count, gen);
         setClearConfirmOpen(false);
+        if (result.unread_count > 0) {
+          // InAppChannel inserted a fresh notification between the server's delete and its
+          // response - the list can't just be assumed empty, or the badge and list would disagree
+          // (bot review finding).
+          refetchNeeded = true;
+        } else {
+          setNotifications([]);
+        }
       } catch (err) {
+        // Shown inside the still-open dialog (errorMessage), not a toast - ConfirmDialog now sits
+        // above the toast stack (--z-modal > --z-toast), and AGENTS.md's own toast-vs-inline table
+        // says a ConfirmDialog failure stays in the dialog rather than also toasting the same
+        // message.
         if (isMountedRef.current) {
-          addToast(operatorApiErrorMessage(err, "Failed to clear notifications."), "error");
+          setClearError(operatorApiErrorMessage(err, "Failed to clear notifications."));
         }
       } finally {
         if (isMountedRef.current) setClearing(false);
       }
     });
+    if (refetchNeeded && isMountedRef.current) await loadList();
   }
 
   return (
@@ -345,11 +364,15 @@ export function NotificationBell() {
         icon={<i className="ti ti-trash" />}
         title="Clear all notifications?"
         message="This permanently deletes your notification history. Your organisation's security audit log is not affected, and future alerts will still arrive normally."
+        errorMessage={clearError}
         confirmLabel="Clear all notifications"
         confirmVariant="danger"
         loading={clearing}
         onConfirm={() => void handleClearAll()}
-        onCancel={() => setClearConfirmOpen(false)}
+        onCancel={() => {
+          setClearConfirmOpen(false);
+          setClearError(null);
+        }}
       />
     </div>
   );

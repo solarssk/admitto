@@ -739,7 +739,11 @@ describe("Clear all", () => {
     );
   });
 
-  it("shows a toast and keeps the list when clearing fails", async () => {
+  it("keeps the dialog open and shows the error inside it (not a toast) when clearing fails", async () => {
+    // ConfirmDialog now sits above the toast stack (--z-modal > --z-toast, the z-index fix
+    // elsewhere in this round), so a toast-only failure message would render invisibly behind the
+    // dialog's own backdrop - the error must show inside the still-open dialog instead (bot review
+    // finding), matching AGENTS.md's own toast-vs-inline convention for ConfirmDialog.
     fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
     fetchAccountNotifications.mockResolvedValue({
       notifications: [makeNotification()],
@@ -756,7 +760,41 @@ describe("Clear all", () => {
     const dialog = await screen.findByRole("dialog", { name: "Clear all notifications?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Clear all notifications" }));
 
-    expect(await screen.findByText("Failed to clear notifications.")).toBeTruthy();
+    await within(dialog).findByText("Failed to clear notifications.");
+    // Exactly one copy of the message - inside the dialog, not also duplicated as a toast.
+    expect(screen.getAllByText("Failed to clear notifications.")).toHaveLength(1);
+    expect(screen.getByRole("dialog", { name: "Clear all notifications?" })).toBeTruthy();
     expect(screen.getByText("5 consecutive failed sign-in attempts")).toBeTruthy();
+  });
+
+  it("refetches the list instead of assuming it's empty when the server reports a nonzero unread_count after clearing (bot review finding)", async () => {
+    // InAppChannel can insert a fresh notification between the server's delete and its response -
+    // the endpoint then correctly reports a nonzero unread_count, and the client must not still
+    // show "You're all caught up" while the badge disagrees.
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications.mockResolvedValueOnce({
+      notifications: [makeNotification()],
+      unread_count: 1,
+    });
+    clearAllAccountNotifications.mockResolvedValue({ cleared_count: 1, unread_count: 1 });
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+
+    fetchAccountNotifications.mockResolvedValueOnce({
+      notifications: [makeNotification({ id: "notif-2", title: "New alert since the clear" })],
+      unread_count: 1,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    const dialog = await screen.findByRole("dialog", { name: "Clear all notifications?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear all notifications" }));
+
+    await waitFor(() => expect(clearAllAccountNotifications).toHaveBeenCalled());
+    await screen.findByText("New alert since the clear");
+    expect(screen.queryByText("You’re all caught up.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Notifications, 1 unread" })).toBeTruthy();
   });
 });
