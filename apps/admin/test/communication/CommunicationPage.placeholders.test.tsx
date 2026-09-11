@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router";
+import { undo } from "@codemirror/commands";
 import { CommunicationPage } from "../../src/pages/CommunicationPage.js";
 import { renderWithToast } from "../test-utils.js";
 import { communicationApiMocks } from "./communicationApiMock.js";
@@ -455,6 +456,33 @@ describe("CommunicationPage placeholder chip list", () => {
         "https://cdn.example.com/logo-b.png",
       );
     });
+  });
+
+  it("resets the body editor's undo history on an event switch, even when both events land on the same default virtual-ticket template", async () => {
+    // Both events have no explicit "ticket" template row (fetchEventTemplates: []), so both land
+    // on activeKey "virtual-ticket" in the same (default) format - the case a bot review twice
+    // flagged as unsafe for the CodeMirror key being only activeKey+format (no event id). It isn't:
+    // CommunicationPage's own `if (loading) return ...` unconditionally unmounts this whole subtree
+    // on every eventId change while its own template fetch is in flight (confirmed via the DOM node
+    // itself: the pre-switch EditorView's .dom is disconnected once the new one lands), which
+    // already forces a fresh CodeMirror mount with a blank undo history - this test is the proof,
+    // and passes whether or not event.id is also in the key.
+    fetchEventTemplate.mockImplementation(async (eventId: string) => ({
+      ...legacyTemplate,
+      body_template: eventId === "evt-a" ? "<p>Event A body</p>" : "<p>Event B body</p>",
+    }));
+    fetchEventTemplates.mockResolvedValue([]);
+
+    renderPageWithEventSwitch();
+    await waitFor(() => expect(bodyValue(getBodyView())).toBe("<p>Event A body</p>"));
+
+    fireEvent.click(screen.getByRole("link", { name: "Switch event" }));
+    await waitFor(() => expect(bodyValue(getBodyView())).toBe("<p>Event B body</p>"));
+
+    // A remounted editor starts with an empty history, so this must be a no-op - if the subtree
+    // hadn't actually remounted, this would revert straight back to event A's body instead.
+    undo(getBodyView());
+    expect(bodyValue(getBodyView())).toBe("<p>Event B body</p>");
   });
 
   it("indents on Tab in the body editor but lets Shift+Tab leave the field", async () => {

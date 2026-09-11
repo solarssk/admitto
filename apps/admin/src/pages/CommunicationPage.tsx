@@ -1255,6 +1255,16 @@ function TemplateEditorCard({
               // new value as just another transaction, same as any edit), so Ctrl+Z right after
               // switching templates could undo straight through into the PREVIOUS template's body -
               // which could then get saved over the one actually being edited (real bot-review find).
+              // A switch to a DIFFERENT event doesn't need event.id here too, even though activeKey
+              // alone can stay unchanged across one (e.g. both events fall back to the same default
+              // virtual-ticket template): CommunicationPage's own `if (loading) return ...` (below,
+              // near the component's end) unconditionally unmounts this entire subtree on every
+              // eventId change while its own template fetch is in flight, which already forces a
+              // fresh CodeMirror mount with a blank undo history - proven by
+              // "resets the body editor's undo history on an event switch" in
+              // CommunicationPage.placeholders.test.tsx, which passes with or without event.id in
+              // this key (verified both ways; a second bot-review report of this same finding is a
+              // false positive for that reason).
               key={`${activeKey}-${format}`}
               ref={bodyRef}
               className={[
