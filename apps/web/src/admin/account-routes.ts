@@ -55,8 +55,52 @@ import {
 } from "@admitto/shared";
 import { writeAdminAuditLog, type OpsAuditContext } from "@admitto/tickets";
 import { PASSWORD_MIN_LENGTH } from "@admitto/auth/constants";
+import { notify } from "@admitto/notifications";
 import { adminAuditFromContext, resolveMailInstanceBaseUrl } from "./admin-helpers.js";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
+
+/**
+ * ASVS V2.5.5 / NIST SP 800-63-4 §4.1.2.1-§4.4: every self-service credential/MFA/SSO change in
+ * this file fires this same self-audience notification at the account owner - see
+ * account.auth_factor.changed's own doc comment in packages/notifications/src/registry.ts.
+ *
+ * Always called with `db` (the plain client), never a `tx` - notify() requires a standalone
+ * `PrismaClient` and must never run inside a still-open transaction (dispatcher.ts's own Db-type
+ * comment), so every call site below fires this only after its own write transaction has already
+ * committed, not from inside a `runInTransaction`/`withStepUpGate` body callback.
+ *
+ * Fired without awaiting (`void notifyAuthFactorChanged(...)` at each call site), matching
+ * `dispatchSecurityNotification`'s own HTTP-reached call sites in packages/auth/src/audit.ts:
+ * every caller here is a request handler with a live response to send, and a configured
+ * email/webhook delivery can take up to 15 seconds (this repo's mail-transport timeout) - that
+ * latency must not become part of the credential-change response itself. Never throws: resolving
+ * the instance organization can fail (unseeded instance), notify() itself never can.
+ */
+async function notifyAuthFactorChanged(
+  db: PrismaClient,
+  userId: string,
+  title: string,
+  body: string,
+): Promise<void> {
+  try {
+    const organizationId = await resolveInstanceOrganizationId(db);
+    await notify(db, "account.auth_factor.changed", {
+      organizationId,
+      title,
+      body,
+      targetUserId: userId,
+      dedupeKey: userId,
+    });
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        event: "account.notify_auth_factor_changed_failed",
+        error: err instanceof Error ? err.message : String(err),
+        ts: new Date().toISOString(),
+      }),
+    );
+  }
+}
 
 function hasLocalPassword(passwordHash: string | null): boolean {
   return passwordHash !== null;
@@ -900,6 +944,12 @@ export async function handleDeleteAccountExternalIdentity(
     if (result.code === "unauthorized") return c.json({ error: "unauthorized" }, status);
     return c.json({ code: result.code }, status);
   }
+  void notifyAuthFactorChanged(
+    db,
+    userId,
+    "Your SSO connection was removed",
+    "Your SSO connection was removed and a new local password was set on your account.",
+  );
   return c.json({ ok: true });
 }
 
@@ -978,6 +1028,12 @@ export async function handlePatchAccountPassword(
   );
 
   if (!gated.ok) return gated.response;
+  void notifyAuthFactorChanged(
+    db,
+    userId,
+    "Your password was changed",
+    "Your account password was changed. If this wasn't you, reset it immediately and review your active sessions.",
+  );
   return c.json({ sessions_revoked: gated.value });
 }
 
@@ -1071,6 +1127,14 @@ export async function handleDeleteAccountTrustedDevices(c: Context, db: PrismaCl
     }
     return count;
   });
+  if (revoked > 0) {
+    void notifyAuthFactorChanged(
+      db,
+      userId,
+      "Trusted devices were cleared",
+      "Trusted devices for two-factor sign-in were cleared on your account. You'll be asked for a code again on those devices.",
+    );
+  }
   return c.json({ devices_revoked: revoked }, 200);
 }
 
@@ -1162,6 +1226,12 @@ export async function handlePostMfaConfirm(
   });
   if (!ok) return c.json({ code: "invalid_code" }, 400);
 
+  void notifyAuthFactorChanged(
+    db,
+    userId,
+    "An authenticator app was added",
+    "An authenticator app (TOTP) was added to your account for two-factor sign-in.",
+  );
   return c.json({ ok: true });
 }
 
@@ -1224,12 +1294,34 @@ export async function handlePostMfaReset(
           metadata: { sessionsRevoked: revokedCount },
         });
       }
-      return revokedCount;
+      return { revokedCount, mfaChanged: mfaDeleted.count > 0, devicesChanged: devicesRevoked > 0 };
     },
   );
 
   if (!gated.ok) return gated.response;
-  return c.json({ ok: true, sessions_revoked: gated.value });
+  // Reachable even with no MFA method left to delete: a per-method removal endpoint
+  // (handleDeleteAccountTotp/handleDeleteAccountWebauthnCredential) doesn't itself touch trusted
+  // devices, so this reset can still be the thing that actually clears them - e.g. TOTP was
+  // already removed by a separate request before this one submitted, leaving devicesRevoked > 0
+  // with mfaChanged false. The audit log above already accounts for this (same OR condition);
+  // the notification must too, or the owner gets no receipt for a real change (bot review
+  // finding, PR #1304).
+  if (gated.value.mfaChanged) {
+    void notifyAuthFactorChanged(
+      db,
+      userId,
+      "Your two-factor authentication was reset",
+      "Two-factor authentication was reset on your account. If this wasn't you, review your active sessions and re-enroll a method.",
+    );
+  } else if (gated.value.devicesChanged) {
+    void notifyAuthFactorChanged(
+      db,
+      userId,
+      "Trusted devices were cleared",
+      "Trusted devices for two-factor sign-in were cleared on your account. You'll be asked for a code again on those devices.",
+    );
+  }
+  return c.json({ ok: true, sessions_revoked: gated.value.revokedCount });
 }
 
 /** Resolve {rpName, rpID, origin} for WebAuthn ceremonies from the instance's own effective base
@@ -1404,6 +1496,12 @@ export async function handlePostAccountWebauthnRegisterFinish(
     });
   });
 
+  void notifyAuthFactorChanged(
+    db,
+    userId,
+    "A new passkey was added",
+    "A new passkey or security key was added to your account for two-factor sign-in.",
+  );
   return c.json({ ok: true, id: created.credentialRowId, backupCodes: created.backupCodes });
 }
 
@@ -1505,6 +1603,12 @@ export async function handleDeleteAccountWebauthnCredential(
 
   if (!gated.ok) return gated.response;
   if (!gated.value) return c.json({ error: "not found" }, 404);
+  void notifyAuthFactorChanged(
+    db,
+    userId,
+    "A passkey was removed",
+    "A passkey or security key was removed from your account.",
+  );
   return c.json({ ok: true });
 }
 
@@ -1550,6 +1654,12 @@ export async function handleDeleteAccountTotp(
 
   if (!gated.ok) return gated.response;
   if (!gated.value) return c.json({ error: "not found" }, 404);
+  void notifyAuthFactorChanged(
+    db,
+    userId,
+    "An authenticator app was removed",
+    "An authenticator app (TOTP) was removed from your account.",
+  );
   return c.json({ ok: true });
 }
 
@@ -1611,5 +1721,11 @@ export async function handlePostAccountRegenerateBackupCodes(
   );
 
   if (!gated.ok) return gated.response;
+  void notifyAuthFactorChanged(
+    db,
+    userId,
+    "Your backup codes were regenerated",
+    "Your two-factor backup codes were regenerated. Your previous codes no longer work.",
+  );
   return c.json({ ok: true, codes: gated.value });
 }

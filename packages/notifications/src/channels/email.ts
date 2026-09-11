@@ -19,6 +19,7 @@ import { clientSafeDeliveryError } from "@admitto/mail-delivery";
 import { awaitWithAbortSignal } from "@admitto/shared/ssrf-guard";
 import type { NotificationChannel, NotificationSendResult } from "../channel.js";
 import type { DispatchedNotification } from "../types.js";
+import { getNotificationTypeDef } from "../registry.js";
 import { buildNotificationEmailBodyHtml } from "./emailContent.js";
 
 const NOTIFICATION_EMAIL_TITLE = "Admitto system notification";
@@ -246,13 +247,27 @@ export class EmailChannel implements NotificationChannel {
     try {
       const baseUrl = resolvePublicBaseUrl(this.options.env);
       const headerLogo = resolveEmailShellHeaderLogo(org?.logo_url, this.options.env);
+      // The org-staff footer/CTA copy below assumed every recipient held the admin/superadmin
+      // role and could turn this alert off from /account - true for the 4 original org-staff
+      // types, false for a self-audience type like account.auth_factor.changed, which reaches
+      // ANY active user (including an Operator, or a user with no role assignment at all - see
+      // resolveSelf's own doc comment in audience.ts) and is deliberately not user-configurable.
+      // Keyed off the registry's own audience/userConfigurable flags, not a hardcoded type
+      // string, so this stays correct for any future type with the same shape (bot review
+      // finding, PR #1304).
+      const typeDef = getNotificationTypeDef(event.type);
+      const footerText =
+        typeDef?.audience === "self"
+          ? "Automated system notification from Admitto - sent because this concerns your own account."
+          : "Automated system notification from Admitto - sent because your account has the admin or superadmin role on this instance.";
+      const ctaLabel = typeDef?.userConfigurable === false ? "Review your account" : "Manage notifications";
       const bodyHtml = buildNotificationEmailBodyHtml({
         severity: event.severity,
         title: event.title,
         body: event.body,
         metadataLine: buildMetadataLine(event.metadata),
         ctaUrl: `${baseUrl}${NOTIFICATION_CTA_PATH}`,
-        ctaLabel: "Manage notifications",
+        ctaLabel,
         badgeImageUrl: `${baseUrl}/assets/notification-badge-${event.severity}.png?v=${EMAIL_ASSET_VERSION}`,
       });
       const html = buildSystemEmailHtml({
@@ -261,8 +276,7 @@ export class EmailChannel implements NotificationChannel {
         logoKind: headerLogo?.kind,
         altFallbackName: org?.name ?? undefined,
         bodyHtml,
-        footerText:
-          "Automated system notification from Admitto - sent because your account has the admin or superadmin role on this instance.",
+        footerText,
       });
 
       // Org name prefix, not "Admitto" - a self-hosted instance's own admins already know who's
