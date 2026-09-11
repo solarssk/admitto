@@ -1,7 +1,10 @@
 .confirm-dialog {
   position: fixed;
   inset: 0;
-  z-index: 300;
+  /* Must outrank --z-dropdown (1000): a ConfirmDialog opened from inside an already-open
+     dropdown panel (e.g. NotificationBell's "Clear all") previously rendered behind it at the
+     old hardcoded 300, leaving the dialog visible but unreachable under the panel. */
+  z-index: var(--z-modal, 1050);
   display: flex;
   align-items: center;
   justify-content: center;

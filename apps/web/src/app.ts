@@ -407,6 +407,7 @@ import {
   handleGetAccountNotificationsUnreadCount,
   handlePatchAccountNotificationRead,
   handlePostAccountNotificationsMarkAllRead,
+  handlePostAccountNotificationsClearAll,
 } from "./admin/account-notifications-routes.js";
 import {
   handleGetSystemSettings,
@@ -2152,6 +2153,9 @@ export function createApp(options: CreateAppOptions = {}) {
   );
   app.post("/api/account/notifications/mark-all-read", jsonPostCsrf, requireSession, (c) =>
     handlePostAccountNotificationsMarkAllRead(c, db),
+  );
+  app.post("/api/account/notifications/clear-all", jsonPostCsrf, requireSession, (c) =>
+    handlePostAccountNotificationsClearAll(c, db),
   );
   app.delete("/api/account/mfa/trusted-devices", jsonPostCsrf, requireSession, (c) =>
     handleDeleteAccountTrustedDevices(c, db),

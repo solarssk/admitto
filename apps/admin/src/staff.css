@@ -763,21 +763,32 @@
   color: var(--text-primary);
 }
 
-.notif-bell__mark-all {
+.notif-bell__head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.notif-bell__icon-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   border: none;
+  border-radius: var(--radius-sm);
   background: none;
-  padding: 0;
-  color: var(--primary);
-  font-size: var(--fs-xs);
-  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 1rem;
   cursor: pointer;
 }
 
-.notif-bell__mark-all:hover:not(:disabled) {
-  text-decoration: underline;
+.notif-bell__icon-action:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
-.notif-bell__mark-all:disabled {
+.notif-bell__icon-action:disabled {
   color: var(--text-muted);
   cursor: default;
 }

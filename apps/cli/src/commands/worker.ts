@@ -16,6 +16,7 @@ import {
   resolveInstanceBaseUrl,
   resolveSecurityAuditLogRetentionDays,
 } from "@admitto/auth";
+import { purgeNotifications, resolveNotificationRetentionDays } from "@admitto/notifications";
 import {
   DEFAULT_MAIL_DRAIN_LIMIT,
   assertValidBounceIngestTickSecondsEnv,
@@ -370,15 +371,20 @@ async function runRetentionJob(db: PrismaClient, locks: WorkerLockClient): Promi
   }
   try {
     const retentionDays = resolveSecurityAuditLogRetentionDays(process.env);
+    const notificationRetentionDays = resolveNotificationRetentionDays(process.env);
     const authResult = await purgeAuthRetention(db, { dryRun: false });
     const mailResult = await nullifyDeliverySnapshots(db, { dryRun: false });
     const securityAuditResult = await purgeSecurityAuditLog(db, {
       dryRun: false,
       retentionDays,
     });
+    const notificationsResult = await purgeNotifications(db, {
+      dryRun: false,
+      retentionDays: notificationRetentionDays,
+    });
     log(
       "retention",
-      `ok auth_sessions=${authResult.sessions} trusted_devices=${authResult.trustedDevices} mail_snapshots=${mailResult.deliveries} security_audit=${securityAuditResult.deleted}`,
+      `ok auth_sessions=${authResult.sessions} trusted_devices=${authResult.trustedDevices} mail_snapshots=${mailResult.deliveries} security_audit=${securityAuditResult.deleted} notifications=${notificationsResult.deleted}`,
     );
     return true;
   } finally {

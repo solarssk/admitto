@@ -111,6 +111,63 @@
   z-index: 1;
 }
 
+/* Mobile session cards (<768px, useIsDesktop) - same fields as the desktop table, laid out as a
+ * stacked card so a row never needs horizontal scrolling, mirroring Users & roles' own
+ * .users-page__card/-meta without the User/Role columns that only apply to viewing someone
+ * else's sessions. */
+.account-sessions-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.account-sessions-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  background: var(--surface-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.account-sessions-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+/* Single column, not 1fr 1fr: "Logged in" (a UTC timestamp plus ActorOrViewerLocalTimeLine's own
+ * local-time-and-timezone-name line below it) and "IP address" (GeoCell's country name) can both
+ * run long enough to wrap badly mid-value in a half-width column on a narrow phone - every field
+ * gets the card's full width instead. */
+.account-sessions-card__meta {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.account-sessions-card__meta > div {
+  min-width: 0;
+}
+
+.account-sessions-card__meta dt {
+  margin: 0 0 var(--space-1);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.account-sessions-card__meta dd {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+}
+
 .account-warn-block {
   margin-bottom: var(--space-3, 0.75rem);
 }
