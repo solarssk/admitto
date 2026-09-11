@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Checkbox } from "@admitto/ui";
 import { useDropdownMenu } from "./useDropdownMenu.js";
+import { floatingOnly, usePanelOpenState } from "./InlineAccordionContext.js";
 import { SearchableSelectSearchBox } from "./SearchableSelectSearchBox.js";
-import type { SearchableSelectOption } from "./SearchableSelect.js";
+import { searchableSelectTriggerClassName } from "./searchable-select-class-names.js";
+import { SearchableSelectPanel, type SearchableSelectOption } from "./SearchableSelect.js";
 import "./searchable-select.css";
 import "./multi-select.css";
 
@@ -20,6 +22,18 @@ function triggerSummary(
   if (value.length === 0) return placeholder;
   if (value.length === 1) return options.find((o) => o.id === value[0])?.label ?? placeholder;
   return `${value.length} selected`;
+}
+
+/** An option's checkbox label, prefixed with its own icon when it has one - kept out of the
+ * render body's `.map()` callback to stay a plain ternary, not one nested inside another. */
+function optionCheckboxLabel(option: SearchableSelectOption) {
+  if (!option.icon) return option.label;
+  return (
+    <span className="multi-select__option-label">
+      <i className={`ti ti-${option.icon}`} aria-hidden="true" />
+      {option.label}
+    </span>
+  );
 }
 
 interface MultiSelectProps {
@@ -41,6 +55,9 @@ interface MultiSelectProps {
    * where "select all" and "select the one option" are the same action. */
   selectAllLabel?: string;
   clearLabel?: string;
+  /** See `SearchableSelect`'s own prop of the same name - same floating-vs-inline choice, same
+   * reason (a FiltersMenu accordion stacking several of these). */
+  panelMode?: "floating" | "inline";
   onChange: (ids: string[]) => void;
 }
 
@@ -66,12 +83,15 @@ export function MultiSelect({
   minWidth = 260,
   selectAllLabel = "Select all",
   clearLabel = "Clear",
+  panelMode = "floating",
   onChange,
 }: Readonly<MultiSelectProps>) {
-  const { open, setOpen, openUpward, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<
-    HTMLButtonElement,
-    HTMLDivElement
-  >({ align: "start", matchTriggerWidth: true, minWidth });
+  const dropdown = useDropdownMenu<HTMLButtonElement, HTMLDivElement>({
+    align: "start",
+    matchTriggerWidth: true,
+    minWidth,
+  });
+  const { isInline, open, setOpen } = usePanelOpenState(dropdown, id, panelMode);
   const [query, setQuery] = useState("");
   const showSearch = options.length > SEARCH_THRESHOLD;
 
@@ -97,7 +117,7 @@ export function MultiSelect({
   const triggerDescribedBy = [describedBy, hintId].filter(Boolean).join(" ") || undefined;
 
   return (
-    <div className="at-field searchable-select" ref={rootRef}>
+    <div className="at-field searchable-select" ref={dropdown.rootRef}>
       {showLabel && (
         <label className="at-label" htmlFor={id}>
           {label}
@@ -106,8 +126,8 @@ export function MultiSelect({
       <button
         type="button"
         id={id}
-        ref={triggerRef}
-        className={`searchable-select__trigger${invalid ? " searchable-select__trigger--invalid" : ""}`}
+        ref={floatingOnly(isInline, dropdown.triggerRef)}
+        className={searchableSelectTriggerClassName(invalid, isInline, open)}
         disabled={disabled}
         title={title}
         aria-expanded={open}
@@ -126,11 +146,7 @@ export function MultiSelect({
         </span>
       )}
       {open && (
-        <div
-          className={`searchable-select__panel${openUpward ? " searchable-select__panel--up" : ""}`}
-          ref={panelRef}
-          style={panelStyle}
-        >
+        <SearchableSelectPanel isInline={isInline} dropdown={dropdown}>
           {showSearch && (
             <SearchableSelectSearchBox
               id={id}
@@ -152,14 +168,14 @@ export function MultiSelect({
               </button>
             </div>
           )}
-          <ul className="searchable-select__list" aria-label={label}>
+          <ul className="searchable-select__list at-scroll" aria-label={label}>
             {results.length === 0 ? (
               <li className="searchable-select__empty">{emptyLabel}</li>
             ) : (
               results.map((o) => (
                 <li key={o.id} className="multi-select__option">
                   <Checkbox
-                    label={o.label}
+                    label={optionCheckboxLabel(o)}
                     checked={selectedSet.has(o.id)}
                     onChange={() => toggle(o.id)}
                   />
@@ -167,7 +183,7 @@ export function MultiSelect({
               ))
             )}
           </ul>
-        </div>
+        </SearchableSelectPanel>
       )}
     </div>
   );

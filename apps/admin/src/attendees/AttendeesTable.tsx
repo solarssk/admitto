@@ -6,6 +6,7 @@ import type {
   AttendeeRowDto,
   AttendeeSortBy,
   AttendeeSortDir,
+  EventCustomFieldDto,
   RsvpStatus,
   TicketTypeDto,
 } from "../api/types.js";
@@ -18,6 +19,7 @@ import { FiltersMenu } from "../components/FiltersMenu.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { MultiSelect } from "../components/MultiSelect.js";
+import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
@@ -157,6 +159,7 @@ function MobileSortControl({
         value={sortBy}
         options={MOBILE_SORT_COLUMNS.map(({ column, label }) => ({ id: column, label }))}
         onChange={(id) => onSortChange(id as AttendeeSortBy)}
+        panelMode="inline"
       />
       <IconButton
         label={sortDir === "asc" ? "Sort ascending" : "Sort descending"}
@@ -211,6 +214,16 @@ export interface AttendeesTableProps {
    * filter, not a page-level error (CodeRabbit review, batch 04 / #351). */
   ticketTypesError?: string | null;
   onRetryTicketTypes?: () => void;
+  /** One filter row per event-defined custom field (Requirements page), rendered after the four
+   * fixed filters - `select`/`boolean` as a MultiSelect over that field's own options, `text` as
+   * a contains-text input. Empty array renders no divider/rows at all. */
+  customFields?: EventCustomFieldDto[];
+  customFieldsError?: string | null;
+  onRetryCustomFields?: () => void;
+  customFieldSelectValues: Readonly<Record<string, string[]>>;
+  onCustomFieldSelectChange: (sourceField: string, values: string[]) => void;
+  customFieldTextInputs: Readonly<Record<string, string>>;
+  onCustomFieldTextInputChange: (sourceField: string, value: string) => void;
   onSearchChange: (value: string) => void;
   onStatusFilterChange: (value: AttendeeStatusFilter) => void;
   onTicketTypeFilterChange: (value: string[]) => void;
@@ -1009,6 +1022,21 @@ function BulkBar({
   );
 }
 
+const CUSTOM_FIELD_BOOLEAN_OPTIONS: ReadonlyArray<SegmentedOption<"any" | "true" | "false">> = [
+  { value: "any", label: "Any" },
+  { value: "true", label: "Yes" },
+  { value: "false", label: "No" },
+];
+
+/** Derives the exclusive Any/Yes/No toggle state for a boolean custom field from its underlying
+ * multi-value filter array - kept as string[] so every custom field (text/select/boolean) shares
+ * the same `cf_<source_field>` query-param shape instead of boolean getting a one-off type. */
+function customFieldBooleanValue(values: readonly string[]): "any" | "true" | "false" {
+  if (values.includes("true")) return "true";
+  if (values.includes("false")) return "false";
+  return "any";
+}
+
 /** Search box + a single "Filters" trigger button. The four filter selects (and, on mobile,
  * the "Sort by" control) live in a floating dropdown panel opened from that button — not
  * inline in the row and not a horizontally-scrolling strip (both tried and rejected in PO
@@ -1031,6 +1059,13 @@ function FilterToolbar({
   onRsvpStatusFilterChange,
   mailStatusFilter,
   onMailStatusFilterChange,
+  customFields,
+  customFieldsError,
+  onRetryCustomFields,
+  customFieldSelectValues,
+  onCustomFieldSelectChange,
+  customFieldTextInputs,
+  onCustomFieldTextInputChange,
   isDesktop,
   sortBy,
   sortDir,
@@ -1049,17 +1084,30 @@ function FilterToolbar({
   onRsvpStatusFilterChange: (value: RsvpStatus[]) => void;
   mailStatusFilter: AttendeeMailStatusFilter[];
   onMailStatusFilterChange: (value: AttendeeMailStatusFilter[]) => void;
+  customFields: EventCustomFieldDto[];
+  customFieldsError?: string | null;
+  onRetryCustomFields?: () => void;
+  customFieldSelectValues: Readonly<Record<string, string[]>>;
+  onCustomFieldSelectChange: (sourceField: string, values: string[]) => void;
+  customFieldTextInputs: Readonly<Record<string, string>>;
+  onCustomFieldTextInputChange: (sourceField: string, value: string) => void;
   isDesktop: boolean;
   sortBy: AttendeeSortBy;
   sortDir: AttendeeSortDir;
   onSortChange: (column: AttendeeSortBy) => void;
 }>) {
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const activeCustomFieldCount = customFields.filter((field) =>
+    field.type === "text"
+      ? Boolean(customFieldTextInputs[field.source_field]?.trim())
+      : (customFieldSelectValues[field.source_field]?.length ?? 0) > 0,
+  ).length;
   const activeFilterCount =
     (statusFilter !== "all" ? 1 : 0) +
     (rsvpStatusFilter.length > 0 ? 1 : 0) +
     (ticketTypeFilter.length > 0 ? 1 : 0) +
-    (mailStatusFilter.length > 0 ? 1 : 0);
+    (mailStatusFilter.length > 0 ? 1 : 0) +
+    activeCustomFieldCount;
 
   return (
     <div className="attendees-toolbar">
@@ -1102,6 +1150,7 @@ function FilterToolbar({
             value={ticketTypeFilter}
             options={ticketTypes.map((t) => ({ id: t.key, label: t.label }))}
             onChange={onTicketTypeFilterChange}
+            panelMode="inline"
           />
           {ticketTypesError && (
             <p className="mail-field-hint" role="alert">
@@ -1124,6 +1173,7 @@ function FilterToolbar({
             value={rsvpStatusFilter}
             options={RSVP_STATUS_OPTIONS}
             onChange={(ids) => onRsvpStatusFilterChange(ids as RsvpStatus[])}
+            panelMode="inline"
           />
         </div>
         <div className="attendees-toolbar__filter">
@@ -1136,10 +1186,11 @@ function FilterToolbar({
             value={statusFilter}
             options={[
               { id: "all", label: "All check-ins" },
-              { id: "admitted", label: "Checked in" },
-              { id: "not_admitted", label: "Not checked in" },
+              { id: "admitted", label: "Checked in", icon: "circle-check" },
+              { id: "not_admitted", label: "Not checked in", icon: "circle-dashed" },
             ]}
             onChange={(id) => onStatusFilterChange(id as AttendeeStatusFilter)}
+            panelMode="inline"
           />
         </div>
         <div className="attendees-toolbar__filter">
@@ -1153,14 +1204,75 @@ function FilterToolbar({
             emptyLabel="No mail statuses found"
             value={mailStatusFilter}
             options={[
-              { id: "not_sent", label: "Not sent" },
-              { id: "sent", label: "Sent" },
-              { id: "pending", label: "Pending" },
-              { id: "failed", label: "Failed" },
+              { id: "not_sent", label: "Not sent", icon: "mail-off" },
+              { id: "sent", label: "Sent", icon: "mail-opened" },
+              { id: "pending", label: "Pending", icon: "clock" },
+              { id: "failed", label: "Failed", icon: "alert-triangle" },
             ]}
             onChange={(ids) => onMailStatusFilterChange(ids as AttendeeMailStatusFilter[])}
+            panelMode="inline"
           />
         </div>
+        {customFields.length > 0 && (
+          <p className="attendees-filters-menu__section-label">Custom fields</p>
+        )}
+        {customFields.map((field) => {
+          if (field.type === "text") {
+            return (
+              <div className="attendees-toolbar__filter" key={field.id}>
+                <Input
+                  id={`attendees-filter-cf-${field.source_field}`}
+                  label={field.label}
+                  placeholder={`Any ${field.label.toLowerCase()}`}
+                  value={customFieldTextInputs[field.source_field] ?? ""}
+                  onChange={(e) =>
+                    onCustomFieldTextInputChange(field.source_field, e.target.value)
+                  }
+                />
+              </div>
+            );
+          }
+          if (field.type === "boolean") {
+            return (
+              <div className="attendees-toolbar__filter" key={field.id}>
+                <span className="at-label">{field.label}</span>
+                <Segmented
+                  ariaLabel={field.label}
+                  value={customFieldBooleanValue(customFieldSelectValues[field.source_field] ?? [])}
+                  options={CUSTOM_FIELD_BOOLEAN_OPTIONS}
+                  onChange={(val) =>
+                    onCustomFieldSelectChange(field.source_field, val === "any" ? [] : [val])
+                  }
+                />
+              </div>
+            );
+          }
+          return (
+            <div className="attendees-toolbar__filter" key={field.id}>
+              <MultiSelect
+                id={`attendees-filter-cf-${field.source_field}`}
+                label={field.label}
+                placeholder={`Any ${field.label.toLowerCase()}`}
+                searchPlaceholder={`Search ${field.label.toLowerCase()}…`}
+                emptyLabel="No options found"
+                value={customFieldSelectValues[field.source_field] ?? []}
+                options={(field.options ?? []).map((option) => ({ id: option, label: option }))}
+                onChange={(values) => onCustomFieldSelectChange(field.source_field, values)}
+                panelMode="inline"
+              />
+            </div>
+          );
+        })}
+        {customFieldsError && (
+          <p className="mail-field-hint" role="alert">
+            {customFieldsError}{" "}
+            {onRetryCustomFields && (
+              <button type="button" className="link-btn" onClick={onRetryCustomFields}>
+                Retry
+              </button>
+            )}
+          </p>
+        )}
       </FiltersMenu>
     </div>
   );
@@ -1394,6 +1506,13 @@ export function AttendeesTable({
   ticketTypes = [],
   ticketTypesError,
   onRetryTicketTypes,
+  customFields = [],
+  customFieldsError,
+  onRetryCustomFields,
+  customFieldSelectValues,
+  onCustomFieldSelectChange,
+  customFieldTextInputs,
+  onCustomFieldTextInputChange,
   onSearchChange,
   onStatusFilterChange,
   onTicketTypeFilterChange,
@@ -1573,6 +1692,13 @@ export function AttendeesTable({
           onRsvpStatusFilterChange={onRsvpStatusFilterChange}
           mailStatusFilter={mailStatusFilter}
           onMailStatusFilterChange={onMailStatusFilterChange}
+          customFields={customFields}
+          customFieldsError={customFieldsError}
+          onRetryCustomFields={onRetryCustomFields}
+          customFieldSelectValues={customFieldSelectValues}
+          onCustomFieldSelectChange={onCustomFieldSelectChange}
+          customFieldTextInputs={customFieldTextInputs}
+          onCustomFieldTextInputChange={onCustomFieldTextInputChange}
           isDesktop={isDesktop}
           sortBy={sortBy}
           sortDir={sortDir}

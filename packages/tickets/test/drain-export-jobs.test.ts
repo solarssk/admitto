@@ -163,6 +163,59 @@ describe("drainExportJobs", () => {
     );
   });
 
+  it("redacts customFields free text (and keeps select values) in the stored result_json on success", async () => {
+    vi.mocked(claimNextAdminJob)
+      .mockResolvedValueOnce(
+        baseJob({
+          result_json: {
+            request: {
+              kind: "attendees_filtered",
+              format: "csv",
+              filters: {
+                status: "all",
+                customFields: [
+                  { source_field: "dietary", type: "text", text: "vegan, allergic to nuts" },
+                  { source_field: "shirt_size", type: "select", values: ["M"] },
+                ],
+              },
+            },
+          },
+        }) as never,
+      )
+      .mockResolvedValue(null);
+
+    await expect(drainExportJobs(db as never, storage)).resolves.toEqual({
+      claimed: 1,
+      succeeded: 1,
+      failed: 0,
+      reclaimed: 0,
+    });
+
+    expect(db.adminJob.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          result_json: expect.objectContaining({
+            request: expect.objectContaining({
+              filters: expect.objectContaining({
+                customFields: [
+                  { source_field: "dietary", type: "text", has_text: true },
+                  { source_field: "shirt_size", type: "select", values: ["M"] },
+                ],
+              }),
+            }),
+          }),
+        }),
+      }),
+    );
+
+    // The whole point of redaction: the free-text value itself must never reach storage.
+    const storedResultJson = JSON.stringify(
+      vi.mocked(db.adminJob.update).mock.calls[0]![0]!.data.result_json,
+    );
+    expect(storedResultJson).not.toContain("vegan");
+    expect(storedResultJson).not.toContain("allergic to nuts");
+  });
+
   it("defaults missing request.filters and omits null audit actor fields", async () => {
     vi.mocked(claimNextAdminJob)
       .mockResolvedValueOnce(

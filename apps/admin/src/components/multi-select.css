@@ -39,3 +39,11 @@
 .multi-select__option .at-check {
   width: 100%;
 }
+
+/* Icon + text pairing for an option row's own label (e.g. mail delivery status), same gap as
+   SearchableSelect's icon+name pairing (searchable-select__option). */
+.multi-select__option-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}

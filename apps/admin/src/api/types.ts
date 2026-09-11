@@ -394,6 +394,14 @@ export interface AttendeesListParams {
   ticket_type?: string[];
   rsvp_status?: RsvpStatus[];
   mail_status?: AttendeeMailStatusFilter[];
+  /** One `cf_<source_field>` query param key per active custom-field filter, its values sent as
+   * repeated occurrences of that key (one per selected value for select/boolean, a single-element
+   * array for `text`) rather than comma-joined - a select option is free admin-typed text and can
+   * itself contain a comma, which a joined value would then need an escape scheme to split back
+   * apart; a repeated param sidesteps that entirely (see attendeesListQuery's own `.append()`).
+   * The caller (AttendeesPage) builds this from the event's own EventCustomField list, so this
+   * type doesn't need to know the field-type branching itself. */
+  customFieldParams?: Record<string, string[]>;
   sortBy?: AttendeeSortBy;
   sortDir?: AttendeeSortDir;
 }

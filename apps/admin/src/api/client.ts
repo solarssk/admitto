@@ -972,6 +972,17 @@ export async function fetchCheckInOpsConfig(eventId: string): Promise<OpsConfigD
   return parseJson<OpsConfigDto>(res);
 }
 
+/** Appends one query-param occurrence per custom-field filter value (see AttendeesListParams'
+ * own `customFieldParams` doc comment for why repeated params, not one comma-joined value) -
+ * shared by attendeesListQuery and buildAttendeesExportSearchParams below. */
+function appendCustomFieldParams(target: URLSearchParams, customFieldParams: Record<string, string[]> | undefined): void {
+  for (const [key, values] of Object.entries(customFieldParams ?? {})) {
+    for (const value of values) {
+      if (value) target.append(key, value);
+    }
+  }
+}
+
 function attendeesListQuery(eventId: string, params: AttendeesListParams = {}): string {
   const q = new URLSearchParams();
   if (params.page != null) q.set("page", String(params.page));
@@ -981,6 +992,7 @@ function attendeesListQuery(eventId: string, params: AttendeesListParams = {}): 
   if (params.ticket_type?.length) q.set("ticket_type", params.ticket_type.join(","));
   if (params.rsvp_status?.length) q.set("rsvp_status", params.rsvp_status.join(","));
   if (params.mail_status?.length) q.set("mail_status", params.mail_status.join(","));
+  appendCustomFieldParams(q, params.customFieldParams);
   if (params.sortBy && params.sortBy !== "name") q.set("sortBy", params.sortBy);
   if (params.sortDir && params.sortDir !== "asc") q.set("sortDir", params.sortDir);
   const qs = q.toString();
@@ -1952,6 +1964,7 @@ function buildAttendeesExportSearchParams(
     ticket_type?: string[];
     rsvp_status?: RsvpStatus[];
     mail_status?: AttendeeMailStatusFilter[];
+    customFieldParams?: Record<string, string[]>;
   },
 ): URLSearchParams {
   const urlParams = new URLSearchParams({ format });
@@ -1960,6 +1973,7 @@ function buildAttendeesExportSearchParams(
   if (params.ticket_type?.length) urlParams.set("ticket_type", params.ticket_type.join(","));
   if (params.rsvp_status?.length) urlParams.set("rsvp_status", params.rsvp_status.join(","));
   if (params.mail_status?.length) urlParams.set("mail_status", params.mail_status.join(","));
+  appendCustomFieldParams(urlParams, params.customFieldParams);
   return urlParams;
 }
 
@@ -2027,6 +2041,7 @@ export async function exportAttendees(
     ticket_type?: string[];
     rsvp_status?: RsvpStatus[];
     mail_status?: AttendeeMailStatusFilter[];
+    customFieldParams?: Record<string, string[]>;
   },
   format: AttendeeExportFormat,
   signal?: AbortSignal,
