@@ -536,6 +536,35 @@ describe("NotificationBell abort races", () => {
     expect(screen.queryByRole("button", { name: /Notifications/ })).toBeNull();
   });
 
+  it("does not update state after unmounting mid-clear-all when the request fails", async () => {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [makeNotification()],
+      unread_count: 1,
+    });
+    let rejectClear: (err: Error) => void = () => {};
+    clearAllAccountNotifications.mockImplementation(
+      () => new Promise((_resolve, reject) => { rejectClear = reject; }),
+    );
+
+    const { unmount } = renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    const dialog = await screen.findByRole("dialog", { name: "Clear all notifications?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear all notifications" }));
+    await act(async () => {});
+    unmount();
+
+    await act(async () => {
+      rejectClear(new Error("network down"));
+      await Promise.resolve();
+    });
+    // No crash, and no attempt to set clearError on the now-unmounted component.
+    expect(screen.queryByRole("button", { name: /Notifications/ })).toBeNull();
+  });
+
   it("discards a list fetch that resolves after the dropdown has already closed", async () => {
     fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
     let resolveList: (value: { notifications: NotificationDto[]; unread_count: number }) => void = () => {};
