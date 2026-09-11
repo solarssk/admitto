@@ -389,6 +389,26 @@ describe("PUT /api/admin/theme", () => {
     expect(persisted.theme.primary).toBe("#aabbcc");
   });
 
+  it("persists valid ticket_primary for superadmin, independent of primary", async () => {
+    const res = await app.request("/api/admin/theme", {
+      method: "PUT",
+      headers: {
+        Cookie: await sessionCookieFor(prisma, superId),
+        "Content-Type": "application/json",
+        ...sameOrigin,
+      },
+      body: JSON.stringify({ primary: "#aabbcc", ticket_primary: "#ea580c" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { theme: { primary?: string; ticket_primary?: string } };
+    expect(body.theme.primary).toBe("#aabbcc");
+    expect(body.theme.ticket_primary).toBe("#ea580c");
+
+    const getRes = await getAdminTheme();
+    const persisted = (await getRes.json()) as { theme: { ticket_primary?: string } };
+    expect(persisted.theme.ticket_primary).toBe("#ea580c");
+  });
+
   it("rejects org admin PUT", async () => {
     const res = await app.request("/api/admin/theme", {
       method: "PUT",

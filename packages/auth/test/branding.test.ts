@@ -10,6 +10,24 @@ describe("sanitizeTheme (branding theme storage validation)", () => {
     expect(sanitizeTheme({ primary: "not-a-color" }).primary).toBeUndefined();
   });
 
+  it("sanitizes ticket_primary the same way as primary, independently", () => {
+    const result = sanitizeTheme({ primary: "#066fd1", ticket_primary: "#ea580c" });
+    expect(result.primary).toBe("#066fd1");
+    expect(result.ticket_primary).toBe("#ea580c");
+  });
+
+  it("drops an invalid ticket_primary without affecting a valid primary", () => {
+    const result = sanitizeTheme({ primary: "#066fd1", ticket_primary: "not-a-color" });
+    expect(result.primary).toBe("#066fd1");
+    expect(result.ticket_primary).toBeUndefined();
+  });
+
+  it("leaves ticket_primary undefined when absent, without affecting primary", () => {
+    const result = sanitizeTheme({ primary: "#066fd1" });
+    expect(result.primary).toBe("#066fd1");
+    expect(result.ticket_primary).toBeUndefined();
+  });
+
   it("sanitizes ticket_font_family_name the same way as font_family_name, independently", () => {
     const result = sanitizeTheme({
       font_family_name: "Admin Sans",

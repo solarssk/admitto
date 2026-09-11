@@ -156,6 +156,9 @@ export interface BrandingCustomFontFamilyDto {
 
 export interface BrandingThemeDto {
   primary?: string;
+  /** The active pick for the public ticket page - falls back to primary when unset so a single
+   * global colour remains the default until someone overrides it. */
+  ticket_primary?: string;
   /** The active pick for the admin staff SPA - either a built-in name (e.g. "Manrope") or one of
    * custom_font_families[].name. */
   font_family_name?: string;
