@@ -560,7 +560,7 @@ describe("oidc routes", () => {
       });
       expect(identity).not.toBeNull();
 
-      await expectAuthFactorChangedNotification(linkUser.id, "A new SSO connection was linked");
+      await expectAuthFactorChangedNotification(linkUser.id, "A new single sign-on connection was linked");
     } finally {
       await prisma.externalIdentity.deleteMany({ where: { user_id: linkUser.id } });
       await prisma.session.deleteMany({ where: { user_id: linkUser.id } });
@@ -626,7 +626,7 @@ describe("oidc routes", () => {
           },
         });
         expect(rows).toHaveLength(1);
-        expect(rows[0]?.body).toContain("An SSO group-role mapping");
+        expect(rows[0]?.body).toContain("Automatic single sign-on sync");
       });
     } finally {
       // Cleaned by type + target metadata, not just user_id: recipient.id - the org-staff

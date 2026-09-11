@@ -1145,7 +1145,7 @@ describe("DELETE /api/admin/users/:id/external-identity", () => {
       expect(revoked?.revoked_at).not.toBeNull();
 
       // Target user, not the superadmin acting on their behalf (bot review finding, PR #1304).
-      await expectAuthFactorChangedNotification(created.id, "Your SSO connection was removed");
+      await expectAuthFactorChangedNotification(created.id, "Your single sign-on connection was removed");
     } finally {
       await prisma.externalIdentity.deleteMany({ where: { user_id: created.id } });
       await prisma.session.deleteMany({ where: { user_id: created.id } });

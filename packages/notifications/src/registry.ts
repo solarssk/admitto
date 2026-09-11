@@ -38,12 +38,12 @@ export const NOTIFICATION_TYPES: Record<string, NotificationTypeDef> = {
   },
   "auth.mfa.break_glass": {
     ...ORG_STAFF_DEFAULTS,
-    label: "MFA break-glass used",
+    label: "Emergency two-factor bypass used",
     defaultSeverity: "error",
   },
   "auth.settings.changed": {
     ...ORG_STAFF_DEFAULTS,
-    label: "Login/security settings changed",
+    label: "Login or security settings changed",
     defaultSeverity: "warn",
   },
   "auth.login.new_country": {
@@ -63,7 +63,7 @@ export const NOTIFICATION_TYPES: Record<string, NotificationTypeDef> = {
   },
   "account.auth_factor.changed": {
     category: "system",
-    label: "Your password or MFA method changed",
+    label: "Your password or two-factor method changed",
     defaultSeverity: "warn",
     // No webhook: that channel is one shared, team-wide URL per organization (see
     // NotificationChannelKey's own doc comment) - posting a self-audience event there would

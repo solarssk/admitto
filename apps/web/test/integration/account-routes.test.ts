@@ -1951,7 +1951,7 @@ describe("DELETE /api/account/external-identity", () => {
     const otherSession = await prisma.session.findUniqueOrThrow({ where: { id: other.session.id } });
     expect(otherSession.revoked_at).not.toBeNull();
 
-    await expectAuthFactorChangedNotification(userId, "Your SSO connection was removed");
+    await expectAuthFactorChangedNotification(userId, "Your single sign-on connection was removed");
   });
 
   it("unlinks a Cloudflare Access identity together with its source OIDC identity, not just the OIDC one", async () => {

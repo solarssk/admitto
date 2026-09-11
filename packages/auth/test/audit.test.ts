@@ -1125,7 +1125,7 @@ describe("audit", () => {
           db,
           "auth.settings.changed",
           expect.objectContaining({
-            body: "Jane Admin changed SSO provider settings (update).",
+            body: "Jane Admin changed single sign-on provider settings (update).",
             metadata: { resource: "oidc_provider", action: "update", target_id: "prov-1", target_label: null },
           }),
         );
@@ -1236,7 +1236,7 @@ describe("audit", () => {
           db,
           "auth.role.elevated",
           expect.objectContaining({
-            body: "An SSO group-role mapping granted New Admin the administrator role.",
+            body: "Automatic single sign-on sync granted New Admin the administrator role.",
             metadata: expect.objectContaining({ actor_user_id: null }),
           }),
         );
