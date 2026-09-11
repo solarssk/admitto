@@ -33,6 +33,7 @@ The saved template previews without errors. For the ticket template, the test me
 - Image and Wallet chips insert ready-to-use markup, an image element or a wallet badge button linking to the placeholder; a bare token does not display a picture or a button by itself.
 - Select the pencil icon next to the template picker to rename the template, change its icon, or edit its description. This does not change the subject or body.
 - Preview uses safe sample values. A template test validates rendering and mail delivery but does not send to attendees.
+- Preview has a sun/moon switch to check how the message looks in a light or dark email client. Dark is a simulated rendering, not a guarantee of how any specific real email app's own dark mode will render the message - different apps can render dark mode differently from this preview and from each other.
 
 ## What changes after this action
 
