@@ -100,26 +100,19 @@ describe("resolveAudienceCandidates", () => {
       });
 
       expect(candidates).toEqual([]);
-      expect(db.roleAssignment.count).not.toHaveBeenCalled();
     });
 
-    it("returns [] when the active user has no standing in this organization", async () => {
+    // No role-assignment or organization-membership check (a prior version of resolveSelf had
+    // one, first instance-/organization-scoped only, then also event-scoped) - every real call
+    // site already independently proves targetUserId's identity before reaching notify(), so
+    // that check only ever rejected legitimate recipients: an active user whose org membership
+    // doesn't match event.organizationId (which for a self-audience type is just the instance's
+    // resolved default org, not necessarily the recipient's own), and an active user with zero
+    // role assignments at all (reachable today - see resolveSelf's own doc comment). Found by
+    // Codex bot review on PR #1304.
+    it("returns [targetUserId] for an active user regardless of organization membership or role assignments", async () => {
       const db = createStubDb();
       db.user.findUnique.mockResolvedValue({ is_active: true });
-      db.roleAssignment.count.mockResolvedValue(0);
-
-      const candidates = await resolveAudienceCandidates(db as unknown as PrismaClient, "self", {
-        organizationId: ORG_ID,
-        targetUserId: "u-1",
-      });
-
-      expect(candidates).toEqual([]);
-    });
-
-    it("returns [targetUserId] for a valid, active org member", async () => {
-      const db = createStubDb();
-      db.user.findUnique.mockResolvedValue({ is_active: true });
-      db.roleAssignment.count.mockResolvedValue(1);
 
       const candidates = await resolveAudienceCandidates(db as unknown as PrismaClient, "self", {
         organizationId: ORG_ID,
@@ -127,6 +120,8 @@ describe("resolveAudienceCandidates", () => {
       });
 
       expect(candidates).toEqual(["u-1"]);
+      expect(db.roleAssignment.findMany).not.toHaveBeenCalled();
+      expect(db.roleAssignment.count).not.toHaveBeenCalled();
     });
   });
 });

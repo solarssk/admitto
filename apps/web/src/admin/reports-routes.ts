@@ -1481,6 +1481,33 @@ async function loadMailReportsAggregates(
   const reachedFilter: Prisma.AttendeeWhereInput = {
     email_deliveries: { some: { status: { in: successStatuses } } },
   };
+  // Splits reachedFilter's complement (not_reached) into why: never_sent means no delivery ever
+  // actually reached the mailer with a real outcome - either no row exists at all, or every row
+  // is still "queued" (not sent yet) or "cancelled" (an operator stopped it before it went out,
+  // same reasoning attendees-list-filters.ts's own not_sent bucket already documents: "nothing
+  // about their mail actually went wrong"). send_failed means at least one row's actual send
+  // attempt came back failed/bounced/rejected and none ever succeeded. "Not reached" alone reads
+  // as "the email didn't arrive", which is only true for the send_failed half - never_sent means
+  // nothing was ever actually sent (yet). Not the same bucket as attendees-list-filters.ts's own
+  // not_sent/pending/failed mail_status filter (that one classifies each attendee's LATEST
+  // delivery only, and keeps queued as its own separate "pending" bucket) - this is an
+  // ever-succeeded rollup across every attempt, matching reachedFilter's own definition above.
+  // Keyed on failed_at, not the row's current status: claim.ts's claimRetryExisting flips a
+  // "failed" row back to "queued" IN PLACE to retry it (same row id, failed_at left untouched),
+  // and cancel.ts's cancelBulkSendBatch can then flip that same still-queued row to "cancelled" -
+  // in both cases the row's current status reads as never-attempted even though a real send
+  // genuinely failed for it earlier. mapSendResult.ts/applyBounceResult.ts stamp failed_at on
+  // every failed/bounced/rejected outcome and nothing ever clears it afterward (not even a later
+  // successful retry on the same row), so it's the durable "a real attempt failed at some point"
+  // signal a point-in-time status column can't provide (bot review). Explicitly ANDs in
+  // `NOT: reachedFilter` - unlike the earlier status-based version, "no row has failed_at set" on
+  // its own is also true of an attendee whose very first attempt succeeded outright (a genuine
+  // success never sets failed_at either), so without this exclusion a reached attendee would
+  // double-count as never_sent too.
+  const neverSentFilter: Prisma.AttendeeWhereInput = {
+    NOT: reachedFilter,
+    email_deliveries: { none: { failed_at: { not: null } } },
+  };
   // Narrower than reachedFilter above - the funnel's "Reached by email" stage is documented (UI
   // copy, wiki) as "got a ticket email" specifically, since it's the entry point of a causal
   // chain toward wallet install and attendance, not attendee_reach's general any-email
@@ -1518,6 +1545,7 @@ async function loadMailReportsAggregates(
     walletInstalledCount,
     attendedCount,
     ticketReachedAttendees,
+    neverSentAttendees,
   ] = await Promise.all([
     db.attendee.count({ where: { event_id: eventId } }),
     db.emailDelivery.groupBy({
@@ -1588,6 +1616,7 @@ async function loadMailReportsAggregates(
     db.attendee.count({ where: { event_id: eventId, ...everInstalledWalletFilter } }),
     db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
     db.attendee.count({ where: { event_id: eventId, ...ticketReachedFilter } }),
+    db.attendee.count({ where: { event_id: eventId, ...neverSentFilter } }),
   ]);
 
   const totalAttempts = byStatusRaw.reduce((sum, row) => sum + row._count._all, 0);
@@ -1625,6 +1654,8 @@ async function loadMailReportsAggregates(
       reached: reachedAttendees,
       not_reached: totalAttendees - reachedAttendees,
       reached_pct: oneDecimalPct(reachedAttendees, totalAttendees),
+      never_sent: neverSentAttendees,
+      send_failed: totalAttendees - reachedAttendees - neverSentAttendees,
     },
     by_purpose: {
       initial: purposeCounts.get("initial") ?? 0,
@@ -2674,7 +2705,8 @@ async function exportMailReportsPdf(
 
   const reachRows = `
     <tr><td>Reached</td><td>${aggregates.attendee_reach.reached}</td><td>${aggregates.attendee_reach.reached_pct}%</td></tr>
-    <tr><td>Not reached</td><td>${aggregates.attendee_reach.not_reached}</td><td>${oneDecimalPct(aggregates.attendee_reach.not_reached, aggregates.total_attendees)}%</td></tr>`;
+    <tr><td>Never sent</td><td>${aggregates.attendee_reach.never_sent}</td><td>${oneDecimalPct(aggregates.attendee_reach.never_sent, aggregates.total_attendees)}%</td></tr>
+    <tr><td>Send failed</td><td>${aggregates.attendee_reach.send_failed}</td><td>${oneDecimalPct(aggregates.attendee_reach.send_failed, aggregates.total_attendees)}%</td></tr>`;
 
   const purposeRows =
     aggregates.delivery.total_attempts === 0

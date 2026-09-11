@@ -22,7 +22,18 @@ export interface NotificationTypeDef {
   defaultSeverity: NotificationSeverity;
   availableChannels: NotificationChannelKey[];
   audience: NotificationAudienceKey;
-  /** Throttle window for NotificationThrottle dedup. Dispatcher defaults to 15 when omitted. */
+  /**
+   * Throttle window for NotificationThrottle dedup. Dispatcher defaults to 15 when omitted.
+   * Explicitly `0` means never throttled: every occurrence dispatches, even a different
+   * occurrence of this same type for the same dedupeKey within what would otherwise be one
+   * throttle window. Use this for a type whose own semantics require every distinct event to be
+   * reported (e.g. account.auth_factor.changed, ASVS V2.5.5) - a shared per-user dedupeKey across
+   * genuinely different underlying changes (password vs. TOTP vs. WebAuthn) would otherwise let
+   * the dispatcher's normal same-subject throttling silently drop every occurrence after the
+   * first one within the window, which is correct behavior for a repeated-incident alert
+   * (e.g. auth.login.repeated_failures) but wrong for a type where each occurrence is its own,
+   * independently reportable event (bot review finding, PR #1304).
+   */
   throttleWindowMinutes?: number;
   /**
    * Whether a user may opt individual channels (email/in_app) in or out for this type via
