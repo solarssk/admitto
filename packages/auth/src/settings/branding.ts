@@ -19,6 +19,9 @@ export interface BrandingCustomFontFamily {
 
 export interface BrandingTheme {
   primary?: string;
+  /** The active pick for the public ticket page - falls back to primary when unset so a single
+   * global colour remains the default until someone overrides it. */
+  ticket_primary?: string;
   /** The active pick for the admin staff SPA - either a built-in name (e.g. "Manrope") or one of
    * custom_font_families[].name. */
   font_family_name?: string;
@@ -145,6 +148,8 @@ function sanitizeTheme(raw: unknown): BrandingTheme {
   if (!raw || typeof raw !== "object") return {};
   const o = raw as Record<string, unknown>;
   const primary = typeof o.primary === "string" && HEX_RE.test(o.primary) ? o.primary : undefined;
+  const ticket_primary =
+    typeof o.ticket_primary === "string" && HEX_RE.test(o.ticket_primary) ? o.ticket_primary : undefined;
   const font_family_name =
     typeof o.font_family_name === "string"
       ? sanitizeBrandingFontFamilyName(o.font_family_name)
@@ -154,7 +159,7 @@ function sanitizeTheme(raw: unknown): BrandingTheme {
       ? sanitizeBrandingFontFamilyName(o.ticket_font_family_name)
       : undefined;
   const custom_font_families = sanitizeCustomFontFamilies(o.custom_font_families) ?? migrateLegacyFontUrl(o);
-  return { primary, font_family_name, ticket_font_family_name, custom_font_families };
+  return { primary, ticket_primary, font_family_name, ticket_font_family_name, custom_font_families };
 }
 
 /** Load branding theme from SystemSettings (env > DB > default). */

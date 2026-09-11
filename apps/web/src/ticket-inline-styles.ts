@@ -104,7 +104,7 @@ body.ticket-page { margin: 0; box-sizing: border-box; width: 100%; overflow-x: c
     background: #fff;
     box-shadow: none;
     border: 1px solid #ccc;
-    border-top: 3px solid #066fd1;
+    border-top: 3px solid var(--primary, #066fd1);
     border-radius: 0;
     overflow: visible;
     page-break-inside: avoid;
@@ -157,10 +157,17 @@ body.ticket-page { margin: 0; box-sizing: border-box; width: 100%; overflow-x: c
 `;
 
 export function buildTicketPageStyles(theme?: BrandingThemeInput | null): string {
-  // The ticket page has its own font pick, falling back to the admin SPA's when unset - resolve it
-  // once here so everything below (resolveThemeVars, the self-hosting fallback) works with a plain
-  // font_family_name the same way it always has, rather than needing to know about two fields.
-  const ticketTheme = theme ? { ...theme, font_family_name: theme.ticket_font_family_name ?? theme.font_family_name } : theme;
+  // The ticket page has its own font and colour picks, each falling back to the admin SPA's own
+  // when unset - resolve both once here so everything below (resolveThemeVars, the self-hosting
+  // fallback) works with plain primary/font_family_name the same way it always has, rather than
+  // needing to know about the ticket-specific fields.
+  const ticketTheme = theme
+    ? {
+        ...theme,
+        primary: theme.ticket_primary ?? theme.primary,
+        font_family_name: theme.ticket_font_family_name ?? theme.font_family_name,
+      }
+    : theme;
   const vars = resolveThemeVars(ticketTheme);
   // resolveThemeVars only sets fontFaceCss for a *custom* uploaded family - the ticket page has no
   // bundler and so never gets the admin SPA's own @fontsource CSS imports (fonts.css) for a
