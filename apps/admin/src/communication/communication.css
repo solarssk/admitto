@@ -313,6 +313,14 @@
   visibility: visible;
 }
 
+/* .at-notice carries no margin of its own (packages/ui) - it normally relies on a flex/grid
+   parent's gap, but here it sits directly between the placeholder chips and the Subject field
+   below, neither of which is a gap container, so it would otherwise touch Subject with zero
+   breathing room. */
+.communication-wallet-notice {
+  margin-bottom: var(--space-3);
+}
+
 .communication-format-hint {
   margin: 0 0 var(--space-3);
   font-size: var(--fs-sm);
@@ -330,13 +338,6 @@
   margin-top: 0;
 }
 
-.communication-body-field label {
-  display: block;
-  margin-bottom: var(--space-2);
-  font-size: var(--fs-sm);
-  font-weight: 500;
-}
-
 .communication-textarea {
   width: 100%;
   min-height: 220px;
@@ -347,6 +348,207 @@
   font-size: var(--fs-sm);
   resize: vertical;
   /* Scrollbar look: shared .at-scroll (packages/ui) — applied via className, not here. */
+}
+
+/* CodeMirror wrapper for the MJML/HTML body field - matches .communication-textarea's chrome
+   (border/radius/font) so swapping the plain textarea for a real code editor (line numbers,
+   syntax highlighting) doesn't change the field's visual weight on the page. Colors target
+   CodeMirror's own generated classes rather than the `at-scroll`/`at-textarea` utility classes,
+   since those apply to whichever element they're set on directly and CodeMirror's actual
+   scrolling/content nodes (.cm-scroller, .cm-content) sit a level below the root .cm-editor this
+   className lands on - a plain className/utility-class match wouldn't reach them. */
+.communication-code-editor {
+  width: 100%;
+}
+
+.communication-code-editor .cm-editor {
+  /* Drag-to-resize, like the old <textarea>'s `resize: vertical` - height is set here (not via
+     CodeMirror's own `height` prop, which would fight a user drag with a fixed inline value) so
+     the browser's native resize handle fully owns it. `.cm-editor` is CodeMirror's own flex
+     container (.cm-scroller inside it is `flex: 1; overflow: auto`), so it fills/scrolls
+     correctly at whatever height the box ends up at, the same way it would at a CSS/prop-fixed
+     height - `resize` just changes *what sets* that height. `overflow: hidden` (required for
+     `resize` to apply at all) is safe here since actual content scrolling already happens one
+     level down, in .cm-scroller. */
+  height: 260px;
+  min-height: 220px;
+  max-height: 70vh;
+  resize: vertical;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace);
+  font-size: var(--fs-sm);
+  background: var(--surface-card);
+}
+
+.communication-code-editor .cm-editor.cm-focused {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: var(--ring);
+}
+
+.communication-code-editor .cm-gutters {
+  background: var(--surface-sunken);
+  border-right: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.communication-code-editor .cm-scroller {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.communication-code-editor .cm-scroller::-webkit-scrollbar {
+  width: 8px;
+}
+
+.communication-code-editor .cm-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.communication-code-editor .cm-scroller::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.communication-code-editor--disabled .cm-editor {
+  background: var(--at-gray-100);
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+/* Placeholder autocomplete popup (placeholderAutocomplete.ts). CodeMirror's own default packs
+   the label and detail onto one nowrap line with only a 0.5em gap and no color distinction (both
+   monospace, same size/weight) - reads as one run-on string once a description is more than a
+   couple of words. Reflowed into a clearer row here instead of trimming the description away.
+   Also adds a mouse hover highlight CodeMirror doesn't provide on its own: by default only the
+   keyboard-moved "selected" row gets a background (confirmed by reading @codemirror/autocomplete's
+   source - there is no hover listener on the list at all), so a mouse-only user got zero
+   indication of which row their cursor was over. */
+.communication-code-editor .cm-tooltip-autocomplete {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.communication-code-editor .cm-tooltip-autocomplete > ul {
+  /* !important on both: CodeMirror's own base theme sets min-width: 250px / max-width: min(700px,
+     95vw) on this exact selector shape, injected into <head> at runtime (after this stylesheet
+     already loaded) - equal specificity, later source order wins by default, so a plain override
+     here was silently losing outright (confirmed empirically: computed max-width was still
+     min(700px,95vw)'s value, not this rule's). Same specificity/!important fight documented
+     elsewhere in this app (see staff.css) for the same "later-injected library CSS" reason. */
+  min-width: 280px !important;
+  /* calc(100vw - 40px), not a plain vw percentage: CodeMirror positions this tooltip flush
+     against the viewport edge with no safety margin of its own (confirmed empirically at 375px
+     width - the popup's right edge landed at exactly 375px, touching the screen edge with zero
+     margin - real PO report on a narrow phone). Paired with the 16px inset `tooltipSpace` gives
+     CodeMirror in CommunicationPage.tsx (bodyExtensions) - the extra 8px here (40, not 32) leaves
+     room for .cm-tooltip-autocomplete's own 1px border on each side, which sits outside this
+     max-width and would otherwise push the bordered box 2px past that allowed space, which was
+     enough for CodeMirror's positioning to give up centering it and flush it against one edge
+     instead (confirmed empirically - fixing the 2px gap alone visibly restored a margin on both
+     sides). A fixed pixel gap holds regardless of where the cursor happens to sit, which a
+     percentage-of-viewport width doesn't guarantee. */
+  max-width: min(440px, calc(100vw - 40px)) !important;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.communication-code-editor .cm-tooltip-autocomplete > ul::-webkit-scrollbar {
+  width: 8px;
+}
+
+.communication-code-editor .cm-tooltip-autocomplete > ul::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.communication-code-editor .cm-tooltip-autocomplete > ul::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+}
+
+.communication-code-editor .cm-tooltip-autocomplete > ul > li {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px var(--space-2);
+  padding: 6px 10px;
+  white-space: normal;
+}
+
+/* --surface-hover (used for most other row-hover treatments in this app, e.g.
+   .communication-chip, SearchableSelect's own options) resolves to --at-gray-50 - visually almost
+   indistinguishable from this popup's white background specifically (real PO feedback: "I don't
+   see that it was selected"). --primary-tint instead gives a light-blue wash clearly visible
+   against white, and reads as the same color family as CodeMirror's own solid-blue "selected"
+   row below - hover as a lighter preview of that same state, not an unrelated new color.
+   :not([aria-selected]): the keyboard-"selected" row (CodeMirror's own default: the first option,
+   until Arrow-moved) is very often also the one the mouse happens to be resting over, and without
+   this exclusion this rule's light background wins there (later in source order) while the
+   [aria-selected] rule's `color: white` still applies underneath (a different rule, still
+   matching) - white text on a barely-tinted light background, close to unreadable (real PO
+   report). Excluding [aria-selected] here means a row is unambiguously in exactly one state:
+   solid-blue-with-white-text (selected) or light-tint-with-dark-text (hover), never a mix. */
+.communication-code-editor .cm-tooltip-autocomplete > ul > li:hover:not([aria-selected]) {
+  background: var(--primary-tint);
+}
+
+.communication-code-editor .cm-completionLabel {
+  flex: none;
+  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace);
+  color: var(--text-primary);
+  font-weight: var(--fw-medium);
+}
+
+.communication-code-editor .cm-completionDetail {
+  flex: 1 1 100%;
+  margin-left: 0;
+  font-family: var(--font-sans);
+  font-style: normal;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* The keyboard-"selected" row (CodeMirror's own default: the first option, until Arrow-moved)
+   gets a solid blue background with `color: white` set on the <li> itself - our label/detail
+   rules above set their own fixed colors unconditionally, which blocks that inheritance and
+   otherwise leaves the detail line in --text-muted gray on top of that blue (close to
+   unreadable). Falling back to `inherit` here for this state only restores CodeMirror's own
+   white-on-blue contrast without hardcoding a second color of our own. */
+.communication-code-editor .cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionLabel,
+.communication-code-editor .cm-tooltip-autocomplete > ul > li[aria-selected] .cm-completionDetail {
+  color: inherit;
+}
+
+/* Highlights {{placeholder}} tokens inside the MJML/HTML body editor
+   (placeholderHighlightViewPlugin.ts) - reuses the same informational-tint tokens
+   .communication-chip reuses, no new colors. Full opacity, no underline: chip-like and clearly
+   visible is the actual ask - two earlier attempts at making THIS SAME rule cope with selection
+   by weakening its own look (a translucent color-mix() fill, then a no-fill underline-only
+   treatment) each traded away that clarity for something PO feedback called too faint / an
+   unwanted decoration. The real fix lives in the plugin instead: it now detects, per match,
+   whether that placeholder's range overlaps the current selection and swaps in
+   .cm-admitto-placeholder--selected for exactly that span - so this rule only ever has to look
+   good on its own, unselected merits. */
+.communication-code-editor .cm-admitto-placeholder {
+  color: var(--status-info-fg);
+  background-color: var(--status-info-tint);
+  border-radius: var(--radius-sm);
+  padding: 0 2px;
+}
+
+/* CodeMirror draws its own text-selection highlight as a separate absolutely-positioned layer
+   with z-index: -2 (confirmed by inspecting the real DOM), painted *behind* this span's normal
+   in-flow content - the opaque fill above would otherwise fully hide that layer for exactly the
+   placeholder's own span, real PO report. Dropping only the background (color stays, so the
+   placeholder is still visibly "marked" while selected) lets that selection layer show through
+   at full, undiminished strength - identical to every other selected token in the document,
+   rather than a translucent blend of the two, which read as barely different from unselected. */
+.communication-code-editor .cm-admitto-placeholder--selected {
+  background-color: transparent;
 }
 
 .communication-errors {

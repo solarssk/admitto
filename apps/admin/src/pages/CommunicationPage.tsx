@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type Dispatch,
@@ -11,6 +12,14 @@ import {
   type SetStateAction,
 } from "react";
 import { useBlocker, useOutletContext, useParams, useSearchParams } from "react-router";
+import CodeMirror, { EditorView, keymap, tooltips, type ReactCodeMirrorRef } from "@uiw/react-codemirror";
+import { html } from "@codemirror/lang-html";
+import { placeholderHighlightViewPlugin } from "../communication/placeholderHighlightViewPlugin.js";
+import { createUnknownPlaceholderLinter } from "../communication/placeholderUnknownLint.js";
+import {
+  createPlaceholderAutocomplete,
+  placeholderBracesConfig,
+} from "../communication/placeholderAutocomplete.js";
 import {
   Badge,
   Button,
@@ -246,7 +255,7 @@ function findMjmlColumnFallbackIndex(value: string): number {
  * Being "within the `<mjml>` root" isn't enough on its own — a cursor can sit inside the root
  * but between components (e.g. right after `</mj-section>` and before `</mj-body>`, or between
  * two sibling `<mj-section>` blocks), which is just as much a loose-text-drop hazard as being
- * outside the root entirely (see the comment in `insertTokenIntoField`). `<mj-column>` is the
+ * outside the root entirely (see the comment in `insertTokenIntoBody`). `<mj-column>` is the
  * innermost element every real template's text content actually lives inside (see
  * DEFAULT_BODY_MJML in packages/mail-templates), and MJML doesn't nest one `<mj-column>` inside
  * another, so a simple sequential tag scan — matching the pragmatic style of
@@ -280,7 +289,7 @@ function isInsideMjText(value: string, start: number, end: number): boolean {
 /** True when `index` sits inside a quoted HTML attribute value, e.g. between the quotes of an
  * existing `<mj-image src="|">` an admin is editing. Splicing a full element there (instead of a
  * bare token) produces markup nested inside an attribute value, which fails to compile (bot
- * review) — `insertTokenIntoField` uses this to always fall back to the bare token in that one
+ * review) — `insertTokenIntoBody` uses this to always fall back to the bare token in that one
  * spot, regardless of placeholder type. Ported from `isInsideQuotedAttribute` in
  * `packages/mail-templates/src/htmlContext.ts` (kept in sync manually, same pattern as
  * `apps/admin/src/utils/safeBrandingLogoHref.ts`) — not imported directly, since that package
@@ -1086,7 +1095,7 @@ function TemplateEditorCard({
   editorSnapshotMissing: boolean;
   format: TemplateFormat;
   onRequestFormat: (next: TemplateFormat) => void;
-  bodyRef: RefObject<HTMLTextAreaElement | null>;
+  bodyRef: RefObject<ReactCodeMirrorRef | null>;
   body: string;
   setBody: Dispatch<SetStateAction<string>>;
   validationErrors: string[];
@@ -1096,6 +1105,85 @@ function TemplateEditorCard({
   saveButtonLabel: string;
   onSave: () => void;
 }>) {
+  // The lint's "known" set is a superset of the chip list's own allowedPlaceholders: chips hide
+  // header_image_url (HIDDEN_PLACEHOLDERS - no way to fill it in through this UI), but a template
+  // that already contains it is still genuinely valid server-side, so the linter must not flag it.
+  const knownPlaceholders = useMemo(
+    () => new Set([...allowedPlaceholders, ...HIDDEN_PLACEHOLDERS]),
+    [allowedPlaceholders],
+  );
+
+  // Autocomplete suggestions use the chip-visible list (not knownPlaceholders' HIDDEN_PLACEHOLDERS
+  // superset) - same reasoning as the chips themselves: header_image_url has no way to be filled
+  // in through this UI, so it shouldn't be actively suggested for insertion, just tolerated by the
+  // linter when a template already contains one. Same description text the chip tooltips show.
+  const placeholderCompletionItems = useMemo(
+    () =>
+      allowedPlaceholders.map((name) => ({
+        name,
+        description: placeholderDescription(name, imagePlaceholders.includes(name)),
+      })),
+    [allowedPlaceholders, imagePlaceholders],
+  );
+
+  // Recomputed only when `format`/`knownPlaceholders`/`placeholderCompletionItems` change, not on
+  // every keystroke (`body` re-renders this component on every keystroke too) - a fresh
+  // extensions array reference on every render would make CodeMirror reconfigure itself
+  // constantly instead of just applying the controlled `value`. Content edits alone still re-lint
+  // live - that's the linter extension's own job (debounced internally), not something this
+  // recompute needs to drive.
+  const bodyExtensions = useMemo(
+    () => [
+      html(),
+      // Visually marks {{placeholder}} tokens so they stand out from surrounding static markup -
+      // see placeholderHighlightViewPlugin.ts for the technique and edge cases it handles.
+      placeholderHighlightViewPlugin,
+      // Flags a {{typo}} placeholder inline, live, with the same "Unknown placeholder: X" wording
+      // the server returns on Save/Preview - see placeholderUnknownLint.ts.
+      createUnknownPlaceholderLinter(knownPlaceholders),
+      // Typing "{{" offers this template's own placeholders instead of only being reachable via
+      // a chip click above the editor - see placeholderAutocomplete.ts (also the reason
+      // basicSetup disables its own autocompletion below: lang-html's tag/attribute completions
+      // would otherwise compete with this one).
+      createPlaceholderAutocomplete(placeholderCompletionItems),
+      // Stops closeBrackets from auto-closing "{" - see placeholderBracesConfig's own doc comment
+      // for why that otherwise matters here specifically (a real live-preview 400, not just a
+      // cosmetic issue).
+      placeholderBracesConfig,
+      // CodeMirror's own default tooltip-positioning space is the full 0..clientWidth/clientHeight
+      // viewport with no margin of its own - confirmed empirically on a 375px-wide phone, where
+      // the autocomplete popup's right edge landed at exactly 375px (real PO report). Shrinking
+      // the space it's allowed to use by 16px on every side keeps it (and the lint hover tooltip,
+      // which shares the same positioning extension) off the screen edge on narrow viewports.
+      tooltips({
+        tooltipSpace: (view) => {
+          const doc = view.dom.ownerDocument.documentElement;
+          return { top: 16, bottom: doc.clientHeight - 16, left: 16, right: doc.clientWidth - 16 };
+        },
+      }),
+      EditorView.contentAttributes.of({
+        id: "communication-body",
+        "aria-label": format === "mjml" ? "MJML body" : "HTML body",
+      }),
+      // Mirrors the old textarea's Tab handling: plain Tab inserts two spaces (code-editor
+      // habit) instead of the browser's default focus-cycling; Shift+Tab is deliberately left
+      // unbound (rather than using CodeMirror's own indentWithTab, which traps both directions)
+      // so keyboard users can still Shift+Tab out of the editor. Doesn't conflict with the
+      // placeholder-completion popup above - its own keymap binds Enter/Escape/arrows, not Tab.
+      keymap.of([
+        {
+          key: "Tab",
+          preventDefault: true,
+          run: (view) => {
+            view.dispatch(view.state.replaceSelection("  "));
+            return true;
+          },
+        },
+      ]),
+    ],
+    [format, knownPlaceholders, placeholderCompletionItems],
+  );
+
   return (
     <Card
       title={activeTemplateName === "ticket" ? "Ticket template" : "Template"}
@@ -1145,30 +1233,43 @@ function TemplateEditorCard({
         className="communication-editor-fieldset-wrapper"
       >
         <fieldset className="communication-editor-fieldset" disabled={isEventArchived(event)}>
-          <div className="communication-body-field">
-            <label htmlFor="communication-body">{format === "mjml" ? "MJML body" : "HTML body"}</label>
-            <textarea
-              id="communication-body"
+          <div className="communication-body-field at-field">
+            {/* Fieldset `disabled` only cascades to native form controls (input/textarea/select) -
+                CodeMirror's contenteditable root isn't one, so the archived/missing-snapshot states
+                below are wired explicitly via `editable` instead of relying on that cascade. Native
+                label-click-to-focus doesn't reach a contenteditable div either, hence the explicit
+                onClick. */}
+            <label
+              className="at-label"
+              htmlFor="communication-body"
+              onClick={() => bodyRef.current?.view?.focus()}
+            >
+              {format === "mjml" ? "MJML body" : "HTML body"}
+            </label>
+            <CodeMirror
               ref={bodyRef}
-              className="communication-textarea at-scroll"
+              className={[
+                "communication-code-editor",
+                (isEventArchived(event) || editorSnapshotMissing) && "communication-code-editor--disabled",
+              ]
+                .filter(Boolean)
+                .join(" ")}
               value={body}
-              onChange={(e) => setBody(e.target.value)}
+              // Height comes from CSS (.communication-code-editor .cm-editor), not this prop -
+              // it's drag-resizable there (`resize: vertical`), which a prop-set fixed height
+              // would fight against.
+              theme="light"
+              // Turns off basicSetup's own autocompletion instance, which would source
+              // suggestions from @codemirror/lang-html's language data - built for standard HTML
+              // tags/attributes, not MJML's custom <mj-*> elements, so wrong/noisy here.
+              // createPlaceholderAutocomplete (in bodyExtensions above) brings autocompletion back
+              // as its own separate instance, scoped to only ever suggest {{placeholder}} tokens.
+              basicSetup={{ autocompletion: false }}
+              extensions={bodyExtensions}
+              editable={!isEventArchived(event) && !editorSnapshotMissing}
+              indentWithTab={false}
+              onChange={setBody}
               onFocus={() => setActiveField("body")}
-              onKeyDown={(e) => {
-                // Plain Tab indents (code-editor habit). Shift+Tab keeps the browser default so
-                // keyboard users can still move focus back out of the textarea.
-                if (e.key !== "Tab" || e.shiftKey) return;
-                e.preventDefault();
-                const el = e.currentTarget;
-                const start = el.selectionStart;
-                const end = el.selectionEnd;
-                const next = `${body.slice(0, start)}  ${body.slice(end)}`;
-                setBody(next);
-                requestAnimationFrame(() => {
-                  el.selectionStart = el.selectionEnd = start + 2;
-                });
-              }}
-              disabled={editorSnapshotMissing}
             />
           </div>
         </fieldset>
@@ -1641,7 +1742,7 @@ export function CommunicationPage() {
   const [senderName, setSenderName] = useState<string | null>(null);
   const [senderAddress, setSenderAddress] = useState<string | null>(null);
 
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const bodyRef = useRef<ReactCodeMirrorRef>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
   const templateSelectionSeqRef = useRef(0);
   const previewSeqRef = useRef(0);
@@ -2159,47 +2260,63 @@ export function CommunicationPage() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty]);
 
-  /** Insert a token at a field's cursor, then move the cursor to right after it.
+  /** Insert a token at the Subject input's cursor, then move the cursor to right after it.
    *
    * Reads and writes the actual DOM element's `value`/selection synchronously (not the React
    * state closure or a `requestAnimationFrame`-deferred selection restore) so that clicking a
    * placeholder chip multiple times in a row — even faster than React can re-render between
    * clicks — always appends after the previous insertion instead of silently overwriting it or
-   * splicing into the middle of it. Previously, reading `el.selectionStart` and the `body`/
-   * `subject` state at click time could both be stale if a prior click's state update and
-   * rAF-scheduled cursor move hadn't been committed yet, causing rapid repeated clicks to insert
-   * at the same stale position and produce broken, nested markup (e.g. a second `<mj-image>`
-   * landing inside the first one's `src="..."` attribute). Setting `el.value`/selection directly
-   * keeps every insertion's start position accurate regardless of click timing, since React skips
-   * touching the DOM value/selection of a controlled input when they already match its state.
-   */
-  /**
-   * Inserts `token` (the caller's preferred markup — possibly a full `<mj-image>`/`<img>`
-   * element) at the field's cursor, falling back to `bareToken` (always just `{{name}}`) instead
-   * when the preferred markup can't safely go where the cursor actually is — see
-   * `resolveMjmlInsertion` for the MJML-specific hazards this guards against.
+   * splicing into the middle of it. Previously, reading `el.selectionStart` and the `subject`
+   * state at click time could both be stale if a prior click's state update and rAF-scheduled
+   * cursor move hadn't been committed yet, causing rapid repeated clicks to insert at the same
+   * stale position. Setting `el.value`/selection directly keeps every insertion's start position
+   * accurate regardless of click timing, since React skips touching the DOM value/selection of a
+   * controlled input when they already match its state. Subjects are plain text, so no MJML-
+   * hazard redirect is needed here — see `insertTokenIntoBody` below for the body field's
+   * equivalent, which dispatches a CodeMirror transaction instead (equally synchronous/
+   * authoritative, so it shares the same rapid-click guarantee without needing this DOM dance).
    */
   function insertTokenIntoField(
-    el: HTMLInputElement | HTMLTextAreaElement | null,
+    el: HTMLInputElement | null,
     token: string,
-    bareToken: string,
     setValue: (value: string) => void,
   ) {
     if (!el) return;
-    let start = el.selectionStart ?? el.value.length;
-    let end = el.selectionEnd ?? el.value.length;
-    let insertion = token;
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
 
-    if (el === bodyRef.current && format === "mjml") {
-      ({ start, end, insertion } = resolveMjmlInsertion(el.value, start, end, token, bareToken));
-    }
-
-    const newValue = insertAtCursor(el.value, insertion, start, end);
-    const newCursorPos = start + insertion.length;
+    const newValue = insertAtCursor(el.value, token, start, end);
+    const newCursorPos = start + token.length;
     el.value = newValue;
     el.setSelectionRange(newCursorPos, newCursorPos);
     el.focus();
     setValue(newValue);
+  }
+
+  /**
+   * Inserts `token` (the caller's preferred markup — possibly a full `<mj-image>`/`<img>`
+   * element) at the CodeMirror body editor's cursor, falling back to `bareToken` (always just
+   * `{{name}}`) instead when the preferred markup can't safely go where the cursor actually is —
+   * see `resolveMjmlInsertion` for the MJML-specific hazards this guards against. Dispatching a
+   * transaction is itself synchronous and authoritative (CodeMirror has no stale-DOM/stale-
+   * closure gap the way reading a controlled `<textarea>`'s state used to), so repeated rapid
+   * clicks on the same chip each read the just-dispatched selection, not a stale one - the same
+   * regression `insertTokenIntoField` above guards against for Subject.
+   */
+  function insertTokenIntoBody(view: EditorView, token: string, bareToken: string) {
+    const value = view.state.doc.toString();
+    let { from: start, to: end } = view.state.selection.main;
+    let insertion = token;
+
+    if (format === "mjml") {
+      ({ start, end, insertion } = resolveMjmlInsertion(value, start, end, token, bareToken));
+    }
+
+    view.dispatch({
+      changes: { from: start, to: end, insert: insertion },
+      selection: { anchor: start + insertion.length },
+    });
+    view.focus();
   }
 
   const insertPlaceholder = (name: string) => {
@@ -2215,10 +2332,12 @@ export function CommunicationPage() {
         ? bodyPlaceholderInsert(name, format, imagePlaceholders)
         : bareToken;
     if (activeField === "subject") {
-      insertTokenIntoField(subjectRef.current, token, bareToken, setSubject);
+      insertTokenIntoField(subjectRef.current, token, setSubject);
       return;
     }
-    insertTokenIntoField(bodyRef.current, token, bareToken, setBody);
+    const view = bodyRef.current?.view;
+    if (!view) return;
+    insertTokenIntoBody(view, token, bareToken);
   };
 
   const runPreview = async (payload: {
