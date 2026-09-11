@@ -173,12 +173,35 @@ export async function confirmTotpEnrollment(
   return updated.count > 0;
 }
 
+/** How many recently-accepted TOTP time steps to remember (newest first), beyond the single
+ * `last_totp_time_step` watermark - see `recentTimeStepsAfterAccepting`'s own doc comment for why
+ * one scalar watermark alone isn't enough to catch every replay. Comfortably covers the verifier's
+ * own ±1-step tolerance window (at most 3 steps are ever reachable as "currently valid" at once)
+ * with a small margin. */
+const RECENT_TOTP_STEPS_TO_KEEP = 3;
+
+/** Newest-first, deduplicated, capped list of recently-accepted time steps after adding one more. */
+function recentTimeStepsAfterAccepting(existing: readonly number[], accepted: number): number[] {
+  return [accepted, ...existing.filter((step) => step !== accepted)].slice(0, RECENT_TOTP_STEPS_TO_KEEP);
+}
+
+export interface VerifyUserTotpResult {
+  ok: boolean;
+  /** True when this attempt failed specifically because it replayed an already-used,
+   * cryptographically valid code - a sequential replay caught by the `afterTimeStep`/
+   * `recentlyConsumedTimeSteps` check below, or a concurrent one that won the initial verify but
+   * lost the atomic watermark update to another request advancing it first. Always false when
+   * `ok` is true. Meaningless (always false) when there was no confirmed TOTP row to check
+   * against in the first place. */
+  replay: boolean;
+}
+
 /** Verify TOTP for login step (confirmed method only). */
-export async function verifyUserTotpCode(
+export async function verifyUserTotpCodeDetailed(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
   code: string,
-): Promise<boolean> {
+): Promise<VerifyUserTotpResult> {
   const row = await prisma.userMfaMethod.findFirst({
     where: {
       user_id: userId,
@@ -186,12 +209,13 @@ export async function verifyUserTotpCode(
       confirmed_at: { not: null },
     },
   });
-  if (!row?.secret_enc) return false;
+  if (!row?.secret_enc) return { ok: false, replay: false };
 
   const verified = verifyTotpCodeDetailed(row.secret_enc, code, {
     afterTimeStep: row.last_totp_time_step,
+    recentlyConsumedTimeSteps: row.recent_totp_time_steps,
   });
-  if (!verified.valid) return false;
+  if (!verified.valid) return { ok: false, replay: verified.replay };
 
   const updated = await prisma.userMfaMethod.updateMany({
     where: {
@@ -201,9 +225,34 @@ export async function verifyUserTotpCode(
     data: {
       last_used_at: new Date(),
       last_totp_time_step: verified.timeStep,
+      recent_totp_time_steps: recentTimeStepsAfterAccepting(row.recent_totp_time_steps, verified.timeStep),
     },
   });
-  return updated.count === 1;
+  if (updated.count === 1) return { ok: true, replay: false };
+  // The atomic update above matched no row, but that alone doesn't prove THIS code was reused: a
+  // concurrent request may have advanced the watermark past this time step with a different,
+  // legitimately newer code (not a replay of this one), or an MFA reset/removal may have deleted
+  // the row entirely between the read above and this update. Re-read to tell which happened -
+  // reuse is proven only when this request's own matched time step is either the CURRENT
+  // watermark or among the row's small recently-accepted history (not just the single latest -
+  // same reasoning as verifyTotpCodeDetailed's own recentlyConsumedTimeSteps check, needed here
+  // too since a concurrent winner's own final state can itself already be several steps ahead by
+  // the time this re-read runs); a missing row or a genuinely different/never-seen watermark is
+  // not evidence of reuse (bot review finding, PR #1316).
+  const current = await prisma.userMfaMethod.findUnique({ where: { id: row.id } });
+  const replay =
+    current?.last_totp_time_step === verified.timeStep ||
+    (current?.recent_totp_time_steps.includes(verified.timeStep) ?? false);
+  return { ok: false, replay };
+}
+
+/** Boolean-only convenience wrapper around {@link verifyUserTotpCodeDetailed}. */
+export async function verifyUserTotpCode(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+  code: string,
+): Promise<boolean> {
+  return (await verifyUserTotpCodeDetailed(prisma, userId, code)).ok;
 }
 
 /** Remove only the user's TOTP row(s) — leaves WebAuthn credentials and backup recovery codes

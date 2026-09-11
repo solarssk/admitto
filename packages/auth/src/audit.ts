@@ -128,6 +128,25 @@ export async function notifyOwnAuthFactorChanged(
   });
 }
 
+/**
+ * Emit `account.mfa.code_reused` and dispatch a real alert to the account owner when a
+ * cryptographically valid TOTP code is submitted again after it was already used to complete
+ * MFA - ASVS V2.8.5 (CWE-287). The code itself was genuine, so a replay specifically (as opposed
+ * to an ordinary wrong guess) is a sign it may have been seen or intercepted by someone else,
+ * distinct from `auth.mfa.repeated_failures`'s own brute-force-guessing streak (see
+ * `completeMfaInTransaction` in login.ts, the only real caller - a replayed code never counts
+ * toward that streak). Fixed title/body: unlike `notifyOwnAuthFactorChanged`, there is only one
+ * real trigger for this, not many call sites each needing their own wording.
+ */
+export async function notifyTotpCodeReused(db: Db, userId: string): Promise<void> {
+  await dispatchSecurityNotification(db, "account.mfa.code_reused", {
+    title: "A two-factor code was reused",
+    body: "Someone tried to sign in using one of your two-factor codes after it had already been used. If this wasn't you, your code may have been seen by someone else - check your account and consider setting up a new authenticator app.",
+    targetUserId: userId,
+    dedupeKey: userId,
+  });
+}
+
 type UserIdentitySnapshot = { email: string; display_name: string | null };
 
 /** Resolve staff email/display_name at audit write time (immutable snapshot columns). */
@@ -520,14 +539,17 @@ export async function logMfaSuccess(db: Db, ctx: MfaAuditContext, method: MfaMet
 }
 
 /** Why an MFA completion attempt failed, recorded in `auth.mfa.fail`'s `reason` field: a wrong
- * TOTP/recovery code, a recovery code that matched but lost a race to consume its row, a rejected
- * WebAuthn assertion, or a code/assertion that verified correctly but session promotion failed
- * afterward (e.g. the partial session expired or was concurrently revoked between verification and
- * promotion - the transaction rolls back in that last case, see `completeMfaInTransaction`/
+ * TOTP/recovery code, a cryptographically valid TOTP code that had already been used
+ * (`totp_replay` - ASVS V2.8.5, see `completeMfaInTransaction`'s own doc comment), a recovery
+ * code that matched but lost a race to consume its row, a rejected WebAuthn assertion, or a
+ * code/assertion that verified correctly but session promotion failed afterward (e.g. the partial
+ * session expired or was concurrently revoked between verification and promotion - the
+ * transaction rolls back in that last case, see `completeMfaInTransaction`/
  * `completeMfaWithWebauthnInTransaction`, so this is what makes the outcome reconstructable after
  * the fact instead of leaving a silent, unaudited failure). */
 export type MfaFailureReason =
   | "invalid_code"
+  | "totp_replay"
   | "recovery_consume_conflict"
   | "invalid_webauthn"
   | "session_not_promoted";
