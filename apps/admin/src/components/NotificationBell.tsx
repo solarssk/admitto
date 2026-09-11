@@ -50,11 +50,24 @@ export function NotificationBell() {
   const [listError, setListError] = useState<string | null>(null);
   const [markingAll, setMarkingAll] = useState(false);
 
-  // Every count-changing operation (poll tick, list load, mark-read, mark-all-read) claims the
-  // next generation the moment it starts, before its own network round-trip - whichever one
-  // started most recently always wins. Without this, a poll tick already in flight when the user
-  // marks something read could resolve afterward with its own now-stale count and silently
-  // overwrite the newer, user-confirmed value (bot review finding).
+  // Guards every queued operation below against running its state updates after unmount - a
+  // StaffShell remount (see unreadCountCache's own doc comment) can happen while an operation is
+  // still queued behind another, not yet even dispatched, so the usual AbortController-on-
+  // cleanup alone doesn't cover it (there's nothing to abort yet for something that hasn't
+  // started).
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // Every count-changing or count-reading operation (poll tick, list load, mark-read,
+  // mark-all-read) claims the next generation right before it actually queries the server -
+  // whichever one is currently running is always the freshest. Without this, an operation already
+  // in flight when a newer one starts could resolve afterward with its own now-stale count and
+  // silently overwrite the newer value (bot review finding).
   const countGenerationRef = useRef(0);
 
   // Every server-confirmed count goes through here so the cache never drifts from what's on
@@ -63,25 +76,26 @@ export function NotificationBell() {
   // held at the moment this operation started; a result from an operation superseded by a later
   // one is silently discarded instead of applied.
   function setConfirmedUnreadCount(value: number, gen: number) {
-    if (gen !== countGenerationRef.current) return;
+    if (gen !== countGenerationRef.current || !isMountedRef.current) return;
     setUnreadCount(value);
     unreadCountCache = { value, expiresAt: Date.now() + UNREAD_POLL_MS };
   }
 
-  // Chains mark-read/mark-all-read network calls one at a time, in click order - generation
-  // numbers alone aren't enough between two mutations, only between a mutation and the passive
-  // poll/list-load. Two mark-read calls can each return a *correct, freshly re-queried* count at
-  // the moment they individually complete server-side; if they ran concurrently, "started later"
-  // and "reflects the latest write" aren't the same request, and discarding by start order could
-  // throw away the one with the truly newer server state (bot review finding). Serializing removes
-  // the ambiguity: only one mutation is ever in flight, so whichever one is currently running is
-  // always the freshest by construction, and the poll/list-load vs. mutation race is still handled
-  // by countGenerationRef, claimed here at actual dispatch time (its turn in the queue), not at
-  // click time.
-  const mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
-  function queueMutation(run: () => Promise<void>): Promise<void> {
-    const next = mutationQueueRef.current.then(run, run);
-    mutationQueueRef.current = next;
+  // Serializes every operation that reads or writes the unread count onto one shared queue - the
+  // passive poll and list load, not just the mark-read/mark-all-read mutations. Generation numbers
+  // alone aren't enough: an operation that *starts* after another can still query the database
+  // before that other one's own write commits (a slow mark-read PATCH, a poll ticking in the
+  // meantime), returning a stale count while claiming a newer generation - the mutation's later,
+  // genuinely fresh response then gets discarded for looking "older" (bot review finding).
+  // Serializing removes the ambiguity entirely: only one of these operations is ever actually
+  // running (and therefore actually querying the database) at a time, so whichever is currently
+  // executing is always the freshest by construction - generation numbers then only need to label
+  // results for setConfirmedUnreadCount, not adjudicate between concurrent requests, since there
+  // never are any.
+  const countQueueRef = useRef<Promise<void>>(Promise.resolve());
+  function queueCountOperation(run: () => Promise<void>): Promise<void> {
+    const next = countQueueRef.current.then(run, run);
+    countQueueRef.current = next;
     return next;
   }
 
@@ -96,21 +110,24 @@ export function NotificationBell() {
     // silent/non-silent split - there's no error/degraded state on the bell to gate on a
     // first-fetch-only basis. A failed tick (poll or initial) just keeps the last-known value;
     // retried by the next interval tick.
-    async function loadCount(silent: boolean) {
-      const gen = ++countGenerationRef.current;
-      if (!silent && unreadCountCache && unreadCountCache.expiresAt > Date.now()) {
-        setUnreadCount(unreadCountCache.value);
-        return;
-      }
-      const ac = new AbortController();
-      currentAbort = ac;
-      try {
-        const data = await fetchAccountNotificationsUnreadCount(ac.signal);
-        if (ac.signal.aborted) return;
-        setConfirmedUnreadCount(data.unread_count, gen);
-      } catch {
-        // Keep the last-known value; retried by the next interval tick.
-      }
+    function loadCount(silent: boolean): Promise<void> {
+      return queueCountOperation(async () => {
+        if (!isMountedRef.current) return;
+        const gen = ++countGenerationRef.current;
+        if (!silent && unreadCountCache && unreadCountCache.expiresAt > Date.now()) {
+          setUnreadCount(unreadCountCache.value);
+          return;
+        }
+        const ac = new AbortController();
+        currentAbort = ac;
+        try {
+          const data = await fetchAccountNotificationsUnreadCount(ac.signal);
+          if (ac.signal.aborted) return;
+          setConfirmedUnreadCount(data.unread_count, gen);
+        } catch {
+          // Keep the last-known value; retried by the next interval tick.
+        }
+      });
     }
 
     void loadCount(false);
@@ -124,19 +141,22 @@ export function NotificationBell() {
   const loadList = useCallback(async (signal?: AbortSignal) => {
     setListLoading(true);
     setListError(null);
-    const gen = ++countGenerationRef.current;
-    try {
-      const data = await fetchAccountNotifications(signal);
-      if (signal?.aborted) return;
-      setNotifications(data.notifications);
-      setConfirmedUnreadCount(data.unread_count, gen);
-      setListLoaded(true);
-    } catch (err) {
-      if (signal?.aborted) return;
-      setListError(operatorApiErrorMessage(err, "Could not load notifications."));
-    } finally {
-      if (!signal?.aborted) setListLoading(false);
-    }
+    await queueCountOperation(async () => {
+      if (!isMountedRef.current || signal?.aborted) return;
+      const gen = ++countGenerationRef.current;
+      try {
+        const data = await fetchAccountNotifications(signal);
+        if (signal?.aborted || !isMountedRef.current) return;
+        setNotifications(data.notifications);
+        setConfirmedUnreadCount(data.unread_count, gen);
+        setListLoaded(true);
+      } catch (err) {
+        if (signal?.aborted || !isMountedRef.current) return;
+        setListError(operatorApiErrorMessage(err, "Could not load notifications."));
+      } finally {
+        if (!signal?.aborted && isMountedRef.current) setListLoading(false);
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -152,12 +172,14 @@ export function NotificationBell() {
       prev.map((n) => (n.id === notification.id ? { ...n, read_at: new Date().toISOString() } : n)),
     );
     setUnreadCount((c) => Math.max(0, c - 1));
-    await queueMutation(async () => {
+    await queueCountOperation(async () => {
+      if (!isMountedRef.current) return;
       const gen = ++countGenerationRef.current;
       try {
         const result = await markAccountNotificationRead(notification.id);
         setConfirmedUnreadCount(result.unread_count, gen);
       } catch (err) {
+        if (!isMountedRef.current) return;
         // Undo both optimistic updates - the row was never actually confirmed read server-side,
         // so leaving it displayed as read (and the badge decremented) would contradict the
         // failure toast until the next list reload or poll tick (bot review finding).
@@ -172,16 +194,20 @@ export function NotificationBell() {
 
   async function handleMarkAllRead() {
     setMarkingAll(true);
-    await queueMutation(async () => {
+    await queueCountOperation(async () => {
+      if (!isMountedRef.current) return;
       const gen = ++countGenerationRef.current;
       try {
         const result = await markAllAccountNotificationsRead();
+        if (!isMountedRef.current) return;
         setNotifications((prev) => prev.map((n) => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })));
         setConfirmedUnreadCount(result.unread_count, gen);
       } catch (err) {
-        addToast(operatorApiErrorMessage(err, "Failed to mark all as read."), "error");
+        if (isMountedRef.current) {
+          addToast(operatorApiErrorMessage(err, "Failed to mark all as read."), "error");
+        }
       } finally {
-        setMarkingAll(false);
+        if (isMountedRef.current) setMarkingAll(false);
       }
     });
   }

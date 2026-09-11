@@ -247,7 +247,7 @@ describe("NotificationBell dropdown", () => {
     ).toContain("notif-bell__row--unread");
   });
 
-  it("discards a poll response that resolves after a newer mark-read already updated the count", async () => {
+  it("queues mark-read behind a pending poll tick, so the poll can never apply a stale count after it", async () => {
     // No waitFor/findBy* below (they poll via real setTimeout internally, which never fires
     // under fake timers and just times the test out) - every async settle point uses a direct
     // act() instead, same convention as the "NotificationBell polling" describe block below.
@@ -263,8 +263,13 @@ describe("NotificationBell dropdown", () => {
     await act(async () => {});
     expect(screen.getByRole("button", { name: "Notifications, 2 unread" })).toBeTruthy();
 
+    // Open the dropdown before the poll tick, so the list is already loaded and the shared queue
+    // is empty when the poll starts.
+    fireEvent.click(screen.getByRole("button", { name: "Notifications, 2 unread" }));
+    await act(async () => {});
+
     // The next poll tick (30s later) starts a request that stays pending until resolvePoll runs -
-    // simulates it being in flight when a newer, user-initiated count change happens.
+    // simulates it still being in flight when the user marks something read.
     let resolvePoll: (value: { unread_count: number }) => void = () => {};
     fetchAccountNotificationsUnreadCount.mockImplementationOnce(
       () => new Promise((resolve) => { resolvePoll = resolve; }),
@@ -273,19 +278,62 @@ describe("NotificationBell dropdown", () => {
       await vi.advanceTimersByTimeAsync(30_000);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Notifications, 2 unread" }));
-    await act(async () => {});
+    // The poll's own request is now queued/in-flight - the click's own mark-read call is queued
+    // behind it and must not fire yet (the shared queue, not generation numbers, is what
+    // prevents a stale poll from ever outliving a newer mutation now).
     fireEvent.click(screen.getByRole("menuitem", { name: /5 consecutive failed sign-in attempts/ }));
     await act(async () => {});
+    expect(markAccountNotificationRead).not.toHaveBeenCalled();
 
-    expect(screen.getByRole("button", { name: "Notifications, 1 unread" })).toBeTruthy();
-
-    // The stale poll (started before the mark-read click) finally resolves with the old count -
-    // it must be discarded rather than stomping the newer, already-applied value.
     await act(async () => {
       resolvePoll({ unread_count: 2 });
     });
+
+    // Only now does the queued mark-read actually run, and its response is the final word.
+    await act(async () => {});
+    expect(markAccountNotificationRead).toHaveBeenCalledWith("notif-1");
     expect(screen.getByRole("button", { name: "Notifications, 1 unread" })).toBeTruthy();
+  });
+
+  it("queues a dropdown reopen behind a pending mutation instead of showing stale list data", async () => {
+    // Regression test for the Codex review finding: reopening the dropdown while a mark-read is
+    // still in flight used to start a second, unqueued list fetch that could apply a pre-mutation
+    // snapshot after the mutation's own optimistic update, silently un-reading the row again.
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications.mockResolvedValueOnce({
+      notifications: [makeNotification()],
+      unread_count: 1,
+    });
+    let resolveMarkRead: (value: { unread_count: number }) => void = () => {};
+    markAccountNotificationRead.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveMarkRead = resolve; }),
+    );
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /5 consecutive failed sign-in attempts/ }));
+    await act(async () => {});
+    expect(fetchAccountNotifications).toHaveBeenCalledTimes(1);
+
+    // Close, then reopen while the mark-read is still pending - queues a second list fetch.
+    openBell();
+    fetchAccountNotifications.mockResolvedValueOnce({
+      notifications: [makeNotification()],
+      unread_count: 1,
+    });
+    openBell();
+    await act(async () => {});
+
+    // The reopen's own fetch must stay queued behind the still-pending mutation.
+    expect(fetchAccountNotifications).toHaveBeenCalledTimes(1);
+
+    resolveMarkRead({ unread_count: 0 });
+    await act(async () => {});
+
+    await waitFor(() => expect(fetchAccountNotifications).toHaveBeenCalledTimes(2));
   });
 
   it("shows a toast when 'Mark all as read' fails", async () => {
