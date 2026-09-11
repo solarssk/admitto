@@ -285,7 +285,7 @@ function ColorSurfaceControl({
                 onClick={onSelectSameAsAdmin}
               >
                 <span className="color-surface-control__dot" style={{ background: sameAsAdminHex }} aria-hidden="true" />
-                Same as Admin panel
+                <span>Same as Admin panel</span>
               </button>
               <div className="color-surface-control__divider" />
             </>
