@@ -70,6 +70,7 @@ import { DEFAULT_TEMPLATE_ICON } from "../communication/templateIcons.js";
 import { DELIVERY_PAGE_SIZE_DEFAULT, DELIVERY_POLL_INTERVAL_MS, DeliveryLogTab } from "../communication/DeliveryLogTable.js";
 import "../communication/communication.css";
 import { isTemplateDirty } from "../communication/templateDirty.js";
+import { forcePreviewColorScheme } from "../communication/forcePreviewColorScheme.js";
 import { makeEmailPreviewInert } from "../communication/inertEmailPreview.js";
 
 type ActiveField = "subject" | "body";
@@ -1319,24 +1320,53 @@ function PreviewBody({
    * "Loading preview…" line. */
   loading?: boolean;
 }>) {
+  const [colorScheme, setColorScheme] = useState<"light" | "dark">("light");
   if (!previewHtml && !loading) {
     return <div className="communication-preview-empty">Preview will appear here.</div>;
   }
   const displayName = senderName || eventTitle;
   const sampleTime = browserClockTime(new Date());
+  const isDark = colorScheme === "dark";
   return (
-    <div className="communication-mail-client">
-      <div className="communication-mail-client__toolbar" aria-hidden={toolbarLabel ? undefined : true}>
+    <div className={isDark ? "communication-mail-client communication-mail-client--dark" : "communication-mail-client"}>
+      <div className="communication-mail-client__toolbar">
         {toolbarLabel ? (
           <span className="communication-mail-client__toolbar-label">{toolbarLabel}</span>
         ) : (
           <i className="ti ti-arrow-left" aria-hidden="true" />
         )}
-        <span className="communication-mail-client__toolbar-actions" aria-hidden="true">
-          <i className="ti ti-archive" aria-hidden="true" />
-          <i className="ti ti-trash" aria-hidden="true" />
-          <i className="ti ti-corner-up-left" aria-hidden="true" />
-          <i className="ti ti-dots" aria-hidden="true" />
+        <span className="communication-mail-client__toolbar-trailing">
+          {/* Real control, not decorative chrome like the icons beside it - forces which side of
+           * the email's own `@media (prefers-color-scheme: dark)` rules the sandboxed preview
+           * iframe renders, since there's no script inside it to react to the browser's actual
+           * setting (see the Safari-vs-Brave report this was built for: two browsers can disagree
+           * on `prefers-color-scheme` for the same page). */}
+          <div className="communication-mail-client__scheme-toggle" role="group" aria-label="Preview color scheme">
+            <button
+              type="button"
+              className="communication-mail-client__scheme-toggle-btn"
+              aria-label="Light"
+              aria-pressed={colorScheme === "light"}
+              onClick={() => setColorScheme("light")}
+            >
+              <i className="ti ti-sun" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="communication-mail-client__scheme-toggle-btn"
+              aria-label="Dark"
+              aria-pressed={colorScheme === "dark"}
+              onClick={() => setColorScheme("dark")}
+            >
+              <i className="ti ti-moon" aria-hidden="true" />
+            </button>
+          </div>
+          <span className="communication-mail-client__toolbar-actions" aria-hidden="true">
+            <i className="ti ti-archive" aria-hidden="true" />
+            <i className="ti ti-trash" aria-hidden="true" />
+            <i className="ti ti-corner-up-left" aria-hidden="true" />
+            <i className="ti ti-dots" aria-hidden="true" />
+          </span>
         </span>
       </div>
       <div className="communication-mail-client__subject">{previewSubject}</div>
@@ -1362,10 +1392,10 @@ function PreviewBody({
       </div>
       {previewHtml ? (
         <iframe
-          className="communication-preview-frame"
+          className={isDark ? "communication-preview-frame communication-preview-frame--dark-sim" : "communication-preview-frame"}
           title="Email preview"
           sandbox=""
-          srcDoc={makeEmailPreviewInert(sanitizeSamplePreviewHtml(previewHtml))}
+          srcDoc={forcePreviewColorScheme(makeEmailPreviewInert(sanitizeSamplePreviewHtml(previewHtml)), colorScheme)}
         />
       ) : (
         <div className="communication-preview-frame communication-preview-frame--loading">

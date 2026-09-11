@@ -373,13 +373,68 @@
   font-size: var(--fs-sm);
 }
 
-/* Gmail-style reading pane: fixed light colors regardless of app theme - an inbox always reads
- * as a light surface, dark mode here would look like a broken/unstyled email, not a themed one. */
+/* Gmail-style reading pane: fixed light colors regardless of *app* theme (switching the admin
+ * SPA's own light/dark setting never touches this) - an inbox always reads as a light surface by
+ * default. The `--dark` modifier below is a deliberate, explicit choice from the Light/Dark
+ * preview toggle, not a theme follow, and switches this same Gmail-style shell to its actual
+ * Gmail dark-mode palette so the toggle reads as "email client in dark mode", not a half-themed
+ * mismatch of a dark email floating inside a light inbox chrome. */
 .communication-mail-client {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: #fff;
   overflow: hidden;
+}
+
+.communication-mail-client--dark {
+  border-color: #3c4043;
+  background: #202124;
+}
+
+.communication-mail-client--dark .communication-mail-client__toolbar,
+.communication-mail-client--dark .communication-mail-client__from {
+  border-color: #3c4043;
+}
+
+.communication-mail-client--dark .communication-mail-client__toolbar {
+  background: #2d2e30;
+  color: #9aa0a6;
+}
+
+.communication-mail-client--dark .communication-mail-client__subject,
+.communication-mail-client--dark .communication-mail-client__from-name {
+  color: #e8eaed;
+}
+
+.communication-mail-client--dark .communication-mail-client__from-address,
+.communication-mail-client--dark .communication-mail-client__to,
+.communication-mail-client--dark .communication-mail-client__meta,
+.communication-mail-client--dark .communication-mail-client__folder,
+.communication-mail-client--dark .communication-mail-client__time {
+  color: #9aa0a6;
+}
+
+.communication-mail-client--dark .communication-preview-frame {
+  background: #202124;
+}
+
+/* The email itself almost never ships its own dark palette (this one only swaps a logo, see
+ * forcePreviewColorScheme.ts) - inverting the whole iframe is what actually turns its light
+ * backgrounds dark and dark text light without needing to know this template's specific colors.
+ * hue-rotate(180deg) alongside the invert corrects hue shifts a plain invert introduces (e.g. the
+ * brand red staying reddish instead of turning cyan). forcePreviewColorScheme.ts injects a
+ * counter-filter for images so photos/badges/QR/logo round-trip to their authored colors instead
+ * of rendering as color negatives.
+ *
+ * `invert(1)` is a full swap - #ffffff becomes literal #000000, which reads as "broken/OLED
+ * black" rather than an actual dark theme. Real dark-mode surfaces (Gmail #202124, Outlook's
+ * Fluent dark ~#201f1e, macOS/iOS system dark ~#1c1c1e-#1e1e1e) all land in the same neighborhood:
+ * a graphite gray around RGB 30-34, not pure black. `invert()` maps a channel value c to
+ * c + amount*(255-2c), so solving for white (c=255) landing near that neighborhood
+ * (255*(1-amount) ≈ 32) gives amount ≈ 0.87 - close enough to those three references that this
+ * doesn't need to hardcode any one of them, while still avoiding true black. */
+.communication-preview-frame--dark-sim {
+  filter: invert(0.87) hue-rotate(180deg);
 }
 
 .communication-mail-client__toolbar {
@@ -393,9 +448,58 @@
   font-size: 1.1rem;
 }
 
+/* Trailing group of the toolbar - keeps the outer toolbar at exactly two flex children (this
+   group + the leading label/arrow) so `justify-content: space-between` still splits left/right
+   instead of centering a third child between them. */
+.communication-mail-client__toolbar-trailing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
 .communication-mail-client__toolbar-actions {
   display: flex;
   gap: var(--space-4);
+}
+
+/* Light/Dark preview toggle - deliberately styled like the rest of the toolbar chrome (small,
+   muted) rather than a prominent app-theme control, since it's local to this one preview and has
+   nothing to do with the admin SPA's own light/dark theme setting. Left unthemed by the
+   `--dark` modifier below - a light gray pill reads fine against both the light and dark
+   toolbar background, same as a search chip in Gmail's own dark mode. */
+.communication-mail-client__scheme-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: #e8eaed;
+}
+
+.communication-mail-client__scheme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 7px;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: #5f6368;
+  cursor: pointer;
+}
+
+.communication-mail-client__scheme-toggle-btn i {
+  font-size: 1rem;
+}
+
+.communication-mail-client__scheme-toggle-btn[aria-pressed="true"] {
+  background: #fff;
+  color: #202124;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+
+.communication-mail-client__scheme-toggle-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
 }
 
 /* Real (non-decorative) content sharing the toolbar's left slot with the archive/trash/reply/
