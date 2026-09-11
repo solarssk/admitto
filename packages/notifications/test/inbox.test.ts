@@ -30,7 +30,7 @@ describe("describePersonalNotifications", () => {
     expect(db.notification.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { user_id: "user-1" },
-        orderBy: { created_at: "desc" },
+        orderBy: [{ created_at: "desc" }, { id: "desc" }],
         take: 30,
       }),
     );
@@ -72,7 +72,7 @@ describe("countUnreadNotifications", () => {
     expect(count).toBe(2);
     expect(db.notification.findMany).toHaveBeenCalledWith({
       where: { user_id: "user-1" },
-      orderBy: { created_at: "desc" },
+      orderBy: [{ created_at: "desc" }, { id: "desc" }],
       take: 30,
       select: { read_at: true },
     });
@@ -85,6 +85,20 @@ describe("countUnreadNotifications", () => {
     const count = await countUnreadNotifications(db as unknown as PrismaClient, "user-1");
 
     expect(count).toBe(30);
+  });
+
+  it("orders by the same tiebreak as describePersonalNotifications, so both queries agree on which rows fall inside the top-30 window when several share the exact same created_at", async () => {
+    const listDb = createStubDb();
+    listDb.notification.findMany.mockResolvedValue([]);
+    const countDb = createStubDb();
+    countDb.notification.findMany.mockResolvedValue([]);
+
+    await describePersonalNotifications(listDb as unknown as PrismaClient, "user-1");
+    await countUnreadNotifications(countDb as unknown as PrismaClient, "user-1");
+
+    const listOrderBy = listDb.notification.findMany.mock.calls[0]![0].orderBy;
+    const countOrderBy = countDb.notification.findMany.mock.calls[0]![0].orderBy;
+    expect(listOrderBy).toEqual(countOrderBy);
   });
 });
 

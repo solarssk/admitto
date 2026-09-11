@@ -195,5 +195,8 @@ export async function handlePostAccountNotificationsClearAll(
 ): Promise<Response> {
   const userId = c.get("auth").userId;
   const clearedCount = await clearAllNotifications(db, userId);
-  return c.json({ cleared_count: clearedCount, unread_count: 0 });
+  // Not hardcoded to 0: InAppChannel can insert a fresh unread notification between the delete
+  // above and this response, same reasoning as handlePostAccountNotificationsMarkAllRead.
+  const unreadCount = await countUnreadNotifications(db, userId);
+  return c.json({ cleared_count: clearedCount, unread_count: unreadCount });
 }

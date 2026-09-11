@@ -33,7 +33,11 @@ export async function describePersonalNotifications(
 ): Promise<PersonalNotification[]> {
   const rows = await db.notification.findMany({
     where: { user_id: userId },
-    orderBy: { created_at: "desc" },
+    // Secondary id tiebreak: created_at alone isn't unique (several notifications can dispatch
+    // in the same event/millisecond), so without it Postgres doesn't guarantee this query and
+    // countUnreadNotifications's own identically-shaped query agree on which rows fall inside
+    // the top-30 window at the boundary (bot review finding).
+    orderBy: [{ created_at: "desc" }, { id: "desc" }],
     take: PERSONAL_NOTIFICATIONS_LIMIT,
     select: {
       id: true,
@@ -66,7 +70,9 @@ export async function describePersonalNotifications(
 export async function countUnreadNotifications(db: Db, userId: string): Promise<number> {
   const rows = await db.notification.findMany({
     where: { user_id: userId },
-    orderBy: { created_at: "desc" },
+    // Same secondary id tiebreak as describePersonalNotifications - both queries must agree on
+    // which rows fall inside the top-30 window (bot review finding).
+    orderBy: [{ created_at: "desc" }, { id: "desc" }],
     take: PERSONAL_NOTIFICATIONS_LIMIT,
     select: { read_at: true },
   });

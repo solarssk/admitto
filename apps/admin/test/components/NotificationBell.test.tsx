@@ -661,6 +661,36 @@ describe("Clear all", () => {
     expect(screen.getByText("5 consecutive failed sign-in attempts")).toBeTruthy();
   });
 
+  it("closes only the confirm dialog on Escape, leaving the dropdown open behind it (bot review finding)", async () => {
+    // Regression test: the dropdown's own useDropdownMenu instance used to stay registered in
+    // openDropdownCount the whole time the dialog was open, so ConfirmDialog's Escape handler
+    // always stepped aside (thinking a nested combobox was open) and the dropdown's own
+    // bubble-phase Escape handler closed the panel instead, leaving the dialog orphaned.
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [makeNotification()],
+      unread_count: 1,
+    });
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    await screen.findByRole("dialog", { name: "Clear all notifications?" });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Clear all notifications?" })).toBeNull(),
+    );
+    expect(clearAllAccountNotifications).not.toHaveBeenCalled();
+    // The dropdown itself must still be open behind the now-closed dialog, not also closed by the
+    // same Escape press.
+    expect(screen.getByText("5 consecutive failed sign-in attempts")).toBeTruthy();
+  });
+
   it("permanently clears the list and shows the empty state after confirming", async () => {
     fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
     fetchAccountNotifications.mockResolvedValue({
@@ -682,6 +712,31 @@ describe("Clear all", () => {
     await screen.findByText("You’re all caught up.");
     expect(screen.queryByText("5 consecutive failed sign-in attempts")).toBeNull();
     expect(screen.getByRole("button", { name: "Notifications" })).toBeTruthy();
+  });
+
+  it("applies the server's re-queried unread_count after clearing, not a hardcoded 0 (bot review finding)", async () => {
+    // InAppChannel can insert a fresh unread notification between the server's delete and its
+    // response - the badge must reflect that real count, not assume clearing always means 0.
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [makeNotification()],
+      unread_count: 1,
+    });
+    clearAllAccountNotifications.mockResolvedValue({ cleared_count: 1, unread_count: 1 });
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    const dialog = await screen.findByRole("dialog", { name: "Clear all notifications?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear all notifications" }));
+
+    await waitFor(() => expect(clearAllAccountNotifications).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Notifications, 1 unread" })).toBeTruthy(),
+    );
   });
 
   it("shows a toast and keeps the list when clearing fails", async () => {

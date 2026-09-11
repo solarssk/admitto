@@ -39,9 +39,11 @@ export function resetNotificationBellCache(): void {
  */
 export function NotificationBell() {
   const { addToast } = useToast();
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
     gap: 8,
+    escapeSuspended: clearConfirmOpen,
   });
   const [unreadCount, setUnreadCount] = useState(
     unreadCountCache && unreadCountCache.expiresAt > Date.now() ? unreadCountCache.value : 0,
@@ -51,7 +53,6 @@ export function NotificationBell() {
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const [markingAll, setMarkingAll] = useState(false);
-  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
 
   // Guards every queued operation below against running its state updates after unmount - a
@@ -222,10 +223,10 @@ export function NotificationBell() {
       if (!isMountedRef.current) return;
       const gen = ++countGenerationRef.current;
       try {
-        await clearAllAccountNotifications();
+        const result = await clearAllAccountNotifications();
         if (!isMountedRef.current) return;
         setNotifications([]);
-        setConfirmedUnreadCount(0, gen);
+        setConfirmedUnreadCount(result.unread_count, gen);
         setClearConfirmOpen(false);
       } catch (err) {
         if (isMountedRef.current) {

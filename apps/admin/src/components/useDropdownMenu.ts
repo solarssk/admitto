@@ -32,6 +32,15 @@ export interface UseDropdownMenuOptions {
   matchTriggerWidth?: boolean;
   /** Floor for the panel width when `matchTriggerWidth` is set. */
   minWidth?: number;
+  /** While true, the panel stays rendered (`open` unchanged) but this hook stops counting
+   * itself in `openDropdownCount` and stops listening for its own Escape/arrow-key handling -
+   * the same "suspend the parent while a child modal is open" pattern AGENTS.md documents for
+   * `useModalFocusTrap`, applied here for a `ConfirmDialog` opened from inside a dropdown panel
+   * (e.g. NotificationBell's "Clear all"). Without this, the panel staying open the whole time
+   * the dialog is up means `isAnyDropdownMenuOpen()` stays true, so the dialog's own Escape
+   * handler always steps aside for what it thinks is a nested combobox - instead the dropdown's
+   * bubble-phase Escape handler fires, closing the panel out from under the still-open dialog. */
+  escapeSuspended?: boolean;
 }
 
 /** Open/close state, click-outside, Escape-to-close, first-`menuitem` focus, and `position:
@@ -54,7 +63,7 @@ export function useDropdownMenu<
   TTrigger extends HTMLElement = HTMLButtonElement,
   TPanel extends HTMLElement = HTMLDivElement,
 >(options: UseDropdownMenuOptions = {}) {
-  const { gap = 4, align = "start", matchTriggerWidth = false, minWidth } = options;
+  const { gap = 4, align = "start", matchTriggerWidth = false, minWidth, escapeSuspended = false } = options;
   const [open, setOpen] = useState(false);
   // Whether the panel is anchored above the trigger instead of below it - set once per open,
   // see the layout effect below. Consumers that need more than the `top`/`left` from
@@ -68,12 +77,12 @@ export function useDropdownMenu<
   const panelRef = useRef<TPanel>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || escapeSuspended) return;
     openDropdownCount += 1;
     return () => {
       openDropdownCount -= 1;
     };
-  }, [open]);
+  }, [open, escapeSuspended]);
 
   // `reason === "focus"`/`"scroll"` mean, respectively, that the user already moved focus
   // elsewhere on purpose (e.g. Tab to the next control) or that an ancestor scroll closed this
@@ -192,7 +201,7 @@ export function useDropdownMenu<
   }, [open, align, gap, matchTriggerWidth, minWidth]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || escapeSuspended) return;
     // Move focus into the popover: the first `menuitem` for a role="menu" popover (Export,
     // More actions), or the first focusable control for a non-menu popover of native form
     // controls (the Attendees list's Filters panel) — without this fallback, focus stayed on
@@ -228,7 +237,7 @@ export function useDropdownMenu<
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open]);
+  }, [open, escapeSuspended]);
 
   return { open, setOpen, close, openUpward, panelStyle, rootRef, triggerRef, panelRef };
 }
