@@ -104,7 +104,7 @@ body.ticket-page { margin: 0; box-sizing: border-box; width: 100%; overflow-x: c
     background: #fff;
     box-shadow: none;
     border: 1px solid #ccc;
-    border-top: 3px solid #066fd1;
+    border-top: 3px solid var(--primary, #066fd1);
     border-radius: 0;
     overflow: visible;
     page-break-inside: avoid;

@@ -79,6 +79,13 @@ describe("buildTicketPageStyles", () => {
     expect(css).toContain("--primary: #ea580c;");
   });
 
+  it("uses the resolved --primary variable for the printed card's top border, not a hardcoded colour", () => {
+    // The print block used to hardcode #066fd1 directly, so a configured ticket_primary (or even
+    // just a customised admin primary) silently reverted to Admitto blue when printed.
+    const css = buildTicketPageStyles({ primary: "#4f46e5", ticket_primary: "#ea580c" });
+    expect(css).toContain("border-top: 3px solid var(--primary, #066fd1);");
+  });
+
   it("falls back to self-hosted Inter when font_family_name matches neither a built-in nor a saved custom family", () => {
     // e.g. stale data left over from a deleted custom family - fonts.css imports Inter
     // unconditionally regardless of the active pick, so the admin SPA always has a real face to

@@ -246,6 +246,15 @@ function ColorSurfaceControl({
     HTMLDivElement
   >({ align: "start" });
 
+  // While inheriting ("Same as Admin panel" active), the palette below must show no swatch (and
+  // not the custom tile either) as active - colorKey/mode otherwise still hold whatever was last
+  // explicitly picked before the override was cleared, which would show two conflicting
+  // selections at once (the "Same as Admin panel" row AND a stale swatch, both marked active).
+  // "" never matches a real THEME_COLORS key, so this is enough to blank the palette without
+  // needing a third ColorMode value.
+  const paletteMode = sameAsAdmin ? "palette" : mode;
+  const paletteColorKey = sameAsAdmin ? "" : colorKey;
+
   return (
     <div className="color-surface-control" ref={rootRef}>
       <button
@@ -282,8 +291,8 @@ function ColorSurfaceControl({
             </>
           )}
           <ColorPaletteField
-            mode={mode}
-            colorKey={colorKey}
+            mode={paletteMode}
+            colorKey={paletteColorKey}
             customHex={customHex}
             disabled={disabled}
             onPick={onPick}
@@ -956,7 +965,7 @@ export function BrandingSettingsPanel() {
               Theme by surface
             </span>
             <p className="at-hint branding-scope-hint">
-              Give each surface its own colour and font, or leave it on Default to match Admin panel.
+              Give each surface its own colour and font, or keep Ticket page matching Admin panel.
             </p>
             <div className="theme-surface-rows">
               <div className="settings-row">

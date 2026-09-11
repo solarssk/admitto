@@ -3525,6 +3525,15 @@
     align-self: flex-start;
   }
 
+  /* Theme by surface's two paired controls (colour trigger + font select, each with its own
+     min-width) sit inside .settings-row__controls, one level below the column-stack above - that
+     alone still leaves them side by side and, on a narrow phone, wider than the card. Stack them
+     too instead of letting them overflow. */
+  .settings-row__controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   /* The generic column-stack above turns this row into 3 stacked blocks (icon+name,
      issuer URL, Edit+Switch) — the actions end up dangling on their own line below
      two lines of text. Un-nest the icon/name/issuer so they can share a line with
@@ -4185,7 +4194,7 @@
   flex-direction: column;
 }
 
-/* Font / Theme by surface — same rhythm as .theme-preview: tight label→hint, 10px to the
+/* Font / Theme by surface: same rhythm as .theme-preview - tight label→hint, 10px to the
    control, 20px between sections. Do not wrap these in .settings-card-stack (its uniform gap
    stacks with the section margins and blows out the spacing). */
 .theme-section {
