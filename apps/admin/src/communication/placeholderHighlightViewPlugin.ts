@@ -57,6 +57,10 @@ function overlapsRealSelection(view: EditorView, from: number, to: number): bool
  * is left completely undecorated. `decoration` is a function (not a fixed value) specifically so
  * each match can pick the selection-aware variant above. */
 const placeholderMatcher = new MatchDecorator({
+  // Built from .source/.flags of the trusted, static VALID_PLACEHOLDER_RE constant (never from
+  // user input) - only to get an independent RegExp *object*, not a dynamic pattern; see the
+  // module comment above for why a shared instance isn't safe to hand to MatchDecorator directly.
+  // eslint-disable-next-line security/detect-non-literal-regexp
   regexp: new RegExp(VALID_PLACEHOLDER_RE.source, VALID_PLACEHOLDER_RE.flags),
   decoration: (match, view, from) =>
     overlapsRealSelection(view, from, from + match[0].length)

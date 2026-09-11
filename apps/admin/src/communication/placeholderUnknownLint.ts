@@ -19,7 +19,9 @@ export function createUnknownPlaceholderLinter(knownPlaceholders: ReadonlySet<st
       // A fresh RegExp per lint pass, not VALID_PLACEHOLDER_RE directly - MatchDecorator-style
       // regex.exec loops mutate `.lastIndex` on whatever object they're given, and that object is
       // a shared module-level singleton other code also reads independently (see the same
-      // reasoning in placeholderHighlightViewPlugin.ts).
+      // reasoning in placeholderHighlightViewPlugin.ts). Built from .source/.flags of that
+      // trusted, static constant (never from user input), only to get an independent object.
+      // eslint-disable-next-line security/detect-non-literal-regexp
       const re = new RegExp(VALID_PLACEHOLDER_RE.source, VALID_PLACEHOLDER_RE.flags);
       let match: RegExpExecArray | null;
       while ((match = re.exec(text))) {
