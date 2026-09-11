@@ -343,7 +343,7 @@ export function NotificationBell() {
         open={clearConfirmOpen}
         icon={<i className="ti ti-trash" />}
         title="Clear all notifications?"
-        message="This permanently deletes your notification history. It does not affect your organisation's security audit log, and future alerts will still arrive normally."
+        message="This permanently deletes your notification history. Your organisation's security audit log is not affected, and future alerts will still arrive normally."
         confirmLabel="Clear all notifications"
         confirmVariant="danger"
         loading={clearing}
