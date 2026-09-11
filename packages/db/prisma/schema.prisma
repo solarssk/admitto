@@ -931,6 +931,12 @@ model UserMfaMethod {
   backup_codes_acknowledged_at DateTime? @default(now())
   /// Last accepted TOTP time step (RFC 6238) — replay protection via otplib `afterTimeStep`.
   last_totp_time_step          Int?
+  /// A few most-recently-accepted TOTP time steps, newest first (small, bounded — see
+  /// RECENT_TOTP_STEPS_TO_KEEP). last_totp_time_step alone only proves whether a code equals the
+  /// SINGLE latest accepted step; once a later step is accepted, an earlier-but-still-recent step
+  /// (still inside the verifier's own tolerance window) can be replayed without matching that
+  /// single watermark, so replay detection also checks membership in this small history.
+  recent_totp_time_steps       Int[]     @default([])
   /// WebAuthn credential ID (base64url), one row per registered passkey/security key.
   webauthn_credential_id       String?   @unique
   /// WebAuthn credential public key (COSE), raw bytes as returned by the authenticator.

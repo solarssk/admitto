@@ -51,6 +51,10 @@ function normalizeToken(code: string): string {
 export interface VerifyTotpCodeOptions {
   /** Reject matches at or before this time step (otplib replay protection). */
   afterTimeStep?: number | null;
+  /** Other recently-accepted time steps, besides afterTimeStep itself, to also check a rejected
+   * code's matched step against when classifying replay - see verifyTotpCodeDetailed's own doc
+   * comment for why afterTimeStep alone isn't enough once a later step has been accepted. */
+  recentlyConsumedTimeSteps?: readonly number[];
 }
 
 /** Verify a 6-digit TOTP code; returns matched time step when valid. */
@@ -85,16 +89,22 @@ export function verifyTotpCodeDetailed(
     // step near "now", not only the exact step afterTimeStep represents - e.g. once step t is
     // accepted, a never-used code from t-1 fails the constrained check (t-1 is not after t) but
     // still passes this unconstrained one, since t-1 is within tolerance of "now" too. That code
-    // was never actually used, so it must not be reported as a replay. Only a matched time step
-    // that's IDENTICAL to afterTimeStep (the specific step already recorded as consumed) proves
-    // this exact code was reused, not merely some other old-but-unused code in the window (bot
-    // review finding, PR #1316).
+    // was never actually used, so it must not be reported as a replay - comparing the matched step
+    // against afterTimeStep (the single latest-accepted step) rules that false positive out.
+    //
+    // But afterTimeStep alone isn't enough either: accept t-1, then accept t (afterTimeStep is now
+    // t), then replay t-1's own code - it's a genuine reuse, but t-1 no longer equals the *latest*
+    // watermark, so an exact-match-against-afterTimeStep-only check would miss it (bot review
+    // finding, PR #1316). recentlyConsumedTimeSteps carries the caller's own short history of
+    // recently-accepted steps (not just the single latest) so a match against ANY of them, not
+    // only the current watermark, is still correctly classified as reuse.
     const unconstrained = totp.verifySync(baseOptions);
     const replay =
       options.afterTimeStep != null &&
       unconstrained.valid &&
       "timeStep" in unconstrained &&
-      unconstrained.timeStep === options.afterTimeStep;
+      (unconstrained.timeStep === options.afterTimeStep ||
+        (options.recentlyConsumedTimeSteps?.includes(unconstrained.timeStep) ?? false));
     return { valid: false, replay };
   } catch {
     return { valid: false, replay: false };
