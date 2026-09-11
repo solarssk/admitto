@@ -1,11 +1,13 @@
-import type { InputHTMLAttributes } from "react";
+import type { InputHTMLAttributes, ReactNode } from "react";
 
 export interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type"> {
-  label?: string;
+  /** Plain text in most callers, but accepts any node so a caller can prefix it with its own
+   * icon (e.g. a MultiSelect option row) instead of `Checkbox` needing an icon prop of its own. */
+  label?: ReactNode;
 }
 
 export function Checkbox({ label, id, className, ...rest }: Readonly<CheckboxProps>) {
-  const autoId = id || (label ? `cb-${label.replace(/\s+/g, "-").toLowerCase()}` : undefined);
+  const autoId = id || (typeof label === "string" ? `cb-${label.replace(/\s+/g, "-").toLowerCase()}` : undefined);
   return (
     <label className="at-check">
       <input id={autoId} type="checkbox" className={["at-check__input", className].filter(Boolean).join(" ")} {...rest} />

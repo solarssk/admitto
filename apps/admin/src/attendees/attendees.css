@@ -134,7 +134,7 @@
      from the trigger's getBoundingClientRect(), align: "end") - not CSS. See
      searchable-select.css's own panel rule for the full story. */
   z-index: var(--z-dropdown);
-  width: 260px;
+  width: 300px;
   background: var(--surface-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -147,6 +147,45 @@
 
 .attendees-toolbar__filter .at-select {
   width: 100%;
+}
+
+/* Boolean custom-field filter's Any/Yes/No toggle - stretched to the row's full width with its
+   3 options split evenly, unlike Segmented's default shrink-to-content sizing (used elsewhere
+   for compact header actions like the Mail transport source toggle). The higher specificity
+   here (two classes) beats .seg-control/.seg-btn's own rule regardless of CSS load order. */
+.attendees-toolbar__filter .seg-control {
+  display: flex;
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.attendees-toolbar__filter .seg-btn {
+  flex: 1;
+  text-align: center;
+}
+
+/* Labeled break between the four fixed filters and the event's own custom-field filter rows -
+   the label sits inline with a rule filling the rest of the row (design mockup), not a border
+   sitting above a block of text: a bare `<p>`'s UA-stylesheet margin-bottom stacking on top of
+   the panel's own flex `gap` was one bug already (PO report); a border-top read as a divider
+   above the *next* row instead of one belonging to this label. */
+.attendees-filters-menu__section-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--primary-active);
+}
+
+.attendees-filters-menu__section-label::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
 }
 
 /* Mobile-only "Sort by" select + direction toggle (AttendeesTable has no column headers to

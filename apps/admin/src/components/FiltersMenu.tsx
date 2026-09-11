@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, type ButtonSize } from "@admitto/ui";
 import { useDropdownMenu } from "./useDropdownMenu.js";
+import { InlineAccordionContext } from "./InlineAccordionContext.js";
 
 interface FiltersMenuProps {
   readonly activeCount: number;
@@ -24,6 +25,22 @@ export function FiltersMenu({ activeCount, children, className, size }: Readonly
     HTMLButtonElement,
     HTMLFieldSetElement
   >({ align: "end" });
+  // Which panelMode="inline" field (SearchableSelect/MultiSelect, keyed by its own `id`) is
+  // currently expanded, shared via context so opening one collapses whichever other was open
+  // instead of stacking several expanded lists at once (PO report). Reset whenever this whole
+  // panel closes, rather than left to persist across a close/reopen cycle.
+  const [openInlineId, setOpenInlineId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open) setOpenInlineId(null);
+  }, [open]);
+  // Memoized so this Provider's own value only changes when the accordion state actually does -
+  // a fresh object literal every render would otherwise re-render every child that reads this
+  // context on every FiltersMenu render, not just when a row actually opens/closes (SonarCloud
+  // S6481).
+  const inlineAccordionValue = useMemo(
+    () => ({ openId: openInlineId, setOpenId: setOpenInlineId }),
+    [openInlineId],
+  );
 
   return (
     <div className={className} ref={rootRef}>
@@ -48,9 +65,11 @@ export function FiltersMenu({ activeCount, children, className, size }: Readonly
         // The trigger itself carries no aria-haspopup at all (not even "true", which the ARIA
         // spec treats as equivalent to "menu") - this is a disclosure button revealing a form,
         // not a menu, and aria-expanded alone is the correct pattern for that (CodeRabbit review).
-        <fieldset className={`${className}__panel`} style={panelStyle} ref={panelRef}>
+        <fieldset className={`${className}__panel at-scroll`} style={panelStyle} ref={panelRef}>
           <legend className="sr-only">Filters</legend>
-          {children}
+          <InlineAccordionContext.Provider value={inlineAccordionValue}>
+            {children}
+          </InlineAccordionContext.Provider>
         </fieldset>
       )}
     </div>

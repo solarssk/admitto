@@ -42,6 +42,19 @@
   box-shadow: 0 0 0 var(--ring-width) var(--status-error-tint);
 }
 
+/* "inline" panelMode only, while its own panel is expanded - the same highlight
+   :focus-visible already gives the trigger, so the closed-looking box above an expanded
+   checkbox list still reads as one connected control instead of two unrelated fragments (PO
+   report). The chevron rotates to match, same disclosure-triangle convention as <details>. */
+.searchable-select__trigger--open {
+  border-color: var(--border-focus);
+  box-shadow: var(--ring);
+}
+
+.searchable-select__trigger--open .searchable-select__chevron {
+  transform: rotate(180deg);
+}
+
 .searchable-select__label {
   min-width: 0;
   overflow: hidden;
@@ -86,6 +99,31 @@
    when this applies (not enough room below the trigger). */
 .searchable-select__panel--up {
   flex-direction: column-reverse;
+}
+
+/* "inline" panelMode (SearchableSelect/MultiSelect): renders in normal document flow right below
+   the trigger instead of `useDropdownMenu`'s `position: fixed` overlay - for a caller (e.g. the
+   Attendees list's FiltersMenu accordion) that stacks several of these inside one already-
+   floating panel, where each picker's own floating overlay would cover the rows below it rather
+   than making room for its content. Keeps its own border/radius (no shadow, no fixed
+   positioning) so the expanded body still reads as one bordered, contained accordion item
+   matching the design mockup - a completely bare, borderless list here read as two disconnected
+   fragments (the still-boxed closed trigger, then plain unboxed rows floating in whitespace
+   below it) rather than one expanding control (PO report). */
+.searchable-select__panel--inline {
+  position: static;
+  margin-top: var(--space-2);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+
+/* Shaded header bar for the "Select all / Clear" row, same idea as the mockup's own sunken
+   `.f-options-actions` strip - a plain border-bottom alone (this row's own default styling)
+   didn't read as a header over the checkbox rows below it. */
+.searchable-select__panel--inline .multi-select__actions {
+  background: var(--surface-sunken);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
 .searchable-select__search {

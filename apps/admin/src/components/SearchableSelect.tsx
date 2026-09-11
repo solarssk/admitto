@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useDropdownMenu } from "./useDropdownMenu.js";
+import { floatingOnly, usePanelOpenState } from "./InlineAccordionContext.js";
 import { SearchableSelectSearchBox } from "./SearchableSelectSearchBox.js";
+import { searchableSelectPanelClassName, searchableSelectTriggerClassName } from "./searchable-select-class-names.js";
 import "./searchable-select.css";
 
 export interface SearchableSelectOption {
@@ -9,6 +11,69 @@ export interface SearchableSelectOption {
   /** Tabler icon name (without the `ti-` prefix), shown before the label in both the trigger
    * and each option row - e.g. "calendar-event" for an event, "building" for an organization. */
   icon?: string;
+}
+
+/** The closed trigger's own content - the selected option's icon+label, or the placeholder when
+ * nothing is selected yet. */
+function triggerContent(selected: SearchableSelectOption | undefined, placeholder: string): ReactNode {
+  if (!selected) return <span className="searchable-select__placeholder">{placeholder}</span>;
+  return (
+    <>
+      {selected.icon && <i className={`ti ti-${selected.icon}`} aria-hidden="true" />}
+      <span className="searchable-select__label">{selected.label}</span>
+    </>
+  );
+}
+
+interface SearchableSelectPanelProps {
+  isInline: boolean;
+  dropdown: Pick<
+    ReturnType<typeof useDropdownMenu<HTMLButtonElement, HTMLDivElement>>,
+    "openUpward" | "panelRef" | "panelStyle"
+  >;
+  children: ReactNode;
+}
+
+/** The open panel's own wrapper `<div>` - identical className/ref/style resolution in
+ * `SearchableSelect` and `MultiSelect`, factored out so the two components don't each carry a
+ * literal copy of the same 3 lines (SonarCloud duplication). */
+export function SearchableSelectPanel({
+  isInline,
+  dropdown,
+  children,
+}: Readonly<SearchableSelectPanelProps>) {
+  return (
+    <div
+      className={searchableSelectPanelClassName(isInline, dropdown.openUpward)}
+      ref={floatingOnly(isInline, dropdown.panelRef)}
+      style={floatingOnly(isInline, dropdown.panelStyle)}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** The open panel's option list - the empty-state row, or one button per result. */
+function optionListBody(
+  results: readonly SearchableSelectOption[],
+  emptyLabel: string,
+  onSelect: (option: SearchableSelectOption) => void,
+): ReactNode {
+  if (results.length === 0) return <li className="searchable-select__empty">{emptyLabel}</li>;
+  return results.map((o) => (
+    <li key={o.id}>
+      <button
+        type="button"
+        className="searchable-select__option"
+        aria-label={o.label}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => onSelect(o)}
+      >
+        {o.icon && <i className={`ti ti-${o.icon}`} aria-hidden="true" />}
+        <span className="searchable-select__name">{o.label}</span>
+      </button>
+    </li>
+  ));
 }
 
 /** Above this option count, a search box earns its keep; at or below it, a short list (e.g. the
@@ -52,6 +117,14 @@ interface SearchableSelectProps {
    * no visible caption at all). Either way the button's own aria-label (below) carries the
    * accessible name. */
   showLabel?: boolean;
+  /** Default "floating": `useDropdownMenu`'s `position: fixed` overlay, escaping any scrolling
+   * ancestor - the right choice standalone, or as the *only* open picker in a panel. "inline":
+   * renders the option list in normal document flow directly under the trigger instead, with no
+   * border/shadow of its own - for a caller that stacks several of these inside one already-
+   * floating panel (a FiltersMenu accordion), where each picker's own floating overlay would
+   * cover the rows below it rather than making room for its content (PO report, design mockup:
+   * see AttendeesTable.tsx's FilterToolbar). */
+  panelMode?: "floating" | "inline";
   onChange: (id: string) => void;
 }
 
@@ -77,12 +150,16 @@ export function SearchableSelect({
   title,
   showLabel = true,
   minWidth = 260,
+  panelMode = "floating",
   onChange,
 }: Readonly<SearchableSelectProps>) {
-  const { open, setOpen, close, openUpward, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<
-    HTMLButtonElement,
-    HTMLDivElement
-  >({ align: "start", matchTriggerWidth: true, minWidth });
+  const dropdown = useDropdownMenu<HTMLButtonElement, HTMLDivElement>({
+    align: "start",
+    matchTriggerWidth: true,
+    minWidth,
+  });
+  const { isInline, open, setOpen } = usePanelOpenState(dropdown, id, panelMode);
+  const close = isInline ? () => setOpen(false) : dropdown.close;
   const [query, setQuery] = useState("");
   const showSearch = options.length > SEARCH_THRESHOLD;
 
@@ -109,7 +186,7 @@ export function SearchableSelect({
   const triggerDescribedBy = [describedBy, hintId].filter(Boolean).join(" ") || undefined;
 
   return (
-    <div className="at-field searchable-select" ref={rootRef}>
+    <div className="at-field searchable-select" ref={dropdown.rootRef}>
       {/* Visible caption - the button's own aria-label above carries the accessible name (a
        * <label for> a button would lose to the button's own subtree content per the accname
        * spec), but sighted users still need to see what this field picks (PO report: "None"
@@ -123,8 +200,8 @@ export function SearchableSelect({
       <button
         type="button"
         id={id}
-        ref={triggerRef}
-        className={`searchable-select__trigger${invalid ? " searchable-select__trigger--invalid" : ""}`}
+        ref={floatingOnly(isInline, dropdown.triggerRef)}
+        className={searchableSelectTriggerClassName(invalid, isInline, open)}
         disabled={disabled}
         title={title}
         aria-expanded={open}
@@ -132,14 +209,7 @@ export function SearchableSelect({
         aria-label={triggerLabel}
         onClick={() => setOpen((current) => !current)}
       >
-        {selected ? (
-          <>
-            {selected.icon && <i className={`ti ti-${selected.icon}`} aria-hidden="true" />}
-            <span className="searchable-select__label">{selected.label}</span>
-          </>
-        ) : (
-          <span className="searchable-select__placeholder">{placeholder}</span>
-        )}
+        {triggerContent(selected, placeholder)}
         <i className="ti ti-chevron-down searchable-select__chevron" aria-hidden="true" />
       </button>
       {hint && (
@@ -148,11 +218,7 @@ export function SearchableSelect({
         </span>
       )}
       {open && (
-        <div
-          className={`searchable-select__panel${openUpward ? " searchable-select__panel--up" : ""}`}
-          ref={panelRef}
-          style={panelStyle}
-        >
+        <SearchableSelectPanel isInline={isInline} dropdown={dropdown}>
           {showSearch && (
             <SearchableSelectSearchBox
               id={id}
@@ -164,27 +230,10 @@ export function SearchableSelect({
               }}
             />
           )}
-          <ul className="searchable-select__list" aria-label={label}>
-            {results.length === 0 ? (
-              <li className="searchable-select__empty">{emptyLabel}</li>
-            ) : (
-              results.map((o) => (
-                <li key={o.id}>
-                  <button
-                    type="button"
-                    className="searchable-select__option"
-                    aria-label={o.label}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleSelect(o)}
-                  >
-                    {o.icon && <i className={`ti ti-${o.icon}`} aria-hidden="true" />}
-                    <span className="searchable-select__name">{o.label}</span>
-                  </button>
-                </li>
-              ))
-            )}
+          <ul className="searchable-select__list at-scroll" aria-label={label}>
+            {optionListBody(results, emptyLabel, handleSelect)}
           </ul>
-        </div>
+        </SearchableSelectPanel>
       )}
     </div>
   );
