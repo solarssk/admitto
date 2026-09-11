@@ -845,8 +845,8 @@ model Notification {
   // created_at ASC LIMIT batchSize, unscoped by user/organization - none of the indexes above
   // lead with created_at, so without this every batch iteration re-sorted the whole remaining
   // table instead of a bounded index scan (bot review finding). SecurityAuditLog's own
-  // purgeSecurityAuditLog has the identical shape and gap, deliberately left alone here - out of
-  // scope for this PR, a separate follow-up.
+  // purgeSecurityAuditLog had the identical shape and gap, fixed the same way - see its own
+  // @@index([created_at]) below.
   @@index([created_at])
 }
 
