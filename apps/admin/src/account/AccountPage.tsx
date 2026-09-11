@@ -41,6 +41,7 @@ import { roleLabel } from "../auth/role-labels.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { GeoCell } from "../components/GeoCell.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
+import { PaginationFooter } from "../components/PaginationFooter.js";
 import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
@@ -49,6 +50,7 @@ import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import "../settings/notifications-panel.css";
 import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { ActorOrViewerLocalTimeLine } from "../components/ActorOrViewerLocalTimeLine.js";
 import { formatRelativeTime } from "../utils/event-dates.js";
 import {
@@ -57,11 +59,14 @@ import {
   setPreferredTimeFormat as setPreferredTimeFormatStore,
 } from "../utils/locale-store.js";
 import { parseUserAgent } from "../utils/parseUserAgent.js";
+import type { AccountTab } from "./accountTabs.js";
 import { TotpDigitInput } from "./TotpDigitInput.js";
 import { TotpQrCode } from "./TotpQrCode.js";
 import { WebauthnStepUpButton } from "./WebauthnStepUpButton.js";
 
 const PASSWORD_HINT = "Changing your password ends your other active sessions. Your current session stays signed in.";
+const SESSIONS_PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
+const SESSIONS_DEFAULT_PAGE_SIZE = 10;
 const TIME_FORMAT_OPTIONS = [
   { id: "system-default", label: "System default (browser)" },
   { id: "24h", label: "24-hour time (13:30)" },
@@ -418,7 +423,24 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
   }
 }
 
-export function AccountPage() {
+/** Every panel stays mounted - AccountPage already loads all of its data up front on mount
+ * (loadAccount/loadSessions/loadNotificationPreferences run together, regardless of which tab is
+ * active), so there's no per-tab fetch to defer the way EventSettingsPage's tabs do. Only
+ * visibility toggles, via the same `hidden` + `role="tabpanel"` shape as SettingsTabPanel. */
+function AccountTabPanel({
+  tab,
+  activeTab,
+  label,
+  children,
+}: Readonly<{ tab: AccountTab; activeTab: AccountTab; label: string; children: ReactNode }>) {
+  return (
+    <div role="tabpanel" aria-label={label} hidden={activeTab !== tab} className="settings-sections">
+      {children}
+    </div>
+  );
+}
+
+export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: AccountTab }>) {
   const { addToast } = useToast();
   const [account, setAccount] = useState<AccountDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -450,6 +472,8 @@ export function AccountPage() {
   const [sessions, setSessions] = useState<SessionListDto[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const [sessionsPage, setSessionsPage] = useState(1);
+  const [sessionsPageSize, setSessionsPageSize] = useState<number>(SESSIONS_DEFAULT_PAGE_SIZE);
   const [notifPrefs, setNotifPrefs] = useState<PersonalNotificationTypeDto[]>([]);
   const [notifPrefsLoading, setNotifPrefsLoading] = useState(true);
   const [notifPrefsError, setNotifPrefsError] = useState<string | null>(null);
@@ -625,6 +649,10 @@ export function AccountPage() {
   // may still have most of its own 200ms left to run, silently eating into the sessions
   // card's window before it's ever shown).
   const showSessionsSpinner = useDelayedLoading(sessionsLoading && !loading);
+  // Desktop table vs. stacked mobile cards below 768px, same breakpoint-driven switch as Users &
+  // roles' own Active sessions tab - only one ever renders (not both, CSS-hidden), so a row's
+  // content never appears twice in the accessibility tree.
+  const isSessionsDesktop = useIsDesktop();
 
   if (loading) {
     if (!showAccountSpinner) return null;
@@ -658,6 +686,16 @@ export function AccountPage() {
 
   const totpEnrolled = isTotpEnrolled(account);
   const otherSessions = sessions.filter((s) => !s.isCurrent);
+  const sessionsTotalPages = Math.max(1, Math.ceil(sessions.length / sessionsPageSize));
+  // Clamp against live data (not a separate reset-on-shrink effect) - revoking a session can
+  // drop the count out from under whichever page was showing, same reasoning as Users & roles'
+  // ActiveSessionsTab (codex review there): Previous/Next below step from this clamped value,
+  // not the raw sessionsPage state, so a stale page number can't make a button under-/overshoot.
+  const sessionsEffectivePage = Math.min(sessionsPage, sessionsTotalPages);
+  const sessionsPageSlice = sessions.slice(
+    (sessionsEffectivePage - 1) * sessionsPageSize,
+    sessionsEffectivePage * sessionsPageSize,
+  );
   const profileDirty =
     displayName !== (account.display_name ?? "") ||
     preferredLocale !== account.preferred_locale ||
@@ -1973,7 +2011,11 @@ export function AccountPage() {
           <div className="sessions-status"><p>{sessionsError}</p><Button type="button" variant="secondary" onClick={() => void loadSessions()}>Retry</Button></div>
         )}
         {!sessionsLoading && !sessionsError && sessions.length === 0 && <p className="sessions-status">No active sessions.</p>}
-        {!sessionsLoading && !sessionsError && sessions.length > 0 && (
+        {/* Only Sign-in drops in the 768-1180px tablet range (.sessions-col-tablet-hide) - unlike
+            Users & roles' own 8-column table, this one only has 5 content columns to begin with,
+            and Device/IP address are both things an admin reviewing their own sessions wants to
+            keep seeing (PO review) rather than trimmed down to just Logged in/Last active. */}
+        {!sessionsLoading && !sessionsError && sessions.length > 0 && isSessionsDesktop && (
           <div className="sessions-table-wrap">
             <table className="table">
               <thead>
@@ -1982,14 +2024,14 @@ export function AccountPage() {
                   <th>IP address</th>
                   <th>Logged in</th>
                   <th>Last active</th>
-                  <th>Sign-in</th>
+                  <th className="sessions-col-tablet-hide">Sign-in</th>
                   <th className="sessions-action-col" aria-label="Actions">
                     <span className="sr-only">Actions</span>
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {sessions.map((s) => (
+                {sessionsPageSlice.map((s) => (
                   <tr key={s.id}>
                     <td title={s.userAgent ?? undefined}>
                       {s.deviceLabel || parseUserAgent(s.userAgent)}
@@ -2008,7 +2050,7 @@ export function AccountPage() {
                       />
                     </td>
                     <td>{formatRelativeTime(s.lastSeenAt)}</td>
-                    <td>
+                    <td className="sessions-col-tablet-hide">
                       <SessionSignIn authMethod={s.authMethod} />
                     </td>
                     <td>
@@ -2028,6 +2070,73 @@ export function AccountPage() {
             </table>
           </div>
         )}
+        {!sessionsLoading && !sessionsError && sessions.length > 0 && !isSessionsDesktop && (
+          <div className="account-sessions-cards">
+            {sessionsPageSlice.map((s) => (
+              <article key={s.id} className="account-sessions-card">
+                <div className="account-sessions-card__head">
+                  <div title={s.userAgent ?? undefined}>
+                    <strong>{s.deviceLabel || parseUserAgent(s.userAgent)}</strong>
+                    {s.isCurrent && <Badge variant="neutral" className="sessions-current-badge">Current</Badge>}
+                  </div>
+                  <div className="sessions-row-actions">
+                    <SessionRevokeAction
+                      session={s}
+                      onRevoke={(session) => {
+                        setRevokeError(null);
+                        setRevokeTarget(session);
+                      }}
+                    />
+                  </div>
+                </div>
+                <dl className="account-sessions-card__meta">
+                  <div>
+                    <dt>IP address</dt>
+                    <dd>
+                      {s.ip ?? "-"}
+                      {s.ip && <div className="sessions-subdued"><GeoCell location={s.country} /></div>}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Logged in</dt>
+                    <dd>
+                      {formatSessionPrimaryTime(s.loginAt)}
+                      <ActorOrViewerLocalTimeLine
+                        iso={s.loginAt}
+                        actorTimezone={s.timezone}
+                        actorTitle="Signer's local time"
+                      />
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Last active</dt>
+                    <dd>{formatRelativeTime(s.lastSeenAt)}</dd>
+                  </div>
+                  <div>
+                    <dt>Sign-in</dt>
+                    <dd><SessionSignIn authMethod={s.authMethod} /></dd>
+                  </div>
+                </dl>
+              </article>
+            ))}
+          </div>
+        )}
+        {!sessionsLoading && !sessionsError && sessions.length > 0 && (
+          <PaginationFooter
+            idPrefix="account-sessions"
+            page={sessionsEffectivePage}
+            pageSize={sessionsPageSize}
+            totalPages={sessionsTotalPages}
+            totalRows={sessions.length}
+            pageSizeOptions={SESSIONS_PAGE_SIZE_OPTIONS}
+            onPageSizeChange={(size) => {
+              setSessionsPageSize(size);
+              setSessionsPage(1);
+            }}
+            onPrevious={() => setSessionsPage(Math.max(1, sessionsEffectivePage - 1))}
+            onNext={() => setSessionsPage(Math.min(sessionsTotalPages, sessionsEffectivePage + 1))}
+          />
+        )}
         {revokeError && <p className="sessions-error">{revokeError}</p>}
       </Card>
     );
@@ -2037,9 +2146,10 @@ export function AccountPage() {
     <>
       {!account.roles.some(isUsableRoleAssignment) && (
         <Notice variant="warning" role="alert" className="account-warn-block">
-          Your account doesn't have any role assigned yet, so there's nothing to access yet. You can still update your password and two-factor settings below. Contact an administrator to request access.
+          Your account doesn't have any role assigned yet, so there's nothing to access yet. You can still update your password and two-factor settings in the Password tab. Contact an administrator to request access.
         </Notice>
       )}
+      <AccountTabPanel tab="profile" activeTab={activeTab} label="Profile">
       <Card
         title="Profile"
         actions={
@@ -2178,15 +2288,22 @@ export function AccountPage() {
           </div>
         </div>
       </Card>
+      </AccountTabPanel>
 
-      <div className="account-security-grid">
-        {renderPasswordCard()}
-        {renderTwoFactorCard()}
-      </div>
+      <AccountTabPanel tab="password" activeTab={activeTab} label="Password">
+        <div className="account-security-grid">
+          {renderPasswordCard()}
+          {renderTwoFactorCard()}
+        </div>
+      </AccountTabPanel>
 
-      {renderSessionsCard()}
+      <AccountTabPanel tab="sessions" activeTab={activeTab} label="Sessions">
+        {renderSessionsCard()}
+      </AccountTabPanel>
 
-      {renderNotificationsCard()}
+      <AccountTabPanel tab="notifications" activeTab={activeTab} label="Notifications">
+        {renderNotificationsCard()}
+      </AccountTabPanel>
 
       <ConfirmDialog open={!!revokeTarget} icon={<i className="ti ti-device-laptop-off" aria-hidden="true" />} title="Revoke session" message={revokeTarget ? `Revoke this session? Last active ${formatRelativeTime(revokeTarget.lastSeenAt)}.` : ""} confirmLabel="Revoke" confirmVariant="danger" loading={revoking} errorMessage={revokeError ?? undefined} onConfirm={handleRevokeConfirm} onCancel={handleRevokeCancel} />
 
