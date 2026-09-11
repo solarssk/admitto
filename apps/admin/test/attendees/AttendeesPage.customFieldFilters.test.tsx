@@ -52,12 +52,12 @@ describe("AttendeesPage custom-field text filter debounce", () => {
 
       expect(fetchEventAttendees).toHaveBeenCalledWith(
         "evt-1",
-        expect.objectContaining({ customFieldParams: { cf_dietary: "vegan" } }),
+        expect.objectContaining({ customFieldParams: { cf_dietary: ["vegan"] } }),
         expect.anything(),
       );
       expect(fetchEventAttendees).not.toHaveBeenCalledWith(
         "evt-1",
-        expect.objectContaining({ customFieldParams: expect.objectContaining({ cf_shirt_notes: "xl" }) }),
+        expect.objectContaining({ customFieldParams: expect.objectContaining({ cf_shirt_notes: ["xl"] }) }),
         expect.anything(),
       );
 
@@ -67,7 +67,7 @@ describe("AttendeesPage custom-field text filter debounce", () => {
       });
       expect(fetchEventAttendees).toHaveBeenCalledWith(
         "evt-1",
-        expect.objectContaining({ customFieldParams: { cf_dietary: "vegan", cf_shirt_notes: "xl" } }),
+        expect.objectContaining({ customFieldParams: { cf_dietary: ["vegan"], cf_shirt_notes: ["xl"] } }),
         expect.anything(),
       );
     } finally {

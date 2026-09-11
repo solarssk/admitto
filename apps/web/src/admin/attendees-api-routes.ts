@@ -526,22 +526,44 @@ function parseCommaSeparatedTicketTypes(raw: string | undefined): string[] {
  * field registry - `source_field` and `type` both come from the DB, never from the query string,
  * so a filter can never be built against an unrelated custom_data key or the wrong control type
  * for that field. An unrecognized `cf_*` param (a deleted/renamed field, or a stale bookmark)
- * is silently ignored, same tolerance parseCommaSeparatedEnum already gives an unknown token. */
+ * is silently ignored, same tolerance parseCommaSeparatedEnum already gives an unknown token.
+ * `select`/`boolean` read every *repeated* `cf_<source_field>` occurrence (`getAll`, one per
+ * selected value) rather than one comma-joined value like ticket_type/rsvp_status/mail_status -
+ * those are fixed enum/slug values that can never contain a comma by construction, but a select
+ * option is free admin-typed text (up to 60 chars, no character restriction) and can contain one;
+ * a repeated query param sidesteps that ambiguity entirely instead of needing an escape scheme
+ * (`URLSearchParams` percent-decodes each occurrence independently, so a comma inside one value
+ * survives intact - see the admin client's own `customFieldParams` builder, which `append()`s one
+ * occurrence per selected value). Values are further restricted to that field's own configured
+ * options (or exactly "true"/"false") - not for SQL safety (already parameterized), but because
+ * `redactAttendeeListFiltersForStorage` keeps select/boolean filter values verbatim in stored job
+ * metadata on the assumption they can only ever be one of a field's fixed, non-free-text options;
+ * an unvalidated value would let arbitrary text ride through that redaction. */
 function parseCustomFieldFilters(
   c: Context,
-  fields: readonly { source_field: string; type: string }[],
+  fields: readonly { source_field: string; type: string; options: Prisma.JsonValue }[],
 ): AttendeeCustomFieldFilter[] {
   const searchParams = new URL(c.req.url).searchParams;
   const filters: AttendeeCustomFieldFilter[] = [];
   for (const field of fields) {
-    const raw = searchParams.get(`cf_${field.source_field}`)?.trim();
-    if (!raw) continue;
+    const key = `cf_${field.source_field}`;
     if (field.type === "text") {
-      filters.push({ source_field: field.source_field, type: "text", text: raw.slice(0, 200) });
+      const raw = searchParams.get(key)?.trim();
+      if (raw) filters.push({ source_field: field.source_field, type: "text", text: raw.slice(0, 200) });
       continue;
     }
     if (field.type !== "select" && field.type !== "boolean") continue;
-    const values = [...new Set(raw.split(",").map((v) => v.trim()).filter(Boolean))];
+    const allowed =
+      field.type === "boolean"
+        ? new Set(["true", "false"])
+        : new Set(
+            Array.isArray(field.options)
+              ? field.options.filter((o): o is string => typeof o === "string")
+              : [],
+          );
+    const values = [
+      ...new Set(searchParams.getAll(key).map((v) => v.trim()).filter((v) => v && allowed.has(v))),
+    ];
     if (values.length > 0) filters.push({ source_field: field.source_field, type: field.type, values });
   }
   return filters;
@@ -578,7 +600,7 @@ async function parseListQuery(
   const mail_status = parseCommaSeparatedEnum(c.req.query("mail_status"), ATTENDEE_MAIL_STATUS_FILTERS);
   const customFieldDefs = await db.eventCustomField.findMany({
     where: { event_id: eventId },
-    select: { source_field: true, type: true },
+    select: { source_field: true, type: true, options: true },
   });
   const customFields = parseCustomFieldFilters(c, customFieldDefs);
   const sortByRaw = c.req.query("sortBy");

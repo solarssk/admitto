@@ -1231,19 +1231,21 @@ export function AttendeesPage() {
   // Detail page's "Resend ticket" gate via useMailConfigured.
   const mailConfigured = useMailConfigured(eventId);
 
-  // One `cf_<source_field>` query param per custom field with an active filter - keyed off the
-  // field's own type so a select/boolean's checked values join with a comma (the same convention
-  // ticket_type/rsvp_status/mail_status already use) while a text field's contains-query is sent
-  // as-is, never split on commas that might be part of the search term itself.
+  // One `cf_<source_field>` query param key per custom field with an active filter, its value(s)
+  // sent as repeated occurrences of that key (one per selected option) rather than comma-joined
+  // like ticket_type/rsvp_status/mail_status - those are fixed enum/slug values that can never
+  // contain a comma by construction, but a select option is free admin-typed text and can, which
+  // a joined value would then need an escape scheme to split back apart (see attendeesListQuery's
+  // own `.append()`, one call per value). A text field's contains-query is a single-element array.
   const customFieldParams = useMemo(() => {
-    const params: Record<string, string> = {};
+    const params: Record<string, string[]> = {};
     for (const field of customFields) {
       if (field.type === "text") {
         const text = customFieldTextQueries[field.source_field];
-        if (text) params[`cf_${field.source_field}`] = text;
+        if (text) params[`cf_${field.source_field}`] = [text];
       } else {
         const values = customFieldSelectValues[field.source_field];
-        if (values && values.length > 0) params[`cf_${field.source_field}`] = values.join(",");
+        if (values && values.length > 0) params[`cf_${field.source_field}`] = values;
       }
     }
     return params;

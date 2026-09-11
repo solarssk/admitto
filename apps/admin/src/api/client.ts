@@ -981,8 +981,10 @@ function attendeesListQuery(eventId: string, params: AttendeesListParams = {}): 
   if (params.ticket_type?.length) q.set("ticket_type", params.ticket_type.join(","));
   if (params.rsvp_status?.length) q.set("rsvp_status", params.rsvp_status.join(","));
   if (params.mail_status?.length) q.set("mail_status", params.mail_status.join(","));
-  for (const [key, value] of Object.entries(params.customFieldParams ?? {})) {
-    if (value) q.set(key, value);
+  for (const [key, values] of Object.entries(params.customFieldParams ?? {})) {
+    for (const value of values) {
+      if (value) q.append(key, value);
+    }
   }
   if (params.sortBy && params.sortBy !== "name") q.set("sortBy", params.sortBy);
   if (params.sortDir && params.sortDir !== "asc") q.set("sortDir", params.sortDir);
@@ -1955,7 +1957,7 @@ function buildAttendeesExportSearchParams(
     ticket_type?: string[];
     rsvp_status?: RsvpStatus[];
     mail_status?: AttendeeMailStatusFilter[];
-    customFieldParams?: Record<string, string>;
+    customFieldParams?: Record<string, string[]>;
   },
 ): URLSearchParams {
   const urlParams = new URLSearchParams({ format });
@@ -1964,8 +1966,10 @@ function buildAttendeesExportSearchParams(
   if (params.ticket_type?.length) urlParams.set("ticket_type", params.ticket_type.join(","));
   if (params.rsvp_status?.length) urlParams.set("rsvp_status", params.rsvp_status.join(","));
   if (params.mail_status?.length) urlParams.set("mail_status", params.mail_status.join(","));
-  for (const [key, value] of Object.entries(params.customFieldParams ?? {})) {
-    if (value) urlParams.set(key, value);
+  for (const [key, values] of Object.entries(params.customFieldParams ?? {})) {
+    for (const value of values) {
+      if (value) urlParams.append(key, value);
+    }
   }
   return urlParams;
 }
@@ -2034,7 +2038,7 @@ export async function exportAttendees(
     ticket_type?: string[];
     rsvp_status?: RsvpStatus[];
     mail_status?: AttendeeMailStatusFilter[];
-    customFieldParams?: Record<string, string>;
+    customFieldParams?: Record<string, string[]>;
   },
   format: AttendeeExportFormat,
   signal?: AbortSignal,

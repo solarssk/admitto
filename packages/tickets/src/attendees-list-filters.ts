@@ -213,6 +213,15 @@ function attendeeMailStatusSql(mail_status?: readonly AttendeeMailStatusFilter[]
   return Prisma.sql`AND (${Prisma.join(mail_status.map(attendeeMailStatusBucketSql), " OR ")})`;
 }
 
+/** Escapes ILIKE's own wildcard characters (`%`, `_`) and the escape character itself (`\`) in a
+ * literal search term, paired with the `ESCAPE '\'` clause below - without this, a term like
+ * "100%" or "A_B" would have Postgres treat the `%`/`_` as pattern wildcards instead of literal
+ * attendee data, matching far more (or differently) than the "contains this exact text" the
+ * contains-text filter promises. */
+function escapeLikePattern(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
 /** One custom field's own condition - `source_field` is interpolated as a bound parameter to
  * the `->>` operator (same as countAttendeesByCustomFieldValue), never string-concatenated, so
  * this is safe regardless of what the caller passes; the caller (parseCustomFieldFilters) is
@@ -221,7 +230,8 @@ function attendeeMailStatusSql(mail_status?: readonly AttendeeMailStatusFilter[]
 function attendeeCustomFieldSql(filter: AttendeeCustomFieldFilter): Prisma.Sql {
   if (filter.type === "text") {
     if (!filter.text) return Prisma.empty;
-    return Prisma.sql`AND (a.custom_data->>${filter.source_field}) ILIKE ${`%${filter.text}%`}`;
+    const pattern = `%${escapeLikePattern(filter.text)}%`;
+    return Prisma.sql`AND (a.custom_data->>${filter.source_field}) ILIKE ${pattern} ESCAPE '\\'`;
   }
   if (!filter.values || filter.values.length === 0) return Prisma.empty;
   return Prisma.sql`AND (a.custom_data->>${filter.source_field}) IN (${Prisma.join(filter.values)})`;
