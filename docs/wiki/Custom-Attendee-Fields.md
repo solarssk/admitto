@@ -4,7 +4,7 @@
 
 ## What this page helps you do
 
-Define event-specific attendee information for forms, imports, exports, and supported operator views.
+Define event-specific attendee information for forms, imports, exports, filtering the attendee list, and supported operator views.
 
 ## Before you start
 
