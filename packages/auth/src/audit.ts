@@ -447,7 +447,7 @@ export async function logMfaBreakGlass(
   const targetLabel = await resolveAccountLabel(db, ctx.userId, ctx.email, ctx.email);
   await dispatchSecurityNotification(db, "auth.mfa.break_glass", {
     title: "Emergency two-factor bypass used",
-    body: `An operator ${actionVerb} ${targetLabel} via the emergency CLI bypass.`,
+    body: `An operator ${actionVerb} ${targetLabel} using the emergency two-factor bypass.`,
     dedupeKey: ctx.userId ?? ctx.email,
     metadata: { action: ctx.action },
   });
@@ -796,7 +796,7 @@ export async function logRepeatedFailedMfaAttempts(
 export type AuthSettingsResource = "oidc_provider" | "cf_access";
 
 const AUTH_SETTINGS_RESOURCE_LABEL: Record<AuthSettingsResource, string> = {
-  oidc_provider: "SSO provider",
+  oidc_provider: "single sign-on provider",
   cf_access: "Cloudflare Access",
 };
 
@@ -894,7 +894,7 @@ export async function logRoleElevated(
 ): Promise<void> {
   const actorLabel = input.actorUserId
     ? await resolveAccountLabel(db, input.actorUserId, undefined, "An admin")
-    : "An SSO group-role mapping";
+    : "Automatic single sign-on sync";
   const targetLabel = await resolveAccountLabel(db, input.targetUserId, undefined, "An account");
   // Organization-scoped grants must notify THAT organization's own admin staff, not necessarily
   // the instance default dispatchSecurityNotification would otherwise resolve - on a

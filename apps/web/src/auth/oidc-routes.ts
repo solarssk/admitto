@@ -275,7 +275,7 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
     void notifyAuthFactorChanged(
       db,
       userId,
-      "A new SSO connection was linked",
+      "A new single sign-on connection was linked",
       "A new single sign-on connection was linked to your account.",
     );
   }

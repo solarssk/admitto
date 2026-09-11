@@ -119,14 +119,17 @@
   text-align: center;
 }
 
+/* Icon sits beside the label+description column, not just the label row above it - align-items:
+   center vertically centers the icon against the COMBINED height of both lines in
+   __label-text, since that text block is the row's only other flex child. */
 .notifications-type-matrix__label-row {
   display: flex;
   align-items: center;
   gap: var(--space-2);
 }
 
-.notifications-type-matrix td:first-child p {
-  margin: var(--space-1) 0 0;
+.notifications-type-matrix__label-text p {
+  margin: 2px 0 0;
   color: var(--text-secondary);
   font-size: var(--fs-xs);
 }
