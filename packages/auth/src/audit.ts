@@ -877,4 +877,14 @@ export async function logLoginNewCountry(
     dedupeKey: `${ctx.userId}:${ctx.countryCode}`,
     metadata: { country: ctx.countryCode },
   });
+  // ASVS V2.2.3 self-audience counterpart to the org-staff alert above: the account OWNER, not
+  // just the rest of the admin team, learns their own account signed in somewhere new (PR5c,
+  // notifications-module-foundation plan's Luka A).
+  void dispatchSecurityNotification(db, "account.login.new_location", {
+    title: "You signed in from a new location",
+    body: `Your account signed in from ${ctx.countryCode}, a location not seen in your recent successful logins. If this wasn't you, secure your account immediately.`,
+    dedupeKey: `${ctx.userId}:${ctx.countryCode}`,
+    targetUserId: ctx.userId,
+    metadata: { country: ctx.countryCode },
+  });
 }

@@ -1193,5 +1193,29 @@ describe("audit", () => {
       });
       expect(notify).not.toHaveBeenCalled();
     });
+
+    // ASVS V2.2.3 self-audience counterpart, alongside the org-staff auth.login.new_country
+    // dispatch above - the account OWNER learns their own account signed in somewhere new, not
+    // just the rest of the admin team (PR5c, notifications-module-foundation plan's Luka A).
+    it("also dispatches account.login.new_location targeting the account owner, deduped on the same user+country pair", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb();
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", countryCode: "FR" });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "account.login.new_location",
+          expect.objectContaining({
+            organizationId: "org_default",
+            targetUserId: "user-1",
+            dedupeKey: "user-1:FR",
+            body: expect.stringContaining("FR"),
+            metadata: { country: "FR" },
+          }),
+        );
+      });
+      // Both dispatches happen from one call - not one OR the other.
+      expect(notify).toHaveBeenCalledWith(db, "auth.login.new_country", expect.anything());
+    });
   });
 });
