@@ -1294,17 +1294,31 @@ export async function handlePostMfaReset(
           metadata: { sessionsRevoked: revokedCount },
         });
       }
-      return { revokedCount, mfaChanged: mfaDeleted.count > 0 };
+      return { revokedCount, mfaChanged: mfaDeleted.count > 0, devicesChanged: devicesRevoked > 0 };
     },
   );
 
   if (!gated.ok) return gated.response;
+  // Reachable even with no MFA method left to delete: a per-method removal endpoint
+  // (handleDeleteAccountTotp/handleDeleteAccountWebauthnCredential) doesn't itself touch trusted
+  // devices, so this reset can still be the thing that actually clears them - e.g. TOTP was
+  // already removed by a separate request before this one submitted, leaving devicesRevoked > 0
+  // with mfaChanged false. The audit log above already accounts for this (same OR condition);
+  // the notification must too, or the owner gets no receipt for a real change (bot review
+  // finding, PR #1304).
   if (gated.value.mfaChanged) {
     void notifyAuthFactorChanged(
       db,
       userId,
       "Your two-factor authentication was reset",
       "Two-factor authentication was reset on your account. If this wasn't you, review your active sessions and re-enroll a method.",
+    );
+  } else if (gated.value.devicesChanged) {
+    void notifyAuthFactorChanged(
+      db,
+      userId,
+      "Trusted devices were cleared",
+      "Trusted devices for two-factor sign-in were cleared on your account. You'll be asked for a code again on those devices.",
     );
   }
   return c.json({ ok: true, sessions_revoked: gated.value.revokedCount });

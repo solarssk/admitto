@@ -826,6 +826,25 @@ describe("POST /api/account/mfa/totp/*", () => {
     expect(auditCountAfter - auditCountBefore).toBe(1);
   });
 
+  it("fires account.auth_factor.changed for a reset that only clears trusted devices (no MFA method left to delete)", async () => {
+    rateLimitStore.reset();
+    // No userMfaMethod row - e.g. it was already removed by a separate request - but a trusted
+    // device from when a method still existed survives: handleDeleteAccountTotp/
+    // handleDeleteAccountWebauthnCredential don't themselves touch trusted devices, so this
+    // reset can be the thing that actually clears them even though mfaDeleted.count is 0.
+    await createTrustedDevice(prisma, { userId });
+
+    const res = await app.request("/api/account/mfa/reset", {
+      method: "POST",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: PASSWORD }),
+    });
+    expect(res.status).toBe(200);
+    expect(await prisma.trustedDevice.count({ where: { user_id: userId, revoked_at: null } })).toBe(0);
+
+    await expectAuthFactorChangedNotification(userId, "Trusted devices were cleared");
+  });
+
   it("does not audit a reset that changes nothing (no MFA, no other sessions, no trusted devices)", async () => {
     rateLimitStore.reset();
     const auditCountBefore = await prisma.adminAuditLog.count({
