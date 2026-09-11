@@ -1241,7 +1241,7 @@ function TemplateEditorCard({
                 below are wired explicitly via `editable` instead of relying on that cascade. Native
                 label-click-to-focus doesn't reach a contenteditable div either, hence the explicit
                 onClick. */}
-            <label
+            <label // NOSONAR - onClick is a mouse-only convenience widening the label's own click-to-focus hit area (see comment above); the editor itself is an independently keyboard-focusable role="textbox" a keyboard user tabs to directly, so nothing here is keyboard-inaccessible
               className="at-label"
               htmlFor="communication-body"
               onClick={() => bodyRef.current?.view?.focus()}

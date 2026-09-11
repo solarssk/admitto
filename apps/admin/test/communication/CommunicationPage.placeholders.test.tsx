@@ -482,4 +482,13 @@ describe("CommunicationPage placeholder chip list", () => {
     view.contentDOM.dispatchEvent(shiftTab);
     expect(shiftTab.defaultPrevented).toBe(false);
   });
+
+  it("focuses the body editor when its label is clicked, same as native label-click-to-focus would for a real form control", async () => {
+    const view = await renderAndGetBodyField();
+    expect(view.hasFocus).toBe(false);
+
+    fireEvent.click(screen.getByText("MJML body"));
+
+    expect(view.hasFocus).toBe(true);
+  });
 });
