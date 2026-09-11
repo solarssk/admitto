@@ -26,16 +26,18 @@ function renderBody(value: string) {
 }
 
 describe("placeholderHighlightViewPlugin", () => {
-  it("decorates a plain-text placeholder inside mj-text markup", () => {
-    const { marks } = renderBody("<mj-text>Hi {{first_name}}</mj-text>");
+  it.each([
+    ["plain-text placeholder inside mj-text markup", "<mj-text>Hi {{first_name}}</mj-text>", "{{first_name}}"],
+    [
+      "placeholder inside an attribute value (src=)",
+      '<mj-image src="{{logo_url}}" alt="Logo" width="200px" />',
+      "{{logo_url}}",
+    ],
+    ["placeholder in a plain HTML body (not MJML-specific)", "<p>Hi {{first_name}}</p>", "{{first_name}}"],
+  ])("decorates a %s", (_label, markup, expectedText) => {
+    const { marks } = renderBody(markup);
     expect(marks).toHaveLength(1);
-    expect(marks[0].textContent).toBe("{{first_name}}");
-  });
-
-  it("decorates a placeholder inside an attribute value (src=)", () => {
-    const { marks } = renderBody('<mj-image src="{{logo_url}}" alt="Logo" width="200px" />');
-    expect(marks).toHaveLength(1);
-    expect(marks[0].textContent).toBe("{{logo_url}}");
+    expect(marks[0].textContent).toBe(expectedText);
   });
 
   it("decorates multiple placeholders in the same document independently", () => {
@@ -57,12 +59,6 @@ describe("placeholderHighlightViewPlugin", () => {
     // Only the two well-formed, lowercase-snake-case placeholders match - {{Foo}} (uppercase),
     // {oops} (single brace), {{}} (empty), and the unterminated {{first_name are all left alone.
     expect(marks.map((el) => el.textContent)).toEqual(["{{first_name}}", "{{logo_url}}"]);
-  });
-
-  it("works the same way for a plain HTML body (not MJML-specific)", () => {
-    const { marks } = renderBody("<p>Hi {{first_name}}</p>");
-    expect(marks).toHaveLength(1);
-    expect(marks[0].textContent).toBe("{{first_name}}");
   });
 
   it("composes with lang-html's own syntax highlighting instead of replacing it", () => {
@@ -88,7 +84,7 @@ describe("placeholderHighlightViewPlugin", () => {
 
     // And the placeholder mark's own computed class list is exactly our one class - it wasn't
     // merged/overwritten into a single span that dropped the highlighting classes either way.
-    expect(mark.classList.length).toBe(1);
+    expect(mark.classList).toHaveLength(1);
   });
 });
 
