@@ -640,6 +640,11 @@ model SecurityAuditLog {
 
   @@index([event_type, created_at(sort: Desc)])
   @@index([user_id])
+  // Supports purgeSecurityAuditLog's batch loop (retention.ts): WHERE created_at <= cutoff ORDER BY
+  // created_at ASC LIMIT batchSize, unscoped by event_type/user_id - neither index above leads with
+  // created_at, so without this every batch iteration re-sorted the whole remaining table instead of
+  // a bounded index scan. Same shape and gap as Notification's purgeNotifications (bot review finding).
+  @@index([created_at])
 }
 
 // Per-scope mailer configuration (ADR 0005, ADR 0006).
