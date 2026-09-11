@@ -373,13 +373,69 @@
   font-size: var(--fs-sm);
 }
 
-/* Gmail-style reading pane: fixed light colors regardless of app theme - an inbox always reads
- * as a light surface, dark mode here would look like a broken/unstyled email, not a themed one. */
+/* Gmail-style reading pane: fixed light colors regardless of *app* theme (switching the admin
+ * SPA's own light/dark setting never touches this) - an inbox always reads as a light surface by
+ * default. The `--dark` modifier below is a deliberate, explicit choice from the Light/Dark
+ * preview toggle, not a theme follow, and switches this same Gmail-style shell to its actual
+ * Gmail dark-mode palette so the toggle reads as "email client in dark mode", not a half-themed
+ * mismatch of a dark email floating inside a light inbox chrome. */
 .communication-mail-client {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: #fff;
   overflow: hidden;
+}
+
+.communication-mail-client--dark {
+  border-color: #3c4043;
+  background: #202124;
+}
+
+.communication-mail-client--dark .communication-mail-client__toolbar,
+.communication-mail-client--dark .communication-mail-client__from {
+  border-color: #3c4043;
+}
+
+.communication-mail-client--dark .communication-mail-client__toolbar {
+  background: #2d2e30;
+  color: #9aa0a6;
+}
+
+.communication-mail-client--dark .communication-mail-client__subject,
+.communication-mail-client--dark .communication-mail-client__from-name {
+  color: #e8eaed;
+}
+
+.communication-mail-client--dark .communication-mail-client__from-address,
+.communication-mail-client--dark .communication-mail-client__to,
+.communication-mail-client--dark .communication-mail-client__meta,
+.communication-mail-client--dark .communication-mail-client__folder,
+.communication-mail-client--dark .communication-mail-client__time {
+  color: #9aa0a6;
+}
+
+.communication-mail-client--dark .communication-preview-frame {
+  background: #202124;
+}
+
+/* Fallback simulation for a template whose dark block only swaps something cosmetic (a logo) and
+ * never sets real colors - see forcePreviewColorScheme.ts's `hasAuthoredDarkPalette`, which skips
+ * this class entirely for a template that already authors its own dark palette, to avoid
+ * inverting an already-correct dark result back toward light.
+ *
+ * `invert(1) hue-rotate(180deg)` must stay an EXACT match with the counter-filter
+ * forcePreviewColorScheme.ts injects for `img`/`svg` - both are literal self-inverses (100% invert
+ * undoes itself; so does a second 180° hue rotation), so composing them is provably the identity
+ * for image pixels: a photo, QR code, wallet badge, or logo round-trips to its authored colors
+ * exactly. Any other, unmatched pair (e.g. a softer `invert(0.87)` outer against this same
+ * counter-filter) does NOT cancel exactly - every image pixel measurably shifts toward gray
+ * instead of staying put. A plain `invert(1)` alone would make #ffffff literal #000000, which
+ * reads as "broken/OLED black" rather than an actual dark theme; `forcePreviewColorScheme.ts`'s
+ * `softenLightBackgrounds` handles that by pre-darkening near-white `background`/`background-color`
+ * CSS *before* this filter runs (so the color math happens once, on source text, never touching
+ * `<img>`/`<svg>`) instead of by weakening the filter itself. */
+.communication-preview-frame--dark-sim {
+  filter: invert(1) hue-rotate(180deg);
 }
 
 .communication-mail-client__toolbar {
@@ -393,14 +449,52 @@
   font-size: 1.1rem;
 }
 
-.communication-mail-client__toolbar-actions {
-  display: flex;
-  gap: var(--space-4);
+/* Light/Dark preview toggle - a single shared "pill" frame around both buttons (segmented
+   control), not a plain unadorned glyph - a zero-chrome version of this read as non-interactive
+   (PO report: "doesn't look clickable"). The ring/background use box-shadow, not border/padding-
+   driven sizing, which adds next to nothing to the toolbar's own row height (measured 1.2px, vs.
+   ~10px for an earlier padding-heavy pill version) while still reading clearly as a clickable
+   control. Left unthemed by the `--dark` modifier below - a light chip still reads fine floating
+   on the dark toolbar background. */
+.communication-mail-client__scheme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  /* A <fieldset> (see accessibility note on the JSX) ships a default border/padding/margin -
+     reset those, this pill draws its own boundary via box-shadow instead. */
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: #e8eaed;
+  box-shadow: 0 0 0 1px #d0d3d6;
 }
 
-/* Real (non-decorative) content sharing the toolbar's left slot with the archive/trash/reply/
-   dots icons - own smaller font-size since the bar's 1.1rem is sized for those icon glyphs,
-   not body text. */
+.communication-mail-client__scheme-toggle-btn {
+  display: inline-flex;
+  padding: 1px 4px;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 1px);
+  background: transparent;
+  color: #5f6368;
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.communication-mail-client__scheme-toggle-btn[aria-pressed="true"] {
+  background: #fff;
+  color: #202124;
+  box-shadow: 0 0 0 1px #9aa0a6;
+}
+
+.communication-mail-client__scheme-toggle-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Real (non-decorative) content in the toolbar's left slot - own smaller font-size since the
+   bar's 1.1rem is sized for the leading icon glyph, not body text. */
 .communication-mail-client__toolbar-label {
   display: inline-flex;
   align-items: center;
