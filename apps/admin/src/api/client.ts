@@ -2819,6 +2819,14 @@ export async function markAllAccountNotificationsRead(): Promise<{
   return parseJson<{ updated_count: number; unread_count: number }>(res);
 }
 
+export async function clearAllAccountNotifications(): Promise<{
+  cleared_count: number;
+  unread_count: number;
+}> {
+  const res = await fetch("/api/account/notifications/clear-all", jsonPostInit({}));
+  return parseJson<{ cleared_count: number; unread_count: number }>(res);
+}
+
 export async function forgetAllTrustedDevices(): Promise<{ devices_revoked: number }> {
   const res = await fetch("/api/account/mfa/trusted-devices", jsonDeleteInit());
   return parseJson<{ devices_revoked: number }>(res);

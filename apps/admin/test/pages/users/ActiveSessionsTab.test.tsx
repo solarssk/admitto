@@ -745,7 +745,10 @@ describe("ActiveSessionsTab operator errors", () => {
     expect(screen.queryByText("authentication_required")).toBeNull();
   });
 
-  it("toasts operator-safe message when revoke fails", async () => {
+  it("shows an operator-safe message inline in the dialog when revoke fails, and keeps it open", async () => {
+    // Not a toast: ConfirmDialog sits above the toast stack (--z-modal > --z-toast), so a
+    // toast-only failure would render invisibly behind the still-open dialog's own backdrop (bot
+    // review finding) - same reasoning and pattern as the device-label-edit failure below.
     vi.mocked(fetchSessions).mockResolvedValueOnce({ sessions: [makeSession()] });
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([]);
     vi.mocked(revokeSessionById).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
@@ -757,9 +760,11 @@ describe("ActiveSessionsTab operator errors", () => {
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to revoke session/);
+      expect(within(dialog).getByRole("alert").textContent).toMatch(/Failed to revoke session/);
     });
     expect(screen.queryByText("secret_internal")).toBeNull();
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
   it("shows an operator-safe message inline in the modal when device label edit fails", async () => {
@@ -784,7 +789,7 @@ describe("ActiveSessionsTab operator errors", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
-  it("toasts operator-safe message when bulk revoke fails", async () => {
+  it("shows an operator-safe message inline in the dialog when bulk revoke fails, and keeps it open", async () => {
     vi.mocked(fetchSessions).mockResolvedValueOnce({ sessions: [] });
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([sampleEvent]);
     vi.mocked(revokeAllOperatorSessions).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
@@ -792,10 +797,35 @@ describe("ActiveSessionsTab operator errors", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^Event,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Summit" }));
     fireEvent.click(screen.getByRole("button", { name: "Revoke all" }));
+    const dialog = screen.getByRole("dialog");
     fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to revoke sessions/);
+      expect(within(dialog).getByRole("alert").textContent).toMatch(/Failed to revoke sessions/);
     });
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("ignores Escape/backdrop cancellation while a revoke request is still in flight", async () => {
+    vi.mocked(fetchSessions).mockResolvedValueOnce({ sessions: [makeSession()] });
+    vi.mocked(fetchAdminEvents).mockResolvedValueOnce([]);
+    let resolveRevoke: (() => void) | undefined;
+    vi.mocked(revokeSessionById).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveRevoke = () => resolve(undefined); }),
+    );
+    renderWithToast(<ActiveSessionsTab />);
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: REVOKE_NAME }).length).toBeGreaterThan(0);
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: REVOKE_NAME })[0]!);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    resolveRevoke?.();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });
 
