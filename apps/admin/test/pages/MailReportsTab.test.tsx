@@ -100,7 +100,7 @@ function fixture(overrides: Partial<EventMailReportsResponse> = {}): EventMailRe
         { status: "cancelled", count: 1 },
       ],
     },
-    attendee_reach: { reached: 2, not_reached: 3, reached_pct: 40 },
+    attendee_reach: { reached: 2, not_reached: 3, reached_pct: 40, never_sent: 2, send_failed: 1 },
     by_purpose: { initial: 5, resend: 1 },
     by_template: [
       { template: null, total: 5, successful: 1, successful_pct: 20 },
@@ -305,12 +305,15 @@ describe("MailReportsTab", () => {
       { name: "Cancelled", meta: "1 · 16.7%" },
     ]);
 
-    // Attendee reach donut - reached vs not-reached, as a share of every attendee (not of attempts).
+    // Attendee reach donut - reached vs never-sent vs send-failed, as a share of every attendee
+    // (not of attempts) - the two not_reached reasons are shown as separate slices, not folded
+    // into one ambiguous "Not reached" bucket.
     const reachCard = cardByTitle("Attendee reach");
-    expect(pieValues(reachCard)).toEqual([2, 3]);
+    expect(pieValues(reachCard)).toEqual([2, 2, 1]);
     expect(breakdownRows(reachCard)).toEqual([
       { name: "Reached", meta: "2 · 40%" },
-      { name: "Not reached", meta: "3 · 60%" },
+      { name: "Never sent", meta: "2 · 40%" },
+      { name: "Send failed", meta: "1 · 20%" },
     ]);
 
     // Initial vs resend - list only, no donut, same total-attempts denominator as Email delivery.

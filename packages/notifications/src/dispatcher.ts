@@ -200,6 +200,67 @@ async function readOrgSettings(
   return { disabledChannelsByType };
 }
 
+/**
+ * Whether this type's org-level settings disable every channel it could even use - same fast
+ * path notify() always took, just pulled into its own function (SonarCloud cognitive-complexity
+ * split, PR #1304; no behavior change). A type with zero availableChannels is never reported as
+ * disabled (nothing was ever wired to a channel to disable in the first place). Writes the
+ * `notification.dispatch.skipped_org_disabled` audit row itself when true, mirroring
+ * claimThrottleOrLogSkip's own log-as-you-go shape below.
+ */
+async function isFullyOrgDisabled(
+  db: Db,
+  type: string,
+  typeDef: NotificationTypeDef,
+  organizationId: string,
+  disabledChannels: NotificationChannelKey[],
+): Promise<boolean> {
+  const fullyDisabled =
+    typeDef.orgDisableable &&
+    typeDef.availableChannels.length > 0 &&
+    typeDef.availableChannels.every((ch) => disabledChannels.includes(ch));
+  if (fullyDisabled) {
+    await writeDispatchAuditLog(db, "notification.dispatch.skipped_org_disabled", organizationId, {
+      notification_type: type,
+    });
+  }
+  return fullyDisabled;
+}
+
+/**
+ * Claims this dispatch's throttle slot, or determines none is needed - pulled out of notify()
+ * itself purely to keep that function's own cognitive complexity down (SonarCloud, PR #1304);
+ * no behavior changed by this split.
+ *
+ * Returns `null` when the type opts out of throttling entirely (`throttleWindowMinutes: 0` -
+ * see NotificationTypeDef's own doc comment): every occurrence dispatches independently, with no
+ * NotificationThrottle row claimed at all. Returns the claimed `{throttleKey, rowId}` on a
+ * successful claim. Returns the `"skip"` sentinel when a real claim was attempted and lost (this
+ * function has already logged `notification.dispatch.skipped_throttled` in that case) - the
+ * caller must stop the whole dispatch.
+ */
+async function claimThrottleOrLogSkip(
+  db: Db,
+  type: string,
+  typeDef: NotificationTypeDef,
+  event: NotificationEvent,
+  deps: DispatchDeps,
+): Promise<{ throttleKey: string; rowId: string } | null | "skip"> {
+  const windowMinutes = typeDef.throttleWindowMinutes ?? DEFAULT_THROTTLE_WINDOW_MINUTES;
+  if (windowMinutes <= 0) return null;
+
+  const now = deps.now?.() ?? new Date();
+  const throttleKey = `${event.organizationId}:${event.dedupeKey ?? "org"}`;
+  const rowId = await claimThrottleSlot(db, type, throttleKey, windowMinutes, now);
+  if (!rowId) {
+    await writeDispatchAuditLog(db, "notification.dispatch.skipped_throttled", event.organizationId, {
+      notification_type: type,
+    });
+    return "skip";
+  }
+  return { throttleKey, rowId };
+}
+
 /** Resolves the audience. Only "self" with no valid target is treated as a dispatch failure that
  * skips everything (prompt 86 §3: never trust the call site's targetUserId blindly - there is no
  * one this personal notification could legitimately be for). For every other audience, an empty
@@ -404,38 +465,18 @@ export async function notify(
 
     const { disabledChannelsByType } = await readOrgSettings(db, event.organizationId);
     const disabledChannels = typeDef.orgDisableable ? (disabledChannelsByType[type] ?? []) : [];
-    // Fully disabled across every channel this type can even use - same fast path as before the
-    // per-channel matrix: skip audience resolution and the throttle claim entirely, not just the
-    // channel sends, since nothing downstream would do anything either way. The length check
-    // guards a type with zero availableChannels: Array.every() on an empty array is vacuously
-    // true, which would otherwise misreport "org disabled" for a type that was never wired to any
-    // channel in the first place (and has nothing configured to disable).
-    if (
-      typeDef.orgDisableable &&
-      typeDef.availableChannels.length > 0 &&
-      typeDef.availableChannels.every((ch) => disabledChannels.includes(ch))
-    ) {
-      await writeDispatchAuditLog(db, "notification.dispatch.skipped_org_disabled", event.organizationId, {
-        notification_type: type,
-      });
-      return;
-    }
+    // Fully disabled across every channel this type can even use - skip audience resolution and
+    // the throttle claim entirely, not just the channel sends, since nothing downstream would do
+    // anything either way.
+    if (await isFullyOrgDisabled(db, type, typeDef, event.organizationId, disabledChannels)) return;
 
-    const now = deps.now?.() ?? new Date();
-    const throttleKey = `${event.organizationId}:${event.dedupeKey ?? "org"}`;
-    const windowMinutes = typeDef.throttleWindowMinutes ?? DEFAULT_THROTTLE_WINDOW_MINUTES;
-    const rowId = await claimThrottleSlot(db, type, throttleKey, windowMinutes, now);
-    if (!rowId) {
-      await writeDispatchAuditLog(db, "notification.dispatch.skipped_throttled", event.organizationId, {
-        notification_type: type,
-      });
-      return;
-    }
-    activeClaim = { throttleKey, rowId };
+    const claimResult = await claimThrottleOrLogSkip(db, type, typeDef, event, deps);
+    if (claimResult === "skip") return;
+    activeClaim = claimResult;
 
     const candidates = await resolveCandidatesOrLogSkip(db, type, typeDef, event);
     if (!candidates) {
-      await releaseThrottleSlot(db, type, throttleKey, rowId);
+      if (activeClaim) await releaseThrottleSlot(db, type, activeClaim.throttleKey, activeClaim.rowId);
       return;
     }
 
@@ -456,8 +497,8 @@ export async function notify(
     // communicated anything. A *partial* success (some channels sent, one failed) keeps the
     // claim: releasing there would let the channels that already delivered resend/spam on the
     // next occurrence while only the genuinely-still-broken channel needed a retry.
-    if (channelsSent.length === 0) {
-      await releaseThrottleSlot(db, type, throttleKey, rowId);
+    if (channelsSent.length === 0 && activeClaim) {
+      await releaseThrottleSlot(db, type, activeClaim.throttleKey, activeClaim.rowId);
     }
 
     if (failures.length > 0) {

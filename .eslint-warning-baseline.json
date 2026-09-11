@@ -276,7 +276,7 @@
     "codeLine": "const disabledChannels = typeDef.orgDisableable ? (disabledChannelsByType[type] ?? []) : [];",
     "column": 56,
     "contextBefore": "const { disabledChannelsByType } = await readOrgSettings(db, event.organizationId);",
-    "contextAfter": "// Fully disabled across every channel this type can even use - same fast path as before the"
+    "contextAfter": "// Fully disabled across every channel this type can even use - skip audience resolution and"
   },
   {
     "ruleId": "security/detect-object-injection",

@@ -6,7 +6,7 @@ import type { EventMailReportsResponse } from "../../src/api/types.js";
 const sample: EventMailReportsResponse = {
   total_attendees: 4,
   delivery: { total_attempts: 5, successful: 4, successful_pct: 80, by_status: [{ status: "accepted", count: 4 }] },
-  attendee_reach: { reached: 3, not_reached: 1, reached_pct: 75 },
+  attendee_reach: { reached: 3, not_reached: 1, reached_pct: 75, never_sent: 1, send_failed: 0 },
   by_purpose: { initial: 4, resend: 1 },
   by_template: [{ template: null, total: 5, successful: 4, successful_pct: 80 }],
   sent_by_day: [],
