@@ -925,6 +925,31 @@ function isRoleElevation(role: Role, replacedRoles: Role[]): boolean {
   return ROLE_RANK[role] > priorRank;
 }
 
+/** Fires auth.role.elevated (NIST AC-2(1)) when this grant is a genuine elevation - pulled out of
+ * handlePostUserRole purely to keep that function's own cognitive complexity down (SonarCloud,
+ * PR #1312, same pattern as dispatcher.ts's claimThrottleOrLogSkip/isFullyOrgDisabled); no
+ * behavior changed by this split. The `role !== "operator"` guard is redundant with
+ * isRoleElevation's own internal check at runtime, but is what lets TypeScript narrow `role` to
+ * logRoleElevated's `"admin" | "superadmin"` parameter type. Must be called only AFTER the
+ * granting transaction has committed - notify() must never run inside one still-open
+ * (dispatchSecurityNotification's own doc comment). */
+async function maybeNotifyRoleElevation(
+  db: PrismaClient,
+  actorId: string,
+  targetId: string,
+  parsed: { role: Role; scopeType: ScopeType; scopeId: string | null },
+  replacedRoles: Role[],
+): Promise<void> {
+  if (parsed.role === "operator" || !isRoleElevation(parsed.role, replacedRoles)) return;
+  await logRoleElevated(db, {
+    actorUserId: actorId,
+    targetUserId: targetId,
+    role: parsed.role,
+    scopeType: parsed.scopeType,
+    scopeId: parsed.scopeId,
+  });
+}
+
 /** Maps handlePostUserRole's transaction failures to a response body, or null to rethrow.
  * Both mapped cases are genuine TOCTOU races: handlePostUserRole's own pre-transaction checks
  * (the existing-assignment lookup for already_assigned, assertLastSuperadminRemovalAllowed's
@@ -1034,23 +1059,7 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
     return c.json({ error: "forbidden" }, 403);
   }
   const { assignment, replacedRoles } = outcome;
-
-  // NIST AC-2(1): tell the rest of the admin team when a user gains admin/superadmin, not just a
-  // same-or-lower-rank type switch (see isRoleElevation's own doc comment). Fired after the
-  // transaction above has already committed - notify() must never run inside one still-open
-  // (dispatchSecurityNotification's own doc comment). parsed.role, not assignment.role: the
-  // latter is a plain `string` (RoleAssignment.role has no Prisma enum, just a documented string
-  // column - see schema.prisma), while parsed.role is already the typed Role parseRoleScope
-  // validated, and performRoleTypeSwitch always creates the row with role: parsed.role.
-  if (parsed.role !== "operator" && isRoleElevation(parsed.role, replacedRoles)) {
-    await logRoleElevated(db, {
-      actorUserId: actorId,
-      targetUserId: id,
-      role: parsed.role,
-      scopeType: parsed.scopeType,
-      scopeId: parsed.scopeId,
-    });
-  }
+  await maybeNotifyRoleElevation(db, actorId, id, parsed, replacedRoles);
 
   emitSystemLog("security", "info", "role_granted", {
     targetUserId: target.id,
