@@ -15,7 +15,7 @@ describe("latest mail-status attendee filters", () => {
       const db = { $queryRaw } as unknown as PrismaClient;
 
       await expect(
-        countFilteredAttendees(db, "event-1", { status: "all", mail_status }),
+        countFilteredAttendees(db, "event-1", { status: "all", mail_status: [mail_status] }),
       ).resolves.toBe(0);
       expect($queryRaw).toHaveBeenCalledOnce();
     },
@@ -105,21 +105,32 @@ describe("not_sent bucket real behavior (bulk-send-cancel)", () => {
   });
 
   it("counts an attendee whose only delivery was cancelled the same as one with no delivery at all", async () => {
-    const count = await countFilteredAttendees(prisma, EVENT_ID, { status: "all", mail_status: "not_sent" });
+    const count = await countFilteredAttendees(prisma, EVENT_ID, { status: "all", mail_status: ["not_sent"] });
     expect(count).toBe(2);
   });
 
   it("lists the never-sent and cancelled attendees under not_sent, and neither under sent/pending/failed", async () => {
-    const notSent = await findFilteredAttendeesForList(prisma, EVENT_ID, { status: "all", mail_status: "not_sent" }, 1, 10);
+    const notSent = await findFilteredAttendeesForList(prisma, EVENT_ID, { status: "all", mail_status: ["not_sent"] }, 1, 10);
     expect(notSent.map((r) => r.id).sort()).toEqual([ATT_CANCELLED, ATT_NEVER_SENT].sort());
 
-    const failed = await findFilteredAttendeesForList(prisma, EVENT_ID, { status: "all", mail_status: "failed" }, 1, 10);
+    const failed = await findFilteredAttendeesForList(prisma, EVENT_ID, { status: "all", mail_status: ["failed"] }, 1, 10);
     expect(failed.map((r) => r.id)).toEqual([ATT_FAILED]);
     // The point of this whole fix: a deliberately-stopped send must not read as a delivery
     // failure - it must not show up here just because it's also not "sent".
     expect(failed.map((r) => r.id)).not.toContain(ATT_CANCELLED);
 
-    const sent = await findFilteredAttendeesForList(prisma, EVENT_ID, { status: "all", mail_status: "sent" }, 1, 10);
+    const sent = await findFilteredAttendeesForList(prisma, EVENT_ID, { status: "all", mail_status: ["sent"] }, 1, 10);
     expect(sent.map((r) => r.id)).toEqual([ATT_SENT]);
+  });
+
+  it("OR-combines multiple selected buckets (sent or failed, excluding pending/not_sent)", async () => {
+    const rows = await findFilteredAttendeesForList(
+      prisma,
+      EVENT_ID,
+      { status: "all", mail_status: ["sent", "failed"] },
+      1,
+      10,
+    );
+    expect(rows.map((r) => r.id).sort()).toEqual([ATT_FAILED, ATT_SENT].sort());
   });
 });

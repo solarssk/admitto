@@ -17,6 +17,7 @@ import {
 import { FiltersMenu } from "../components/FiltersMenu.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
+import { MultiSelect } from "../components/MultiSelect.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { useDelayedLoading, whenShown } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
@@ -201,9 +202,9 @@ export interface AttendeesTableProps {
   isUnfilteredEmpty: boolean;
   searchInput: string;
   statusFilter: AttendeeStatusFilter;
-  ticketTypeFilter: string;
-  rsvpStatusFilter: "" | RsvpStatus;
-  mailStatusFilter: "" | AttendeeMailStatusFilter;
+  ticketTypeFilter: string[];
+  rsvpStatusFilter: RsvpStatus[];
+  mailStatusFilter: AttendeeMailStatusFilter[];
   ticketTypes?: TicketTypeDto[];
   /** Set when the ticket-type filter's own catalog failed to load - the rest of the table (and
    * the other filters) still work, so this renders as a small inline notice next to the Type
@@ -212,9 +213,9 @@ export interface AttendeesTableProps {
   onRetryTicketTypes?: () => void;
   onSearchChange: (value: string) => void;
   onStatusFilterChange: (value: AttendeeStatusFilter) => void;
-  onTicketTypeFilterChange: (value: string) => void;
-  onRsvpStatusFilterChange: (value: "" | RsvpStatus) => void;
-  onMailStatusFilterChange: (value: "" | AttendeeMailStatusFilter) => void;
+  onTicketTypeFilterChange: (value: string[]) => void;
+  onRsvpStatusFilterChange: (value: RsvpStatus[]) => void;
+  onMailStatusFilterChange: (value: AttendeeMailStatusFilter[]) => void;
   sortBy: AttendeeSortBy;
   sortDir: AttendeeSortDir;
   onSortChange: (column: AttendeeSortBy) => void;
@@ -1039,15 +1040,15 @@ function FilterToolbar({
   onSearchChange: (value: string) => void;
   statusFilter: AttendeeStatusFilter;
   onStatusFilterChange: (value: AttendeeStatusFilter) => void;
-  ticketTypeFilter: string;
-  onTicketTypeFilterChange: (value: string) => void;
+  ticketTypeFilter: string[];
+  onTicketTypeFilterChange: (value: string[]) => void;
   ticketTypes: TicketTypeDto[];
   ticketTypesError?: string | null;
   onRetryTicketTypes?: () => void;
-  rsvpStatusFilter: "" | RsvpStatus;
-  onRsvpStatusFilterChange: (value: "" | RsvpStatus) => void;
-  mailStatusFilter: "" | AttendeeMailStatusFilter;
-  onMailStatusFilterChange: (value: "" | AttendeeMailStatusFilter) => void;
+  rsvpStatusFilter: RsvpStatus[];
+  onRsvpStatusFilterChange: (value: RsvpStatus[]) => void;
+  mailStatusFilter: AttendeeMailStatusFilter[];
+  onMailStatusFilterChange: (value: AttendeeMailStatusFilter[]) => void;
   isDesktop: boolean;
   sortBy: AttendeeSortBy;
   sortDir: AttendeeSortDir;
@@ -1056,9 +1057,9 @@ function FilterToolbar({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const activeFilterCount =
     (statusFilter !== "all" ? 1 : 0) +
-    (rsvpStatusFilter !== "" ? 1 : 0) +
-    (ticketTypeFilter !== "" ? 1 : 0) +
-    (mailStatusFilter !== "" ? 1 : 0);
+    (rsvpStatusFilter.length > 0 ? 1 : 0) +
+    (ticketTypeFilter.length > 0 ? 1 : 0) +
+    (mailStatusFilter.length > 0 ? 1 : 0);
 
   return (
     <div className="attendees-toolbar">
@@ -1092,17 +1093,14 @@ function FilterToolbar({
           <MobileSortControl sortBy={sortBy} sortDir={sortDir} onSortChange={onSortChange} />
         )}
         <div className="attendees-toolbar__filter">
-          <SearchableSelect
+          <MultiSelect
             id="attendees-filter-type"
             label="Filter by ticket type"
             placeholder="All ticket types"
             searchPlaceholder="Search ticket types…"
             emptyLabel="No ticket types found"
             value={ticketTypeFilter}
-            options={[
-              { id: "", label: "All ticket types" },
-              ...ticketTypes.map((t) => ({ id: t.key, label: t.label })),
-            ]}
+            options={ticketTypes.map((t) => ({ id: t.key, label: t.label }))}
             onChange={onTicketTypeFilterChange}
           />
           {ticketTypesError && (
@@ -1117,15 +1115,15 @@ function FilterToolbar({
           )}
         </div>
         <div className="attendees-toolbar__filter">
-          <SearchableSelect
+          <MultiSelect
             id="attendees-filter-rsvp"
             label="Filter by attendance"
             placeholder="All attendance statuses"
             searchPlaceholder="Search attendance statuses…"
             emptyLabel="No attendance statuses found"
-            value={rsvpStatusFilter || "all"}
-            options={[{ id: "all", label: "All attendance statuses" }, ...RSVP_STATUS_OPTIONS]}
-            onChange={(value) => onRsvpStatusFilterChange(value === "all" ? "" : (value as RsvpStatus))}
+            value={rsvpStatusFilter}
+            options={RSVP_STATUS_OPTIONS}
+            onChange={(ids) => onRsvpStatusFilterChange(ids as RsvpStatus[])}
           />
         </div>
         <div className="attendees-toolbar__filter">
@@ -1147,23 +1145,20 @@ function FilterToolbar({
         <div className="attendees-toolbar__filter">
           {/* Buckets over raw delivery statuses — filters the same latest-delivery status
             * the Mail column badge shows (#522). */}
-          <SearchableSelect
+          <MultiSelect
             id="attendees-filter-mail"
             label="Filter by mail delivery status"
             placeholder="All mail statuses"
             searchPlaceholder="Search mail statuses…"
             emptyLabel="No mail statuses found"
-            value={mailStatusFilter || "all"}
+            value={mailStatusFilter}
             options={[
-              { id: "all", label: "All mail statuses" },
               { id: "not_sent", label: "Not sent" },
               { id: "sent", label: "Sent" },
               { id: "pending", label: "Pending" },
               { id: "failed", label: "Failed" },
             ]}
-            onChange={(value) =>
-              onMailStatusFilterChange(value === "all" ? "" : (value as AttendeeMailStatusFilter))
-            }
+            onChange={(ids) => onMailStatusFilterChange(ids as AttendeeMailStatusFilter[])}
           />
         </div>
       </FiltersMenu>

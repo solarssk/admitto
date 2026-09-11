@@ -39,7 +39,7 @@ describe("fetchEventAttendees (client) — query string building", () => {
   it("includes mail_status when given (#522)", async () => {
     const fetchMock = stubFetch();
 
-    await fetchEventAttendees("evt-1", { mail_status: "failed" });
+    await fetchEventAttendees("evt-1", { mail_status: ["failed"] });
 
     const [url] = fetchMock.mock.calls[0]!;
     expect(url).toBe("/api/admin/events/evt-1/attendees?mail_status=failed");

@@ -1083,7 +1083,7 @@ describe("mail_status filter — list + export (#522)", () => {
       orderBy: { created_at: "desc" },
     });
     const meta = log!.metadata as Record<string, unknown>;
-    expect(meta.filters).toMatchObject({ mail_status: "failed" });
+    expect(meta.filters).toMatchObject({ mail_status: ["failed"] });
   });
 
   it("the Mail column badge and the mail_status filter agree on 'latest' when two deliveries share a timestamp (#522 code review)", async () => {

@@ -978,9 +978,9 @@ function attendeesListQuery(eventId: string, params: AttendeesListParams = {}): 
   if (params.pageSize != null) q.set("pageSize", String(params.pageSize));
   if (params.q) q.set("q", params.q);
   if (params.status && params.status !== "all") q.set("status", params.status);
-  if (params.ticket_type) q.set("ticket_type", params.ticket_type);
-  if (params.rsvp_status) q.set("rsvp_status", params.rsvp_status);
-  if (params.mail_status) q.set("mail_status", params.mail_status);
+  if (params.ticket_type?.length) q.set("ticket_type", params.ticket_type.join(","));
+  if (params.rsvp_status?.length) q.set("rsvp_status", params.rsvp_status.join(","));
+  if (params.mail_status?.length) q.set("mail_status", params.mail_status.join(","));
   if (params.sortBy && params.sortBy !== "name") q.set("sortBy", params.sortBy);
   if (params.sortDir && params.sortDir !== "asc") q.set("sortDir", params.sortDir);
   const qs = q.toString();
@@ -1949,17 +1949,17 @@ function buildAttendeesExportSearchParams(
   params: {
     q?: string;
     status?: string;
-    ticket_type?: string;
-    rsvp_status?: RsvpStatus;
-    mail_status?: AttendeeMailStatusFilter;
+    ticket_type?: string[];
+    rsvp_status?: RsvpStatus[];
+    mail_status?: AttendeeMailStatusFilter[];
   },
 ): URLSearchParams {
   const urlParams = new URLSearchParams({ format });
   if (params.q) urlParams.set("q", params.q);
   if (params.status && params.status !== "all") urlParams.set("status", params.status);
-  if (params.ticket_type) urlParams.set("ticket_type", params.ticket_type);
-  if (params.rsvp_status) urlParams.set("rsvp_status", params.rsvp_status);
-  if (params.mail_status) urlParams.set("mail_status", params.mail_status);
+  if (params.ticket_type?.length) urlParams.set("ticket_type", params.ticket_type.join(","));
+  if (params.rsvp_status?.length) urlParams.set("rsvp_status", params.rsvp_status.join(","));
+  if (params.mail_status?.length) urlParams.set("mail_status", params.mail_status.join(","));
   return urlParams;
 }
 
@@ -2024,9 +2024,9 @@ export async function exportAttendees(
   params: {
     q?: string;
     status?: string;
-    ticket_type?: string;
-    rsvp_status?: RsvpStatus;
-    mail_status?: AttendeeMailStatusFilter;
+    ticket_type?: string[];
+    rsvp_status?: RsvpStatus[];
+    mail_status?: AttendeeMailStatusFilter[];
   },
   format: AttendeeExportFormat,
   signal?: AbortSignal,

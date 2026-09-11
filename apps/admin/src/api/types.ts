@@ -388,9 +388,9 @@ export interface AttendeesListParams {
   pageSize?: number;
   q?: string;
   status?: "all" | "admitted" | "not_admitted";
-  ticket_type?: string;
-  rsvp_status?: RsvpStatus;
-  mail_status?: AttendeeMailStatusFilter;
+  ticket_type?: string[];
+  rsvp_status?: RsvpStatus[];
+  mail_status?: AttendeeMailStatusFilter[];
   sortBy?: AttendeeSortBy;
   sortDir?: AttendeeSortDir;
 }

@@ -1,0 +1,41 @@
+/* MultiSelect: adds a "select all / clear" footer row and checkbox list rows on top of
+   SearchableSelect's own trigger/panel/search styling (searchable-select.css). */
+
+.multi-select__actions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.multi-select__actions button {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.multi-select__actions button:hover {
+  color: var(--primary-hover);
+}
+
+.multi-select__option {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius);
+}
+
+.multi-select__option:hover {
+  background: var(--surface-hover, var(--surface-sunken));
+}
+
+.multi-select__option .at-check {
+  width: 100%;
+}

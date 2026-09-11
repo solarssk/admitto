@@ -57,7 +57,10 @@ interface SearchableSelectProps {
 /** Generic searchable combobox: a disclosure button (same trigger/panel/outside-click mechanism
  * as FiltersMenu) whose panel holds a search box and an icon+label list - the same shape as
  * PhoneCountrySelect, generalized past phone-country data for any options list too long for a
- * plain `<select>` to stay usable (e.g. picking one event out of dozens). */
+ * plain `<select>` to stay usable (e.g. picking one event out of dozens). Need more than one
+ * value at once (e.g. a multi-value filter)? See the sibling `MultiSelect` in this same
+ * directory - same trigger/panel/`useDropdownMenu` mechanism, checkbox rows instead of
+ * close-on-click - rather than building a second one-off picker. */
 export function SearchableSelect({
   id,
   label,

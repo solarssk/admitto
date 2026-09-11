@@ -81,7 +81,7 @@ describe("exportAttendees (client) — thin wrapper coverage", () => {
     try {
       await exportAttendees(
         "evt-1",
-        { q: "vip", status: "admitted", ticket_type: "vip", rsvp_status: "confirmed", mail_status: "sent" },
+        { q: "vip", status: "admitted", ticket_type: ["vip"], rsvp_status: ["confirmed"], mail_status: ["sent"] },
         "csv",
       );
 
