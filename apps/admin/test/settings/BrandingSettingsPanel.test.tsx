@@ -512,6 +512,15 @@ describe("BrandingSettingsPanel - colour palette", () => {
     expect(adminColorValue()).toBe("#abcdef");
   });
 
+  it("switches Ticket page to its own custom colour via the native colour picker, independent of Admin panel", async () => {
+    await renderWithTheme();
+
+    fireEvent.click(ticketColorTrigger());
+    fireEvent.change(screen.getByLabelText("Custom colour picker"), { target: { value: "#abcdef" } });
+    expect(ticketColorValue()).toBe("#abcdef");
+    expect(adminColorValue()).toBe("Admitto blue");
+  });
+
   it("Restore defaults reverts colour and font (both surfaces) to Admitto's own defaults without touching organisation name/logo", async () => {
     mockFetchOrg.mockResolvedValueOnce({
       org_name: "Acme Corp",
