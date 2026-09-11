@@ -49,6 +49,15 @@ html:has(.shell), body:has(.shell) {
   gap: 6px;
   min-height: 0;
   overflow-y: auto;
+  /* The tablet-rail's collapsed<->expanded width is an animated grid-template-columns
+     transition (line ~684 below), not an instant snap - but the class toggle that drives it
+     is instant, so anything that only shows/hides via that class (the brand wordmark, the
+     "ADMINISTRATION" section label, ...) appears at its full resting width immediately,
+     before .sidebar itself has animated open enough to fit it. Without a horizontal clip
+     here, that content spills past .sidebar's still-narrow edge into .content next to it for
+     the transition's duration (PO report: the wordmark briefly overlapping the divider while
+     expanding) instead of being smoothly uncovered as the column widens underneath it. */
+  overflow-x: hidden;
   z-index: var(--z-sticky);
 }
 
@@ -779,9 +788,13 @@ html:has(.shell), body:has(.shell) {
     font-size: 20px;
   }
 
-  /* Tablet sidebar: mark only (same 28px as desktop). Hide the text wordmark so the
-     rail and the temporarily expanded labelled sidebar keep one brand size. */
-  .sidebar__brand .brand-link__wordmark {
+  /* Collapsed rail only: mark-only brand (same 28px as desktop), no room for the
+     wordmark at the rail's narrow width. Expanded (.shell--nav-open) widens the sidebar
+     to the same var(--sidebar-w) desktop uses (line ~690 above), so there's exactly as
+     much room as the always-expanded desktop sidebar, where the wordmark already shows -
+     hiding it unconditionally here (PO report) made the expanded tablet rail the one
+     place the full brand never appeared, on both mobile's drawer and desktop it does. */
+  .shell:not(.shell--nav-open) .sidebar__brand .brand-link__wordmark {
     display: none;
   }
 
