@@ -904,8 +904,8 @@ export async function handleDeleteAccountExternalIdentity(
   void notifyAuthFactorChanged(
     db,
     userId,
-    "Your SSO connection was removed",
-    "Your SSO connection was removed and a new local password was set on your account.",
+    "Your single sign-on connection was removed",
+    "Your single sign-on connection was removed and a new local password was set on your account.",
   );
   return c.json({ ok: true });
 }

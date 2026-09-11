@@ -331,7 +331,7 @@ async function resolveCfAccessIdentityUncached(
     void notifyOwnAuthFactorChanged(
       prisma,
       result.userId,
-      "A new SSO connection was linked",
+      "A new single sign-on connection was linked",
       "A new single sign-on connection (Cloudflare Access) was linked to your account.",
     );
   }
