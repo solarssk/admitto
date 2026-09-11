@@ -13,7 +13,7 @@ import { SESSION_COOKIE_NAME, SESSION_STAGE, validatePartialSession } from "@adm
  * `CHANGE_PASSWORD_REQUIRED` partial-session stage (IAM-001, see app.ts's
  * requireChangePasswordSession) - a normal signed-in staff member hitting it would just bounce
  * straight back to `/login`, defeating the whole point of this endpoint for the common case. My
- * Account's own "Change password" section at `/account` is what a full session needs instead;
+ * Account's own Password tab at `/account?tab=password` is what a full session needs instead;
  * that route already redirects to sign-in on its own when there is no session at all. A 302 (not
  * 301) either way, so the destination can move without a stale cached redirect. */
 export async function handleGetChangePasswordWellKnown(
@@ -27,5 +27,5 @@ export async function handleGetChangePasswordWellKnown(
       return c.redirect("/change-password", 302);
     }
   }
-  return c.redirect("/account", 302);
+  return c.redirect("/account?tab=password", 302);
 }
