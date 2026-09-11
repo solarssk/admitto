@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import {
@@ -145,7 +145,26 @@ afterEach(async () => {
   await prisma.oidcRoleGrant.deleteMany({ where: { user_id: adminUserId } });
   await prisma.session.deleteMany({ where: { user_id: adminUserId, id: { not: adminSessionId } } });
   await prisma.user.update({ where: { id: adminUserId }, data: { password_hash: await hashPassword(ADMIN_PASSWORD) } });
+  // account.auth_factor.changed's own throttle claim (dedupe_key = userId) must not survive into
+  // the next test - otherwise only the first credential-changing test per file run would ever
+  // actually dispatch, and every later one would be silently throttled for the rest of the
+  // 15-minute window instead of failing loudly.
+  await prisma.notification.deleteMany({ where: { user_id: { in: [userId, adminUserId] } } });
+  await prisma.notificationThrottle.deleteMany({ where: { event_type: "account.auth_factor.changed" } });
 });
+
+/** Polls for the account.auth_factor.changed in-app Notification fired by one of this file's
+ * self-service credential/MFA/SSO actions (fire-and-forget, see notifyAuthFactorChanged's own
+ * doc comment in account-routes.ts) - it can still be in flight when the HTTP response returns. */
+async function expectAuthFactorChangedNotification(forUserId: string, expectedTitle: string): Promise<void> {
+  await vi.waitFor(async () => {
+    const rows = await prisma.notification.findMany({
+      where: { user_id: forUserId, notification_type: "account.auth_factor.changed", title: expectedTitle },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.severity).toBe("warn");
+  });
+}
 
 afterAll(async () => {
   if (prevInstanceOrgId !== undefined) process.env.INSTANCE_ORG_ID = prevInstanceOrgId;
@@ -386,6 +405,21 @@ describe("PATCH /api/account/password", () => {
     });
     expect(audit?.actor_user_id).toBe(userId);
     expect(audit?.metadata).toMatchObject({ sessionsRevoked: 1 });
+
+    await expectAuthFactorChangedNotification(userId, "Your password was changed");
+  });
+
+  it("does not fire account.auth_factor.changed for a rejected password change", async () => {
+    const res = await app.request("/api/account/password", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ current_password: "wrong", new_password: NEW_PASSWORD, new_password_confirm: NEW_PASSWORD }),
+    });
+    expect(res.status).toBe(401);
+    const rows = await prisma.notification.findMany({
+      where: { user_id: userId, notification_type: "account.auth_factor.changed" },
+    });
+    expect(rows).toHaveLength(0);
   });
 
   it("returns 400 no_local_password for OIDC-only account", async () => {
@@ -536,6 +570,8 @@ describe("DELETE /api/account/mfa/trusted-devices", () => {
       (await prisma.trustedDevice.findUnique({ where: { id: otherDevice.trustedDevice.id } }))?.revoked_at,
     ).toBeNull();
     await prisma.trustedDevice.delete({ where: { id: otherDevice.trustedDevice.id } });
+
+    await expectAuthFactorChangedNotification(userId, "Trusted devices were cleared");
   });
 
   it("writes an audit entry only when a device was actually revoked", async () => {
@@ -553,6 +589,11 @@ describe("DELETE /api/account/mfa/trusted-devices", () => {
         where: { organization_id: ORG_ACCOUNT, action_type: "account_trusted_devices_revoked" },
       }),
     ).toBe(auditCountBefore);
+    expect(
+      await prisma.notification.count({
+        where: { user_id: userId, notification_type: "account.auth_factor.changed" },
+      }),
+    ).toBe(0);
 
     await createTrustedDevice(prisma, { userId });
     const res = await app.request("/api/account/mfa/trusted-devices", {
@@ -605,6 +646,8 @@ describe("POST /api/account/mfa/totp/*", () => {
     // so this session must not be rejected by the backup-codes-acknowledgment gate.
     const meRes = await app.request("/api/account", { headers: { Cookie: userCookie } });
     expect(meRes.status).toBe(200);
+
+    await expectAuthFactorChangedNotification(userId, "An authenticator app was added");
   });
 
   it("two concurrent confirms of the same pending enrollment write exactly one audit row", async () => {
@@ -701,6 +744,8 @@ describe("POST /api/account/mfa/totp/*", () => {
     });
     expect(audit?.actor_user_id).toBe(userId);
     expect(audit?.metadata).toMatchObject({ sessionsRevoked: 1 });
+
+    await expectAuthFactorChangedNotification(userId, "Your two-factor authentication was reset");
   });
 
   it("two concurrent MFA resets write exactly one audit row", async () => {
@@ -770,6 +815,13 @@ describe("POST /api/account/mfa/totp/*", () => {
       where: { organization_id: ORG_ACCOUNT, action_type: "account_mfa_reset" },
     });
     expect(auditCountAfter).toBe(auditCountBefore);
+    // No MFA method existed to remove, so nothing about an auth factor actually changed -
+    // account.auth_factor.changed must not fire just because the endpoint returned 200.
+    expect(
+      await prisma.notification.count({
+        where: { user_id: userId, notification_type: "account.auth_factor.changed" },
+      }),
+    ).toBe(0);
   });
 
   it("returns 400 no_local_password for OIDC-only TOTP enroll", async () => {
@@ -1210,6 +1262,8 @@ describe("DELETE /api/account/mfa/totp", () => {
       orderBy: { created_at: "desc" },
     });
     expect(audit?.actor_user_id).toBe(userId);
+
+    await expectAuthFactorChangedNotification(userId, "An authenticator app was removed");
   });
 
   it("removes TOTP even when it is the user's only confirmed MFA method (no server-side last-method block)", async () => {
@@ -1233,6 +1287,11 @@ describe("DELETE /api/account/mfa/totp", () => {
       body: JSON.stringify({}),
     });
     expect(res.status).toBe(404);
+    expect(
+      await prisma.notification.count({
+        where: { user_id: userId, notification_type: "account.auth_factor.changed" },
+      }),
+    ).toBe(0);
   });
 
   it("treats a malformed JSON body the same as no body (no step-up code supplied)", async () => {
@@ -1458,6 +1517,8 @@ describe("POST /api/account/mfa/backup-codes/regenerate", () => {
       orderBy: { created_at: "desc" },
     });
     expect(audit?.actor_user_id).toBe(userId);
+
+    await expectAuthFactorChangedNotification(userId, "Your backup codes were regenerated");
   });
 
   it("returns 400 for a body that fails schema validation", async () => {
@@ -1823,6 +1884,8 @@ describe("DELETE /api/account/external-identity", () => {
     expect(currentSession.revoked_at).toBeNull();
     const otherSession = await prisma.session.findUniqueOrThrow({ where: { id: other.session.id } });
     expect(otherSession.revoked_at).not.toBeNull();
+
+    await expectAuthFactorChangedNotification(userId, "Your SSO connection was removed");
   });
 
   it("unlinks a Cloudflare Access identity together with its source OIDC identity, not just the OIDC one", async () => {

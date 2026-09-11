@@ -69,7 +69,16 @@ async function resolveOrgStaff(db: Db, organizationId: string): Promise<string[]
  * assignment in this organization (or instance-wide) - never trusts the call site blindly
  * (prompt 86 §3: "nie ufaj call-site'owi bezkrytycznie"). Returns [] (not a throw) for a
  * missing targetUserId, an inactive user, or a user with no standing in this organization -
- * dispatcher.ts logs and skips on an empty audience rather than failing the caller. */
+ * dispatcher.ts logs and skips on an empty audience rather than failing the caller.
+ *
+ * "Standing in this organization" includes an event-scoped role assignment for one of this
+ * organization's own events, not just instance-/organization-scoped ones - an operator (the
+ * typical event-scoped role, see account-routes.ts's own ROLE_PRIORITY) is exactly the kind of
+ * user account.auth_factor.changed (ASVS V2.5.5) exists to protect, same as any admin. Missing
+ * this originally (checking only scope_type "instance"/"organization") went unnoticed because no
+ * registered type used audience "self" until account.auth_factor.changed did - re-verified
+ * against the real seeded fixtures in apps/web's own integration tests, not just read as correct.
+ */
 async function resolveSelf(db: Db, ctx: AudienceContext): Promise<string[]> {
   if (!ctx.targetUserId) return [];
 
@@ -79,16 +88,23 @@ async function resolveSelf(db: Db, ctx: AudienceContext): Promise<string[]> {
   });
   if (!user?.is_active) return [];
 
-  const membershipCount = await db.roleAssignment.count({
-    where: {
-      user_id: ctx.targetUserId,
-      OR: [
-        { scope_type: "instance" },
-        { scope_type: "organization", scope_id: ctx.organizationId },
-      ],
-    },
+  const assignments = await db.roleAssignment.findMany({
+    where: { user_id: ctx.targetUserId },
+    select: { scope_type: true, scope_id: true },
   });
-  if (membershipCount === 0) return [];
 
-  return [ctx.targetUserId];
+  const hasDirectStanding = assignments.some(
+    (a) => a.scope_type === "instance" || (a.scope_type === "organization" && a.scope_id === ctx.organizationId),
+  );
+  if (hasDirectStanding) return [ctx.targetUserId];
+
+  const eventScopeIds = assignments
+    .filter((a) => a.scope_type === "event" && a.scope_id)
+    .map((a) => a.scope_id as string);
+  if (eventScopeIds.length === 0) return [];
+
+  const ownedEventCount = await db.event.count({
+    where: { id: { in: eventScopeIds }, organization_id: ctx.organizationId },
+  });
+  return ownedEventCount > 0 ? [ctx.targetUserId] : [];
 }

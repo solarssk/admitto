@@ -17,10 +17,11 @@ const ORG_STAFF_DEFAULTS: Omit<NotificationTypeDef, "label" | "defaultSeverity">
 
 /**
  * Closed, developer-defined set of notification types (ADR 0038 §9 - no admin-configurable
- * rules/thresholds, no "subscribe to any System Log entry"). ADR 0044 §6 registry, foundation
- * slice: the 4 org-staff security/ops alerts wired in this PR. A 5th, self-audience type
- * (`account.auth_factor.changed`, ASVS V2.5.5) is added by a later PR once the personal-account
- * wiring it needs exists - see the notifications-module-foundation plan.
+ * rules/thresholds, no "subscribe to any System Log entry"). ADR 0044 §6 registry: 4 org-staff
+ * security/ops alerts plus one self-audience type below (`account.auth_factor.changed`,
+ * ASVS V2.5.5 + NIST SP 800-63-4 §4.1.2.1/§4.2.4/§4.4 - notify the account owner, and only the
+ * account owner, whenever their own password/MFA/SSO changes, whether they made the change
+ * themselves or an admin made it for them).
  */
 export const NOTIFICATION_TYPES: Record<string, NotificationTypeDef> = {
   "auth.login.repeated_failures": {
@@ -42,6 +43,22 @@ export const NOTIFICATION_TYPES: Record<string, NotificationTypeDef> = {
     ...ORG_STAFF_DEFAULTS,
     label: "Admin login from a new country",
     defaultSeverity: "warn",
+  },
+  "account.auth_factor.changed": {
+    category: "system",
+    label: "Your password or MFA method changed",
+    defaultSeverity: "warn",
+    // No webhook: that channel is one shared, team-wide URL per organization (see
+    // NotificationChannelKey's own doc comment) - posting a self-audience event there would
+    // broadcast "this specific person changed their MFA" to the whole org's Discord/Slack, the
+    // exact exposure this type exists to avoid for every OTHER type's audience.
+    availableChannels: ["email", "in_app"],
+    audience: "self",
+    // Mandatory: the whole point of ASVS V2.5.5 is catching an unauthorized change on your own
+    // account, so neither the account owner nor the organization can silence the one alert meant
+    // to let them catch it (see userConfigurable/orgDisableable's own doc comments in types.ts).
+    userConfigurable: false,
+    orgDisableable: false,
   },
 };
 

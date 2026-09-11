@@ -8,6 +8,7 @@ import { vi } from "vitest";
 export function createStubDb() {
   return {
     roleAssignment: { findMany: vi.fn(), count: vi.fn() },
+    event: { count: vi.fn() },
     user: { findUnique: vi.fn(), findMany: vi.fn() },
     organization: { findUnique: vi.fn() },
     notificationSettings: { findUnique: vi.fn(), upsert: vi.fn() },

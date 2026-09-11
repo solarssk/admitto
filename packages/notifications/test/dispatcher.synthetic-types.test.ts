@@ -110,7 +110,7 @@ describe("notify() with synthetic type shapes", () => {
 
   it("sends to a valid self-audience target", async () => {
     db.user.findUnique.mockResolvedValue({ is_active: true });
-    db.roleAssignment.count.mockResolvedValue(1);
+    db.roleAssignment.findMany.mockResolvedValue([{ scope_type: "instance", scope_id: null }]);
     const email = stubChannel();
 
     await notify(
