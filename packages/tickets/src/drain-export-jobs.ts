@@ -18,7 +18,7 @@ import {
   parseExportJobStaleRunningMs,
   reclaimStaleExportJobs,
 } from "./reclaim-stale-export-jobs.js";
-import { scrubExportJobResultJson } from "./export-job-privacy.js";
+import { redactAttendeeListFiltersForStorage, scrubExportJobResultJson } from "./export-job-privacy.js";
 
 export type DrainExportJobsResult = {
   claimed: number;
@@ -132,13 +132,7 @@ async function runOneExportJob(
           request: {
             kind: request.kind,
             format: request.format,
-            filters: {
-              status: request.filters.status,
-              ticket_type: request.filters.ticket_type ?? null,
-              rsvp_status: request.filters.rsvp_status,
-              mail_status: request.filters.mail_status,
-              has_query: Boolean(request.filters.q && String(request.filters.q).trim()),
-            },
+            filters: redactAttendeeListFiltersForStorage(request.filters),
           },
           filename: file.filename,
           contentType: file.contentType,

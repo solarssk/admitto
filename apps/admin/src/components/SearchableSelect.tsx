@@ -25,6 +25,15 @@ function triggerContent(selected: SearchableSelectOption | undefined, placeholde
   );
 }
 
+interface SearchableSelectPanelProps {
+  isInline: boolean;
+  dropdown: Pick<
+    ReturnType<typeof useDropdownMenu<HTMLButtonElement, HTMLDivElement>>,
+    "openUpward" | "panelRef" | "panelStyle"
+  >;
+  children: ReactNode;
+}
+
 /** The open panel's own wrapper `<div>` - identical className/ref/style resolution in
  * `SearchableSelect` and `MultiSelect`, factored out so the two components don't each carry a
  * literal copy of the same 3 lines (SonarCloud duplication). */
@@ -32,14 +41,7 @@ export function SearchableSelectPanel({
   isInline,
   dropdown,
   children,
-}: {
-  isInline: boolean;
-  dropdown: Pick<
-    ReturnType<typeof useDropdownMenu<HTMLButtonElement, HTMLDivElement>>,
-    "openUpward" | "panelRef" | "panelStyle"
-  >;
-  children: ReactNode;
-}) {
+}: Readonly<SearchableSelectPanelProps>) {
   return (
     <div
       className={searchableSelectPanelClassName(isInline, dropdown.openUpward)}
