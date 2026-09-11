@@ -29,10 +29,10 @@ afterAll(async () => {
 });
 
 describe("GET /.well-known/change-password", () => {
-  it("redirects to /account when there is no session cookie at all", async () => {
+  it("redirects to /account?tab=password when there is no session cookie at all", async () => {
     const res = await app.request("/.well-known/change-password", { redirect: "manual" });
     expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("/account");
+    expect(res.headers.get("location")).toBe("/account?tab=password");
   });
 
   it("redirects to /change-password only for a CHANGE_PASSWORD_REQUIRED partial session", async () => {
@@ -48,22 +48,22 @@ describe("GET /.well-known/change-password", () => {
     expect(res.headers.get("location")).toBe("/change-password");
   });
 
-  it("redirects a normal signed-in staff member (full session) to /account, not the forced-change page", async () => {
+  it("redirects a normal signed-in staff member (full session) to /account?tab=password, not the forced-change page", async () => {
     const cookie = await sessionCookieFor(prisma, userId);
     const res = await app.request("/.well-known/change-password", {
       redirect: "manual",
       headers: { Cookie: cookie },
     });
     expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("/account");
+    expect(res.headers.get("location")).toBe("/account?tab=password");
   });
 
-  it("redirects to /account for a garbage/expired cookie instead of erroring", async () => {
+  it("redirects to /account?tab=password for a garbage/expired cookie instead of erroring", async () => {
     const res = await app.request("/.well-known/change-password", {
       redirect: "manual",
       headers: { Cookie: "admitto_session=not-a-real-token" },
     });
     expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("/account");
+    expect(res.headers.get("location")).toBe("/account?tab=password");
   });
 });
