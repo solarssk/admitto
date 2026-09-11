@@ -752,6 +752,34 @@ describe("Clear all", () => {
     await screen.findByText("You’re all caught up.");
   });
 
+  it("shows the empty state (not a stale load error) after clearing all, even when an earlier refresh had failed (bot review finding)", async () => {
+    // If the list loaded once, a later refresh failed (listError set) while the old notifications
+    // stayed in state, the header's Clear all trigger remains visible (it only checks
+    // notifications.length, not listError). Confirming must not leave the dropdown showing
+    // "Could not load notifications" on top of the now-correctly-empty list.
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications
+      .mockResolvedValueOnce({ notifications: [makeNotification()], unread_count: 1 })
+      .mockRejectedValueOnce(new Error("network down"));
+    clearAllAccountNotifications.mockResolvedValue({ cleared_count: 1, unread_count: 0 });
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+    openBell(); // close
+    openBell(); // reopen - triggers the second, rejecting fetchAccountNotifications call
+    await screen.findByText("Could not load notifications.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    const dialog = await screen.findByRole("dialog", { name: "Clear all notifications?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear all notifications" }));
+
+    await waitFor(() => expect(clearAllAccountNotifications).toHaveBeenCalled());
+    await screen.findByText("You’re all caught up.");
+    expect(screen.queryByText("Could not load notifications.")).toBeNull();
+  });
+
   it("permanently clears the list and shows the empty state after confirming", async () => {
     fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
     fetchAccountNotifications.mockResolvedValue({

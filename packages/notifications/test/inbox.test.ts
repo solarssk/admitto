@@ -59,46 +59,48 @@ describe("describePersonalNotifications", () => {
 });
 
 describe("countUnreadNotifications", () => {
-  it("counts only the caller's own unread rows, within the same newest-30 window the list shows", async () => {
+  it("counts the caller's own unread rows via a read_at:null filter, capped at 30", async () => {
     const db = createStubDb();
-    db.notification.findMany.mockResolvedValue([
-      { read_at: null },
-      { read_at: new Date("2026-09-10T09:00:00Z") },
-      { read_at: null },
-    ]);
+    // The query now filters for unread rows directly (not "top-30 recent, then filter"), so the
+    // stub only ever returns rows matching the where clause - already-read rows never come back.
+    db.notification.findMany.mockResolvedValue([{ id: "n1" }, { id: "n2" }]);
 
     const count = await countUnreadNotifications(db as unknown as PrismaClient, "user-1");
 
     expect(count).toBe(2);
     expect(db.notification.findMany).toHaveBeenCalledWith({
-      where: { user_id: "user-1" },
-      orderBy: [{ created_at: "desc" }, { id: "desc" }],
+      where: { user_id: "user-1", read_at: null },
       take: 30,
-      select: { read_at: true },
+      select: { id: true },
     });
   });
 
-  it("never exceeds what describePersonalNotifications can ever show - more than 30 unread rows in the window still counts as at most 30", async () => {
+  it("never exceeds 30 even when there are more unread rows than that", async () => {
     const db = createStubDb();
-    db.notification.findMany.mockResolvedValue(Array.from({ length: 30 }, () => ({ read_at: null })));
+    db.notification.findMany.mockResolvedValue(Array.from({ length: 30 }, (_, i) => ({ id: `n${i}` })));
 
     const count = await countUnreadNotifications(db as unknown as PrismaClient, "user-1");
 
     expect(count).toBe(30);
   });
 
-  it("orders by the same tiebreak as describePersonalNotifications, so both queries agree on which rows fall inside the top-30 window when several share the exact same created_at", async () => {
-    const listDb = createStubDb();
-    listDb.notification.findMany.mockResolvedValue([]);
-    const countDb = createStubDb();
-    countDb.notification.findMany.mockResolvedValue([]);
+  it("still reports a nonzero count when the caller's unread notification falls outside describePersonalNotifications's own newest-30 window (bot review finding)", async () => {
+    // Regression test for capping-then-filtering: if the query took the chronological top-30
+    // first and filtered for unread afterward, a user whose 30 most recent notifications are all
+    // already read - but who still has one older unread row - would see 0, hiding the badge and
+    // "Mark all as read" even though markAllNotificationsRead itself is unbounded and would still
+    // catch it. Filtering on read_at directly (the fix) means this scenario is indistinguishable
+    // from any other unread row at the query level - this test locks in the query's where clause
+    // rather than simulating the DB's actual chronological ordering.
+    const db = createStubDb();
+    db.notification.findMany.mockResolvedValue([{ id: "old-unread" }]);
 
-    await describePersonalNotifications(listDb as unknown as PrismaClient, "user-1");
-    await countUnreadNotifications(countDb as unknown as PrismaClient, "user-1");
+    const count = await countUnreadNotifications(db as unknown as PrismaClient, "user-1");
 
-    const listOrderBy = listDb.notification.findMany.mock.calls[0]![0].orderBy;
-    const countOrderBy = countDb.notification.findMany.mock.calls[0]![0].orderBy;
-    expect(listOrderBy).toEqual(countOrderBy);
+    expect(count).toBe(1);
+    expect(db.notification.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { user_id: "user-1", read_at: null } }),
+    );
   });
 });
 

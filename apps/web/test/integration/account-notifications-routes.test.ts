@@ -100,7 +100,7 @@ afterAll(async () => {
 
 async function createNotification(
   userId: string,
-  overrides: Partial<{ organizationId: string; readAt: Date | null; title: string }> = {},
+  overrides: Partial<{ organizationId: string; readAt: Date | null; title: string; createdAt: Date }> = {},
 ) {
   return prisma.notification.create({
     data: {
@@ -111,6 +111,7 @@ async function createNotification(
       title: overrides.title ?? "5 consecutive failed sign-in attempts",
       body: "5 consecutive failed sign-in attempts on admin@example.com.",
       read_at: overrides.readAt ?? null,
+      ...(overrides.createdAt ? { created_at: overrides.createdAt } : {}),
     },
   });
 }
@@ -248,6 +249,32 @@ describe("GET /api/account/notifications/unread-count", () => {
     await createNotification(userAId, { readAt: new Date() });
     await createNotification(userBId);
     await createNotification(userBId);
+
+    const res = await app.request("/api/account/notifications/unread-count", {
+      headers: { Cookie: cookieA },
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { unread_count: number }).unread_count).toBe(1);
+  });
+
+  it("still reports the unread count when the caller's 30 most recent notifications are all read but an older one is still unread", async () => {
+    // Regression test (bot review finding): if the query took the chronological newest-30 window
+    // first and filtered for unread afterward, this scenario would silently report 0 - hiding both
+    // the badge and "Mark all as read" for a real unread notification, even though
+    // markAllNotificationsRead itself is unbounded and would still catch it.
+    const now = Date.now();
+    await createNotification(userAId, {
+      readAt: null,
+      createdAt: new Date(now - 40 * 60 * 1000),
+      title: "Older unread alert",
+    });
+    for (let i = 0; i < 30; i++) {
+      await createNotification(userAId, {
+        readAt: new Date(),
+        createdAt: new Date(now - i * 1000),
+        title: `Recent read alert ${i}`,
+      });
+    }
 
     const res = await app.request("/api/account/notifications/unread-count", {
       headers: { Cookie: cookieA },
