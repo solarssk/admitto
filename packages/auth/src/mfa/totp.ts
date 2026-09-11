@@ -80,7 +80,21 @@ export function verifyTotpCodeDetailed(
     // V2.8.5, CWE-287): a signal worth alerting the account owner about, distinct from an
     // ordinary wrong guess. Only recomputed when a constraint was actually supplied to begin
     // with - no watermark, nothing to have been replayed against.
-    const replay = options.afterTimeStep != null && totp.verifySync(baseOptions).valid;
+    //
+    // The unconstrained check's own epochTolerance window (±1 step) can validate a code for ANY
+    // step near "now", not only the exact step afterTimeStep represents - e.g. once step t is
+    // accepted, a never-used code from t-1 fails the constrained check (t-1 is not after t) but
+    // still passes this unconstrained one, since t-1 is within tolerance of "now" too. That code
+    // was never actually used, so it must not be reported as a replay. Only a matched time step
+    // that's IDENTICAL to afterTimeStep (the specific step already recorded as consumed) proves
+    // this exact code was reused, not merely some other old-but-unused code in the window (bot
+    // review finding, PR #1316).
+    const unconstrained = totp.verifySync(baseOptions);
+    const replay =
+      options.afterTimeStep != null &&
+      unconstrained.valid &&
+      "timeStep" in unconstrained &&
+      unconstrained.timeStep === options.afterTimeStep;
     return { valid: false, replay };
   } catch {
     return { valid: false, replay: false };
@@ -106,7 +120,9 @@ export function verifyTotpCodeWithSecret(secret: string, code: string): boolean 
   }).valid;
 }
 
-/** @internal Used by @admitto/auth/testing — not part of the public auth API. */
-export function generateTotpCode(secret: string): string {
-  return totp.generateSync({ secret, period: TOTP_PERIOD_SEC });
+/** @internal Used by @admitto/auth/testing — not part of the public auth API. `epoch` (Unix
+ * seconds) lets a test generate a code for a specific past/future time step instead of "now",
+ * e.g. to construct an old-but-never-used code adjacent to one already accepted. */
+export function generateTotpCode(secret: string, epoch?: number): string {
+  return totp.generateSync({ secret, period: TOTP_PERIOD_SEC, ...(epoch != null ? { epoch } : {}) });
 }

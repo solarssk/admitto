@@ -214,11 +214,15 @@ export async function verifyUserTotpCodeDetailed(
     },
   });
   if (updated.count === 1) return { ok: true, replay: false };
-  // Lost the atomic race: another request already advanced last_totp_time_step to this same (or
-  // later) step between this request's own verify above and its update just now - i.e. another
-  // request concurrently used this exact code first. Also a genuine replay, just a concurrent
-  // one instead of a sequential one.
-  return { ok: false, replay: true };
+  // The atomic update above matched no row, but that alone doesn't prove THIS code was reused: a
+  // concurrent request may have advanced the watermark past this time step with a different,
+  // legitimately newer code (not a replay of this one), or an MFA reset/removal may have deleted
+  // the row entirely between the read above and this update. Re-read to tell which happened - only
+  // a persisted watermark that's IDENTICAL to this request's own matched time step proves another
+  // concurrent request consumed this exact code first; a missing row or a different (later)
+  // watermark is not evidence of reuse (bot review finding, PR #1316).
+  const current = await prisma.userMfaMethod.findUnique({ where: { id: row.id } });
+  return { ok: false, replay: current?.last_totp_time_step === verified.timeStep };
 }
 
 /** Boolean-only convenience wrapper around {@link verifyUserTotpCodeDetailed}. */
