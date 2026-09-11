@@ -1154,6 +1154,11 @@ describe("audit", () => {
             // multi-organization instance (bot review finding, PR #1312).
             organizationId: "org-1",
             dedupeKey: "target-1",
+            // The grant already committed by the time this dispatches, so the newly-elevated
+            // "target-1" could itself now match resolveOrgStaff - excluded so the alert reaches
+            // only the REST of the admin team, not the account it's about (bot review finding,
+            // PR #1312).
+            excludeUserId: "target-1",
             body: "Jane Admin granted New Admin the administrator role.",
             metadata: {
               actor_user_id: "actor-1",

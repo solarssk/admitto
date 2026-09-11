@@ -911,6 +911,14 @@ export async function logRoleElevated(
     title: "Admin role granted",
     body: `${actorLabel} granted ${targetLabel} the ${ELEVATED_ROLE_LABEL[input.role]} role.`,
     dedupeKey: input.targetUserId,
+    // The grant has already committed by the time this dispatches, so the newly-elevated
+    // account itself can now genuinely match resolveOrgStaff (an instance-scoped superadmin
+    // grant, or an org-scoped admin grant for the same organization this notification targets) -
+    // without this, the account would receive the alert meant for "the rest of the admin team"
+    // about its own promotion (bot review finding, PR #1312). Safe to pass unconditionally: it
+    // only narrows the org-staff candidate list if the target is actually present in it, and has
+    // no effect on the team webhook (channel.ts, audience-independent).
+    excludeUserId: input.targetUserId,
     metadata: {
       actor_user_id: input.actorUserId ?? null,
       target_user_id: input.targetUserId,

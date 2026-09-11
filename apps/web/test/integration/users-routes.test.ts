@@ -1035,6 +1035,15 @@ describe("POST /api/admin/users/:id/roles - auth.role.elevated notification (NIS
         expect(rows).toHaveLength(1);
         expect(rows[0]?.body).toContain("the administrator role");
       });
+
+      // The grant already committed by the time this dispatches, so `created` (now an org-admin
+      // of ORG_USERS) would otherwise itself match resolveOrgStaff and receive the alert meant
+      // for the REST of the admin team about its own promotion (bot review finding, PR #1312).
+      expect(
+        await prisma.notification.count({
+          where: { user_id: created.id, notification_type: "auth.role.elevated" },
+        }),
+      ).toBe(0);
     } finally {
       await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
       await prisma.user.deleteMany({ where: { id: created.id } });
