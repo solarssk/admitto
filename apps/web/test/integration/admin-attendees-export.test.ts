@@ -399,6 +399,17 @@ describe("GET /api/admin/events/:eventId/attendees — ticket_type filter", () =
     expect(ids).not.toContain(ATT_STD);
   });
 
+  it("comma-separated ticket_type=vip,standard returns the union of both types (multi-select filter)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_EX}/attendees?ticket_type=vip,standard`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { id: string }[]; total: number };
+    const ids = body.items.map((i) => i.id);
+    expect(ids).toContain(ATT_VIP1);
+    expect(ids).toContain(ATT_STD);
+  });
+
   it("ticket_type=vip + status=admitted returns subset", async () => {
     const res = await app.request(
       `/api/admin/events/${EVENT_EX}/attendees?ticket_type=vip&status=admitted`,

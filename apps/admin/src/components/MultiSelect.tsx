@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Checkbox } from "@admitto/ui";
 import { useDropdownMenu } from "./useDropdownMenu.js";
+import { SearchableSelectSearchBox } from "./SearchableSelectSearchBox.js";
 import type { SearchableSelectOption } from "./SearchableSelect.js";
 import "./searchable-select.css";
 import "./multi-select.css";
@@ -123,24 +124,15 @@ export function MultiSelect({
           style={panelStyle}
         >
           {showSearch && (
-            <div className="at-control">
-              <input
-                type="text"
-                id={`${id}-search`}
-                name={`${id}-search`}
-                className="searchable-select__search"
-                placeholder={searchPlaceholder}
-                aria-label={searchPlaceholder}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && results.length > 0) {
-                    e.preventDefault();
-                    toggle(results[0]!.id);
-                  }
-                }}
-              />
-            </div>
+            <SearchableSelectSearchBox
+              id={id}
+              searchPlaceholder={searchPlaceholder}
+              query={query}
+              onQueryChange={setQuery}
+              onEnter={() => {
+                if (results.length > 0) toggle(results[0]!.id);
+              }}
+            />
           )}
           {options.length > 1 && (
             <div className="multi-select__actions">

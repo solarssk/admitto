@@ -120,6 +120,42 @@ describe("exportAttendees (client) — thin wrapper coverage", () => {
     }
   });
 
+  it("omits ticket_type/rsvp_status/mail_status when their arrays are empty", async () => {
+    const fetchMock = enqueueThenDownload("attendees.csv");
+    vi.stubGlobal("fetch", fetchMock);
+    const stub = stubBlobDownload();
+
+    try {
+      await exportAttendees("evt-1", { ticket_type: [], rsvp_status: [], mail_status: [] }, "csv");
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/admin/events/evt-1/attendees/export?format=csv",
+        expect.anything(),
+      );
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it("comma-joins multiple ticket_type and rsvp_status values", async () => {
+    const fetchMock = enqueueThenDownload("attendees.csv");
+    vi.stubGlobal("fetch", fetchMock);
+    const stub = stubBlobDownload();
+
+    try {
+      await exportAttendees(
+        "evt-1",
+        { ticket_type: ["vip", "staff"], rsvp_status: ["confirmed", "tentative"] },
+        "csv",
+      );
+      const [url] = fetchMock.mock.calls[0]!;
+      expect(url).toBe(
+        "/api/admin/events/evt-1/attendees/export?format=csv&ticket_type=vip%2Cstaff&rsvp_status=confirmed%2Ctentative",
+      );
+    } finally {
+      stub.restore();
+    }
+  });
+
   it("propagates a failed export as an ApiError instead of downloading anything", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
