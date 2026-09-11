@@ -51,6 +51,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [confirmTarget, setConfirmTarget] = useState<SessionListDto | null>(null);
   const [revoking, setRevoking] = useState(false);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const [editTarget, setEditTarget] = useState<SessionListDto | null>(null);
 
@@ -58,6 +59,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
   const [selectedEventId, setSelectedEventId] = useState("");
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [bulkRevoking, setBulkRevoking] = useState(false);
+  const [bulkRevokeError, setBulkRevokeError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,13 +106,17 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
     /* v8 ignore if */
     if (!confirmTarget) return;
     setRevoking(true);
+    setRevokeError(null);
     try {
       await revokeSessionById(confirmTarget.id);
       setConfirmTarget(null);
       addToast("Session revoked.", "success");
       await load();
     } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Failed to revoke session."), "error");
+      // Shown inside the still-open dialog (errorMessage), not a toast - ConfirmDialog sits above
+      // the toast stack (--z-modal > --z-toast), so a toast-only failure would render invisibly
+      // behind the dialog's own backdrop while it stays open (bot review finding).
+      setRevokeError(operatorApiErrorMessage(err, "Failed to revoke session."));
     } finally {
       setRevoking(false);
     }
@@ -122,6 +128,7 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
     /* v8 ignore if */
     if (!selectedEventId) return;
     setBulkRevoking(true);
+    setBulkRevokeError(null);
     try {
       const { revokedCount } = await revokeAllOperatorSessions(selectedEventId);
       addToast(
@@ -131,7 +138,9 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
       setBulkConfirmOpen(false);
       await load();
     } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Failed to revoke sessions."), "error");
+      // Same reasoning as handleRevoke's own errorMessage: ConfirmDialog sits above the toast
+      // stack, so failures must show inside the still-open dialog instead.
+      setBulkRevokeError(operatorApiErrorMessage(err, "Failed to revoke sessions."));
     } finally {
       setBulkRevoking(false);
     }
@@ -379,9 +388,12 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
         confirmLabel="Revoke"
         confirmVariant="danger"
         loading={revoking}
+        errorMessage={revokeError}
         onConfirm={() => void handleRevoke()}
         onCancel={() => {
-          if (!revoking) setConfirmTarget(null);
+          if (revoking) return;
+          setConfirmTarget(null);
+          setRevokeError(null);
         }}
       />
 
@@ -406,9 +418,12 @@ export function ActiveSessionsTab({ onCountChange }: Readonly<ActiveSessionsTabP
         confirmLabel="Revoke"
         confirmVariant="danger"
         loading={bulkRevoking}
+        errorMessage={bulkRevokeError}
         onConfirm={() => void handleBulkRevoke()}
         onCancel={() => {
-          if (!bulkRevoking) setBulkConfirmOpen(false);
+          if (bulkRevoking) return;
+          setBulkConfirmOpen(false);
+          setBulkRevokeError(null);
         }}
       />
     </>

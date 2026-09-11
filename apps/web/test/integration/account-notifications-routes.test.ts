@@ -315,3 +315,39 @@ describe("POST /api/account/notifications/mark-all-read", () => {
     expect(otherRow?.read_at).toBeNull();
   });
 });
+
+describe("POST /api/account/notifications/clear-all", () => {
+  it("permanently deletes only the caller's own notifications, leaving another user's rows untouched", async () => {
+    await createNotification(userAId);
+    await createNotification(userAId, { readAt: new Date() });
+    const otherNotification = await createNotification(userBId);
+
+    const res = await app.request("/api/account/notifications/clear-all", {
+      method: "POST",
+      headers: { Cookie: cookieA, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { cleared_count: number; unread_count: number }).toEqual({
+      cleared_count: 2,
+      unread_count: 0,
+    });
+
+    const remainingForA = await prisma.notification.count({ where: { user_id: userAId } });
+    expect(remainingForA).toBe(0);
+
+    const otherRow = await prisma.notification.findUnique({ where: { id: otherNotification.id } });
+    expect(otherRow).not.toBeNull();
+  });
+
+  it("is idempotent when the caller already has nothing to clear", async () => {
+    const res = await app.request("/api/account/notifications/clear-all", {
+      method: "POST",
+      headers: { Cookie: cookieA, ...sameOrigin },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { cleared_count: number; unread_count: number }).toEqual({
+      cleared_count: 0,
+      unread_count: 0,
+    });
+  });
+});

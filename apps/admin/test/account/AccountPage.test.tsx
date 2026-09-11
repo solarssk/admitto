@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AccountPage } from "../../src/account/AccountPage.js";
 import type { AccountDto, AccountMfaMethodDto, SessionListDto } from "../../src/api/types.js";
 import { PASSWORD_STRENGTH_STRONG } from "@admitto/auth/password-strength-fixtures";
 import { BACKUP_RECOVERY_CODE_COUNT } from "@admitto/auth/constants";
-import { renderWithToast } from "../test-utils.js";
+import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 
 vi.mock("../../src/api/client.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client.js")>();
@@ -200,7 +200,7 @@ function fillPasswordForm() {
 /** Renders the page and fills the password-change form, without submitting it. Caller must mock
  * `mockFetchAccount`/`mockFetchSessions` beforehand. */
 async function renderAndFillPasswordForm(): Promise<void> {
-  renderWithToast(<AccountPage />);
+  renderWithToast(<AccountPage activeTab="password" />);
   await waitFor(() => {
     expect(screen.getByLabelText("Current password")).toBeTruthy();
   });
@@ -269,7 +269,7 @@ async function startTotpSetup(otpauthUri: string): Promise<void> {
     backupCodesAlreadyShown: true,
   });
 
-  renderWithToast(<AccountPage />);
+  renderWithToast(<AccountPage activeTab="password" />);
   await waitFor(() => {
     expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
   });
@@ -287,6 +287,12 @@ function totpRow(): HTMLElement {
 function backupCodesRow(): HTMLElement {
   return screen.getByText("Backup codes").closest(".account-mfa-method") as HTMLElement;
 }
+
+// Defaults every test to the desktop sessions table (useIsDesktop()) - the mobile-card layout
+// gets its own dedicated tests below with an explicit mockMatchMedia(false).
+beforeEach(() => {
+  mockMatchMedia(true);
+});
 
 afterEach(() => {
   cleanup();
@@ -314,7 +320,7 @@ describe("AccountPage delayed loading", () => {
     );
     mockFetchSessions.mockImplementation(() => new Promise(() => {}));
     vi.useFakeTimers();
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="sessions" />);
     await act(async () => {
       resolveAccountFetch(baseAccount);
     });
@@ -331,7 +337,7 @@ describe("AccountPage delayed loading", () => {
     );
     mockFetchSessions.mockImplementation(() => new Promise(() => {}));
     vi.useFakeTimers();
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="sessions" />);
 
     // Let 150ms elapse on the account fetch's own clock before it resolves, almost the
     // whole no-flash window, to prove the sessions spinner's window doesn't inherit this
@@ -476,7 +482,7 @@ describe("AccountPage toasts", () => {
   it("keeps password mismatch inline without a toast", async () => {
     mockLoadedAccount();
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByLabelText(newPasswordLabel)).toBeTruthy();
     });
@@ -495,7 +501,7 @@ describe("AccountPage toasts", () => {
   it("shows password strength feedback while typing a new password", async () => {
     mockLoadedAccount();
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByLabelText(newPasswordLabel)).toBeTruthy();
     });
@@ -514,7 +520,7 @@ describe("AccountPage toasts", () => {
   it("exposes password-manager hints on the change-password form", async () => {
     mockLoadedAccount();
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByLabelText("Current password")).toBeTruthy();
     });
@@ -700,7 +706,7 @@ describe("AccountPage toasts", () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockEnrollMfaTotp.mockRejectedValueOnce(new ApiError(409, "already_enrolled", "already_enrolled"));
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
     });
@@ -720,7 +726,7 @@ describe("AccountPage toasts", () => {
       backupCodesAlreadyShown: false,
     });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
     });
@@ -745,7 +751,7 @@ describe("AccountPage toasts", () => {
       backupCodesAlreadyShown: false,
     });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
     });
@@ -780,7 +786,7 @@ describe("AccountPage toasts", () => {
       });
 
     try {
-      renderWithToast(<AccountPage />);
+      renderWithToast(<AccountPage activeTab="password" />);
       await waitFor(() => {
         expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
       });
@@ -819,7 +825,7 @@ describe("AccountPage toasts", () => {
     });
     mockConfirmMfaTotp.mockResolvedValueOnce(undefined);
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
     });
@@ -849,7 +855,7 @@ describe("AccountPage toasts", () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockConfirmMfaTotp.mockRejectedValueOnce(new ApiError(400, "invalid_code", "invalid_code"));
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
     });
@@ -874,7 +880,7 @@ describe("AccountPage toasts", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockResetMfa.mockResolvedValueOnce({ sessions_revoked: 1 });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -900,7 +906,7 @@ describe("AccountPage toasts", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockResetMfa.mockResolvedValueOnce({ sessions_revoked: 2 });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -926,7 +932,7 @@ describe("AccountPage toasts", () => {
       backupCodesAlreadyShown: false,
     });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
     });
@@ -948,7 +954,7 @@ describe("AccountPage toasts", () => {
     mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -977,7 +983,7 @@ describe("AccountPage toasts", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [currentSession, otherSession] });
     mockDeleteSession.mockResolvedValue(undefined);
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="sessions" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Revoke all other sessions" })).toBeTruthy();
     });
@@ -998,7 +1004,7 @@ describe("AccountPage toasts", () => {
       .mockRejectedValueOnce(new Error("internal session transport detail"))
       .mockResolvedValueOnce({ sessions: [] });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="sessions" />);
     expect(await screen.findByText("Could not load sessions.")).toBeTruthy();
     expect(screen.queryByText("internal session transport detail")).toBeNull();
 
@@ -1014,7 +1020,7 @@ describe("AccountPage toasts", () => {
     mockFetchAccount.mockResolvedValue(baseAccount);
     mockFetchSessions.mockResolvedValue({ sessions: [currentSession, otherSession] });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="sessions" />);
     await screen.findByRole("button", { name: "Revoke all other sessions" });
 
     const otherSessionRevoke = screen
@@ -1069,7 +1075,7 @@ describe("AccountPage toasts", () => {
       ],
     });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="sessions" />);
 
     await waitFor(() => {
       expect(screen.getByText("Edge / Windows")).toBeTruthy();
@@ -1091,7 +1097,7 @@ describe("AccountPage toasts", () => {
       ],
     });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="sessions" />);
 
     await waitFor(() => {
       expect(screen.getByText(/Europe\/Warsaw/)).toBeTruthy();
@@ -1107,7 +1113,7 @@ describe("AccountPage toasts", () => {
       ],
     });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="sessions" />);
 
     await waitFor(() => {
       expect(screen.getByText("192.0.2.10")).toBeTruthy();
@@ -1119,7 +1125,7 @@ describe("AccountPage toasts", () => {
     mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: false, roles: [] });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(
         screen.getByText(/Two-factor setup requires a local password/i),
@@ -1132,7 +1138,7 @@ describe("AccountPage toasts", () => {
     mockFetchAccount.mockResolvedValue({ ...totpEnrolledAccount, has_local_password: false, roles: [] });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(
         screen.getByText(/Two-factor reset requires a local password/i),
@@ -1281,7 +1287,7 @@ describe("AccountPage toasts", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [currentSession, otherSession] });
     mockDeleteSession.mockResolvedValue(undefined);
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="sessions" />);
     await waitFor(() => {
       expect(screen.getAllByRole("button", { name: REVOKE_SESSION_BUTTON }).length).toBeGreaterThan(0);
     });
@@ -1303,7 +1309,7 @@ describe("AccountPage toasts", () => {
     mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -1334,7 +1340,7 @@ describe("AccountPage toasts", () => {
     const { ApiError } = await import("../../src/api/client.js");
     mockFetchAccount.mockResolvedValueOnce(baseAccount);
     mockFetchSessions.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="sessions" />);
     await waitFor(() => {
       expect(screen.getByText(/Could not load sessions/)).toBeTruthy();
     });
@@ -1363,7 +1369,7 @@ describe("AccountPage toasts", () => {
     mockLoadedAccount();
     mockFetchSessions.mockResolvedValue({ sessions: [otherSession] });
     mockDeleteSession.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="sessions" />);
     await waitFor(() => {
       expect(screen.getAllByRole("button", { name: REVOKE_SESSION_BUTTON }).length).toBeGreaterThan(0);
     });
@@ -1404,7 +1410,7 @@ describe("AccountPage toasts", () => {
     mockLoadedAccount();
     mockFetchSessions.mockResolvedValue({ sessions: [currentSession, otherSession] });
     mockDeleteSession.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="sessions" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Revoke all other sessions" })).toBeTruthy();
     });
@@ -1421,7 +1427,7 @@ describe("AccountPage toasts", () => {
     mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockResetMfa.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -1440,7 +1446,7 @@ describe("AccountPage toasts", () => {
     mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockResetMfa.mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"));
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -1471,7 +1477,7 @@ describe("AccountPage toasts", () => {
       .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
       .mockResolvedValueOnce({ sessions_revoked: 0 });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -1511,7 +1517,7 @@ describe("AccountPage toasts", () => {
     mockBeginWebauthnAssertion.mockResolvedValue({ options: { challenge: "chal-1" } } as never);
     mockStartAuthentication.mockResolvedValue({ id: "cred-1" } as never);
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -1537,7 +1543,7 @@ describe("AccountPage toasts", () => {
     mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockResetMfa.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -1557,6 +1563,100 @@ describe("AccountPage toasts", () => {
 
     dialog = await openResetMfaDialog();
     expect(within(dialog).queryByText(/Failed to reset 2FA/)).toBeNull();
+  });
+});
+
+describe("AccountPage: Sessions pagination and responsive layout", () => {
+  function manySessions(n: number) {
+    return Array.from({ length: n }, (_, i) =>
+      makeAccountSession({ id: `sess-${i}`, deviceLabel: `Device ${i}`, isCurrent: i === 0 }),
+    );
+  }
+
+  it("paginates active sessions 10 per page by default", async () => {
+    mockLoadedAccount();
+    mockFetchSessions.mockResolvedValue({ sessions: manySessions(12) });
+
+    renderWithToast(<AccountPage activeTab="sessions" />);
+    await screen.findByRole("table");
+
+    expect(screen.getByText("Showing 1–10 of 12")).toBeTruthy();
+    expect(screen.getByText("Page 1 of 2")).toBeTruthy();
+    expect(screen.getByText("Device 0")).toBeTruthy();
+    expect(screen.queryByText("Device 10")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(screen.getByText("Showing 11–12 of 12")).toBeTruthy();
+    expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+    expect(screen.getByText("Device 10")).toBeTruthy();
+    expect(screen.queryByText("Device 0")).toBeNull();
+  });
+
+  it("changing rows-per-page resets to page 1 and shows every session on one page", async () => {
+    mockLoadedAccount();
+    mockFetchSessions.mockResolvedValue({ sessions: manySessions(12) });
+
+    renderWithToast(<AccountPage activeTab="sessions" />);
+    await screen.findByRole("table");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Rows per page,/ }));
+    fireEvent.click(screen.getByRole("button", { name: "25" }));
+
+    expect(screen.getByText("Showing 1–12 of 12")).toBeTruthy();
+    expect(screen.getByText("Page 1 of 1")).toBeTruthy();
+  });
+
+  it("steps from the clamped page, not a stale raw page, after a revoke shrinks the page count", async () => {
+    // 21 sessions = 3 pages of 10/10/1. Revoking the sole session on page 3 leaves 20 = 2 pages,
+    // clamping the view to page 2 - Previous must then land on page 1, not stay on page 2
+    // (same fix, and same test shape, as Users & roles' ActiveSessionsTab).
+    mockFetchAccount.mockResolvedValueOnce(baseAccount);
+    mockFetchSessions.mockResolvedValueOnce({ sessions: manySessions(21) });
+    mockDeleteSession.mockResolvedValueOnce(undefined);
+    mockFetchSessions.mockResolvedValueOnce({ sessions: manySessions(20) });
+
+    renderWithToast(<AccountPage activeTab="sessions" />);
+    await screen.findByRole("table");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("Page 3 of 3")).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole("button", { name: REVOKE_SESSION_BUTTON })[0]!);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Page 2 of 2")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    expect(screen.getByText("Page 1 of 2")).toBeTruthy();
+  });
+
+  it("shows a stacked card layout instead of a table below the desktop breakpoint", async () => {
+    mockMatchMedia(false);
+    mockLoadedAccount();
+    const { currentSession, otherSession } = makeCurrentAndOtherSessions();
+    mockFetchSessions.mockResolvedValue({ sessions: [currentSession, otherSession] });
+
+    renderWithToast(<AccountPage activeTab="sessions" />);
+    await waitFor(() => {
+      expect(screen.getByText("Other")).toBeTruthy();
+    });
+
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.getByText("This device")).toBeTruthy();
+    expect(screen.getByText("Showing 1–2 of 2")).toBeTruthy();
+
+    const revokeButtons = screen.getAllByRole("button", { name: REVOKE_SESSION_BUTTON });
+    const otherRevoke = revokeButtons.find((btn) => !btn.hasAttribute("disabled"));
+    expect(otherRevoke).toBeTruthy();
+    fireEvent.click(otherRevoke!);
+    expect(await screen.findByRole("dialog")).toBeTruthy();
   });
 });
 
@@ -2308,7 +2408,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
 
   /** Renders the page and opens the "Add passkey" dialog. */
   async function openAddPasskeyDialog(): Promise<HTMLElement> {
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
     });
@@ -2318,7 +2418,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
 
   /** Renders the page and opens the "Add security key" dialog. */
   async function openAddSecurityKeyDialog(): Promise<HTMLElement> {
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(securityKeyRow()).getByRole("button", { name: "Add" })).toBeTruthy();
     });
@@ -2662,7 +2762,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
   it("Add from within the Manage passkeys dialog opens Add passkey", async () => {
     mockLoadedAccount({ ...baseAccount, mfa_methods: [makeWebauthnMethod()] });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -2680,7 +2780,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
       mfa_methods: [makeWebauthnMethod({ attachment: "cross-platform" })],
     });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(securityKeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -2694,7 +2794,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
   it("Close dismisses the Manage passkeys dialog", async () => {
     mockLoadedAccount({ ...baseAccount, mfa_methods: [makeWebauthnMethod()] });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -2708,7 +2808,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
   it("shows Never used for a credential that has never been used", async () => {
     mockLoadedAccount({ ...baseAccount, mfa_methods: [makeWebauthnMethod({ last_used_at: null })] });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -2720,7 +2820,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
   it("falls back to a generic name for an unlabeled passkey", async () => {
     mockLoadedAccount({ ...baseAccount, mfa_methods: [makeWebauthnMethod({ label: null })] });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -2744,7 +2844,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockDeleteWebauthnCredential.mockResolvedValueOnce({ ok: true });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -2790,7 +2890,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     mockDeleteWebauthnCredential.mockResolvedValueOnce({ ok: true });
     mockSendSignal.mockRejectedValueOnce(new Error("Signal API unsupported"));
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -2815,7 +2915,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockDeleteWebauthnCredential.mockResolvedValueOnce({ ok: true });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -2846,7 +2946,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
       .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
       .mockResolvedValueOnce({ ok: true });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -2891,7 +2991,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
       .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
       .mockResolvedValueOnce({ ok: true });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -2931,7 +3031,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     mockBeginWebauthnAssertion.mockResolvedValue({ options: { challenge: "chal-1" } } as never);
     mockStartAuthentication.mockResolvedValue({ id: "cred-1" } as never);
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -2961,7 +3061,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     });
     mockDeleteWebauthnCredential.mockRejectedValueOnce(new Error("network down"));
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -2985,7 +3085,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
       ],
     });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -3009,7 +3109,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     });
     mockDeleteWebauthnCredential.mockImplementationOnce(() => new Promise(() => {}));
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -3030,7 +3130,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
   it("warns that removing the only confirmed method leaves the account without two-factor authentication", async () => {
     mockLoadedAccount({ ...baseAccount, mfa_methods: [makeWebauthnMethod()] });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -3057,7 +3157,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
       ],
     });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -3090,7 +3190,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockDeleteWebauthnCredential.mockResolvedValueOnce({ ok: true });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(securityKeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -3114,7 +3214,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
   it("shows a disabled Add passkey/Add security key and a note when webauthn is disabled for the instance", async () => {
     mockLoadedAccount({ ...baseAccount, webauthn_enabled: false });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByText("Passkey")).toBeTruthy();
     });
@@ -3137,7 +3237,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
       mfa_methods: [makeWebauthnMethod()],
     });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -3156,7 +3256,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
       mfa_methods: [makeWebauthnMethod()],
     });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(passkeyRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -3173,7 +3273,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     mockBrowserSupportsPasskeys.mockResolvedValueOnce(false);
     mockLoadedAccount(baseAccount);
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     const passkeyAdd = await waitFor(() => {
       const button = within(passkeyRow()).getByRole("button", { name: "Add" });
       expect(button.hasAttribute("disabled")).toBe(true);
@@ -3188,7 +3288,7 @@ describe("AccountPage: WebAuthn passkeys & security keys", () => {
     mockFetchAccount.mockResolvedValue({ ...baseAccount, has_local_password: false, webauthn_enabled: true, roles: [] });
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByText(/Two-factor setup requires a local password/i)).toBeTruthy();
     });
@@ -3216,7 +3316,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockDeleteAccountTotp.mockResolvedValueOnce({ ok: true });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -3242,7 +3342,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockDeleteAccountTotp.mockResolvedValueOnce({ ok: true });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -3272,7 +3372,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
       .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
       .mockResolvedValueOnce({ ok: true });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -3310,7 +3410,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     mockBeginWebauthnAssertion.mockResolvedValue({ options: { challenge: "chal-1" } } as never);
     mockStartAuthentication.mockResolvedValue({ id: "cred-1" } as never);
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -3339,7 +3439,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
       .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
       .mockResolvedValueOnce({ ok: true });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -3364,7 +3464,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockDeleteAccountTotp.mockRejectedValueOnce(new Error("network down"));
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -3384,7 +3484,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockResetMfa.mockResolvedValueOnce({ sessions_revoked: 0 });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
     });
@@ -3413,7 +3513,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
   it("offers Forget all trusted devices even without a local password, but hides Reset everything there", async () => {
     mockLoadedAccount({ ...totpEnrolledAccount, has_local_password: false });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
     });
@@ -3426,7 +3526,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
   it("disables Forget all trusted devices when no device is currently remembered", async () => {
     mockLoadedAccount({ ...totpEnrolledAccount, trusted_devices_count: 0 });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
     });
@@ -3445,7 +3545,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockForgetAllTrustedDevices.mockResolvedValueOnce({ devices_revoked: 3 });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
     });
@@ -3477,7 +3577,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockForgetAllTrustedDevices.mockResolvedValueOnce({ devices_revoked: 1 });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
     });
@@ -3497,7 +3597,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
   it("Cancel dismisses the Forget all trusted devices dialog without revoking anything", async () => {
     mockLoadedAccount({ ...totpEnrolledAccount, trusted_devices_count: 2 });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
     });
@@ -3515,7 +3615,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     mockLoadedAccount({ ...totpEnrolledAccount, trusted_devices_count: 1 });
     mockForgetAllTrustedDevices.mockResolvedValueOnce({ devices_revoked: 0 });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
     });
@@ -3532,7 +3632,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     mockLoadedAccount({ ...totpEnrolledAccount, trusted_devices_count: 1 });
     mockForgetAllTrustedDevices.mockRejectedValueOnce(new Error("network down"));
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
     });
@@ -3551,7 +3651,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockResetMfa.mockImplementationOnce(() => new Promise(() => {}));
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Two-factor authentication options" })).toBeTruthy();
     });
@@ -3576,7 +3676,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     mockFetchAccount.mockResolvedValue(totpEnrolledAccount);
     mockFetchSessions.mockResolvedValue({ sessions: [] });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -3596,7 +3696,7 @@ describe("AccountPage: Manage authenticator app (TOTP) dialog", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockDeleteAccountTotp.mockImplementationOnce(() => new Promise(() => {}));
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(totpRow()).getByRole("button", { name: "Manage" })).toBeTruthy();
     });
@@ -3619,7 +3719,7 @@ describe("AccountPage: Backup codes", () => {
   it("is not shown when the account has no confirmed MFA method yet", async () => {
     mockLoadedAccount(baseAccount);
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Set up" })).toBeTruthy();
     });
@@ -3631,7 +3731,7 @@ describe("AccountPage: Backup codes", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockFetchBackupCodesStatus.mockRejectedValueOnce(new Error("network down"));
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(mockFetchBackupCodesStatus).toHaveBeenCalledTimes(1);
     });
@@ -3651,7 +3751,7 @@ describe("AccountPage: Backup codes", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockFetchBackupCodesStatus.mockRejectedValueOnce(new ApiError(401, "unauthorized", "unauthorized"));
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
 
     await waitFor(() => {
       expect(window.location.assign).toHaveBeenCalledWith(expect.stringContaining("/login?next="));
@@ -3666,7 +3766,7 @@ describe("AccountPage: Backup codes", () => {
       () => new Promise((_, reject) => { rejectStatus = reject; }),
     );
 
-    const { unmount } = renderWithToast(<AccountPage />);
+    const { unmount } = renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(mockFetchBackupCodesStatus).toHaveBeenCalledTimes(1);
     });
@@ -3682,7 +3782,7 @@ describe("AccountPage: Backup codes", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockFetchBackupCodesStatus.mockResolvedValueOnce({ total: 10, remaining: 7 });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(backupCodesRow()).getByText("7 of 10 remaining")).toBeTruthy();
     });
@@ -3693,7 +3793,7 @@ describe("AccountPage: Backup codes", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockFetchBackupCodesStatus.mockResolvedValueOnce({ total: 0, remaining: 0 });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(backupCodesRow()).getByText("None generated yet")).toBeTruthy();
     });
@@ -3704,7 +3804,7 @@ describe("AccountPage: Backup codes", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockFetchBackupCodesStatus.mockResolvedValueOnce({ total: 10, remaining: 3 });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(backupCodesRow()).getByText("3 of 10 remaining")).toBeTruthy();
     });
@@ -3720,7 +3820,7 @@ describe("AccountPage: Backup codes", () => {
     const newCodes = Array.from({ length: BACKUP_RECOVERY_CODE_COUNT }, (_, i) => `NEW-CODE-${i}`);
     mockRegenerateBackupCodes.mockResolvedValueOnce({ ok: true, codes: newCodes });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(backupCodesRow()).getByText("3 of 10 remaining")).toBeTruthy();
     });
@@ -3753,7 +3853,7 @@ describe("AccountPage: Backup codes", () => {
       .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
       .mockResolvedValueOnce({ ok: true, codes: secondCodes });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(backupCodesRow()).getByText("3 of 10 remaining")).toBeTruthy();
     });
@@ -3803,7 +3903,7 @@ describe("AccountPage: Backup codes", () => {
     mockBeginWebauthnAssertion.mockResolvedValue({ options: { challenge: "chal-1" } } as never);
     mockStartAuthentication.mockResolvedValue({ id: "cred-1" } as never);
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(backupCodesRow()).getByText("3 of 10 remaining")).toBeTruthy();
     });
@@ -3829,7 +3929,7 @@ describe("AccountPage: Backup codes", () => {
       .mockRejectedValueOnce(new ApiError(400, "totp_required", "totp_required"))
       .mockResolvedValueOnce({ ok: true, codes: newCodes });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(backupCodesRow()).getByText("10 of 10 remaining")).toBeTruthy();
     });
@@ -3858,7 +3958,7 @@ describe("AccountPage: Backup codes", () => {
     mockFetchSessions.mockResolvedValue({ sessions: [] });
     mockFetchBackupCodesStatus.mockResolvedValueOnce({ total: 10, remaining: 3 });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(backupCodesRow()).getByText("3 of 10 remaining")).toBeTruthy();
     });
@@ -3878,7 +3978,7 @@ describe("AccountPage: Backup codes", () => {
     mockFetchBackupCodesStatus.mockResolvedValueOnce({ total: 10, remaining: 3 });
     mockRegenerateBackupCodes.mockRejectedValueOnce(new Error("network down"));
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(backupCodesRow()).getByText("3 of 10 remaining")).toBeTruthy();
     });
@@ -3897,7 +3997,7 @@ describe("AccountPage: Backup codes", () => {
     mockFetchBackupCodesStatus.mockResolvedValueOnce({ total: 10, remaining: 3 });
     mockRegenerateBackupCodes.mockImplementationOnce(() => new Promise(() => {}));
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="password" />);
     await waitFor(() => {
       expect(within(backupCodesRow()).getByText("3 of 10 remaining")).toBeTruthy();
     });
@@ -3927,7 +4027,7 @@ describe("AccountPage: Notifications", () => {
     mockLoadedAccount();
     mockFetchNotificationPreferences.mockResolvedValue({ notification_types: [TYPE_A] });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="notifications" />);
 
     await screen.findByText(TYPE_A.label);
     const emailSwitch = screen.getByRole("switch", {
@@ -3945,7 +4045,7 @@ describe("AccountPage: Notifications", () => {
     mockLoadedAccount();
     mockFetchNotificationPreferences.mockResolvedValue({ notification_types: [TYPE_UNMAPPED] });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="notifications" />);
 
     await screen.findByText(TYPE_UNMAPPED.label);
     expect(screen.getByText("Alerts admin staff when this event occurs.")).toBeTruthy();
@@ -3958,7 +4058,7 @@ describe("AccountPage: Notifications", () => {
       notification_types: [{ ...TYPE_A, channels: { email: false, in_app: true } }],
     });
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="notifications" />);
     await screen.findByText(TYPE_A.label);
 
     fireEvent.click(screen.getByRole("switch", { name: `${TYPE_A.label} - Email` }));
@@ -3995,7 +4095,7 @@ describe("AccountPage: Notifications", () => {
     });
     mockPatchNotificationPreference.mockImplementationOnce(() => firstCall);
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="notifications" />);
     await screen.findByText(TYPE_A.label);
 
     fireEvent.click(screen.getByRole("switch", { name: `${TYPE_A.label} - Email` }));
@@ -4030,7 +4130,7 @@ describe("AccountPage: Notifications", () => {
     mockFetchNotificationPreferences.mockResolvedValue({ notification_types: [TYPE_A] });
     mockPatchNotificationPreference.mockRejectedValue(new Error("network down"));
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="notifications" />);
     await screen.findByText(TYPE_A.label);
 
     fireEvent.click(screen.getByRole("switch", { name: `${TYPE_A.label} - Email` }));
@@ -4047,7 +4147,7 @@ describe("AccountPage: Notifications", () => {
     mockLoadedAccount();
     mockFetchNotificationPreferences.mockRejectedValueOnce(new Error("boom"));
 
-    renderWithToast(<AccountPage />);
+    renderWithToast(<AccountPage activeTab="notifications" />);
     expect(await screen.findByText("Could not load notification preferences.")).toBeTruthy();
 
     mockFetchNotificationPreferences.mockResolvedValue({ notification_types: [TYPE_A] });

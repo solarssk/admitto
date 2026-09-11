@@ -64,6 +64,11 @@ vi.mock("@admitto/mail-delivery", () => ({
   workerHeartbeatStaleMs: vi.fn(() => 120_000),
 }));
 
+vi.mock("@admitto/notifications", () => ({
+  purgeNotifications: vi.fn(async () => ({ deleted: 0 })),
+  resolveNotificationRetentionDays: vi.fn(() => 30),
+}));
+
 vi.mock("@admitto/import", () => ({ drainImportJobs }));
 vi.mock("@admitto/storage", () => ({ getDefaultStorage: vi.fn(() => ({})) }));
 vi.mock("../src/lib/sse-publish.js", () => ({

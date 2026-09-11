@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  clearAllAccountNotifications,
   fetchAccountNotificationPreferences,
   fetchAccountNotifications,
   fetchAccountNotificationsUnreadCount,
@@ -100,6 +101,17 @@ describe("personal notification client helpers", () => {
     await expect(markAllAccountNotificationsRead()).resolves.toEqual(body);
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe("/api/account/notifications/mark-all-read");
+    expect(init).toMatchObject({ method: "POST", body: JSON.stringify({}) });
+  });
+
+  it("clearAllAccountNotifications POSTs an empty body", async () => {
+    const body = { cleared_count: 5, unread_count: 0 };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => body });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(clearAllAccountNotifications()).resolves.toEqual(body);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("/api/account/notifications/clear-all");
     expect(init).toMatchObject({ method: "POST", body: JSON.stringify({}) });
   });
 });

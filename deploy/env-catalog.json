@@ -890,6 +890,15 @@
       "secret": false,
       "ui": "none",
       "summary": "Days to keep durable security audit rows (default 30)."
+    },
+    {
+      "name": "NOTIFICATION_RETENTION_DAYS",
+      "group": "retention",
+      "boot": "optional",
+      "consumers": ["worker"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Days to keep in-app notification inbox rows a user never manually cleared (default 30)."
     }
   ]
 }

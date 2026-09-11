@@ -20,6 +20,7 @@ export function createStubDb() {
       findUnique: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+      deleteMany: vi.fn(),
     },
     securityAuditLog: { create: vi.fn() },
     $queryRaw: vi.fn(),
