@@ -197,6 +197,32 @@ function pickTicketFont(label: string): void {
   fireEvent.click(screen.getByRole("button", { name: label }));
 }
 
+/** The colour pill triggers sit next to the font selects in the same Theme-by-surface row - same
+ * "<label>, <value>" accessible-name shape as the font triggers above, and same reason: Ticket
+ * page resolves its unset state to a real label ("Same as Admin panel") rather than a falsy
+ * value. Admin panel's own trigger always shows the actual colour name (e.g. "Admitto blue"),
+ * matching how its font trigger always shows "Admitto Sans" rather than a generic placeholder. */
+function adminColorTrigger(): HTMLElement {
+  return screen.getByRole("button", { name: /^Admin panel colour,/ });
+}
+function ticketColorTrigger(): HTMLElement {
+  return screen.getByRole("button", { name: /^Ticket page colour,/ });
+}
+function adminColorValue(): string {
+  return adminColorTrigger().getAttribute("aria-label")!.replace(/^Admin panel colour, /, "");
+}
+function ticketColorValue(): string {
+  return ticketColorTrigger().getAttribute("aria-label")!.replace(/^Ticket page colour, /, "");
+}
+function pickAdminColor(label: string): void {
+  fireEvent.click(adminColorTrigger());
+  fireEvent.click(screen.getByRole("button", { name: label }));
+}
+function pickTicketColor(label: string): void {
+  fireEvent.click(ticketColorTrigger());
+  fireEvent.click(screen.getByRole("button", { name: label }));
+}
+
 const defaultOrg = {
   org_name: "Acme Corp",
   logo_url: null as string | null,
@@ -447,28 +473,43 @@ describe("BrandingSettingsPanel - organisation fields", () => {
 describe("BrandingSettingsPanel - colour palette", () => {
   it("shows the Admitto blue palette swatch active by default", async () => {
     await renderWithTheme();
+    fireEvent.click(adminColorTrigger());
     expect(screen.getByRole("button", { name: "Admitto blue" }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("selects a different palette colour on click", async () => {
     await renderWithTheme();
 
-    fireEvent.click(screen.getByRole("button", { name: "Violet" }));
-    expect(screen.getByRole("button", { name: "Violet" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "Admitto blue" }).getAttribute("aria-pressed")).toBe("false");
+    pickAdminColor("Violet");
+    expect(adminColorValue()).toBe("Violet");
     expect(screen.getByText(/Unsaved changes/)).toBeTruthy();
   });
 
-  it("shows the custom swatch active and its hex when the saved primary isn't in the palette", async () => {
+  it("keeps the popover open after picking a colour, so trying several stays a single open/close cycle", async () => {
+    await renderWithTheme();
+
+    fireEvent.click(adminColorTrigger());
+    fireEvent.click(screen.getByRole("button", { name: "Violet" }));
+    // Still open - the "Purple" swatch (rendered only while the popover is open) is reachable
+    // without reopening the trigger.
+    fireEvent.click(screen.getByRole("button", { name: "Purple" }));
+    expect(adminColorValue()).toBe("Purple");
+
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("button", { name: "Purple" })).toBeNull();
+  });
+
+  it("shows the custom hex as the trigger's label when the saved primary isn't in the palette", async () => {
     await renderWithTheme({ primary: "#123456" });
-    expect(document.querySelector("code")?.textContent).toBe("#123456");
+    expect(adminColorValue()).toBe("#123456");
   });
 
   it("switches to custom mode via the native colour picker", async () => {
     await renderWithTheme();
 
+    fireEvent.click(adminColorTrigger());
     fireEvent.change(screen.getByLabelText("Custom colour picker"), { target: { value: "#abcdef" } });
-    expect(document.querySelector("code")?.textContent).toBe("#abcdef");
+    expect(adminColorValue()).toBe("#abcdef");
   });
 
   it("Restore defaults reverts colour and font (both surfaces) to Admitto's own defaults without touching organisation name/logo", async () => {
@@ -481,6 +522,7 @@ describe("BrandingSettingsPanel - colour palette", () => {
     mockFetchTheme.mockResolvedValueOnce({
       theme: {
         primary: "#123456",
+        ticket_primary: "#ea580c",
         font_family_name: "Old Font",
         ticket_font_family_name: "Manrope",
         custom_font_families: [
@@ -490,16 +532,52 @@ describe("BrandingSettingsPanel - colour palette", () => {
     });
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
-    expect(document.querySelector("code")?.textContent).toBe("#123456");
+    expect(adminColorValue()).toBe("#123456");
+    expect(ticketColorValue()).toBe("Orange");
 
     fireEvent.click(screen.getByRole("button", { name: "Restore defaults" }));
 
+    expect(adminColorValue()).toBe("Admitto blue");
+    expect(ticketColorValue()).toBe("Same as Admin panel");
+    fireEvent.click(adminColorTrigger());
     expect(screen.getByRole("button", { name: "Admitto blue" }).getAttribute("aria-pressed")).toBe("true");
     expect(adminFontValue()).toBe("Admitto Sans");
     expect(ticketFontValue()).toBe("Same as Admin panel");
-    expect(document.querySelector("code")).toBeNull();
     expect(screen.getByLabelText("Organisation name")).toHaveProperty("value", "Acme Corp");
     expect(screen.getByAltText(/organisation logo preview/i)).toBeTruthy();
+  });
+
+  it("shows a disabled Registration form colour placeholder, not a functional picker", async () => {
+    await renderWithTheme();
+    expect(isDisabled(screen.getByRole("button", { name: /Registration form colour/ }))).toBe(true);
+  });
+
+  it("picking a swatch on Ticket page sets its own ticket_primary, independent of Admin panel", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce(defaultTheme);
+    mockPatchOrg.mockResolvedValueOnce(defaultOrg);
+    mockSaveTheme.mockResolvedValueOnce({ theme: { ticket_primary: "#ea580c" } });
+    renderWithToast(<BrandingSettingsPanel />);
+    await screen.findByLabelText("Organisation name");
+
+    expect(ticketColorValue()).toBe("Same as Admin panel");
+    pickTicketColor("Orange");
+    expect(ticketColorValue()).toBe("Orange");
+    expect(adminColorValue()).toBe("Admitto blue");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(mockSaveTheme).toHaveBeenCalledWith(expect.objectContaining({ ticket_primary: "#ea580c" }));
+    });
+  });
+
+  it("picking \"Same as Admin panel\" on Ticket page's colour clears its override", async () => {
+    await renderWithTheme({ primary: "#066fd1", ticket_primary: "#ea580c" });
+    expect(ticketColorValue()).toBe("Orange");
+
+    fireEvent.click(ticketColorTrigger());
+    fireEvent.click(screen.getByRole("button", { name: "Same as Admin panel" }));
+    expect(ticketColorValue()).toBe("Same as Admin panel");
   });
 });
 
@@ -982,7 +1060,7 @@ describe("BrandingSettingsPanel - save and reset", () => {
     await screen.findByLabelText("Organisation name");
 
     fireEvent.change(screen.getByLabelText("Organisation name"), { target: { value: "New Name Inc" } });
-    fireEvent.click(screen.getByRole("button", { name: "Violet" }));
+    pickAdminColor("Violet");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -1029,7 +1107,7 @@ describe("BrandingSettingsPanel - save and reset", () => {
     renderWithToast(<BrandingSettingsPanel />);
     await screen.findByLabelText("Organisation name");
 
-    fireEvent.click(screen.getByRole("button", { name: "Violet" }));
+    pickAdminColor("Violet");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -1113,6 +1191,23 @@ describe("BrandingSettingsPanel - save and reset", () => {
     expect(mockSaveTheme).not.toHaveBeenCalled();
   });
 
+  it("blocks save and shows an inline error next to Theme by surface when the loaded theme's ticket_primary itself is invalid", async () => {
+    mockFetchOrg.mockResolvedValueOnce(defaultOrg);
+    mockFetchTheme.mockResolvedValueOnce({ theme: { ticket_primary: "not-a-hex" } });
+    renderWithToast(<BrandingSettingsPanel />);
+    const nameInput = await screen.findByLabelText("Organisation name");
+    // Save is disabled on a clean load - dirty an unrelated field so it becomes clickable,
+    // exercising the theme validation that still covers the untouched, already-invalid colour.
+    fireEvent.change(nameInput, { target: { value: "Acme Renamed" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(screen.getByText(/valid 6-digit hex colour/i)).toBeTruthy();
+    });
+    expect(mockPatchOrg).not.toHaveBeenCalled();
+    expect(mockSaveTheme).not.toHaveBeenCalled();
+  });
+
   it("reports a generic failure toast when both the organisation and theme saves reject", async () => {
     mockFetchOrg.mockResolvedValueOnce(defaultOrg);
     mockFetchTheme.mockResolvedValueOnce(defaultTheme);
@@ -1160,11 +1255,11 @@ describe("BrandingSettingsPanel - save and reset", () => {
     await waitFor(() => expect(screen.getByLabelText("Organisation name")).toHaveProperty("value", "Acme Corp"));
 
     fireEvent.change(screen.getByLabelText("Organisation name"), { target: { value: "Unsaved Draft" } });
-    fireEvent.click(screen.getByRole("button", { name: "Violet" }));
+    pickAdminColor("Violet");
     fireEvent.click(screen.getByRole("button", { name: "Reset to saved" }));
 
     expect(screen.getByLabelText("Organisation name")).toHaveProperty("value", "Acme Corp");
-    expect(screen.getByRole("button", { name: "Admitto blue" }).getAttribute("aria-pressed")).toBe("true");
+    expect(adminColorValue()).toBe("Admitto blue");
     expect(mockPatchOrg).not.toHaveBeenCalled();
     expect(mockSaveTheme).not.toHaveBeenCalled();
   });

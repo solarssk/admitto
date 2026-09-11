@@ -68,6 +68,17 @@ describe("buildTicketPageStyles", () => {
     expect(css).toContain("font-family: 'IBM Plex Sans'");
   });
 
+  it("uses ticket_primary instead of primary when set", () => {
+    const css = buildTicketPageStyles({ primary: "#4f46e5", ticket_primary: "#ea580c" });
+    expect(css).toContain("--primary: #ea580c;");
+    expect(css).not.toContain("--primary: #4f46e5;");
+  });
+
+  it("falls back to primary when ticket_primary is unset", () => {
+    const css = buildTicketPageStyles({ primary: "#ea580c" });
+    expect(css).toContain("--primary: #ea580c;");
+  });
+
   it("falls back to self-hosted Inter when font_family_name matches neither a built-in nor a saved custom family", () => {
     // e.g. stale data left over from a deleted custom family - fonts.css imports Inter
     // unconditionally regardless of the active pick, so the admin SPA always has a real face to
