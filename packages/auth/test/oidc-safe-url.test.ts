@@ -192,6 +192,48 @@ describe("fetchOidcDiscovery SSRF guard", () => {
   });
 });
 
+describe("fetchOidcDiscovery issuer validation (ASVS V10.5.3 / OIDC Discovery 1.0 §4.3)", () => {
+  it("rejects a discovery document whose issuer doesn't match the URL it was fetched from", async () => {
+    // The document claims to be a different issuer than the one actually requested - accepting
+    // this would let Admitto end up trusting whichever issuer a discovery response happens to
+    // claim, not the one an admin configured.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          issuer: "http://127.0.0.1:9999/attacker-controlled",
+          authorization_endpoint: "http://127.0.0.1:9999/authorize",
+          token_endpoint: "http://127.0.0.1:9999/token",
+          jwks_uri: "http://127.0.0.1:9999/jwks",
+        }),
+      }),
+    );
+
+    await expect(fetchOidcDiscovery("http://127.0.0.1:9999")).rejects.toThrow(/issuer mismatch/);
+  });
+
+  it("accepts a discovery document whose issuer matches the requested URL exactly", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          issuer: "http://127.0.0.1:9999",
+          authorization_endpoint: "http://127.0.0.1:9999/authorize",
+          token_endpoint: "http://127.0.0.1:9999/token",
+          jwks_uri: "http://127.0.0.1:9999/jwks",
+        }),
+      }),
+    );
+
+    const doc = await fetchOidcDiscovery("http://127.0.0.1:9999");
+    expect(doc.issuer).toBe("http://127.0.0.1:9999");
+  });
+});
+
 describe("assertSafeOidcFetchUrlResolved", () => {
   it("rejects hostnames that resolve to private addresses", async () => {
     mockedLookup.mockResolvedValue([{ address: "10.0.0.5", family: 4 }] as Awaited<

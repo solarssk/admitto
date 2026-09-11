@@ -55,6 +55,18 @@ export async function fetchOidcDiscovery(issuer: string): Promise<OidcDiscoveryD
   ) {
     throw new TypeError("OIDC discovery document missing required fields");
   }
+  // OIDC Discovery 1.0 §4.3: the issuer value returned MUST be identical to the issuer URL that
+  // was used to request the document. Skipping this lets a discovery response claim a different
+  // issuer than the one actually configured/requested - since this returned value becomes the
+  // provider's stored, trusted issuer (compared verbatim against every future token's `iss`
+  // claim, see token.ts), an unchecked mismatch here would mean Admitto ends up trusting whichever
+  // issuer the fetched document happens to claim, not the one an admin actually intended (ASVS
+  // V10.5.3). `base`, not discoveryBase, is the correct comparison side - it's the same
+  // no-trailing-slash form normalizeIssuerInput's own doc comment says token verification compares
+  // against verbatim.
+  if (docIssuer !== base) {
+    throw new Error(`OIDC discovery issuer mismatch: requested "${base}", document claims "${docIssuer}"`);
+  }
   const userinfo = doc["userinfo_endpoint"];
   const endSession = doc["end_session_endpoint"];
   assertSafeOidcFetchUrl(authorization_endpoint);
