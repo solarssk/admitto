@@ -22,6 +22,22 @@ export interface EventMailReportsResponse {
     reached: number;
     not_reached: number;
     reached_pct: number;
+    /** Splits not_reached by why: never_sent means no delivery ever actually reached the mailer
+     * with a real outcome (no row at all, or every row is still "queued"/not sent yet, or was
+     * "cancelled" before going out); send_failed means at least one row's actual send attempt
+     * came back failed/bounced/rejected and none ever succeeded. never_sent + send_failed ===
+     * not_reached always. "Not reached" alone reads as "the email didn't arrive", which is only
+     * true for the send_failed half - a plain UI label can't tell them apart otherwise. Keyed on
+     * EmailDelivery.failed_at, not the row's current status - a retried-then-requeued or
+     * retried-then-cancelled row can read as never-attempted by status alone even though a real
+     * send genuinely failed for it earlier, and failed_at is the one field that survives that
+     * (see reports-routes.ts's own doc comment for the full retry-mechanics explanation). Not the
+     * same split as the Attendees list's own not_sent/pending/failed mail_status filter
+     * (packages/tickets/attendees-list-filters.ts) - that one classifies each attendee's LATEST
+     * delivery only (and keeps queued as its own "pending" bucket); this is an
+     * ever-succeeded-across-every-attempt rollup, matching reached/not_reached above. */
+    never_sent: number;
+    send_failed: number;
   };
   by_purpose: {
     initial: number;

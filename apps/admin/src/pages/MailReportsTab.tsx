@@ -71,7 +71,8 @@ function statusBreakdownRows(byStatus: EventMailReportsResponse["delivery"]["by_
 function reachSlices(reach: EventMailReportsResponse["attendee_reach"]): ReportsDonutSlice[] {
   return [
     { label: "Reached", color: STATUS_OK, count: reach.reached },
-    { label: "Not reached", color: DANGER_RED, count: reach.not_reached },
+    { label: "Never sent", color: GRAY_400, count: reach.never_sent },
+    { label: "Send failed", color: DANGER_RED, count: reach.send_failed },
   ];
 }
 
