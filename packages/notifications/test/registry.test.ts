@@ -6,12 +6,13 @@ const ORG_STAFF_TYPES = [
   "auth.mfa.break_glass",
   "auth.settings.changed",
   "auth.login.new_country",
+  "auth.role.elevated",
 ];
 
 const SELF_TYPES = ["account.auth_factor.changed", "account.login.new_location"];
 
 describe("NOTIFICATION_TYPES", () => {
-  it("registers exactly the 4 org-staff types plus the 2 self-audience types", () => {
+  it("registers exactly the 5 org-staff types plus the 2 self-audience types", () => {
     const compare = (a: string, b: string) => a.localeCompare(b);
     const expected = [...ORG_STAFF_TYPES, ...SELF_TYPES];
     expect(Object.keys(NOTIFICATION_TYPES).toSorted(compare)).toEqual(expected.toSorted(compare));

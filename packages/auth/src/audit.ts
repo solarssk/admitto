@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Prisma, PrismaClient } from "@admitto/db/client";
+import type { ScopeType } from "@admitto/db";
 import { resolveInstanceOrganizationId } from "@admitto/db/instance-org";
 import { redactEmail } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
@@ -833,6 +834,58 @@ export async function logAuthSettingsChanged(
       action: input.action,
       target_id: input.targetId ?? null,
       target_label: input.targetLabel ?? null,
+    },
+  });
+}
+
+const ELEVATED_ROLE_LABEL: Record<"admin" | "superadmin", string> = {
+  admin: "administrator",
+  superadmin: "superadmin",
+};
+
+/**
+ * Emit `auth.role.elevated` and dispatch a real alert to the rest of the admin team whenever a
+ * user is granted the "admin" or "superadmin" role - NIST SP 800-53 rev5 AC-2(1) (account managers
+ * are notified on a privilege modification), applied to the one privilege change that matters most
+ * for detecting an account takeover: someone gaining elevated access. Only "admin"/"superadmin" are
+ * accepted here, never "operator" - those accounts are short-lived and supervised in person
+ * (project_operator_no_mfa_by_design's already-established, lower-risk scope decision), and
+ * `assertRoleGrantAllowed` already requires the actor themselves to be a superadmin for either
+ * accepted role, so this only ever fires behind that same gate.
+ *
+ * Deliberately no new `SecurityAuditLog` row (same reasoning as `logAuthSettingsChanged`, which
+ * this function otherwise mirrors closely): the grant is already durable via `AdminAuditLog`
+ * (`users-routes.ts`'s `role_granted`/`role_changed` write, inside the same transaction that
+ * creates the assignment) - this only adds the alert dispatch that was missing.
+ *
+ * `db` is a plain `PrismaClient`, called only AFTER the granting transaction has committed - same
+ * `notify()` constraint every other dispatch in this module already respects (see
+ * `dispatchSecurityNotification`'s own doc comment). The caller decides WHETHER a grant counts as
+ * a genuine elevation (e.g. a superadmin-to-admin type switch is a demotion, not this) - this
+ * function unconditionally dispatches once called, same as every other `logXxx` in this module.
+ */
+export async function logRoleElevated(
+  db: PrismaClient,
+  input: {
+    actorUserId: string;
+    targetUserId: string;
+    role: "admin" | "superadmin";
+    scopeType: ScopeType;
+    scopeId: string | null;
+  },
+): Promise<void> {
+  const actorLabel = await resolveAccountLabel(db, input.actorUserId, undefined, "An admin");
+  const targetLabel = await resolveAccountLabel(db, input.targetUserId, undefined, "An account");
+  void dispatchSecurityNotification(db, "auth.role.elevated", {
+    title: "Admin role granted",
+    body: `${actorLabel} granted ${targetLabel} the ${ELEVATED_ROLE_LABEL[input.role]} role.`,
+    dedupeKey: input.targetUserId,
+    metadata: {
+      actor_user_id: input.actorUserId,
+      target_user_id: input.targetUserId,
+      role: input.role,
+      scope_type: input.scopeType,
+      scope_id: input.scopeId,
     },
   });
 }

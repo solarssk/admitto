@@ -194,6 +194,7 @@ export {
   logOidcLoginSuccess,
   logAccessDenied,
   logAuthSettingsChanged,
+  logRoleElevated,
   type LoginAuditContext,
   type MfaAuditContext,
   type MfaFailureReason,

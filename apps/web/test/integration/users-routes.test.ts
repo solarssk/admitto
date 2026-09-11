@@ -1010,6 +1010,90 @@ describe("POST /api/admin/users/:id/roles - exclusive role types", () => {
   });
 });
 
+describe("POST /api/admin/users/:id/roles - auth.role.elevated notification (NIST AC-2(1))", () => {
+  it("fires auth.role.elevated (org-staff, deduped on the target) when a user is granted admin for the first time", async () => {
+    const created = await prisma.user.create({
+      data: { email: "role-elevated-admin@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/roles`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "admin", scope_type: "organization", scope_id: ORG_USERS }),
+      });
+      expect(res.status).toBe(201);
+
+      await vi.waitFor(async () => {
+        const rows = await prisma.notification.findMany({
+          where: {
+            user_id: superId,
+            notification_type: "auth.role.elevated",
+            metadata: { path: ["target_user_id"], equals: created.id },
+          },
+        });
+        expect(rows).toHaveLength(1);
+        expect(rows[0]?.body).toContain("the administrator role");
+      });
+    } finally {
+      await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
+  // Granting "operator" never reaches logRoleElevated at all (isRoleElevation's own early
+  // return) - a synchronous branch, not a race with a fire-and-forget dispatch, so no vi.waitFor
+  // is needed to assert its absence here.
+  it("does not fire auth.role.elevated for an operator grant", async () => {
+    const created = await prisma.user.create({
+      data: { email: "role-elevated-operator@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/roles`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "operator", scope_type: "event", scope_id: eventId }),
+      });
+      expect(res.status).toBe(201);
+
+      const rows = await prisma.notification.findMany({
+        where: { notification_type: "auth.role.elevated", metadata: { path: ["target_user_id"], equals: created.id } },
+      });
+      expect(rows).toHaveLength(0);
+    } finally {
+      await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+
+  it("does not fire auth.role.elevated for a demotion (superadmin -> admin type switch is a rank decrease, not an escalation)", async () => {
+    const created = await prisma.user.create({
+      data: { email: "role-elevated-demotion@example.com", password_hash: await hashPassword(PASSWORD) },
+    });
+    await prisma.roleAssignment.create({
+      data: { user_id: created.id, role: "superadmin", scope_type: "instance", scope_id: null },
+    });
+
+    try {
+      const res = await app.request(`/api/admin/users/${created.id}/roles`, {
+        method: "POST",
+        headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "admin", scope_type: "organization", scope_id: ORG_USERS }),
+      });
+      expect(res.status).toBe(201);
+
+      const rows = await prisma.notification.findMany({
+        where: { notification_type: "auth.role.elevated", metadata: { path: ["target_user_id"], equals: created.id } },
+      });
+      expect(rows).toHaveLength(0);
+    } finally {
+      await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
+      await prisma.user.deleteMany({ where: { id: created.id } });
+    }
+  });
+});
+
 describe("DELETE /api/admin/users/:id/external-identity", () => {
   it("unlinks SSO for another user and sets the new password in the same request", async () => {
     const created = await prisma.user.create({
