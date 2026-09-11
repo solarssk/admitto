@@ -44,7 +44,7 @@ import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
-import { NOTIFICATION_SEVERITY_ICON } from "../components/notificationSeverity.js";
+import { NOTIFICATION_SEVERITY_ICON, NOTIFICATION_TYPE_DESCRIPTIONS } from "../components/notificationSeverity.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import "../settings/notifications-panel.css";
 import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListItem.js";
@@ -1926,7 +1926,10 @@ export function AccountPage() {
                               aria-hidden="true"
                             />
                           </span>
-                          <strong>{type.label}</strong>
+                          <div className="notifications-type-matrix__label-text">
+                            <strong>{type.label}</strong>
+                            <p>{NOTIFICATION_TYPE_DESCRIPTIONS[type.id] ?? "Alerts admin staff when this event occurs."}</p>
+                          </div>
                         </div>
                       </td>
                       {(["email", "in_app"] as const).map((channel) =>
