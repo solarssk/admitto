@@ -187,6 +187,7 @@ describe("resolvePersonalPreferences", () => {
         "auth.mfa.break_glass",
         "auth.settings.changed",
         "auth.login.new_country",
+        "auth.role.elevated",
         WEBHOOK_ONLY_TYPE,
       ].toSorted(),
     );

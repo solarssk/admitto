@@ -15,6 +15,7 @@ import {
   hashPassword,
   isPasswordTooCommon,
   isValidEmailFormat,
+  logRoleElevated,
   passwordTooCommonJsonBody,
   normalizeEmail,
   PASSWORD_MIN_LENGTH,
@@ -887,6 +888,9 @@ async function performRoleTypeSwitch(
       scope_id: parsed.scopeId,
     },
   });
+  // RoleAssignment.role is a plain `string` column (schema.prisma), always one of the 3 values
+  // this app ever writes - same `as Role` idiom parseRoleScope already uses for the same reason.
+  const replacedRoles = replaced.map((a) => a.role as Role);
   await writeAdminAuditLog(tx, {
     organizationId: orgId,
     actorUserId: actorId,
@@ -899,10 +903,51 @@ async function performRoleTypeSwitch(
       role: parsed.role,
       scopeType: parsed.scopeType,
       scopeId: parsed.scopeId,
-      ...(replaced.length > 0 ? { replacedRoles: replaced.map((a) => a.role) } : {}),
+      ...(replaced.length > 0 ? { replacedRoles } : {}),
     },
   });
-  return created;
+  return { assignment: created, replacedRoles };
+}
+
+const ROLE_RANK: Record<Role, number> = { operator: 0, admin: 1, superadmin: 2 };
+
+/** True when granting `role` genuinely increases the target's privilege level relative to
+ * whatever role type it's replacing (or the empty baseline of no prior assignment at all) - used
+ * to gate `auth.role.elevated` (NIST AC-2(1)) so a same-or-lower-rank replacement, e.g. a
+ * superadmin-to-admin type switch, is correctly read as a demotion, not the escalation this alert
+ * exists to catch. `role` is never "operator" at this call site (assertRoleGrantAllowed already
+ * requires the actor to be a superadmin for "admin"/"superadmin", and "operator" grants are out of
+ * this alert's scope regardless - see logRoleElevated's own doc comment), but the check stays
+ * explicit rather than relying on the rank comparison alone to encode that. */
+function isRoleElevation(role: Role, replacedRoles: Role[]): boolean {
+  if (role === "operator") return false;
+  const priorRank = replacedRoles.length > 0 ? Math.max(...replacedRoles.map((r) => ROLE_RANK[r])) : 0;
+  return ROLE_RANK[role] > priorRank;
+}
+
+/** Fires auth.role.elevated (NIST AC-2(1)) when this grant is a genuine elevation - pulled out of
+ * handlePostUserRole purely to keep that function's own cognitive complexity down (SonarCloud,
+ * PR #1312, same pattern as dispatcher.ts's claimThrottleOrLogSkip/isFullyOrgDisabled); no
+ * behavior changed by this split. The `role !== "operator"` guard is redundant with
+ * isRoleElevation's own internal check at runtime, but is what lets TypeScript narrow `role` to
+ * logRoleElevated's `"admin" | "superadmin"` parameter type. Must be called only AFTER the
+ * granting transaction has committed - notify() must never run inside one still-open
+ * (dispatchSecurityNotification's own doc comment). */
+async function maybeNotifyRoleElevation(
+  db: PrismaClient,
+  actorId: string,
+  targetId: string,
+  parsed: { role: Role; scopeType: ScopeType; scopeId: string | null },
+  replacedRoles: Role[],
+): Promise<void> {
+  if (parsed.role === "operator" || !isRoleElevation(parsed.role, replacedRoles)) return;
+  await logRoleElevated(db, {
+    actorUserId: actorId,
+    targetUserId: targetId,
+    role: parsed.role,
+    scopeType: parsed.scopeType,
+    scopeId: parsed.scopeId,
+  });
 }
 
 /** Maps handlePostUserRole's transaction failures to a response body, or null to rethrow.
@@ -1013,7 +1058,8 @@ export async function handlePostUserRole(c: Context, db: PrismaClient): Promise<
   if (outcome === "forbidden") {
     return c.json({ error: "forbidden" }, 403);
   }
-  const assignment = outcome;
+  const { assignment, replacedRoles } = outcome;
+  await maybeNotifyRoleElevation(db, actorId, id, parsed, replacedRoles);
 
   emitSystemLog("security", "info", "role_granted", {
     targetUserId: target.id,

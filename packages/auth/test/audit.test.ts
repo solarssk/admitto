@@ -24,6 +24,7 @@ import {
   logRateLimitExceeded,
   logRepeatedFailedLogins,
   logRepeatedFailedMfaAttempts,
+  logRoleElevated,
   logSuperadminBootstrapCli,
   logTrustedDeviceCreated,
   logTrustedDeviceUsed,
@@ -1102,6 +1103,135 @@ describe("audit", () => {
     });
   });
 
+  describe("logRoleElevated", () => {
+    /** Distinct actor/target snapshots keyed by user id - fakeDb()'s single fixed snapshot can't
+     * tell the two apart, and this function's whole point is naming both correctly. */
+    function dbWithDistinctActorAndTarget(): PrismaClient {
+      const snapshots: Record<string, { email: string; display_name: string | null }> = {
+        "actor-1": { email: "admin@example.com", display_name: "Jane Admin" },
+        "target-1": { email: "newadmin@example.com", display_name: "New Admin" },
+      };
+      return {
+        securityAuditLog: { create: vi.fn() },
+        user: {
+          findUnique: vi.fn(({ where }: { where: { id: string } }) =>
+            Promise.resolve(snapshots[where.id] ?? null),
+          ),
+        },
+        organization: { findUnique: vi.fn().mockResolvedValue({ id: "org_default" }), findFirst: vi.fn() },
+        $transaction: vi.fn(),
+      } as unknown as PrismaClient;
+    }
+
+    it("does not write a durable SecurityAuditLog row - already covered by AdminAuditLog, same reasoning as logAuthSettingsChanged", async () => {
+      const create = vi.fn();
+      await logRoleElevated(fakeDb(create), {
+        actorUserId: "user-1",
+        targetUserId: "user-2",
+        role: "admin",
+        scopeType: "organization",
+        scopeId: "org-1",
+      });
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it("dispatches a real notification, deduped on the TARGET account (not the actor), naming both correctly, organization-scoped to the GRANTED organization (bot review finding, PR #1312)", async () => {
+      const db = dbWithDistinctActorAndTarget();
+      await logRoleElevated(db, {
+        actorUserId: "actor-1",
+        targetUserId: "target-1",
+        role: "admin",
+        scopeType: "organization",
+        scopeId: "org-1",
+      });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.role.elevated",
+          expect.objectContaining({
+            // Not "org_default": an organization-scoped grant must notify THAT organization's
+            // own admin staff, not the instance default - a different tenant on a
+            // multi-organization instance (bot review finding, PR #1312).
+            organizationId: "org-1",
+            dedupeKey: "target-1",
+            // The grant already committed by the time this dispatches, so the newly-elevated
+            // "target-1" could itself now match resolveOrgStaff - excluded so the alert reaches
+            // only the REST of the admin team, not the account it's about (bot review finding,
+            // PR #1312).
+            excludeUserId: "target-1",
+            body: "Jane Admin granted New Admin the administrator role.",
+            metadata: {
+              actor_user_id: "actor-1",
+              target_user_id: "target-1",
+              role: "admin",
+              scope_type: "organization",
+              scope_id: "org-1",
+            },
+          }),
+        );
+      });
+    });
+
+    it("labels a superadmin grant distinctly from an admin grant, and falls back to the instance default organization (superadmin has no single owning organization)", async () => {
+      const db = dbWithDistinctActorAndTarget();
+      await logRoleElevated(db, {
+        actorUserId: "actor-1",
+        targetUserId: "target-1",
+        role: "superadmin",
+        scopeType: "instance",
+        scopeId: null,
+      });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.role.elevated",
+          expect.objectContaining({
+            organizationId: "org_default",
+            body: expect.stringContaining("the superadmin role"),
+          }),
+        );
+      });
+    });
+
+    it("dispatches with no human actor (system-driven IdP group-role sync), attributing the grant to the sync itself", async () => {
+      const db = dbWithDistinctActorAndTarget();
+      await logRoleElevated(db, {
+        targetUserId: "target-1",
+        role: "admin",
+        scopeType: "organization",
+        scopeId: "org-1",
+      });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.role.elevated",
+          expect.objectContaining({
+            body: "An SSO group-role mapping granted New Admin the administrator role.",
+            metadata: expect.objectContaining({ actor_user_id: null }),
+          }),
+        );
+      });
+    });
+
+    it("falls back to generic actor/target labels when no identity snapshot is available for either", async () => {
+      const db = fakeDb(vi.fn(), null);
+      await logRoleElevated(db, {
+        actorUserId: "user-1",
+        targetUserId: "user-2",
+        role: "admin",
+        scopeType: "organization",
+        scopeId: "org-1",
+      });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.role.elevated",
+          expect.objectContaining({ body: "An admin granted An account the administrator role." }),
+        );
+      });
+    });
+  });
+
   describe("logLoginNewCountry", () => {
     it("records into the System logs buffer at info level (not a failure/denial event)", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
@@ -1144,6 +1274,23 @@ describe("audit", () => {
             body: expect.stringContaining("admin@example.com"),
             metadata: { country: "FR" },
           }),
+        );
+      });
+    });
+
+    // The account owner already gets their own account.login.new_location alert below - without
+    // this, an owner who is themselves an active admin/superadmin (guaranteed by
+    // checkNewCountryLogin's hasElevatedRole gate) would also be a candidate for this org-staff
+    // dispatch and get a second email/in-app alert about the same login (bot review finding, PR #1309).
+    it("excludes the logging-in account itself from the org-staff dispatch's candidates", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb();
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", countryCode: "FR" });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.new_country",
+          expect.objectContaining({ excludeUserId: "user-1" }),
         );
       });
     });
@@ -1192,6 +1339,34 @@ describe("audit", () => {
         expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("auth.notify_dispatch_failed"));
       });
       expect(notify).not.toHaveBeenCalled();
+    });
+
+    // ASVS V2.2.3 self-audience counterpart, alongside the org-staff auth.login.new_country
+    // dispatch above - the account OWNER learns their own account signed in somewhere new, not
+    // just the rest of the admin team (PR5c, notifications-module-foundation plan's Luka A).
+    it("also dispatches account.login.new_location targeting the account owner, deduped on the same user+country pair", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb();
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", countryCode: "FR" });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "account.login.new_location",
+          expect.objectContaining({
+            organizationId: "org_default",
+            targetUserId: "user-1",
+            dedupeKey: "user-1:FR",
+            body: expect.stringContaining("FR"),
+            metadata: { country: "FR" },
+          }),
+        );
+      });
+      // Both dispatches happen from one call - not one OR the other.
+      expect(notify).toHaveBeenCalledWith(db, "auth.login.new_country", expect.anything());
+      // excludeUserId is an org-staff-only concept (dispatcher.ts's resolveCandidatesOrLogSkip
+      // ignores it for "self") - this self dispatch never sets it, only the org-staff one above.
+      const selfCall = notify.mock.calls.find(([, type]) => type === "account.login.new_location");
+      expect(selfCall?.[2]).not.toHaveProperty("excludeUserId");
     });
   });
 });

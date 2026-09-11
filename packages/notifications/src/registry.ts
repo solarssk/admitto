@@ -17,11 +17,16 @@ const ORG_STAFF_DEFAULTS: Omit<NotificationTypeDef, "label" | "defaultSeverity">
 
 /**
  * Closed, developer-defined set of notification types (ADR 0038 §9 - no admin-configurable
- * rules/thresholds, no "subscribe to any System Log entry"). ADR 0044 §6 registry: 4 org-staff
- * security/ops alerts plus one self-audience type below (`account.auth_factor.changed`,
- * ASVS V2.5.5 + NIST SP 800-63-4 §4.1.2.1/§4.2.4/§4.4 - notify the account owner, and only the
+ * rules/thresholds, no "subscribe to any System Log entry"). ADR 0044 §6 registry: 5 org-staff
+ * security/ops alerts plus two self-audience types below - `account.auth_factor.changed`
+ * (ASVS V2.5.5 + NIST SP 800-63-4 §4.1.2.1/§4.2.4/§4.4 - notify the account owner, and only the
  * account owner, whenever their own password/MFA/SSO changes, whether they made the change
- * themselves or an admin made it for them).
+ * themselves or an admin made it for them) and `account.login.new_location` (ASVS V2.2.3 -
+ * notify the account owner themselves when their own account signs in from a location not seen
+ * among its recent successful logins, alongside the existing org-staff `auth.login.new_country`
+ * alert that tells the REST of the admins about the same event). `auth.role.elevated` (NIST SP
+ * 800-53 rev5 AC-2(1) - notify account managers when a user's privileges are modified) rounds out
+ * the org-staff set.
  */
 export const NOTIFICATION_TYPES: Record<string, NotificationTypeDef> = {
   "auth.login.repeated_failures": {
@@ -44,6 +49,16 @@ export const NOTIFICATION_TYPES: Record<string, NotificationTypeDef> = {
     label: "Admin login from a new country",
     defaultSeverity: "warn",
   },
+  "auth.role.elevated": {
+    ...ORG_STAFF_DEFAULTS,
+    label: "Admin or superadmin role granted",
+    defaultSeverity: "warn",
+    // Never throttled (see throttleWindowMinutes's own doc comment): dedupeKey is the target
+    // user, but two distinct grants to the SAME target within the window - a revoke followed by
+    // a re-grant, or the admin UI saving several new organization scopes in sequence - are each
+    // independently reportable, not a repeat of one incident (bot review finding, PR #1312).
+    throttleWindowMinutes: 0,
+  },
   "account.auth_factor.changed": {
     category: "system",
     label: "Your password or MFA method changed",
@@ -63,6 +78,25 @@ export const NOTIFICATION_TYPES: Record<string, NotificationTypeDef> = {
     // Mandatory: the whole point of ASVS V2.5.5 is catching an unauthorized change on your own
     // account, so neither the account owner nor the organization can silence the one alert meant
     // to let them catch it (see userConfigurable/orgDisableable's own doc comments in types.ts).
+    userConfigurable: false,
+    orgDisableable: false,
+  },
+  "account.login.new_location": {
+    category: "system",
+    label: "You signed in from a new location",
+    defaultSeverity: "warn",
+    // No webhook, same reasoning as account.auth_factor.changed - a shared org webhook would
+    // broadcast "this specific person just signed in from X" to the whole team, not just the
+    // account owner.
+    availableChannels: ["email", "in_app"],
+    audience: "self",
+    // Mandatory, same reasoning as account.auth_factor.changed: this exists to catch a stolen
+    // credential being used somewhere the real owner never has been (ASVS V2.2.3), so an attacker
+    // who already has the account must not be able to silence the one alert meant to out them.
+    // Fired from the same call site (checkNewCountryLogin/logLoginNewCountry) and same
+    // hasElevatedRole gate as the existing org-staff auth.login.new_country - admin/superadmin
+    // accounts only, not yet extended to operators (project_operator_no_mfa_by_design: operator
+    // accounts are short-lived and supervised in person, a deliberately separate scope decision).
     userConfigurable: false,
     orgDisableable: false,
   },

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Prisma, PrismaClient } from "@admitto/db/client";
+import type { ScopeType } from "@admitto/db";
 import { resolveInstanceOrganizationId } from "@admitto/db/instance-org";
 import { redactEmail } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
@@ -65,6 +66,16 @@ async function dispatchSecurityNotification(
     /** Required for a self-audience type (e.g. account.auth_factor.changed) - ignored otherwise.
      * See NotificationEvent.targetUserId's own doc comment in packages/notifications. */
     targetUserId?: string;
+    /** A user_id to drop from an org-staff type's candidates - only meaningful there, ignored for
+     * "self". See NotificationEvent.excludeUserId's own doc comment in packages/notifications. */
+    excludeUserId?: string;
+    /** Overrides the notification's organization instead of resolving the instance default -
+     * needed when the underlying event concerns a SPECIFIC organization that may not be the
+     * instance default (e.g. auth.role.elevated's organization-scoped grants), so the org-staff
+     * audience resolves to that organization's own admins, not an unrelated one's (bot review
+     * finding, PR #1312). Omit to keep the previous, always-resolve-the-instance-default
+     * behavior every other call site in this module still relies on. */
+    organizationId?: string;
   },
 ): Promise<void> {
   if (!isPlainPrismaClient(db)) {
@@ -78,8 +89,8 @@ async function dispatchSecurityNotification(
     return;
   }
   try {
-    const organizationId = await resolveInstanceOrganizationId(db);
-    await notify(db, type, { organizationId, ...event });
+    const organizationId = event.organizationId ?? (await resolveInstanceOrganizationId(db));
+    await notify(db, type, { ...event, organizationId });
   } catch (err) {
     console.error(
       JSON.stringify({
@@ -834,6 +845,90 @@ export async function logAuthSettingsChanged(
   });
 }
 
+const ELEVATED_ROLE_LABEL: Record<"admin" | "superadmin", string> = {
+  admin: "administrator",
+  superadmin: "superadmin",
+};
+
+/**
+ * Emit `auth.role.elevated` and dispatch a real alert to the rest of the admin team whenever a
+ * user is granted the "admin" or "superadmin" role - NIST SP 800-53 rev5 AC-2(1) (account managers
+ * are notified on a privilege modification), applied to the one privilege change that matters most
+ * for detecting an account takeover: someone gaining elevated access. Only "admin"/"superadmin" are
+ * accepted here, never "operator" - those accounts are short-lived and supervised in person
+ * (project_operator_no_mfa_by_design's already-established, lower-risk scope decision).
+ *
+ * `actorUserId` is optional: most callers are a human admin (`assertRoleGrantAllowed` already
+ * requires them to be a superadmin for either accepted role, via `users-routes.ts`'s
+ * `handlePostUserRole`), but a grant can also be created with no human actor at all - an OIDC or
+ * Cloudflare Access group-role sync (`applyOidcGroupRoleMappings`) creates a `RoleAssignment`
+ * directly from the identity provider's own group claims the moment a mapped user logs in, and
+ * that path is arguably the one most likely to change access without an admin actively watching
+ * (bot review finding, PR #1312) - omitting `actorUserId` there attributes the grant to the sync
+ * itself instead of guessing at a human actor that doesn't exist.
+ *
+ * Deliberately no new `SecurityAuditLog` row (same reasoning as `logAuthSettingsChanged`, which
+ * this function otherwise mirrors closely): the grant is already durable via `AdminAuditLog`
+ * (`users-routes.ts`'s `role_granted`/`role_changed` write) or `OidcRoleGrant` (the IdP-sync path)
+ * - this only adds the alert dispatch that was missing.
+ *
+ * `db` accepts the same `Db` union every read in this module does (label lookups are safe inside
+ * an open transaction), but should be called with a plain `PrismaClient` AFTER the granting
+ * transaction has committed wherever one is available - `dispatchSecurityNotification` itself
+ * no-ops (with a log, not a throw) if given a transaction client instead, the same graceful
+ * fallback `notifyOwnAuthFactorChanged` already relies on for a caller that might itself be
+ * invoked from inside another caller's still-open transaction (see
+ * `resolveCfAccessIdentityUncached`'s own doc comment). The caller decides WHETHER a grant counts
+ * as a genuine elevation (e.g. a superadmin-to-admin type switch is a demotion, not this) - this
+ * function unconditionally dispatches once called, same as every other `logXxx` in this module.
+ */
+export async function logRoleElevated(
+  db: Db,
+  input: {
+    actorUserId?: string;
+    targetUserId: string;
+    role: "admin" | "superadmin";
+    scopeType: ScopeType;
+    scopeId: string | null;
+  },
+): Promise<void> {
+  const actorLabel = input.actorUserId
+    ? await resolveAccountLabel(db, input.actorUserId, undefined, "An admin")
+    : "An SSO group-role mapping";
+  const targetLabel = await resolveAccountLabel(db, input.targetUserId, undefined, "An account");
+  // Organization-scoped grants must notify THAT organization's own admin staff, not necessarily
+  // the instance default dispatchSecurityNotification would otherwise resolve - on a
+  // multi-organization instance the affected organization's admins could otherwise miss this
+  // alert entirely while an unrelated organization's admins receive it instead (bot review
+  // finding, PR #1312). A superadmin grant has no single owning organization (instance-scoped by
+  // definition), so that case keeps the instance-default fallback.
+  const organizationId =
+    input.scopeType === "organization" && input.scopeId
+      ? input.scopeId
+      : undefined;
+  void dispatchSecurityNotification(db, "auth.role.elevated", {
+    organizationId,
+    title: "Admin role granted",
+    body: `${actorLabel} granted ${targetLabel} the ${ELEVATED_ROLE_LABEL[input.role]} role.`,
+    dedupeKey: input.targetUserId,
+    // The grant has already committed by the time this dispatches, so the newly-elevated
+    // account itself can now genuinely match resolveOrgStaff (an instance-scoped superadmin
+    // grant, or an org-scoped admin grant for the same organization this notification targets) -
+    // without this, the account would receive the alert meant for "the rest of the admin team"
+    // about its own promotion (bot review finding, PR #1312). Safe to pass unconditionally: it
+    // only narrows the org-staff candidate list if the target is actually present in it, and has
+    // no effect on the team webhook (channel.ts, audience-independent).
+    excludeUserId: input.targetUserId,
+    metadata: {
+      actor_user_id: input.actorUserId ?? null,
+      target_user_id: input.targetUserId,
+      role: input.role,
+      scope_type: input.scopeType,
+      scope_id: input.scopeId,
+    },
+  });
+}
+
 /**
  * Record and alert on a successful admin/superadmin login from a country not seen among that
  * account's recent successful logins - the decision of WHETHER a login qualifies (role gate,
@@ -875,6 +970,22 @@ export async function logLoginNewCountry(
     // within the 15-minute throttle window is two distinct signals worth two alerts, not one
     // suppressed by the other - see checkNewCountryLogin's own doc comment.
     dedupeKey: `${ctx.userId}:${ctx.countryCode}`,
+    // The account owner already gets their own personalized account.login.new_location alert
+    // below - without this, an owner who is themselves an active admin/superadmin (guaranteed by
+    // checkNewCountryLogin's own hasElevatedRole gate) would also appear in this org-staff
+    // dispatch's candidate list and get a second email/in-app alert about the same login (bot
+    // review finding, PR #1309). The rest of the admin team, and the team webhook, are unaffected.
+    excludeUserId: ctx.userId,
+    metadata: { country: ctx.countryCode },
+  });
+  // ASVS V2.2.3 self-audience counterpart to the org-staff alert above: the account OWNER, not
+  // just the rest of the admin team, learns their own account signed in somewhere new (PR5c,
+  // notifications-module-foundation plan's Luka A).
+  void dispatchSecurityNotification(db, "account.login.new_location", {
+    title: "You signed in from a new location",
+    body: `Your account signed in from ${ctx.countryCode}, a location not seen in your recent successful logins. If this wasn't you, secure your account immediately.`,
+    dedupeKey: `${ctx.userId}:${ctx.countryCode}`,
+    targetUserId: ctx.userId,
     metadata: { country: ctx.countryCode },
   });
 }

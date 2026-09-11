@@ -3,8 +3,10 @@ import type { IdentityProvider, PrismaClient } from "@admitto/db";
 import { ExternalIdentityLinkError } from "../../src/external-identity/resolve-user.js";
 
 const notifyOwnAuthFactorChanged = vi.fn();
+const logRoleElevated = vi.fn();
 vi.mock("../../src/audit.js", () => ({
   notifyOwnAuthFactorChanged: (...args: unknown[]) => notifyOwnAuthFactorChanged(...args),
+  logRoleElevated: (...args: unknown[]) => logRoleElevated(...args),
 }));
 
 import {
@@ -104,7 +106,7 @@ describe("resolveCfAccessIdentityFromValidatedJwt caching", () => {
   });
 
   it("coalesces concurrent calls presenting the same issued token into one transaction", async () => {
-    const transaction = vi.fn(async () => ({ userId: "resolved-user" }));
+    const transaction = vi.fn(async () => ({ userId: "resolved-user", elevatedGrants: [] }));
     const prisma = { $transaction: transaction } as unknown as PrismaClient;
     const sameToken = {
       ...input,
@@ -122,7 +124,7 @@ describe("resolveCfAccessIdentityFromValidatedJwt caching", () => {
   });
 
   it("never serves a cached result once the resolution has settled, even for the identical token - a deactivated account or disabled provider must be caught on the very next call", async () => {
-    const transaction = vi.fn(async () => ({ userId: "resolved-user" }));
+    const transaction = vi.fn(async () => ({ userId: "resolved-user", elevatedGrants: [] }));
     const prisma = { $transaction: transaction } as unknown as PrismaClient;
     const sameToken = {
       ...input,
@@ -137,7 +139,7 @@ describe("resolveCfAccessIdentityFromValidatedJwt caching", () => {
   });
 
   it("does not reuse the cache once Cloudflare issues a new token (different iat)", async () => {
-    const transaction = vi.fn(async () => ({ userId: "resolved-user" }));
+    const transaction = vi.fn(async () => ({ userId: "resolved-user", elevatedGrants: [] }));
     const prisma = { $transaction: transaction } as unknown as PrismaClient;
 
     await resolveCfAccessIdentityFromValidatedJwt(prisma, {
@@ -160,7 +162,7 @@ describe("resolveCfAccessIdentityFromValidatedJwt caching", () => {
       .mockRejectedValueOnce({ code: "P2034" })
       .mockRejectedValueOnce({ code: "P2034" })
       .mockRejectedValueOnce({ code: "P2034" })
-      .mockResolvedValueOnce({ userId: "resolved-user" });
+      .mockResolvedValueOnce({ userId: "resolved-user", elevatedGrants: [] });
     const prisma = { $transaction: transaction } as unknown as PrismaClient;
     const sameToken = {
       ...input,
@@ -187,10 +189,11 @@ describe("resolveCfAccessIdentityFromValidatedJwt notifies on a real new link", 
   beforeEach(() => {
     clearCfAccessIdentityCacheForTests();
     notifyOwnAuthFactorChanged.mockReset().mockResolvedValue(undefined);
+    logRoleElevated.mockReset().mockResolvedValue(undefined);
   });
 
   it("notifies the account owner when a new Cloudflare Access ExternalIdentity was actually created (bot review finding, PR #1308)", async () => {
-    const transaction = vi.fn(async () => ({ userId: "resolved-user", linked: true }));
+    const transaction = vi.fn(async () => ({ userId: "resolved-user", linked: true, elevatedGrants: [] }));
     const prisma = { $transaction: transaction } as unknown as PrismaClient;
 
     const result = await resolveCfAccessIdentityFromValidatedJwt(prisma, {
@@ -208,7 +211,7 @@ describe("resolveCfAccessIdentityFromValidatedJwt notifies on a real new link", 
   });
 
   it("does not notify when the Cloudflare Access identity already existed (a re-authentication, not a new link)", async () => {
-    const transaction = vi.fn(async () => ({ userId: "resolved-user", linked: false }));
+    const transaction = vi.fn(async () => ({ userId: "resolved-user", linked: false, elevatedGrants: [] }));
     const prisma = { $transaction: transaction } as unknown as PrismaClient;
 
     await resolveCfAccessIdentityFromValidatedJwt(prisma, {
@@ -220,7 +223,7 @@ describe("resolveCfAccessIdentityFromValidatedJwt notifies on a real new link", 
   });
 
   it("fires notify only once when concurrent callers share the same coalesced transaction", async () => {
-    const transaction = vi.fn(async () => ({ userId: "resolved-user", linked: true }));
+    const transaction = vi.fn(async () => ({ userId: "resolved-user", linked: true, elevatedGrants: [] }));
     const prisma = { $transaction: transaction } as unknown as PrismaClient;
     const sameToken = {
       ...input,
@@ -234,5 +237,67 @@ describe("resolveCfAccessIdentityFromValidatedJwt notifies on a real new link", 
 
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(notifyOwnAuthFactorChanged).toHaveBeenCalledOnce();
+  });
+});
+
+// Gaining admin/superadmin through this source provider's group-role sync is the path most
+// likely to change access without an admin actively watching (bot review finding, PR #1312) -
+// applyOidcGroupRoleMappings itself is real here (only audit.js is mocked), so these exercise the
+// actual elevatedGrants plumbing out of the transaction, not just a stubbed passthrough.
+describe("resolveCfAccessIdentityFromValidatedJwt notifies on role elevation", () => {
+  const input = {
+    config: { enabled: true, sourceProviderId: "source-provider" },
+    cloudflareProvider: {} as IdentityProvider,
+    cloudflareSubject: "edge-session-subject",
+    claims: {},
+  };
+
+  beforeEach(() => {
+    clearCfAccessIdentityCacheForTests();
+    notifyOwnAuthFactorChanged.mockReset().mockResolvedValue(undefined);
+    logRoleElevated.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("dispatches auth.role.elevated for each newly created admin/superadmin grant, with no actorUserId (system-driven)", async () => {
+    const transaction = vi.fn(async () => ({
+      userId: "resolved-user",
+      linked: false,
+      elevatedGrants: [
+        { role: "admin", scopeType: "organization", scopeId: "org-1" },
+        { role: "superadmin", scopeType: "instance", scopeId: null },
+      ],
+    }));
+    const prisma = { $transaction: transaction } as unknown as PrismaClient;
+
+    await resolveCfAccessIdentityFromValidatedJwt(prisma, {
+      ...input,
+      payload: { sub: "cf-sub-elevation", iat: 1000, custom: { admitto_identity: "source-subject" } },
+    });
+
+    expect(logRoleElevated).toHaveBeenCalledTimes(2);
+    expect(logRoleElevated).toHaveBeenCalledWith(prisma, {
+      targetUserId: "resolved-user",
+      role: "admin",
+      scopeType: "organization",
+      scopeId: "org-1",
+    });
+    expect(logRoleElevated).toHaveBeenCalledWith(prisma, {
+      targetUserId: "resolved-user",
+      role: "superadmin",
+      scopeType: "instance",
+      scopeId: null,
+    });
+  });
+
+  it("does not call logRoleElevated when no elevated grant was created", async () => {
+    const transaction = vi.fn(async () => ({ userId: "resolved-user", linked: false, elevatedGrants: [] }));
+    const prisma = { $transaction: transaction } as unknown as PrismaClient;
+
+    await resolveCfAccessIdentityFromValidatedJwt(prisma, {
+      ...input,
+      payload: { sub: "cf-sub-no-elevation", iat: 1000, custom: { admitto_identity: "source-subject" } },
+    });
+
+    expect(logRoleElevated).not.toHaveBeenCalled();
   });
 });

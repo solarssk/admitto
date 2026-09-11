@@ -6,9 +6,9 @@ import {
   ExternalIdentityLinkError,
   type ExternalIdentityClaims,
 } from "../external-identity/resolve-user.js";
-import { applyOidcGroupRoleMappings } from "../oidc/group-role-mapping.js";
+import { applyOidcGroupRoleMappings, type ElevatedGrant } from "../oidc/group-role-mapping.js";
 import { parseStringArrayClaim } from "../oidc/claims.js";
-import { notifyOwnAuthFactorChanged } from "../audit.js";
+import { logRoleElevated, notifyOwnAuthFactorChanged } from "../audit.js";
 import type { CfAccessConfig } from "./config.js";
 
 /**
@@ -215,6 +215,10 @@ async function resolveCfAccessIdentityUncached(
   }
 
   const result = await runCfAccessIdentityTransaction(prisma, async (tx) => {
+    // Declared fresh per transaction attempt (not hoisted outside runCfAccessIdentityTransaction)
+    // so a serialization retry - which re-runs this whole callback from scratch on a fresh `tx` -
+    // never double-counts a grant from an attempt whose writes were rolled back.
+    const elevatedGrants: ElevatedGrant[] = [];
     const sourceProvider = await lockSourceProvider(tx, sourceProviderId);
 
     const sourceIdentity = await tx.externalIdentity.findUnique({
@@ -268,14 +272,16 @@ async function resolveCfAccessIdentityUncached(
         last_login_at: now,
       },
     });
-    await applyOidcGroupRoleMappings(tx, sourceProvider.id, sourceIdentity.user_id, sourceGroups);
+    await applyOidcGroupRoleMappings(tx, sourceProvider.id, sourceIdentity.user_id, sourceGroups, (grant) =>
+      elevatedGrants.push(grant),
+    );
 
     if (existingCfIdentity) {
       await tx.externalIdentity.update({
         where: { id: existingCfIdentity.id },
         data: { last_login_at: now },
       });
-      return { userId: sourceIdentity.user_id, linked: false };
+      return { userId: sourceIdentity.user_id, linked: false, elevatedGrants };
     }
 
     await tx.externalIdentity.create({
@@ -292,8 +298,24 @@ async function resolveCfAccessIdentityUncached(
         last_login_at: now,
       },
     });
-    return { userId: sourceIdentity.user_id, linked: true };
+    return { userId: sourceIdentity.user_id, linked: true, elevatedGrants };
   });
+
+  // Gaining admin/superadmin through this source provider's group-role sync is the path most
+  // likely to change access without an admin actively watching, so it gets the same
+  // auth.role.elevated alert as a manual grant through the admin UI - fired here (after the
+  // transaction above has committed), not from inside applyOidcGroupRoleMappings, for the same
+  // reason as notifyOwnAuthFactorChanged just below (bot review finding, PR #1312). No
+  // actorUserId: there is no human actor to name, the sync itself is the "actor"
+  // (logRoleElevated's own doc comment).
+  for (const grant of result.elevatedGrants) {
+    void logRoleElevated(prisma, {
+      targetUserId: result.userId,
+      role: grant.role,
+      scopeType: grant.scopeType,
+      scopeId: grant.scopeId,
+    });
+  }
 
   if (result.linked) {
     // Fired here (once per actual DB write, inside resolveCfAccessIdentityUncached - called
