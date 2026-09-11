@@ -24,6 +24,7 @@ import {
   logRateLimitExceeded,
   logRepeatedFailedLogins,
   logRepeatedFailedMfaAttempts,
+  logRoleElevated,
   logSuperadminBootstrapCli,
   logTrustedDeviceCreated,
   logTrustedDeviceUsed,
@@ -1097,6 +1098,135 @@ describe("audit", () => {
             body: "Jane Admin changed SSO provider settings (update).",
             metadata: { resource: "oidc_provider", action: "update", target_id: "prov-1", target_label: null },
           }),
+        );
+      });
+    });
+  });
+
+  describe("logRoleElevated", () => {
+    /** Distinct actor/target snapshots keyed by user id - fakeDb()'s single fixed snapshot can't
+     * tell the two apart, and this function's whole point is naming both correctly. */
+    function dbWithDistinctActorAndTarget(): PrismaClient {
+      const snapshots: Record<string, { email: string; display_name: string | null }> = {
+        "actor-1": { email: "admin@example.com", display_name: "Jane Admin" },
+        "target-1": { email: "newadmin@example.com", display_name: "New Admin" },
+      };
+      return {
+        securityAuditLog: { create: vi.fn() },
+        user: {
+          findUnique: vi.fn(({ where }: { where: { id: string } }) =>
+            Promise.resolve(snapshots[where.id] ?? null),
+          ),
+        },
+        organization: { findUnique: vi.fn().mockResolvedValue({ id: "org_default" }), findFirst: vi.fn() },
+        $transaction: vi.fn(),
+      } as unknown as PrismaClient;
+    }
+
+    it("does not write a durable SecurityAuditLog row - already covered by AdminAuditLog, same reasoning as logAuthSettingsChanged", async () => {
+      const create = vi.fn();
+      await logRoleElevated(fakeDb(create), {
+        actorUserId: "user-1",
+        targetUserId: "user-2",
+        role: "admin",
+        scopeType: "organization",
+        scopeId: "org-1",
+      });
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it("dispatches a real notification, deduped on the TARGET account (not the actor), naming both correctly, organization-scoped to the GRANTED organization (bot review finding, PR #1312)", async () => {
+      const db = dbWithDistinctActorAndTarget();
+      await logRoleElevated(db, {
+        actorUserId: "actor-1",
+        targetUserId: "target-1",
+        role: "admin",
+        scopeType: "organization",
+        scopeId: "org-1",
+      });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.role.elevated",
+          expect.objectContaining({
+            // Not "org_default": an organization-scoped grant must notify THAT organization's
+            // own admin staff, not the instance default - a different tenant on a
+            // multi-organization instance (bot review finding, PR #1312).
+            organizationId: "org-1",
+            dedupeKey: "target-1",
+            // The grant already committed by the time this dispatches, so the newly-elevated
+            // "target-1" could itself now match resolveOrgStaff - excluded so the alert reaches
+            // only the REST of the admin team, not the account it's about (bot review finding,
+            // PR #1312).
+            excludeUserId: "target-1",
+            body: "Jane Admin granted New Admin the administrator role.",
+            metadata: {
+              actor_user_id: "actor-1",
+              target_user_id: "target-1",
+              role: "admin",
+              scope_type: "organization",
+              scope_id: "org-1",
+            },
+          }),
+        );
+      });
+    });
+
+    it("labels a superadmin grant distinctly from an admin grant, and falls back to the instance default organization (superadmin has no single owning organization)", async () => {
+      const db = dbWithDistinctActorAndTarget();
+      await logRoleElevated(db, {
+        actorUserId: "actor-1",
+        targetUserId: "target-1",
+        role: "superadmin",
+        scopeType: "instance",
+        scopeId: null,
+      });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.role.elevated",
+          expect.objectContaining({
+            organizationId: "org_default",
+            body: expect.stringContaining("the superadmin role"),
+          }),
+        );
+      });
+    });
+
+    it("dispatches with no human actor (system-driven IdP group-role sync), attributing the grant to the sync itself", async () => {
+      const db = dbWithDistinctActorAndTarget();
+      await logRoleElevated(db, {
+        targetUserId: "target-1",
+        role: "admin",
+        scopeType: "organization",
+        scopeId: "org-1",
+      });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.role.elevated",
+          expect.objectContaining({
+            body: "An SSO group-role mapping granted New Admin the administrator role.",
+            metadata: expect.objectContaining({ actor_user_id: null }),
+          }),
+        );
+      });
+    });
+
+    it("falls back to generic actor/target labels when no identity snapshot is available for either", async () => {
+      const db = fakeDb(vi.fn(), null);
+      await logRoleElevated(db, {
+        actorUserId: "user-1",
+        targetUserId: "user-2",
+        role: "admin",
+        scopeType: "organization",
+        scopeId: "org-1",
+      });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.role.elevated",
+          expect.objectContaining({ body: "An admin granted An account the administrator role." }),
         );
       });
     });

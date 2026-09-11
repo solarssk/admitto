@@ -17,14 +17,16 @@ const ORG_STAFF_DEFAULTS: Omit<NotificationTypeDef, "label" | "defaultSeverity">
 
 /**
  * Closed, developer-defined set of notification types (ADR 0038 §9 - no admin-configurable
- * rules/thresholds, no "subscribe to any System Log entry"). ADR 0044 §6 registry: 4 org-staff
+ * rules/thresholds, no "subscribe to any System Log entry"). ADR 0044 §6 registry: 5 org-staff
  * security/ops alerts plus two self-audience types below - `account.auth_factor.changed`
  * (ASVS V2.5.5 + NIST SP 800-63-4 §4.1.2.1/§4.2.4/§4.4 - notify the account owner, and only the
  * account owner, whenever their own password/MFA/SSO changes, whether they made the change
  * themselves or an admin made it for them) and `account.login.new_location` (ASVS V2.2.3 -
  * notify the account owner themselves when their own account signs in from a location not seen
  * among its recent successful logins, alongside the existing org-staff `auth.login.new_country`
- * alert that tells the REST of the admins about the same event).
+ * alert that tells the REST of the admins about the same event). `auth.role.elevated` (NIST SP
+ * 800-53 rev5 AC-2(1) - notify account managers when a user's privileges are modified) rounds out
+ * the org-staff set.
  */
 export const NOTIFICATION_TYPES: Record<string, NotificationTypeDef> = {
   "auth.login.repeated_failures": {
@@ -46,6 +48,16 @@ export const NOTIFICATION_TYPES: Record<string, NotificationTypeDef> = {
     ...ORG_STAFF_DEFAULTS,
     label: "Admin login from a new country",
     defaultSeverity: "warn",
+  },
+  "auth.role.elevated": {
+    ...ORG_STAFF_DEFAULTS,
+    label: "Admin or superadmin role granted",
+    defaultSeverity: "warn",
+    // Never throttled (see throttleWindowMinutes's own doc comment): dedupeKey is the target
+    // user, but two distinct grants to the SAME target within the window - a revoke followed by
+    // a re-grant, or the admin UI saving several new organization scopes in sequence - are each
+    // independently reportable, not a repeat of one incident (bot review finding, PR #1312).
+    throttleWindowMinutes: 0,
   },
   "account.auth_factor.changed": {
     category: "system",
