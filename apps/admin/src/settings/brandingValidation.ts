@@ -17,6 +17,7 @@ export function isValidHex(value: string): boolean {
 
 export interface BrandingFieldErrors {
   primary?: string;
+  ticket_primary?: string;
   font_family_name?: string;
   ticket_font_family_name?: string;
   custom_font_families?: string;
@@ -67,6 +68,11 @@ export function validateBrandingDraft(draft: BrandingThemeDto): BrandingValidati
     errors.primary = "Enter a valid 6-digit hex colour (e.g. #066fd1).";
   }
 
+  const ticketPrimary = draft.ticket_primary?.trim();
+  if (ticketPrimary && !isValidHex(ticketPrimary)) {
+    errors.ticket_primary = "Enter a valid 6-digit hex colour (e.g. #066fd1).";
+  }
+
   const fontNameError = fontNameFieldError(draft.font_family_name);
   if (fontNameError) errors.font_family_name = fontNameError;
 
@@ -96,6 +102,11 @@ export function brandingDraftForSave(draft: BrandingThemeDto): BrandingThemeDto 
   const primary = draft.primary?.trim();
   if (primary && isValidHex(primary)) {
     result.primary = primary;
+  }
+
+  const ticketPrimary = draft.ticket_primary?.trim();
+  if (ticketPrimary && isValidHex(ticketPrimary)) {
+    result.ticket_primary = ticketPrimary;
   }
 
   const safeFontName = sanitizedFontNameField(draft.font_family_name);
