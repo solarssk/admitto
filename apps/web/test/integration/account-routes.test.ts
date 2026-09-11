@@ -422,6 +422,25 @@ describe("PATCH /api/account/password", () => {
     expect(rows).toHaveLength(0);
   });
 
+  it("fires account.auth_factor.changed for an active user with ZERO role assignments (bot review finding, PR #1304)", async () => {
+    // Reachable today: revoking a plain admin's or operator's only role has no equivalent of
+    // assertLastSuperadminRemovalAllowed's lockout guard, so an active, logged-in account can
+    // genuinely end up with no role assignment at all while still able to reach My Account.
+    const own = await prisma.roleAssignment.findFirstOrThrow({ where: { user_id: userId } });
+    await prisma.roleAssignment.delete({ where: { id: own.id } });
+    try {
+      const res = await app.request("/api/account/password", {
+        method: "PATCH",
+        headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password: PASSWORD, new_password: NEW_PASSWORD, new_password_confirm: NEW_PASSWORD }),
+      });
+      expect(res.status).toBe(200);
+      await expectAuthFactorChangedNotification(userId, "Your password was changed");
+    } finally {
+      await prisma.roleAssignment.create({ data: { user_id: userId, role: own.role, scope_type: own.scope_type, scope_id: own.scope_id } });
+    }
+  });
+
   it("fires account.auth_factor.changed for a SECOND, different operation by the same user within the same 15-minute window a shared throttle key would otherwise collapse (bot review finding, PR #1304)", async () => {
     const res = await app.request("/api/account/password", {
       method: "PATCH",

@@ -65,19 +65,27 @@ async function resolveOrgStaff(db: Db, organizationId: string): Promise<string[]
   return [...activeUserIds];
 }
 
-/** The event's targetUserId, but only once confirmed to be an active user with a real role
- * assignment in this organization (or instance-wide) - never trusts the call site blindly
- * (prompt 86 §3: "nie ufaj call-site'owi bezkrytycznie"). Returns [] (not a throw) for a
- * missing targetUserId, an inactive user, or a user with no standing in this organization -
- * dispatcher.ts logs and skips on an empty audience rather than failing the caller.
+/**
+ * The event's targetUserId, but only once confirmed to be a real, active user - never trusts the
+ * call site blindly (prompt 86 §3: "nie ufaj call-site'owi bezkrytycznie"). Returns [] (not a
+ * throw) for a missing targetUserId or an inactive user - dispatcher.ts logs and skips on an
+ * empty audience rather than failing the caller.
  *
- * "Standing in this organization" includes an event-scoped role assignment for one of this
- * organization's own events, not just instance-/organization-scoped ones - an operator (the
- * typical event-scoped role, see account-routes.ts's own ROLE_PRIORITY) is exactly the kind of
- * user account.auth_factor.changed (ASVS V2.5.5) exists to protect, same as any admin. Missing
- * this originally (checking only scope_type "instance"/"organization") went unnoticed because no
- * registered type used audience "self" until account.auth_factor.changed did - re-verified
- * against the real seeded fixtures in apps/web's own integration tests, not just read as correct.
+ * Deliberately does NOT also require a role assignment in `ctx.organizationId` (two earlier
+ * versions of this function did, first instance-/organization-scoped only, then also
+ * event-scoped). Every real call site already independently proves targetUserId's identity
+ * before ever reaching notify() - it's either the authenticated caller's own session userId
+ * (account-routes.ts's self-service endpoints), or a user id an admin route already wrote to
+ * moments earlier in the same request (the admin-assisted reset paths this registers targets) -
+ * so an org-membership gate here added no real protection, only two ways to wrongly reject a
+ * legitimate recipient: `ctx.organizationId` for a self-audience type is whatever
+ * resolveInstanceOrganizationId() happens to resolve (the instance's single default
+ * organization), not necessarily an organization the recipient is actually a member of; and an
+ * active user can genuinely have zero role assignments today - revoking a plain admin's or
+ * operator's only role has no equivalent of assertLastSuperadminRemovalAllowed's lockout guard
+ * (users-lockout-guards.ts), yet that account stays active and able to reach My Account. Found by
+ * Codex bot review on PR #1304, once account.auth_factor.changed became the first real caller of
+ * this audience strategy.
  */
 async function resolveSelf(db: Db, ctx: AudienceContext): Promise<string[]> {
   if (!ctx.targetUserId) return [];
@@ -88,23 +96,5 @@ async function resolveSelf(db: Db, ctx: AudienceContext): Promise<string[]> {
   });
   if (!user?.is_active) return [];
 
-  const assignments = await db.roleAssignment.findMany({
-    where: { user_id: ctx.targetUserId },
-    select: { scope_type: true, scope_id: true },
-  });
-
-  const hasDirectStanding = assignments.some(
-    (a) => a.scope_type === "instance" || (a.scope_type === "organization" && a.scope_id === ctx.organizationId),
-  );
-  if (hasDirectStanding) return [ctx.targetUserId];
-
-  const eventScopeIds = assignments
-    .filter((a) => a.scope_type === "event" && a.scope_id)
-    .map((a) => a.scope_id as string);
-  if (eventScopeIds.length === 0) return [];
-
-  const ownedEventCount = await db.event.count({
-    where: { id: { in: eventScopeIds }, organization_id: ctx.organizationId },
-  });
-  return ownedEventCount > 0 ? [ctx.targetUserId] : [];
+  return [ctx.targetUserId];
 }

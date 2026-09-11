@@ -100,92 +100,28 @@ describe("resolveAudienceCandidates", () => {
       });
 
       expect(candidates).toEqual([]);
+    });
+
+    // No role-assignment or organization-membership check (a prior version of resolveSelf had
+    // one, first instance-/organization-scoped only, then also event-scoped) - every real call
+    // site already independently proves targetUserId's identity before reaching notify(), so
+    // that check only ever rejected legitimate recipients: an active user whose org membership
+    // doesn't match event.organizationId (which for a self-audience type is just the instance's
+    // resolved default org, not necessarily the recipient's own), and an active user with zero
+    // role assignments at all (reachable today - see resolveSelf's own doc comment). Found by
+    // Codex bot review on PR #1304.
+    it("returns [targetUserId] for an active user regardless of organization membership or role assignments", async () => {
+      const db = createStubDb();
+      db.user.findUnique.mockResolvedValue({ is_active: true });
+
+      const candidates = await resolveAudienceCandidates(db as unknown as PrismaClient, "self", {
+        organizationId: ORG_ID,
+        targetUserId: "u-1",
+      });
+
+      expect(candidates).toEqual(["u-1"]);
       expect(db.roleAssignment.findMany).not.toHaveBeenCalled();
-    });
-
-    it("returns [] when the active user has no role assignments at all", async () => {
-      const db = createStubDb();
-      db.user.findUnique.mockResolvedValue({ is_active: true });
-      db.roleAssignment.findMany.mockResolvedValue([]);
-
-      const candidates = await resolveAudienceCandidates(db as unknown as PrismaClient, "self", {
-        organizationId: ORG_ID,
-        targetUserId: "u-1",
-      });
-
-      expect(candidates).toEqual([]);
-      expect(db.event.count).not.toHaveBeenCalled();
-    });
-
-    it("returns [] for an organization-scoped assignment in a DIFFERENT organization", async () => {
-      const db = createStubDb();
-      db.user.findUnique.mockResolvedValue({ is_active: true });
-      db.roleAssignment.findMany.mockResolvedValue([{ scope_type: "organization", scope_id: "org-other" }]);
-
-      const candidates = await resolveAudienceCandidates(db as unknown as PrismaClient, "self", {
-        organizationId: ORG_ID,
-        targetUserId: "u-1",
-      });
-
-      expect(candidates).toEqual([]);
-    });
-
-    it("returns [targetUserId] for an instance-scoped (superadmin) assignment", async () => {
-      const db = createStubDb();
-      db.user.findUnique.mockResolvedValue({ is_active: true });
-      db.roleAssignment.findMany.mockResolvedValue([{ scope_type: "instance", scope_id: null }]);
-
-      const candidates = await resolveAudienceCandidates(db as unknown as PrismaClient, "self", {
-        organizationId: ORG_ID,
-        targetUserId: "u-1",
-      });
-
-      expect(candidates).toEqual(["u-1"]);
-      expect(db.event.count).not.toHaveBeenCalled();
-    });
-
-    it("returns [targetUserId] for an organization-scoped (admin) assignment in this organization", async () => {
-      const db = createStubDb();
-      db.user.findUnique.mockResolvedValue({ is_active: true });
-      db.roleAssignment.findMany.mockResolvedValue([{ scope_type: "organization", scope_id: ORG_ID }]);
-
-      const candidates = await resolveAudienceCandidates(db as unknown as PrismaClient, "self", {
-        organizationId: ORG_ID,
-        targetUserId: "u-1",
-      });
-
-      expect(candidates).toEqual(["u-1"]);
-    });
-
-    it("returns [targetUserId] for an event-scoped (operator) assignment whose event belongs to this organization", async () => {
-      const db = createStubDb();
-      db.user.findUnique.mockResolvedValue({ is_active: true });
-      db.roleAssignment.findMany.mockResolvedValue([{ scope_type: "event", scope_id: "evt-1" }]);
-      db.event.count.mockResolvedValue(1);
-
-      const candidates = await resolveAudienceCandidates(db as unknown as PrismaClient, "self", {
-        organizationId: ORG_ID,
-        targetUserId: "u-1",
-      });
-
-      expect(candidates).toEqual(["u-1"]);
-      expect(db.event.count).toHaveBeenCalledWith({
-        where: { id: { in: ["evt-1"] }, organization_id: ORG_ID },
-      });
-    });
-
-    it("returns [] for an event-scoped assignment whose event belongs to a DIFFERENT organization", async () => {
-      const db = createStubDb();
-      db.user.findUnique.mockResolvedValue({ is_active: true });
-      db.roleAssignment.findMany.mockResolvedValue([{ scope_type: "event", scope_id: "evt-other-org" }]);
-      db.event.count.mockResolvedValue(0);
-
-      const candidates = await resolveAudienceCandidates(db as unknown as PrismaClient, "self", {
-        organizationId: ORG_ID,
-        targetUserId: "u-1",
-      });
-
-      expect(candidates).toEqual([]);
+      expect(db.roleAssignment.count).not.toHaveBeenCalled();
     });
   });
 });
