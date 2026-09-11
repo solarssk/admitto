@@ -713,6 +713,137 @@
   color: var(--primary);
 }
 
+/* ── Topbar: NotificationBell ────────────────────────────────────── */
+.notif-bell__icon-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  font-size: 1.1rem;
+}
+
+/* Anchored to the icon-wrap's own corner via transform, not just a negative top/right offset -
+   at 2 digits the badge is wider than the bell glyph itself (min-width, not a fixed width, so it
+   grows with the count), and a plain negative offset let it sit on top of the icon instead of
+   beside it (PO report, with a screenshot at 16 unread). translate(38%, -38%) pushes exactly half
+   the badge's own box outside the wrap's corner regardless of how wide the count makes it. */
+.notif-bell__badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  transform: translate(38%, -38%);
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--surface-card);
+}
+
+.notif-bell__panel {
+  width: 340px;
+  max-width: calc(100vw - 24px);
+}
+
+.notif-bell__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 4px 10px 8px;
+}
+
+.notif-bell__head strong {
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+}
+
+.notif-bell__mark-all {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--primary);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.notif-bell__mark-all:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.notif-bell__mark-all:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.notif-bell__status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.notif-bell__status i {
+  font-size: 1.5rem;
+}
+
+.notif-bell__retry {
+  border: 1px solid var(--border);
+  background: none;
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.notif-bell__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.notif-bell__row {
+  align-items: flex-start;
+}
+
+.notif-bell__row--unread .user-menu__item-text strong {
+  font-weight: 700;
+}
+
+.notif-bell__row--unread::after {
+  content: "";
+  flex: none;
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+/* Shows the alert's own content directly in the row, clamped to 2 lines - previously only in a
+   title= tooltip, invisible without a long hover, which made a click feel like it revealed
+   nothing (PO report). Qualified by the parent class (not a bare .notif-bell__row-body) so its
+   specificity beats .user-menu__item-text span's own color rule instead of losing to it. */
+.user-menu__item-text .notif-bell__row-body {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--text-secondary);
+}
+
 /* ─── Page header ─────────────────────────────────────────────────────────── */
 .placeholder-note {
   color: var(--text-secondary);

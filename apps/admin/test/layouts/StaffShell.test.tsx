@@ -21,6 +21,10 @@ vi.mock("../../src/components/UserMenu.js", () => ({
   UserMenu: () => <span data-testid="user-menu" />,
 }));
 
+vi.mock("../../src/components/NotificationBell.js", () => ({
+  NotificationBell: () => <span data-testid="notification-bell" />,
+}));
+
 function renderShell(eventId?: string, sidebar = <span>nav items</span>) {
   return render(
     <MemoryRouter>

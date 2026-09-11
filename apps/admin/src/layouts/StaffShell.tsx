@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "../auth/AuthProvider.js";
+import { NotificationBell } from "../components/NotificationBell.js";
 import { SystemStatus } from "../components/SystemStatus.js";
 import { UserMenu } from "../components/UserMenu.js";
 import { BrandLink } from "./BrandLink.js";
@@ -80,6 +81,7 @@ export function StaffShell({
           <BrandLink to={brandTo} end={brandEnd} className="topbar__brand" markClassName="topbar__brand-mark" />
           <div className="topbar__right">
             <SystemStatus assignments={assignments} mailerStatus={user.mailer_status} eventId={eventId} />
+            <NotificationBell />
             <UserMenu user={user} assignments={assignments} />
           </div>
         </header>

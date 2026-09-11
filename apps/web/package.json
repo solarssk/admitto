@@ -27,6 +27,7 @@
     "@admitto/mail-delivery": "*",
     "@admitto/mail-templates": "*",
     "@admitto/mailer": "*",
+    "@admitto/notifications": "*",
     "@admitto/shared": "*",
     "@admitto/storage": "*",
     "@admitto/tickets": "*",

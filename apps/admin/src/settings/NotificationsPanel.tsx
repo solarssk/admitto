@@ -26,6 +26,7 @@ import type {
 } from "../api/types.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
+import { NOTIFICATION_SEVERITY_ICON } from "../components/notificationSeverity.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
@@ -70,17 +71,6 @@ const CHANNEL_COLUMNS: ReadonlyArray<{ key: NotificationChannelKind; label: stri
   { key: "email", label: "Email" },
   { key: "in_app", label: "In-app" },
 ];
-
-/** Matches the colored-circle severity badge the actual notification email now renders (see
- * packages/notifications/src/channels/emailContent.ts) - same three severities, same meaning,
- * just a live Tabler icon here instead of a baked PNG (no Outlook rendering constraints in a
- * browser admin UI). Uses the shared .status-circle-- variants already in packages/ui - no new
- * CSS needed. */
-const SEVERITY_ICON: Record<string, string> = {
-  info: "ti-info-circle",
-  warn: "ti-alert-triangle",
-  error: "ti-alert-circle",
-};
 
 const TYPE_DESCRIPTIONS: Record<string, string> = {
   "auth.login.repeated_failures":
@@ -876,7 +866,7 @@ export function NotificationsPanel() {
                           className={`status-circle status-circle--sm status-circle--${type.default_severity}`}
                           aria-hidden="true"
                         >
-                          <i className={`ti ${SEVERITY_ICON[type.default_severity] ?? "ti-info-circle"}`} aria-hidden="true" />
+                          <i className={`ti ${NOTIFICATION_SEVERITY_ICON[type.default_severity] ?? "ti-info-circle"}`} aria-hidden="true" />
                         </span>
                         <strong>{type.label}</strong>
                       </div>
