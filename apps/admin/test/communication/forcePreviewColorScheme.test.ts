@@ -184,4 +184,69 @@ body{background-color:#ffffff;color:#222222}
     // A custom property is never mistaken for a `background`/`background-color` declaration.
     expect(dark).toContain("--icon-color:#ffffff");
   });
+
+  it("treats a comma-list mixing dark and light alternatives as unresolvable, leaving it untouched", () => {
+    const html = `<!doctype html><html><head><style>
+@media (prefers-color-scheme: dark), (prefers-color-scheme: light) { .a { display: block; } }
+</style></head><body></body></html>`;
+    const dark = forcePreviewColorScheme(html, "dark").html;
+    const light = forcePreviewColorScheme(html, "light").html;
+    expect(dark).toContain("prefers-color-scheme: dark), (prefers-color-scheme: light)");
+    expect(light).toContain("prefers-color-scheme: dark), (prefers-color-scheme: light)");
+  });
+
+  it("gives up gracefully on a malformed (unclosed) media block instead of mis-parsing it", () => {
+    const html = `<!doctype html><html><head><style>
+@media (prefers-color-scheme: dark) { .a { display: block; } }
+@media (prefers-color-scheme: dark) { .b { display: block; }
+</style></head><body></body></html>`;
+    const dark = forcePreviewColorScheme(html, "dark").html;
+    // The well-formed first block resolves normally...
+    expect(dark).toContain(".a { display: block; }");
+    // ...but the second, unclosed one is left completely untouched rather than mis-parsed -
+    // still literally containing "prefers-color-scheme" since it was never resolved.
+    expect(dark).toContain("@media (prefers-color-scheme: dark) { .b { display: block; }");
+  });
+
+  it("does not crash scanning for authored image filters when an unrelated media block elsewhere is malformed", () => {
+    const html = `<!doctype html><html><head><style>
+.logo{display:block}
+@media (min-width: 200px) { .b { color: blue; }
+</style></head><body><img src="x.png"></body></html>`;
+    const dark = forcePreviewColorScheme(html, "dark").html;
+    // No crash, and the image still gets the fallback counter-filter despite the malformed,
+    // unrelated media block elsewhere in the same stylesheet.
+    expect(dark).toContain('src="x.png" style="filter:invert(1) hue-rotate(180deg) !important"');
+  });
+
+  it("leaves an already-dark/saturated background-color unchanged instead of darkening it further", () => {
+    const html = `<!doctype html><html><head><style>
+.banner{background-color:#fa000f}
+</style></head><body></body></html>`;
+    const dark = forcePreviewColorScheme(html, "dark").html;
+    expect(dark).toContain("background-color:#fa000f"); // unchanged - already well under the "light" threshold
+  });
+
+  it("expands a 3-digit hex background before darkening it", () => {
+    const html = `<!doctype html><html><head><style>
+.wrapper{background-color:#fff}
+</style></head><body></body></html>`;
+    const dark = forcePreviewColorScheme(html, "dark").html;
+    expect(dark).toContain("background-color:#dedede"); // same result as the 6-digit #ffffff case
+  });
+
+  it("does not crash extracting filter rules when a rule's opening brace is never closed at all", () => {
+    const html = `<!doctype html><html><head><style>.logo{display:block</style></head><body><img src="x.png"></body></html>`;
+    const dark = forcePreviewColorScheme(html, "dark").html;
+    expect(dark).toContain('src="x.png" style="filter:invert(1) hue-rotate(180deg) !important"');
+  });
+
+  it("skips an empty <style> tag instead of trying to transform it", () => {
+    const html = `<!doctype html><html><head><style></style><style>
+@media (prefers-color-scheme: dark) { .a { display: block; } }
+</style></head><body></body></html>`;
+    const { html: out, hasAuthoredDarkPalette } = forcePreviewColorScheme(html, "dark");
+    expect(out).toContain(".a { display: block; }");
+    expect(hasAuthoredDarkPalette).toBe(false);
+  });
 });

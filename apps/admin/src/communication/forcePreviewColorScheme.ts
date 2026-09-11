@@ -69,6 +69,17 @@ function colorSchemeGate(condition: string): "dark" | "light" | null {
   return gate;
 }
 
+/** Trims a residual condition fragment and drops one leading and/or trailing "and" left behind
+ * by removing the color-scheme feature it used to be conjoined with - plain string methods
+ * instead of a `\s+and\s*$`-shaped regex, which SonarCloud (typescript:S8786) flagged for
+ * super-linear backtracking on a long run of whitespace with no literal "and" to terminate it. */
+function stripAndBoundaries(alt: string): string {
+  let s = alt.trim();
+  if (s.toLowerCase().startsWith("and ")) s = s.slice(4).trim();
+  if (s.toLowerCase().endsWith(" and")) s = s.slice(0, -4).trim();
+  return s;
+}
+
 /** What's left of a color-scheme-gated condition once the `(prefers-color-scheme: ...)` feature
  * test itself is removed - `""` for a bare condition (the block should always apply once
  * resolved), otherwise a real residual condition (e.g. `(max-width: 400px)` out of `(prefers-
@@ -79,12 +90,7 @@ function residualCondition(condition: string): string {
   return condition
     .replace(COLOR_SCHEME_PAREN_RE, "")
     .split(",")
-    .map((alt) =>
-      alt
-        .replace(/^\s*and\s+/i, "")
-        .replace(/\s+and\s*$/i, "")
-        .trim(),
-    )
+    .map(stripAndBoundaries)
     .filter(Boolean)
     .join(", ");
 }
@@ -190,21 +196,29 @@ function softenLightBackgrounds(html: string): string {
     .replace(LIGHT_BGCOLOR_ATTR_RE, (_full, prefix: string, hex: string, suffix: string) => `${prefix}${darkenHex(hex)}${suffix}`);
 }
 
-const TOP_LEVEL_RULE_RE = /([^{}]+)\{([^{}]*)\}/g;
 const FILTER_DECL_RE = /filter\s*:\s*([^;]+)/i;
 
 /** Best-effort: extracts `selector{...filter:VALUE...}` pairs from CSS with every `@media` block
  * already removed (`stripAllMediaBlocks`), so this only ever sees flat, non-nested rule bodies -
  * a naive single-level scan, not a real CSS parser. Good enough to find a template's own class-
  * based image filter (e.g. a dark-mode logo recolored with `brightness(0) invert(1)`) without
- * needing a full selector/specificity engine. */
+ * needing a full selector/specificity engine. Finds each rule's `{`/`}` pair with plain
+ * `indexOf` rather than a `([^{}]+)\{([^{}]*)\}` regex - two adjacent unbounded character-class
+ * quantifiers like that gave SonarCloud (typescript:S8786) the same super-linear backtracking
+ * concern as the media-query matcher above, and `indexOf` is worst-case linear by construction. */
 function extractFilterRules(css: string): Array<{ selector: string; filter: string }> {
   const rules: Array<{ selector: string; filter: string }> = [];
-  TOP_LEVEL_RULE_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = TOP_LEVEL_RULE_RE.exec(css))) {
-    const filterMatch = FILTER_DECL_RE.exec(match[2] ?? "");
-    if (filterMatch) rules.push({ selector: (match[1] ?? "").trim(), filter: (filterMatch[1] ?? "").trim() });
+  let cursor = 0;
+  while (cursor < css.length) {
+    const openIndex = css.indexOf("{", cursor);
+    if (openIndex === -1) break;
+    const closeIndex = css.indexOf("}", openIndex + 1);
+    if (closeIndex === -1) break;
+    const selector = css.slice(cursor, openIndex).trim();
+    const body = css.slice(openIndex + 1, closeIndex);
+    const filterMatch = FILTER_DECL_RE.exec(body);
+    if (filterMatch) rules.push({ selector, filter: (filterMatch[1] ?? "").trim() });
+    cursor = closeIndex + 1;
   }
   return rules;
 }
@@ -227,8 +241,9 @@ function authoredFilterFor(el: Element, rules: Array<{ selector: string; filter:
   return matched;
 }
 
-export function forcePreviewColorScheme(html: string, mode: "light" | "dark"): { html: string; hasAuthoredDarkPalette: boolean } {
-  const doc = new DOMParser().parseFromString(html, "text/html");
+/** Resolves every `<style>` tag's color-scheme media blocks in place for `mode`, returning
+ * whether any of them counts as an authored dark palette (see the file-level doc comment). */
+function resolveColorSchemeStyles(doc: Document, mode: "light" | "dark"): boolean {
   let hasAuthoredDarkPalette = false;
   for (const styleEl of doc.querySelectorAll("style")) {
     if (!styleEl.textContent) continue;
@@ -236,19 +251,30 @@ export function forcePreviewColorScheme(html: string, mode: "light" | "dark"): {
     styleEl.textContent = transformed.css;
     if (transformed.hadColorDeclaration) hasAuthoredDarkPalette = true;
   }
+  return hasAuthoredDarkPalette;
+}
+
+/** Sets the fallback-simulation counter-filter on every `img`/`svg` in `doc`, composed with
+ * whatever filter that element already authors (inline, or via a matching top-level CSS rule)
+ * instead of replacing it - see the file-level doc comment. */
+function applyImageCounterFilters(doc: Document): void {
+  const allCss = [...doc.querySelectorAll("style")].map((el) => el.textContent ?? "").join("\n");
+  const filterRules = extractFilterRules(stripAllMediaBlocks(allCss));
+  for (const el of doc.querySelectorAll("img, svg")) {
+    const authored = authoredFilterFor(el, filterRules);
+    const composed = authored ? `${authored} invert(1) hue-rotate(180deg)` : "invert(1) hue-rotate(180deg)";
+    const existingStyle = el.getAttribute("style") ?? "";
+    const separator = existingStyle && !existingStyle.trim().endsWith(";") ? ";" : "";
+    el.setAttribute("style", `${existingStyle}${separator}filter:${composed} !important`);
+  }
+}
+
+export function forcePreviewColorScheme(html: string, mode: "light" | "dark"): { html: string; hasAuthoredDarkPalette: boolean } {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const hasAuthoredDarkPalette = resolveColorSchemeStyles(doc, mode);
 
   const applyFallbackInversion = mode === "dark" && !hasAuthoredDarkPalette;
-  if (applyFallbackInversion) {
-    const allCss = [...doc.querySelectorAll("style")].map((el) => el.textContent ?? "").join("\n");
-    const filterRules = extractFilterRules(stripAllMediaBlocks(allCss));
-    for (const el of doc.querySelectorAll("img, svg")) {
-      const authored = authoredFilterFor(el, filterRules);
-      const composed = authored ? `${authored} invert(1) hue-rotate(180deg)` : "invert(1) hue-rotate(180deg)";
-      const existingStyle = el.getAttribute("style") ?? "";
-      const separator = existingStyle && !existingStyle.trim().endsWith(";") ? ";" : "";
-      el.setAttribute("style", `${existingStyle}${separator}filter:${composed} !important`);
-    }
-  }
+  if (applyFallbackInversion) applyImageCounterFilters(doc);
 
   const doctype = doc.doctype ? `<!doctype ${doc.doctype.name}>` : "";
   let out = doctype + doc.documentElement.outerHTML;
