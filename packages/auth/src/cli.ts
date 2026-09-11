@@ -159,7 +159,7 @@ async function runResetMfa(): Promise<void> {
     prisma,
     userId,
     "Your two-factor authentication was reset",
-    "An administrator reset two-factor authentication on your account via the emergency CLI bypass. If this wasn't expected, contact your organization's administrator immediately.",
+    "An administrator reset two-factor authentication on your account using the emergency two-factor bypass. If this wasn't expected, contact your organization's administrator immediately.",
   );
   console.log(`MFA reset for ${email} (sessions and trusted devices revoked).`);
 }

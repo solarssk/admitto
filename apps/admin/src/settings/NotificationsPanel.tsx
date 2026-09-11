@@ -26,7 +26,7 @@ import type {
 } from "../api/types.js";
 import { operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { NOTIFICATION_SEVERITY_ICON } from "../components/notificationSeverity.js";
+import { NOTIFICATION_SEVERITY_ICON, NOTIFICATION_TYPE_DESCRIPTIONS } from "../components/notificationSeverity.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
@@ -71,16 +71,6 @@ const CHANNEL_COLUMNS: ReadonlyArray<{ key: NotificationChannelKind; label: stri
   { key: "email", label: "Email" },
   { key: "in_app", label: "In-app" },
 ];
-
-const TYPE_DESCRIPTIONS: Record<string, string> = {
-  "auth.login.repeated_failures":
-    "Multiple failed sign-in attempts on an admin account - a possible brute-force or credential-stuffing attempt.",
-  "auth.mfa.break_glass":
-    "An operator used a break-glass CLI command to reset another admin account's two-factor authentication or generate an emergency recovery code for it.",
-  "auth.settings.changed": "Organisation-wide login or security settings changed, such as MFA policy or SSO.",
-  "auth.login.new_country": "An admin account signed in from a country not seen among its recent successful logins.",
-  "auth.role.elevated": "A user was granted the admin or superadmin role.",
-};
 
 const RECIPIENT_DESCRIPTION_MAX = 200;
 
@@ -869,9 +859,11 @@ export function NotificationsPanel() {
                         >
                           <i className={`ti ${NOTIFICATION_SEVERITY_ICON[type.default_severity] ?? "ti-info-circle"}`} aria-hidden="true" />
                         </span>
-                        <strong>{type.label}</strong>
+                        <div className="notifications-type-matrix__label-text">
+                          <strong>{type.label}</strong>
+                          <p>{NOTIFICATION_TYPE_DESCRIPTIONS[type.id] ?? "Alerts admin staff when this event occurs."}</p>
+                        </div>
                       </div>
-                      <p>{TYPE_DESCRIPTIONS[type.id] ?? "Alerts admin staff when this event occurs."}</p>
                     </td>
                     {CHANNEL_COLUMNS.map((col) =>
                       type.available_channels.includes(col.key) ? (
