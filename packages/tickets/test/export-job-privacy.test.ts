@@ -10,11 +10,11 @@ describe("redactAttendeeListFiltersForStorage", () => {
       redactAttendeeListFiltersForStorage({
         q: "Ada Lovelace",
         status: "confirmed",
-        ticket_type: "vip",
+        ticket_type: ["vip"],
       }),
     ).toEqual({
       status: "confirmed",
-      ticket_type: "vip",
+      ticket_type: ["vip"],
       rsvp_status: undefined,
       mail_status: undefined,
       has_query: true,

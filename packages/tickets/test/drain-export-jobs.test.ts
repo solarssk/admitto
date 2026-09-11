@@ -216,7 +216,7 @@ describe("drainExportJobs", () => {
         baseJob({
           id: "job-xlsx",
           result_json: {
-            request: { kind: "attendees_filtered", format: "xlsx", filters: { ticket_type: "vip" } },
+            request: { kind: "attendees_filtered", format: "xlsx", filters: { ticket_type: ["vip"] } },
           },
         }) as never,
       )
@@ -232,7 +232,7 @@ describe("drainExportJobs", () => {
     expect(storage.put.mock.calls[0]![1].ext).toBe(".pdf");
     expect(storage.put.mock.calls[1]![1].ext).toBe(".xlsx");
     expect(writeBulkActionLog.mock.calls[1]![1].metadata.filters).toMatchObject({
-      ticket_type: "vip",
+      ticket_type: ["vip"],
       mail_status: null,
       has_query: false,
     });

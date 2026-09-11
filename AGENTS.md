@@ -366,6 +366,17 @@ you start`, `Steps`, `Expected result`, `Important decisions`, `What changes aft
 their purpose. Verify factual instructions against the current `main` UI and domain behaviour;
 the documentation check proves structural consistency, not product correctness.
 
+**Before writing a new dropdown, combobox, or checkbox-list picker, check
+`apps/admin/src/components/` first.** `SearchableSelect.tsx` (single choice from a list, with a
+search box past 6 options) and its sibling `MultiSelect.tsx` (same trigger/panel/`useDropdownMenu`
+mechanism, checkbox rows that stay open instead of closing on click) already cover "pick one" and
+"pick several" from a fixed option list, including the multi-select filters on the Attendees list
+(ticket type, attendance, mail delivery status). This class of duplication has already happened
+silently once: `FiltersMenu.tsx` exists only because the Attendees list's `FilterToolbar` and the
+Reports admission log had each already written their own copy of the same trigger/panel/badge
+wiring before anyone noticed and extracted it (see that file's own doc comment). Reach for
+`SearchableSelect`/`MultiSelect` even for a page-local, one-off filter.
+
 ### Visual documentation
 
 - Use tables to compare roles, statuses, fields, providers, or actions.
