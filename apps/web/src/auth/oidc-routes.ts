@@ -17,9 +17,11 @@ import {
   OIDC_LINK_STEP_UP_MAX_AGE_MS,
   revokeSession,
   logOidcLoginSuccess,
+  logRoleElevated,
   checkNewCountryLogin,
   SESSION_COOKIE_NAME,
   type ConsumedOidcAuthState,
+  type ElevatedGrant,
   type ExternalIdentityClaims,
 } from "@admitto/auth";
 import { recordSystemLog } from "@admitto/shared/system-log";
@@ -280,7 +282,23 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
   }
 
   try {
-    await applyOidcGroupRoleMappings(db, provider.id, userId, claims.groups);
+    const elevatedGrants: ElevatedGrant[] = [];
+    await applyOidcGroupRoleMappings(db, provider.id, userId, claims.groups, (grant) =>
+      elevatedGrants.push(grant),
+    );
+    // Gaining admin/superadmin through a group-role sync is the path most likely to change
+    // access without an admin actively watching, so it gets the same auth.role.elevated alert as
+    // a manual grant through the admin UI - db is already a plain PrismaClient here, so no
+    // commit to wait for (bot review finding, PR #1312). No actorUserId: there is no human actor
+    // to name, the sync itself is the "actor" (logRoleElevated's own doc comment).
+    for (const grant of elevatedGrants) {
+      void logRoleElevated(db, {
+        targetUserId: userId,
+        role: grant.role,
+        scopeType: grant.scopeType,
+        scopeId: grant.scopeId,
+      });
+    }
   } catch (err) {
     logOidcError("group mapping", err);
     return oidcFailedRedirect(c);

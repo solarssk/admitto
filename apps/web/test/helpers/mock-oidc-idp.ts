@@ -10,6 +10,11 @@ export interface MockOidcIdp {
   authorizeEndpoint: string;
   publicJwk: jose.JWK;
   server: Server;
+  /** Sets the `groups` claim the NEXT issued ID token will carry, then reverts to `[]` - a test
+   * calls this immediately before driving one callback through runOidcCallback. Not part of the
+   * real OIDC protocol: this mock IdP is a standalone server the test already controls directly,
+   * so a simple stateful setter is the only way a test can choose what claim it issues. */
+  setNextGroups(groups: string[]): void;
 }
 
 export async function startMockOidcIdp(): Promise<MockOidcIdp> {
@@ -22,7 +27,8 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
   let jwksUri = "";
   let tokenEndpoint = "";
   let authorizeEndpoint = "";
-  const nonceByCode = new Map<string, string>();
+  const codeState = new Map<string, { nonce: string; groups: string[] }>();
+  let nextGroups: string[] = [];
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", issuer || "http://127.0.0.1");
@@ -48,14 +54,18 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
       for await (const chunk of req) chunks.push(chunk as Buffer);
       const body = new URLSearchParams(Buffer.concat(chunks).toString());
       const code = body.get("code");
-      if (!code || !nonceByCode.has(code)) {
+      const state = code ? codeState.get(code) : undefined;
+      if (!code || !state) {
         res.writeHead(400);
         res.end("invalid code");
         return;
       }
-      const nonce = nonceByCode.get(code)!;
-      nonceByCode.delete(code);
-      const idToken = await new jose.SignJWT({ nonce, email: "oidc-flow@example.com", groups: [] })
+      codeState.delete(code);
+      const idToken = await new jose.SignJWT({
+        nonce: state.nonce,
+        email: "oidc-flow@example.com",
+        groups: state.groups,
+      })
         .setProtectedHeader({ alg: "RS256", kid: "test-key" })
         .setIssuer(issuer)
         .setAudience("test-oidc-client")
@@ -68,13 +78,14 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
     }
     if (url.pathname === "/authorize") {
       const redirectUri = url.searchParams.get("redirect_uri")!;
-      const state = url.searchParams.get("state")!;
+      const authState = url.searchParams.get("state")!;
       const nonce = url.searchParams.get("nonce") ?? "";
       const code = randomUUID();
-      nonceByCode.set(code, nonce);
+      codeState.set(code, { nonce, groups: nextGroups });
+      nextGroups = [];
       const target = new URL(redirectUri);
       target.searchParams.set("code", code);
-      target.searchParams.set("state", state);
+      target.searchParams.set("state", authState);
       res.writeHead(302, { Location: target.toString() });
       res.end();
       return;
@@ -100,6 +111,9 @@ export async function startMockOidcIdp(): Promise<MockOidcIdp> {
     authorizeEndpoint,
     publicJwk,
     server,
+    setNextGroups: (groups: string[]) => {
+      nextGroups = groups;
+    },
   };
 }
 

@@ -330,6 +330,7 @@ export { encryptClientSecret, hasClientSecret } from "./oidc/provider-secret.js"
 export {
   applyOidcGroupRoleMappings,
   preservesSuperadminInvariant,
+  type ElevatedGrant,
 } from "./oidc/group-role-mapping.js";
 export {
   findEnabledOidcProviders,

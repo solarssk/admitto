@@ -53,6 +53,17 @@ describe("NOTIFICATION_TYPES", () => {
     expect(NOTIFICATION_TYPES["account.login.new_location"]!.throttleWindowMinutes).toBeUndefined();
   });
 
+  it("auth.role.elevated is never throttled - two distinct grants to the same target (a revoke+re-grant, or several new organization scopes saved in sequence) are each independently reportable, not one incident (bot review finding, PR #1312)", () => {
+    expect(NOTIFICATION_TYPES["auth.role.elevated"]!.throttleWindowMinutes).toBe(0);
+  });
+
+  it.each(ORG_STAFF_TYPES.filter((type) => type !== "auth.role.elevated"))(
+    "%s uses the default (15-minute) throttle window from ORG_STAFF_DEFAULTS",
+    (type) => {
+      expect(NOTIFICATION_TYPES[type]!.throttleWindowMinutes).toBe(15);
+    },
+  );
+
   it("getNotificationTypeDef returns undefined for an unregistered key", () => {
     expect(getNotificationTypeDef("not.a.real.type")).toBeUndefined();
   });

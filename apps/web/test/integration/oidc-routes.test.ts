@@ -586,4 +586,55 @@ describe("oidc routes", () => {
       },
     );
   });
+
+  // Gaining admin/superadmin through a group-role sync is the path most likely to change access
+  // without an admin actively watching, so it must raise the same auth.role.elevated alert as a
+  // manual grant through the admin UI (bot review finding, PR #1312).
+  it("dispatches auth.role.elevated (org-staff) when a group-role mapping elevates a linked user with no prior role", async () => {
+    const recipient = await prisma.user.create({
+      data: { email: "oidc-role-elevated-recipient@example.com", password_hash: await hashPassword("unused"), is_active: true },
+    });
+    await prisma.roleAssignment.create({
+      data: { user_id: recipient.id, role: "superadmin", scope_type: "instance", scope_id: null },
+    });
+    const target = await prisma.user.create({
+      data: { email: "oidc-role-elevated-target@example.com", password_hash: await hashPassword("unused"), is_active: true },
+    });
+    await prisma.externalIdentity.create({
+      data: { provider_id: PROVIDER_ID, subject: "mock-subject-oidc", user_id: target.id, email: target.email },
+    });
+    await prisma.oidcGroupRoleMapping.create({
+      data: { provider_id: PROVIDER_ID, group: "sso-admins", role: "superadmin", scope_type: "instance", scope_id: "" },
+    });
+
+    try {
+      // No initial role: ensureOidcGrantForRule refuses to create a conflicting type on top of
+      // an existing one (see its own doc comment), so a real elevation here needs a target
+      // starting from no role at all - the same starting state group-role-mapping.test.ts's own
+      // "adds role from matching group rule" test relies on, unlike withOidcLinkedUser (which
+      // always seeds one).
+      mockIdp.setNextGroups(["sso-admins"]);
+      const res = await runOidcCallback();
+      expect(res.status).toBe(302);
+
+      await vi.waitFor(async () => {
+        const rows = await prisma.notification.findMany({
+          where: {
+            user_id: recipient.id,
+            notification_type: "auth.role.elevated",
+            metadata: { path: ["target_user_id"], equals: target.id },
+          },
+        });
+        expect(rows).toHaveLength(1);
+        expect(rows[0]?.body).toContain("An SSO group-role mapping");
+      });
+    } finally {
+      await prisma.notification.deleteMany({ where: { user_id: recipient.id } });
+      await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID, user_id: target.id } });
+      await prisma.roleAssignment.deleteMany({ where: { user_id: { in: [recipient.id, target.id] } } });
+      await prisma.externalIdentity.deleteMany({ where: { user_id: target.id } });
+      await prisma.oidcGroupRoleMapping.deleteMany({ where: { provider_id: PROVIDER_ID, group: "sso-admins" } });
+      await prisma.user.deleteMany({ where: { id: { in: [recipient.id, target.id] } } });
+    }
+  });
 });

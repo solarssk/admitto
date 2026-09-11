@@ -1,8 +1,19 @@
 import { randomInt } from "node:crypto";
 import { Prisma, type PrismaClient } from "@admitto/db/client";
-import { hasScope } from "@admitto/db/roles";
+import { hasScope, type ScopeType } from "@admitto/db/roles";
 import { isSerializationFailure } from "@admitto/db/errors";
 import { logOidcSuperadminRevokeBlocked } from "../audit.js";
+
+/** A newly created "admin"/"superadmin" grant from one `applyOidcGroupRoleMappings` call - a
+ * caller uses this to dispatch `auth.role.elevated` (packages/auth/src/audit.ts's
+ * `logRoleElevated`) AFTER its own transaction commits, since this module never dispatches
+ * notifications itself (bot review finding, PR #1312: an IdP-driven grant previously raised no
+ * alert at all, unlike the same grant made through the admin UI). */
+export interface ElevatedGrant {
+  role: "admin" | "superadmin";
+  scopeType: ScopeType;
+  scopeId: string | null;
+}
 
 export { isSerializationFailure } from "@admitto/db/errors";
 
@@ -302,12 +313,21 @@ async function ensureOidcGrantForRule(
  * `undefined` means the provider did not supply a usable groups claim, so no role state is
  * changed. An explicit empty array remains a real assertion that no mapped groups apply and can
  * revoke provider-owned grants.
+ *
+ * `onElevatedGrant`, when given, is called synchronously once per newly created "admin"/
+ * "superadmin" grant (never for "operator" - out of `auth.role.elevated`'s scope) - AFTER
+ * `ensureOidcGrantForRule` has fully committed it, so it fires exactly once per genuine grant
+ * regardless of that function's own internal serialization retries. It never performs any I/O
+ * itself (a caller running this with an open `tx` must not dispatch a notification from inside
+ * it) - it only hands the grant's shape back so the caller can buffer it and dispatch once its
+ * own transaction has committed (bot review finding, PR #1312).
  */
 export async function applyOidcGroupRoleMappings(
   prisma: PrismaClient | Prisma.TransactionClient,
   providerId: string,
   userId: string,
   groups: readonly string[] | undefined,
+  onElevatedGrant?: (grant: ElevatedGrant) => void,
 ): Promise<number> {
   if (groups === undefined) return 0;
   const rules = await prisma.oidcGroupRoleMapping.findMany({
@@ -339,6 +359,9 @@ export async function applyOidcGroupRoleMappings(
 
     if (await ensureOidcGrantForRule(prisma, userId, providerId, rule, scopeId, grantKey)) {
       changed++;
+      if (onElevatedGrant && (rule.role === "admin" || rule.role === "superadmin")) {
+        onElevatedGrant({ role: rule.role, scopeType: rule.scope_type as ScopeType, scopeId });
+      }
     }
   }
 

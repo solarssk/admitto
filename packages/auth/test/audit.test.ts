@@ -1135,7 +1135,7 @@ describe("audit", () => {
       expect(create).not.toHaveBeenCalled();
     });
 
-    it("dispatches a real notification, deduped on the TARGET account (not the actor), naming both correctly", async () => {
+    it("dispatches a real notification, deduped on the TARGET account (not the actor), naming both correctly, organization-scoped to the GRANTED organization (bot review finding, PR #1312)", async () => {
       const db = dbWithDistinctActorAndTarget();
       await logRoleElevated(db, {
         actorUserId: "actor-1",
@@ -1149,7 +1149,10 @@ describe("audit", () => {
           db,
           "auth.role.elevated",
           expect.objectContaining({
-            organizationId: "org_default",
+            // Not "org_default": an organization-scoped grant must notify THAT organization's
+            // own admin staff, not the instance default - a different tenant on a
+            // multi-organization instance (bot review finding, PR #1312).
+            organizationId: "org-1",
             dedupeKey: "target-1",
             body: "Jane Admin granted New Admin the administrator role.",
             metadata: {
@@ -1164,7 +1167,7 @@ describe("audit", () => {
       });
     });
 
-    it("labels a superadmin grant distinctly from an admin grant", async () => {
+    it("labels a superadmin grant distinctly from an admin grant, and falls back to the instance default organization (superadmin has no single owning organization)", async () => {
       const db = dbWithDistinctActorAndTarget();
       await logRoleElevated(db, {
         actorUserId: "actor-1",
@@ -1177,7 +1180,30 @@ describe("audit", () => {
         expect(notify).toHaveBeenCalledWith(
           db,
           "auth.role.elevated",
-          expect.objectContaining({ body: expect.stringContaining("the superadmin role") }),
+          expect.objectContaining({
+            organizationId: "org_default",
+            body: expect.stringContaining("the superadmin role"),
+          }),
+        );
+      });
+    });
+
+    it("dispatches with no human actor (system-driven IdP group-role sync), attributing the grant to the sync itself", async () => {
+      const db = dbWithDistinctActorAndTarget();
+      await logRoleElevated(db, {
+        targetUserId: "target-1",
+        role: "admin",
+        scopeType: "organization",
+        scopeId: "org-1",
+      });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.role.elevated",
+          expect.objectContaining({
+            body: "An SSO group-role mapping granted New Admin the administrator role.",
+            metadata: expect.objectContaining({ actor_user_id: null }),
+          }),
         );
       });
     });

@@ -53,6 +53,11 @@ export const NOTIFICATION_TYPES: Record<string, NotificationTypeDef> = {
     ...ORG_STAFF_DEFAULTS,
     label: "Admin or superadmin role granted",
     defaultSeverity: "warn",
+    // Never throttled (see throttleWindowMinutes's own doc comment): dedupeKey is the target
+    // user, but two distinct grants to the SAME target within the window - a revoke followed by
+    // a re-grant, or the admin UI saving several new organization scopes in sequence - are each
+    // independently reportable, not a repeat of one incident (bot review finding, PR #1312).
+    throttleWindowMinutes: 0,
   },
   "account.auth_factor.changed": {
     category: "system",
