@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Checkbox } from "@admitto/ui";
 import { useDropdownMenu } from "./useDropdownMenu.js";
-import { usePanelOpenState } from "./InlineAccordionContext.js";
+import { floatingOnly, usePanelOpenState } from "./InlineAccordionContext.js";
 import { SearchableSelectSearchBox } from "./SearchableSelectSearchBox.js";
-import { searchableSelectPanelClassName, searchableSelectTriggerClassName } from "./searchable-select-class-names.js";
-import type { SearchableSelectOption } from "./SearchableSelect.js";
+import { searchableSelectTriggerClassName } from "./searchable-select-class-names.js";
+import { SearchableSelectPanel, type SearchableSelectOption } from "./SearchableSelect.js";
 import "./searchable-select.css";
 import "./multi-select.css";
 
@@ -126,7 +126,7 @@ export function MultiSelect({
       <button
         type="button"
         id={id}
-        ref={isInline ? undefined : dropdown.triggerRef}
+        ref={floatingOnly(isInline, dropdown.triggerRef)}
         className={searchableSelectTriggerClassName(invalid, isInline, open)}
         disabled={disabled}
         title={title}
@@ -146,11 +146,7 @@ export function MultiSelect({
         </span>
       )}
       {open && (
-        <div
-          className={searchableSelectPanelClassName(isInline, dropdown.openUpward)}
-          ref={isInline ? undefined : dropdown.panelRef}
-          style={isInline ? undefined : dropdown.panelStyle}
-        >
+        <SearchableSelectPanel isInline={isInline} dropdown={dropdown}>
           {showSearch && (
             <SearchableSelectSearchBox
               id={id}
@@ -187,7 +183,7 @@ export function MultiSelect({
               ))
             )}
           </ul>
-        </div>
+        </SearchableSelectPanel>
       )}
     </div>
   );

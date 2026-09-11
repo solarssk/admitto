@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useDropdownMenu } from "./useDropdownMenu.js";
-import { usePanelOpenState } from "./InlineAccordionContext.js";
+import { floatingOnly, usePanelOpenState } from "./InlineAccordionContext.js";
 import { SearchableSelectSearchBox } from "./SearchableSelectSearchBox.js";
 import { searchableSelectPanelClassName, searchableSelectTriggerClassName } from "./searchable-select-class-names.js";
 import "./searchable-select.css";
@@ -22,6 +22,32 @@ function triggerContent(selected: SearchableSelectOption | undefined, placeholde
       {selected.icon && <i className={`ti ti-${selected.icon}`} aria-hidden="true" />}
       <span className="searchable-select__label">{selected.label}</span>
     </>
+  );
+}
+
+/** The open panel's own wrapper `<div>` - identical className/ref/style resolution in
+ * `SearchableSelect` and `MultiSelect`, factored out so the two components don't each carry a
+ * literal copy of the same 3 lines (SonarCloud duplication). */
+export function SearchableSelectPanel({
+  isInline,
+  dropdown,
+  children,
+}: {
+  isInline: boolean;
+  dropdown: Pick<
+    ReturnType<typeof useDropdownMenu<HTMLButtonElement, HTMLDivElement>>,
+    "openUpward" | "panelRef" | "panelStyle"
+  >;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={searchableSelectPanelClassName(isInline, dropdown.openUpward)}
+      ref={floatingOnly(isInline, dropdown.panelRef)}
+      style={floatingOnly(isInline, dropdown.panelStyle)}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -172,7 +198,7 @@ export function SearchableSelect({
       <button
         type="button"
         id={id}
-        ref={isInline ? undefined : dropdown.triggerRef}
+        ref={floatingOnly(isInline, dropdown.triggerRef)}
         className={searchableSelectTriggerClassName(invalid, isInline, open)}
         disabled={disabled}
         title={title}
@@ -190,11 +216,7 @@ export function SearchableSelect({
         </span>
       )}
       {open && (
-        <div
-          className={searchableSelectPanelClassName(isInline, dropdown.openUpward)}
-          ref={isInline ? undefined : dropdown.panelRef}
-          style={isInline ? undefined : dropdown.panelStyle}
-        >
+        <SearchableSelectPanel isInline={isInline} dropdown={dropdown}>
           {showSearch && (
             <SearchableSelectSearchBox
               id={id}
@@ -209,7 +231,7 @@ export function SearchableSelect({
           <ul className="searchable-select__list at-scroll" aria-label={label}>
             {optionListBody(results, emptyLabel, handleSelect)}
           </ul>
-        </div>
+        </SearchableSelectPanel>
       )}
     </div>
   );

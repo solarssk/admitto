@@ -55,3 +55,12 @@ export function usePanelOpenState(
   if (isInline) return { isInline, open: inlineOpen, setOpen: setInlineOpen };
   return { isInline, open: dropdown.open, setOpen: dropdown.setOpen };
 }
+
+/** An inline-mode field renders in normal document flow and has no use for `useDropdownMenu`'s
+ * own ref/style wiring (its floating positioning, sized to the trigger) - `undefined` there lets
+ * the DOM element opt out of that behavior entirely. Used for the trigger ref, panel ref, and
+ * panel style alike in both `SearchableSelect` and `MultiSelect`, in place of three repeated
+ * `isInline ? undefined : ...` ternaries per component. */
+export function floatingOnly<T>(isInline: boolean, value: T): T | undefined {
+  return isInline ? undefined : value;
+}
