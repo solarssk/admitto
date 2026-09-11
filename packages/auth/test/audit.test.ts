@@ -18,6 +18,7 @@ import {
   logMfaFailure,
   logMfaRecoveryConsumed,
   logMfaSuccess,
+  notifyOwnAuthFactorChanged,
   logOidcLoginSuccess,
   logOidcSuperadminRevokeBlocked,
   logRateLimitExceeded,
@@ -532,6 +533,35 @@ describe("audit", () => {
       });
     });
 
+  });
+
+  describe("notifyOwnAuthFactorChanged", () => {
+    // Used by the CLI break-glass MFA reset commands (packages/auth/src/cli.ts,
+    // apps/cli/src/commands/auth.ts), which bypass every HTTP route apps/web wires this
+    // notification into (bot review finding, PR #1308) - see this function's own doc comment.
+    it("dispatches account.auth_factor.changed targeting and deduped on the given user, not the acting operator", async () => {
+      const db = fakeDb();
+      await notifyOwnAuthFactorChanged(db, "user-1", "Your two-factor authentication was reset", "body text");
+      expect(notify).toHaveBeenCalledWith(
+        db,
+        "account.auth_factor.changed",
+        expect.objectContaining({
+          organizationId: "org_default",
+          title: "Your two-factor authentication was reset",
+          body: "body text",
+          targetUserId: "user-1",
+          dedupeKey: "user-1",
+        }),
+      );
+    });
+
+    it("skips notify() (without throwing) when db is a transaction client, not a plain PrismaClient", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const tx = { user: { findUnique: vi.fn() } } as unknown as PrismaClient;
+      await notifyOwnAuthFactorChanged(tx, "user-1", "title", "body");
+      expect(notify).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("auth.notify_dispatch_skipped_transaction_client"));
+    });
   });
 
   describe("logSuperadminBootstrapCli", () => {
