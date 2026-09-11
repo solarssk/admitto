@@ -219,7 +219,12 @@ function attendeeMailStatusSql(mail_status?: readonly AttendeeMailStatusFilter[]
  * attendee data, matching far more (or differently) than the "contains this exact text" the
  * contains-text filter promises. */
 function escapeLikePattern(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+  // A lone trailing backslash can't be written as String.raw`\` - the parser reads that
+  // backslash as escaping the closing backtick itself, not as the template's own content.
+  return value
+    .replaceAll("\\", String.raw`\\`)
+    .replaceAll("%", String.raw`\%`)
+    .replaceAll("_", String.raw`\_`);
 }
 
 /** One custom field's own condition - `source_field` is interpolated as a bound parameter to

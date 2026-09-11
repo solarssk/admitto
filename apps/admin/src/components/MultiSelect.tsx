@@ -3,6 +3,7 @@ import { Checkbox } from "@admitto/ui";
 import { useDropdownMenu } from "./useDropdownMenu.js";
 import { useInlineOpenState } from "./InlineAccordionContext.js";
 import { SearchableSelectSearchBox } from "./SearchableSelectSearchBox.js";
+import { searchableSelectPanelClassName, searchableSelectTriggerClassName } from "./searchable-select-class-names.js";
 import type { SearchableSelectOption } from "./SearchableSelect.js";
 import "./searchable-select.css";
 import "./multi-select.css";
@@ -21,6 +22,18 @@ function triggerSummary(
   if (value.length === 0) return placeholder;
   if (value.length === 1) return options.find((o) => o.id === value[0])?.label ?? placeholder;
   return `${value.length} selected`;
+}
+
+/** An option's checkbox label, prefixed with its own icon when it has one - kept out of the
+ * render body's `.map()` callback to stay a plain ternary, not one nested inside another. */
+function optionCheckboxLabel(option: SearchableSelectOption) {
+  if (!option.icon) return option.label;
+  return (
+    <span className="multi-select__option-label">
+      <i className={`ti ti-${option.icon}`} aria-hidden="true" />
+      {option.label}
+    </span>
+  );
 }
 
 interface MultiSelectProps {
@@ -117,7 +130,7 @@ export function MultiSelect({
         type="button"
         id={id}
         ref={isInline ? undefined : dropdown.triggerRef}
-        className={`searchable-select__trigger${invalid ? " searchable-select__trigger--invalid" : ""}${isInline && open ? " searchable-select__trigger--open" : ""}`}
+        className={searchableSelectTriggerClassName(invalid, isInline, open)}
         disabled={disabled}
         title={title}
         aria-expanded={open}
@@ -137,11 +150,7 @@ export function MultiSelect({
       )}
       {open && (
         <div
-          className={
-            isInline
-              ? "searchable-select__panel searchable-select__panel--inline"
-              : `searchable-select__panel${dropdown.openUpward ? " searchable-select__panel--up" : ""}`
-          }
+          className={searchableSelectPanelClassName(isInline, dropdown.openUpward)}
           ref={isInline ? undefined : dropdown.panelRef}
           style={isInline ? undefined : dropdown.panelStyle}
         >
@@ -173,16 +182,7 @@ export function MultiSelect({
               results.map((o) => (
                 <li key={o.id} className="multi-select__option">
                   <Checkbox
-                    label={
-                      o.icon ? (
-                        <span className="multi-select__option-label">
-                          <i className={`ti ti-${o.icon}`} aria-hidden="true" />
-                          {o.label}
-                        </span>
-                      ) : (
-                        o.label
-                      )
-                    }
+                    label={optionCheckboxLabel(o)}
                     checked={selectedSet.has(o.id)}
                     onChange={() => toggle(o.id)}
                   />

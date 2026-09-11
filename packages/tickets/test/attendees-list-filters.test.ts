@@ -8,6 +8,7 @@ import { assertTestDatabaseUrl } from "@admitto/db/test-db-guard";
 import {
   countFilteredAttendees,
   findFilteredAttendeesForList,
+  findFilteredAttendeesForExport,
   buildAttendeeListWhere,
   type AttendeeCustomFieldFilter,
 } from "../src/attendees-list-filters.js";
@@ -402,5 +403,67 @@ describe("custom-field filters (T-Shirt size / Networking & Dinner style)", () =
   it("an empty customFields array takes the fast Prisma-where path, same as omitting it", async () => {
     const count = await countFilteredAttendees(prisma, EVENT_ID, { status: "all", customFields: [] });
     expect(count).toBe(5);
+  });
+
+  it("a select filter with an empty values array contributes nothing, same as a blank text filter", async () => {
+    // Both still force the raw-SQL path (customFields.length > 0), but each filter row's own
+    // condition must resolve to Prisma.empty rather than an always-false IN ()/ILIKE '' - proven
+    // by pairing each with a real, narrowing filter and checking the real one's own match count
+    // is unaffected by the empty one sitting alongside it.
+    const withEmptyValues: AttendeeCustomFieldFilter[] = [
+      { source_field: "t_shirt_size", type: "select", values: ["M"] },
+      { source_field: "dinner", type: "boolean", values: [] },
+    ];
+    const rows = await findFilteredAttendeesForList(
+      prisma,
+      EVENT_ID,
+      { status: "all", customFields: withEmptyValues },
+      1,
+      10,
+    );
+    expect(rows.map((r) => r.id).sort()).toEqual([ATT_M_YES, ATT_WILDCARD_LOOKALIKE].sort());
+
+    const withBlankText: AttendeeCustomFieldFilter[] = [
+      { source_field: "t_shirt_size", type: "select", values: ["M"] },
+      { source_field: "notes", type: "text", text: "" },
+    ];
+    const rows2 = await findFilteredAttendeesForList(
+      prisma,
+      EVENT_ID,
+      { status: "all", customFields: withBlankText },
+      1,
+      10,
+    );
+    expect(rows2.map((r) => r.id).sort()).toEqual([ATT_M_YES, ATT_WILDCARD_LOOKALIKE].sort());
+  });
+
+  it("findFilteredAttendeesForExport applies customFields the same way as the list query", async () => {
+    const customFields: AttendeeCustomFieldFilter[] = [
+      { source_field: "t_shirt_size", type: "select", values: ["S"] },
+    ];
+    const filtered = await findFilteredAttendeesForExport(prisma, EVENT_ID, { status: "all", customFields });
+    expect(filtered.map((r) => r.email)).toEqual([`${ATT_S_YES}@example.com`]);
+
+    // No customFields (or an empty array) takes the fast Prisma-where export path instead.
+    const unfiltered = await findFilteredAttendeesForExport(prisma, EVENT_ID, {
+      status: "all",
+      customFields: [],
+    });
+    expect(unfiltered).toHaveLength(5);
+
+    // customFields entirely omitted (not just an empty array) still takes the fast path.
+    const omitted = await findFilteredAttendeesForExport(prisma, EVENT_ID, { status: "all" });
+    expect(omitted).toHaveLength(5);
+
+    // A real search term still forces the raw-SQL export path even with customFields omitted.
+    const searched = await findFilteredAttendeesForExport(prisma, EVENT_ID, { status: "all", q: ATT_S_YES });
+    expect(searched.map((r) => r.email)).toEqual([`${ATT_S_YES}@example.com`]);
+
+    // An explicit (not just omitted) empty mail_status array also still takes the fast path.
+    const emptyMailStatus = await findFilteredAttendeesForExport(prisma, EVENT_ID, {
+      status: "all",
+      mail_status: [],
+    });
+    expect(emptyMailStatus).toHaveLength(5);
   });
 });

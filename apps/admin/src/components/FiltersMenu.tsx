@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, type ButtonSize } from "@admitto/ui";
 import { useDropdownMenu } from "./useDropdownMenu.js";
 import { InlineAccordionContext } from "./InlineAccordionContext.js";
@@ -33,6 +33,14 @@ export function FiltersMenu({ activeCount, children, className, size }: Readonly
   useEffect(() => {
     if (!open) setOpenInlineId(null);
   }, [open]);
+  // Memoized so this Provider's own value only changes when the accordion state actually does -
+  // a fresh object literal every render would otherwise re-render every child that reads this
+  // context on every FiltersMenu render, not just when a row actually opens/closes (SonarCloud
+  // S6481).
+  const inlineAccordionValue = useMemo(
+    () => ({ openId: openInlineId, setOpenId: setOpenInlineId }),
+    [openInlineId],
+  );
 
   return (
     <div className={className} ref={rootRef}>
@@ -59,7 +67,7 @@ export function FiltersMenu({ activeCount, children, className, size }: Readonly
         // not a menu, and aria-expanded alone is the correct pattern for that (CodeRabbit review).
         <fieldset className={`${className}__panel at-scroll`} style={panelStyle} ref={panelRef}>
           <legend className="sr-only">Filters</legend>
-          <InlineAccordionContext.Provider value={{ openId: openInlineId, setOpenId: setOpenInlineId }}>
+          <InlineAccordionContext.Provider value={inlineAccordionValue}>
             {children}
           </InlineAccordionContext.Provider>
         </fieldset>

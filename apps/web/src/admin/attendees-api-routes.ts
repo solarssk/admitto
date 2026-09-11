@@ -539,34 +539,41 @@ function parseCommaSeparatedTicketTypes(raw: string | undefined): string[] {
  * `redactAttendeeListFiltersForStorage` keeps select/boolean filter values verbatim in stored job
  * metadata on the assumption they can only ever be one of a field's fixed, non-free-text options;
  * an unvalidated value would let arbitrary text ride through that redaction. */
+/** A `select` field's own configured options, or the fixed true/false pair for `boolean` -
+ * whatever a submitted value is checked against in parseOneCustomFieldFilter. */
+function allowedCustomFieldValues(field: { type: string; options: Prisma.JsonValue }): Set<string> {
+  if (field.type === "boolean") return new Set(["true", "false"]);
+  if (!Array.isArray(field.options)) return new Set();
+  return new Set(field.options.filter((o): o is string => typeof o === "string"));
+}
+
+/** One field's own `cf_<source_field>` value(s), or `null` when the field has no active filter -
+ * see parseCustomFieldFilters's own doc comment for the validation this applies. */
+function parseOneCustomFieldFilter(
+  searchParams: URLSearchParams,
+  field: { source_field: string; type: string; options: Prisma.JsonValue },
+): AttendeeCustomFieldFilter | null {
+  const key = `cf_${field.source_field}`;
+  if (field.type === "text") {
+    const raw = searchParams.get(key)?.trim();
+    return raw ? { source_field: field.source_field, type: "text", text: raw.slice(0, 200) } : null;
+  }
+  if (field.type !== "select" && field.type !== "boolean") return null;
+  const allowed = allowedCustomFieldValues(field);
+  const values = [
+    ...new Set(searchParams.getAll(key).map((v) => v.trim()).filter((v) => v && allowed.has(v))),
+  ];
+  return values.length > 0 ? { source_field: field.source_field, type: field.type, values } : null;
+}
+
 function parseCustomFieldFilters(
   c: Context,
   fields: readonly { source_field: string; type: string; options: Prisma.JsonValue }[],
 ): AttendeeCustomFieldFilter[] {
   const searchParams = new URL(c.req.url).searchParams;
-  const filters: AttendeeCustomFieldFilter[] = [];
-  for (const field of fields) {
-    const key = `cf_${field.source_field}`;
-    if (field.type === "text") {
-      const raw = searchParams.get(key)?.trim();
-      if (raw) filters.push({ source_field: field.source_field, type: "text", text: raw.slice(0, 200) });
-      continue;
-    }
-    if (field.type !== "select" && field.type !== "boolean") continue;
-    const allowed =
-      field.type === "boolean"
-        ? new Set(["true", "false"])
-        : new Set(
-            Array.isArray(field.options)
-              ? field.options.filter((o): o is string => typeof o === "string")
-              : [],
-          );
-    const values = [
-      ...new Set(searchParams.getAll(key).map((v) => v.trim()).filter((v) => v && allowed.has(v))),
-    ];
-    if (values.length > 0) filters.push({ source_field: field.source_field, type: field.type, values });
-  }
-  return filters;
+  return fields
+    .map((field) => parseOneCustomFieldFilter(searchParams, field))
+    .filter((filter): filter is AttendeeCustomFieldFilter => filter !== null);
 }
 
 /** Parse and clamp list query params (`page`, `pageSize`, `q`, `status`, `ticket_type`, `mail_status`,

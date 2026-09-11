@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useDropdownMenu } from "./useDropdownMenu.js";
 import { useInlineOpenState } from "./InlineAccordionContext.js";
 import { SearchableSelectSearchBox } from "./SearchableSelectSearchBox.js";
+import { searchableSelectPanelClassName, searchableSelectTriggerClassName } from "./searchable-select-class-names.js";
 import "./searchable-select.css";
 
 export interface SearchableSelectOption {
@@ -10,6 +11,41 @@ export interface SearchableSelectOption {
   /** Tabler icon name (without the `ti-` prefix), shown before the label in both the trigger
    * and each option row - e.g. "calendar-event" for an event, "building" for an organization. */
   icon?: string;
+}
+
+/** The closed trigger's own content - the selected option's icon+label, or the placeholder when
+ * nothing is selected yet. */
+function triggerContent(selected: SearchableSelectOption | undefined, placeholder: string): ReactNode {
+  if (!selected) return <span className="searchable-select__placeholder">{placeholder}</span>;
+  return (
+    <>
+      {selected.icon && <i className={`ti ti-${selected.icon}`} aria-hidden="true" />}
+      <span className="searchable-select__label">{selected.label}</span>
+    </>
+  );
+}
+
+/** The open panel's option list - the empty-state row, or one button per result. */
+function optionListBody(
+  results: readonly SearchableSelectOption[],
+  emptyLabel: string,
+  onSelect: (option: SearchableSelectOption) => void,
+): ReactNode {
+  if (results.length === 0) return <li className="searchable-select__empty">{emptyLabel}</li>;
+  return results.map((o) => (
+    <li key={o.id}>
+      <button
+        type="button"
+        className="searchable-select__option"
+        aria-label={o.label}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => onSelect(o)}
+      >
+        {o.icon && <i className={`ti ti-${o.icon}`} aria-hidden="true" />}
+        <span className="searchable-select__name">{o.label}</span>
+      </button>
+    </li>
+  ));
 }
 
 /** Above this option count, a search box earns its keep; at or below it, a short list (e.g. the
@@ -140,7 +176,7 @@ export function SearchableSelect({
         type="button"
         id={id}
         ref={isInline ? undefined : dropdown.triggerRef}
-        className={`searchable-select__trigger${invalid ? " searchable-select__trigger--invalid" : ""}${isInline && open ? " searchable-select__trigger--open" : ""}`}
+        className={searchableSelectTriggerClassName(invalid, isInline, open)}
         disabled={disabled}
         title={title}
         aria-expanded={open}
@@ -148,14 +184,7 @@ export function SearchableSelect({
         aria-label={triggerLabel}
         onClick={() => setOpen((current) => !current)}
       >
-        {selected ? (
-          <>
-            {selected.icon && <i className={`ti ti-${selected.icon}`} aria-hidden="true" />}
-            <span className="searchable-select__label">{selected.label}</span>
-          </>
-        ) : (
-          <span className="searchable-select__placeholder">{placeholder}</span>
-        )}
+        {triggerContent(selected, placeholder)}
         <i className="ti ti-chevron-down searchable-select__chevron" aria-hidden="true" />
       </button>
       {hint && (
@@ -165,11 +194,7 @@ export function SearchableSelect({
       )}
       {open && (
         <div
-          className={
-            isInline
-              ? "searchable-select__panel searchable-select__panel--inline"
-              : `searchable-select__panel${dropdown.openUpward ? " searchable-select__panel--up" : ""}`
-          }
+          className={searchableSelectPanelClassName(isInline, dropdown.openUpward)}
           ref={isInline ? undefined : dropdown.panelRef}
           style={isInline ? undefined : dropdown.panelStyle}
         >
@@ -185,24 +210,7 @@ export function SearchableSelect({
             />
           )}
           <ul className="searchable-select__list at-scroll" aria-label={label}>
-            {results.length === 0 ? (
-              <li className="searchable-select__empty">{emptyLabel}</li>
-            ) : (
-              results.map((o) => (
-                <li key={o.id}>
-                  <button
-                    type="button"
-                    className="searchable-select__option"
-                    aria-label={o.label}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleSelect(o)}
-                  >
-                    {o.icon && <i className={`ti ti-${o.icon}`} aria-hidden="true" />}
-                    <span className="searchable-select__name">{o.label}</span>
-                  </button>
-                </li>
-              ))
-            )}
+            {optionListBody(results, emptyLabel, handleSelect)}
           </ul>
         </div>
       )}
