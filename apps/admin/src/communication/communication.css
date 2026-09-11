@@ -462,32 +462,39 @@
   gap: var(--space-4);
 }
 
-/* Light/Dark preview toggle - sized and weighted to match the plain archive/trash/reply/dots
-   icons right next to it (same 1.1rem glyph, no button chrome/background at rest) instead of a
-   pill control, so it adds no extra row height to the toolbar - a padded pill here measured
-   ~10px taller than the toolbar's own natural content height. Active vs. inactive reads by
-   color/weight alone (dark vs. muted gray), same state `[aria-pressed]` already gives assistive
-   tech. Left unthemed by the `--dark` modifier below - the muted gray still reads fine against
-   the dark toolbar background. */
+/* Light/Dark preview toggle - a single shared "pill" frame around both buttons (segmented
+   control), not a plain glyph matching the decorative archive/trash/reply/dots icons next to
+   it - a zero-chrome version of this read as non-interactive (PO report: "doesn't look
+   clickable"). The ring/background use box-shadow, not border/padding-driven sizing, which adds
+   next to nothing to the toolbar's own row height (measured 1.2px, vs. ~10px for an earlier
+   padding-heavy pill version) while still reading clearly as a clickable control. Left unthemed
+   by the `--dark` modifier below - a light chip still reads fine floating on the dark toolbar
+   background. */
 .communication-mail-client__scheme-toggle {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 1px;
+  border-radius: var(--radius-sm);
+  background: #e8eaed;
+  box-shadow: 0 0 0 1px #d0d3d6;
 }
 
 .communication-mail-client__scheme-toggle-btn {
   display: inline-flex;
-  padding: 0;
+  padding: 1px 4px;
   border: none;
-  background: none;
-  color: #9aa0a6;
-  font-size: 1.1rem;
+  border-radius: calc(var(--radius-sm) - 1px);
+  background: transparent;
+  color: #5f6368;
+  font-size: 1.05rem;
   line-height: 1;
   cursor: pointer;
 }
 
 .communication-mail-client__scheme-toggle-btn[aria-pressed="true"] {
+  background: #fff;
   color: #202124;
+  box-shadow: 0 0 0 1px #9aa0a6;
 }
 
 .communication-mail-client__scheme-toggle-btn:focus-visible {
