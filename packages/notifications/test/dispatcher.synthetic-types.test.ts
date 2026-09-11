@@ -7,10 +7,11 @@ import { createStubDb } from "./stubDb.js";
 
 // vi.mock is hoisted above regular top-level consts - anything the factory references must be
 // declared via vi.hoisted() to avoid a temporal-dead-zone ReferenceError.
-const { SELF_TYPE, EMPTY_CHANNELS_TYPE, WEBHOOK_INAPP_ONLY_TYPE } = vi.hoisted(() => ({
+const { SELF_TYPE, EMPTY_CHANNELS_TYPE, WEBHOOK_INAPP_ONLY_TYPE, NEVER_THROTTLED_TYPE } = vi.hoisted(() => ({
   SELF_TYPE: "test.self_audience",
   EMPTY_CHANNELS_TYPE: "test.no_channels",
   WEBHOOK_INAPP_ONLY_TYPE: "test.webhook_and_inapp_only",
+  NEVER_THROTTLED_TYPE: "test.never_throttled",
 }));
 
 // Every real foundation type is org-staff-audience with all 3 channels and an explicit
@@ -51,6 +52,16 @@ vi.mock("../src/registry.js", async (importOriginal) => {
       throttleWindowMinutes: 15,
       userConfigurable: true,
       orgDisableable: true,
+    },
+    [NEVER_THROTTLED_TYPE]: {
+      category: "system",
+      label: "Never-throttled test type",
+      defaultSeverity: "warn",
+      availableChannels: ["email"],
+      audience: "org-staff",
+      throttleWindowMinutes: 0,
+      userConfigurable: false,
+      orgDisableable: false,
     },
   };
   return {
@@ -166,6 +177,34 @@ describe("notify() with synthetic type shapes", () => {
             failures: [{ channel: "in_app", error: expect.any(String) }],
           }),
         }),
+      }),
+    );
+  });
+
+  it("dispatches every occurrence for a throttleWindowMinutes: 0 type, even repeated calls sharing the same dedupeKey within what would otherwise be one throttle window (bot review finding, PR #1304)", async () => {
+    db.roleAssignment.findMany.mockResolvedValue([{ user_id: "u-1", user: { is_active: true } }]);
+    const email = stubChannel();
+
+    await notify(
+      db as unknown as PrismaClient,
+      NEVER_THROTTLED_TYPE,
+      { ...EVENT, dedupeKey: "same-user" },
+      { channels: { email } },
+    );
+    await notify(
+      db as unknown as PrismaClient,
+      NEVER_THROTTLED_TYPE,
+      { ...EVENT, dedupeKey: "same-user" },
+      { channels: { email } },
+    );
+
+    // No throttle claim attempted at all (claimThrottleSlot's own INSERT ... ON CONFLICT goes
+    // through $queryRaw) - not "claimed and released", never claimed in the first place.
+    expect(db.$queryRaw).not.toHaveBeenCalled();
+    expect(email.send).toHaveBeenCalledTimes(2);
+    expect(db.securityAuditLog.create).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ event_type: "notification.dispatch.skipped_throttled" }),
       }),
     );
   });

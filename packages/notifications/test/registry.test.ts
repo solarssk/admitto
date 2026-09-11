@@ -32,13 +32,16 @@ describe("NOTIFICATION_TYPES", () => {
   });
 
   it.each(SELF_TYPES)(
-    "%s is self-audience, mandatory (not user/org configurable), no webhook",
+    "%s is self-audience, mandatory (not user/org configurable), no webhook, never throttled",
     (type) => {
       const def = NOTIFICATION_TYPES[type]!;
       expect(def.audience).toBe("self");
       expect(def.userConfigurable).toBe(false);
       expect(def.orgDisableable).toBe(false);
       expect(def.availableChannels.toSorted((a, b) => a.localeCompare(b))).toEqual(["email", "in_app"]);
+      // Every call site shares one per-user dedupeKey, but each occurrence is its own distinct
+      // event a shared throttle window would otherwise collapse (bot review finding, PR #1304).
+      expect(def.throttleWindowMinutes).toBe(0);
       expect(["info", "warn", "error"]).toContain(def.defaultSeverity);
       expect(def.label.length).toBeGreaterThan(0);
     },

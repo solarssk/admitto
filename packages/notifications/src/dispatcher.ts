@@ -424,18 +424,25 @@ export async function notify(
     const now = deps.now?.() ?? new Date();
     const throttleKey = `${event.organizationId}:${event.dedupeKey ?? "org"}`;
     const windowMinutes = typeDef.throttleWindowMinutes ?? DEFAULT_THROTTLE_WINDOW_MINUTES;
-    const rowId = await claimThrottleSlot(db, type, throttleKey, windowMinutes, now);
-    if (!rowId) {
-      await writeDispatchAuditLog(db, "notification.dispatch.skipped_throttled", event.organizationId, {
-        notification_type: type,
-      });
-      return;
+    // windowMinutes === 0 (never negative - registry.ts is the only source, always a literal)
+    // means this type opts out of throttling entirely (see NotificationTypeDef's own doc
+    // comment) - skip the claim step altogether rather than claiming-and-immediately-checking,
+    // so every occurrence dispatches independently with no shared NotificationThrottle row at
+    // all for this type.
+    if (windowMinutes > 0) {
+      const rowId = await claimThrottleSlot(db, type, throttleKey, windowMinutes, now);
+      if (!rowId) {
+        await writeDispatchAuditLog(db, "notification.dispatch.skipped_throttled", event.organizationId, {
+          notification_type: type,
+        });
+        return;
+      }
+      activeClaim = { throttleKey, rowId };
     }
-    activeClaim = { throttleKey, rowId };
 
     const candidates = await resolveCandidatesOrLogSkip(db, type, typeDef, event);
     if (!candidates) {
-      await releaseThrottleSlot(db, type, throttleKey, rowId);
+      if (activeClaim) await releaseThrottleSlot(db, type, activeClaim.throttleKey, activeClaim.rowId);
       return;
     }
 
@@ -456,8 +463,8 @@ export async function notify(
     // communicated anything. A *partial* success (some channels sent, one failed) keeps the
     // claim: releasing there would let the channels that already delivered resend/spam on the
     // next occurrence while only the genuinely-still-broken channel needed a retry.
-    if (channelsSent.length === 0) {
-      await releaseThrottleSlot(db, type, throttleKey, rowId);
+    if (channelsSent.length === 0 && activeClaim) {
+      await releaseThrottleSlot(db, type, activeClaim.throttleKey, activeClaim.rowId);
     }
 
     if (failures.length > 0) {

@@ -54,6 +54,12 @@ export const NOTIFICATION_TYPES: Record<string, NotificationTypeDef> = {
     // exact exposure this type exists to avoid for every OTHER type's audience.
     availableChannels: ["email", "in_app"],
     audience: "self",
+    // Never throttled (see NotificationTypeDef.throttleWindowMinutes's own doc comment): every
+    // call site shares one per-user dedupeKey (the account owner), but each occurrence is its own
+    // distinct, independently reportable change - a password change followed by a passkey removal
+    // 2 minutes later are two different events the owner must see, not a repeat of one incident to
+    // collapse into a single alert (bot review finding, PR #1304).
+    throttleWindowMinutes: 0,
     // Mandatory: the whole point of ASVS V2.5.5 is catching an unauthorized change on your own
     // account, so neither the account owner nor the organization can silence the one alert meant
     // to let them catch it (see userConfigurable/orgDisableable's own doc comments in types.ts).

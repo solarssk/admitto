@@ -422,6 +422,34 @@ describe("PATCH /api/account/password", () => {
     expect(rows).toHaveLength(0);
   });
 
+  it("fires account.auth_factor.changed for a SECOND, different operation by the same user within the same 15-minute window a shared throttle key would otherwise collapse (bot review finding, PR #1304)", async () => {
+    const res = await app.request("/api/account/password", {
+      method: "PATCH",
+      headers: { Cookie: userCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ current_password: PASSWORD, new_password: NEW_PASSWORD, new_password_confirm: NEW_PASSWORD }),
+    });
+    expect(res.status).toBe(200);
+    await expectAuthFactorChangedNotification(userId, "Your password was changed");
+
+    // No throttle-row cleanup here, unlike the shared afterEach - the whole point is proving the
+    // SECOND, genuinely different operation below still dispatches its own receipt within what
+    // would otherwise be the same 15-minute throttle window as the password change above, since
+    // account.auth_factor.changed opts out of throttling entirely (registry.ts's
+    // throttleWindowMinutes: 0).
+    await createTrustedDevice(prisma, { userId });
+    const devicesRes = await app.request("/api/account/mfa/trusted-devices", {
+      method: "DELETE",
+      headers: { Cookie: userCookie, ...sameOrigin },
+    });
+    expect(devicesRes.status).toBe(200);
+    await expectAuthFactorChangedNotification(userId, "Trusted devices were cleared");
+
+    const rows = await prisma.notification.findMany({
+      where: { user_id: userId, notification_type: "account.auth_factor.changed" },
+    });
+    expect(rows).toHaveLength(2);
+  });
+
   it("returns 400 no_local_password for OIDC-only account", async () => {
     const oidcSession = await createSession(prisma, { userId: oidcUserId, stage: SESSION_STAGE.FULL });
     const res = await app.request("/api/account/password", {
