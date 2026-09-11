@@ -1029,6 +1029,11 @@ export function AttendeesPage() {
   // main search box (below), not on every keystroke.
   const [customFieldTextInputs, setCustomFieldTextInputs] = useState<Record<string, string>>({});
   const [customFieldTextQueries, setCustomFieldTextQueries] = useState<Record<string, string>>({});
+  // Per-field debounce timers for customFieldTextInputs (declared here so both the eventId reset
+  // effect and the debounce-commit effect below can reach them) - see the debounce effect's own
+  // comment for why this can't just be `useEffect(..., [customFieldTextInputs])` alone.
+  const customFieldDebounceTimersRef = useRef<Record<string, number>>({});
+  const prevCustomFieldTextInputsRef = useRef<Record<string, string>>({});
   // Only the count is ever used (gates the bulk "Revoke items" action) — no need to hold onto
   // the full item catalog here, unlike ticketTypes above (whose labels/colors ARE rendered).
   const [eventItemCount, setEventItemCount] = useState(0);
@@ -1149,6 +1154,11 @@ export function AttendeesPage() {
     setCustomFieldSelectValues((current) => (Object.keys(current).length === 0 ? current : {}));
     setCustomFieldTextInputs((current) => (Object.keys(current).length === 0 ? current : {}));
     setCustomFieldTextQueries((current) => (Object.keys(current).length === 0 ? current : {}));
+    // A pending debounce timer from the previous event's text field(s) would otherwise fire after
+    // this reset and write a stale cf_<source_field> query the new event's fields don't expect.
+    Object.values(customFieldDebounceTimersRef.current).forEach((t) => window.clearTimeout(t));
+    customFieldDebounceTimersRef.current = {};
+    prevCustomFieldTextInputsRef.current = {};
     // Same reference-churn concern as ticketTypeFilter above, but for `customFields` itself, not
     // just the selected filter values - it feeds customFieldParams below, which is itself a
     // loadList dependency, so a fresh `[]` here (or from the resolved fetch, when it happens to
@@ -1170,19 +1180,34 @@ export function AttendeesPage() {
   }, [eventId, customFieldsRetryToken]);
 
   // Commits each custom text field's typed value to its own query after the same pause the main
-  // search box uses, one independent timer per field so typing in one doesn't reset another's.
+  // search box uses, one independent timer per field so typing in one doesn't reset another's -
+  // re-arming every field's timer on every keystroke (they all live in one `customFieldTextInputs`
+  // object, so any field's change gives the whole object a new reference) would have kept
+  // resetting field B's countdown for as long as the user kept typing into field A. Only the
+  // field whose own value actually changed since the last render gets a fresh timer; every other
+  // field's already-scheduled one is left running.
   useEffect(() => {
-    const timers = Object.entries(customFieldTextInputs).map(([sourceField, value]) =>
-      window.setTimeout(() => {
+    const previous = prevCustomFieldTextInputsRef.current;
+    for (const [sourceField, value] of Object.entries(customFieldTextInputs)) {
+      if (previous[sourceField] === value) continue;
+      window.clearTimeout(customFieldDebounceTimersRef.current[sourceField]);
+      customFieldDebounceTimersRef.current[sourceField] = window.setTimeout(() => {
         const trimmed = value.trim();
         setCustomFieldTextQueries((current) =>
           current[sourceField] === trimmed ? current : { ...current, [sourceField]: trimmed },
         );
         setPage(1);
-      }, DEBOUNCE_MS),
-    );
-    return () => timers.forEach((t) => window.clearTimeout(t));
+      }, DEBOUNCE_MS);
+    }
+    prevCustomFieldTextInputsRef.current = customFieldTextInputs;
   }, [customFieldTextInputs]);
+  // Unmount only - each keystroke's effect above already clears the one timer it replaces.
+  useEffect(
+    () => () => {
+      Object.values(customFieldDebounceTimersRef.current).forEach((t) => window.clearTimeout(t));
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!eventId) return;

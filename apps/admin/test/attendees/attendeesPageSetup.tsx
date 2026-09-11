@@ -6,6 +6,7 @@ import { mockMatchMedia, renderWithToast } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 
 export const fetchEventAttendees = vi.fn();
+export const fetchEventCustomFields = vi.fn();
 export const fetchEventMailSettings = vi.fn();
 export const exportAttendees = vi.fn();
 export const reportApiError = vi.fn();
@@ -55,7 +56,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
   fetchTicketTypes: vi.fn().mockResolvedValue([]),
-  fetchEventCustomFields: vi.fn().mockResolvedValue([]),
+  fetchEventCustomFields: (...args: unknown[]) => fetchEventCustomFields(...args),
   fetchEventItems: vi.fn().mockResolvedValue([]),
   fetchEventTemplates: vi.fn().mockResolvedValue([]),
   fetchEventMailSettings: (...args: unknown[]) => fetchEventMailSettings(...args),
@@ -95,6 +96,7 @@ export function renderPage() {
 
 beforeEach(() => {
   mockMatchMedia(true);
+  fetchEventCustomFields.mockResolvedValue([]);
   fetchEventMailSettings.mockResolvedValue(mailSettings("smtp"));
   exportAttendees.mockResolvedValue(undefined);
 });
