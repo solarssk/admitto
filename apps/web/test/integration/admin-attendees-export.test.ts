@@ -406,8 +406,12 @@ describe("GET /api/admin/events/:eventId/attendees — ticket_type filter", () =
     expect(res.status).toBe(200);
     const body = (await res.json()) as { items: { id: string }[]; total: number };
     const ids = body.items.map((i) => i.id);
-    expect(ids).toContain(ATT_VIP1);
-    expect(ids).toContain(ATT_STD);
+    expect(body.total).toBe(6);
+    expect(ids.sort()).toEqual(
+      [ATT_VIP1, ATT_VIP2, ATT_INJ, ATT_MEGA_VIP, ATT_STD, ATT_MEGA_STD].sort(),
+    );
+    // Has no ticket_type at all - must not slip in just because the endpoint ignored the filter.
+    expect(ids).not.toContain("att-export-notype");
   });
 
   it("ticket_type=vip + status=admitted returns subset", async () => {
