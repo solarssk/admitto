@@ -195,7 +195,7 @@ describe("CommunicationPage placeholder chip insertion outside the <mjml> root",
     fetchEventTemplate.mockResolvedValue(mjmlTemplate);
     const view = await renderAndGetBodyField();
 
-    // Deliberately do NOT position the cursor — this is the exact scenario that produced the
+    // Deliberately do NOT position the cursor - this is the exact scenario that produced the
     // bug: the user's first action on the page is clicking a placeholder chip, so CodeMirror's
     // default initial selection of 0 (a fresh document always starts there) would otherwise
     // place new markup before <mjml>, same as an unfocused textarea's default selectionStart/End.
