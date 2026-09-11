@@ -691,6 +691,38 @@ describe("Clear all", () => {
     expect(screen.getByText("5 consecutive failed sign-in attempts")).toBeTruthy();
   });
 
+  it("ignores Escape while the delete is still in flight, so a slow request can't be cancelled after it's already unabortably running (bot review finding)", async () => {
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [makeNotification()],
+      unread_count: 1,
+    });
+    let resolveClear: (value: { cleared_count: number; unread_count: number }) => void = () => {};
+    clearAllAccountNotifications.mockImplementation(
+      () => new Promise((resolve) => { resolveClear = resolve; }),
+    );
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("5 consecutive failed sign-in attempts");
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    const dialog = await screen.findByRole("dialog", { name: "Clear all notifications?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear all notifications" }));
+    await act(async () => {});
+
+    // The request is still pending - Escape must not close the dialog out from under it.
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Clear all notifications?" })).toBeTruthy();
+
+    await act(async () => {
+      resolveClear({ cleared_count: 1, unread_count: 0 });
+      await Promise.resolve();
+    });
+    await screen.findByText("You’re all caught up.");
+  });
+
   it("permanently clears the list and shows the empty state after confirming", async () => {
     fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 1 });
     fetchAccountNotifications.mockResolvedValue({

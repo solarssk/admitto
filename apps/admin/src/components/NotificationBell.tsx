@@ -370,6 +370,11 @@ export function NotificationBell() {
         loading={clearing}
         onConfirm={() => void handleClearAll()}
         onCancel={() => {
+          // Ignore Escape/backdrop cancellation while the unabortable delete is still in flight -
+          // ConfirmDialog's own focus trap and backdrop call onCancel unconditionally, only the
+          // visible Cancel button respects `loading` on its own (bot review finding); same guard
+          // as EventArchivingPanel's onCancel.
+          if (clearing) return;
           setClearConfirmOpen(false);
           setClearError(null);
         }}

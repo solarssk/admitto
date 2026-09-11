@@ -830,6 +830,11 @@ model Notification {
   created_at        DateTime  @default(now())
 
   @@index([user_id, read_at])
+  // Supports describePersonalNotifications/countUnreadNotifications (inbox.ts): both filter by
+  // user_id and order by created_at/id descending, take 30 - without this, that ordering can't
+  // be satisfied by the (user_id, read_at) index above, so Postgres sorts every one of the
+  // caller's rows on each 30s poll instead of a bounded backward index scan (bot review finding).
+  @@index([user_id, created_at, id])
   @@index([organization_id])
 }
 
