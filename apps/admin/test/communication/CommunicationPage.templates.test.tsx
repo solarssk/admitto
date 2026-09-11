@@ -7,6 +7,7 @@ import { makeEmailPreviewInert } from "../../src/communication/inertEmailPreview
 import { clickKeepEditing, getTooltipText, renderWithToast } from "../test-utils.js";
 import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
 import { communicationApiMocks } from "./communicationApiMock.js";
+import { bodyValue, getBodyView, setBodyValue } from "./codeMirrorTestUtils.js";
 
 const {
   fetchEventTemplates,
@@ -447,10 +448,9 @@ describe("CommunicationPage templates", () => {
     fireEvent.change(subjectInput, { target: { value: "New subject" } });
     expect(subjectInput).toHaveProperty("value", "New subject");
 
-    const bodyTextarea = screen.getByLabelText("HTML body");
-    fireEvent.focus(bodyTextarea);
-    fireEvent.change(bodyTextarea, { target: { value: "<p>New body</p>" } });
-    expect(bodyTextarea).toHaveProperty("value", "<p>New body</p>");
+    const view = getBodyView("HTML body");
+    setBodyValue(view, "<p>New body</p>");
+    expect(bodyValue(view)).toBe("<p>New body</p>");
   });
 
   it("selects persisted ticket template from the picker", async () => {
@@ -950,7 +950,7 @@ describe("CommunicationPage templates", () => {
     expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
     expect(await screen.findByText("Initial subject", {}, { timeout: 2000 })).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText("HTML body"), { target: { value: "<p>New body</p>" } });
+    setBodyValue(getBodyView("HTML body"), "<p>New body</p>");
 
     expect(await screen.findByText("Updated subject", {}, { timeout: 2000 })).toBeTruthy();
   });

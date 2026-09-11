@@ -1,6 +1,6 @@
 # Advanced Email Templates
 
-**Audience:** Technical Event Managers · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
+**Audience:** Technical Event Managers · **Required role:** Administrator · **Feature status:** ✅ Available · **Last verified:** Admitto 0.6.8
 
 ## What this page helps you do
 
@@ -18,8 +18,8 @@ Edit the source of an event email when the standard template needs a controlled 
 2. Keep **MJML** selected when the body contains tags such as `<mj-section>` or `<mj-text>`.
 3. Keep **HTML** selected when the body is a complete HTML fragment or document.
 4. Edit one section at a time.
-5. Insert placeholders with the chips above the editor. Image and Wallet chips insert ready-to-use markup (an image or an Add to Wallet badge button), not plain text.
-6. Select **Preview** and resolve every validation message.
+5. Insert placeholders with the chips above the editor, or type `{{` directly in the body for an autocomplete list of this template's own placeholders. Image and Wallet chips insert ready-to-use markup (an image or an Add to Wallet badge button), not plain text.
+6. Select **Preview** and resolve every validation message. An unrecognized `{{placeholder}}` is also underlined directly in the editor as you type, so you do not have to open Preview to find it.
 7. Save the template, then send a test to an approved test address.
 
 ## Expected result
