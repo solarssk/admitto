@@ -36,7 +36,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
 
 ### Find attendees on the list
 
-1. Use search (clear button clears the box) and filters, including mail delivery status when needed.
+1. Use search (clear button clears the box) and filters, including mail delivery status and any custom attendee fields defined for this event, when needed.
 2. Choose how many rows per page to show.
 3. On phones, attendees appear as cards; on desktop, as a table.
 4. Use the single **Export** menu for approved exports of the current view.

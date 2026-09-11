@@ -373,6 +373,151 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
     expect(notBody.items.some((i) => i.id === ATT_A2)).toBe(true);
   });
 
+  describe("cf_<source_field> custom-field filters", () => {
+    const FIELD_ID = "custom-field-filter-test-region";
+    // Deliberately contains a comma - proves a repeated `cf_region=` query param (one occurrence
+    // per selected value, `URLSearchParams.getAll` server-side) survives a real select option
+    // that has one, instead of a comma-joined value mistaking it for two separate selections.
+    const OPTION_WITH_COMMA = "Sales, EMEA";
+    const OPTION_PLAIN = "Support";
+
+    beforeEach(async () => {
+      await prisma.eventCustomField.create({
+        data: {
+          id: FIELD_ID,
+          event_id: EVENT_A,
+          source_field: "region",
+          label: "Region",
+          type: "select",
+          options: [OPTION_WITH_COMMA, OPTION_PLAIN],
+        },
+      });
+      await prisma.attendee.update({
+        where: { id: ATT_A1 },
+        data: { custom_data: { region: OPTION_WITH_COMMA } },
+      });
+      await prisma.attendee.update({
+        where: { id: ATT_A2 },
+        data: { custom_data: { region: OPTION_PLAIN } },
+      });
+    });
+
+    afterEach(async () => {
+      await prisma.eventCustomField.delete({ where: { id: FIELD_ID } });
+      await prisma.attendee.update({ where: { id: ATT_A1 }, data: { custom_data: Prisma.JsonNull } });
+      await prisma.attendee.update({ where: { id: ATT_A2 }, data: { custom_data: Prisma.JsonNull } });
+    });
+
+    it("matches a select option value that itself contains a comma", async () => {
+      const qs = new URLSearchParams();
+      qs.append("cf_region", OPTION_WITH_COMMA);
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees?${qs.toString()}`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: { id: string }[]; total: number };
+      expect(body.total).toBe(1);
+      expect(body.items[0]!.id).toBe(ATT_A1);
+    });
+
+    it("matches several repeated cf_region occurrences, one of which itself contains a comma", async () => {
+      const qs = new URLSearchParams();
+      qs.append("cf_region", OPTION_WITH_COMMA);
+      qs.append("cf_region", OPTION_PLAIN);
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees?${qs.toString()}`, {
+        headers: { Cookie: adminCookie },
+      });
+      const body = (await res.json()) as { items: { id: string }[]; total: number };
+      expect(body.total).toBe(2);
+      expect(body.items.map((i) => i.id).sort()).toEqual([ATT_A1, ATT_A2].sort());
+    });
+
+    it("silently drops a value that is not one of the field's configured options", async () => {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/attendees?cf_region=not-a-real-option`,
+        { headers: { Cookie: adminCookie } },
+      );
+      expect(res.status).toBe(200);
+      // Every value was rejected, so this behaves as no filter at all - not a filter that
+      // (incorrectly) matches nothing, and not an error.
+      const body = (await res.json()) as { total: number };
+      expect(body.total).toBe(3);
+    });
+
+    it("ignores a cf_ param for a source_field that isn't a real field on this event", async () => {
+      const res = await app.request(
+        `/api/admin/events/${EVENT_A}/attendees?cf_not_a_real_field=anything`,
+        { headers: { Cookie: adminCookie } },
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { total: number };
+      expect(body.total).toBe(3);
+    });
+  });
+
+  describe("cf_<source_field> boolean and text custom-field filters", () => {
+    const BOOLEAN_FIELD_ID = "custom-field-filter-test-dinner";
+    const TEXT_FIELD_ID = "custom-field-filter-test-notes";
+
+    beforeEach(async () => {
+      await prisma.eventCustomField.create({
+        data: {
+          id: BOOLEAN_FIELD_ID,
+          event_id: EVENT_A,
+          source_field: "dinner",
+          label: "Dinner",
+          type: "boolean",
+        },
+      });
+      await prisma.eventCustomField.create({
+        data: { id: TEXT_FIELD_ID, event_id: EVENT_A, source_field: "notes", label: "Notes", type: "text" },
+      });
+      await prisma.attendee.update({ where: { id: ATT_A1 }, data: { custom_data: { dinner: "true" } } });
+      await prisma.attendee.update({ where: { id: ATT_A2 }, data: { custom_data: { dinner: "false" } } });
+    });
+
+    afterEach(async () => {
+      await prisma.eventCustomField.delete({ where: { id: BOOLEAN_FIELD_ID } });
+      await prisma.eventCustomField.delete({ where: { id: TEXT_FIELD_ID } });
+      await prisma.attendee.update({ where: { id: ATT_A1 }, data: { custom_data: Prisma.JsonNull } });
+      await prisma.attendee.update({ where: { id: ATT_A2 }, data: { custom_data: Prisma.JsonNull } });
+    });
+
+    it("only accepts exactly true/false for a boolean field, dropping anything else", async () => {
+      const valid = await app.request(`/api/admin/events/${EVENT_A}/attendees?cf_dinner=false`, {
+        headers: { Cookie: adminCookie },
+      });
+      const validBody = (await valid.json()) as { items: { id: string }[]; total: number };
+      expect(validBody.total).toBe(1);
+      expect(validBody.items[0]!.id).toBe(ATT_A2);
+
+      const invalid = await app.request(`/api/admin/events/${EVENT_A}/attendees?cf_dinner=maybe`, {
+        headers: { Cookie: adminCookie },
+      });
+      const invalidBody = (await invalid.json()) as { total: number };
+      expect(invalidBody.total).toBe(3);
+    });
+
+    it("clamps a text filter to 200 characters", async () => {
+      const longNote = "x".repeat(50);
+      await prisma.attendee.update({
+        where: { id: ATT_A1 },
+        data: { custom_data: { notes: longNote.repeat(5) } },
+      });
+      const qs = new URLSearchParams({ cf_notes: longNote.repeat(6) });
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees?${qs.toString()}`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      // The 300-char search term is clamped to 200 before it reaches SQL - since the stored
+      // value is only 250 "x"s, an unclamped ILIKE '%<300 x's>%' could never match it, while the
+      // clamped 200-char pattern is a substring of it and does.
+      const body = (await res.json()) as { items: { id: string }[]; total: number };
+      expect(body.total).toBe(1);
+      expect(body.items[0]!.id).toBe(ATT_A1);
+    });
+  });
+
   it("sorts by name ascending (default) and descending", async () => {
     const asc = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
       headers: { Cookie: adminCookie },

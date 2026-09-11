@@ -160,6 +160,7 @@ export {
 } from "./export-job-privacy.js";
 export type { RedactedAttendeeListFilters } from "./export-job-privacy.js";
 export type {
+  AttendeeCustomFieldFilter,
   AttendeeExportRsvpStatus,
   AttendeeListFilterParams,
   AttendeeMailStatusFilter,

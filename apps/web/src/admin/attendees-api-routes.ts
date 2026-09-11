@@ -70,6 +70,7 @@ import {
   acquireEventTicketTypesLock,
   REVOCABLE_ITEM_STATES,
   type AdmitResult,
+  type AttendeeCustomFieldFilter,
   type AttendeeMailStatusFilter,
   type AttendeeSortBy,
   type AttendeeSortDir,
@@ -521,8 +522,68 @@ function parseCommaSeparatedTicketTypes(raw: string | undefined): string[] {
   return [...seen];
 }
 
-/** Parse and clamp list query params (`page`, `pageSize`, `q`, `status`, `ticket_type`, `mail_status`, `sortBy`, `sortDir`). */
-function parseListQuery(c: Context): {
+/** Reads every `cf_<source_field>` query param and matches it against the event's own custom
+ * field registry - `source_field` and `type` both come from the DB, never from the query string,
+ * so a filter can never be built against an unrelated custom_data key or the wrong control type
+ * for that field. An unrecognized `cf_*` param (a deleted/renamed field, or a stale bookmark)
+ * is silently ignored, same tolerance parseCommaSeparatedEnum already gives an unknown token.
+ * `select`/`boolean` read every *repeated* `cf_<source_field>` occurrence (`getAll`, one per
+ * selected value) rather than one comma-joined value like ticket_type/rsvp_status/mail_status -
+ * those are fixed enum/slug values that can never contain a comma by construction, but a select
+ * option is free admin-typed text (up to 60 chars, no character restriction) and can contain one;
+ * a repeated query param sidesteps that ambiguity entirely instead of needing an escape scheme
+ * (`URLSearchParams` percent-decodes each occurrence independently, so a comma inside one value
+ * survives intact - see the admin client's own `customFieldParams` builder, which `append()`s one
+ * occurrence per selected value). Values are further restricted to that field's own configured
+ * options (or exactly "true"/"false") - not for SQL safety (already parameterized), but because
+ * `redactAttendeeListFiltersForStorage` keeps select/boolean filter values verbatim in stored job
+ * metadata on the assumption they can only ever be one of a field's fixed, non-free-text options;
+ * an unvalidated value would let arbitrary text ride through that redaction. */
+/** A `select` field's own configured options, or the fixed true/false pair for `boolean` -
+ * whatever a submitted value is checked against in parseOneCustomFieldFilter. */
+function allowedCustomFieldValues(field: { type: string; options: Prisma.JsonValue }): Set<string> {
+  if (field.type === "boolean") return new Set(["true", "false"]);
+  if (!Array.isArray(field.options)) return new Set();
+  return new Set(field.options.filter((o): o is string => typeof o === "string"));
+}
+
+/** One field's own `cf_<source_field>` value(s), or `null` when the field has no active filter -
+ * see parseCustomFieldFilters's own doc comment for the validation this applies. */
+function parseOneCustomFieldFilter(
+  searchParams: URLSearchParams,
+  field: { source_field: string; type: string; options: Prisma.JsonValue },
+): AttendeeCustomFieldFilter | null {
+  const key = `cf_${field.source_field}`;
+  if (field.type === "text") {
+    const raw = searchParams.get(key)?.trim();
+    return raw ? { source_field: field.source_field, type: "text", text: raw.slice(0, 200) } : null;
+  }
+  if (field.type !== "select" && field.type !== "boolean") return null;
+  const allowed = allowedCustomFieldValues(field);
+  const values = [
+    ...new Set(searchParams.getAll(key).map((v) => v.trim()).filter((v) => v && allowed.has(v))),
+  ];
+  return values.length > 0 ? { source_field: field.source_field, type: field.type, values } : null;
+}
+
+function parseCustomFieldFilters(
+  c: Context,
+  fields: readonly { source_field: string; type: string; options: Prisma.JsonValue }[],
+): AttendeeCustomFieldFilter[] {
+  const searchParams = new URL(c.req.url).searchParams;
+  return fields
+    .map((field) => parseOneCustomFieldFilter(searchParams, field))
+    .filter((filter): filter is AttendeeCustomFieldFilter => filter !== null);
+}
+
+/** Parse and clamp list query params (`page`, `pageSize`, `q`, `status`, `ticket_type`, `mail_status`,
+ * `cf_*`, `sortBy`, `sortDir`). Async since custom-field params need the event's own field registry
+ * to validate `source_field`/`type` against. */
+async function parseListQuery(
+  c: Context,
+  db: PrismaClient,
+  eventId: string,
+): Promise<{
   page: number;
   pageSize: number;
   q?: string;
@@ -530,9 +591,10 @@ function parseListQuery(c: Context): {
   ticket_type: string[];
   rsvp_status: RsvpStatus[];
   mail_status: AttendeeMailStatusFilter[];
+  customFields: AttendeeCustomFieldFilter[];
   sortBy: AttendeeSortBy;
   sortDir: AttendeeSortDir;
-} {
+}> {
   const page = positiveIntQuery(c.req.query("page"), 1);
   const pageSize = positiveIntQuery(c.req.query("pageSize"), 25, 100);
   const qRaw = c.req.query("q")?.trim();
@@ -543,13 +605,18 @@ function parseListQuery(c: Context): {
   const ticket_type = parseCommaSeparatedTicketTypes(c.req.query("ticket_type"));
   const rsvp_status = parseCommaSeparatedEnum(c.req.query("rsvp_status"), RSVP_STATUSES);
   const mail_status = parseCommaSeparatedEnum(c.req.query("mail_status"), ATTENDEE_MAIL_STATUS_FILTERS);
+  const customFieldDefs = await db.eventCustomField.findMany({
+    where: { event_id: eventId },
+    select: { source_field: true, type: true, options: true },
+  });
+  const customFields = parseCustomFieldFilters(c, customFieldDefs);
   const sortByRaw = c.req.query("sortBy");
   const sortBy = ATTENDEE_SORT_COLUMNS.includes(sortByRaw as AttendeeSortBy)
     ? (sortByRaw as AttendeeSortBy)
     : "name";
   const sortDirRaw = c.req.query("sortDir");
   const sortDir: AttendeeSortDir = sortDirRaw === "desc" ? "desc" : "asc";
-  return { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, sortBy, sortDir };
+  return { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, customFields, sortBy, sortDir };
 }
 
 /** Latest email delivery status per attendee id (one entry per id). Tiebreak on `id` desc
@@ -965,9 +1032,10 @@ export async function handleListEventAttendees(c: Context, db: PrismaClient): Pr
   const forbidden = await assertEventManageAccess(c, db, eventId);
   if (forbidden) return forbidden;
 
-  const { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, sortBy, sortDir } = parseListQuery(c);
+  const { page, pageSize, q, status, ticket_type, rsvp_status, mail_status, customFields, sortBy, sortDir } =
+    await parseListQuery(c, db, eventId);
 
-  const filterParams = { q, status, ticket_type, rsvp_status, mail_status };
+  const filterParams = { q, status, ticket_type, rsvp_status, mail_status, customFields };
 
   const [total, rows] = await Promise.all([
     countFilteredAttendees(db, eventId, filterParams),
@@ -1038,8 +1106,8 @@ export async function handleExportAttendees(c: Context, db: PrismaClient): Promi
   }
   const format = formatRaw;
 
-  const { q, status, ticket_type, rsvp_status, mail_status } = parseListQuery(c);
-  const filterParams = { q, status, ticket_type, rsvp_status, mail_status };
+  const { q, status, ticket_type, rsvp_status, mail_status, customFields } = await parseListQuery(c, db, eventId);
+  const filterParams = { q, status, ticket_type, rsvp_status, mail_status, customFields };
 
   const event = await db.event.findUnique({
     where: { id: eventId },

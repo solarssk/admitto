@@ -30,6 +30,41 @@ describe("redactAttendeeListFiltersForStorage", () => {
       has_query: false,
     });
   });
+
+  it("scrubs a text custom field's value to has_text, keeps select/boolean values verbatim", () => {
+    expect(
+      redactAttendeeListFiltersForStorage({
+        status: "all",
+        customFields: [
+          { source_field: "dietary_notes", type: "text", text: "no nuts, allergic" },
+          { source_field: "t_shirt_size", type: "select", values: ["M", "L"] },
+          { source_field: "dinner", type: "boolean", values: ["true"] },
+        ],
+      }),
+    ).toEqual({
+      status: "all",
+      ticket_type: null,
+      rsvp_status: undefined,
+      mail_status: undefined,
+      customFields: [
+        { source_field: "dietary_notes", type: "text", has_text: true },
+        { source_field: "t_shirt_size", type: "select", values: ["M", "L"] },
+        { source_field: "dinner", type: "boolean", values: ["true"] },
+      ],
+      has_query: false,
+    });
+  });
+
+  it("sets has_text false for an empty text custom field, and leaves customFields undefined when absent", () => {
+    expect(
+      redactAttendeeListFiltersForStorage({
+        status: "all",
+        customFields: [{ source_field: "dietary_notes", type: "text", text: "" }],
+      }).customFields,
+    ).toEqual([{ source_field: "dietary_notes", type: "text", has_text: false }]);
+
+    expect(redactAttendeeListFiltersForStorage({ status: "all" }).customFields).toBeUndefined();
+  });
 });
 
 describe("scrubExportJobResultJson", () => {
