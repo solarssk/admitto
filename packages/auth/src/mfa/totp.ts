@@ -10,7 +10,7 @@ const totp = new OTP({ strategy: "totp" });
 
 export type TotpVerifyResult =
   | { valid: true; timeStep: number }
-  | { valid: false };
+  | { valid: false; replay: boolean };
 
 /** Generate a new TOTP secret (base32). */
 export function generateTotpSecret(): string {
@@ -61,29 +61,29 @@ export function verifyTotpCodeDetailed(
 ): TotpVerifyResult {
   try {
     const secret = decryptTotpSecret(secretEnc);
-    const verifyOptions: {
-      token: string;
-      secret: string;
-      period: number;
-      epochTolerance: number;
-      afterTimeStep?: number;
-    } = {
+    const baseOptions = {
       token: normalizeToken(code),
       secret,
       period: TOTP_PERIOD_SEC,
       epochTolerance: TOTP_EPOCH_TOLERANCE_SEC,
     };
-    if (options.afterTimeStep != null) {
-      verifyOptions.afterTimeStep = options.afterTimeStep;
-    }
+    const verifyOptions: typeof baseOptions & { afterTimeStep?: number } =
+      options.afterTimeStep != null ? { ...baseOptions, afterTimeStep: options.afterTimeStep } : baseOptions;
 
     const result = totp.verifySync(verifyOptions);
     if (result.valid && "timeStep" in result) {
       return { valid: true, timeStep: result.timeStep };
     }
-    return { valid: false };
+    // A code rejected only because of the afterTimeStep replay-protection constraint - not
+    // because it's actually wrong - would otherwise have verified successfully without it. That
+    // specific case is a genuine replay of an already-used, cryptographically valid code (ASVS
+    // V2.8.5, CWE-287): a signal worth alerting the account owner about, distinct from an
+    // ordinary wrong guess. Only recomputed when a constraint was actually supplied to begin
+    // with - no watermark, nothing to have been replayed against.
+    const replay = options.afterTimeStep != null && totp.verifySync(baseOptions).valid;
+    return { valid: false, replay };
   } catch {
-    return { valid: false };
+    return { valid: false, replay: false };
   }
 }
 

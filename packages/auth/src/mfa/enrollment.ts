@@ -173,12 +173,22 @@ export async function confirmTotpEnrollment(
   return updated.count > 0;
 }
 
+export interface VerifyUserTotpResult {
+  ok: boolean;
+  /** True when this attempt failed specifically because it replayed an already-used,
+   * cryptographically valid code - a sequential replay caught by the `afterTimeStep` check
+   * below, or a concurrent one that won the initial verify but lost the atomic watermark update
+   * to another request advancing it first. Always false when `ok` is true. Meaningless (always
+   * false) when there was no confirmed TOTP row to check against in the first place. */
+  replay: boolean;
+}
+
 /** Verify TOTP for login step (confirmed method only). */
-export async function verifyUserTotpCode(
+export async function verifyUserTotpCodeDetailed(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
   code: string,
-): Promise<boolean> {
+): Promise<VerifyUserTotpResult> {
   const row = await prisma.userMfaMethod.findFirst({
     where: {
       user_id: userId,
@@ -186,12 +196,12 @@ export async function verifyUserTotpCode(
       confirmed_at: { not: null },
     },
   });
-  if (!row?.secret_enc) return false;
+  if (!row?.secret_enc) return { ok: false, replay: false };
 
   const verified = verifyTotpCodeDetailed(row.secret_enc, code, {
     afterTimeStep: row.last_totp_time_step,
   });
-  if (!verified.valid) return false;
+  if (!verified.valid) return { ok: false, replay: verified.replay };
 
   const updated = await prisma.userMfaMethod.updateMany({
     where: {
@@ -203,7 +213,21 @@ export async function verifyUserTotpCode(
       last_totp_time_step: verified.timeStep,
     },
   });
-  return updated.count === 1;
+  if (updated.count === 1) return { ok: true, replay: false };
+  // Lost the atomic race: another request already advanced last_totp_time_step to this same (or
+  // later) step between this request's own verify above and its update just now - i.e. another
+  // request concurrently used this exact code first. Also a genuine replay, just a concurrent
+  // one instead of a sequential one.
+  return { ok: false, replay: true };
+}
+
+/** Boolean-only convenience wrapper around {@link verifyUserTotpCodeDetailed}. */
+export async function verifyUserTotpCode(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+  code: string,
+): Promise<boolean> {
+  return (await verifyUserTotpCodeDetailed(prisma, userId, code)).ok;
 }
 
 /** Remove only the user's TOTP row(s) — leaves WebAuthn credentials and backup recovery codes

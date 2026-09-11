@@ -20,8 +20,10 @@ import {
   confirmTotpEnrollment,
   resetUserMfa,
   verifyUserTotpCode,
+  verifyUserTotpCodeDetailed,
   removeTotpMethod,
 } from "../src/mfa/enrollment.js";
+import { verifyTotpOrRecoveryCodeDetailed } from "../src/mfa/verify-step-up-code.js";
 import {
   generateTotpSecret,
   encryptTotpSecret,
@@ -956,7 +958,7 @@ describe("TOTP verify", () => {
     expect(verifyTotpCode(enc, "000000")).toBe(false);
   });
 
-  it("rejects replay of the same time step via afterTimeStep", () => {
+  it("rejects replay of the same time step via afterTimeStep, and flags it as a genuine replay", () => {
     const secret = generateTotpSecret();
     const enc = encryptTotpSecret(secret);
     const code = generateTotpCode(secret);
@@ -966,6 +968,31 @@ describe("TOTP verify", () => {
 
     const replay = verifyTotpCodeDetailed(enc, code, { afterTimeStep: first.timeStep });
     expect(replay.valid).toBe(false);
+    if (replay.valid) return;
+    expect(replay.replay).toBe(true);
+  });
+
+  it("does not flag an ordinary wrong code as a replay", () => {
+    const secret = generateTotpSecret();
+    const enc = encryptTotpSecret(secret);
+    const code = generateTotpCode(secret);
+    const first = verifyTotpCodeDetailed(enc, code);
+    expect(first.valid).toBe(true);
+    if (!first.valid) return;
+
+    const wrong = verifyTotpCodeDetailed(enc, "000000", { afterTimeStep: first.timeStep });
+    expect(wrong.valid).toBe(false);
+    if (wrong.valid) return;
+    expect(wrong.replay).toBe(false);
+  });
+
+  it("does not flag a wrong code as a replay when no afterTimeStep constraint was supplied", () => {
+    const secret = generateTotpSecret();
+    const enc = encryptTotpSecret(secret);
+    const wrong = verifyTotpCodeDetailed(enc, "000000");
+    expect(wrong.valid).toBe(false);
+    if (wrong.valid) return;
+    expect(wrong.replay).toBe(false);
   });
 
   it("verifyUserTotpCode rejects immediate replay of the same code", async () => {
@@ -988,6 +1015,95 @@ describe("TOTP verify", () => {
     const code = generateTotpCode(secret);
     expect(await verifyUserTotpCode(prisma, userId, code)).toBe(true);
     expect(await verifyUserTotpCode(prisma, userId, code)).toBe(false);
+  });
+
+  it("verifyUserTotpCodeDetailed flags a sequential replay of an already-used code", async () => {
+    const userId = "user-totp-replay-detailed";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.create({
+      data: { id: userId, email: "totp-replay-detailed@example.com", password_hash },
+    });
+
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const code = generateTotpCode(secret);
+    expect(await verifyUserTotpCodeDetailed(prisma, userId, code)).toEqual({ ok: true, replay: false });
+    expect(await verifyUserTotpCodeDetailed(prisma, userId, code)).toEqual({ ok: false, replay: true });
+  });
+
+  it("verifyUserTotpCodeDetailed does not flag an ordinary wrong code as a replay", async () => {
+    const userId = "user-totp-wrong-code";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.create({
+      data: { id: userId, email: "totp-wrong-code@example.com", password_hash },
+    });
+
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    expect(await verifyUserTotpCodeDetailed(prisma, userId, "000000")).toEqual({ ok: false, replay: false });
+  });
+});
+
+describe("verifyTotpOrRecoveryCodeDetailed", () => {
+  it("propagates totpReplay when a replayed TOTP code matches neither a fresh window nor a recovery code", async () => {
+    const userId = "user-step-up-totp-replay";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.create({
+      data: { id: userId, email: "step-up-totp-replay@example.com", password_hash },
+    });
+
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const code = generateTotpCode(secret);
+    expect(await verifyTotpOrRecoveryCodeDetailed(prisma, userId, code)).toEqual({ ok: true, method: "totp" });
+
+    const replayResult = await verifyTotpOrRecoveryCodeDetailed(prisma, userId, code);
+    expect(replayResult).toEqual({ ok: false, reason: "no_match", totpReplay: true });
+  });
+
+  it("does not flag totpReplay for an ordinary wrong code that also matches no recovery code", async () => {
+    const userId = "user-step-up-wrong-code";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.create({
+      data: { id: userId, email: "step-up-wrong-code@example.com", password_hash },
+    });
+
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const result = await verifyTotpOrRecoveryCodeDetailed(prisma, userId, "000000");
+    expect(result).toEqual({ ok: false, reason: "no_match", totpReplay: false });
   });
 });
 
