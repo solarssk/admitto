@@ -39,9 +39,9 @@ function mailFilterStatuses(filter: Exclude<AttendeeMailStatusFilter, "not_sent"
 export type AttendeeListFilterParams = {
   q?: string;
   status: "all" | "admitted" | "not_admitted";
-  ticket_type?: string;
-  rsvp_status?: AttendeeExportRsvpStatus;
-  mail_status?: AttendeeMailStatusFilter;
+  ticket_type?: string[];
+  rsvp_status?: AttendeeExportRsvpStatus[];
+  mail_status?: AttendeeMailStatusFilter[];
 };
 
 /** Whitelisted sortable columns for the attendee list — Ticket sorts by the catalog's curated
@@ -104,8 +104,8 @@ export function buildAttendeeListWhere(
     event_id: eventId,
     ...(status === "admitted" ? { admitted_at: { not: null } } : {}),
     ...(status === "not_admitted" ? { admitted_at: null } : {}),
-    ...(ticket_type ? { ticket_type } : {}),
-    ...(rsvp_status ? { rsvp_status } : {}),
+    ...(ticket_type && ticket_type.length > 0 ? { ticket_type: { in: ticket_type } } : {}),
+    ...(rsvp_status && rsvp_status.length > 0 ? { rsvp_status: { in: rsvp_status } } : {}),
   };
 }
 
@@ -153,12 +153,16 @@ function attendeeStatusSql(status: AttendeeListFilterParams["status"]) {
   return Prisma.empty;
 }
 
-function attendeeTicketTypeSql(ticket_type?: string) {
-  return ticket_type ? Prisma.sql`AND a.ticket_type = ${ticket_type}` : Prisma.empty;
+function attendeeTicketTypeSql(ticket_type?: readonly string[]) {
+  return ticket_type && ticket_type.length > 0
+    ? Prisma.sql`AND a.ticket_type IN (${Prisma.join(ticket_type)})`
+    : Prisma.empty;
 }
 
-function attendeeRsvpStatusSql(rsvp_status?: AttendeeExportRsvpStatus) {
-  return rsvp_status ? Prisma.sql`AND a.rsvp_status = ${rsvp_status}` : Prisma.empty;
+function attendeeRsvpStatusSql(rsvp_status?: readonly AttendeeExportRsvpStatus[]) {
+  return rsvp_status && rsvp_status.length > 0
+    ? Prisma.sql`AND a.rsvp_status IN (${Prisma.join(rsvp_status)})`
+    : Prisma.empty;
 }
 
 /** Latest-delivery mail-status filter, as a correlated subquery against "EmailDelivery" —
@@ -167,10 +171,9 @@ function attendeeRsvpStatusSql(rsvp_status?: AttendeeExportRsvpStatus) {
  * JOIN + IN would match ANY historical delivery. Per-attendee delivery counts are tiny
  * (initial send + a few resends), so the subquery walks a handful of rows per candidate via
  * the (attendee_id, event_id, status) index's leading column. */
-function attendeeMailStatusSql(mail_status?: AttendeeMailStatusFilter) {
-  if (!mail_status) return Prisma.empty;
+function attendeeMailStatusBucketSql(mail_status: AttendeeMailStatusFilter): Prisma.Sql {
   if (mail_status === "not_sent") {
-    return Prisma.sql`AND (
+    return Prisma.sql`(
       NOT EXISTS (SELECT 1 FROM "EmailDelivery" ed WHERE ed.attendee_id = a.id)
       OR (
         SELECT ed.status FROM "EmailDelivery" ed
@@ -181,12 +184,20 @@ function attendeeMailStatusSql(mail_status?: AttendeeMailStatusFilter) {
     )`;
   }
   const statuses = mailFilterStatuses(mail_status);
-  return Prisma.sql`AND (
+  return Prisma.sql`(
     SELECT ed.status FROM "EmailDelivery" ed
     WHERE ed.attendee_id = a.id
     ORDER BY ed.created_at DESC, ed.id DESC
     LIMIT 1
   ) IN (${Prisma.join([...statuses])})`;
+}
+
+/** Multiple selected buckets OR together (an attendee matches if their latest delivery falls in
+ * any one of them) - each bucket's own condition stays independent since e.g. "not_sent" and
+ * "failed" describe mutually exclusive latest-status shapes that can't be merged into one IN. */
+function attendeeMailStatusSql(mail_status?: readonly AttendeeMailStatusFilter[]) {
+  if (!mail_status || mail_status.length === 0) return Prisma.empty;
+  return Prisma.sql`AND (${Prisma.join(mail_status.map(attendeeMailStatusBucketSql), " OR ")})`;
 }
 
 /** Search OR (columns + custom_data json), inlined in SQL — no id materialization. Empty when
@@ -212,7 +223,7 @@ export async function countFilteredAttendees(
   const { q, status, ticket_type, rsvp_status, mail_status } = params;
   // The latest-delivery mail filter (like search) has no Prisma-where equivalent — either one
   // routes the count through the raw-SQL branch so it stays in lockstep with the list query.
-  if (!q && !mail_status) {
+  if (!q && (!mail_status || mail_status.length === 0)) {
     return db.attendee.count({ where: buildAttendeeListWhere(eventId, params) });
   }
   const [{ count }] = await db.$queryRaw<[{ count: bigint }]>`
@@ -276,7 +287,7 @@ export async function findFilteredAttendeesForExport(
   params: AttendeeListFilterParams,
 ): Promise<ExportAttendeeSqlRow[]> {
   const { q, status, ticket_type, rsvp_status, mail_status } = params;
-  if (!q && !mail_status) {
+  if (!q && (!mail_status || mail_status.length === 0)) {
     return db.attendee.findMany({
       where: buildAttendeeListWhere(eventId, params),
       select: EXPORT_ATTENDEE_SELECT,

@@ -28,6 +28,7 @@ import { ensureEnrollmentBackupCodesStashed } from "./ensure-backup-codes.js";
 import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { resolveClientTimezone } from "../admin/admin-helpers.js";
 import { resolveInstanceOrganizationId } from "../admin/instance-org.js";
+import { notifyAuthFactorChanged } from "../admin/notify-auth-factor-changed.js";
 
 function htmlResponse(
   c: Context,
@@ -150,6 +151,15 @@ export async function handlePostChangePassword(c: Context, db: PrismaClient): Pr
       actionType: "account_password_changed",
       metadata: { forced: true, sessionsRevoked: revokedCount },
     });
+    // Same self-audience receipt as the self-service /api/account/password path
+    // (account-routes.ts) - this is the account owner's own action, just reached via the
+    // forced-password-change flow instead of My Account (bot review finding, PR #1304).
+    void notifyAuthFactorChanged(
+      db,
+      gate.userId,
+      "Your password was changed",
+      "Your account password was changed. If this wasn't you, reset it immediately and review your active sessions.",
+    );
 
     if (promotedStage === SESSION_STAGE.BACKUP_CODES_REQUIRED) {
       await ensureEnrollmentBackupCodesStashed(db, gate.sessionId, gate.userId);

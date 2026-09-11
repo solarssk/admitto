@@ -90,16 +90,20 @@ describe("resolveAudienceCandidates", () => {
       expect(candidates).toEqual([]);
     });
 
-    it("returns [] when the target user is inactive", async () => {
+    // Deliberately does NOT exclude a disabled account - see resolveSelf's own doc comment (bot
+    // review finding, PR #1308): the admin UI exposes MFA/password reset and SSO unlink for a
+    // disabled account, so excluding is_active: false here would silently and permanently drop
+    // this mandatory notification for exactly that real, reachable case.
+    it("returns [targetUserId] for a disabled (is_active: false) user - the account still exists", async () => {
       const db = createStubDb();
-      db.user.findUnique.mockResolvedValue({ is_active: false });
+      db.user.findUnique.mockResolvedValue({ id: "u-1", is_active: false });
 
       const candidates = await resolveAudienceCandidates(db as unknown as PrismaClient, "self", {
         organizationId: ORG_ID,
         targetUserId: "u-1",
       });
 
-      expect(candidates).toEqual([]);
+      expect(candidates).toEqual(["u-1"]);
     });
 
     // No role-assignment or organization-membership check (a prior version of resolveSelf had
@@ -112,7 +116,7 @@ describe("resolveAudienceCandidates", () => {
     // Codex bot review on PR #1304.
     it("returns [targetUserId] for an active user regardless of organization membership or role assignments", async () => {
       const db = createStubDb();
-      db.user.findUnique.mockResolvedValue({ is_active: true });
+      db.user.findUnique.mockResolvedValue({ id: "u-1", is_active: true });
 
       const candidates = await resolveAudienceCandidates(db as unknown as PrismaClient, "self", {
         organizationId: ORG_ID,

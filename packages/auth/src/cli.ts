@@ -19,7 +19,7 @@ import { findUserByEmail, normalizeEmail } from "./user.js";
 import { verifyPassword } from "./password.js";
 import { resetUserMfa } from "./mfa/enrollment.js";
 import { generateEmergencyRecoveryCode } from "./mfa/emergency-recovery.js";
-import { logMfaBreakGlassCli } from "./audit.js";
+import { logMfaBreakGlassCli, notifyOwnAuthFactorChanged } from "./audit.js";
 import { loadEnvFile } from "@admitto/shared/load-env-file";
 import { assertNoPasswordArgv, CliError, createLineReader, readPasswordFromStdin } from "./cli-helpers.js";
 import { purgeAuthRetention, purgeSecurityAuditLog, resolveSecurityAuditLogRetentionDays } from "./retention.js";
@@ -155,6 +155,12 @@ async function runResetMfa(): Promise<void> {
   const { userId } = await verifyTargetUserPassword(email);
   await resetUserMfa(prisma, userId);
   await logMfaBreakGlassCli(prisma, { action: "reset_mfa", email, userId });
+  await notifyOwnAuthFactorChanged(
+    prisma,
+    userId,
+    "Your two-factor authentication was reset",
+    "An administrator reset two-factor authentication on your account via the emergency CLI bypass. If this wasn't expected, contact your organization's administrator immediately.",
+  );
   console.log(`MFA reset for ${email} (sessions and trusted devices revoked).`);
 }
 

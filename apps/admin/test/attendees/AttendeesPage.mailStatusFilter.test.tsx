@@ -30,12 +30,12 @@ describe("AttendeesPage mail delivery status filter (#522)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     fireEvent.click(screen.getByRole("button", { name: /^Filter by mail delivery status,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Failed" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Failed" }));
 
     await waitFor(() => {
       expect(fetchEventAttendees).toHaveBeenLastCalledWith(
         "evt-1",
-        expect.objectContaining({ mail_status: "failed", page: 1 }),
+        expect.objectContaining({ mail_status: ["failed"], page: 1 }),
         expect.anything(),
       );
     });
