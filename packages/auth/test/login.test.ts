@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   logMfaRecoveryConsumed: vi.fn().mockResolvedValue(undefined),
   logTrustedDeviceCreated: vi.fn().mockResolvedValue(undefined),
   checkNewCountryLogin: vi.fn().mockResolvedValue(undefined),
+  notifyTotpCodeReused: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../src/privileged-login-alert.js", () => ({
@@ -56,6 +57,7 @@ vi.mock("../src/audit.js", () => ({
   logMfaRecoveryConsumed: mocks.logMfaRecoveryConsumed,
   logMfaSuccess: mocks.logMfaSuccess,
   logTrustedDeviceCreated: mocks.logTrustedDeviceCreated,
+  notifyTotpCodeReused: mocks.notifyTotpCodeReused,
 }));
 
 vi.mock("../src/session.js", () => ({
@@ -290,6 +292,47 @@ describe("completeMfa failure audit", () => {
     // The code matched but lost the race to consume it - not a guess, so it must not count
     // toward the repeated-MFA-failure alert.
     expect(mocks.recordFailedMfaFailureSideEffects).not.toHaveBeenCalled();
+  });
+
+  it("audits a replayed TOTP code as totp_replay, notifies the account owner, and does not bump the guessing-alert streak", async () => {
+    mocks.verifyTotpOrRecoveryCodeDetailed.mockResolvedValue({ ok: false, reason: "no_match", totpReplay: true });
+
+    const result = await completeMfa(prisma, {
+      userId: "user-1",
+      sessionId: "sess-1",
+      code: "123456",
+      ip: "1.2.3.4",
+    });
+
+    expect(result).toEqual({ ok: false });
+    expect(mocks.logMfaFailure).toHaveBeenCalledWith(
+      prisma,
+      expect.anything(),
+      "totp_replay",
+      undefined,
+    );
+    // A replayed code isn't a guess - it must not feed the same streak as ordinary wrong codes.
+    expect(mocks.recordFailedMfaFailureSideEffects).not.toHaveBeenCalled();
+    expect(mocks.notifyTotpCodeReused).toHaveBeenCalledWith(prisma, "user-1");
+  });
+
+  it("does not notify the account owner for an ordinary wrong code (not a replay)", async () => {
+    mocks.verifyTotpOrRecoveryCodeDetailed.mockResolvedValue({ ok: false, reason: "no_match", totpReplay: false });
+
+    await completeMfa(prisma, {
+      userId: "user-1",
+      sessionId: "sess-1",
+      code: "000000",
+      ip: "1.2.3.4",
+    });
+
+    expect(mocks.logMfaFailure).toHaveBeenCalledWith(
+      prisma,
+      expect.anything(),
+      "invalid_code",
+      undefined,
+    );
+    expect(mocks.notifyTotpCodeReused).not.toHaveBeenCalled();
   });
 
   it("audits a correct code whose session promotion failed, without bumping the guessing-alert streak", async () => {

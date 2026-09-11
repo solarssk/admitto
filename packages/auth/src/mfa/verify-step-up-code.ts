@@ -1,5 +1,5 @@
 import type { PrismaClient, Prisma } from "@admitto/db";
-import { verifyUserTotpCode } from "./enrollment.js";
+import { verifyUserTotpCodeDetailed } from "./enrollment.js";
 import { findBackupRecoveryRowId } from "./backup-recovery.js";
 import { findEmergencyRecoveryRowId } from "./emergency-recovery.js";
 import { consumeRecoveryRow } from "./recovery-consume.js";
@@ -10,10 +10,14 @@ import { consumeRecoveryRow } from "./recovery-consume.js";
  * recovery code that matched but lost a race to consume the row (already used).
  * `method` is narrower than the full `MfaMethod` union (from `../audit.js`) - a code check can
  * only ever match "totp", "backup", or "emergency", never "webauthn".
+ * `totpReplay` is only ever true alongside `reason: "no_match"` - a `code` that matched neither
+ * a fresh TOTP window nor a recovery code, specifically because it was a cryptographically valid
+ * TOTP code that had already been used (see `verifyUserTotpCodeDetailed`'s own doc comment).
  */
 export type StepUpCodeResult =
   | { ok: true; method: "totp" | "backup" | "emergency" }
-  | { ok: false; reason: "no_match" | "consume_conflict" };
+  | { ok: false; reason: "no_match"; totpReplay: boolean }
+  | { ok: false; reason: "consume_conflict" };
 
 /** Verify a TOTP code, or consume a backup/emergency recovery code, for step-up re-auth. */
 export async function verifyTotpOrRecoveryCodeDetailed(
@@ -22,9 +26,10 @@ export async function verifyTotpOrRecoveryCodeDetailed(
   code: string,
 ): Promise<StepUpCodeResult> {
   const trimmed = code.trim();
-  if (!trimmed) return { ok: false, reason: "no_match" };
+  if (!trimmed) return { ok: false, reason: "no_match", totpReplay: false };
 
-  if (await verifyUserTotpCode(prisma, userId, trimmed)) {
+  const totpResult = await verifyUserTotpCodeDetailed(prisma, userId, trimmed);
+  if (totpResult.ok) {
     return { ok: true, method: "totp" };
   }
 
@@ -34,7 +39,7 @@ export async function verifyTotpOrRecoveryCodeDetailed(
     recoveryRowId = await findEmergencyRecoveryRowId(prisma, userId, trimmed);
     recoveryMethod = "emergency";
   }
-  if (!recoveryRowId) return { ok: false, reason: "no_match" };
+  if (!recoveryRowId) return { ok: false, reason: "no_match", totpReplay: totpResult.replay };
 
   const consumed = await consumeRecoveryRow(prisma, recoveryRowId);
   if (!consumed) return { ok: false, reason: "consume_conflict" };

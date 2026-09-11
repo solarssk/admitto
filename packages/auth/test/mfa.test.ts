@@ -20,8 +20,10 @@ import {
   confirmTotpEnrollment,
   resetUserMfa,
   verifyUserTotpCode,
+  verifyUserTotpCodeDetailed,
   removeTotpMethod,
 } from "../src/mfa/enrollment.js";
+import { verifyTotpOrRecoveryCodeDetailed } from "../src/mfa/verify-step-up-code.js";
 import {
   generateTotpSecret,
   encryptTotpSecret,
@@ -31,6 +33,7 @@ import {
   decryptTotpSecret,
   buildTotpOtpauthUri,
   parseTotpSecretFromOtpauthUri,
+  TOTP_PERIOD_SEC,
 } from "../src/mfa/totp.js";
 import {
   verifyBackupRecoveryCode,
@@ -956,7 +959,7 @@ describe("TOTP verify", () => {
     expect(verifyTotpCode(enc, "000000")).toBe(false);
   });
 
-  it("rejects replay of the same time step via afterTimeStep", () => {
+  it("rejects replay of the same time step via afterTimeStep, and flags it as a genuine replay", () => {
     const secret = generateTotpSecret();
     const enc = encryptTotpSecret(secret);
     const code = generateTotpCode(secret);
@@ -966,6 +969,82 @@ describe("TOTP verify", () => {
 
     const replay = verifyTotpCodeDetailed(enc, code, { afterTimeStep: first.timeStep });
     expect(replay.valid).toBe(false);
+    if (replay.valid) return;
+    expect(replay.replay).toBe(true);
+  });
+
+  it("does not flag an ordinary wrong code as a replay", () => {
+    const secret = generateTotpSecret();
+    const enc = encryptTotpSecret(secret);
+    const code = generateTotpCode(secret);
+    const first = verifyTotpCodeDetailed(enc, code);
+    expect(first.valid).toBe(true);
+    if (!first.valid) return;
+
+    const wrong = verifyTotpCodeDetailed(enc, "000000", { afterTimeStep: first.timeStep });
+    expect(wrong.valid).toBe(false);
+    if (wrong.valid) return;
+    expect(wrong.replay).toBe(false);
+  });
+
+  it("does not flag a wrong code as a replay when no afterTimeStep constraint was supplied", () => {
+    const secret = generateTotpSecret();
+    const enc = encryptTotpSecret(secret);
+    const wrong = verifyTotpCodeDetailed(enc, "000000");
+    expect(wrong.valid).toBe(false);
+    if (wrong.valid) return;
+    expect(wrong.replay).toBe(false);
+  });
+
+  it("does not flag a never-used, older code as a replay just because it's still within the epoch tolerance window of a different, already-accepted step (bot review finding, PR #1316)", () => {
+    const secret = generateTotpSecret();
+    const enc = encryptTotpSecret(secret);
+    // The current step's own code, accepted with no prior watermark - establishes the "already
+    // accepted" step t.
+    const codeAtT = generateTotpCode(secret);
+    const accepted = verifyTotpCodeDetailed(enc, codeAtT);
+    expect(accepted.valid).toBe(true);
+    if (!accepted.valid) return;
+
+    // A DIFFERENT, never-submitted-before code from the adjacent step t-1 - still within the
+    // ±1-step epoch tolerance of "now", so the unconstrained check alone would call it valid, but
+    // it was never actually used and must not be reported as a replay of step t.
+    const codeAtTMinus1 = generateTotpCode(secret, Math.floor(Date.now() / 1000) - TOTP_PERIOD_SEC);
+    const result = verifyTotpCodeDetailed(enc, codeAtTMinus1, { afterTimeStep: accepted.timeStep });
+    expect(result.valid).toBe(false);
+    if (result.valid) return;
+    expect(result.replay).toBe(false);
+  });
+
+  it("flags replay of an older-but-recently-accepted code even once a newer step has advanced afterTimeStep past it, given its own recentlyConsumedTimeSteps history (bot review finding, PR #1316)", () => {
+    const secret = generateTotpSecret();
+    const enc = encryptTotpSecret(secret);
+
+    // Accept step t-1 first (explicit past epoch, no prior watermark).
+    const codeAtTMinus1 = generateTotpCode(secret, Math.floor(Date.now() / 1000) - TOTP_PERIOD_SEC);
+    const acceptedTMinus1 = verifyTotpCodeDetailed(enc, codeAtTMinus1);
+    expect(acceptedTMinus1.valid).toBe(true);
+    if (!acceptedTMinus1.valid) return;
+
+    // Then accept step t (real "now"), advancing the watermark past t-1.
+    const codeAtT = generateTotpCode(secret);
+    const acceptedT = verifyTotpCodeDetailed(enc, codeAtT, {
+      afterTimeStep: acceptedTMinus1.timeStep,
+      recentlyConsumedTimeSteps: [acceptedTMinus1.timeStep],
+    });
+    expect(acceptedT.valid).toBe(true);
+    if (!acceptedT.valid) return;
+
+    // Replaying t-1's own already-used code: afterTimeStep is now t, so the exact-match-against-
+    // the-current-watermark check alone would miss this - it's caught only via
+    // recentlyConsumedTimeSteps still remembering t-1 as accepted.
+    const replayed = verifyTotpCodeDetailed(enc, codeAtTMinus1, {
+      afterTimeStep: acceptedT.timeStep,
+      recentlyConsumedTimeSteps: [acceptedTMinus1.timeStep],
+    });
+    expect(replayed.valid).toBe(false);
+    if (replayed.valid) return;
+    expect(replayed.replay).toBe(true);
   });
 
   it("verifyUserTotpCode rejects immediate replay of the same code", async () => {
@@ -988,6 +1067,202 @@ describe("TOTP verify", () => {
     const code = generateTotpCode(secret);
     expect(await verifyUserTotpCode(prisma, userId, code)).toBe(true);
     expect(await verifyUserTotpCode(prisma, userId, code)).toBe(false);
+  });
+
+  it("verifyUserTotpCodeDetailed flags a sequential replay of an already-used code", async () => {
+    const userId = "user-totp-replay-detailed";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.create({
+      data: { id: userId, email: "totp-replay-detailed@example.com", password_hash },
+    });
+
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const code = generateTotpCode(secret);
+    expect(await verifyUserTotpCodeDetailed(prisma, userId, code)).toEqual({ ok: true, replay: false });
+    expect(await verifyUserTotpCodeDetailed(prisma, userId, code)).toEqual({ ok: false, replay: true });
+  });
+
+  it("verifyUserTotpCodeDetailed flags replay of an older-but-recently-used code even after a newer code has advanced the watermark past it (bot review finding, PR #1316)", async () => {
+    const userId = "user-totp-replay-older-step";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.create({
+      data: { id: userId, email: "totp-replay-older-step@example.com", password_hash },
+    });
+
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const codeAtTMinus1 = generateTotpCode(secret, Math.floor(Date.now() / 1000) - TOTP_PERIOD_SEC);
+    expect(await verifyUserTotpCodeDetailed(prisma, userId, codeAtTMinus1)).toEqual({ ok: true, replay: false });
+
+    const codeAtT = generateTotpCode(secret);
+    expect(await verifyUserTotpCodeDetailed(prisma, userId, codeAtT)).toEqual({ ok: true, replay: false });
+
+    // codeAtTMinus1 was genuinely already used above, but the watermark has since advanced to
+    // codeAtT's own step - an exact-match-against-the-latest-watermark-only check would wrongly
+    // call this an ordinary wrong code instead of a replay.
+    expect(await verifyUserTotpCodeDetailed(prisma, userId, codeAtTMinus1)).toEqual({ ok: false, replay: true });
+  });
+
+  it("verifyUserTotpCodeDetailed does not flag an ordinary wrong code as a replay", async () => {
+    const userId = "user-totp-wrong-code";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.create({
+      data: { id: userId, email: "totp-wrong-code@example.com", password_hash },
+    });
+
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    expect(await verifyUserTotpCodeDetailed(prisma, userId, "000000")).toEqual({ ok: false, replay: false });
+  });
+});
+
+describe("verifyTotpOrRecoveryCodeDetailed", () => {
+  it("propagates totpReplay when a replayed TOTP code matches neither a fresh window nor a recovery code", async () => {
+    const userId = "user-step-up-totp-replay";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.create({
+      data: { id: userId, email: "step-up-totp-replay@example.com", password_hash },
+    });
+
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const code = generateTotpCode(secret);
+    expect(await verifyTotpOrRecoveryCodeDetailed(prisma, userId, code)).toEqual({ ok: true, method: "totp" });
+
+    const replayResult = await verifyTotpOrRecoveryCodeDetailed(prisma, userId, code);
+    expect(replayResult).toEqual({ ok: false, reason: "no_match", totpReplay: true });
+  });
+
+  it("does not flag totpReplay for an ordinary wrong code that also matches no recovery code", async () => {
+    const userId = "user-step-up-wrong-code";
+    const password_hash = await hashPassword(PASSWORD);
+    await prisma.user.create({
+      data: { id: userId, email: "step-up-wrong-code@example.com", password_hash },
+    });
+
+    const secret = generateTotpSecret();
+    await prisma.userMfaMethod.create({
+      data: {
+        user_id: userId,
+        type: "totp",
+        secret_enc: encryptTotpSecret(secret),
+        confirmed_at: new Date(),
+      },
+    });
+
+    const result = await verifyTotpOrRecoveryCodeDetailed(prisma, userId, "000000");
+    expect(result).toEqual({ ok: false, reason: "no_match", totpReplay: false });
+  });
+});
+
+// verifyUserTotpCodeDetailed's own update-lost-the-race branch is exercised here with a mocked
+// Prisma client, not real concurrent requests against Postgres - deterministically reproducing a
+// genuine DB-level race (two overlapping updates) without flaking on timing is impractical, and
+// unlike the rest of this file, the exact behavior under test IS the re-read-and-classify branch
+// itself, not anything that needs a real database round trip (bot review finding, PR #1316).
+describe("verifyUserTotpCodeDetailed re-read-after-lost-race classification", () => {
+  function stubPrisma(
+    row: { id: string; secret_enc: string; last_totp_time_step: number | null; recent_totp_time_steps?: number[] } | null,
+    reRead: { last_totp_time_step: number | null; recent_totp_time_steps?: number[] } | null,
+  ) {
+    return {
+      userMfaMethod: {
+        findFirst: vi.fn().mockResolvedValue(row && { recent_totp_time_steps: [], ...row }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findUnique: vi.fn().mockResolvedValue(reRead && { recent_totp_time_steps: [], ...reRead }),
+      },
+    } as unknown as PrismaClient;
+  }
+
+  it("does not flag replay when the row was deleted (e.g. an MFA reset) between the read and the update", async () => {
+    const secret = generateTotpSecret();
+    const secretEnc = encryptTotpSecret(secret);
+    const code = generateTotpCode(secret);
+
+    const db = stubPrisma({ id: "row-1", secret_enc: secretEnc, last_totp_time_step: null }, null);
+    const result = await verifyUserTotpCodeDetailed(db, "user-1", code);
+    expect(result).toEqual({ ok: false, replay: false });
+  });
+
+  it("does not flag replay when a concurrent request advanced the watermark with a different, later code", async () => {
+    const secret = generateTotpSecret();
+    const secretEnc = encryptTotpSecret(secret);
+    const code = generateTotpCode(secret);
+    const verified = verifyTotpCodeDetailed(secretEnc, code);
+    expect(verified.valid).toBe(true);
+    if (!verified.valid) return;
+
+    const db = stubPrisma(
+      { id: "row-1", secret_enc: secretEnc, last_totp_time_step: null },
+      { last_totp_time_step: verified.timeStep + 1 },
+    );
+    const result = await verifyUserTotpCodeDetailed(db, "user-1", code);
+    expect(result).toEqual({ ok: false, replay: false });
+  });
+
+  it("flags replay only when the persisted watermark exactly matches this request's own matched time step", async () => {
+    const secret = generateTotpSecret();
+    const secretEnc = encryptTotpSecret(secret);
+    const code = generateTotpCode(secret);
+    const verified = verifyTotpCodeDetailed(secretEnc, code);
+    expect(verified.valid).toBe(true);
+    if (!verified.valid) return;
+
+    const db = stubPrisma(
+      { id: "row-1", secret_enc: secretEnc, last_totp_time_step: null },
+      { last_totp_time_step: verified.timeStep },
+    );
+    const result = await verifyUserTotpCodeDetailed(db, "user-1", code);
+    expect(result).toEqual({ ok: false, replay: true });
+  });
+
+  it("flags replay when the persisted watermark has moved on, but this request's own matched time step is still in the row's recent-steps history", async () => {
+    const secret = generateTotpSecret();
+    const secretEnc = encryptTotpSecret(secret);
+    const code = generateTotpCode(secret);
+    const verified = verifyTotpCodeDetailed(secretEnc, code);
+    expect(verified.valid).toBe(true);
+    if (!verified.valid) return;
+
+    const db = stubPrisma(
+      { id: "row-1", secret_enc: secretEnc, last_totp_time_step: null },
+      { last_totp_time_step: verified.timeStep + 1, recent_totp_time_steps: [verified.timeStep + 1, verified.timeStep] },
+    );
+    const result = await verifyUserTotpCodeDetailed(db, "user-1", code);
+    expect(result).toEqual({ ok: false, replay: true });
   });
 });
 
