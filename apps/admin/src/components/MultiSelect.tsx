@@ -6,7 +6,7 @@ import type { SearchableSelectOption } from "./SearchableSelect.js";
 import "./searchable-select.css";
 import "./multi-select.css";
 
-/** Same threshold as SearchableSelect — a search box earns its keep above this option count. */
+/** Same threshold as SearchableSelect - a search box earns its keep above this option count. */
 const SEARCH_THRESHOLD = 6;
 
 /** Closed-trigger summary: the placeholder with nothing selected, the one selected option's own
@@ -37,14 +37,14 @@ interface MultiSelectProps {
   title?: string;
   minWidth?: number;
   showLabel?: boolean;
-  /** Row above the option list toggling every option at once — hidden for a single-option list,
+  /** Row above the option list toggling every option at once - hidden for a single-option list,
    * where "select all" and "select the one option" are the same action. */
   selectAllLabel?: string;
   clearLabel?: string;
   onChange: (ids: string[]) => void;
 }
 
-/** MultiSelect variant of `SearchableSelect` — same trigger/panel/search mechanism, but the
+/** MultiSelect variant of `SearchableSelect` - same trigger/panel/search mechanism, but the
  * panel holds a checkbox list instead of a single-click option list: a row toggles membership
  * and keeps the panel open (closing on every click, as `SearchableSelect` does, would force one
  * open/close cycle per value picked). The closed trigger summarizes the selection instead of
