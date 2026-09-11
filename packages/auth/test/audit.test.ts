@@ -1148,6 +1148,23 @@ describe("audit", () => {
       });
     });
 
+    // The account owner already gets their own account.login.new_location alert below - without
+    // this, an owner who is themselves an active admin/superadmin (guaranteed by
+    // checkNewCountryLogin's hasElevatedRole gate) would also be a candidate for this org-staff
+    // dispatch and get a second email/in-app alert about the same login (bot review finding, PR #1309).
+    it("excludes the logging-in account itself from the org-staff dispatch's candidates", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb();
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", countryCode: "FR" });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.new_country",
+          expect.objectContaining({ excludeUserId: "user-1" }),
+        );
+      });
+    });
+
     it("prefers the account's display name over its email when both are known", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const db = fakeDb(vi.fn(), { email: "admin@example.com", display_name: "Admin User" });
@@ -1216,6 +1233,10 @@ describe("audit", () => {
       });
       // Both dispatches happen from one call - not one OR the other.
       expect(notify).toHaveBeenCalledWith(db, "auth.login.new_country", expect.anything());
+      // excludeUserId is an org-staff-only concept (dispatcher.ts's resolveCandidatesOrLogSkip
+      // ignores it for "self") - this self dispatch never sets it, only the org-staff one above.
+      const selfCall = notify.mock.calls.find(([, type]) => type === "account.login.new_location");
+      expect(selfCall?.[2]).not.toHaveProperty("excludeUserId");
     });
   });
 });

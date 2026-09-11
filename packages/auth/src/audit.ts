@@ -65,6 +65,9 @@ async function dispatchSecurityNotification(
     /** Required for a self-audience type (e.g. account.auth_factor.changed) - ignored otherwise.
      * See NotificationEvent.targetUserId's own doc comment in packages/notifications. */
     targetUserId?: string;
+    /** A user_id to drop from an org-staff type's candidates - only meaningful there, ignored for
+     * "self". See NotificationEvent.excludeUserId's own doc comment in packages/notifications. */
+    excludeUserId?: string;
   },
 ): Promise<void> {
   if (!isPlainPrismaClient(db)) {
@@ -875,6 +878,12 @@ export async function logLoginNewCountry(
     // within the 15-minute throttle window is two distinct signals worth two alerts, not one
     // suppressed by the other - see checkNewCountryLogin's own doc comment.
     dedupeKey: `${ctx.userId}:${ctx.countryCode}`,
+    // The account owner already gets their own personalized account.login.new_location alert
+    // below - without this, an owner who is themselves an active admin/superadmin (guaranteed by
+    // checkNewCountryLogin's own hasElevatedRole gate) would also appear in this org-staff
+    // dispatch's candidate list and get a second email/in-app alert about the same login (bot
+    // review finding, PR #1309). The rest of the admin team, and the team webhook, are unaffected.
+    excludeUserId: ctx.userId,
     metadata: { country: ctx.countryCode },
   });
   // ASVS V2.2.3 self-audience counterpart to the org-staff alert above: the account OWNER, not

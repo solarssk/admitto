@@ -76,6 +76,19 @@ export interface NotificationEvent {
    * smaller, more stable thing to keep around forever than an email that could change.
    */
   dedupeKey?: string;
+  /**
+   * A user_id to drop from an "org-staff" audience's candidate list - has no effect on any other
+   * audience strategy (dispatcher.ts's resolveCandidatesOrLogSkip only applies it for org-staff).
+   * For a call site that dispatches BOTH an org-staff alert and a personalized "self" alert about
+   * the same underlying event (e.g. logLoginNewCountry's auth.login.new_country +
+   * account.login.new_location pair), the account this concerns would otherwise appear in both
+   * audiences and receive two emails/in-app alerts for one incident - the org-staff copy is meant
+   * for the REST of the admin team, not a duplicate of the personalized alert the owner already
+   * gets. The team webhook (audience-independent, channel.ts) and any configured
+   * extra_email_recipients distro still fire regardless - this only narrows per-user email/in_app
+   * candidates. Bot review finding, PR #1309.
+   */
+  excludeUserId?: string;
 }
 
 /**
