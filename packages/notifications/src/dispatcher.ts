@@ -200,6 +200,40 @@ async function readOrgSettings(
   return { disabledChannelsByType };
 }
 
+/**
+ * Claims this dispatch's throttle slot, or determines none is needed - pulled out of notify()
+ * itself purely to keep that function's own cognitive complexity down (SonarCloud, PR #1304);
+ * no behavior changed by this split.
+ *
+ * Returns `null` when the type opts out of throttling entirely (`throttleWindowMinutes: 0` -
+ * see NotificationTypeDef's own doc comment): every occurrence dispatches independently, with no
+ * NotificationThrottle row claimed at all. Returns the claimed `{throttleKey, rowId}` on a
+ * successful claim. Returns the `"skip"` sentinel when a real claim was attempted and lost (this
+ * function has already logged `notification.dispatch.skipped_throttled` in that case) - the
+ * caller must stop the whole dispatch.
+ */
+async function claimThrottleOrLogSkip(
+  db: Db,
+  type: string,
+  typeDef: NotificationTypeDef,
+  event: NotificationEvent,
+  deps: DispatchDeps,
+): Promise<{ throttleKey: string; rowId: string } | null | "skip"> {
+  const windowMinutes = typeDef.throttleWindowMinutes ?? DEFAULT_THROTTLE_WINDOW_MINUTES;
+  if (windowMinutes <= 0) return null;
+
+  const now = deps.now?.() ?? new Date();
+  const throttleKey = `${event.organizationId}:${event.dedupeKey ?? "org"}`;
+  const rowId = await claimThrottleSlot(db, type, throttleKey, windowMinutes, now);
+  if (!rowId) {
+    await writeDispatchAuditLog(db, "notification.dispatch.skipped_throttled", event.organizationId, {
+      notification_type: type,
+    });
+    return "skip";
+  }
+  return { throttleKey, rowId };
+}
+
 /** Resolves the audience. Only "self" with no valid target is treated as a dispatch failure that
  * skips everything (prompt 86 §3: never trust the call site's targetUserId blindly - there is no
  * one this personal notification could legitimately be for). For every other audience, an empty
@@ -421,24 +455,9 @@ export async function notify(
       return;
     }
 
-    const now = deps.now?.() ?? new Date();
-    const throttleKey = `${event.organizationId}:${event.dedupeKey ?? "org"}`;
-    const windowMinutes = typeDef.throttleWindowMinutes ?? DEFAULT_THROTTLE_WINDOW_MINUTES;
-    // windowMinutes === 0 (never negative - registry.ts is the only source, always a literal)
-    // means this type opts out of throttling entirely (see NotificationTypeDef's own doc
-    // comment) - skip the claim step altogether rather than claiming-and-immediately-checking,
-    // so every occurrence dispatches independently with no shared NotificationThrottle row at
-    // all for this type.
-    if (windowMinutes > 0) {
-      const rowId = await claimThrottleSlot(db, type, throttleKey, windowMinutes, now);
-      if (!rowId) {
-        await writeDispatchAuditLog(db, "notification.dispatch.skipped_throttled", event.organizationId, {
-          notification_type: type,
-        });
-        return;
-      }
-      activeClaim = { throttleKey, rowId };
-    }
+    const claimResult = await claimThrottleOrLogSkip(db, type, typeDef, event, deps);
+    if (claimResult === "skip") return;
+    activeClaim = claimResult;
 
     const candidates = await resolveCandidatesOrLogSkip(db, type, typeDef, event);
     if (!candidates) {
