@@ -57,7 +57,15 @@ function isPlainPrismaClient(db: Db): db is PrismaClient {
 async function dispatchSecurityNotification(
   db: Db,
   type: string,
-  event: { title: string; body: string; dedupeKey: string; metadata?: Record<string, unknown> },
+  event: {
+    title: string;
+    body: string;
+    dedupeKey: string;
+    metadata?: Record<string, unknown>;
+    /** Required for a self-audience type (e.g. account.auth_factor.changed) - ignored otherwise.
+     * See NotificationEvent.targetUserId's own doc comment in packages/notifications. */
+    targetUserId?: string;
+  },
 ): Promise<void> {
   if (!isPlainPrismaClient(db)) {
     console.error(
@@ -82,6 +90,31 @@ async function dispatchSecurityNotification(
       }),
     );
   }
+}
+
+/**
+ * ASVS V2.5.5 / NIST SP 800-63-4 §4.1.2.1-§4.4 self-audience receipt, for auth-factor changes
+ * reached from outside apps/web (which has its own equivalent, apps/web/src/admin/
+ * notify-auth-factor-changed.ts, for the same notification type) - packages/auth cannot depend on
+ * apps/web, so this is a small, deliberate duplicate rather than a shared cross-package helper,
+ * same reasoning as this file's own resolveInstanceOrganizationId import (packages/auth has its
+ * own copy of that too, not apps/web's). Used by the CLI break-glass MFA reset commands
+ * (packages/auth/src/cli.ts, apps/cli/src/commands/auth.ts) - resetUserMfa() there bypasses every
+ * HTTP route apps/web wires this notification into, so the target account would otherwise never
+ * learn their own MFA was reset via that path (bot review finding, PR #1308).
+ */
+export async function notifyOwnAuthFactorChanged(
+  db: Db,
+  userId: string,
+  title: string,
+  body: string,
+): Promise<void> {
+  await dispatchSecurityNotification(db, "account.auth_factor.changed", {
+    title,
+    body,
+    targetUserId: userId,
+    dedupeKey: userId,
+  });
 }
 
 type UserIdentitySnapshot = { email: string; display_name: string | null };

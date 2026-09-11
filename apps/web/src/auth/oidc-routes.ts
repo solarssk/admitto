@@ -31,6 +31,7 @@ import { resolveClientIp } from "../rate-limit/client-ip.js";
 import { clearOidcFlowCookie, oidcFlowCookieMatches } from "./oidc-flow-cookie.js";
 import { beginOidcAuthorizationRedirect } from "./oidc-flow.js";
 import { parseOptionalClientTimezone } from "../admin/timezone.js";
+import { notifyAuthFactorChanged } from "../admin/notify-auth-factor-changed.js";
 
 const OIDC_LOGIN_ERROR_PATH = "/login?error=oidc_failed";
 
@@ -137,14 +138,19 @@ async function exchangeOidcCallbackToken(
   }
 }
 
-/** Resolve or create the local user for the external identity; logs and returns null on failure. */
+/** Resolve or create the local user for the external identity; logs and returns null on failure.
+ * `linked: true` means an already-logged-in user just linked a NEW provider to their existing
+ * account (resolveOrCreateUserFromExternalIdentity's explicit-link branch) - the symmetric
+ * counterpart to handleDeleteAccountExternalIdentity's unlink, which already fires this same
+ * notification. `linked` is always false for a fresh login (existing identity re-authenticating)
+ * and for JIT auto-provisioning (a brand-new user, no prior account owner to notify). */
 async function resolveOidcCallbackUserId(
   db: PrismaClient,
   provider: IdentityProvider,
   subject: string,
   claims: ExternalIdentityClaims,
   consumed: ConsumedOidcAuthState,
-): Promise<string | null> {
+): Promise<{ userId: string; linked: boolean } | null> {
   try {
     const resolved = await resolveOrCreateUserFromExternalIdentity(
       db,
@@ -153,7 +159,7 @@ async function resolveOidcCallbackUserId(
       claims,
       consumed.link_user_id ? { currentUserId: consumed.link_user_id } : undefined,
     );
-    return resolved.user.id;
+    return { userId: resolved.user.id, linked: resolved.linked };
   } catch (err) {
     if (err instanceof ExternalIdentityLinkError) {
       logOidcError("identity link", err.message);
@@ -259,9 +265,18 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
 
   const claims = extractClaims(payload, provider);
 
-  const userId = await resolveOidcCallbackUserId(db, provider, subject, claims, consumed);
-  if (!userId) {
+  const resolved = await resolveOidcCallbackUserId(db, provider, subject, claims, consumed);
+  if (!resolved) {
     return oidcFailedRedirect(c);
+  }
+  const { userId, linked } = resolved;
+  if (linked) {
+    void notifyAuthFactorChanged(
+      db,
+      userId,
+      "A new SSO connection was linked",
+      "A new single sign-on connection was linked to your account.",
+    );
   }
 
   try {

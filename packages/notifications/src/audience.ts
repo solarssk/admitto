@@ -66,13 +66,27 @@ async function resolveOrgStaff(db: Db, organizationId: string): Promise<string[]
 }
 
 /**
- * The event's targetUserId, but only once confirmed to be a real, active user - never trusts the
- * call site blindly (prompt 86 §3: "nie ufaj call-site'owi bezkrytycznie"). Returns [] (not a
- * throw) for a missing targetUserId or an inactive user - dispatcher.ts logs and skips on an
- * empty audience rather than failing the caller.
+ * The event's targetUserId, but only once confirmed to be a real user row - never trusts the call
+ * site blindly (prompt 86 §3: "nie ufaj call-site'owi bezkrytycznie"). Returns [] (not a throw)
+ * for a missing targetUserId or a user id that doesn't exist - dispatcher.ts logs and skips on an
+ * empty audience rather than failing the caller. The existence check itself matters, not just as
+ * defense-in-depth: InAppChannel's Notification row has a real FK to User, so resolving a
+ * genuinely nonexistent id here would surface as a DB constraint failure deep in dispatchToChannels
+ * instead of a clean, early empty-audience skip.
  *
- * Deliberately does NOT also require a role assignment in `ctx.organizationId` (two earlier
- * versions of this function did, first instance-/organization-scoped only, then also
+ * Deliberately does NOT also require the user to be active (an earlier version of this function
+ * did). The admin UI exposes MFA reset/password reset/SSO unlink for a disabled account (only
+ * SSO-managed status gates those actions, not is_active - apps/admin/src/pages/users/
+ * UserEditModal.tsx), so gating delivery on is_active silently and permanently dropped this
+ * mandatory notification for exactly that case, with no queue or replay once the account is later
+ * re-enabled (bot review finding, PR #1308). A disabled account can still have its own real email
+ * inbox and its own future re-enabled self, so there's no privacy or security reason to withhold
+ * the alert - only a technical implementation habit (borrowed from resolveOrgStaff's own
+ * is_active filter, which exists for a different reason: excluding a disabled ADMIN from being
+ * bothered about someone else's incident, not about their own account).
+ *
+ * Also deliberately does NOT require a role assignment in `ctx.organizationId` (an even earlier
+ * version of this function did, first instance-/organization-scoped only, then also
  * event-scoped). Every real call site already independently proves targetUserId's identity
  * before ever reaching notify() - it's either the authenticated caller's own session userId
  * (account-routes.ts's self-service endpoints), or a user id an admin route already wrote to
@@ -92,9 +106,9 @@ async function resolveSelf(db: Db, ctx: AudienceContext): Promise<string[]> {
 
   const user = await db.user.findUnique({
     where: { id: ctx.targetUserId },
-    select: { is_active: true },
+    select: { id: true },
   });
-  if (!user?.is_active) return [];
+  if (!user) return [];
 
   return [ctx.targetUserId];
 }
