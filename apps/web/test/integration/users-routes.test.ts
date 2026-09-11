@@ -1038,6 +1038,19 @@ describe("POST /api/admin/users/:id/roles - auth.role.elevated notification (NIS
     } finally {
       await prisma.roleAssignment.deleteMany({ where: { user_id: created.id } });
       await prisma.user.deleteMany({ where: { id: created.id } });
+      // The org-staff audience for this grant (scope_id: ORG_USERS) is superId (instance
+      // superadmin) AND adminId (this file's own long-lived ORG_USERS admin fixture, see its
+      // beforeAll) - both get their own Notification row. Deleting `created` above only cascades
+      // ITS OWN notifications (none here, it's the target not a recipient); cleaning by type +
+      // target metadata (rather than listing superId/adminId by name) catches every recipient
+      // without assuming which fixture accounts happen to be org-staff today (bot review
+      // finding, PR #1312 - the file's own generic afterEach only clears targetId's rows).
+      await prisma.notification.deleteMany({
+        where: {
+          notification_type: "auth.role.elevated",
+          metadata: { path: ["target_user_id"], equals: created.id },
+        },
+      });
     }
   });
 

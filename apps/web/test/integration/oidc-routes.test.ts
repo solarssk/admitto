@@ -629,7 +629,17 @@ describe("oidc routes", () => {
         expect(rows[0]?.body).toContain("An SSO group-role mapping");
       });
     } finally {
-      await prisma.notification.deleteMany({ where: { user_id: recipient.id } });
+      // Cleaned by type + target metadata, not just user_id: recipient.id - the org-staff
+      // audience for an instance-scoped superadmin grant is EVERY active instance superadmin in
+      // the shared integration DB, not only the one this test created, so any other active
+      // superadmin present at the time would also receive (and otherwise leak) a row here (same
+      // class of bot review finding as PR #1312's users-routes.test.ts fix).
+      await prisma.notification.deleteMany({
+        where: {
+          notification_type: "auth.role.elevated",
+          metadata: { path: ["target_user_id"], equals: target.id },
+        },
+      });
       await prisma.oidcRoleGrant.deleteMany({ where: { provider_id: PROVIDER_ID, user_id: target.id } });
       await prisma.roleAssignment.deleteMany({ where: { user_id: { in: [recipient.id, target.id] } } });
       await prisma.externalIdentity.deleteMany({ where: { user_id: target.id } });

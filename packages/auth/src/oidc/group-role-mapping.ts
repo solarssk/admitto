@@ -315,12 +315,30 @@ async function ensureOidcGrantForRule(
  * revoke provider-owned grants.
  *
  * `onElevatedGrant`, when given, is called synchronously once per newly created "admin"/
- * "superadmin" grant (never for "operator" - out of `auth.role.elevated`'s scope) - AFTER
- * `ensureOidcGrantForRule` has fully committed it, so it fires exactly once per genuine grant
- * regardless of that function's own internal serialization retries. It never performs any I/O
- * itself (a caller running this with an open `tx` must not dispatch a notification from inside
- * it) - it only hands the grant's shape back so the caller can buffer it and dispatch once its
- * own transaction has committed (bot review finding, PR #1312).
+ * "superadmin" grant (never for "operator" - out of `auth.role.elevated`'s scope), right after
+ * `ensureOidcGrantForRule` reports it created one - regardless of that function's own internal
+ * serialization retries, so it fires exactly once per genuine grant.
+ *
+ * What "committed" means at that point, and what a caller should therefore do inside the
+ * callback, depends on whether `prisma` here is a root `PrismaClient` or an open
+ * `Prisma.TransactionClient` (bot review finding, PR #1312):
+ * - Root `PrismaClient` (e.g. `apps/web/src/auth/oidc-routes.ts`): `ensureOidcGrantForRule`'s own
+ *   `runInOwnTransaction` opens a SEPARATE, independent transaction per rule - this function's
+ *   own multi-rule loop is NOT atomic as a whole. A grant the callback just reported is already
+ *   durably committed at that instant, unconditionally, regardless of whether a LATER rule in
+ *   the same call later throws. The caller must dispatch (or otherwise act on) the grant
+ *   immediately from inside the callback, not buffer it for after this function returns - a
+ *   buffer discarded by a later rule's exception would silently and PERMANENTLY lose the alert
+ *   for the earlier, already-committed grant (ensureOidcGrantForRule's own existence check means
+ *   a later call, e.g. the user's next login, never reports that same grant as "new" again).
+ * - Open `Prisma.TransactionClient`: `runInOwnTransaction` does not open anything new, so every
+ *   grant in this call shares the CALLER's own transaction and lives or dies with it as one
+ *   atomic unit. There, buffering every grant reported during the call and acting on the buffer
+ *   only after the caller's own transaction has committed (see
+ *   `resolveCfAccessIdentityUncached`'s own doc comment) is correct - dispatching immediately
+ *   from inside the callback would risk alerting on a grant a later rollback then undoes.
+ * The callback itself must never perform any I/O in the transaction-client case (a caller running
+ * this with an open `tx` must not dispatch a notification from inside it).
  */
 export async function applyOidcGroupRoleMappings(
   prisma: PrismaClient | Prisma.TransactionClient,

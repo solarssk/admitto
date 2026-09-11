@@ -21,7 +21,6 @@ import {
   checkNewCountryLogin,
   SESSION_COOKIE_NAME,
   type ConsumedOidcAuthState,
-  type ElevatedGrant,
   type ExternalIdentityClaims,
 } from "@admitto/auth";
 import { recordSystemLog } from "@admitto/shared/system-log";
@@ -282,23 +281,30 @@ export async function handleOidcCallback(c: Context, db: PrismaClient, baseUrl: 
   }
 
   try {
-    const elevatedGrants: ElevatedGrant[] = [];
-    await applyOidcGroupRoleMappings(db, provider.id, userId, claims.groups, (grant) =>
-      elevatedGrants.push(grant),
-    );
     // Gaining admin/superadmin through a group-role sync is the path most likely to change
     // access without an admin actively watching, so it gets the same auth.role.elevated alert as
     // a manual grant through the admin UI - db is already a plain PrismaClient here, so no
     // commit to wait for (bot review finding, PR #1312). No actorUserId: there is no human actor
     // to name, the sync itself is the "actor" (logRoleElevated's own doc comment).
-    for (const grant of elevatedGrants) {
+    //
+    // Dispatched directly from the callback, NOT buffered into an array and looped after
+    // applyOidcGroupRoleMappings returns: db being a plain PrismaClient here means each matched
+    // rule's grant commits in its OWN independent transaction (ensureOidcGrantForRule's own
+    // runInOwnTransaction) as applyOidcGroupRoleMappings works through its rule loop - it is NOT
+    // one atomic operation across every rule. A provider with several matching rules where an
+    // early grant commits and a LATER rule then throws would otherwise discard the already-
+    // dispatched-nowhere alert for that earlier, already-durable grant - and since
+    // ensureOidcGrantForRule's own existence check means that same grant is never reported as
+    // "new" again on a later login, the alert would be lost permanently, not just delayed (bot
+    // review finding, PR #1312).
+    await applyOidcGroupRoleMappings(db, provider.id, userId, claims.groups, (grant) => {
       void logRoleElevated(db, {
         targetUserId: userId,
         role: grant.role,
         scopeType: grant.scopeType,
         scopeId: grant.scopeId,
       });
-    }
+    });
   } catch (err) {
     logOidcError("group mapping", err);
     return oidcFailedRedirect(c);
