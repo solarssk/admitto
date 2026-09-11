@@ -280,7 +280,15 @@ async function resolveCandidatesOrLogSkip(
     organizationId: event.organizationId,
     targetUserId: event.targetUserId,
   });
-  if (candidates.length > 0 || typeDef.audience !== "self") return candidates;
+  // excludeUserId only narrows "org-staff" - see NotificationEvent.excludeUserId's own doc
+  // comment. Filtering it out can legitimately leave zero candidates (the excluded admin was the
+  // organization's only one); that's still not treated as "nothing to do" below, same as any
+  // other org-staff audience that resolves empty - the team webhook/extra recipients still fire.
+  const filtered =
+    typeDef.audience === "org-staff" && event.excludeUserId
+      ? candidates.filter((id) => id !== event.excludeUserId)
+      : candidates;
+  if (filtered.length > 0 || typeDef.audience !== "self") return filtered;
 
   await writeDispatchAuditLog(
     db,
