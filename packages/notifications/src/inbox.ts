@@ -34,9 +34,8 @@ export async function describePersonalNotifications(
   const rows = await db.notification.findMany({
     where: { user_id: userId },
     // Secondary id tiebreak: created_at alone isn't unique (several notifications can dispatch
-    // in the same event/millisecond), so without it Postgres doesn't guarantee this query and
-    // countUnreadNotifications's own identically-shaped query agree on which rows fall inside
-    // the top-30 window at the boundary (bot review finding).
+    // in the same event/millisecond), so without it Postgres doesn't guarantee a stable, repeatable
+    // top-30 window across separate calls to this query (bot review finding).
     orderBy: [{ created_at: "desc" }, { id: "desc" }],
     take: PERSONAL_NOTIFICATIONS_LIMIT,
     select: {
@@ -62,21 +61,21 @@ export async function describePersonalNotifications(
   }));
 }
 
-/** Count of the caller's own unread notifications, capped to the same window
- * describePersonalNotifications shows - an unbounded count would let the bell's badge climb past
- * what the list can ever display or let the caller mark as read, once someone has more than
- * PERSONAL_NOTIFICATIONS_LIMIT unread at once. Still a single indexed read (see the Notification
- * model's @@index([user_id, read_at])), just capped after. */
+/** Count of the caller's own unread notifications, capped at PERSONAL_NOTIFICATIONS_LIMIT so the
+ * bell's badge can't climb past what individual per-row read actions
+ * (markNotificationRead) can ever reach one row at a time. Filters on read_at directly rather than
+ * taking the chronological top-30 and filtering afterward: capping-then-filtering could return 0
+ * even when an older unread row exists outside that window, hiding both the badge and "Mark all
+ * as read" for a notification that markAllNotificationsRead itself (unbounded) would still catch
+ * (bot review finding). A single indexed read either way (the Notification model's
+ * @@index([user_id, read_at])). */
 export async function countUnreadNotifications(db: Db, userId: string): Promise<number> {
   const rows = await db.notification.findMany({
-    where: { user_id: userId },
-    // Same secondary id tiebreak as describePersonalNotifications - both queries must agree on
-    // which rows fall inside the top-30 window (bot review finding).
-    orderBy: [{ created_at: "desc" }, { id: "desc" }],
+    where: { user_id: userId, read_at: null },
     take: PERSONAL_NOTIFICATIONS_LIMIT,
-    select: { read_at: true },
+    select: { id: true },
   });
-  return rows.filter((row) => row.read_at === null).length;
+  return rows.length;
 }
 
 /**

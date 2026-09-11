@@ -241,6 +241,12 @@ export function NotificationBell() {
           refetchNeeded = true;
         } else {
           setNotifications([]);
+          // A stale error from an earlier failed poll/refresh would otherwise keep the dropdown
+          // showing "Could not load notifications" with a Retry button even though the clear just
+          // succeeded, since the render picks listError over the (now correctly empty) list
+          // (bot review finding). The `unread_count > 0` branch above gets this for free from
+          // loadList()'s own reset.
+          setListError(null);
         }
       } catch (err) {
         // Shown inside the still-open dialog (errorMessage), not a toast - ConfirmDialog now sits
