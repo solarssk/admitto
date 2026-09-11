@@ -1350,7 +1350,8 @@ function PreviewBody({
          * archive/trash/reply/dots icons this toolbar used to imitate a real inbox's chrome with
          * were removed - sitting next to one real, clickable control, they read as more buttons
          * that just don't work, not as decoration. */}
-        <div className="communication-mail-client__scheme-toggle" role="group" aria-label="Preview color scheme">
+        <fieldset className="communication-mail-client__scheme-toggle">
+          <legend className="sr-only">Preview color scheme</legend>
           <button
             type="button"
             className="communication-mail-client__scheme-toggle-btn"
@@ -1369,7 +1370,7 @@ function PreviewBody({
           >
             <i className="ti ti-moon" aria-hidden="true" />
           </button>
-        </div>
+        </fieldset>
       </div>
       <div className="communication-mail-client__subject">{previewSubject}</div>
       <div className="communication-mail-client__from">

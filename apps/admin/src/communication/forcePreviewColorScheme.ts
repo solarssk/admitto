@@ -31,7 +31,11 @@
  *    work to support dark mode themselves. `hasAuthoredDarkPalette` on the return value flags this
  *    so the caller skips applying the whole-iframe filter class. */
 
-const MEDIA_RULE_RE = /@media\s*([^{]*)\{/gi;
+// No `\s*` before the capture group: `[^{]*` already matches whitespace, and the two
+// overlapping unbounded quantifiers back-to-back gave this super-linear backtracking on input
+// with no `{` (SonarCloud typescript:S8786) - dropping the redundant one removes the ambiguity
+// without changing what's captured (leading whitespace in the condition still ends up in group 1).
+const MEDIA_RULE_RE = /@media([^{]*)\{/gi;
 const DARK_FEATURE_RE = /prefers-color-scheme\s*:\s*dark/i;
 const COLOR_DECL_RE = /\b(background(-color)?|color|border(-color)?)\s*:/i;
 
@@ -107,9 +111,9 @@ const LIGHT_CHANNEL_THRESHOLD = 200;
 
 function darkenHex(hex: string): string {
   const full = hex.length === 3 ? hex.replace(/./g, "$&$&") : hex;
-  const r = parseInt(full.slice(0, 2), 16);
-  const g = parseInt(full.slice(2, 4), 16);
-  const b = parseInt(full.slice(4, 6), 16);
+  const r = Number.parseInt(full.slice(0, 2), 16);
+  const g = Number.parseInt(full.slice(2, 4), 16);
+  const b = Number.parseInt(full.slice(4, 6), 16);
   if (Math.min(r, g, b) < LIGHT_CHANNEL_THRESHOLD) return `#${full}`;
   const scale = (c: number) => Math.round(c * DARKEN_FACTOR).toString(16).padStart(2, "0");
   return `#${scale(r)}${scale(g)}${scale(b)}`;

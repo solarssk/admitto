@@ -460,6 +460,11 @@
   display: inline-flex;
   align-items: center;
   gap: 1px;
+  /* A <fieldset> (see accessibility note on the JSX) ships a default border/padding/margin -
+     reset those, this pill draws its own boundary via box-shadow instead. */
+  margin: 0;
+  padding: 0;
+  border: 0;
   border-radius: var(--radius-sm);
   background: #e8eaed;
   box-shadow: 0 0 0 1px #d0d3d6;
