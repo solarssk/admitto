@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import {
@@ -50,10 +50,24 @@ async function seed(client: PrismaClient) {
   await client.roleAssignment.deleteMany({ where: { OR: [{ scope_id: ORG_WEBAUTHN }, { user: { email: EMAIL_SUPERADMIN } }] } });
   await client.adminAuditLog.deleteMany({ where: { organization_id: ORG_WEBAUTHN } });
   await client.user.deleteMany({ where: { email: { in: emails } } });
+  await client.event.deleteMany({ where: { id: "evt-webauthn-account" } });
   await client.organization.deleteMany({ where: { id: ORG_WEBAUTHN } });
 
   const password_hash = await hashPassword(PASSWORD);
   await client.organization.create({ data: { id: ORG_WEBAUTHN, name: "WebAuthn Account Test Org", slug: "webauthn-account-test" } });
+  // Backs the event-scoped role assignments below with a real Event row - resolveSelf (audience.ts)
+  // validates an event-scoped assignment against the event's own organization_id, so a dangling
+  // scope_id with no matching Event row resolves to no standing at all (account.auth_factor.changed
+  // would silently never reach this fixture otherwise).
+  await client.event.create({
+    data: {
+      id: "evt-webauthn-account",
+      title: "WebAuthn Account Test Event",
+      slug: "webauthn-account-test-event",
+      organization_id: ORG_WEBAUTHN,
+      date: new Date("2026-01-01"),
+    },
+  });
 
   const user = await client.user.create({ data: { email: EMAIL_USER, password_hash } });
   userId = user.id;
@@ -106,7 +120,23 @@ afterEach(async () => {
   await prisma.userMfaMethod.deleteMany({ where: { user_id: superadminUserId } });
   await prisma.systemSettings.deleteMany({ where: { key: SETTING_WEBAUTHN_ENABLED } });
   rateLimitStore.reset();
+  // account.auth_factor.changed's throttle claim (dedupe_key = userId) must not survive into the
+  // next test - see the identical comment in account-routes.test.ts's own afterEach.
+  await prisma.notification.deleteMany({ where: { user_id: { in: [userId, otherUserId, superadminUserId] } } });
+  await prisma.notificationThrottle.deleteMany({ where: { event_type: "account.auth_factor.changed" } });
 });
+
+/** Polls for the account.auth_factor.changed in-app Notification this file's WebAuthn
+ * register/remove actions fire (fire-and-forget, see notifyAuthFactorChanged's own doc comment
+ * in account-routes.ts) - it can still be in flight when the HTTP response returns. */
+async function expectAuthFactorChangedNotification(forUserId: string, expectedTitle: string): Promise<void> {
+  await vi.waitFor(async () => {
+    const rows = await prisma.notification.findMany({
+      where: { user_id: forUserId, notification_type: "account.auth_factor.changed", title: expectedTitle },
+    });
+    expect(rows).toHaveLength(1);
+  });
+}
 
 /** Register a confirmed WebAuthn credential directly against `prisma` (bypassing the HTTP
  * session gate) — simulates a user who already enrolled their first MFA method at login (the
@@ -272,6 +302,8 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
     // only to target DELETE /api/account/mfa/webauthn/:id).
     expect(row?.credential_id).toBe(credentialId);
     expect(row?.credential_id).not.toBe(row?.id);
+
+    await expectAuthFactorChangedNotification(userId, "A new passkey was added");
   });
 
   it("a second credential does not return fresh backup codes (already acknowledged from the first)", async () => {
@@ -452,6 +484,13 @@ describe("DELETE /api/account/mfa/webauthn/:credentialId", () => {
   it("removes a credential for the non-MFA-required operator fixture without a step-up code", async () => {
     const { finishBody } = await registerCredential(userCookie, "platform");
     const credentialId = (finishBody as { id: string }).id;
+    // The register call above already claims account.auth_factor.changed's own throttle slot for
+    // this user via its own fire-and-forget notify() - wait for that dispatch to fully land
+    // (claim + send + release-on-noop, all internal to notify()) before clearing the throttle
+    // row, otherwise a race between this cleanup and register's still-in-flight claim could
+    // re-insert the row afterward and silently throttle the DELETE's own notification below.
+    await expectAuthFactorChangedNotification(userId, "A new passkey was added");
+    await prisma.notificationThrottle.deleteMany({ where: { event_type: "account.auth_factor.changed" } });
 
     const res = await app.request(`/api/account/mfa/webauthn/${credentialId}`, {
       method: "DELETE",
@@ -460,6 +499,8 @@ describe("DELETE /api/account/mfa/webauthn/:credentialId", () => {
     });
     expect(res.status).toBe(200);
     expect(await prisma.userMfaMethod.count({ where: { id: credentialId } })).toBe(0);
+
+    await expectAuthFactorChangedNotification(userId, "A passkey was removed");
   });
 
   it("treats a malformed JSON body the same as no body (no step-up code supplied)", async () => {

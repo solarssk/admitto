@@ -410,6 +410,35 @@ describe("EmailChannel", () => {
     expect(html).not.toContain("/admin/settings?tab=notifications");
   });
 
+  it("renders truthful self-audience copy for account.auth_factor.changed - not the org-staff role claim or a 'manage' CTA for a type with nothing to manage (bot review finding, PR #1304)", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    await channel.send(
+      { ...EVENT, type: "account.auth_factor.changed", title: "Your password was changed", body: "..." },
+      ["u-1"],
+    );
+
+    const html = send.mock.calls[0]![0].html;
+    expect(html).toContain("sent because this concerns your own account");
+    expect(html).not.toContain("admin or superadmin role");
+    expect(html).toContain("Review your account");
+    expect(html).not.toContain("Manage notifications");
+  });
+
+  it("keeps the org-staff footer/CTA for an org-staff type even when its type string isn't the literal one hardcoded elsewhere in tests", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    await channel.send({ ...EVENT, type: "auth.settings.changed" }, ["u-1"]);
+
+    const html = send.mock.calls[0]![0].html;
+    expect(html).toContain("admin or superadmin role");
+    expect(html).toContain("Manage notifications");
+  });
+
   it("treats a non-array extra_email_recipients as none configured", async () => {
     const db = createStubDb();
     db.user.findMany.mockResolvedValue([]);
