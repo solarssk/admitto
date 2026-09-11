@@ -216,6 +216,57 @@ describe("notify()", () => {
     expect(db.notificationThrottle.deleteMany).not.toHaveBeenCalled();
   });
 
+  it("drops event.excludeUserId from an org-staff candidate list, while the webhook and a configured team distro email still reach everyone (bot review finding, PR #1309)", async () => {
+    db.notificationSettings.findUnique.mockResolvedValue(null);
+    queryRawClaims(db, true);
+    db.roleAssignment.findMany.mockResolvedValue([
+      { user_id: "u-1", user: { is_active: true } },
+      { user_id: "u-2", user: { is_active: true } },
+    ]);
+    db.notificationPreference.findMany.mockResolvedValue([]);
+    const email = stubChannel();
+    const webhook = stubChannel();
+    const inApp = stubChannel();
+
+    await notify(db as unknown as PrismaClient, TYPE, { ...EVENT, excludeUserId: "u-1" }, {
+      channels: { email, webhook, in_app: inApp },
+    });
+
+    expect(email.send).toHaveBeenCalledWith(expect.anything(), ["u-2"]);
+    expect(inApp.send).toHaveBeenCalledWith(expect.anything(), ["u-2"]);
+    expect(webhook.send).toHaveBeenCalledWith(expect.anything(), []);
+  });
+
+  it("still dispatches to the webhook/team distro (not a hard skip) when excludeUserId removes the organization's only org-staff candidate", async () => {
+    db.notificationSettings.findUnique.mockResolvedValue(null);
+    queryRawClaims(db, true);
+    db.roleAssignment.findMany.mockResolvedValue([{ user_id: "u-1", user: { is_active: true } }]);
+    db.notificationPreference.findMany.mockResolvedValue([]);
+    const email: NotificationChannel = {
+      channel: "email",
+      send: vi.fn(async (_event, recipientUserIds: string[]) =>
+        recipientUserIds.length === 0 ? { ok: true, noop: true } : { ok: true },
+      ),
+    };
+    const webhook = stubChannel();
+    const inApp = stubChannel();
+
+    await notify(db as unknown as PrismaClient, TYPE, { ...EVENT, excludeUserId: "u-1" }, {
+      channels: { email, webhook, in_app: inApp },
+    });
+
+    expect(inApp.send).not.toHaveBeenCalled();
+    expect(webhook.send).toHaveBeenCalledWith(expect.anything(), []);
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event_type: "notification.dispatch.sent",
+          metadata: expect.objectContaining({ channels_sent: ["webhook"] }),
+        }),
+      }),
+    );
+  });
+
   it("releases the throttle claim when the audience resolves to nobody AND every channel is a legitimate no-op, so a later real occurrence isn't silently suppressed", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
     queryRawClaims(db, true);
