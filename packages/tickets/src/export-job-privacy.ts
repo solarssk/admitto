@@ -10,9 +10,9 @@ import type {
 
 export type RedactedAttendeeListFilters = {
   status?: AttendeeListFilterParams["status"];
-  ticket_type?: string | null;
-  rsvp_status?: AttendeeExportRsvpStatus;
-  mail_status?: AttendeeMailStatusFilter;
+  ticket_type?: string[] | null;
+  rsvp_status?: AttendeeExportRsvpStatus[];
+  mail_status?: AttendeeMailStatusFilter[];
   has_query: boolean;
 };
 

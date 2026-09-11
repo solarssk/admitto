@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useDropdownMenu } from "./useDropdownMenu.js";
+import { SearchableSelectSearchBox } from "./SearchableSelectSearchBox.js";
 import "./searchable-select.css";
 
 export interface SearchableSelectOption {
@@ -57,7 +58,10 @@ interface SearchableSelectProps {
 /** Generic searchable combobox: a disclosure button (same trigger/panel/outside-click mechanism
  * as FiltersMenu) whose panel holds a search box and an icon+label list - the same shape as
  * PhoneCountrySelect, generalized past phone-country data for any options list too long for a
- * plain `<select>` to stay usable (e.g. picking one event out of dozens). */
+ * plain `<select>` to stay usable (e.g. picking one event out of dozens). Need more than one
+ * value at once (e.g. a multi-value filter)? See the sibling `MultiSelect` in this same
+ * directory - same trigger/panel/`useDropdownMenu` mechanism, checkbox rows instead of
+ * close-on-click - rather than building a second one-off picker. */
 export function SearchableSelect({
   id,
   label,
@@ -150,24 +154,15 @@ export function SearchableSelect({
           style={panelStyle}
         >
           {showSearch && (
-            <div className="at-control">
-              <input
-                type="text"
-                id={`${id}-search`}
-                name={`${id}-search`}
-                className="searchable-select__search"
-                placeholder={searchPlaceholder}
-                aria-label={searchPlaceholder}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && results.length > 0) {
-                    e.preventDefault();
-                    handleSelect(results[0]!);
-                  }
-                }}
-              />
-            </div>
+            <SearchableSelectSearchBox
+              id={id}
+              searchPlaceholder={searchPlaceholder}
+              query={query}
+              onQueryChange={setQuery}
+              onEnter={() => {
+                if (results.length > 0) handleSelect(results[0]!);
+              }}
+            />
           )}
           <ul className="searchable-select__list" aria-label={label}>
             {results.length === 0 ? (

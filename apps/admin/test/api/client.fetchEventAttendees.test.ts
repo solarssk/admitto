@@ -39,9 +39,27 @@ describe("fetchEventAttendees (client) — query string building", () => {
   it("includes mail_status when given (#522)", async () => {
     const fetchMock = stubFetch();
 
-    await fetchEventAttendees("evt-1", { mail_status: "failed" });
+    await fetchEventAttendees("evt-1", { mail_status: ["failed"] });
 
     const [url] = fetchMock.mock.calls[0]!;
     expect(url).toBe("/api/admin/events/evt-1/attendees?mail_status=failed");
+  });
+
+  it("comma-joins multiple ticket_type and rsvp_status values", async () => {
+    const fetchMock = stubFetch();
+
+    await fetchEventAttendees("evt-1", { ticket_type: ["vip", "staff"], rsvp_status: ["confirmed", "tentative"] });
+
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("/api/admin/events/evt-1/attendees?ticket_type=vip%2Cstaff&rsvp_status=confirmed%2Ctentative");
+  });
+
+  it("omits ticket_type/rsvp_status/mail_status from the query string when their arrays are empty", async () => {
+    const fetchMock = stubFetch();
+
+    await fetchEventAttendees("evt-1", { ticket_type: [], rsvp_status: [], mail_status: [] });
+
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("/api/admin/events/evt-1/attendees");
   });
 });

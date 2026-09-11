@@ -38,9 +38,9 @@ const tableProps = {
   isUnfilteredEmpty: false,
   searchInput: "",
   statusFilter: "all" as const,
-  ticketTypeFilter: "",
-  rsvpStatusFilter: "" as const,
-  mailStatusFilter: "" as const,
+  ticketTypeFilter: [],
+  rsvpStatusFilter: [],
+  mailStatusFilter: [],
   onMailStatusFilterChange: vi.fn(),
   onSearchChange: vi.fn(),
   onStatusFilterChange: vi.fn(),
@@ -619,12 +619,11 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     fireEvent.click(screen.getByRole("button", { name: /^Filter by mail delivery status,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Failed" }));
-    expect(onMailStatusFilterChange).toHaveBeenCalledWith("failed");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Failed" }));
+    expect(onMailStatusFilterChange).toHaveBeenCalledWith(["failed"]);
 
-    fireEvent.click(screen.getByRole("button", { name: /^Filter by mail delivery status,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "All mail statuses" }));
-    expect(onMailStatusFilterChange).toHaveBeenCalledWith("");
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(onMailStatusFilterChange).toHaveBeenCalledWith([]);
   });
 
   it("reports ticket type, attendance, and check-in status filter changes", () => {
@@ -636,7 +635,10 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
         {...tableProps}
         items={[baseRow]}
         selectedIds={new Set()}
-        ticketTypes={[{ key: "vip", label: "VIP" }]}
+        ticketTypes={[
+          { key: "vip", label: "VIP" },
+          { key: "staff", label: "Staff" },
+        ]}
         onTicketTypeFilterChange={onTicketTypeFilterChange}
         onRsvpStatusFilterChange={onRsvpStatusFilterChange}
         onStatusFilterChange={onStatusFilterChange}
@@ -646,32 +648,31 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
 
     fireEvent.click(screen.getByRole("button", { name: /^Filter by ticket type,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "VIP" }));
-    expect(onTicketTypeFilterChange).toHaveBeenCalledWith("vip");
-
+    fireEvent.click(screen.getByRole("checkbox", { name: "VIP" }));
+    expect(onTicketTypeFilterChange).toHaveBeenCalledWith(["vip"]);
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(onTicketTypeFilterChange).toHaveBeenCalledWith([]);
     fireEvent.click(screen.getByRole("button", { name: /^Filter by ticket type,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "All ticket types" }));
-    expect(onTicketTypeFilterChange).toHaveBeenCalledWith("");
 
     fireEvent.click(screen.getByRole("button", { name: /^Filter by attendance,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Confirmed" }));
-    expect(onRsvpStatusFilterChange).toHaveBeenCalledWith("confirmed");
-
+    fireEvent.click(screen.getByRole("checkbox", { name: "Confirmed" }));
+    expect(onRsvpStatusFilterChange).toHaveBeenCalledWith(["confirmed"]);
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(onRsvpStatusFilterChange).toHaveBeenCalledWith([]);
     fireEvent.click(screen.getByRole("button", { name: /^Filter by attendance,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "All attendance statuses" }));
-    expect(onRsvpStatusFilterChange).toHaveBeenCalledWith("");
+
     fireEvent.click(screen.getByRole("button", { name: /^Filter by check-in status,/ }));
     fireEvent.click(screen.getByRole("button", { name: "Checked in" }));
     expect(onStatusFilterChange).toHaveBeenCalledWith("admitted");
   });
 
   it("does not collide with a real ticket type whose catalog key is literally 'all'", () => {
-    // Regression test (#752 review): the ticket-type filter used to double as both an
-    // empty-string sentinel AND the literal option id "all". A catalog key of "all" (e.g. a
-    // type created from the label "All" via the API or a legacy backfill) then produced two
-    // options with the same id, and selecting the real one fired the reset-to-"" path instead
-    // of filtering to it. The sentinel now lives entirely in the empty-string value, so a real
-    // "all" key can never collide with it.
+    // Regression test (#752 review), ported to MultiSelect: the single-select version used to
+    // double the ticket-type filter as both an empty-string "no filter" sentinel AND the literal
+    // option id "all", so a catalog key of "all" (e.g. a type created from the label "All")
+    // could collide with it. MultiSelect has no synthetic "no filter" option at all - "no
+    // filter" is simply an empty selection - so a real "all" key is just an ordinary checkbox,
+    // never confused with "nothing selected".
     const onTicketTypeFilterChange = vi.fn();
     render(
       <AttendeesTable
@@ -679,20 +680,21 @@ describe("AttendeesTable Filters dropdown (PO review, third pass)", () => {
         items={[baseRow]}
         selectedIds={new Set()}
         ticketTypes={[{ key: "all", label: "All-access pass" }]}
-        ticketTypeFilter="all"
+        ticketTypeFilter={["all"]}
         onTicketTypeFilterChange={onTicketTypeFilterChange}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
 
-    // The trigger shows the real catalog entry's label, not the "no filter" placeholder.
+    // The trigger shows the real catalog entry's label, not a "no filter" placeholder.
     expect(screen.getByRole("button", { name: "Filter by ticket type, All-access pass" })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Filter by ticket type, All-access pass" }));
-    fireEvent.click(screen.getByRole("button", { name: "All-access pass" }));
-    expect(onTicketTypeFilterChange).toHaveBeenCalledWith("all");
-    expect(onTicketTypeFilterChange).not.toHaveBeenCalledWith("");
+    fireEvent.click(screen.getByRole("checkbox", { name: "All-access pass" }));
+    // Unchecking the one selected "all"-keyed option clears the selection - it must not be
+    // read as some sentinel value distinct from an empty array.
+    expect(onTicketTypeFilterChange).toHaveBeenCalledWith([]);
   });
 });
 
@@ -836,27 +838,27 @@ describe("AttendeesTable mail delivery status filter (#522)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     fireEvent.click(screen.getByRole("button", { name: /^Filter by mail delivery status,/ }));
-    for (const label of ["All mail statuses", "Not sent", "Sent", "Pending", "Failed"]) {
-      expect(screen.getByRole("button", { name: label })).toBeTruthy();
+    for (const label of ["Not sent", "Sent", "Pending", "Failed"]) {
+      expect(screen.getByRole("checkbox", { name: label })).toBeTruthy();
     }
 
-    fireEvent.click(screen.getByRole("button", { name: "Failed" }));
-    expect(onMailStatusFilterChange).toHaveBeenCalledWith("failed");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Failed" }));
+    expect(onMailStatusFilterChange).toHaveBeenCalledWith(["failed"]);
   });
 
   it("keeps the selected mail status reflected in the select's value (no separate active-filter indicator to keep in sync)", () => {
     const { rerender } = render(
-      <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} mailStatusFilter="" />,
+      <AttendeesTable {...tableProps} items={[baseRow]} selectedIds={new Set()} mailStatusFilter={[]} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    expect(screen.getByRole("button", { name: "Filter by mail delivery status, All mail statuses" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Filter by mail delivery status, none selected" })).toBeTruthy();
 
     rerender(
       <AttendeesTable
         {...tableProps}
         items={[baseRow]}
         selectedIds={new Set()}
-        mailStatusFilter="not_sent"
+        mailStatusFilter={["not_sent"]}
       />,
     );
     expect(screen.getByRole("button", { name: "Filter by mail delivery status, Not sent" })).toBeTruthy();

@@ -496,15 +496,40 @@ async function requireManagedEventAttendee(
   return { attendee, attendeeId, eventId };
 }
 
+/** Comma-separated values (a multi-select filter) validated against a fixed allowed set —
+ * unknown tokens are dropped rather than rejecting the whole param, same tolerance the old
+ * single-value parse gave an unrecognized value (silently falls back to "no filter" for that
+ * token instead of erroring the request). */
+function parseCommaSeparatedEnum<T extends string>(raw: string | undefined, allowed: readonly T[]): T[] {
+  if (!raw) return [];
+  const seen = new Set<T>();
+  for (const token of raw.split(",")) {
+    const trimmed = token.trim();
+    if ((allowed as readonly string[]).includes(trimmed)) seen.add(trimmed as T);
+  }
+  return [...seen];
+}
+
+/** Same shape for `ticket_type`, which has no fixed enum (any event-defined ticket type key). */
+function parseCommaSeparatedTicketTypes(raw: string | undefined): string[] {
+  if (!raw) return [];
+  const seen = new Set<string>();
+  for (const token of raw.split(",")) {
+    const trimmed = token.trim().slice(0, 100);
+    if (trimmed) seen.add(trimmed);
+  }
+  return [...seen];
+}
+
 /** Parse and clamp list query params (`page`, `pageSize`, `q`, `status`, `ticket_type`, `mail_status`, `sortBy`, `sortDir`). */
 function parseListQuery(c: Context): {
   page: number;
   pageSize: number;
   q?: string;
   status: "all" | "admitted" | "not_admitted";
-  ticket_type?: string;
-  rsvp_status?: RsvpStatus;
-  mail_status?: AttendeeMailStatusFilter;
+  ticket_type: string[];
+  rsvp_status: RsvpStatus[];
+  mail_status: AttendeeMailStatusFilter[];
   sortBy: AttendeeSortBy;
   sortDir: AttendeeSortDir;
 } {
@@ -515,16 +540,9 @@ function parseListQuery(c: Context): {
   const statusRaw = c.req.query("status") ?? "all";
   const status =
     statusRaw === "admitted" || statusRaw === "not_admitted" ? statusRaw : "all";
-  const ticketTypeRaw = c.req.query("ticket_type")?.trim();
-  const ticket_type = ticketTypeRaw || undefined;
-  const rsvpRaw = c.req.query("rsvp_status")?.trim();
-  const rsvp_status = RSVP_STATUSES.includes(rsvpRaw as RsvpStatus)
-    ? (rsvpRaw as RsvpStatus)
-    : undefined;
-  const mailStatusRaw = c.req.query("mail_status")?.trim();
-  const mail_status = ATTENDEE_MAIL_STATUS_FILTERS.includes(mailStatusRaw as AttendeeMailStatusFilter)
-    ? (mailStatusRaw as AttendeeMailStatusFilter)
-    : undefined;
+  const ticket_type = parseCommaSeparatedTicketTypes(c.req.query("ticket_type"));
+  const rsvp_status = parseCommaSeparatedEnum(c.req.query("rsvp_status"), RSVP_STATUSES);
+  const mail_status = parseCommaSeparatedEnum(c.req.query("mail_status"), ATTENDEE_MAIL_STATUS_FILTERS);
   const sortByRaw = c.req.query("sortBy");
   const sortBy = ATTENDEE_SORT_COLUMNS.includes(sortByRaw as AttendeeSortBy)
     ? (sortByRaw as AttendeeSortBy)
