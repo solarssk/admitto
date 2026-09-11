@@ -187,6 +187,8 @@
     font-size: 16px;
     width: calc(100% / 0.875);
     height: calc(var(--control-h) / 0.875);
+    padding-left: calc(2.1rem / 0.875);
+    padding-right: calc(var(--pad-control-x) / 0.875);
     transform: scale(0.875);
     transform-origin: left center;
   }
@@ -196,10 +198,6 @@
     padding-left: calc(var(--pad-control-x) / 0.875);
     padding-right: calc(2rem / 0.875);
     background-position: right calc(0.6rem / 0.875) center;
-  }
-  .at-inputgroup:not(:has(.at-inputgroup__icon--action)) > .at-input {
-    padding-left: calc(2.1rem / 0.875);
-    padding-right: calc(var(--pad-control-x) / 0.875);
   }
 
   /* .at-control's own overflow:hidden clips a focused child's outward box-shadow ring, same
