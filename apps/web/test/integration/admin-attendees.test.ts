@@ -297,6 +297,15 @@ afterAll(async () => {
 });
 
 describe("GET /api/admin/events/:eventId/attendees", () => {
+  // Safety net for the company-sort regression fixture below: if that test times out, its own
+  // try/finally never gets to run (the abandoned promise's `finally` fires whenever the request
+  // eventually settles, which can be well after later tests have already read the table) - a
+  // leftover "Zack Sort" row then pollutes whichever test runs next. deleteMany is a no-op for
+  // every other test in this block, so this is safe to run unconditionally after each one.
+  afterEach(async () => {
+    await prisma.attendee.deleteMany({ where: { id: "att-admin-company-regression" } });
+  });
+
   it("returns paginated list without token fields", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees?page=1&pageSize=1`, {
       headers: { Cookie: adminCookie },
@@ -429,18 +438,15 @@ describe("GET /api/admin/events/:eventId/attendees", () => {
         custom_data: { company: "Aaa Corp" },
       },
     });
-    try {
-      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees?sortBy=company`, {
-        headers: { Cookie: adminCookie },
-      });
-      const body = (await res.json()) as { items: { name: string; company: string | null }[] };
-      // "Aaa Corp" (from custom_data; the scalar column is null) sorts before "Alpha Corp" - if
-      // the ORDER BY used only the null scalar column, this attendee would sort last instead.
-      expect(body.items[0]).toMatchObject({ name: "Zack Sort", company: "Aaa Corp" });
-    } finally {
-      await prisma.attendee.delete({ where: { id: "att-admin-company-regression" } });
-    }
-  });
+    // Cleanup is the describe block's afterEach above, not a local finally - see its comment.
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees?sortBy=company`, {
+      headers: { Cookie: adminCookie },
+    });
+    const body = (await res.json()) as { items: { name: string; company: string | null }[] };
+    // "Aaa Corp" (from custom_data; the scalar column is null) sorts before "Alpha Corp" - if
+    // the ORDER BY used only the null scalar column, this attendee would sort last instead.
+    expect(body.items[0]).toMatchObject({ name: "Zack Sort", company: "Aaa Corp" });
+  }, 10000);
 
   it("sorts by admitted_at with nulls last regardless of direction", async () => {
     const asc = await app.request(`/api/admin/events/${EVENT_A}/attendees?sortBy=admitted_at`, {
