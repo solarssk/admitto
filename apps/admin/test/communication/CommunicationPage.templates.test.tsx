@@ -302,6 +302,39 @@ describe("CommunicationPage templates", () => {
     expect(screen.queryByRole("button", { name: "Send email" })).toBeNull();
   });
 
+  it("switches the preview's Light/Dark toggle and back, updating the mail-client shell and iframe together", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    previewEventTemplate.mockResolvedValue({
+      subject: "Hi",
+      html: '<!doctype html><html><head><style>.logo{color:#222}</style></head><body><img src="logo.png"></body></html>',
+    });
+
+    renderPage();
+
+    const frame = await screen.findByTitle<HTMLIFrameElement>("Email preview");
+    const shell = frame.closest(".communication-mail-client");
+    expect(shell?.className).not.toContain("communication-mail-client--dark");
+    expect(frame.className).not.toContain("communication-preview-frame--dark-sim");
+    expect(screen.getByRole("button", { name: "Light" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Dark" }).getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Dark" }));
+
+    expect(shell?.className).toContain("communication-mail-client--dark");
+    expect(frame.className).toContain("communication-preview-frame--dark-sim");
+    expect(screen.getByRole("button", { name: "Light" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: "Dark" }).getAttribute("aria-pressed")).toBe("true");
+    // The iframe's own content was re-run through forcePreviewColorScheme for "dark" too, not
+    // just the surrounding shell's CSS class.
+    expect(frame.srcdoc).toContain("filter:invert(1) hue-rotate(180deg) !important");
+
+    fireEvent.click(screen.getByRole("button", { name: "Light" }));
+
+    expect(shell?.className).not.toContain("communication-mail-client--dark");
+    expect(frame.className).not.toContain("communication-preview-frame--dark-sim");
+    expect(frame.srcdoc).not.toContain("hue-rotate");
+  });
+
   it("shows a safe initial-load error when template loading fails outside the API layer", async () => {
     fetchEventTemplates.mockRejectedValueOnce(new Error("network unavailable"));
     fetchEventTemplate.mockResolvedValue(legacyTemplate);
@@ -1051,6 +1084,20 @@ describe("CommunicationPage templates", () => {
     await waitFor(() => {
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Preview failed/);
     });
+  });
+
+  it("Send tab's own preview (separate route/mocks from the Templates tab) has the same working Light/Dark toggle", async () => {
+    fetchEventTemplates.mockResolvedValue([]);
+    previewEventTemplate.mockResolvedValue({ subject: "Inherited subject", html: "<p>Inherited</p>" });
+
+    renderSendPage();
+
+    const frame = await screen.findByTitle<HTMLIFrameElement>("Email preview");
+
+    fireEvent.click(screen.getByRole("button", { name: "Dark" }));
+
+    expect(frame.closest(".communication-mail-client")?.className).toContain("communication-mail-client--dark");
+    expect(frame.className).toContain("communication-preview-frame--dark-sim");
   });
 
   it("toasts operator-safe template switch failure", async () => {
