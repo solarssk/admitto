@@ -9,6 +9,19 @@ import "./multi-select.css";
 /** Same threshold as SearchableSelect — a search box earns its keep above this option count. */
 const SEARCH_THRESHOLD = 6;
 
+/** Closed-trigger summary: the placeholder with nothing selected, the one selected option's own
+ * label (falling back to the placeholder if that id is no longer in `options`, e.g. a filter
+ * still referencing a deleted ticket type), or a plain count once there's more than one. */
+function triggerSummary(
+  value: readonly string[],
+  placeholder: string,
+  options: readonly SearchableSelectOption[],
+): string {
+  if (value.length === 0) return placeholder;
+  if (value.length === 1) return options.find((o) => o.id === value[0])?.label ?? placeholder;
+  return `${value.length} selected`;
+}
+
 interface MultiSelectProps {
   id: string;
   label: string;
@@ -78,12 +91,7 @@ export function MultiSelect({
     );
   }
 
-  const triggerText =
-    value.length === 0
-      ? placeholder
-      : value.length === 1
-        ? (options.find((o) => o.id === value[0])?.label ?? placeholder)
-        : `${value.length} selected`;
+  const triggerText = triggerSummary(value, placeholder, options);
 
   const hintId = hint ? `${id}-hint` : undefined;
   const triggerDescribedBy = [describedBy, hintId].filter(Boolean).join(" ") || undefined;
