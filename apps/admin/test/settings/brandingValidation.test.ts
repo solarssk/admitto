@@ -25,6 +25,24 @@ describe("validateBrandingDraft", () => {
     expect(result.valid).toBe(true);
   });
 
+  it("accepts valid hex ticket_primary independently of primary", () => {
+    const result = validateBrandingDraft({ primary: "#aabbcc", ticket_primary: "#ea580c" });
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual({});
+  });
+
+  it("rejects invalid hex ticket_primary without affecting a valid primary", () => {
+    const result = validateBrandingDraft({ primary: "#aabbcc", ticket_primary: "not-a-color" });
+    expect(result.valid).toBe(false);
+    expect(result.errors.ticket_primary).toBeTruthy();
+    expect(result.errors.primary).toBeUndefined();
+  });
+
+  it("accepts empty ticket_primary", () => {
+    const result = validateBrandingDraft({});
+    expect(result.errors.ticket_primary).toBeUndefined();
+  });
+
   it("accepts a built-in font name alone with no saved custom families", () => {
     const nameOnly = validateBrandingDraft({ font_family_name: "Georgia" });
     expect(nameOnly.valid).toBe(true);
@@ -130,6 +148,17 @@ describe("validateBrandingDraft", () => {
 describe("brandingDraftForSave", () => {
   it("omits an invalid primary but keeps a valid font name on its own", () => {
     expect(brandingDraftForSave({ primary: "bad", font_family_name: "Evil" })).toEqual({ font_family_name: "Evil" });
+  });
+
+  it("keeps a valid ticket_primary alongside a valid primary", () => {
+    expect(brandingDraftForSave({ primary: "#aabbcc", ticket_primary: "#ea580c" })).toEqual({
+      primary: "#aabbcc",
+      ticket_primary: "#ea580c",
+    });
+  });
+
+  it("drops an invalid ticket_primary but keeps a valid primary on its own", () => {
+    expect(brandingDraftForSave({ primary: "#aabbcc", ticket_primary: "bad" })).toEqual({ primary: "#aabbcc" });
   });
 
   it("sanitizes and keeps ticket_font_family_name independently of font_family_name", () => {
