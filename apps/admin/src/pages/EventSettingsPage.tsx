@@ -595,6 +595,7 @@ interface ArchiveToggleDeps {
   archiveMode: "archive" | "unarchive";
   setArchiving: (value: boolean) => void;
   setArchiveOpen: (value: boolean) => void;
+  setArchiveError: (value: string | null) => void;
   setMailCardResetKey: (updater: (n: number) => number) => void;
   setLocationCardResetKey: (updater: (n: number) => number) => void;
   setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
@@ -611,6 +612,7 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
     archiveMode,
     setArchiving,
     setArchiveOpen,
+    setArchiveError,
     setMailCardResetKey,
     setLocationCardResetKey,
     setTicketTypesCardResetKey,
@@ -620,6 +622,7 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
     refreshLayoutEvent,
   } = deps;
   setArchiving(true);
+  setArchiveError(null);
   try {
     if (archiveMode === "archive") {
       await archiveEvent(eventId);
@@ -636,7 +639,10 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
-    addToast(operatorApiErrorMessage(err, "Action failed"), "error");
+    // Shown inside the still-open dialog (errorMessage), not a toast - ConfirmDialog sits above
+    // the toast stack (--z-modal > --z-toast), so a toast-only failure would render invisibly
+    // behind the dialog's own backdrop while it stays open (bot review finding).
+    setArchiveError(operatorApiErrorMessage(err, "Action failed"));
   } finally {
     setArchiving(false);
   }
@@ -709,6 +715,7 @@ interface RevokeCheckinsDeps {
   eventId: string;
   setRevokingCheckins: (value: boolean) => void;
   setRevokeCheckinsOpen: (value: boolean) => void;
+  setRevokeCheckinsError: (value: string | null) => void;
   setMailCardResetKey: (updater: (n: number) => number) => void;
   setLocationCardResetKey: (updater: (n: number) => number) => void;
   setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
@@ -724,6 +731,7 @@ async function confirmRevokeCheckins(deps: RevokeCheckinsDeps): Promise<void> {
     eventId,
     setRevokingCheckins,
     setRevokeCheckinsOpen,
+    setRevokeCheckinsError,
     setMailCardResetKey,
     setLocationCardResetKey,
     setTicketTypesCardResetKey,
@@ -733,6 +741,7 @@ async function confirmRevokeCheckins(deps: RevokeCheckinsDeps): Promise<void> {
     refreshLayoutEvent,
   } = deps;
   setRevokingCheckins(true);
+  setRevokeCheckinsError(null);
   try {
     const { revokedCount } = await revokeAllCheckIns(eventId);
     addToast(
@@ -749,7 +758,8 @@ async function confirmRevokeCheckins(deps: RevokeCheckinsDeps): Promise<void> {
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
-    addToast(operatorApiErrorMessage(err, "Failed to revoke check-ins"), "error");
+    // Same reasoning as confirmArchiveToggle's own errorMessage.
+    setRevokeCheckinsError(operatorApiErrorMessage(err, "Failed to revoke check-ins"));
   } finally {
     setRevokingCheckins(false);
   }
@@ -759,6 +769,7 @@ interface RevokeItemsDeps {
   eventId: string;
   setRevokingItems: (value: boolean) => void;
   setRevokeItemsOpen: (value: boolean) => void;
+  setRevokeItemsError: (value: string | null) => void;
   setMailCardResetKey: (updater: (n: number) => number) => void;
   setLocationCardResetKey: (updater: (n: number) => number) => void;
   setTicketTypesCardResetKey: (updater: (n: number) => number) => void;
@@ -774,6 +785,7 @@ async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
     eventId,
     setRevokingItems,
     setRevokeItemsOpen,
+    setRevokeItemsError,
     setMailCardResetKey,
     setLocationCardResetKey,
     setTicketTypesCardResetKey,
@@ -783,6 +795,7 @@ async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
     refreshLayoutEvent,
   } = deps;
   setRevokingItems(true);
+  setRevokeItemsError(null);
   try {
     const { revokedCount } = await revokeAllItemsIssued(eventId);
     addToast(
@@ -799,7 +812,8 @@ async function confirmRevokeItems(deps: RevokeItemsDeps): Promise<void> {
     await load();
     await refreshLayoutEvent?.();
   } catch (err) {
-    addToast(operatorApiErrorMessage(err, "Failed to revoke items"), "error");
+    // Same reasoning as confirmArchiveToggle's own errorMessage.
+    setRevokeItemsError(operatorApiErrorMessage(err, "Failed to revoke items"));
   } finally {
     setRevokingItems(false);
   }
@@ -982,14 +996,17 @@ export function EventSettingsPage() {
   const [exporting, setExporting] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveMode, setArchiveMode] = useState<"archive" | "unarchive">("archive");
+  const [archiveError, setArchiveError] = useState<string | null>(null);
   const [logoUploading, setLogoUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [revokingCheckins, setRevokingCheckins] = useState(false);
   const [revokeCheckinsOpen, setRevokeCheckinsOpen] = useState(false);
+  const [revokeCheckinsError, setRevokeCheckinsError] = useState<string | null>(null);
   const [revokingItems, setRevokingItems] = useState(false);
   const [revokeItemsOpen, setRevokeItemsOpen] = useState(false);
+  const [revokeItemsError, setRevokeItemsError] = useState<string | null>(null);
   const [ticketTypesDirty, setTicketTypesDirty] = useState(false);
   const [ticketTypesSaving, setTicketTypesSaving] = useState(false);
   // Same reasoning as mailCardResetKey below, applied to TicketTypesCard's own draft state.
@@ -1179,6 +1196,7 @@ export function EventSettingsPage() {
       archiveMode,
       setArchiving,
       setArchiveOpen,
+      setArchiveError,
       setMailCardResetKey,
       setLocationCardResetKey,
       setTicketTypesCardResetKey,
@@ -1205,6 +1223,7 @@ export function EventSettingsPage() {
       eventId,
       setRevokingCheckins,
       setRevokeCheckinsOpen,
+      setRevokeCheckinsError,
       setMailCardResetKey,
       setLocationCardResetKey,
       setTicketTypesCardResetKey,
@@ -1221,6 +1240,7 @@ export function EventSettingsPage() {
       eventId,
       setRevokingItems,
       setRevokeItemsOpen,
+      setRevokeItemsError,
       setMailCardResetKey,
       setLocationCardResetKey,
       setTicketTypesCardResetKey,
@@ -1572,8 +1592,12 @@ export function EventSettingsPage() {
         confirmVariant="danger"
         confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
         loading={revokingCheckins}
+        errorMessage={revokeCheckinsError}
         onConfirm={() => void handleRevokeCheckinsConfirm()}
-        onCancel={() => setRevokeCheckinsOpen(false)}
+        onCancel={() => {
+          setRevokeCheckinsOpen(false);
+          setRevokeCheckinsError(null);
+        }}
       />
       <ConfirmDialog
         open={revokeItemsOpen}
@@ -1586,8 +1610,12 @@ export function EventSettingsPage() {
         confirmVariant="danger"
         confirmDelaySeconds={BULK_REVOKE_CONFIRM_DELAY_SECONDS}
         loading={revokingItems}
+        errorMessage={revokeItemsError}
         onConfirm={() => void handleRevokeItemsConfirm()}
-        onCancel={() => setRevokeItemsOpen(false)}
+        onCancel={() => {
+          setRevokeItemsOpen(false);
+          setRevokeItemsError(null);
+        }}
       />
       <ConfirmDialog
         open={archiveOpen}
@@ -1596,8 +1624,12 @@ export function EventSettingsPage() {
         confirmLabel={archiveDialogCopy.confirmLabel}
         confirmVariant={archiveDialogCopy.confirmVariant}
         loading={archiving}
+        errorMessage={archiveError}
         onConfirm={() => void handleArchiveConfirm()}
-        onCancel={() => setArchiveOpen(false)}
+        onCancel={() => {
+          setArchiveOpen(false);
+          setArchiveError(null);
+        }}
       />
       <ConfirmDialog
         open={deleteOpen}

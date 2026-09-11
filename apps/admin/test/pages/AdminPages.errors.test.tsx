@@ -332,7 +332,9 @@ describe("EventSettingsPage operator errors", () => {
     });
   });
 
-  it("toasts on archive failure", async () => {
+  it("shows an error inline in the dialog on archive failure (not a toast)", async () => {
+    // ConfirmDialog sits above the toast stack (--z-modal > --z-toast), so a toast-only failure
+    // would render invisibly behind the still-open dialog's own backdrop (bot review finding).
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(eventSettings);
     vi.mocked(archiveEvent).mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     renderSettings();
@@ -347,8 +349,10 @@ describe("EventSettingsPage operator errors", () => {
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Action failed/);
+      expect(within(dialog).getByRole("alert").textContent).toMatch(/Action failed/);
     });
+    expect(screen.queryByTestId("at-toast")).toBeNull();
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
   it("toasts on export failure", async () => {

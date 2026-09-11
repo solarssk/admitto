@@ -3575,7 +3575,9 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     });
   });
 
-  it("keeps the dialog open and shows an error toast when revoking check-ins fails", async () => {
+  it("keeps the dialog open and shows an error inline (not a toast) when revoking check-ins fails", async () => {
+    // ConfirmDialog sits above the toast stack, so a toast-only failure would render invisibly
+    // behind the still-open dialog's own backdrop (bot review finding).
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, admitted_count: 2 });
     const { ApiError } = await import("../../src/api/client.js");
     vi.mocked(revokeAllCheckIns).mockRejectedValueOnce(new ApiError(500, "server_error"));
@@ -3585,8 +3587,9 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to revoke check-ins/);
+      expect(within(dialog).getByRole("alert").textContent).toMatch(/Failed to revoke check-ins/);
     });
+    expect(screen.queryByTestId("at-toast")).toBeNull();
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
@@ -3616,7 +3619,8 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("keeps the dialog open and shows an error toast when revoking items fails", async () => {
+  it("keeps the dialog open and shows an error inline (not a toast) when revoking items fails", async () => {
+    // Same reasoning as the revoke-check-ins failure test above.
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, issued_items_count: 2 });
     const { ApiError } = await import("../../src/api/client.js");
     vi.mocked(revokeAllItemsIssued).mockRejectedValueOnce(new ApiError(500, "server_error"));
@@ -3626,8 +3630,9 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Failed to revoke items/);
+      expect(within(dialog).getByRole("alert").textContent).toMatch(/Failed to revoke items/);
     });
+    expect(screen.queryByTestId("at-toast")).toBeNull();
     expect(screen.getByRole("dialog")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
