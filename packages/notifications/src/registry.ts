@@ -19,14 +19,16 @@ const ORG_STAFF_DEFAULTS: Omit<NotificationTypeDef, "label" | "defaultSeverity">
  * Closed, developer-defined set of notification types (ADR 0038 §9 - no admin-configurable
  * rules/thresholds, no "subscribe to any System Log entry"). ADR 0044 §6 registry: 5 org-staff
  * security/ops alerts plus three self-audience types below - `account.auth_factor.changed`
- * (ASVS V2.5.5 + NIST SP 800-63-4 §4.1.2.1/§4.2.4/§4.4 - notify the account owner, and only the
+ * (ASVS V6.3.7 + NIST SP 800-63-4 §4.1.2.1/§4.2.4/§4.5 - notify the account owner, and only the
  * account owner, whenever their own password/MFA/SSO changes, whether they made the change
- * themselves or an admin made it for them), `account.login.new_location` (ASVS V2.2.3 -
+ * themselves or an admin made it for them), `account.login.new_location` (ASVS V6.3.5 -
  * notify the account owner themselves when their own account signs in from a location not seen
  * among its recent successful logins, alongside the existing org-staff `auth.login.new_country`
  * alert that tells the REST of the admins about the same event), and `account.mfa.code_reused`
- * (ASVS V2.8.5 - notify the account owner when a cryptographically valid TOTP code is submitted
- * again after already being used, a possible sign the code was intercepted). `auth.role.elevated`
+ * (closest current analog ASVS V6.3.5 - the 4.0.3-era OTP-replay-specific V2.8.5 was retired in
+ * 5.0 as "insufficient impact" for its own line item, folded into this broader one - notify the
+ * account owner when a cryptographically valid TOTP code is submitted again after already being
+ * used, a possible sign the code was intercepted). `auth.role.elevated`
  * (NIST SP 800-53 rev5 AC-2(1) - notify account managers when a user's privileges are modified)
  * rounds out the org-staff set.
  */
@@ -77,7 +79,7 @@ export const NOTIFICATION_TYPES: Record<string, NotificationTypeDef> = {
     // 2 minutes later are two different events the owner must see, not a repeat of one incident to
     // collapse into a single alert (bot review finding, PR #1304).
     throttleWindowMinutes: 0,
-    // Mandatory: the whole point of ASVS V2.5.5 is catching an unauthorized change on your own
+    // Mandatory: the whole point of ASVS V6.3.7 is catching an unauthorized change on your own
     // account, so neither the account owner nor the organization can silence the one alert meant
     // to let them catch it (see userConfigurable/orgDisableable's own doc comments in types.ts).
     userConfigurable: false,
@@ -93,7 +95,7 @@ export const NOTIFICATION_TYPES: Record<string, NotificationTypeDef> = {
     availableChannels: ["email", "in_app"],
     audience: "self",
     // Mandatory, same reasoning as account.auth_factor.changed: this exists to catch a stolen
-    // credential being used somewhere the real owner never has been (ASVS V2.2.3), so an attacker
+    // credential being used somewhere the real owner never has been (ASVS V6.3.5), so an attacker
     // who already has the account must not be able to silence the one alert meant to out them.
     // Fired from the same call site (checkNewCountryLogin/logLoginNewCountry) and same
     // hasElevatedRole gate as the existing org-staff auth.login.new_country - admin/superadmin
@@ -113,7 +115,8 @@ export const NOTIFICATION_TYPES: Record<string, NotificationTypeDef> = {
     // Default (not zero) throttle window, same reasoning as account.login.new_location: an
     // attacker retrying the SAME leaked code in a tight burst is legitimately one incident, not
     // one alert per attempt.
-    // Mandatory, same reasoning as the other two self-audience types (ASVS V2.8.5): the whole
+    // Mandatory, same reasoning as the other two self-audience types (closest current analog ASVS
+    // V6.3.5 - see this file's own top doc comment for why): the whole
     // point is catching a code that may have been intercepted, so an attacker who already has
     // one valid code must not be able to silence the one alert meant to out them.
     userConfigurable: false,

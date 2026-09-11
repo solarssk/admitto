@@ -104,7 +104,7 @@ async function dispatchSecurityNotification(
 }
 
 /**
- * ASVS V2.5.5 / NIST SP 800-63-4 §4.1.2.1-§4.4 self-audience receipt, for auth-factor changes
+ * ASVS V6.3.7 / NIST SP 800-63-4 §4.1.2.1-§4.5 self-audience receipt, for auth-factor changes
  * reached from outside apps/web (which has its own equivalent, apps/web/src/admin/
  * notify-auth-factor-changed.ts, for the same notification type) - packages/auth cannot depend on
  * apps/web, so this is a small, deliberate duplicate rather than a shared cross-package helper,
@@ -131,8 +131,10 @@ export async function notifyOwnAuthFactorChanged(
 /**
  * Emit `account.mfa.code_reused` and dispatch a real alert to the account owner when a
  * cryptographically valid TOTP code is submitted again after it was already used to complete
- * MFA - ASVS V2.8.5 (CWE-287). The code itself was genuine, so a replay specifically (as opposed
- * to an ordinary wrong guess) is a sign it may have been seen or intercepted by someone else,
+ * MFA (CWE-287; closest current ASVS analog is V6.3.5 - the 4.0.3-era OTP-replay-specific V2.8.5
+ * was retired in 5.0 as "insufficient impact" for its own line item). The code itself was
+ * genuine, so a replay specifically (as opposed to an ordinary wrong guess) is a sign it may
+ * have been seen or intercepted by someone else,
  * distinct from `auth.mfa.repeated_failures`'s own brute-force-guessing streak (see
  * `completeMfaInTransaction` in login.ts, the only real caller - a replayed code never counts
  * toward that streak). Fixed title/body: unlike `notifyOwnAuthFactorChanged`, there is only one
@@ -540,7 +542,7 @@ export async function logMfaSuccess(db: Db, ctx: MfaAuditContext, method: MfaMet
 
 /** Why an MFA completion attempt failed, recorded in `auth.mfa.fail`'s `reason` field: a wrong
  * TOTP/recovery code, a cryptographically valid TOTP code that had already been used
- * (`totp_replay` - ASVS V2.8.5, see `completeMfaInTransaction`'s own doc comment), a recovery
+ * (`totp_replay`, see `completeMfaInTransaction`'s own doc comment), a recovery
  * code that matched but lost a race to consume its row, a rejected WebAuthn assertion, or a
  * code/assertion that verified correctly but session promotion failed afterward (e.g. the partial
  * session expired or was concurrently revoked between verification and promotion - the
@@ -1000,7 +1002,7 @@ export async function logLoginNewCountry(
     excludeUserId: ctx.userId,
     metadata: { country: ctx.countryCode },
   });
-  // ASVS V2.2.3 self-audience counterpart to the org-staff alert above: the account OWNER, not
+  // ASVS V6.3.5 self-audience counterpart to the org-staff alert above: the account OWNER, not
   // just the rest of the admin team, learns their own account signed in somewhere new (PR5c,
   // notifications-module-foundation plan's Luka A).
   void dispatchSecurityNotification(db, "account.login.new_location", {
