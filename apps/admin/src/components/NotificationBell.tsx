@@ -68,6 +68,23 @@ export function NotificationBell() {
     unreadCountCache = { value, expiresAt: Date.now() + UNREAD_POLL_MS };
   }
 
+  // Chains mark-read/mark-all-read network calls one at a time, in click order - generation
+  // numbers alone aren't enough between two mutations, only between a mutation and the passive
+  // poll/list-load. Two mark-read calls can each return a *correct, freshly re-queried* count at
+  // the moment they individually complete server-side; if they ran concurrently, "started later"
+  // and "reflects the latest write" aren't the same request, and discarding by start order could
+  // throw away the one with the truly newer server state (bot review finding). Serializing removes
+  // the ambiguity: only one mutation is ever in flight, so whichever one is currently running is
+  // always the freshest by construction, and the poll/list-load vs. mutation race is still handled
+  // by countGenerationRef, claimed here at actual dispatch time (its turn in the queue), not at
+  // click time.
+  const mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  function queueMutation(run: () => Promise<void>): Promise<void> {
+    const next = mutationQueueRef.current.then(run, run);
+    mutationQueueRef.current = next;
+    return next;
+  }
+
   // Poll the cheap unread-count endpoint continuously; the fuller list is fetched lazily below,
   // only when the dropdown is actually opened - no reason to re-render its list every 30s while
   // a user might be mid-read in the panel.
@@ -131,38 +148,42 @@ export function NotificationBell() {
 
   async function handleRowClick(notification: NotificationDto) {
     if (notification.read_at) return;
-    const gen = ++countGenerationRef.current;
     setNotifications((prev) =>
       prev.map((n) => (n.id === notification.id ? { ...n, read_at: new Date().toISOString() } : n)),
     );
     setUnreadCount((c) => Math.max(0, c - 1));
-    try {
-      const result = await markAccountNotificationRead(notification.id);
-      setConfirmedUnreadCount(result.unread_count, gen);
-    } catch (err) {
-      // Undo both optimistic updates - the row was never actually confirmed read server-side, so
-      // leaving it displayed as read (and the badge decremented) would contradict the failure
-      // toast until the next list reload or poll tick (bot review finding).
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === notification.id ? { ...n, read_at: null } : n)),
-      );
-      setUnreadCount((c) => c + 1);
-      addToast(operatorApiErrorMessage(err, "Failed to mark notification as read."), "error");
-    }
+    await queueMutation(async () => {
+      const gen = ++countGenerationRef.current;
+      try {
+        const result = await markAccountNotificationRead(notification.id);
+        setConfirmedUnreadCount(result.unread_count, gen);
+      } catch (err) {
+        // Undo both optimistic updates - the row was never actually confirmed read server-side,
+        // so leaving it displayed as read (and the badge decremented) would contradict the
+        // failure toast until the next list reload or poll tick (bot review finding).
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === notification.id ? { ...n, read_at: null } : n)),
+        );
+        setUnreadCount((c) => c + 1);
+        addToast(operatorApiErrorMessage(err, "Failed to mark notification as read."), "error");
+      }
+    });
   }
 
   async function handleMarkAllRead() {
     setMarkingAll(true);
-    const gen = ++countGenerationRef.current;
-    try {
-      const result = await markAllAccountNotificationsRead();
-      setNotifications((prev) => prev.map((n) => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })));
-      setConfirmedUnreadCount(result.unread_count, gen);
-    } catch (err) {
-      addToast(operatorApiErrorMessage(err, "Failed to mark all as read."), "error");
-    } finally {
-      setMarkingAll(false);
-    }
+    await queueMutation(async () => {
+      const gen = ++countGenerationRef.current;
+      try {
+        const result = await markAllAccountNotificationsRead();
+        setNotifications((prev) => prev.map((n) => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })));
+        setConfirmedUnreadCount(result.unread_count, gen);
+      } catch (err) {
+        addToast(operatorApiErrorMessage(err, "Failed to mark all as read."), "error");
+      } finally {
+        setMarkingAll(false);
+      }
+    });
   }
 
   return (

@@ -20,6 +20,7 @@ const EXPECTED_POLICIES: Record<
   "auth:passkey-login-begin-ip": { windowMs: [60_000], max: [10], checks: 1 },
   "auth:passkey-login-finish-ip": { windowMs: [60_000], max: [10], checks: 1 },
   "auth:account-ip": { windowMs: [60_000], max: [30], checks: 1 },
+  "account:notifications-poll": { windowMs: [60_000], max: [20], checks: 1 },
   "admin:oidc-provider-ops": { windowMs: [60_000], max: [10], checks: 1 },
   "admin:test-send": { windowMs: [60_000, 3_600_000], max: [5, 20], checks: 2 },
   "admin:mail-transport-test": { windowMs: [60_000, 3_600_000], max: [3, 10], checks: 2 },
@@ -215,6 +216,28 @@ describe("RATE_POLICIES registry", () => {
     // budget for the one safety action that stops a bad send).
     expect(RATE_POLICIES["admin:bulk-send-cancel"].checks[0]!.keyOf(ctx)).toBe(
       "admin:bulk-send-cancel:user:user-42:event:evt-1",
+    );
+  });
+
+  it("excludes only the polled unread-count route from the shared auth:account-ip bucket", () => {
+    // Regression guard for the Codex review finding: a shared office/VPN IP polling this route
+    // every 30s per open tab must not exhaust the same budget every other /api/account/* route
+    // (profile, password, sessions, MFA) also draws from.
+    const check = RATE_POLICIES["auth:account-ip"].checks[0]!;
+    expect(check.when).toBeTypeOf("function");
+    const ctxFor = (path: string) => ({ req: { path } }) as never;
+    expect(check.when!(ctxFor("/api/account/notifications/unread-count"))).toBe(false);
+    expect(check.when!(ctxFor("/api/account"))).toBe(true);
+    expect(check.when!(ctxFor("/api/account/notifications"))).toBe(true);
+    expect(check.when!(ctxFor("/api/account/sessions"))).toBe(true);
+  });
+
+  it("scopes account:notifications-poll by user id, separately from auth:account-ip", () => {
+    const authCtx = {
+      get: (key: string) => (key === "auth" ? { userId: "user-42" } : undefined),
+    } as never;
+    expect(RATE_POLICIES["account:notifications-poll"].checks[0]!.keyOf(authCtx)).toBe(
+      "account:notifications-poll:user:user-42",
     );
   });
 

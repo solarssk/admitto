@@ -689,6 +689,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const adminNotificationSettingsTestRateLimit = rateLimit(rateLimitStore, "admin:notification-settings-test");
   const adminEventMailDiagnosticsRateLimit = rateLimit(rateLimitStore, "admin:event-mail-diagnostics");
   const adminHealthLiveRateLimit = rateLimit(rateLimitStore, "admin:health-live");
+  const accountNotificationsPollRateLimit = rateLimit(rateLimitStore, "account:notifications-poll");
   const adminImportPreviewRateLimit = rateLimit(rateLimitStore, "admin:import-preview");
   const adminAttendeesSearchRateLimit = rateLimit(rateLimitStore, "admin:attendees-search");
   const adminGeocodingSearchRateLimit = rateLimit(rateLimitStore, "admin:geocoding-search");
@@ -2139,8 +2140,11 @@ export function createApp(options: CreateAppOptions = {}) {
   app.patch("/api/account/notifications/preferences", jsonPostCsrf, requireSession, (c) =>
     handlePatchAccountNotificationPreference(c, db),
   );
-  app.get("/api/account/notifications/unread-count", requireSession, (c) =>
-    handleGetAccountNotificationsUnreadCount(c, db),
+  app.get(
+    "/api/account/notifications/unread-count",
+    requireSession,
+    accountNotificationsPollRateLimit,
+    (c) => handleGetAccountNotificationsUnreadCount(c, db),
   );
   app.get("/api/account/notifications", requireSession, (c) => handleGetAccountNotifications(c, db));
   app.patch("/api/account/notifications/:id/read", jsonPostCsrf, requireSession, (c) =>

@@ -148,7 +148,9 @@ describe("NotificationBell dropdown", () => {
 
     fireEvent.click(screen.getByRole("menuitem", { name: /5 consecutive failed sign-in attempts/ }));
 
-    expect(markAccountNotificationRead).toHaveBeenCalledWith("notif-1");
+    // The actual network call is queued (fires on the next microtask, not synchronously in the
+    // click handler) so two mark-read/mark-all-read mutations can never run concurrently.
+    await waitFor(() => expect(markAccountNotificationRead).toHaveBeenCalledWith("notif-1"));
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Notifications" })).toBeTruthy();
     });
@@ -322,7 +324,7 @@ describe("NotificationBell dropdown", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Mark all as read" }));
 
-    expect(markAllAccountNotificationsRead).toHaveBeenCalled();
+    await waitFor(() => expect(markAllAccountNotificationsRead).toHaveBeenCalled());
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Notifications" })).toBeTruthy();
       expect(screen.queryByRole("button", { name: "Mark all as read" })).toBeNull();
@@ -350,6 +352,56 @@ describe("NotificationBell dropdown", () => {
     await waitFor(() => expect(markAccountNotificationRead).toHaveBeenCalledWith("notif-1"));
     const otherRow = screen.getByRole("menuitem", { name: /MFA break-glass used/ });
     expect(otherRow.className).toContain("notif-bell__row--unread");
+  });
+
+  it("serializes two quick mark-read clicks so the badge settles on the true final count", async () => {
+    // Regression test for the bot review finding: without a queue, two concurrent mark-read
+    // requests can resolve out of order, and discarding by generation/start-order alone could
+    // throw away the one whose *server-side write* actually happened last (the truly fresh
+    // count), leaving the badge stuck at a wrong value until the next poll. Serializing removes
+    // the ambiguity entirely - the second click's own request cannot even start until the first
+    // one has fully resolved.
+    fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 2 });
+    fetchAccountNotifications.mockResolvedValue({
+      notifications: [
+        makeNotification({ id: "notif-1" }),
+        makeNotification({
+          id: "notif-2",
+          title: "MFA break-glass used",
+          body: "An operator used the emergency two-factor bypass.",
+        }),
+      ],
+      unread_count: 2,
+    });
+    let resolveFirst: (value: { unread_count: number }) => void = () => {};
+    markAccountNotificationRead.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveFirst = resolve; }),
+    );
+
+    renderWithToast(<NotificationBell />);
+    await act(async () => {});
+    openBell();
+    await screen.findByText("MFA break-glass used");
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /^5 consecutive failed sign-in attempts/ }));
+    await waitFor(() => expect(markAccountNotificationRead).toHaveBeenCalledWith("notif-1"));
+
+    markAccountNotificationRead.mockResolvedValueOnce({ unread_count: 0 });
+    fireEvent.click(screen.getByRole("menuitem", { name: /MFA break-glass used/ }));
+
+    // The second click's own network call must stay queued - not fired concurrently - while the
+    // first one is still pending.
+    await act(async () => {});
+    expect(markAccountNotificationRead).toHaveBeenCalledTimes(1);
+
+    // The first (slower) call resolves with a count that was already stale by the time it
+    // arrives (notif-2 wasn't marked read server-side yet when it was computed) - the queue
+    // means the second call only starts, and its own genuinely fresher count only applies,
+    // after this one is fully done.
+    resolveFirst({ unread_count: 1 });
+
+    await waitFor(() => expect(markAccountNotificationRead).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Notifications" })).toBeTruthy());
   });
 
   it("falls back to a generic icon for a severity not in the icon map", async () => {

@@ -300,13 +300,22 @@ export const RATE_POLICIES = {
    * My Account page load alone fires 3 GETs (account, sessions, backup-codes status), and the
    * WebAuthn stack added several more legitimate sub-requests per MFA action (register/begin,
    * register/finish, assert/begin, credential list), so 10/min was tripping on ordinary
-   * back-to-back account/MFA management, not just abuse. */
+   * back-to-back account/MFA management, not just abuse.
+   *
+   * One deliberate exception: GET /api/account/notifications/unread-count is excluded via
+   * `when` below - it's polled every 30s per open tab for as long as NotificationBell is
+   * mounted, not a one-time page-load burst like everything else here, so a handful of staff
+   * behind the same office/VPN NAT would exhaust this bucket on that alone and start getting
+   * 429s on genuine account actions (Codex review finding, PR #1303). It has its own,
+   * user-scoped policy (`account:notifications-poll`) instead - see app.ts's registration for
+   * that route. */
   "auth:account-ip": {
     checks: [
       {
         keyOf: (c) => `auth:account:ip:${resolveClientIp(c)}`,
         windowMs: 60_000,
         max: 30,
+        when: (c) => c.req.path !== "/api/account/notifications/unread-count",
         logOnExceeded: { scope: "account_ip" },
       },
     ],
@@ -409,6 +418,21 @@ export const RATE_POLICIES = {
   "admin:notification-settings-test": authUserScopedPolicy(
     "admin:notification-settings-test",
     "admin_notification_settings_test",
+  ),
+  /** GET /api/account/notifications/unread-count - polled every 30s per open tab for as long as
+   * NotificationBell is mounted, unlike every other /api/account/* route (a one-time page-load
+   * burst). The shared auth:account-ip bucket (30/min) was sized around that burst shape - a
+   * handful of staff behind the same office/VPN NAT polling independently would exhaust it on
+   * this alone, then get 429s on genuine profile/password/session/MFA requests sharing the same
+   * IP (Codex review finding, PR #1303). User-scoped instead, like account:password-check and the
+   * other authenticated-action policies above: this route already requires requireSession, so a
+   * real userId exists to key on, and one person's polling shouldn't compete with a colleague's
+   * on the same network. max covers several simultaneously open tabs for one user with margin,
+   * not just the steady-state 2/min a single tab's 30s poll produces. */
+  "account:notifications-poll": authUserScopedPolicy(
+    "account:notifications-poll",
+    "account_notifications_poll",
+    20,
   ),
   /** On-demand live health probes (Nominatim / OIDC) from Settings → Health check. */
   "admin:health-live": {
