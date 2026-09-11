@@ -155,14 +155,40 @@
   }
   .at-inputgroup:has(.at-inputgroup__icon--action) { height: var(--control-h); }
 
+  /* flex: none matters for the .at-inputgroup branch: .at-inputgroup is `display: flex` (line
+     ~196 below), so without it this rule's inflated `width` is just a flex-basis - default
+     flex-shrink: 1 immediately shrinks it back down to the container's real width, undoing the
+     inflation before the `scale(0.875)` below shrinks it again for real, rendering the control
+     ~12.5% narrower than every sibling (e.g. Attendees search box, Event settings "Event link
+     ID" clipping their text/placeholder at touch-device widths). Same fix as the action-icon
+     variant of this trick further down, which already has `flex: none` for the same reason. */
   .at-control > .at-input,
-  .at-control > .at-select,
-  .at-inputgroup:not(:has(.at-inputgroup__icon--action)) > .at-input {
+  .at-control > .at-select {
+    flex: none;
     font-size: 16px;
     width: calc(100% / 0.875);
     height: calc(var(--control-h) / 0.875);
     transform: scale(0.875);
     transform-origin: top left;
+  }
+  /* .at-inputgroup centers its child with `align-items: center` (line ~204 below), so the
+     inflated pre-transform box is vertically centered on its OWN (taller) height, not
+     .at-control's simple top-of-block placement above - `transform-origin: top left` (correct
+     for .at-control, which never moves the box) instead scales this one down from a top edge
+     that flex already shifted upward by half the inflated/real height difference, leaving the
+     final box floating ~2-3px above where it should sit: its top border (and, worse, the
+     absolutely-positioned .at-inputgroup__icon next to it) lands above the wrapper's
+     `overflow: hidden` clip line and disappears entirely (PO report: missing top border,
+     vanishing search/field icons on touch devices only). `left center` scales from the
+     midpoint align-items already centered on the wrapper's center, so the shrink lands back
+     exactly on that same center - width math (left edge) is untouched. */
+  .at-inputgroup:not(:has(.at-inputgroup__icon--action)) > .at-input {
+    flex: none;
+    font-size: 16px;
+    width: calc(100% / 0.875);
+    height: calc(var(--control-h) / 0.875);
+    transform: scale(0.875);
+    transform-origin: left center;
   }
   .at-control > .at-input { padding: 0 calc(var(--pad-control-x) / 0.875); }
   .at-control > .at-input[type="password"] { padding-right: calc(2.25rem / 0.875); }
@@ -194,7 +220,14 @@
 
 .at-control { display: block; }
 .at-inputgroup { display: flex; align-items: center; position: relative; }
-.at-inputgroup .at-inputgroup__icon { position: absolute; left: 0.65rem; color: var(--text-muted); font-size: 1.05rem; pointer-events: none; }
+/* z-index: 1 matters on touch devices: the pointer:coarse media block above puts a
+   `transform` on the sibling .at-input to shrink it back down after inflating it, and any
+   `transform` other than none creates a new stacking context - paired with the input's own
+   opaque background and its later DOM position (after this icon), that stacking context
+   was painting the input's background over this absolutely-positioned icon, hiding it
+   completely (confirmed via elementFromPoint at the icon's own coordinates returning the
+   input, not the icon). Desktop never applies that transform, so this was invisible there. */
+.at-inputgroup .at-inputgroup__icon { position: absolute; left: 0.65rem; top: 50%; transform: translateY(-50%); z-index: 1; color: var(--text-muted); font-size: 1.05rem; pointer-events: none; }
 .at-inputgroup .at-input { padding-left: 2.1rem; }
 
 /* Input's onIconClick opt-in (e.g. the Redirect URI copy button). Two prior attempts kept the
@@ -270,7 +303,7 @@
     height: calc(var(--control-h) / 0.875);
     padding-left: calc(var(--pad-control-x) / 0.875);
     transform: scale(0.875);
-    transform-origin: top left;
+    transform-origin: left center;
   }
 }
 
