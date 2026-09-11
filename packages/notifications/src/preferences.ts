@@ -9,8 +9,9 @@ type Db = PrismaClient;
  * Resolves which of a notification type's per-user channels (email, in_app - never webhook, a
  * team-wide resource handled separately by dispatcher.ts) are enabled for each of `userIds`, in
  * one query. No stored NotificationPreference row for a user means every applicable channel is on
- * for them (opt-out default, ADR 0044 §2). A type with `userConfigurable: false` (the ASVS V2.5.5
- * self-audience receipts) always maps every user to its full channel set regardless of any stored
+ * for them (opt-out default, ADR 0044 §2). A type with `userConfigurable: false` (the mandatory
+ * self-audience receipts, see registry.ts's own doc comment) always maps every user to its full
+ * channel set regardless of any stored
  * row - letting the account owner silence the one alert meant to let them catch an unauthorized
  * change on their own account would defeat its purpose (see NotificationTypeDef.userConfigurable).
  */

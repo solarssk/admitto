@@ -27,7 +27,7 @@ export interface NotificationTypeDef {
    * Explicitly `0` means never throttled: every occurrence dispatches, even a different
    * occurrence of this same type for the same dedupeKey within what would otherwise be one
    * throttle window. Use this for a type whose own semantics require every distinct event to be
-   * reported (e.g. account.auth_factor.changed, ASVS V2.5.5) - a shared per-user dedupeKey across
+   * reported (e.g. account.auth_factor.changed, ASVS V6.3.7) - a shared per-user dedupeKey across
    * genuinely different underlying changes (password vs. TOTP vs. WebAuthn) would otherwise let
    * the dispatcher's normal same-subject throttling silently drop every occurrence after the
    * first one within the window, which is correct behavior for a repeated-incident alert
@@ -37,8 +37,8 @@ export interface NotificationTypeDef {
   throttleWindowMinutes?: number;
   /**
    * Whether a user may opt individual channels (email/in_app) in or out for this type via
-   * NotificationPreference. false only for ASVS V2.5.5-mandated self-audience account-security
-   * receipts (e.g. "your password changed") - letting the account owner silence the one alert
+   * NotificationPreference. false only for the mandatory self-audience account-security receipts
+   * (e.g. "your password changed", ASVS V6.3.7) - letting the account owner silence the one alert
    * meant to let them catch an unauthorized change on their own account would defeat its purpose.
    */
   userConfigurable: boolean;

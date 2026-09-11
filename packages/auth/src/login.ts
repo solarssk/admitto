@@ -15,6 +15,7 @@ import {
   logMfaSuccess,
   logTrustedDeviceCreated,
   logTrustedDeviceUsed,
+  notifyTotpCodeReused,
   type LoginAuditContext,
   type MfaAuditContext,
   type MfaMethod,
@@ -307,7 +308,7 @@ export interface CompleteMfaResult {
 }
 
 type CompleteMfaTxResult =
-  | { ok: false; reason: "invalid_code" | "recovery_consume_conflict" }
+  | { ok: false; reason: "invalid_code" | "totp_replay" | "recovery_consume_conflict" }
   | { ok: false; reason: "session_not_promoted"; method: MfaMethod }
   | {
       ok: true;
@@ -341,10 +342,10 @@ async function completeMfaInTransaction(
 
   const codeResult = await verifyTotpOrRecoveryCodeDetailed(tx, userId, code);
   if (!codeResult.ok) {
-    return {
-      ok: false,
-      reason: codeResult.reason === "consume_conflict" ? "recovery_consume_conflict" : "invalid_code",
-    };
+    if (codeResult.reason === "consume_conflict") {
+      return { ok: false, reason: "recovery_consume_conflict" };
+    }
+    return { ok: false, reason: codeResult.totpReplay ? "totp_replay" : "invalid_code" };
   }
 
   const promoted = await promoteSessionToFull(tx, sessionId, userId);
@@ -395,9 +396,19 @@ async function emitMfaAudit(
   if (!result.ok) {
     await logMfaFailure(db, auditCtx, result.reason, result.reason === "session_not_promoted" ? result.method : undefined);
     // Only a wrong code counts toward the repeated-guessing alert streak - a recovery-consume
-    // race or a session-promotion failure both mean the code itself was correct.
+    // race or a session-promotion failure both mean the code itself was correct, and a replayed
+    // code isn't a guess at all (see the account.mfa.code_reused dispatch below).
     if (result.reason === "invalid_code") {
       await recordFailedMfaFailureSideEffects(db, input.userId, { ip: input.ip });
+    }
+    // The code itself was genuine, so its reuse - as opposed to an ordinary wrong guess - is a
+    // sign it may have been seen or intercepted by someone else (closest current ASVS analog:
+    // V6.3.5 - see notifyTotpCodeReused's own doc comment for why). Fire-and-forget,
+    // same reasoning as every other HTTP-reached notify() dispatch in this module (login.ts's
+    // own caller is a request awaiting this response) - never let a configured email/webhook
+    // delivery (up to 15s) add latency to the failed-login response itself.
+    if (result.reason === "totp_replay") {
+      void notifyTotpCodeReused(db, input.userId);
     }
     return;
   }

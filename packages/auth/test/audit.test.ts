@@ -28,6 +28,7 @@ import {
   logSuperadminBootstrapCli,
   logTrustedDeviceCreated,
   logTrustedDeviceUsed,
+  notifyTotpCodeReused,
   redactEmail,
 } from "../src/audit.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -560,6 +561,35 @@ describe("audit", () => {
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       const tx = { user: { findUnique: vi.fn() } } as unknown as PrismaClient;
       await notifyOwnAuthFactorChanged(tx, "user-1", "title", "body");
+      expect(notify).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("auth.notify_dispatch_skipped_transaction_client"));
+    });
+  });
+
+  describe("notifyTotpCodeReused", () => {
+    // The only real caller is completeMfaInTransaction (login.ts), which dispatches this after a
+    // totp_replay failure - a fixed, not caller-supplied, title/body distinguishes it from
+    // notifyOwnAuthFactorChanged's many differently-worded call sites (see this function's own
+    // doc comment).
+    it("dispatches account.mfa.code_reused targeting and deduped on the given user", async () => {
+      const db = fakeDb();
+      await notifyTotpCodeReused(db, "user-1");
+      expect(notify).toHaveBeenCalledWith(
+        db,
+        "account.mfa.code_reused",
+        expect.objectContaining({
+          organizationId: "org_default",
+          title: "A two-factor code was reused",
+          targetUserId: "user-1",
+          dedupeKey: "user-1",
+        }),
+      );
+    });
+
+    it("skips notify() (without throwing) when db is a transaction client, not a plain PrismaClient", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const tx = { user: { findUnique: vi.fn() } } as unknown as PrismaClient;
+      await notifyTotpCodeReused(tx, "user-1");
       expect(notify).not.toHaveBeenCalled();
       expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("auth.notify_dispatch_skipped_transaction_client"));
     });
@@ -1341,7 +1371,7 @@ describe("audit", () => {
       expect(notify).not.toHaveBeenCalled();
     });
 
-    // ASVS V2.2.3 self-audience counterpart, alongside the org-staff auth.login.new_country
+    // ASVS V6.3.5 self-audience counterpart, alongside the org-staff auth.login.new_country
     // dispatch above - the account OWNER learns their own account signed in somewhere new, not
     // just the rest of the admin team (PR5c, notifications-module-foundation plan's Luka A).
     it("also dispatches account.login.new_location targeting the account owner, deduped on the same user+country pair", async () => {

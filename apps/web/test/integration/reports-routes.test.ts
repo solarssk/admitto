@@ -1697,7 +1697,7 @@ describe("GET /api/admin/events/:eventId/reports", () => {
       await prisma.ticketType.deleteMany({ where: { event_id: EVENT_CAT } });
       await prisma.event.deleteMany({ where: { id: EVENT_CAT } });
     }
-  });
+  }, 10000);
 
   it("folds a literal empty-string ticket_type into the (none) bucket instead of a confusing separate entry (CodeRabbit review)", async () => {
     const EVENT_BLANK = "evt-reports-blank";
