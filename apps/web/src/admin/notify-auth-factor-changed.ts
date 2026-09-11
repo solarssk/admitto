@@ -3,7 +3,7 @@ import { notify } from "@admitto/notifications";
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 
 /**
- * ASVS V2.5.5 / NIST SP 800-63-4 §4.1.2.1-§4.4: every place in this app that changes a user's own
+ * ASVS V6.3.7 / NIST SP 800-63-4 §4.1.2.1-§4.5: every place in this app that changes a user's own
  * password, MFA method, passkey, trusted devices, or SSO link - whether the user did it themselves
  * or an admin did it for them - fires this same self-audience notification at the account owner.
  * See account.auth_factor.changed's own doc comment in packages/notifications/src/registry.ts.
