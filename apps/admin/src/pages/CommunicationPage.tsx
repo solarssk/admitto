@@ -1058,6 +1058,7 @@ function PlaceholderChip({
 
 function TemplateEditorCard({
   event,
+  activeKey,
   activeTemplateName,
   allowedPlaceholders,
   imagePlaceholders,
@@ -1082,6 +1083,7 @@ function TemplateEditorCard({
   onSave,
 }: Readonly<{
   event: EventDto;
+  activeKey: string;
   activeTemplateName: string;
   allowedPlaceholders: string[];
   imagePlaceholders: string[];
@@ -1247,6 +1249,13 @@ function TemplateEditorCard({
               {format === "mjml" ? "MJML body" : "HTML body"}
             </label>
             <CodeMirror
+              // Forces a fresh EditorView (and with it, a fresh undo history) whenever the admin
+              // switches to a different template or toggles MJML/HTML format - @uiw/react-codemirror
+              // otherwise keeps the SAME instance across a controlled `value` swap (it applies the
+              // new value as just another transaction, same as any edit), so Ctrl+Z right after
+              // switching templates could undo straight through into the PREVIOUS template's body -
+              // which could then get saved over the one actually being edited (real bot-review find).
+              key={`${activeKey}-${format}`}
               ref={bodyRef}
               className={[
                 "communication-code-editor",
@@ -2272,7 +2281,7 @@ export function CommunicationPage() {
    * stale position. Setting `el.value`/selection directly keeps every insertion's start position
    * accurate regardless of click timing, since React skips touching the DOM value/selection of a
    * controlled input when they already match its state. Subjects are plain text, so no MJML-
-   * hazard redirect is needed here — see `insertTokenIntoBody` below for the body field's
+   * hazard redirect is needed here - see `insertTokenIntoBody` below for the body field's
    * equivalent, which dispatches a CodeMirror transaction instead (equally synchronous/
    * authoritative, so it shares the same rapid-click guarantee without needing this DOM dance).
    */
@@ -2294,9 +2303,9 @@ export function CommunicationPage() {
   }
 
   /**
-   * Inserts `token` (the caller's preferred markup — possibly a full `<mj-image>`/`<img>`
+   * Inserts `token` (the caller's preferred markup - possibly a full `<mj-image>`/`<img>`
    * element) at the CodeMirror body editor's cursor, falling back to `bareToken` (always just
-   * `{{name}}`) instead when the preferred markup can't safely go where the cursor actually is —
+   * `{{name}}`) instead when the preferred markup can't safely go where the cursor actually is -
    * see `resolveMjmlInsertion` for the MJML-specific hazards this guards against. Dispatching a
    * transaction is itself synchronous and authoritative (CodeMirror has no stale-DOM/stale-
    * closure gap the way reading a controlled `<textarea>`'s state used to), so repeated rapid
@@ -2649,6 +2658,7 @@ export function CommunicationPage() {
           <div className="communication-templates-split">
             <TemplateEditorCard
               event={event}
+              activeKey={activeKey}
               activeTemplateName={activeTemplateName}
               allowedPlaceholders={allowedPlaceholders}
               imagePlaceholders={imagePlaceholders}
