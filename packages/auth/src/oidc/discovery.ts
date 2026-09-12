@@ -61,10 +61,17 @@ export async function fetchOidcDiscovery(issuer: string): Promise<OidcDiscoveryD
   // provider's stored, trusted issuer (compared verbatim against every future token's `iss`
   // claim, see token.ts), an unchecked mismatch here would mean Admitto ends up trusting whichever
   // issuer the fetched document happens to claim, not the one an admin actually intended (ASVS
-  // V10.5.3). `base`, not discoveryBase, is the correct comparison side - it's the same
-  // no-trailing-slash form normalizeIssuerInput's own doc comment says token verification compares
-  // against verbatim.
-  if (docIssuer !== base) {
+  // V10.5.3).
+  // Tolerant of a trailing-slash difference only: pasting the full .../.well-known/openid-
+  // configuration URL (the explicitly supported paste-and-correct flow, see
+  // normalizeIssuerInput's own doc comment) always strips down to a no-trailing-slash `base`,
+  // regardless of whether the IdP's real issuer has one - that ambiguity is inherent to the input,
+  // not a sign of a different issuer, so a same-URL-modulo-trailing-slash match is still accepted.
+  // The document's own exact docIssuer (trailing slash included) is still what gets returned/
+  // stored below, unchanged - only this comparison is slash-insensitive, not the stored value
+  // itself or its later verbatim comparison against token `iss` claims (bot review finding).
+  const stripTrailingSlash = (value: string) => (value.endsWith("/") ? value.slice(0, -1) : value);
+  if (stripTrailingSlash(docIssuer) !== stripTrailingSlash(base)) {
     throw new Error(`OIDC discovery issuer mismatch: requested "${base}", document claims "${docIssuer}"`);
   }
   const userinfo = doc["userinfo_endpoint"];
