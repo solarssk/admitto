@@ -22,21 +22,24 @@ works; Admitto never signs or hosts pass files itself.
 - **On-demand creation.** A pass is created the first time an attendee taps "Add to Apple/Google
   Wallet" on their ticket page - not eagerly at ticket issuance, not in bulk. Repeat taps reuse the
   same pass.
-- **Field mapping.** Every PassCreator template defines its own custom field names (an admin
-  chooses these when building the template in PassCreator's own dashboard - Admitto has no say in
-  what they're called). In Event Settings → Wallet, an admin adds one row per template field: pick
-  an Admitto **value** from a fixed list (attendee full/first/last name, email, company,
-  department, event name/date/hours/location, directions/accessibility text, Google/Apple Maps
-  links, individual address parts, ticket type, the ticket/QR value itself, event type, or a venue
-  access-point detail such as room, entrance, door/gate/portal, phone number, Venue place ID, or
-  an opening time), then type the exact
-  **key** that matches that field's name in the PassCreator template. For example, mapping value
-  "Attendee full name" to key `fullName` sends the attendee's name to whichever template field is
-  registered as `fullName`. There is no default mapping and no auto-detection - nothing beyond the
-  QR/barcode is sent until a row exists for it, because different templates use different field
-  names and Admitto can't guess them. See the
-  [template setup page](Wallet-Passes-PassCreator-Setup) for the full step-by-step, including how
-  to register a field on the PassCreator side first.
+- **Field mapping.** Every PassCreator template defines its own custom field names, chosen by an
+  admin when building the template in PassCreator's own dashboard; Admitto has no say in what
+  they're called.
+  - **How it works:** in Event Settings → Wallet, an admin adds one row per template field: pick
+    an Admitto **value**, then type the exact **key** that matches that field's name in the
+    PassCreator template. For example, mapping value "Attendee full name" to key `fullName` sends
+    the attendee's name to whichever template field is registered as `fullName`.
+  - **Available values:** attendee full/first/last name, email, company, department, event
+    name/date/hours/location, directions/accessibility text, Google/Apple Maps links, individual
+    address parts, ticket type, the ticket/QR value itself, event type, or a venue access-point
+    detail such as room, entrance, door/gate/portal, phone number, Venue place ID, or an opening
+    time.
+  - **No default mapping, no auto-detection:** nothing beyond the QR/barcode is sent until a row
+    exists for it, because different templates use different field names and Admitto can't guess
+    them.
+
+  See the [template setup page](Wallet-Passes-PassCreator-Setup) for the full step-by-step,
+  including how to register a field on the PassCreator side first.
 - **Semantic tags** (Apple Wallet only, no switch). Siri Suggestions and Maps/Calendar smart
   surfacing use the same Field mapping mechanism as visible card fields - there is no separate
   toggle. Map a placeholder such as "Event type", "Venue room", or an access-point opening time to
@@ -49,29 +52,44 @@ works; Admitto never signs or hosts pass files itself.
   is enabled and the event has a start time, Admitto tells PassCreator when the pass should surface
   on the Lock Screen - independent of, and regardless of, the semantic tags field mapping above.
   See the [template setup page](Wallet-Passes-PassCreator-Setup) for details.
-- **Live updates to already-issued, active passes.** Editing an attendee (name, email, company,
-  department, ticket type) or a wallet-relevant event field (title, date, hours, timezone, the
-  Apple Wallet toggle, event type, or a Location field) automatically refreshes passes already on
-  attendees' devices - no manual re-issue needed. Saving an event-wide change shows a confirmation
-  naming how many attendees currently have the pass installed, so it's clear this reaches real
-  devices; editing a single attendee shows a lighter, non-blocking note instead, since that only
-  ever affects one person. Neither appears when nothing is actually installed yet. Two things this
-  does not cover: a voided pass is
-  skipped until it is restored *and* separately pushed again, since restoring only clears the void
-  flag rather than refreshing content; and a single-attendee edit pushes immediately in the same
-  request rather than through the background job queue, so it never shows up in Event Settings →
-  Wallet's "Wallet push history" list - that list is event-wide and bulk pushes only.
+- **Live updates to already-issued, active passes.** Editing an attendee or a wallet-relevant
+  event field automatically refreshes passes already on attendees' devices, no manual re-issue
+  needed.
+  - **What triggers a push:** an attendee edit (name, email, company, department, ticket type), or
+    a wallet-relevant event field (title, date, hours, timezone, the Apple Wallet toggle, event
+    type, or a Location field).
+  - **Confirmation UX:** saving an event-wide change shows a confirmation naming how many
+    attendees currently have the pass installed, so it's clear this reaches real devices. Editing
+    a single attendee shows a lighter, non-blocking note instead, since that only ever affects one
+    person. Neither appears when nothing is actually installed yet.
+  - **Two exceptions:** a voided pass is skipped until it is restored *and* separately pushed
+    again, since restoring only clears the void flag rather than refreshing content. A
+    single-attendee edit pushes immediately in the same request rather than through the background
+    job queue, so it never shows up in Event Settings → Wallet's "Wallet push history" list, which
+    is event-wide and bulk pushes only.
 - **Registration status.** Whether an attendee has actually added the pass to their device (not
-  just had one issued) is tracked from PassCreator via webhook, with periodic polling as a
-  fallback (can take a while to reach any one attendee) - shown on Attendee Detail and the
-  Attendees list's Wallet column. Attendee Detail's wallet **Refresh status** action pulls that
-  one attendee's current status immediately instead of waiting for the periodic poll - useful when
-  PassCreator's own dashboard already shows a pass as added but Admitto hasn't caught up yet. Both
-  surfaces only show the platform(s) Event Settings → Wallet actually offers for that event -
-  turning the whole feature off hides the Wallet column and the Attendee Detail Wallet card
-  entirely, and turning off just Apple or just Google Wallet drops that platform's icon/row
-  everywhere, without affecting the other one.
-- **Wallet lifecycle actions.** Void, push updates, refresh status, and permanently delete a wallet pass at the provider - available both from Attendee Detail (single attendee) and the Attendees list (bulk, for a selection). Restore is Attendee Detail only, there is no bulk version of it. Revoking an attendee's ticket also voids their wallet pass automatically; restoring the ticket restores the pass the same way. A bulk action against a large selection takes noticeably longer than an equivalent single-attendee action multiplied out - each attendee's pass is updated one call at a time at a fixed pace, to stay within PassCreator's own request limit, rather than all at once. A bulk wallet action accepts at most 100 attendees per selection and can take up to roughly 15 seconds to finish at this pace; this is expected, not a stuck page.
+  just had one issued) is tracked from PassCreator, shown on Attendee Detail and the Attendees
+  list's Wallet column.
+  - **How it's tracked:** via webhook, with periodic polling as a fallback (can take a while to
+    reach any one attendee). Attendee Detail's wallet **Refresh status** action pulls that one
+    attendee's current status immediately instead of waiting for the periodic poll, useful when
+    PassCreator's own dashboard already shows a pass as added but Admitto hasn't caught up yet.
+  - **Platform visibility:** both surfaces only show the platform(s) Event Settings → Wallet
+    actually offers for that event. Turning the whole feature off hides the Wallet column and the
+    Attendee Detail Wallet card entirely; turning off just Apple or just Google Wallet drops that
+    platform's icon/row everywhere, without affecting the other one.
+- **Wallet lifecycle actions.**
+  - **Actions available:** void, push updates, refresh status, and permanently delete a wallet
+    pass at the provider, plus restore. Revoking an attendee's ticket also voids their wallet pass
+    automatically; restoring the ticket restores the pass the same way.
+  - **Single vs bulk scope:** void, push updates, refresh status, and delete are available both
+    from Attendee Detail (single attendee) and the Attendees list (bulk, for a selection). Restore
+    is Attendee Detail only, there is no bulk version of it.
+  - **Rate and pacing limits:** a bulk wallet action accepts at most 100 attendees per selection.
+    Each attendee's pass is updated one call at a time at a fixed pace, to stay within
+    PassCreator's own request limit, rather than all at once, so a bulk action against a large
+    selection takes noticeably longer than an equivalent single-attendee action multiplied out, up
+    to roughly 15 seconds to finish at this pace. This is expected, not a stuck page.
 
 ## What's not supported
 

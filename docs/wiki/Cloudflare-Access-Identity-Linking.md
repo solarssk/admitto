@@ -41,15 +41,19 @@ flowchart TD
 
 ## Steps
 
-1. At your identity provider, add a custom claim (sometimes called a scope mapping, attribute mapping, or claim mapping, depending on the provider) that returns a stable identifier for the signed-in user, for example `admitto_identity`. In Authentik, this is **Customization → Property Mappings → Create**, an OAuth2/OpenID Provider Scope Mapping, with a Python expression such as:
+1. At your identity provider, add a custom claim that returns a stable identifier for the signed-in user, for example `admitto_identity`.
+   - Providers name this differently: a scope mapping, attribute mapping, or claim mapping, depending on the provider.
+   - In Authentik, this is **Customization → Property Mappings → Create**, an OAuth2/OpenID Provider Scope Mapping, with a Python expression such as:
 
-   ```python
-   return {"admitto_identity": request.user.uid}
-   ```
-
-   Okta, Microsoft Entra ID, and OneLogin each have an equivalent mechanism under their own name (for example custom authorization server claims, optional claims, or app parameters) - check your provider's own documentation for the exact steps. Whichever provider you use, attach the claim to a scope Cloudflare already requests by default, such as `profile`, rather than inventing a new scope name of your own - Cloudflare only receives claims tied to scopes it actually asks for.
+     ```python
+     return {"admitto_identity": request.user.uid}
+     ```
+   - Okta, Microsoft Entra ID, and OneLogin each have an equivalent mechanism under their own name (for example custom authorization server claims, optional claims, or app parameters). Check your provider's own documentation for the exact steps.
+   - Whichever provider you use, attach the claim to a scope Cloudflare already requests by default, such as `profile`, rather than inventing a new scope name of your own. Cloudflare only receives claims tied to scopes it actually asks for.
 2. Attach the new claim to the specific application your identity provider uses for Cloudflare (matched by Client ID, see Before you start) - creating the claim in step 1 does not attach it to anything by itself in most providers, including Authentik.
-3. Confirm that application produces the exact same identifier for a given person as the application Admitto's direct sign-in already uses. Many providers can compute a different, per-application identifier by default (sometimes described as pairwise or hashed) rather than one stable value shared across every application - if yours does, set both applications to the same, non-hashed mode (Authentik calls this setting **Subject mode**). Do not change this setting on the application Admitto's direct sign-in already uses if any account has signed in through it - that orphans its existing links.
+3. Confirm that application produces the exact same identifier for a given person as the application Admitto's direct sign-in already uses.
+   - Many providers can compute a different, per-application identifier by default (sometimes described as pairwise or hashed), rather than one stable value shared across every application. If yours does, set both applications to the same, non-hashed mode (Authentik calls this setting **Subject mode**).
+   - Warning: do not change this setting on the application Admitto's direct sign-in already uses if any account has signed in through it. That orphans its existing links.
 4. If the direct provider has group-to-role mappings configured, repeat steps 1-3 for a second, bounded claim carrying only the groups Admitto's mappings actually use (for example `admitto_groups`) - do not forward an entire directory-wide group list.
 5. In Cloudflare Zero Trust, open **Integrations → Identity providers**, edit your identity provider entry, and add your claim name(s) from steps 1 and 4 under **OIDC Claims**. This is a different field from **OIDC Scopes** further down the same page: Scopes controls what Cloudflare requests, Claims controls what Cloudflare actually copies into the signed Access JWT it sends to Admitto. Adding a claim name only under Scopes forwards nothing.
 6. Click **Test** on that same Cloudflare identity provider page and confirm your claim name (for example `admitto_identity`) appears under `oidc_fields` with a real value, before testing an actual sign-in.
@@ -67,7 +71,9 @@ A staff member already linked to the selected direct provider signs in through C
 - Admitto's own **Protected URL paths** field (Organisation settings → Identity → Cloudflare Access, see [Identity and SSO](Identity-and-SSO)) only drives Admitto-side decisions, such as the check-in redirect fallback described below - it never configures Cloudflare itself. If your Cloudflare Access application was created before check-in accepted this identity, or its path match otherwise still only lists `/admin` and `/api/admin/*`, add `/api/checkin` to that application directly. Until you do, Cloudflare never forwards a token on check-in requests and scanning falls back to requiring an ordinary Admitto session, even though `/admin` itself works through Cloudflare.
 - Protecting `/login` with Cloudflare too stops anyone reaching the password form without first clearing Cloudflare, but removes it as a recovery path if Cloudflare or the identity provider ever has an outage. Decide this deliberately rather than by default.
 - Role grants for a Cloudflare sign-in come only from the group claim configured in steps 4-5, never from any group data Cloudflare provides natively.
-- A staff account that signs in **without** going through Cloudflare Access (local password, or directly through your identity provider) gets a normal Admitto session, not a Cloudflare Access identity. If that account's usual landing page is `/admin` and Cloudflare protects that path, the sign-in and any two-factor step still complete normally, but the session cannot reach `/admin` itself - only a Cloudflare Access identity can. Admitto detects this and lands the account on the check-in surface (`/operator`) instead, once at least one event exists - every admin and superadmin can already use that page, and it is not behind Cloudflare. On a brand-new instance with no events yet, it falls back one step further, to My account (`/account`), since there is no check-in surface to use either. This is expected, not a failed sign-in.
+- A staff account that signs in **without** going through Cloudflare Access (local password, or directly through your identity provider) gets a normal Admitto session, not a Cloudflare Access identity. If that account's usual landing page is `/admin` and Cloudflare protects that path, the sign-in and any two-factor step still complete normally, but the session cannot reach `/admin` itself, since only a Cloudflare Access identity can. This is expected, not a failed sign-in. Admitto instead falls back to another landing page:
+  - **If at least one event exists:** the account lands on the check-in surface (`/operator`) instead. Every admin and superadmin can already use that page, and it is not behind Cloudflare.
+  - **If the instance is brand-new with no events yet:** there is no check-in surface to use either, so Admitto falls back one step further, to My account (`/account`).
 
 ## What changes after this action
 

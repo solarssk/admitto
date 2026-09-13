@@ -39,7 +39,11 @@ The field appears in supported attendee and import workflows with the label, typ
 
 The field becomes part of the event's attendee data. Editing its label, description, type, required state, or options affects later data entry and validation; existing values are not automatically rewritten.
 
-When you reopen an existing Select field to edit it, each option shows how many attendees currently have it selected. Renaming or clearing an option that's in use flags it in place, and selecting **Save** then asks you to confirm before it goes through, listing exactly which options and how many attendees are affected. Removing an option outright (its **×** button) asks for confirmation the same way before it disappears. None of this applies to a brand-new option that hasn't been saved yet.
+When you reopen an existing Select field to edit it, each option shows how many attendees currently have it selected.
+
+1. Renaming or clearing an option that's in use flags it in place. Selecting **Save** then asks you to confirm before it goes through, listing exactly which options and how many attendees are affected.
+2. Removing an option outright (its **×** button) asks for confirmation the same way before it disappears.
+3. None of this applies to a brand-new option that hasn't been saved yet.
 
 ## Common problems
 

@@ -20,7 +20,9 @@ Sending is always a deliberate staff action - a per-attendee **Resend**, a **Bul
 
 ### "Reminder" and other custom templates
 
-There is no dedicated, automatic reminder mechanism - "Reminder" is simply one of several icon and label choices offered when you create a custom template (alongside Announcement, Event day, Save the date, and others). A custom template behaves exactly like the ticket email: someone on staff has to send or resend it. There is no way, today, to schedule a message to go out automatically a fixed number of days before an event. You can create up to 10 custom templates per event.
+There is no dedicated, automatic reminder mechanism. "Reminder" is simply one of several icon and label choices offered when you create a custom template (alongside Announcement, Event day, Save the date, and others). A custom template behaves exactly like the ticket email: someone on staff has to send or resend it. You can create up to 10 custom templates per event.
+
+There is no way, today, to schedule a message to go out automatically a fixed number of days before an event.
 
 ### Resending
 
@@ -55,7 +57,11 @@ Most of the staff-facing account actions you might expect to send an email do no
 | An admin/superadmin account signs in from a country not seen among its recent successful logins | **Yes, by default** | Recorded in the Security audit log, and by default also raises an in-app notification and (once mail transport is set up) an email, the same as repeated failed sign-in attempts above - compared against that account's own last 5 successful logins (not its full history, so returning to a country used further back than that still counts as "not seen" here), so the very first login on an account, or one with no reliable country history yet to compare against, is never flagged; the signed-in account itself also always gets its own personal, non-configurable version of this alert, so they learn even if the rest of the admin team has turned the shared one off |
 | A user is granted the admin or superadmin role | **Yes, by default** | Recorded in the Audit log; also raises an in-app notification and (once mail transport is set up) an email to the rest of the admin team by default, naming who granted the role and to whom - a same-or-lower-rank change, such as moving a superadmin down to admin, is a demotion and does not raise this alert |
 
-**In short:** everything above leaves a record in [Logs and Audit](Logs-and-Audit) for a Superadmin to review. The rows marked "Yes, by default" push a real-time alert the moment they happen, with no setup required first - in-app always, and email too once the organisation's mail transport is configured. Organisation Settings → Notifications is where a Superadmin turns a type or channel off, or adds a webhook URL to also receive these alerts there - it's an opt-out screen, not something that has to be visited first to start receiving them. Every other row leaves an audit trail only; if you need to know about one of those as it happens, someone has to be watching the log.
+**In short:** everything above leaves a record in [Logs and Audit](Logs-and-Audit) for a Superadmin to review.
+
+- Rows marked "Yes, by default" push a real-time alert the moment they happen, with no setup required first: in-app always, and email too once the organisation's mail transport is configured.
+- Organisation Settings → Notifications is where a Superadmin turns a type or channel off, or adds a webhook URL to also receive these alerts there. It's an opt-out screen, not something that has to be visited first to start receiving them.
+- Every other row leaves an audit trail only. If you need to know about one of those as it happens, someone has to be watching the log.
 
 ## Related pages
 
