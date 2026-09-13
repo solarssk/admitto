@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Staff deep links now begin loading their destination screen while the event context is being resolved, and load one event instead of the complete event picker list. Session and branding checks also start together, so administrators on higher-latency connections reach the event workspace with fewer sequential network waits.
+
+### Fixed
+
+- Opening the staff app no longer immediately repeats its successful session check through the connection-status heartbeat. It still checks after 30 seconds and whenever the device comes back online or the tab becomes visible.
+
 ## [0.7.0] - 2026-09-13
 
 ### Added

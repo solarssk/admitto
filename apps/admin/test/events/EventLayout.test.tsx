@@ -6,11 +6,11 @@ import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
 import { EventLayout } from "../../src/App.js";
 import type { EventDto } from "../../src/api/types.js";
 
-const fetchAdminEvents = vi.fn();
+const fetchAdminEvent = vi.fn();
 
 vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),
-  fetchAdminEvents: (...args: unknown[]) => fetchAdminEvents(...args),
+  fetchAdminEvent: (...args: unknown[]) => fetchAdminEvent(...args),
 }));
 
 vi.mock("../../src/layouts/AdminShell.js", () => ({
@@ -62,7 +62,7 @@ afterEach(() => {
 });
 
 describe("EventLayout (#274)", () => {
-  it("renders the shell immediately from navigation state without re-fetching the events list", async () => {
+  it("renders the shell immediately from navigation state without fetching the event again", async () => {
     renderLayout({
       pathname: "/admin/events/evt-1/overview",
       state: { event: eventDto("evt-1", "Spring Gala") },
@@ -71,11 +71,11 @@ describe("EventLayout (#274)", () => {
     // Immediately — no fetch round-trip, no bare-spinner flash in between.
     expect(screen.getByText("shell:Spring Gala")).toBeTruthy();
     expect(document.querySelector(".shell-loading")).toBeNull();
-    expect(fetchAdminEvents).not.toHaveBeenCalled();
+    expect(fetchAdminEvent).not.toHaveBeenCalled();
   });
 
   it("falls back to fetching the event on a deep link with no navigation state", async () => {
-    fetchAdminEvents.mockResolvedValueOnce([eventDto("evt-1", "Spring Gala")]);
+    fetchAdminEvent.mockResolvedValueOnce(eventDto("evt-1", "Spring Gala"));
 
     renderLayout({ pathname: "/admin/events/evt-1/overview" });
 
@@ -83,12 +83,12 @@ describe("EventLayout (#274)", () => {
     expect(document.querySelector(".shell-loading")).toBeTruthy();
 
     await screen.findByText("shell:Spring Gala");
-    expect(fetchAdminEvents).toHaveBeenCalledTimes(1);
-    expect(fetchAdminEvents).toHaveBeenCalledWith({ includeArchived: true });
+    expect(fetchAdminEvent).toHaveBeenCalledTimes(1);
+    expect(fetchAdminEvent).toHaveBeenCalledWith("evt-1");
   });
 
   it("ignores navigation state for a different event and fetches instead", async () => {
-    fetchAdminEvents.mockResolvedValueOnce([eventDto("evt-2", "Autumn Summit")]);
+    fetchAdminEvent.mockResolvedValueOnce(eventDto("evt-2", "Autumn Summit"));
 
     renderLayout({
       pathname: "/admin/events/evt-2/overview",
@@ -96,11 +96,11 @@ describe("EventLayout (#274)", () => {
     });
 
     await screen.findByText("shell:Autumn Summit");
-    expect(fetchAdminEvents).toHaveBeenCalledTimes(1);
+    expect(fetchAdminEvent).toHaveBeenCalledTimes(1);
   });
 
   it("still redirects to the picker when the event is not found", async () => {
-    fetchAdminEvents.mockResolvedValueOnce([eventDto("evt-1", "Spring Gala")]);
+    fetchAdminEvent.mockRejectedValueOnce(new Error("event_not_found"));
 
     renderLayout({ pathname: "/admin/events/evt-unknown/overview" });
 
@@ -108,9 +108,7 @@ describe("EventLayout (#274)", () => {
   });
 
   it("still resolves archived events through the fallback fetch", async () => {
-    fetchAdminEvents.mockResolvedValueOnce([
-      eventDto("evt-old", "Past Conference", "2026-01-15T10:00:00.000Z"),
-    ]);
+    fetchAdminEvent.mockResolvedValueOnce(eventDto("evt-old", "Past Conference", "2026-01-15T10:00:00.000Z"));
 
     renderLayout({ pathname: "/admin/events/evt-old/overview" });
 
@@ -118,7 +116,7 @@ describe("EventLayout (#274)", () => {
   });
 
   it("clears the one-shot navigation state after first use, so a later back/forward revisit re-validates via the fallback fetch (Codex review)", async () => {
-    fetchAdminEvents.mockResolvedValueOnce([eventDto("evt-1", "Spring Gala")]);
+    fetchAdminEvent.mockResolvedValueOnce(eventDto("evt-1", "Spring Gala"));
 
     const router = createMemoryRouter(
       [
@@ -137,7 +135,7 @@ describe("EventLayout (#274)", () => {
 
     // Initial visit: fast path, no fetch — same as the plain fast-path test.
     expect(screen.getByText("shell:Spring Gala")).toBeTruthy();
-    expect(fetchAdminEvents).not.toHaveBeenCalled();
+    expect(fetchAdminEvent).not.toHaveBeenCalled();
 
     // Navigate back to the picker, then forward again to the same history
     // entry — simulating an admin whose org assignment was revoked in
@@ -149,7 +147,7 @@ describe("EventLayout (#274)", () => {
 
     await act(async () => router.navigate(1));
 
-    await waitFor(() => expect(fetchAdminEvents).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetchAdminEvent).toHaveBeenCalledTimes(1));
     await screen.findByText("shell:Spring Gala");
   });
 
@@ -160,9 +158,7 @@ describe("EventLayout (#274)", () => {
     });
     expect(screen.getByTestId("shell-archived-at").textContent).toBe("active");
 
-    fetchAdminEvents.mockResolvedValueOnce([
-      eventDto("evt-1", "Spring Gala", "2026-02-01T00:00:00.000Z"),
-    ]);
+    fetchAdminEvent.mockResolvedValueOnce(eventDto("evt-1", "Spring Gala", "2026-02-01T00:00:00.000Z"));
     screen.getByRole("button", { name: "refresh" }).click();
 
     await waitFor(() => {
@@ -170,7 +166,7 @@ describe("EventLayout (#274)", () => {
         "2026-02-01T00:00:00.000Z",
       );
     });
-    expect(fetchAdminEvents).toHaveBeenCalledWith({ includeArchived: true });
+    expect(fetchAdminEvent).toHaveBeenCalledWith("evt-1");
   });
 
   it("refreshEvent silently keeps the last-known snapshot when the background re-fetch fails", async () => {
@@ -179,10 +175,10 @@ describe("EventLayout (#274)", () => {
       state: { event: eventDto("evt-1", "Spring Gala") },
     });
 
-    fetchAdminEvents.mockRejectedValueOnce(new Error("network down"));
+    fetchAdminEvent.mockRejectedValueOnce(new Error("network down"));
     screen.getByRole("button", { name: "refresh" }).click();
 
-    await waitFor(() => expect(fetchAdminEvents).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetchAdminEvent).toHaveBeenCalledTimes(1));
     expect(screen.getByText("shell:Spring Gala")).toBeTruthy();
     expect(screen.getByTestId("shell-archived-at").textContent).toBe("active");
   });

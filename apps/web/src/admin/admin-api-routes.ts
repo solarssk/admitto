@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
 import { z } from "zod";
-import { canManageInstance, listAdminEvents } from "@admitto/auth";
+import { canManageInstance, getAdminEvent, listAdminEvents } from "@admitto/auth";
 import { ensureBadgeEventItem, ensureStandardTicketType, writeAdminAuditLog } from "@admitto/tickets";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
 import { normalizeTimeZone } from "@admitto/shared/timezones";
@@ -259,6 +259,23 @@ export async function handleGetAdminEvents(c: Context, db: PrismaClient): Promis
   const dtos = events.map((e) => serializeEventDto(e, countByEvent.get(e.id) ?? 0, userDisplayMap));
   const withWeather = await attachWeatherToEventDtos(db, events, dtos);
   return c.json({ events: withWeather });
+}
+
+/** GET /api/admin/events/:eventId — one admin-visible event for a deep-linked staff route. */
+export async function handleGetAdminEvent(c: Context, db: PrismaClient): Promise<Response> {
+  const auth = c.get("auth");
+  const eventId = c.req.param("eventId");
+  if (!eventId) return c.json({ error: "event_not_found" }, 404);
+  const event = await getAdminEvent(db, auth.userId, eventId);
+  if (!event) return c.json({ error: "event_not_found" }, 404);
+
+  await refreshMapsConfigCacheIfStale(db);
+  const countByEvent = await countAttendeesByEvent(db, [event.id]);
+  const actorIds = [event.created_by_user_id, event.archived_by_user_id].filter((id): id is string => !!id);
+  const userDisplayMap = await resolveUserDisplayMap(db, actorIds);
+  const dto = serializeEventDto(event, countByEvent.get(event.id) ?? 0, userDisplayMap);
+  const [withWeather] = await attachWeatherToEventDtos(db, [event], [dto]);
+  return c.json({ event: withWeather! });
 }
 
 /** POST /api/admin/events — create event (superadmin or org admin). */

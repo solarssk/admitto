@@ -21,8 +21,11 @@ function loginRedirect(reason: string): void {
   window.location.assign(`/login?reason=${reason}&next=${next}`);
 }
 
-export function ConnectionStateProvider({ children }: Readonly<{ children: ReactNode }>) {
-  const [state, setState] = useState<ConnectionState>("reconnecting");
+export function ConnectionStateProvider({
+  children,
+  initiallyConnected = false,
+}: Readonly<{ children: ReactNode; initiallyConnected?: boolean }>) {
+  const [state, setState] = useState<ConnectionState>(initiallyConnected ? "connected" : "reconnecting");
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
   const mounted = useRef(true);
 
@@ -75,7 +78,10 @@ export function ConnectionStateProvider({ children }: Readonly<{ children: React
 
   useEffect(() => {
     mounted.current = true;
-    void ping();
+    // AuthProvider has just successfully completed the identical authenticated
+    // request on the normal app bootstrap path. Keep the 30-second, online, and
+    // visibility probes, but do not spend another long-haul round trip at mount.
+    if (!initiallyConnected) void ping();
 
     const interval = window.setInterval(() => void ping(), HEARTBEAT_MS);
     const onOnline = () => void ping();
@@ -95,7 +101,7 @@ export function ConnectionStateProvider({ children }: Readonly<{ children: React
       window.removeEventListener("offline", onOffline);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [ping]);
+  }, [ping, initiallyConnected]);
 
   const value = useMemo(
     () => ({ state, lastCheckedAt, reportApiError }),
