@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-13
+
 ### Added
 
 - The `app` container now shuts down gracefully on `docker stop`/`docker compose down` instead of terminating immediately: it stops accepting new requests, lets in-flight ones (including open Reports/check-in live-update streams) finish for up to 6 seconds before forcing them closed, then gives the database disconnect up to 3 more seconds - 9 seconds combined, comfortably inside Docker's default 10-second stop window, so a routine restart or host maintenance no longer risks cutting off a request that was already in progress. The background worker container already did this; this closes the same gap for the web server.
@@ -1415,7 +1417,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.6.8...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/solarssk/admitto/compare/v0.6.8...v0.7.0
 [0.6.8]: https://github.com/solarssk/admitto/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/solarssk/admitto/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/solarssk/admitto/compare/v0.6.5...v0.6.6
