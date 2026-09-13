@@ -192,6 +192,91 @@ describe("fetchOidcDiscovery SSRF guard", () => {
   });
 });
 
+describe("fetchOidcDiscovery issuer validation (ASVS V10.5.3 / OIDC Discovery 1.0 §4.3)", () => {
+  it("rejects a discovery document whose issuer doesn't match the URL it was fetched from", async () => {
+    // The document claims to be a different issuer than the one actually requested - accepting
+    // this would let Admitto end up trusting whichever issuer a discovery response happens to
+    // claim, not the one an admin configured.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          issuer: "http://127.0.0.1:9999/attacker-controlled",
+          authorization_endpoint: "http://127.0.0.1:9999/authorize",
+          token_endpoint: "http://127.0.0.1:9999/token",
+          jwks_uri: "http://127.0.0.1:9999/jwks",
+        }),
+      }),
+    );
+
+    await expect(fetchOidcDiscovery("http://127.0.0.1:9999")).rejects.toThrow(/issuer mismatch/);
+  });
+
+  it("accepts a discovery document whose issuer matches the requested URL exactly", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          issuer: "http://127.0.0.1:9999",
+          authorization_endpoint: "http://127.0.0.1:9999/authorize",
+          token_endpoint: "http://127.0.0.1:9999/token",
+          jwks_uri: "http://127.0.0.1:9999/jwks",
+        }),
+      }),
+    );
+
+    const doc = await fetchOidcDiscovery("http://127.0.0.1:9999");
+    expect(doc.issuer).toBe("http://127.0.0.1:9999");
+  });
+
+  it("accepts a matching issuer that has a trailing slash the document reports but a pasted .well-known URL can't carry (bot review finding)", async () => {
+    // An admin pasting the full .../.well-known/openid-configuration URL (the explicitly
+    // supported paste-and-correct flow) always strips down to a no-trailing-slash base,
+    // regardless of whether the IdP's real issuer has one - this must not be rejected as a
+    // mismatch just because that ambiguity is inherent to the input, not a different issuer.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          issuer: "http://127.0.0.1:9999/",
+          authorization_endpoint: "http://127.0.0.1:9999/authorize",
+          token_endpoint: "http://127.0.0.1:9999/token",
+          jwks_uri: "http://127.0.0.1:9999/jwks",
+        }),
+      }),
+    );
+
+    const doc = await fetchOidcDiscovery("http://127.0.0.1:9999/.well-known/openid-configuration");
+    // The document's own exact issuer is what gets stored, trailing slash and all - only the
+    // validation comparison is slash-insensitive, not the returned value itself.
+    expect(doc.issuer).toBe("http://127.0.0.1:9999/");
+  });
+
+  it("still rejects a genuinely different issuer even when only the trailing slash differs", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          issuer: "http://127.0.0.1:9999/attacker-controlled/",
+          authorization_endpoint: "http://127.0.0.1:9999/authorize",
+          token_endpoint: "http://127.0.0.1:9999/token",
+          jwks_uri: "http://127.0.0.1:9999/jwks",
+        }),
+      }),
+    );
+
+    await expect(fetchOidcDiscovery("http://127.0.0.1:9999")).rejects.toThrow(/issuer mismatch/);
+  });
+});
+
 describe("assertSafeOidcFetchUrlResolved", () => {
   it("rejects hostnames that resolve to private addresses", async () => {
     mockedLookup.mockResolvedValue([{ address: "10.0.0.5", family: 4 }] as Awaited<
