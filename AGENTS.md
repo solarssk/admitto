@@ -320,7 +320,7 @@ drift out of date.
 
 ```
 - [x] Wiki updated
-- [x] No Wiki update needed - <specific reason>
+- [ ] No Wiki update needed - <specific reason>
 ```
 
 (em/en/hyphen dash accepted before `<specific reason>`.)
