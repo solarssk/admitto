@@ -127,7 +127,9 @@ See [Identity and SSO](Identity-and-SSO) and [Cloudflare Access - Identity Linki
 | Company, department | Optional, up to 200 characters each |
 | Ticket type | Must exist in the event's current ticket-type catalog - checked again at the moment you save, in case it was deleted in the meantime |
 
-An attendee's email must be unique within the event - a second attendee with the same address is rejected ("This email is already registered for this event."). If two staff members edit the same attendee at once, the second save is rejected with "Someone else changed this record. Reload and try again." rather than silently overwriting the first change. Restoring a revoked attendee re-checks the event's capacity limit, the same as adding a brand-new one.
+- An attendee's email must be unique within the event. A second attendee with the same address is rejected: "This email is already registered for this event."
+- If two staff members edit the same attendee at once, the second save is rejected instead of silently overwriting the first change: "Someone else changed this record. Reload and try again."
+- Restoring a revoked attendee re-checks the event's capacity limit, the same as adding a brand-new one.
 
 ### CSV/XLSX import
 
@@ -155,7 +157,12 @@ Every row gets its own pass/fail reason in the preview before you commit - nothi
 | Type | Text, select, or yes/no |
 | Select options | At least one required for a select field; up to 20 options, each up to 60 characters |
 
-An event can have up to 20 custom fields. A field currently used as a hint on an Event item can't be deleted until you remove it there first. Renaming or removing a select option that attendees have already chosen asks you to confirm, naming how many attendees are affected, rather than silently changing what they see or blocking you outright. An attendee's answer to a required field can't be left blank; a select answer must be one of the configured options; a yes/no answer accepts Yes/No/true/false (case-insensitive).
+- An event can have up to 20 custom fields.
+- A field currently used as a hint on an Event item can't be deleted until you remove it there first.
+- Renaming or removing a select option that attendees have already chosen asks you to confirm, naming how many attendees are affected, rather than silently changing what they see or blocking you outright.
+- An attendee's answer to a required field can't be left blank.
+- A select answer must be one of the configured options.
+- A yes/no answer accepts Yes/No/true/false (case-insensitive).
 
 ### Event items (Requirements page)
 
@@ -252,7 +259,10 @@ Beyond length limits, the template editor checks the actual content as you type 
 | Code not recognised | "This code is not valid for this event. Check the QR or use manual lookup." |
 | Event requires confirmation before admitting | "Attendee found. Confirm check-in below." (not checked in until you explicitly confirm) |
 
-Two near-simultaneous scans of the same ticket can never both succeed - the loser is reported as "already checked in", never a duplicate admission. Manual lookup only searches name and email (never company or department), is capped at 20 results, and does nothing on an empty search. If manual lookup is turned off for an event, both the button and the underlying request are blocked: "Manual lookup is disabled for this event. Use QR scan only." All check-in actions from one device/session share a combined limit of 120 requests per minute.
+- Two near-simultaneous scans of the same ticket can never both succeed. The loser is reported as "already checked in", never a duplicate admission.
+- Manual lookup only searches name and email (never company or department), is capped at 20 results, and does nothing on an empty search.
+- If manual lookup is turned off for an event, both the button and the underlying request are blocked: "Manual lookup is disabled for this event. Use QR scan only."
+- All check-in actions from one device/session share a combined limit of 120 requests per minute.
 
 ### Public ticket page
 
@@ -260,9 +270,20 @@ An invalid or unrecognised ticket link shows "This link is invalid or the page n
 
 ## Wallet actions (Attendee Detail and bulk)
 
-Void, Restore, Push updates, Refresh status, and Delete all require Wallet to actually be configured for the event and, except Delete's target existing, a wallet pass to exist on that attendee - each gives a specific reason otherwise ("This attendee has no wallet pass to act on.", "Wallet isn't configured for this event."). Void, Restore, Push updates, and Delete each require an explicit confirmation dialog first; Delete's warns that the action is permanent and that Apple/Google Wallet gives no way to remove a pass from someone's phone - only they can do that.
+| Action | Requires | Confirmation dialog |
+|---|---|---|
+| Void | Wallet configured for the event, and a wallet pass on that attendee | Required |
+| Restore | Wallet configured for the event, and a wallet pass on that attendee | Required |
+| Push updates | Wallet configured for the event, and a wallet pass on that attendee | Required |
+| Refresh status | Wallet configured for the event, and a wallet pass on that attendee | Not required |
+| Delete | Wallet configured for the event (the pass doesn't have to exist yet) | Required, warns that the action is permanent and that Apple/Google Wallet gives no way to remove a pass from someone's phone - only the attendee can do that |
 
-A provider (PassCreator) rejection is always translated to a specific reason - a wrong API key, the pass not found, PassCreator rate-limiting the instance, or a timeout - never a bare error. Revoking or restoring an attendee's admission status automatically voids or restores their wallet pass to match, best-effort, without blocking the attendee save itself if that sync fails. Single-attendee wallet actions are limited to 10 per minute per admin/event; bulk wallet actions accept up to 100 attendees per request, one bulk action at a time per admin/event, and silently skip (not error) anyone who has no pass or is already in the target state - reported back as a count, e.g. "3 had no pass, or it was already voided."
+If a requirement isn't met, each action gives a specific reason: "This attendee has no wallet pass to act on." or "Wallet isn't configured for this event."
+
+- A provider (PassCreator) rejection is always translated to a specific reason, never a bare error: a wrong API key, the pass not found, PassCreator rate-limiting the instance, or a timeout.
+- Revoking or restoring an attendee's admission status automatically voids or restores their wallet pass to match, best-effort, without blocking the attendee save itself if that sync fails.
+- Single-attendee wallet actions are limited to 10 per minute per admin/event.
+- Bulk wallet actions accept up to 100 attendees per request, one bulk action at a time per admin/event. They silently skip (not error) anyone who has no pass or is already in the target state, and report it back as a count, e.g. "3 had no pass, or it was already voided."
 
 ## Organisation settings (Superadmin)
 
@@ -292,7 +313,9 @@ The active provider (Microsoft 365 Graph, SMTP, or Power Automate) determines wh
 
 ### External services (Weather and Maps)
 
-Every base URL you configure (Open-Meteo, Nominatim, a custom map tile server) is checked the same way mail server hosts are: it must be a real, publicly-resolvable address, not a private or internal one. An Open-Meteo API key is only required if you're using their paid customer API - the free tier doesn't need one. Both the weather provider (MET Norway) and the geocoding provider (Nominatim) require a **Support contact email** to be set under General settings before they'll actually work - without one, you'll see a banner explaining exactly that.
+- Every base URL you configure (Open-Meteo, Nominatim, a custom map tile server) is checked the same way mail server hosts are: it must be a real, publicly-resolvable address, not a private or internal one.
+- An Open-Meteo API key is only required if you're using their paid customer API. The free tier doesn't need one.
+- Both the weather provider (MET Norway) and the geocoding provider (Nominatim) require a **Support contact email** to be set under General settings before they'll actually work. Without one, you'll see a banner explaining exactly that.
 
 ### General / Instance URL
 

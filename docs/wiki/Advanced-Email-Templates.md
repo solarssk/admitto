@@ -33,7 +33,10 @@ The preview renders without validation errors, required ticket values are presen
 - `ticket_url` and `qr_image_url` are required for a usable ticket message.
 - Unknown or malformed `{{placeholders}}` are rejected. Do not invent variable names.
 - Wallet chips insert a ready-to-use badge button. In Preview and Send test the link is always a placeholder, by design, since both use fixed sample data instead of this event's real configuration. In a real attendee message, the link resolves once Wallet is turned on and configured for this event.
-- Preview's sun/moon switch checks the message against `@media (prefers-color-scheme: dark)` CSS. If the body's own dark rules set real colors (background, text, or border), Preview trusts and shows those colors as authored. If the body has no dark-mode CSS at all, or only uses it for something cosmetic (for example swapping a logo image), Preview instead simulates a plausible dark rendering so there is still something useful to check. Either way, this is Admitto's own simulation, not a specific email client's real dark-mode rendering - Apple Mail, Gmail, and Outlook can each render dark mode differently from Preview and from each other.
+- Preview's sun/moon switch checks the message against `@media (prefers-color-scheme: dark)` CSS:
+  - If the body's own dark rules set real colors (background, text, or border), Preview trusts and shows those colors as authored.
+  - If the body has no dark-mode CSS at all, or only uses it for something cosmetic (for example swapping a logo image), Preview instead simulates a plausible dark rendering, so there is still something useful to check.
+- Either way, this is Admitto's own simulation, not a specific email client's real dark-mode rendering. Apple Mail, Gmail, and Outlook can each render dark mode differently from Preview and from each other.
 
 <details>
 <summary>Example MJML ticket section</summary>

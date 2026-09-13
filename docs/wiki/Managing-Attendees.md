@@ -61,7 +61,14 @@ Open the correct event. Check its ticket types and custom attendee fields before
 3. Review the status strip: **Pass**, Attendance, Ticket delivery, Check-in, and Wallet.
 4. Use **Additional information** for custom fields, **Notes** for shared operator notes, and **Activity** for a plain-language history of changes.
 5. Delivery history supports **View sent message** (the rendered mail exactly as sent, including the real ticket link and QR code) and **View delivery details**.
-6. Use the red **Revoke** control for revoke pass / revoke check-in. **More actions** holds **Resend ticket**, **Copy ticket link** (copies the attendee's ticket URL to the clipboard without sending anything - issues the ticket first if it hasn't been issued yet, so this works even for an attendee who has never been sent a mail; fails only when a ticket can never be issued - a cancelled or revoked attendee, or an agency-imported attendee missing its reference), **Revoke items**, **Delete attendee** (typed confirmation for GDPR erasure), and, once the attendee has added a wallet pass, **Void wallet pass**, **Push updates**, **Refresh status**, and **Delete wallet pass**. **Restore pass** asks for confirmation before applying; **Refresh status** does not, since it only reads from the provider. Revoking the attendee's pass also voids their wallet pass automatically, if they have one; restoring it does the same in reverse.
+6. Use the red **Revoke** control for revoke pass / revoke check-in. **More actions** holds:
+   - **Resend ticket**
+   - **Copy ticket link**: copies the attendee's ticket URL to the clipboard without sending anything. It issues the ticket first if it hasn't been issued yet, so this works even for an attendee who has never been sent a mail. It fails only when a ticket can never be issued: for a cancelled or revoked attendee, or an agency-imported attendee missing its reference.
+   - **Revoke items**
+   - **Delete attendee** (typed confirmation for GDPR erasure)
+   - Once the attendee has added a wallet pass: **Void wallet pass**, **Push updates**, **Refresh status**, and **Delete wallet pass**
+
+   **Restore pass** asks for confirmation before applying; **Refresh status** does not, since it only reads from the provider. Revoking the attendee's pass also voids their wallet pass automatically, if they have one; restoring it does the same in reverse.
 
 Use [Importing Attendees](Importing-Attendees) for a prepared list rather than adding many records one by one.
 
@@ -76,15 +83,23 @@ The attendee appears once in the event with accurate contact, ticket, and event-
 - Use notes only for event work that belongs on the attendee record.
 - Change a pass state only when the event's authorised process requires it.
 - **Delete attendee** permanently erases that person's event record for GDPR. Prefer revoke or status corrections when the person should stay in history.
-- **Delete wallet pass** permanently removes the pass record at the provider, so it stops receiving updates - it does **not** remove the pass from the attendee's phone (Apple/Google Wallet gives no third party a way to do that; only the attendee can). It also does not affect check-in - use **Revoke pass** to block entry. The attendee would need to add a new pass from their ticket page. Prefer **Void wallet pass** when the person should be able to get it back.
-- **Refresh status** pulls that attendee's current device-registration status directly from the provider, immediately - use it when the provider's own dashboard already shows a pass as added but Admitto's Wallet column or Attendee Detail hasn't caught up yet, instead of waiting for the periodic background check to reach that attendee.
-- Attendees' header **More actions** also has a **Push updates** for the whole event, not just a selection - use it when a pass needs refreshing but nothing wallet-relevant technically changed (Event Settings' own automatic push only fires on an actual field change). Appears once this event has Wallet configured; the run shows up in Event Settings → Wallet's push history as "Whole event · manual push".
-- Attendees' header **More actions** also has a **Refresh status** for the whole event, not just a selection - pulls the current device-registration status for every wallet pass under the event at once (including a voided one, since voiding doesn't unregister the device), running in the background with a summary toast once it finishes. Appears once this event has Wallet configured.
+- **Delete wallet pass** permanently removes the pass record at the provider, so it stops receiving updates.
+- It does **not** remove the pass from the attendee's phone (Apple/Google Wallet gives no third party a way to do that; only the attendee can), and it does not affect check-in. Use **Revoke pass** to block entry.
+- The attendee would need to add a new pass from their ticket page. Prefer **Void wallet pass** when the person should be able to get it back.
+- **Refresh status** pulls that attendee's current device-registration status directly from the provider, immediately. Use it when the provider's own dashboard already shows a pass as added but Admitto's Wallet column or Attendee Detail hasn't caught up yet, instead of waiting for the periodic background check to reach that attendee.
+- Attendees' header **More actions** also has a **Push updates** for the whole event, not just a selection. Use it when a pass needs refreshing but nothing wallet-relevant technically changed (Event Settings' own automatic push only fires on an actual field change).
+  - Appears once this event has Wallet configured. The run shows up in Event Settings → Wallet's push history as "Whole event · manual push".
+- Attendees' header **More actions** also has a **Refresh status** for the whole event, not just a selection. It pulls the current device-registration status for every wallet pass under the event at once (including a voided one, since voiding doesn't unregister the device), running in the background with a summary toast once it finishes.
+  - Appears once this event has Wallet configured.
 - Export attendee information only for an approved event purpose.
 
 ## What changes after this action
 
-Saved attendee details become available to templates, ticket rendering, filters, exports, and check-in. A pass-state change can immediately affect whether the ticket can be admitted. Deletion removes the attendee from the event permanently. A bulk ticket type change reports the wallet push outcome in a toast once it finishes; a pass that could not be reached stays on its previous ticket type until you retry with **Push updates**. Editing an attendee's name, email, company, department, or ticket type also refreshes their already-issued active wallet pass, if they have one - unlike the bulk ticket type change above, this push happens immediately and doesn't appear in Event settings → Wallet's Wallet push history list.
+- Saved attendee details become available to templates, ticket rendering, filters, exports, and check-in.
+- A pass-state change can immediately affect whether the ticket can be admitted.
+- Deletion removes the attendee from the event permanently.
+- A bulk ticket type change reports the wallet push outcome in a toast once it finishes. A pass that could not be reached stays on its previous ticket type until you retry with **Push updates**.
+- Editing an attendee's name, email, company, department, or ticket type also refreshes their already-issued active wallet pass, if they have one. Unlike the bulk ticket type change above, this push happens immediately and doesn't appear in Event settings → Wallet's Wallet push history list.
 
 ## Common problems
 
