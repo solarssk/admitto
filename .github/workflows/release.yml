@@ -59,7 +59,9 @@ jobs:
             MESSAGES="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${BEFORE}...${AFTER}" --jq '.commits[].commit.message')"
           fi
 
-          if ! printf '%s\n' "$MESSAGES" | grep -qiE "^release:[[:space:]]+${TAG_RE}\$"; then
+          # GitHub adds " (#<PR>)" to a squash- or merge-commit subject. Accept that
+          # standard suffix while still requiring this exact product version.
+          if ! printf '%s\n' "$MESSAGES" | grep -qiE "^release:[[:space:]]+${TAG_RE}([[:space:]]+\\(#[0-9]+\\))?\$"; then
             echo "This push didn't introduce a 'release: ${TAG}' commit — skipping."
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
