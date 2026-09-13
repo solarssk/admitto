@@ -63,18 +63,23 @@ plain-English description of the role, not the product's name for it.
    than "something failed", say that plainly rather than fabricating a specific-sounding cause. A
    wrong specific message is worse than an honest generic one.
 7. **The same event gets the same wording everywhere it appears, including within one component.**
-   An `EmptyState`'s `title` and `description` describe the same failure - a box titled "Could not
-   load audit log" whose text underneath says "Failed to load audit log" reads as two different
-   problems to the reader, not one, even though only the verb differs. This also applies across
-   screens: the fixed phrase for an initial-load failure is **"Could not load X"**, ending with a
-   period as a complete sentence - not "Failed to load X" and not "X failed to load" - pick one verb
-   for this class of message and use it everywhere, the same way `GENERIC_SEND_FAILED_MESSAGE`
-   (`packages/mail-delivery/src/sanitizeError.ts`) is a single shared constant specifically so two call
-   sites can't drift apart on the same fallback text. When adding a new load-error `EmptyState`, write
-   the `title` and the `description`/fallback string together and read them back side by side before
-   committing - CI cannot check this consistency the way `CODE_MESSAGES` coverage is checked
-   ([AGENTS.md § Compounding rules](../../AGENTS.md#compounding-rules)), so it depends on the author
-   actually re-reading both strings.
+
+   - **Within one component:** an `EmptyState`'s `title` and `description` describe the same
+     failure. A box titled "Could not load audit log" whose text underneath says "Failed to load
+     audit log" reads as two different problems to the reader, not one, even though only the verb
+     differs.
+   - **Fixed phrasing:** the phrase for an initial-load failure is **"Could not load X"**, ending
+     with a period as a complete sentence, not "Failed to load X" and not "X failed to load". Pick
+     one verb for this class of message and use it everywhere.
+   - **Why this matters as much as a code constant:** `GENERIC_SEND_FAILED_MESSAGE`
+     (`packages/mail-delivery/src/sanitizeError.ts`) is a single shared constant specifically so two
+     call sites can't drift apart on the same fallback text. The same discipline applies to copy
+     that isn't backed by a shared constant.
+   - **Process for authors:** when adding a new load-error `EmptyState`, write the `title` and the
+     `description`/fallback string together and read them back side by side before committing. CI
+     cannot check this consistency the way `CODE_MESSAGES` coverage is checked
+     ([AGENTS.md § Compounding rules](../../AGENTS.md#compounding-rules)), so it depends on the
+     author actually re-reading both strings.
 
 ## What this doesn't cover
 

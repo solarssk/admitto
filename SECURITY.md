@@ -54,18 +54,31 @@ Active automated checks in this repository:
 | SonarCloud | Code quality and maintainability (SAST-adjacent, e.g. hardcoded-secret patterns, injection-prone constructs). Automatic Analysis cannot ingest coverage under any configuration (confirmed from SonarSource's own docs); a CI-based migration that would add a coverage quality-gate condition is planned but blocked on a human generating a `SONAR_TOKEN` - see [docs/dev/sonarcloud-ci-coverage-migration.md](docs/dev/sonarcloud-ci-coverage-migration.md) | Automatic analysis on every PR and `main` push | GitHub App (`sonarcloud.io`) - not a workflow file in this repo |
 | OWASP ZAP baseline | DAST, unauthenticated passive scan (no merge gate) | Manual dispatch + weekly | `.github/workflows/dast-baseline.yml` |
 
-**DAST scope (2026-08-29):** the ZAP baseline scan runs against the same docker-compose stack
-`deploy-smoke.yml` builds, unauthenticated - it only reaches `/`, `/login`, `/healthz`, and
-whatever its spider finds from there without credentials. Nothing behind `/admin` or `/operator`
-is covered yet; an authenticated crawl is future scope. Report-only for now: results are a
-workflow artifact, not a Security-tab SARIF upload (ZAP's baseline scanner has no native SARIF
-output) and do not block any pipeline.
+**DAST scope (2026-08-29):**
+
+- **Scope:** the ZAP baseline scan runs against the same docker-compose stack `deploy-smoke.yml`
+  builds, unauthenticated. It only reaches `/`, `/login`, `/healthz`, and whatever its spider finds
+  from there without credentials.
+- **Limitation:** nothing behind `/admin` or `/operator` is covered yet; an authenticated crawl is
+  future scope.
+- **Reporting status:** report-only for now. Results are a workflow artifact, not a Security-tab
+  SARIF upload (ZAP's baseline scanner has no native SARIF output), and they do not block any
+  pipeline.
 
 **Codecov data:** CI uploads LCOV coverage reports (file paths and hit counts). No secrets, attendee PII, or production credentials are sent. Treat Codecov as development tooling; customer production data stays in customer PostgreSQL.
 
 **PR pipeline:** application build, lint, typecheck, tests with coverage, dependency audit, license compliance, secret scan, PII guard, migration safety, CodeQL, and Semgrep. Container image build smoke and a report-only Trivy scan run on every merge to `main`; release tags add the blocking Trivy CRITICAL gate, SBOM, and provenance.
 
-**SAST on PRs vs `main` - decision (2026-07-06), revised (2026-08-29):** Semgrep was kept off PRs (Option B) purely on a CI-speed/marginal-value tradeoff: ~2–3 min added per PR against overlap with CodeQL's `security-extended` rules. That calculus didn't weigh external perception - an enterprise security review of this repo checks whether *every* PR gets dual SAST coverage, not just what lands on `main`. Semgrep (`p/javascript`, `p/typescript`) now also runs on every PR (Option A); CodeQL `security-extended` remains the primary gate, Semgrep the complementary second engine, on PRs and `main` alike.
+**SAST on PRs vs `main`:**
+
+- **Decision (2026-07-06):** Semgrep was kept off PRs (Option B) purely on a CI-speed/marginal-value
+  tradeoff: it adds about 2 to 3 minutes per PR, and it overlaps with CodeQL's `security-extended`
+  rules.
+- **Revised (2026-08-29):** that calculus didn't weigh external perception. An enterprise security
+  review of this repo checks whether *every* PR gets dual SAST coverage, not just what lands on
+  `main`. Semgrep (`p/javascript`, `p/typescript`) now also runs on every PR (Option A). CodeQL
+  `security-extended` remains the primary gate, and Semgrep is the complementary second engine, on
+  PRs and `main` alike.
 
 **Required merge checks on `main`:** GitHub branch protection requires `build-test`, `secret-scan`, `pii-guard`, `analyze` (CodeQL), `migration-safety`, `wiki-docs`, `semgrep`, and `dependency-review`. All eight must pass before a PR can merge.
 
