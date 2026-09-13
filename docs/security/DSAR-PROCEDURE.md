@@ -46,19 +46,21 @@ flowchart TD
 ## 4. Erasure
 
 - After legal confirms erasure is required and no retention exception applies:
-  1. Delete the attendee record from **Admin → Attendees → attendee detail → More actions →
-     Delete attendee** (type the attendee's name to confirm), or for multiple data subjects at
-     once, select their rows on the **Attendees** list and use the bulk bar's **More actions →
-     Delete** (a confirmation dialog lists what will be removed; no typed confirmation since
-     there's no single name to type - unlike the single-attendee flow above). Both call the same
-     `DELETE`/`bulk-delete`
-     `/api/admin/events/:eventId/attendees/...` endpoints used by the API client below - they
-     remove dependent delivery, wallet, and check-in rows in one transaction and write an audit
-     log entry (per-attendee, plus a central admin-audit-log entry naming the erased attendee(s)
-     and event - see [DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog)
-     for why that one retains identity, unlike the per-attendee trail). Not blocked by the event
-     being archived. If the SPA is unavailable, call the endpoint directly with an authenticated
-     staff session and CSRF token (same session model as other admin mutations).
+  1. Delete the attendee record. Both paths below call the same `DELETE`/`bulk-delete`
+     `/api/admin/events/:eventId/attendees/...` endpoints used by the API client below, and both
+     work even when the event is archived.
+     - **Single-attendee deletion:** **Admin → Attendees → attendee detail → More actions →
+       Delete attendee**, typing the attendee's name to confirm.
+     - **Bulk deletion:** select the rows on the **Attendees** list, then **More actions → Delete**
+       from the bulk bar. A confirmation dialog lists what will be removed; there's no typed-name
+       confirmation here since there's no single name to type, unlike the single-attendee flow.
+     - **What gets removed and audited:** dependent delivery, wallet, and check-in rows are removed
+       in one transaction. An audit log entry is written per-attendee, plus a central
+       admin-audit-log entry naming the erased attendee(s) and event. See
+       [DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog) for why
+       the central entry retains identity, unlike the per-attendee trail.
+     - **Direct-API fallback:** if the SPA is unavailable, call the endpoint directly with an
+       authenticated staff session and CSRF token (same session model as other admin mutations).
   2. Remove copies from local exports, mail logs, and backup retention per your backup policy.
 - Document completion date and responsible person.
 
@@ -68,14 +70,18 @@ If the API is unavailable, operators may erase by direct database operation. Dep
 removed before the attendee because `EmailDelivery`, `WalletPass`, and `CheckIn` reference attendees
 with `ON DELETE RESTRICT`. Sent delivery rows can include rendered ticket email HTML.
 
-**This bypasses both audit writers the API path uses** (the per-attendee `AttendeeActionLog` entry
-and the central `AdminAuditLog` entry - see
-[DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog)) - a manual
-erasure with no central audit record is exactly the accountability gap that log exists to close.
-The `INSERT` below writes the same central record by hand; do not skip it. Capture the attendee's
-name/email and the event's title *before* the delete (the `SELECT` in the transaction does this),
-and know your own `user_id` (`SELECT id FROM "User" WHERE email = '...'`) and the event's
-`organization_id` beforehand.
+> **Warning: this bypasses both audit writers the API path uses** (the per-attendee
+> `AttendeeActionLog` entry and the central `AdminAuditLog` entry - see
+> [DATA-PROTECTION.md](../../DATA-PROTECTION.md#central-admin-audit-log-adminauditlog)). A manual
+> erasure with no central audit record is exactly the accountability gap that log exists to close.
+> The `INSERT` below writes the same central record by hand; do not skip it.
+
+Before you run this:
+
+1. Capture the attendee's name and email, and the event's title, *before* the delete. The `SELECT`
+   in the transaction below does this.
+2. Know your own `user_id` (`SELECT id FROM "User" WHERE email = '...'`).
+3. Know the event's `organization_id` beforehand.
 
 Run the operation in one transaction and scope it to the event and attendee:
 
