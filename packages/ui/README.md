@@ -50,19 +50,13 @@ organisation-uploaded custom branding fonts (`apps/admin/src/settings/FontFamily
 - **CJK (Japanese/Chinese/Korean)** - `ja-JP`, `zh-CN`, `ko-KR` are valid `preferred_locale` values (used for `Intl`-based date/number formatting only, see below), but no shipped font has Han/Kana/Hangul glyphs either. Same silent-fallback behavior as Arabic.
 - **RTL layout** - the app has no `dir="rtl"` handling anywhere, and its CSS is written with physical properties (`margin-left`, `text-align: left`, …) rather than logical ones (`margin-inline-start`, …). Even if a font covered Arabic/Hebrew glyphs, the layout itself would still render left-to-right.
 
-Full UI-string translation (i18n) doesn't exist yet either - every visible label is a hardcoded English literal in JSX. `preferred_locale` only drives `Intl.DateTimeFormat`/`toLocaleString`-style formatting (enforced by `apps/admin/test/locale/locale-coverage.test.ts`), not text translation. RTL, non-Latin/CJK font coverage, and UI translation are one combined internationalization effort, planned as a dedicated initiative rather than incremental patches.
+Full UI-string translation (i18n) doesn't exist yet either - every visible label is a hardcoded English literal in JSX. `preferred_locale` only drives `Intl.DateTimeFormat`/`toLocaleString`-style formatting (enforced by `apps/admin/test/locale/locale-coverage.test.ts`), not text translation.
+
+RTL, non-Latin/CJK font coverage, and UI translation are one combined internationalization effort, planned as a dedicated initiative rather than incremental patches.
 
 **Format policy (this package's bundled fonts only): woff2 only, no woff/truetype fallback.**
-`apps/admin` ships as a native ES module with no legacy bundle (no `@vitejs/plugin-legacy`, no
-`.browserslistrc`, `tsconfig` targets `ES2022`) - any browser old enough to need a woff/truetype
-fallback can't run the app's JS at all,
-so those files are pure dead weight. `@tabler/icons-webfont`'s default CSS ships woff2+woff+ttf;
-`apps/admin/vite.config.ts` has a build plugin (`stripLegacyIconFontFallback`) that strips the
-woff/ttf fallback before Vite's CSS pipeline turns them into shipped assets (saves ~3.3MB).
-`@fontsource`'s per-weight CSS files still ship woff2+woff pairs as of this writing - the same
-plugin approach was tried and doesn't reach them: they're pulled in via CSS `@import` (not a JS
-`import`), and Vite resolves `@import` internally within its `vite:css` plugin without ever
-routing the imported file through the plugin container's `resolveId`/`load`/`transform` hooks
-(confirmed empirically - none of those hooks fire for `@fontsource/*` paths). Trimming that woff
-duplication would require vendoring first-party `@font-face` CSS instead of importing the
-package's default stylesheet - a deliberate follow-up, not attempted here.
+
+- **Why woff2-only works here:** `apps/admin` ships as a native ES module with no legacy bundle (no `@vitejs/plugin-legacy`, no `.browserslistrc`, `tsconfig` targets `ES2022`). Any browser old enough to need a woff/truetype fallback can't run the app's JS at all, so those files are pure dead weight.
+- **Tabler icons:** `@tabler/icons-webfont`'s default CSS ships woff2+woff+ttf. `apps/admin/vite.config.ts` has a build plugin (`stripLegacyIconFontFallback`) that strips the woff/ttf fallback before Vite's CSS pipeline turns them into shipped assets, saving ~3.3MB.
+- **`@fontsource` is not stripped yet:** its per-weight CSS files still ship woff2+woff pairs as of this writing. The same plugin approach was tried and doesn't reach them: they're pulled in via CSS `@import` (not a JS `import`), and Vite resolves `@import` internally within its `vite:css` plugin without ever routing the imported file through the plugin container's `resolveId`/`load`/`transform` hooks (confirmed empirically, none of those hooks fire for `@fontsource/*` paths).
+- **Follow-up, not attempted here:** trimming that woff duplication would require vendoring first-party `@font-face` CSS instead of importing the package's default stylesheet.

@@ -73,20 +73,22 @@ developer.passcreator.com/en/webhooks/pass-hooks): the POST body never names whi
 subscribed events fired, so the *target URL a delivery arrives on* is the only signal. The three
 registration events (`first_pushnotification_registered`, `pushnotification_registered`,
 `pushnotification_unregistered`) share one target URL because their handling doesn't depend on
-telling them apart - `applyWebhookUpdate` just trusts whatever counts the delivery reports.
+telling them apart. `applyWebhookUpdate` just trusts whatever counts the delivery reports.
+
 `pass_voided` gets its own `/voided`-suffixed target URL (`subscribeWalletWebhooksBestEffort` in
-`apps/web/src/admin/event-settings-routes.ts`) because its payload has no `voided` field at all -
-arriving on that URL is itself the only voided signal there is (`isVoidedRoute` in
+`apps/web/src/admin/event-settings-routes.ts`) because its payload has no `voided` field at all.
+Arriving on that URL is itself the only voided signal there is (`isVoidedRoute` in
 `apps/web/src/wallet-webhook.ts`).
 
-Auth: `Authorization: <api_key>` header, no `Bearer` prefix. Rate limit: 600 req/min, exponential
-backoff on 429 (see `PassCreatorClient`'s retry logic). Config (API key, template ID, field
-mapping) is stored per-event, not per-instance, so a leaked/rotated key's blast radius in Admitto's
-own logs/audit trail is scoped to one event. **This does not limit the key itself**: PassCreator
-API keys inherit the permissions of the account that created them, not a fixed scope to one
-template - `PassCreatorClient.listWebhooks()` is explicitly account-wide, for example. If the same
-PassCreator account backs multiple events, a leaked key can affect all of them at the provider; use
-a dedicated PassCreator service user scoped to one template for real per-event isolation.
+- **Auth:** `Authorization: <api_key>` header, no `Bearer` prefix.
+- **Rate limit:** 600 req/min, exponential backoff on 429 (see `PassCreatorClient`'s retry logic).
+- **Config scope:** API key, template ID, and field mapping are stored per-event, not per-instance,
+  so a leaked or rotated key's blast radius in Admitto's own logs/audit trail is scoped to one event.
+- **Key-scope caveat:** this does not limit the key itself. PassCreator API keys inherit the
+  permissions of the account that created them, not a fixed scope to one template
+  (`PassCreatorClient.listWebhooks()` is explicitly account-wide, for example). If the same
+  PassCreator account backs multiple events, a leaked key can affect all of them at the provider.
+  Use a dedicated PassCreator service user scoped to one template for real per-event isolation.
 
 ## Data flow: field mapping is the only mechanism (semantics API field does not exist)
 
@@ -116,14 +118,17 @@ Admitto's job ends at step 1: it can supply the *data*, but the *binding* betwee
 key and a Custom Field lives entirely inside PassCreator's template editor, outside Admitto's
 control - there is no API to configure that side.
 
-`WALLET_MAPPING_PLACEHOLDERS` includes both general-purpose placeholders (name, date, address
-fields, usable for any Additional Property) and ones added specifically because they match Apple's
-Semantic Tags vocabulary: `event_type`, `venue_room`, `venue_entrance`(`_door`/`_gate`/`_portal`),
-`venue_phone_number`, `venue_place_id`, and the seven access-point timing placeholders
-(`venue_open_time`/`venue_close_time`/`doors_open_time`/`gates_open_time`/`box_office_open_time`/
-`parking_lots_open_time`/`fan_zone_open_time`). `venue_place_id` (Apple Maps' own place identifier)
-has no automatic source - Admitto's geocoding is Nominatim/OSM-based, not Apple MapKit, so an admin
-must look it up manually in the Apple Maps app and enter it in Event Settings → Location.
+`WALLET_MAPPING_PLACEHOLDERS` includes two kinds of placeholders:
+
+- **General-purpose:** name, date, and address fields, usable for any Additional Property.
+- **Apple Semantic Tags vocabulary:** `event_type`, `venue_room`, `venue_entrance`
+  (`_door`/`_gate`/`_portal`), `venue_phone_number`, `venue_place_id`, and the seven access-point
+  timing placeholders (`venue_open_time`/`venue_close_time`/`doors_open_time`/`gates_open_time`/
+  `box_office_open_time`/`parking_lots_open_time`/`fan_zone_open_time`).
+
+`venue_place_id` (Apple Maps' own place identifier) has no automatic source. Admitto's geocoding
+is Nominatim/OSM-based, not Apple MapKit, so an admin must look it up manually in the Apple Maps
+app and enter it in Event Settings → Location.
 
 ### Standard: every date/time placeholder sent to Apple is a real ISO 8601 instant
 
@@ -166,10 +171,14 @@ implementation.
 EC public key above. `apps/cli`'s `registration-sync` job polls `getRegistrationStatus()` as a
 fallback for events the webhook may have missed. `wallet_push` (`AdminJob`) is the background job
 that re-syncs already-issued passes when a wallet-relevant event field changes (title, date, hours,
-timezone, event type, or the Apple Wallet toggle) - see
-`walletRelevantEventFieldsChanged` in `apps/web/src/admin/event-settings-routes.ts`. Two things this
-job does *not* cover: it only targets `status: "active"` passes (`drain-wallet-push-jobs.ts`), so a
-voided pass stays untouched until it's restored *and* separately reissued - `restorePass()` only
-clears the void flag at the provider, it does not push fresh content; and a single-attendee edit
-(name, email, company, department, ticket type) pushes synchronously in the same request instead of
-going through this job queue, so it never appears in the admin UI's "Wallet push history" list.
+timezone, event type, or the Apple Wallet toggle), see `walletRelevantEventFieldsChanged` in
+`apps/web/src/admin/event-settings-routes.ts`.
+
+This job does *not* cover two things:
+
+- It only targets `status: "active"` passes (`drain-wallet-push-jobs.ts`), so a voided pass stays
+  untouched until it's restored *and* separately reissued. `restorePass()` only clears the void
+  flag at the provider, it does not push fresh content.
+- A single-attendee edit (name, email, company, department, ticket type) pushes synchronously in
+  the same request instead of going through this job queue, so it never appears in the admin UI's
+  "Wallet push history" list.
