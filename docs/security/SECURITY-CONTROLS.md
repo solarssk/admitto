@@ -94,20 +94,27 @@ behave. It is cleared only by one of:
 - the account's own **"Forget all trusted devices"** action (My account → Two-factor authentication's options menu).
 
 > **Shared check-in devices.** On shared operator tablets, signing out alone no longer clears
-> remembered-device trust - the trust is scoped to that specific account (`validateTrustedDevice`
+> remembered-device trust. The trust is scoped to that specific account (`validateTrustedDevice`
 > rejects the cookie for a different `user_id`), so it does not carry over to whoever uses the
-> device next, but it does let the *same* account skip MFA again on that device until the trust
-> window expires. Set `trusted_device_days` to a short value (or `0` to disable the feature
-> entirely) for any instance where the same account may sign in from a device it shouldn't stay
-> trusted on, and use **"Forget all trusted devices"** or an admin-initiated reset to clear it
-> sooner.
+> device next. It does, however, let the *same* account skip MFA again on that device until the
+> trust window expires.
+>
+> Mitigations for an instance where the same account may sign in from a device it shouldn't stay
+> trusted on:
+> - Set `trusted_device_days` to a short value, or `0` to disable the feature entirely.
+> - Use **"Forget all trusted devices"** or an admin-initiated reset to clear trust sooner.
 
 **Session idle timeout (v0.4.13+).** Sessions previously only expired on an absolute lifetime
-(admin defaulted to 7 days), with no inactivity check - a stolen or left-open admin browser tab
+(admin defaulted to 7 days), with no inactivity check, so a stolen or left-open admin browser tab
 stayed authenticated for up to a week. A `full`-stage session now also ends once `now -
-last_seen_at` exceeds a configurable idle window (`SESSION_IDLE_TIMEOUT_ADMIN_MS` /
-`SESSION_IDLE_TIMEOUT_OPERATOR_MS`, same env-lock pattern as the absolute-lifetime settings).
-Defaults: admin 30 min idle / 12h absolute (down from 7 days); operator 2h idle / 12h absolute.
+last_seen_at` exceeds a configurable idle window, using the same env-lock pattern as the
+absolute-lifetime settings.
+
+| Role | Idle timeout env var | Idle default | Absolute default |
+|------|----------------------|---------------|-------------------|
+| Admin | `SESSION_IDLE_TIMEOUT_ADMIN_MS` | 30 min | 12h (down from 7 days) |
+| Operator | `SESSION_IDLE_TIMEOUT_OPERATOR_MS` | 2h | 12h |
+
 Settings → Security warns inline when either an absolute lifetime or an idle timeout is set past a
 sane threshold, and the API rejects a save where the idle timeout would exceed that role's own
 absolute lifetime.
@@ -120,15 +127,19 @@ enforced server-side, not just the strength meter shown while typing - per NIST 
 character-composition rules.
 
 **No account lockout, by design.** Local password authentication never locks or disables an
-account after repeated failed attempts - a login-triggerable lockout on admin/superadmin accounts
-would itself be a denial-of-service vector on a self-hosted internal tool. Brute-force is
-mitigated instead by the login rate limits above (see **Rate limiting**) plus an audit record on
-repeated failed attempts against privileged accounts (`packages/auth/src/privileged-login-alert.ts`):
-crossing the threshold emits an `auth.login.repeated_failures` (or `auth.mfa.repeated_failures`)
-event into the System logs live tail and writes a durable `SecurityAuditLog` row, for an operator to
-find on review - it never blocks the account, and there is no email, webhook, or other push
-notification, so an operator who isn't actively watching those logs will not be proactively alerted
-in the moment.
+account after repeated failed attempts. A login-triggerable lockout on admin/superadmin accounts
+would itself be a denial-of-service vector on a self-hosted internal tool.
+
+Brute-force is mitigated instead by:
+
+- The login rate limits above (see **Rate limiting**).
+- An audit record on repeated failed attempts against privileged accounts
+  (`packages/auth/src/privileged-login-alert.ts`): crossing the threshold emits an
+  `auth.login.repeated_failures` (or `auth.mfa.repeated_failures`) event into the System logs live
+  tail and writes a durable `SecurityAuditLog` row, for an operator to find on review.
+
+This never blocks the account, and there is no email, webhook, or other push notification, so an
+operator who isn't actively watching those logs will not be proactively alerted in the moment.
 
 ### Implemented in codebase
 
@@ -284,15 +295,17 @@ misconfiguration risk, not bypassable from the app alone.
 **Hardening (v0.4.5+):** malformed or non-IP first hops fall back to the TCP remote address instead
 of a shared `"unknown"` bucket (which previously allowed cross-client rate-limit interference).
 
-**Hardening (v0.4.13+):** `TRUSTED_PROXY_CIDRS` peer allowlist - previously `TRUST_PROXY=true`
-trusted forwarded headers from **any** direct connection, so a client that reached the app
-directly (misconfigured port exposure, or from elsewhere on the same network) could forge its own
-rate-limit IP, CSRF origin, and cookie `Secure` flag. **Residual:** the default deploy topology
-pins `TRUSTED_PROXY_CIDRS` to the whole `internal` compose network subnet, not just the `proxy`
-container's individual address - a compromise of another container on that same network (`db`,
-`redis`, `migrate`, `worker`) could still inject these headers. Narrowing to a single pinned
-container IP was judged not worth the added operational fragility (static IPs in Compose); this
-subnet-level allowlist is still a materially smaller trust boundary than "any direct connection."
+**Hardening (v0.4.13+): what changed.** `TRUSTED_PROXY_CIDRS` adds a peer allowlist. Previously,
+`TRUST_PROXY=true` trusted forwarded headers from **any** direct connection, so a client that
+reached the app directly (misconfigured port exposure, or from elsewhere on the same network)
+could forge its own rate-limit IP, CSRF origin, and cookie `Secure` flag.
+
+**Residual risk.** The default deploy topology pins `TRUSTED_PROXY_CIDRS` to the whole `internal`
+compose network subnet, not just the `proxy` container's individual address, so a compromise of
+another container on that same network (`db`, `redis`, `migrate`, `worker`) could still inject
+these headers. Narrowing to a single pinned container IP was judged not worth the added
+operational fragility (static IPs in Compose); this subnet-level allowlist is still a materially
+smaller trust boundary than "any direct connection."
 
 When `TRUST_PROXY` is unset/false, forwarded headers are ignored for IP, CSRF origin, and cookie
 `Secure` flag (direct socket / request URL used) regardless of peer.
@@ -318,38 +331,51 @@ Requires **superadmin** session (or Cloudflare Access JWT with instance admin ro
 discover/test. Residual risk: compromised superadmin account can still trigger outbound fetches to
 **public** URLs the instance can reach - perimeter egress filtering remains an operator control.
 
-**Self-hosted private SSO allowlist.** `SSO_PRIVATE_DESTINATION_ALLOWLIST` (comma-separated exact
-hostnames or IP literals, case-insensitive) is an ops-only escape hatch that works in production:
-listed destinations skip the private/loopback checks for identity outbound fetches. One list
-covers every configured provider that shares those hosts (OIDC today; intended for future SAML
-metadata fetches on the same guard). Residual risk: a compromised admin can still point provider
-settings at any allowlisted name; keep the list minimal and ensure DNS for those names is under
-operator control. Set the variable on `app`. HTTPS remains required.
+**Self-hosted private SSO allowlist:**
 
-**Mail transport destinations (v0.4.13+).** The same class of guard now also covers SMTP host,
-Power Automate webhook URL, and the bounce-detection IMAP host: each is checked against a
+- **What it is:** `SSO_PRIVATE_DESTINATION_ALLOWLIST` (comma-separated exact hostnames or IP
+  literals, case-insensitive) is an ops-only escape hatch that works in production.
+- **What it bypasses:** listed destinations skip the private/loopback checks for identity outbound
+  fetches.
+- **Scope:** one list covers every configured provider that shares those hosts (OIDC today;
+  intended for future SAML metadata fetches on the same guard).
+- **Residual risk:** a compromised admin can still point provider settings at any allowlisted
+  name; keep the list minimal and ensure DNS for those names is under operator control. HTTPS
+  remains required.
+- **Where to set it:** on `app`.
+
+**Mail transport destinations (v0.4.13+).** The same class of guard now also covers the SMTP host,
+the Power Automate webhook URL, and the bounce-detection IMAP host. Each is checked against a
 private/loopback/link-local/cloud-metadata blocklist both when saved and immediately before the
-server connects, with the real connection pinned to the already-validated address (closing the same
-DNS-rebinding gap the OIDC guard closes). Event-level dedicated mail transport additionally now
-requires superadmin (matching the organization-wide Mail settings page) and can no longer silently
-send the organization's real SMTP password or Power Automate key to a connection target the event
-override changed - saving or sending now requires that override to also supply its own credential.
+server connects, with the real connection pinned to the already-validated address, closing the
+same DNS-rebinding gap the OIDC guard closes.
 
-**Self-hosted private MTA allowlist.** `MAIL_PRIVATE_DESTINATION_ALLOWLIST` (comma-separated exact
-hostnames or IP literals, case-insensitive) is an ops-only escape hatch that works in production:
-listed destinations skip the private/loopback checks at save and connect. This is narrower than
-`ALLOW_PRIVATE_MAIL_DESTINATIONS=true`, which remains non-production only (global bypass). Residual
-risk: a compromised admin can still point mail settings at any allowlisted name; keep the list
-minimal and ensure DNS for those names is under operator control. Set the variable on both `app`
-and `worker`.
+Separately, event-level dedicated mail transport now also requires superadmin (matching the
+organization-wide Mail settings page). It can no longer silently send the organization's real SMTP
+password or Power Automate key to a connection target the event override changed: saving or
+sending now requires that override to also supply its own credential.
 
-**Weather and maps destinations.** The same DNS-pin-and-connect pattern also covers the three
-admin-configurable external-service URLs under Organisation Settings → External services: the
-Weather (Open-Meteo) base URL, the Nominatim geocoding base URL, and the map tile-server URL. Each
-re-resolves the hostname and pins the outbound connection to the validated address at request
-time, closing the same DNS-rebinding gap as the OIDC and mail guards above - see
-`apps/web/src/weather/open-meteo-client.ts`, `apps/web/src/maps/nominatim-provider.ts`, and
-`apps/web/src/maps/static-map.ts`.
+**Self-hosted private MTA allowlist:**
+
+- **What it is:** `MAIL_PRIVATE_DESTINATION_ALLOWLIST` (comma-separated exact hostnames or IP
+  literals, case-insensitive) is an ops-only escape hatch that works in production.
+- **What it bypasses:** listed destinations skip the private/loopback checks at save and connect.
+  This is narrower than `ALLOW_PRIVATE_MAIL_DESTINATIONS=true`, which remains non-production only
+  (global bypass).
+- **Residual risk:** a compromised admin can still point mail settings at any allowlisted name;
+  keep the list minimal and ensure DNS for those names is under operator control.
+- **Where to set it:** on both `app` and `worker`.
+
+**Weather and maps destinations.** The same DNS-pin-and-connect pattern also covers three
+admin-configurable external-service URLs under Organisation Settings → External services. Each
+re-resolves its hostname and pins the outbound connection to the validated address at request
+time, closing the same DNS-rebinding gap as the OIDC and mail guards above.
+
+| Service | Configurable URL | Implementation |
+|---------|-------------------|-----------------|
+| Weather | Open-Meteo base URL | `apps/web/src/weather/open-meteo-client.ts` |
+| Geocoding | Nominatim base URL | `apps/web/src/maps/nominatim-provider.ts` |
+| Map tiles | Map tile-server URL | `apps/web/src/maps/static-map.ts` |
 
 **PassCreator call pacing (not SSRF - availability/abuse hardening).** Every outbound call to PassCreator (issue, void, restore, delete, push, search, webhook key fetch) goes through one choke point, `PassCreatorClient.requestRaw`, which paces requests proactively rather than reacting to a 429 after PassCreator's own limit is already exceeded:
 
@@ -389,18 +415,21 @@ time, closing the same DNS-rebinding gap as the OIDC and mail guards above - see
 
 Be explicit with auditors about what is **out of product scope** today:
 
-- No built-in SIEM or central log platform (forward container logs if required). The in-app
-  **System logs** screen (superadmin only, see [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) is a
-  short, in-memory live tail for day-to-day diagnostics - not a substitute for a SIEM: it holds
-  only the last 1000 entries and is emptied on every restart. A narrower, durable exception exists
-  for fifteen auth/security event types (login, MFA, logout, OIDC, access-denied, trusted-device,
-  superadmin bootstrap) - see **Durable
-  security audit trail (`SecurityAuditLog`)** in [DATA-PROTECTION.md](../../DATA-PROTECTION.md); this
-  is a queryable incident-review trail, not a general-purpose log platform, and rate-limit/system
-  log signals stay ephemeral and operator-shipped as above. That trail is also neither complete nor
-  permanent: persistence is best-effort (a write failure is logged but never blocks the underlying
-  auth action, so a transient DB hiccup can leave a gap) and rows are purged after the configured
-  retention window (30 days by default).
+- **No built-in SIEM or central log platform** (forward container logs if required).
+  - **System logs screen:** the in-app **System logs** screen (superadmin only, see
+    [DATA-PROTECTION.md](../../DATA-PROTECTION.md)) is a short, in-memory live tail for day-to-day
+    diagnostics. It is **not** a substitute for a SIEM: it holds only the last 1000 entries and is
+    emptied on every restart.
+  - **Durable exception (`SecurityAuditLog`):** a narrower, durable exception exists for fifteen
+    auth/security event types (login, MFA, logout, OIDC, access-denied, trusted-device, superadmin
+    bootstrap). See **Durable security audit trail (`SecurityAuditLog`)** in
+    [DATA-PROTECTION.md](../../DATA-PROTECTION.md). This is a queryable incident-review trail, not
+    a general-purpose log platform, and rate-limit/system log signals stay ephemeral and
+    operator-shipped as above.
+  - **Durability caveats on that trail:** it is neither complete nor permanent. Persistence is
+    best-effort, a write failure is logged but never blocks the underlying auth action, so a
+    transient DB hiccup can leave a gap. Rows are also purged after the configured retention window
+    (30 days by default).
 - No HA / multi-region failover in the default compose topology.
 - No always-on scheduler for all long-term PII purge domains yet (retention **policy** documented;
   auth-state purge, email delivery snapshot nullification, and security audit log purge run on the
