@@ -93,7 +93,7 @@ flowchart LR
   Ingest[External registration source\nplanned, not built] -.-> Core
 ```
 
-**Today:** import, mail delivery, wallet passes, check-in, and export/reporting have all shipped (see VERSIONING.md and the release tag for maturity status - shipped is not the same as production-ready for a first event). A self-service external registration/ingest API (a form or third-party system submitting attendees directly into Admitto without staff re-keying them) is a roadmap item, not a deployed control - mention it to auditors as **planned**, not as existing.
+**Today:** import, mail delivery, wallet passes, check-in, and export/reporting have all shipped (see VERSIONING.md and the release tag for maturity status - shipped is not the same as production-ready for a first event). A self-service external registration/ingest API (a form or third-party system submitting attendees directly into Admitto without staff re-keying them) is a roadmap item, not a deployed control. Mention it to auditors as **planned**, not as existing.
 
 Admitto is intended as the **system of record for attendance** after guests are registered in the
 customer process (today, via staff-driven CSV/XLSX import).
