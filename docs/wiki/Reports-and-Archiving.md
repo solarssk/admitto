@@ -26,7 +26,8 @@ Open the correct event and confirm its time zone. Before archiving, finish check
    - Adoption by ticket type
    - Time to install, and time to install after a reminder
    - The with/without-wallet check-in comparison
-   - Cumulative passes issued over time
+
+   Cumulative passes issued over time is separate: it shows every pass issued, whether or not installation was ever confirmed.
 
    Two other metrics work differently: platform mix (Apple, Google, and Samsung Wallet, whichever platforms the event's Wallet settings offer) and how many devices or accounts each attendee's pass is registered on. Both show who currently has an active registration right now, so they can be lower than pass adoption for an event reviewed well after it ended. Wallet lifecycle makes this split explicit: active (installed right now), removed (confirmed installed at some point, not any more), or never installed. Pass adoption always equals active plus removed.
 9. Switch to the **Custom fields** tab to see a chart for each custom field configured on the event's Requirements page: a selector or yes/no field shows a donut of how many attendees hold each value (plus how many haven't answered), and a free-text field shows a gauge for how many attendees have filled it in. A newly added custom field gets a chart here automatically, with no extra setup.

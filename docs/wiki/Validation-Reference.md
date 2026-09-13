@@ -276,7 +276,7 @@ An invalid or unrecognised ticket link shows "This link is invalid or the page n
 | Restore | Wallet configured for the event, and a wallet pass on that attendee | Required |
 | Push updates | Wallet configured for the event, and a wallet pass on that attendee | Required |
 | Refresh status | Wallet configured for the event, and a wallet pass on that attendee | Not required |
-| Delete | Wallet configured for the event (the pass doesn't have to exist yet) | Required, warns that the action is permanent and that Apple/Google Wallet gives no way to remove a pass from someone's phone - only the attendee can do that |
+| Delete | Wallet configured for the event, and a wallet pass on that attendee | Required, warns that the action is permanent and that Apple/Google Wallet gives no way to remove a pass from someone's phone - only the attendee can do that |
 
 If a requirement isn't met, each action gives a specific reason: "This attendee has no wallet pass to act on." or "Wallet isn't configured for this event."
 
