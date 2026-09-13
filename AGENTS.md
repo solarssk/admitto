@@ -109,18 +109,20 @@ Staff UI uses `useToast()` from `@admitto/ui` (`ToastProvider` in the admin shel
 
 Toasts dedupe identical `message + variant`, cap at five, and sit below the check-in overlay (`--z-toast` &lt; `--z-overlay`). Prefer `renderWithToast()` in admin tests when asserting toast behavior.
 
-**Never use the native `window.confirm()` / `window.alert()`** for a confirmation - always the app's
-`ConfirmDialog` (`apps/admin/src/components/ConfirmDialog.tsx`). Its `confirmVariant` defaults to
-`"primary"`; reserve `"danger"`/`"warning"` for actions that are genuinely irreversible or destroy
-something (delete, permanently revoke, archive). A prompt over form state that only exists
-in-memory and nothing has actually been lost yet - "Discard unsaved changes?" is the canonical
-example - stays default severity even though the wording sounds alarming, since the same amber/red
-treatment used for a real delete would misrepresent the risk. See
-`apps/admin/src/identity/DiscardUnsavedChangesDialogs.tsx` for the shared two-dialog pattern (one
-for the Cancel button, one for the router's dirty-guard blocker) most editors with unsaved-changes
-protection should reuse rather than re-implementing per screen.
+**Never use the native `window.confirm()` / `window.alert()`** for a confirmation. Always use the app's
+`ConfirmDialog` (`apps/admin/src/components/ConfirmDialog.tsx`).
 
-**Check-in camera exception:** the desktop inline camera (`CkInlineCamera`) is scan-only - unlike the mobile fullscreen overlay, it never doubles as the operator's check-in/item-issuing surface, so no result ever renders on top of it. A no-match scan there reports via **toast**, the same as manual lookup's no-match, and the camera keeps scanning. This is the opposite of the in-context-inline row above, which still governs the mobile overlay (where a toast would render below `--z-overlay`, invisible).
+`confirmVariant` defaults to `"primary"`. Reserve a higher severity only for actions that actually destroy something:
+
+- **`"primary"` (default):** any other confirmation, including prompts about form state that only exists in-memory and nothing has actually been lost yet. "Discard unsaved changes?" is the canonical example: the wording sounds alarming, but the amber/red treatment used for a real delete would misrepresent the risk.
+- **`"danger"` / `"warning"`:** genuinely irreversible actions (delete, permanently revoke, archive).
+
+See `apps/admin/src/identity/DiscardUnsavedChangesDialogs.tsx` for the shared two-dialog pattern (one for the Cancel button, one for the router's dirty-guard blocker) that most editors with unsaved-changes protection should reuse rather than re-implementing per screen.
+
+**Check-in camera exception:** the desktop inline camera (`CkInlineCamera`) is scan-only. It never doubles as the operator's check-in/item-issuing surface, so no result ever renders on top of it.
+
+- **Desktop inline camera:** a no-match scan reports via **toast**, the same as manual lookup's no-match, and the camera keeps scanning.
+- **Mobile fullscreen overlay:** still governed by the in-context-inline row above. A toast would render below `--z-overlay` and be invisible there, so no-match must render on the overlay itself.
 
 ### Admin API errors in the UI
 
@@ -139,16 +141,11 @@ and the content rules behind it, see [docs/dev/error-and-notice-copy.md](docs/de
 
 When an agent repeats a mistake, add a precise rule here (or in a scoped `.cursor/rules/*.mdc` file). One line per gotcha; cut rules that no longer prevent real errors.
 
-**SonarCloud Automatic Analysis needs `sonar.tests` listed explicitly in `.sonarcloud.properties`
-(repo root) - without it every `*.test.ts(x)` file analyzes as production source (qualifier `FIL`
-instead of `UTS`), so intentional test-fixture duplication (db seeding, TOTP enrollment, login
-flows repeated across integration test files) counts against the "New Code Duplication" quality
-gate as if it were a production-code smell.** Confirmed via the public API
-(`api/components/tree?component=solarssk_admitto&qualifiers=UTS`) that this project had **zero**
-files classified `UTS` project-wide before this fix - every workspace's tests were silently being
-scanned as source. Once classified `UTS`, SonarCloud still analyzes Bugs and Code Smells on that
-file (per SonarSource's own docs), it just stops counting Duplication and Security Hotspots there -
-this is not "tests go unanalyzed", it's Sonar's own documented, intentional scope split.
+**SonarCloud Automatic Analysis needs `sonar.tests` listed explicitly in `.sonarcloud.properties` (repo root).** Without it, every `*.test.ts(x)` file analyzes as production source (qualifier `FIL` instead of `UTS`), so intentional test-fixture duplication (db seeding, TOTP enrollment, login flows repeated across integration test files) counts against the "New Code Duplication" quality gate as if it were a production-code smell.
+
+Once a file is classified `UTS`, SonarCloud still analyzes Bugs and Code Smells on it (per SonarSource's own docs); it just stops counting Duplication and Security Hotspots there. This is not "tests go unanalyzed", it's Sonar's own documented, intentional scope split.
+
+- Confirmed via the public API (`api/components/tree?component=solarssk_admitto&qualifiers=UTS`): this project had **zero** files classified `UTS` project-wide before this fix, every workspace's tests were silently being scanned as source.
 **`.sonarcloud.properties` under Automatic Analysis (the GitHub App mode, no CI scanner step) does
 not support wildcard patterns** - `sonar.test.inclusions=**/*.test.ts` or `sonar.tests=packages/*/test`
 are silently ignored, not an error. List every workspace's `test/` directory as a literal,
@@ -166,17 +163,15 @@ under Automatic Analysis, so every path listed in `sonar.tests` is still also a 
 glob patterns rather than the bare-path list `sonar.tests` takes). Confirmed broken as a hard
 failure (not a warning) on the very next push to `main` after adding `sonar.tests` without this.
 
-**SonarCloud Automatic Analysis cannot ingest coverage, full stop - not a `.sonarcloud.properties`
-config gap.** Confirmed from SonarSource's own docs: "Code coverage information is not supported"
-is listed as a current Automatic Analysis limitation, and the JS/TS coverage page has a dedicated
-section titled "Use CI-based, not automatic analysis." `sonar.javascript.lcov.reportPaths` is real
-but is a CI-based-analysis-only property (`sonar-project.properties`, read by an actual
-`sonar-scanner`/`sonarqube-scan-action` run) - Automatic Analysis never reads
-`sonar-project.properties` at all (it reads `.sonarcloud.properties` instead) and has coverage
-support removed at the product level regardless of any property. Don't spend time trying to wire
-coverage into `.sonarcloud.properties`; see
-[docs/dev/sonarcloud-ci-coverage-migration.md](docs/dev/sonarcloud-ci-coverage-migration.md) for
-the sourced answer and the concrete (human-gated, needs a `SONAR_TOKEN`) migration path.
+**SonarCloud Automatic Analysis cannot ingest coverage, full stop.** This is not a `.sonarcloud.properties` config gap: SonarSource's own docs list "Code coverage information is not supported" as a current Automatic Analysis limitation, and the JS/TS coverage page has a dedicated section titled "Use CI-based, not automatic analysis."
+
+Don't bother with any of these, none of them work under Automatic Analysis:
+
+- Setting `sonar.javascript.lcov.reportPaths` - it's real, but a CI-based-analysis-only property (`sonar-project.properties`, read by an actual `sonar-scanner`/`sonarqube-scan-action` run).
+- Adding or editing `sonar-project.properties` - Automatic Analysis never reads it at all (it reads `.sonarcloud.properties` instead).
+- Any other property-level workaround - coverage support is removed at the product level regardless of any property.
+
+See [docs/dev/sonarcloud-ci-coverage-migration.md](docs/dev/sonarcloud-ci-coverage-migration.md) for the sourced answer and the concrete (human-gated, needs a `SONAR_TOKEN`) migration path.
 
 **Font formats (`apps/admin`'s own bundled fonts): woff2 only, no woff/truetype fallback** - the
 app's JS already requires a browser new enough that woff2 is a given, so older formats are pure
@@ -191,19 +186,16 @@ re-attempt that approach without reading why it failed first).
 
 **No production installs of unreleased feature work.** Admitto has no customer/staging deploy of WIP branches or unreleased milestone features until a tagged stable release ships. Do **not** invent “legacy cleanup”, migration backfills, or compatibility shims for code that only ever existed on a PR branch. If a review says delete dead “older builds” cleanup, delete it.
 
-**Before push / claiming CI will pass:** run the **full package test suite** for every workspace
-you changed (e.g. `npm test -w @admitto/admin`, not a single `--run some.test.ts`), **and** the same
-gate CI uses for those packages (`npm run build` / typecheck when `.ts`/`.tsx` or tests included
-in `tsc` changed). A subset Vitest run is for debugging only and does **not** authorize push.
-Vitest alone is not enough for typecheck: `apps/web` and `apps/admin` both build with
-`tsc` (CI jobs fail on `TS18047` / `TS2493` even when Vitest is green). Touching admin UI means
-`npm run build -w @admitto/admin` before push; touching web means `npm run build -w @admitto/web`.
-Prefer full `npm test` when blast radius is unclear. Do not push on red. Cite the commands and
-pass/fail in the handoff. For fetch
-mocks in web tests, type the first argument (`input: string | URL`); bare `vi.fn(async () => …)`
-makes `mock.calls[0][0]` a `TS2493` under `tsc` even when Vitest is green. After a null-check on
-React state, nest handlers must use narrowed locals (`const weather = weatherDraft`) - TypeScript
-does not keep the narrowing inside nested functions.
+**Before push / claiming CI will pass:**
+
+- Run the **full package test suite** for every workspace you changed (e.g. `npm test -w @admitto/admin`, not a single `--run some.test.ts`). A subset Vitest run is for debugging only and does **not** authorize push. Prefer full `npm test` when blast radius is unclear.
+- Run the same gate CI uses for those packages: `npm run build` / typecheck when `.ts`/`.tsx` or tests included in `tsc` changed. Vitest alone is not enough for typecheck: `apps/web` and `apps/admin` both build with `tsc` (CI jobs fail on `TS18047` / `TS2493` even when Vitest is green). Touching admin UI means `npm run build -w @admitto/admin` before push; touching web means `npm run build -w @admitto/web`.
+- Do not push on red. Cite the commands and pass/fail in the handoff.
+
+Two `tsc`-only gotchas Vitest won't catch:
+
+- **Fetch mocks in web tests:** type the first argument (`input: string | URL`). A bare `vi.fn(async () => …)` makes `mock.calls[0][0]` a `TS2493` under `tsc` even when Vitest is green.
+- **Narrowed React state in nested handlers:** after a null-check on React state, nested handlers must use narrowed locals (`const weather = weatherDraft`); TypeScript does not keep the narrowing inside nested functions.
 
 **New `process.env.X` reads must be registered in `deploy/env-catalog.json`, then regenerated.**
 CI's `wiki-docs` job runs `npm run docs:check`, which includes `generate-env-dictionary.mjs
@@ -227,18 +219,11 @@ Copy both `packages/<name>/package.json` and `--from=builder …/packages/<name>
 pattern as crypto/location/…). Builder already has all of `packages/`; omitting the production
 COPY lines yields `ERR_MODULE_NOT_FOUND` when the container starts (CI `migration-safety`).
 
-**New workspace package (any kind, not just runtime): `.github/workflows/ci.yml`'s `test-rest`
-job's "Run coverage" step is also an explicit `-w @admitto/<name>` allowlist, not a glob.** A
-package left off it never runs `vitest run --coverage` in CI, so it silently contributes zero
-lines to both the Codecov upload and the SonarCloud CI-based scan's `coverage-rest` artifact —
-its real, passing local test suite shows up as 0% "Coverage on New Code" on every PR touching it,
-which reads exactly like SonarCloud Automatic Analysis's well-known inability to ingest coverage
-at all (`docs/dev/sonarcloud-ci-coverage-migration.md`) even though that's a completely different,
-unrelated cause. Root-caused on `packages/notifications`'s first PR (#1272): the package had 54
-real tests and 95%+ local coverage, but `new_coverage` still showed 0% because
-`-w @admitto/notifications` was simply missing from that one `npm run coverage` command line.
-Confirm locally first (`npm run coverage -w @admitto/<name>` should produce
-`packages/<name>/coverage/lcov.info`), then add the workspace flag to the list.
+**New workspace package (any kind, not just runtime): `.github/workflows/ci.yml`'s `test-rest` job's "Run coverage" step is also an explicit `-w @admitto/<name>` allowlist, not a glob.** A package left off it never runs `vitest run --coverage` in CI, so it silently contributes zero lines to both the Codecov upload and the SonarCloud CI-based scan's `coverage-rest` artifact. Its real, passing local test suite then shows up as 0% "Coverage on New Code" on every PR touching it, which looks exactly like SonarCloud Automatic Analysis's well-known inability to ingest coverage at all (`docs/dev/sonarcloud-ci-coverage-migration.md`), but is a completely different, unrelated cause.
+
+Why: root-caused on `packages/notifications`'s first PR (#1272), where the package had 54 real tests and 95%+ local coverage, but `new_coverage` still showed 0% because `-w @admitto/notifications` was simply missing from that one `npm run coverage` command line.
+
+Confirm locally first (`npm run coverage -w @admitto/<name>` should produce `packages/<name>/coverage/lcov.info`), then add the workspace flag to the list.
 
 **Renaming a Vitest project (`test.name`):** grep `package.json` scripts and CI workflows for
 `--project <old-name>` first - the filter is an anchored exact match, so a stale reference fails
@@ -264,18 +249,15 @@ Sonar's own marker only registers when NOSONAR leads it. Confirmed by re-checkin
 list after pushing, not by assumption - the same file's own `role="presentation"` suppression a
 few lines away (NOSONAR leading its own comment) did clear, this trailing form did not.
 
-**A comment explaining *why* two files share a deliberately-unextracted duplicate block can
-itself blow the `new_duplicated_lines_density` gate, even worded differently in each file.**
-SonarCloud's CPD match is computed on code tokens (comments are stripped for the comparison
-itself), but the *reported* duplicate line range for a file still includes any new line sitting
-inside the matched block's span - so a freshly-added comment right above an already-flagged
-`vi.mock()`/`vi.hoisted()` block counts toward that file's "new duplicated lines" regardless of
-whether its text matches the sibling file's comment. Confirmed by pushing a near-identical
-5-line explanation to two files (19.8%→1.4%→3.1%, gate failed), then confirming the fix isn't
-"make the wording different" (still 2.6%, most of the increase persisted) but "make the comment
-short" (down to 2.1% after trimming both to 1-2 lines). Keep any such comment as short as
-possible, and re-check the actual SonarCloud PR analysis after pushing - don't assume a comment
-is free just because it isn't executable code.
+**A comment explaining *why* two files share a deliberately-unextracted duplicate block can itself blow the `new_duplicated_lines_density` gate, even worded differently in each file.** SonarCloud's CPD match is computed on code tokens (comments are stripped for the comparison itself), but the *reported* duplicate line range for a file still includes any new line sitting inside the matched block's span. So a freshly-added comment right above an already-flagged `vi.mock()`/`vi.hoisted()` block counts toward that file's "new duplicated lines" regardless of whether its text matches the sibling file's comment.
+
+Confirmed empirically on two files sharing a near-identical 5-line explanation:
+
+- Duplication density moved 19.8% → 1.4% → 3.1% as the comment was added (gate failed).
+- Rewording the comment differently per file did not fix it (still 2.6%, most of the increase persisted).
+- Trimming both comments to 1-2 lines did (down to 2.1%).
+
+Keep any such comment as short as possible, and re-check the actual SonarCloud PR analysis after pushing - don't assume a comment is free just because it isn't executable code.
 
 **`apps/admin` pages are lazily code-split (`React.lazy`) - a component's CSS import must live in
 that component's own file, not just "somewhere already loaded on this page".** A modal/component
@@ -288,47 +270,35 @@ lazy `communication` chunk) using `.add-attendee-modal__*` classes with no impor
 at all. `grep -rn 'import "delivery-modals.css"' apps/admin/src/communication/` - every consumer of
 a shared modal/component CSS file should show up importing it directly.
 
-**Do not import `@admitto/mail-templates`, `@admitto/tickets`, or `@admitto/wallet` (package
-root) from `apps/admin`.** All three barrels re-export Prisma/node-only server modules (mjml/fs
-for mail-templates; Prisma, `node:crypto`, pdfkit for tickets; `node:crypto`, Prisma, and `pg`
-transitively via `registration-sync.ts`/`passcreator-webhook.ts` for wallet); Vite can ship them
-into a lazy SPA chunk (`fileURLToPath is not a function` on Event Settings was the mail-templates
-incident; the tickets barrel separately pulled the entire `typescript` compiler into a lazy chunk
-via `htmlnano`→`cosmiconfig`'s optional TS-config loader; the wallet barrel pulled `node:crypto`,
-`node:url`, `@prisma/client/runtime`, `pg`, and `pgpass` into the Event Settings chunk via the same
-`WALLET_MAPPING_PLACEHOLDERS` import). Use browser-safe subpaths only (e.g.
-`@admitto/mail-templates/placeholders`, `@admitto/tickets/custom-data-reserved`,
-`@admitto/tickets/event-item-usability`, `@admitto/wallet/passcreator-mapper`). Same idea as
-avoiding `@admitto/auth`'s root entry for password helpers (`./constants`, `./password-strength`).
-Type-only re-exports from the root remain OK when they stay `import type` / `export type`. A local
-build's Vite output (`npm run build -w @admitto/admin`) surfaces new leaks as "Module ... has been
-externalized for browser compatibility" warnings during the `vite build` step: do not ignore them.
+**Do not import `@admitto/mail-templates`, `@admitto/tickets`, or `@admitto/wallet` (package root) from `apps/admin`.** All three barrels re-export Prisma/node-only server modules, and Vite can ship them into a lazy SPA chunk.
 
-**A CSS custom-property fallback (`var(--token, #hex)`) must match the token's real value in
-`packages/ui/src/styles/tokens/colors.css` exactly.** The fallback only renders when the variable
-is genuinely undefined (a stylesheet load race, or a standalone page that never imports
-`colors.css`), so a drifted fallback is invisible in normal use and easy to introduce with a
-hand-typed hex that's merely close to the real color. `apps/admin/test/styles/token-fallback-coverage.test.ts`
-parses `colors.css` at test time (not a hardcoded copy) and fails the build on any mismatch across
-`apps/admin/src`, `apps/web/src`, and `packages/ui/src` - if you add a new token or a new
-`var(--x, #hex)` usage, run this test rather than eyeballing the hex. This is one instance of a
-reusable technique: when a set of things must each map to exactly one fixed value (an API error
-code to its UI message - `apps/admin/test/api/operator-api-error.coverage.test.ts` for
-`CODE_MESSAGES` - a design token to its fallback, a status enum to its label), write a test that
-scans real usages and fails on drift, rather than trusting the mapping stays complete by review
-alone; neither `tsc` nor a normal Vitest assertion catches this class of gap.
+| Package | Why it leaks | Safe subpath to use instead |
+|---|---|---|
+| `@admitto/mail-templates` | Barrel pulls in mjml/fs. Caused `fileURLToPath is not a function` on Event Settings. | `@admitto/mail-templates/placeholders` |
+| `@admitto/tickets` | Barrel pulls in Prisma, `node:crypto`, pdfkit, and, via `htmlnano`→`cosmiconfig`'s optional TS-config loader, the entire `typescript` compiler. | `@admitto/tickets/custom-data-reserved`, `@admitto/tickets/event-item-usability` |
+| `@admitto/wallet` | Barrel pulls in `node:crypto`, Prisma, and `pg` transitively via `registration-sync.ts`/`passcreator-webhook.ts`; pulled `node:crypto`, `node:url`, `@prisma/client/runtime`, `pg`, and `pgpass` into the Event Settings chunk via the `WALLET_MAPPING_PLACEHOLDERS` import. | `@admitto/wallet/passcreator-mapper` |
 
-**A `ConfirmDialog` (or any child modal) opened from inside a parent modal must suspend the
-parent's own `useModalFocusTrap` while it's open**, e.g.
-`useModalFocusTrap(panelRef, open && !anyConfirmDialogOpen, handleClose)` - see
-`apps/admin/src/pages/users/UserEditModal.tsx` and `apps/admin/src/identity/useUnsavedChangesGuard.ts`.
-Both traps register a capture-phase `keydown` listener on `document`; if the parent's stays active,
-its listener (registered first, since it mounts before the child dialog opens) fires ahead of the
-child's on every Escape press, which can reopen a second copy of the same dialog instead of letting
-the topmost one close. This surfaces specifically on Escape (Tab-trapping still works, since focus
-itself is already inside the child), so a click-only manual test of a nested dialog can look correct
-while this bug is present - test Escape explicitly whenever a `ConfirmDialog` can appear on top of
-an already-open modal.
+Same idea as avoiding `@admitto/auth`'s root entry for password helpers (`./constants`, `./password-strength`). Type-only re-exports from the root remain OK when they stay `import type` / `export type`.
+
+A local build's Vite output (`npm run build -w @admitto/admin`) surfaces new leaks as "Module ... has been externalized for browser compatibility" warnings during the `vite build` step: do not ignore them.
+
+**A CSS custom-property fallback (`var(--token, #hex)`) must match the token's real value in `packages/ui/src/styles/tokens/colors.css` exactly.** The fallback only renders when the variable is genuinely undefined (a stylesheet load race, or a standalone page that never imports `colors.css`), so a drifted fallback is invisible in normal use and easy to introduce with a hand-typed hex that's merely close to the real color.
+
+`apps/admin/test/styles/token-fallback-coverage.test.ts` parses `colors.css` at test time (not a hardcoded copy) and fails the build on any mismatch across `apps/admin/src`, `apps/web/src`, and `packages/ui/src`. If you add a new token or a new `var(--x, #hex)` usage, run this test rather than eyeballing the hex.
+
+> **Reusable technique:** when a set of things must each map to exactly one fixed value (an API error code to its UI message, see `apps/admin/test/api/operator-api-error.coverage.test.ts` for `CODE_MESSAGES`; a design token to its fallback; a status enum to its label), write a test that scans real usages and fails on drift, rather than trusting the mapping stays complete by review alone. Neither `tsc` nor a normal Vitest assertion catches this class of gap.
+
+**A `ConfirmDialog` (or any child modal) opened from inside a parent modal must suspend the parent's own `useModalFocusTrap` while it's open:**
+
+```ts
+useModalFocusTrap(panelRef, open && !anyConfirmDialogOpen, handleClose)
+```
+
+See `apps/admin/src/pages/users/UserEditModal.tsx` and `apps/admin/src/identity/useUnsavedChangesGuard.ts`.
+
+Why: both traps register a capture-phase `keydown` listener on `document`. If the parent's stays active, its listener (registered first, since it mounts before the child dialog opens) fires ahead of the child's on every Escape press, which can reopen a second copy of the same dialog instead of letting the topmost one close.
+
+> **Test this explicitly:** the bug surfaces specifically on Escape (Tab-trapping still works, since focus itself is already inside the child), so a click-only manual test of a nested dialog can look correct while the bug is present. Test Escape whenever a `ConfirmDialog` can appear on top of an already-open modal.
 
 **Do not create new top-level `.md` documentation files in this repo.** This repo's doc set is
 fixed: `README.md`, `CHANGELOG.md`, `SECURITY.md`, `VERSIONING.md`, `DATA-PROTECTION.md`,
@@ -339,26 +309,27 @@ new file. Avoid hardcoding "current milestone/version" callouts in prose here - 
 `CHANGELOG.md`'s `[Unreleased]` section or the open GitHub milestone instead, so this file can't
 drift out of date.
 
-**User Wiki documentation gate:** `docs/wiki/` is the sole, versioned source for the published
-GitHub Wiki and is the deliberate exception to the fixed-document-set rule above. For every
-human- or AI-authored PR, assess whether a user-visible workflow, role, terminology, availability
-status, or recovery step changed. Update the relevant Wiki source page when it did; otherwise
-complete the `No Wiki update needed` declaration in the PR template with a specific reason. Run
-`npm run docs:check` after changing Wiki source. Do not edit the GitHub Wiki directly: the publish
-workflow replaces it from `docs/wiki/` after merge. Write user guidance in clear English, use only
-synthetic examples, and never publish customer names, personal data, environments, credentials,
-or unsupported operational workarounds.
+**User Wiki documentation gate:** `docs/wiki/` is the sole, versioned source for the published GitHub Wiki. It is the deliberate exception to the fixed-document-set rule above.
 
-**`docs:pr-check` (CI wiki-docs job) is not `docs:check`.** The job also runs
-`scripts/check-pr-docs-impact.mjs`, which requires the PR body to include the template's
-`## Documentation impact` section with **exactly one** checked line on its own line:
-`- [x] Wiki updated` or `- [x] No Wiki update needed - <specific reason>` (em/en/hyphen dash
-accepted). A Checklist bullet that merely mentions "Wiki updated" does **not** pass. Keep the
-other option present and unchecked. If wiki files changed, the checked option must be
-`Wiki updated`; if none changed, it must be `No Wiki update needed` with a real reason.
-**Agents: this is a hard handoff gate** (same priority as local tests before push). See
-`.cursor/rules/wiki-docs-pr-gate.mdc`. Body-only fixes need a **new push** on the PR head
-(`gh run rerun` keeps the stale event body); stacked PRs each need their own correct checkbox.
+- **When to update:** for every human- or AI-authored PR, assess whether a user-visible workflow, role, terminology, availability status, or recovery step changed. Update the relevant Wiki source page when it did; otherwise complete the `No Wiki update needed` declaration in the PR template with a specific reason.
+- **How to update:** edit the source pages under `docs/wiki/`, then run `npm run docs:check`.
+- **Publishing:** do not edit the GitHub Wiki directly. The publish workflow replaces it from `docs/wiki/` after merge.
+- **Content restrictions:** write user guidance in clear English, use only synthetic examples, and never publish customer names, personal data, environments, credentials, or unsupported operational workarounds.
+
+**`docs:pr-check` (CI wiki-docs job) is not `docs:check`.** The job also runs `scripts/check-pr-docs-impact.mjs`, which requires the PR body to include the template's `## Documentation impact` section with **exactly one** checked line on its own line:
+
+```
+- [x] Wiki updated
+- [x] No Wiki update needed - <specific reason>
+```
+
+(em/en/hyphen dash accepted before `<specific reason>`.)
+
+- A Checklist bullet that merely mentions "Wiki updated" does **not** pass.
+- Keep the other option present and unchecked.
+- If wiki files changed, the checked option must be `Wiki updated`; if none changed, it must be `No Wiki update needed` with a real reason.
+- **Agents: this is a hard handoff gate** (same priority as local tests before push). See `.cursor/rules/wiki-docs-pr-gate.mdc`.
+- Body-only fixes need a **new push** on the PR head (`gh run rerun` keeps the stale event body); stacked PRs each need their own correct checkbox.
 
 For workflow pages, use the same reader-facing structure: `What this page helps you do`, `Before
 you start`, `Steps`, `Expected result`, `Important decisions`, `What changes after this action`,
@@ -366,16 +337,9 @@ you start`, `Steps`, `Expected result`, `Important decisions`, `What changes aft
 their purpose. Verify factual instructions against the current `main` UI and domain behaviour;
 the documentation check proves structural consistency, not product correctness.
 
-**Before writing a new dropdown, combobox, or checkbox-list picker, check
-`apps/admin/src/components/` first.** `SearchableSelect.tsx` (single choice from a list, with a
-search box past 6 options) and its sibling `MultiSelect.tsx` (same trigger/panel/`useDropdownMenu`
-mechanism, checkbox rows that stay open instead of closing on click) already cover "pick one" and
-"pick several" from a fixed option list, including the multi-select filters on the Attendees list
-(ticket type, attendance, mail delivery status). This class of duplication has already happened
-silently once: `FiltersMenu.tsx` exists only because the Attendees list's `FilterToolbar` and the
-Reports admission log had each already written their own copy of the same trigger/panel/badge
-wiring before anyone noticed and extracted it (see that file's own doc comment). Reach for
-`SearchableSelect`/`MultiSelect` even for a page-local, one-off filter.
+**Before writing a new dropdown, combobox, or checkbox-list picker, check `apps/admin/src/components/` first.** `SearchableSelect.tsx` (single choice from a list, with a search box past 6 options) and its sibling `MultiSelect.tsx` (same trigger/panel/`useDropdownMenu` mechanism, checkbox rows that stay open instead of closing on click) already cover "pick one" and "pick several" from a fixed option list, including the multi-select filters on the Attendees list (ticket type, attendance, mail delivery status). Reach for `SearchableSelect`/`MultiSelect` even for a page-local, one-off filter.
+
+This class of duplication has already happened silently once: `FiltersMenu.tsx` exists only because the Attendees list's `FilterToolbar` and the Reports admission log had each already written their own copy of the same trigger/panel/badge wiring before anyone noticed and extracted it (see that file's own doc comment).
 
 ### Visual documentation
 

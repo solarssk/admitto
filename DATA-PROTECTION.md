@@ -61,27 +61,36 @@ stderr, error traces, and anything that could reach a third-party log aggregator
 tokens in logs, ever.
 
 **Exception, by design:** a small, fixed set of staff/operator accountability events *do* log the
-acting staff member's own full email address - a successful staff login, a Cloudflare Access
-sign-in, MFA break-glass use, and admin actions such as archiving, deleting, or exporting an event.
-This identifies **who did an action**, for internal accountability - the same legitimate-interest
-basis already used for the admin audit trail below, not a new one. It only applies to a **verified**
-identity: a **failed** login attempt is unauthenticated user input (it could be anyone typing an
-address, including an attacker), so its email is still shown redacted (e.g. `a***@example.com`).
-Attendee-facing data - a ticket email's recipient address, import file content - always stays
-redacted or minimised in these logs, and database query logs never include the actual query values,
-only the query shape and how long it took.
+acting staff member's own full email address:
 
-The per-request access log line (`http_request`, source of the System-logs live tail below) includes
-the client IP for every request, staff or anonymous - the app already reads it for every ticket/QR/
-check-in request to key its rate limiter (`rate-limit/policies.ts`), so this surfaces data already
-being processed rather than adding a new category of it, and matches standard access-log practice
-(Apache/nginx, ALB/CloudFront) plus OWASP's guidance to record source IP on security-relevant
-requests - chiefly to spot scanning or brute-forcing of ticket/QR tokens. Ticket/QR paths (`/t/*`,
-`/q/*`) are still logged as `/t/[redacted]`/`/q/[redacted]` - the raw token never reaches stdout -
-alongside a short, one-way `ref` hash of the token so repeated hits on the same participant's link
-are recognizable across log lines without exposing it. Retention for this IP follows the same
-operator-managed convention as the reverse proxy's own access log (see the Retention table below);
-it is not auto-purged like `SecurityAuditLog`.
+- A successful staff login
+- A Cloudflare Access sign-in
+- MFA break-glass use
+- Admin actions such as archiving, deleting, or exporting an event
+
+This identifies **who did an action**, for internal accountability. It uses the same
+legitimate-interest basis already used for the admin audit trail below, not a new one.
+
+It only applies to a **verified** identity. A **failed** login attempt is unauthenticated user
+input (it could be anyone typing an address, including an attacker), so its email is still shown
+redacted (e.g. `a***@example.com`). Attendee-facing data - a ticket email's recipient address,
+import file content - always stays redacted or minimised in these logs, and database query logs
+never include the actual query values, only the query shape and how long it took.
+
+The per-request access log line (`http_request`, source of the System-logs live tail below)
+includes the client IP for every request, staff or anonymous. The app already reads it for every
+ticket/QR/check-in request to key its rate limiter (`rate-limit/policies.ts`), so this surfaces
+data already being processed rather than adding a new category of it. It also matches standard
+access-log practice (Apache/nginx, ALB/CloudFront) plus OWASP's guidance to record source IP on
+security-relevant requests, chiefly to spot scanning or brute-forcing of ticket/QR tokens.
+
+- Ticket/QR paths (`/t/*`, `/q/*`) are still logged as `/t/[redacted]`/`/q/[redacted]`; the raw
+  token never reaches stdout.
+- Alongside that, a short, one-way `ref` hash of the token is logged, so repeated hits on the same
+  participant's link are recognizable across log lines without exposing it.
+
+Retention for this IP follows the same operator-managed convention as the reverse proxy's own
+access log (see the Retention table below); it is not auto-purged like `SecurityAuditLog`.
 
 This does **not** apply to the admin audit trail (`AttendeeActionLog`, `AdminAuditLog`), which is a
 first-class, access-controlled product feature, not an operational log line - see below.

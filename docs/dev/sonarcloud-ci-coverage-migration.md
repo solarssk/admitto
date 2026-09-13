@@ -47,16 +47,19 @@ top of it.
 
 ## What's already prepared in this repo (no secret needed)
 
-- **`sonar-project.properties`** (repo root) - project key/organization, the same `sonar.tests`
-  classification as `.sonarcloud.properties` (see that file's own comment and the
-  `AGENTS.md` Compounding rules entry for why it's a literal list, not a glob - `sonar.tests` never
-  accepts wildcards, under either analysis mode, per SonarSource's
-  ["Setting initial scope"](https://docs.sonarsource.com/sonarqube-cloud/managing-your-projects/project-analysis/setting-analysis-scope/setting-initial-scope)
-  docs), a matching `sonar.exclusions` (`sonar.sources` defaults to `.` when unset, which would
-  otherwise re-include every `sonar.tests` path as source too and fail the scan on that overlap -
-  the same fix `.sonarcloud.properties` already needed, mirrored here), and
-  `sonar.javascript.lcov.reportPaths` pointing at every workspace's LCOV output. This
-  file is **inert today** - Automatic Analysis never reads `sonar-project.properties` (it reads
+- **`sonar-project.properties`** (repo root) carries four things:
+  - The project key and organization.
+  - The same `sonar.tests` classification as `.sonarcloud.properties`. It's a literal list, not a
+    glob: `sonar.tests` never accepts wildcards, under either analysis mode, per SonarSource's
+    ["Setting initial scope"](https://docs.sonarsource.com/sonarqube-cloud/managing-your-projects/project-analysis/setting-analysis-scope/setting-initial-scope)
+    docs. See that file's own comment and the `AGENTS.md` Compounding rules entry for the full
+    reasoning.
+  - A matching `sonar.exclusions`. `sonar.sources` defaults to `.` when unset, which would
+    otherwise re-include every `sonar.tests` path as source too and fail the scan on that overlap,
+    the same fix `.sonarcloud.properties` already needed, mirrored here.
+  - `sonar.javascript.lcov.reportPaths`, pointing at every workspace's LCOV output.
+
+  This file is **inert today**: Automatic Analysis never reads `sonar-project.properties` (it reads
   `.sonarcloud.properties` instead, per SonarSource's own docs on that file). It only takes effect
   once the workflow step below exists and Automatic Analysis is off.
 
@@ -133,20 +136,21 @@ Then add a new job, after the three test jobs:
 Notes on this shape:
 
 - The `fork == false` guard mirrors SonarSource's own documented pattern for GitHub Actions
-  (["Analyzing pull requests from forked repositories"](https://docs.sonarsource.com/sonarqube-cloud/analyzing-source-code/ci-based-analysis/github-actions-for-sonarcloud))
-  and is necessary here: unlike Codecov's upload action, `sonarqube-scan-action` has no
-  `fail_ci_if_error`-style soft-fail - an empty/invalid `SONAR_TOKEN` makes the step error for
-  real. Fork-originated `pull_request` runs never receive repo secrets (the same reason this
-  workflow's `DATABASE_URL` has no password - see that comment in `ci.yml`), so without this guard
-  every external-contributor PR would show a hard-failing `sonarcloud` job.
+  (["Analyzing pull requests from forked repositories"](https://docs.sonarsource.com/sonarqube-cloud/analyzing-source-code/ci-based-analysis/github-actions-for-sonarcloud)).
+  Fork-originated `pull_request` runs never receive repo secrets (the same reason this workflow's
+  `DATABASE_URL` has no password - see that comment in `ci.yml`), so without this guard every
+  external-contributor PR would show a hard-failing `sonarcloud` job.
+- The guard is necessary, not just tidy: unlike Codecov's upload action, `sonarqube-scan-action`
+  has no `fail_ci_if_error`-style soft-fail - an empty/invalid `SONAR_TOKEN` makes the step error
+  for real.
 - **Trade-off worth deciding on deliberately:** this guard means fork PRs get **no** SonarCloud
-  analysis at all post-migration. Automatic Analysis currently analyzes fork PRs today with zero
-  extra config (just without coverage). Getting CI-based analysis working on fork PRs too needs
-  SonarSource's documented 3-workflow split (build fork code with no secrets → hand off via
-  `workflow_run` → analyze with secrets, never executing fork-provided code) - real additional
-  complexity and a security-sensitive pattern, not something to add speculatively. Flag this
-  explicitly to whoever approves the migration; it may be an acceptable trade for a mostly
-  solo-maintained repo, or it may not.
+  analysis at all post-migration, versus Automatic Analysis today, which analyzes fork PRs with
+  zero extra config (just without coverage). Flag this explicitly to whoever approves the
+  migration; it may be an acceptable trade for a mostly solo-maintained repo, or it may not.
+  - Getting CI-based analysis working on fork PRs too needs SonarSource's documented 3-workflow
+    split (build fork code with no secrets → hand off via `workflow_run` → analyze with secrets,
+    never executing fork-provided code) - real additional complexity and a security-sensitive
+    pattern, not something to add speculatively.
 - **Not included above, and a deliberate policy choice for whoever does the migration, not
   something to default to silently:** `sonar.qualitygate.wait=true` (add to
   `sonar-project.properties`) makes the scan step itself fail when the quality gate fails, which is
@@ -171,14 +175,16 @@ endpoint's response entirely, not just zero).
 
 Codecov already receives this repo's LCOV on every PR (`CODECOV_TOKEN` is already an configured
 secret; no new one needed) and already posts a `codecov/patch` commit status today, using
-Codecov's undocumented-in-this-repo defaults - it's just not in `main`'s required status checks,
-and has no PR comment. A root `codecov.yml` (added in this PR - see repo root) makes that explicit
-and adds a `codecov/project` status plus a PR comment, without needing any of the SonarCloud steps
+Codecov's undocumented-in-this-repo defaults. It's just not in `main`'s required status checks, and
+has no PR comment. A root `codecov.yml` (added in this PR - see repo root) makes that explicit and
+adds a `codecov/project` status plus a PR comment, without needing any of the SonarCloud steps
 above. See `codecov.yml`'s own comments for the exact config and `SECURITY.md`'s Codecov row for
-current status. This is the faster, zero-new-secret path to "coverage is visibly gated somewhere"
-- the SonarCloud migration above is still worth doing for its own sake (one combined quality +
-coverage gate, an existing `new_coverage` quality-gate condition that's currently dead weight), but
-it is not the only or fastest route to a coverage signal on PRs.
+current status.
+
+This is the faster, zero-new-secret path to "coverage is visibly gated somewhere". The SonarCloud
+migration above is still worth doing for its own sake (one combined quality + coverage gate, an
+existing `new_coverage` quality-gate condition that's currently dead weight), but it is not the
+only or fastest route to a coverage signal on PRs.
 
 ## Sources
 

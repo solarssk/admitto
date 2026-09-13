@@ -31,7 +31,13 @@ Dev/CI database stack remains in [`../infra/docker-compose.yml`](../infra/docker
 
 Admitto is **self-hosted**: you run it on infrastructure you control (VPS, on-prem server, NAS with Docker, etc.). We do **not** ship a managed cloud service.
 
-The **only supported production path** in this repo is a **Docker Compose stack** - not bare-metal installs (Node/Postgres directly on the host), not Kubernetes/Helm, and not serverless hosts like Vercel. You need **Docker Engine** (or Docker Desktop for local smoke tests) on the host; everything else runs inside containers.
+The **only supported production path** in this repo is a **Docker Compose stack**. You need **Docker Engine** (or Docker Desktop for local smoke tests) on the host; everything else runs inside containers.
+
+Not supported:
+
+- Bare-metal installs (Node/Postgres directly on the host)
+- Kubernetes/Helm
+- Serverless hosts like Vercel
 
 What you get in `deploy/`:
 
@@ -158,7 +164,11 @@ Find the right CIDR: from the app container, log or inspect the peer address of 
 5. Run **worker** with the same secrets as `app`.
 6. Prefer Variant A when you can; Variant B is for stacks that intentionally omit compose nginx.
 
-Self-hosted LAN SMTP that resolves to RFC1918 is blocked when `NODE_ENV=production` unless the hostname is listed in `MAIL_PRIVATE_DESTINATION_ALLOWLIST` on **app** and **worker** (see [ENV.md](./ENV.md)). Lab stacks can set `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` when NODE_ENV is not production. Opening SMTP on the public WAN is usually the wrong fix.
+Self-hosted LAN SMTP that resolves to RFC1918 is blocked when `NODE_ENV=production`. Opening SMTP on the public WAN is usually the wrong fix.
+
+To allow it, list the hostname in `MAIL_PRIVATE_DESTINATION_ALLOWLIST` on **app** and **worker** (see [ENV.md](./ENV.md)).
+
+Lab-only: stacks can instead set `ALLOW_PRIVATE_MAIL_DESTINATIONS=true` when `NODE_ENV` is not production.
 
 ---
 
@@ -309,8 +319,9 @@ Wiki Identity and SSO page.
 Migration and serving are two separate compose services, both running
 `deploy/docker-entrypoint.sh` (same image, different `command:`). **`app` only starts once
 `migrate` exits 0** (`depends_on: condition: service_completed_successfully`), so the web server
-never runs migration logic itself. **Every service runs as the unprivileged `node` user** (UID 1000
-in the official Node image).
+never runs migration logic itself.
+
+**Every service runs as the unprivileged `node` user** (UID 1000 in the official Node image).
 
 **Before the first `docker compose up`**, prepare host bind mounts. Compose creates missing paths as
 **root-owned**, which breaks emergency CLI export and branding uploads until ownership is fixed:
@@ -327,11 +338,12 @@ cd deploy
 2. `prisma migrate deploy` - idempotent schema migrations (automatic; operators never run this by hand)
 3. Idempotent backfills (safe to re-run; throw if DB/schema incompatible)
 
-**`app`** execs `node apps/web/dist/src/index.js` only. No migration logic, no retention on boot, and
-no filesystem access to backup dumps. Product retention (auth sessions, mail snapshots, security audit
-log), bounce ingest, mail drain, and import/export jobs run on the **`worker`** service (same image,
-`command: ["worker"]` → `admitto worker`). Keep exactly one worker replica; the process uses session
-advisory locks so a mistaken second replica skips overlapping jobs rather than double-running them.
+- **`app`** execs `node apps/web/dist/src/index.js` only. No migration logic, no retention on boot,
+  and no filesystem access to backup dumps.
+- **`worker`** (same image, `command: ["worker"]` → `admitto worker`) runs product retention (auth
+  sessions, mail snapshots, security audit log), bounce ingest, mail drain, and import/export jobs.
+- Keep exactly one worker replica. The process uses session advisory locks, so a mistaken second
+  replica skips overlapping jobs rather than double-running them.
 
 Operator upgrade procedure: see [Upgrading](#upgrading) above.
 
@@ -439,10 +451,13 @@ Public attendee paths (`/t/*`, `/q/*`) must stay bypassed at Cloudflare.
 
 ## Admitto worker (mail, import/export, bounce, retention)
 
-Compose runs a dedicated **`worker`** service (same image as `app`, `command: ["worker"]`).
-It records a `BackgroundWorkerHeartbeat` (Settings → Health → Background worker), drains the
-mail queue, runs async import/export `AdminJob`s, polls enabled bounce mailboxes, and runs
-product retention on boot plus about every 24 hours.
+Compose runs a dedicated **`worker`** service (same image as `app`, `command: ["worker"]`). It:
+
+- Records a `BackgroundWorkerHeartbeat` (Settings → Health → Background worker)
+- Drains the mail queue
+- Runs async import/export `AdminJob`s
+- Polls enabled bounce mailboxes
+- Runs product retention on boot plus about every 24 hours
 
 ```bash
 docker compose logs -f worker
@@ -493,15 +508,21 @@ docker compose exec db-backup sh -c 'ls -la /backups/nightly-*.sql.gz'
 docker compose exec db-backup sh -c 'gzip -t /backups/nightly-*.sql.gz'
 ```
 
-**Bounce ingest:** runs inside the **`worker`** (not a separate sidecar). The worker wakes on a
-short tick; per-event **Check every** (`poll_interval_minutes`) decides when each enabled event is
-due. Soft Settings → Health treats a successful run as stale after the larger of 2× Check every and
-2× the worker tick (floored at 15 minutes). Each run writes `last_run_*` for the Event settings
-card and that Health row. When `OPS_HEALTH_TOKEN` is set, compose also points
-`BOUNCE_INGEST_APP_URL=http://app:3000` (or `ADMITTO_INTERNAL_URL`) so each run can append
-`mail_bounce_ingest_*` lines to Settings → Logs (mail). `/readyz` exposes soft `bounce_ingest_*`
-gauges (never alone a 503). Worker liveness for operators is the Settings → Health **Background
-worker** row (DB heartbeat), not a bounce-only container HEALTHCHECK.
+**Bounce ingest:**
+
+- **Where it runs:** inside the **`worker`** (not a separate sidecar).
+- **Timing:** the worker wakes on a short tick; per-event **Check every**
+  (`poll_interval_minutes`) decides when each enabled event is due. Soft Settings → Health treats
+  a successful run as stale after the larger of 2× Check every and 2× the worker tick (floored at
+  15 minutes).
+- **What it writes:** each run writes `last_run_*` for the Event settings card and that Health
+  row.
+- **Health-token routing:** when `OPS_HEALTH_TOKEN` is set, compose also points
+  `BOUNCE_INGEST_APP_URL=http://app:3000` (or `ADMITTO_INTERNAL_URL`) so each run can append
+  `mail_bounce_ingest_*` lines to Settings → Logs (mail).
+- **`/readyz` gauges:** exposes soft `bounce_ingest_*` gauges (never alone a 503).
+- **Liveness check:** worker liveness for operators is the Settings → Health **Background
+  worker** row (DB heartbeat), not a bounce-only container HEALTHCHECK.
 
 Nightly dumps on the host volume are **not** a full disaster-recovery strategy - copy offsite per
 ADR 0023 (S3, rsync, or your backup tool). TODO: document operator-specific offsite copy.
