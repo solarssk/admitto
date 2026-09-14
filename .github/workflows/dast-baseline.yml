@@ -58,6 +58,13 @@ jobs:
           sed -i 's|^REDIS_URL=.*|REDIS_URL=redis://:smoke-redis-secret@redis:6379|' .env
           node validate-env.mjs .env
 
+      # Compose otherwise creates ./emergency-exports as root-owned on a fresh runner; the app
+      # container runs as UID 1000 and can't write to it, which fails the seed step below (its
+      # bootstrap-superadmin CLI checks that this dir is writable before doing anything else).
+      - name: Prepare host bind-mount dirs
+        working-directory: deploy
+        run: sudo ./scripts/init-host-dirs.sh
+
       - name: Build and start stack
         working-directory: deploy
         run: docker compose up -d --build
