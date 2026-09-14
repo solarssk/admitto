@@ -159,6 +159,7 @@ export {
   canAccessCheckInPanel,
   listCheckInEvents,
   listAdminEvents,
+  getAdminEvent,
   checkCapability,
   locationPinFields,
   type AuthCapability,

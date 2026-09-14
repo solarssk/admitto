@@ -326,6 +326,33 @@ export async function listAdminEvents(
   return rows.map(toEventSummary);
 }
 
+/** One event visible to an admin, including archived events for direct links and settings history. */
+export async function getAdminEvent(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+  eventId: string,
+): Promise<EventSummary | null> {
+  if (!(await canAccessAdminPanel(prisma, userId))) return null;
+
+  if (await hasScope(prisma, userId, "superadmin", "instance")) {
+    const row = await prisma.event.findUnique({ where: { id: eventId }, select: eventSelect });
+    return row ? toEventSummary(row) : null;
+  }
+
+  const orgAssignments = await prisma.roleAssignment.findMany({
+    where: { user_id: userId, role: "admin", scope_type: "organization" },
+    select: { scope_id: true },
+  });
+  const orgIds = orgAssignments.map((a) => a.scope_id).filter((id): id is string => !!id);
+  if (orgIds.length === 0) return null;
+
+  const row = await prisma.event.findFirst({
+    where: { id: eventId, organization_id: { in: orgIds } },
+    select: eventSelect,
+  });
+  return row ? toEventSummary(row) : null;
+}
+
 /** Dispatch a capability check; `eventId` required for event-scoped capabilities. */
 export async function checkCapability(
   prisma: PrismaClient | Prisma.TransactionClient,

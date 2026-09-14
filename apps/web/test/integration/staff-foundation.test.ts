@@ -180,6 +180,27 @@ describe("GET /api/admin/events", () => {
   });
 });
 
+describe("GET /api/admin/events/:eventId", () => {
+  it("returns only the requested event to an organization admin", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}`, {
+      headers: { Cookie: await sessionCookieFor(prisma, adminId) },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { event: { id: string; title: string } };
+    expect(body.event).toMatchObject({ id: EVENT_A, title: "Event A" });
+  });
+
+  it("does not reveal an event outside the organization admin scope", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_B}`, {
+      headers: { Cookie: await sessionCookieFor(prisma, adminId) },
+    });
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "event_not_found" });
+  });
+});
+
 describe("GET /api/checkin/events", () => {
   it("returns 401 without session even with bearer", async () => {
     const res = await app.request("/api/checkin/events", {

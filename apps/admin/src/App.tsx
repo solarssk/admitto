@@ -14,7 +14,7 @@ import { SettingsLayout } from "./layouts/SettingsLayout.js";
 import { OperatorShell } from "./layouts/OperatorShell.js";
 import { EventsPickerPage } from "./pages/EventsPickerPage.js";
 import { PlaceholderPage } from "./pages/PlaceholderPage.js";
-import { ApiError, fetchAdminEvents } from "./api/client.js";
+import { ApiError, fetchAdminEvent } from "./api/client.js";
 import type { EventDto } from "./api/types.js";
 
 // Route-level code-splitting: each page below loads on demand so the initial
@@ -23,22 +23,39 @@ import type { EventDto } from "./api/types.js";
 // navigations in startTransition, so an in-app navigation keeps the current
 // view while the chunk loads; only a cold load of a lazy route shows the
 // Suspense fallback.
-const SettingsTabContent = lazy(() => import("./pages/SettingsPage.js").then((m) => ({ default: m.SettingsTabContent })));
-const IdentityProvidersPanel = lazy(() => import("./identity/IdentityProvidersPanel.js").then((m) => ({ default: m.IdentityProvidersPanel })));
-const UsersPage = lazy(() => import("./pages/UsersPage.js").then((m) => ({ default: m.UsersPage })));
-const AccountLayout = lazy(() => import("./account/AccountLayout.js").then((m) => ({ default: m.AccountLayout })));
-const CheckInEntryPage = lazy(() => import("./pages/CheckInEntryPage.js").then((m) => ({ default: m.CheckInEntryPage })));
-const CheckInPage = lazy(() => import("./pages/CheckInPage.js").then((m) => ({ default: m.CheckInPage })));
-const AdminCheckInRoute = lazy(() => import("./pages/AdminCheckInRoute.js").then((m) => ({ default: m.AdminCheckInRoute })));
-const AttendeesPage = lazy(() => import("./pages/AttendeesPage.js").then((m) => ({ default: m.AttendeesPage })));
-const AttendeeDetailPage = lazy(() => import("./pages/AttendeeDetailPage.js").then((m) => ({ default: m.AttendeeDetailPage })));
-const EventSettingsPage = lazy(() => import("./pages/EventSettingsPage.js").then((m) => ({ default: m.EventSettingsPage })));
-const ImportPage = lazy(() => import("./pages/ImportPage.js").then((m) => ({ default: m.ImportPage })));
-const RequirementsPage = lazy(() => import("./pages/RequirementsPage.js").then((m) => ({ default: m.RequirementsPage })));
-const CommunicationPage = lazy(() => import("./pages/CommunicationPage.js").then((m) => ({ default: m.CommunicationPage })));
-const EventOverviewPage = lazy(() => import("./pages/EventOverviewPage.js").then((m) => ({ default: m.EventOverviewPage })));
-const ReportsPage = lazy(() => import("./pages/ReportsPage.js").then((m) => ({ default: m.ReportsPage })));
-const SetupWizardPage = lazy(() => import("./pages/SetupWizardPage.js").then((m) => ({ default: m.SetupWizardPage })));
+const loadSettingsTabContent = () => import("./pages/SettingsPage.js").then((m) => ({ default: m.SettingsTabContent }));
+const loadIdentityProvidersPanel = () => import("./identity/IdentityProvidersPanel.js").then((m) => ({ default: m.IdentityProvidersPanel }));
+const loadUsersPage = () => import("./pages/UsersPage.js").then((m) => ({ default: m.UsersPage }));
+const loadAccountLayout = () => import("./account/AccountLayout.js").then((m) => ({ default: m.AccountLayout }));
+const loadCheckInEntryPage = () => import("./pages/CheckInEntryPage.js").then((m) => ({ default: m.CheckInEntryPage }));
+const loadCheckInPage = () => import("./pages/CheckInPage.js").then((m) => ({ default: m.CheckInPage }));
+const loadAdminCheckInRoute = () => import("./pages/AdminCheckInRoute.js").then((m) => ({ default: m.AdminCheckInRoute }));
+const loadAttendeesPage = () => import("./pages/AttendeesPage.js").then((m) => ({ default: m.AttendeesPage }));
+const loadAttendeeDetailPage = () => import("./pages/AttendeeDetailPage.js").then((m) => ({ default: m.AttendeeDetailPage }));
+const loadEventSettingsPage = () => import("./pages/EventSettingsPage.js").then((m) => ({ default: m.EventSettingsPage }));
+const loadImportPage = () => import("./pages/ImportPage.js").then((m) => ({ default: m.ImportPage }));
+const loadRequirementsPage = () => import("./pages/RequirementsPage.js").then((m) => ({ default: m.RequirementsPage }));
+const loadCommunicationPage = () => import("./pages/CommunicationPage.js").then((m) => ({ default: m.CommunicationPage }));
+const loadEventOverviewPage = () => import("./pages/EventOverviewPage.js").then((m) => ({ default: m.EventOverviewPage }));
+const loadReportsPage = () => import("./pages/ReportsPage.js").then((m) => ({ default: m.ReportsPage }));
+const loadSetupWizardPage = () => import("./pages/SetupWizardPage.js").then((m) => ({ default: m.SetupWizardPage }));
+
+const SettingsTabContent = lazy(loadSettingsTabContent);
+const IdentityProvidersPanel = lazy(loadIdentityProvidersPanel);
+const UsersPage = lazy(loadUsersPage);
+const AccountLayout = lazy(loadAccountLayout);
+const CheckInEntryPage = lazy(loadCheckInEntryPage);
+const CheckInPage = lazy(loadCheckInPage);
+const AdminCheckInRoute = lazy(loadAdminCheckInRoute);
+const AttendeesPage = lazy(loadAttendeesPage);
+const AttendeeDetailPage = lazy(loadAttendeeDetailPage);
+const EventSettingsPage = lazy(loadEventSettingsPage);
+const ImportPage = lazy(loadImportPage);
+const RequirementsPage = lazy(loadRequirementsPage);
+const CommunicationPage = lazy(loadCommunicationPage);
+const EventOverviewPage = lazy(loadEventOverviewPage);
+const ReportsPage = lazy(loadReportsPage);
+const SetupWizardPage = lazy(loadSetupWizardPage);
 
 const PLACEHOLDER_ROUTES = [
   { path: "overview", title: "Overview" },
@@ -64,6 +81,38 @@ const EVENT_ROUTE_COMPONENTS: Partial<Record<(typeof PLACEHOLDER_ROUTES)[number]
   communication: CommunicationPage,
   reports: ReportsPage,
 };
+
+// A deep link already identifies its initial route. Start loading that route's
+// code while EventLayout resolves the event instead of making the route chunk
+// wait for that request to finish.
+const EVENT_ROUTE_LOADERS: Partial<Record<string, () => Promise<unknown>>> = {
+  overview: loadEventOverviewPage,
+  attendees: loadAttendeesPage,
+  "attendees/import": loadImportPage,
+  checkin: loadAdminCheckInRoute,
+  communication: loadCommunicationPage,
+  reports: loadReportsPage,
+  requirements: loadRequirementsPage,
+  settings: loadEventSettingsPage,
+};
+
+export function preloadLazyRoute(load: () => Promise<unknown>): Promise<unknown> {
+  return load().catch(() => undefined);
+}
+
+function preloadEventRoute(pathname: string, eventId: string | undefined): void {
+  if (!eventId) return;
+  const prefix = `/admin/events/${encodeURIComponent(eventId)}/`;
+  const routePath = pathname.startsWith(prefix) ? pathname.slice(prefix.length) : undefined;
+  if (!routePath) return;
+
+  // Resolve static nested paths before the dynamic attendee detail route so
+  // /attendees/import starts its own chunk, not the attendees-list chunk.
+  const directLoad = EVENT_ROUTE_LOADERS[routePath];
+  const attendeeDetail = /^attendees\/[^/]+$/.exec(routePath);
+  const load = directLoad ?? (attendeeDetail ? loadAttendeeDetailPage : undefined);
+  if (load) void preloadLazyRoute(load);
+}
 
 /** Event passed through router navigation state (events picker, create-event
  * flow), if it matches the route's eventId. */
@@ -103,9 +152,7 @@ export function EventLayout() {
   const refreshEvent = useCallback(async () => {
     if (!eventId) return;
     try {
-      const events = await fetchAdminEvents({ includeArchived: true });
-      const found = events.find((e) => e.id === eventId);
-      if (found) setEvent(found);
+      setEvent(await fetchAdminEvent(eventId));
     } catch {
       // Best-effort: the mutation that triggered this already reported its
       // own success/error toast, so a failed background refresh here just
@@ -115,12 +162,16 @@ export function EventLayout() {
   }, [eventId]);
 
   useEffect(() => {
+    preloadEventRoute(location.pathname, eventId);
+  }, [eventId, location.pathname]);
+
+  useEffect(() => {
     const fromState = navStateEventRef.current;
     setEvent(fromState);
     setError(false);
     if (fromState) {
       // One-shot: strip the event from this history entry's state once
-      // consumed. listAdminEvents re-scopes org-admin access on every
+      // consumed. The event endpoint re-scopes org-admin access on every
       // fallback fetch below, so trusting this snapshot forever would let a
       // later back/forward revisit to this exact entry skip that recheck —
       // e.g. after the admin's org assignment is revoked in the same browser
@@ -134,13 +185,8 @@ export function EventLayout() {
     let cancelled = false;
     (async () => {
       try {
-        const events = await fetchAdminEvents({ includeArchived: true });
+        const found = await fetchAdminEvent(eventId!);
         if (cancelled) return;
-        const found = events.find((e) => e.id === eventId);
-        if (!found) {
-          setError(true);
-          return;
-        }
         setEvent(found);
       } catch (err) {
         if (cancelled) return;
@@ -241,7 +287,7 @@ export default function App() {
     <ErrorBoundary>
       <ToastProvider>
         <AuthProvider>
-          <ConnectionStateProvider>
+          <ConnectionStateProvider initiallyConnected>
             <Suspense
               fallback={
                 <output className="shell-loading">

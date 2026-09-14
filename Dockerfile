@@ -22,7 +22,16 @@ RUN npm ci
 ENV ILA_IP_LOCATION_DB=user
 ENV ILA_DATA_DIR=/app/data/geoip
 ENV ILA_AUTO_UPDATE=false
-RUN node apps/web/scripts/prefetch-geo-db.mjs
+# The dataset is downloaded from a public GitHub Release. Retry brief upstream
+# outages during the image build, but still fail after the final attempt.
+RUN for attempt in 1 2 3; do \
+      if node apps/web/scripts/prefetch-geo-db.mjs; then exit 0; fi; \
+      if [ "$attempt" -lt 3 ]; then \
+        echo "GeoIP prefetch attempt $attempt failed; retrying..."; \
+        sleep "$attempt"; \
+      fi; \
+    done; \
+    exit 1
 
 RUN npx prisma generate --schema packages/db/prisma/schema.prisma --config packages/db/prisma.config.ts
 
