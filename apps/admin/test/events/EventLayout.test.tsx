@@ -3,7 +3,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
-import { EventLayout } from "../../src/App.js";
+import { EventLayout, preloadLazyRoute } from "../../src/App.js";
 import type { EventDto } from "../../src/api/types.js";
 
 const fetchAdminEvent = vi.fn();
@@ -62,6 +62,10 @@ afterEach(() => {
 });
 
 describe("EventLayout (#274)", () => {
+  it("absorbs a speculative route preload failure", async () => {
+    await expect(preloadLazyRoute(() => Promise.reject(new Error("chunk unavailable")))).resolves.toBeUndefined();
+  });
+
   it("renders the shell immediately from navigation state without fetching the event again", async () => {
     renderLayout({
       pathname: "/admin/events/evt-1/overview",

@@ -96,6 +96,10 @@ const EVENT_ROUTE_LOADERS: Partial<Record<string, () => Promise<unknown>>> = {
   settings: loadEventSettingsPage,
 };
 
+export function preloadLazyRoute(load: () => Promise<unknown>): Promise<unknown> {
+  return load().catch(() => undefined);
+}
+
 function preloadEventRoute(pathname: string, eventId: string | undefined): void {
   if (!eventId) return;
   const prefix = `/admin/events/${encodeURIComponent(eventId)}/`;
@@ -107,7 +111,7 @@ function preloadEventRoute(pathname: string, eventId: string | undefined): void 
   const directLoad = EVENT_ROUTE_LOADERS[routePath];
   const attendeeDetail = /^attendees\/[^/]+$/.exec(routePath);
   const load = directLoad ?? (attendeeDetail ? loadAttendeeDetailPage : undefined);
-  if (load) void load();
+  if (load) void preloadLazyRoute(load);
 }
 
 /** Event passed through router navigation state (events picker, create-event
