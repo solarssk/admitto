@@ -479,6 +479,16 @@ export async function fetchAdminEvents(
   return data.events;
 }
 
+/** Load one event for a deep-linked admin route, including archived events. */
+export async function fetchAdminEvent(eventId: string, signal?: AbortSignal): Promise<EventDto> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}`, {
+    credentials: "same-origin",
+    signal,
+  });
+  const data = await parseJson<{ event: EventDto }>(res);
+  return data.event;
+}
+
 /** Create a new event (superadmin or org admin). */
 export async function createEvent(body: CreateEventBody): Promise<EventDto> {
   const res = await fetch("/api/admin/events", jsonPostInit(body));

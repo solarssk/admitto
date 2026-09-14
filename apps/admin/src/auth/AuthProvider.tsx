@@ -38,6 +38,12 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   const refresh = useCallback(async () => {
     setLoading(true);
     setAuthError(null);
+    // Branding is independent of the session payload. Starting it now removes a
+    // full network round trip from a cold staff-app load, while retaining the
+    // current all-or-nothing visual bootstrap (no flash of unthemed UI).
+    const themePromise = fetchStaffTheme()
+      .then((theme) => applyThemeVars(theme.theme))
+      .catch(() => applyThemeVars(null));
     try {
       const me = await fetchMe();
       setPreferredLocale(me.user.preferred_locale ?? undefined);
@@ -47,12 +53,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
       setDeviceLabel(me.device_label ?? null);
       setHasAdmittoSession(me.session_active);
       setSetupComplete(me.setup_complete !== false);
-      try {
-        const theme = await fetchStaffTheme();
-        applyThemeVars(theme.theme);
-      } catch {
-        applyThemeVars(null);
-      }
+      await themePromise;
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         const next = encodeURIComponent(window.location.pathname + window.location.search);
