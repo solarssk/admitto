@@ -453,6 +453,7 @@ describe("authorization", () => {
     expect((await getAdminEvent(prisma, USER_ADMIN_A, EVENT_A))?.id).toBe(EVENT_A);
     expect(await getAdminEvent(prisma, USER_ADMIN_A, EVENT_B)).toBeNull();
     expect((await getAdminEvent(prisma, USER_SUPER, EVENT_B))?.id).toBe(EVENT_B);
+    expect(await getAdminEvent(prisma, USER_OP_A, EVENT_A)).toBeNull();
   });
 
   it("listAdminEvents — excludes archived by default", async () => {
