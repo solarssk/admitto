@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConnectionBanner, ConnectionStateProvider } from "../../src/connection/ConnectionStateProvider.js";
 import { fetchMe } from "../../src/api/client.js";
@@ -26,5 +26,17 @@ describe("ConnectionStateProvider", () => {
 
     expect(mockFetchMe).not.toHaveBeenCalled();
     expect(screen.queryByText(/not connected/i)).toBeNull();
+  });
+
+  it("pings /me on mount when no authenticated bootstrap result is available", async () => {
+    mockFetchMe.mockResolvedValueOnce({} as never);
+
+    render(
+      <ConnectionStateProvider>
+        <ConnectionBanner />
+      </ConnectionStateProvider>,
+    );
+
+    await waitFor(() => expect(mockFetchMe).toHaveBeenCalledTimes(1));
   });
 });

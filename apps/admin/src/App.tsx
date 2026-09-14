@@ -88,17 +88,25 @@ const EVENT_ROUTE_COMPONENTS: Partial<Record<(typeof PLACEHOLDER_ROUTES)[number]
 const EVENT_ROUTE_LOADERS: Partial<Record<string, () => Promise<unknown>>> = {
   overview: loadEventOverviewPage,
   attendees: loadAttendeesPage,
+  "attendees/import": loadImportPage,
   checkin: loadAdminCheckInRoute,
   communication: loadCommunicationPage,
   reports: loadReportsPage,
   requirements: loadRequirementsPage,
+  settings: loadEventSettingsPage,
 };
 
 function preloadEventRoute(pathname: string, eventId: string | undefined): void {
   if (!eventId) return;
   const prefix = `/admin/events/${encodeURIComponent(eventId)}/`;
-  const routeName = pathname.startsWith(prefix) ? pathname.slice(prefix.length).split("/")[0] : undefined;
-  const load = routeName ? EVENT_ROUTE_LOADERS[routeName] : undefined;
+  const routePath = pathname.startsWith(prefix) ? pathname.slice(prefix.length) : undefined;
+  if (!routePath) return;
+
+  // Resolve static nested paths before the dynamic attendee detail route so
+  // /attendees/import starts its own chunk, not the attendees-list chunk.
+  const directLoad = EVENT_ROUTE_LOADERS[routePath];
+  const attendeeDetail = routePath.match(/^attendees\/[^/]+$/);
+  const load = directLoad ?? (attendeeDetail ? loadAttendeeDetailPage : undefined);
   if (load) void load();
 }
 

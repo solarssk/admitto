@@ -87,6 +87,19 @@ describe("EventLayout (#274)", () => {
     expect(fetchAdminEvent).toHaveBeenCalledWith("evt-1");
   });
 
+  it.each([
+    "/admin/events/evt-1/settings",
+    "/admin/events/evt-1/attendees/import",
+    "/admin/events/evt-1/attendees/att-1",
+  ])("preloads the exact nested destination while resolving %s", async (pathname) => {
+    fetchAdminEvent.mockResolvedValueOnce(eventDto("evt-1", "Spring Gala"));
+
+    renderLayout({ pathname });
+
+    expect(await screen.findByText("shell:Spring Gala")).toBeTruthy();
+    expect(fetchAdminEvent).toHaveBeenCalledWith("evt-1");
+  });
+
   it("ignores navigation state for a different event and fetches instead", async () => {
     fetchAdminEvent.mockResolvedValueOnce(eventDto("evt-2", "Autumn Summit"));
 

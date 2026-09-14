@@ -4,6 +4,7 @@ import {
   addAttendeeNote,
   deleteAttendee,
   deleteAttendeeNote,
+  fetchAdminEvent,
   fetchAttendeeDetail,
   updateAttendeeNote,
 } from "../../src/api/client.js";
@@ -22,6 +23,19 @@ describe("deleteAttendee (client) — thin wrapper coverage", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/admin/events/evt%20with%20space/attendees/att%20with%20space",
       expect.objectContaining({ method: "DELETE", credentials: "same-origin" }),
+    );
+  });
+
+  it("GETs one encoded event instead of the event list", async () => {
+    const event = { id: "evt with space", title: "Spring Gala" };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ event }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchAdminEvent("evt with space")).resolves.toEqual(event);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/events/evt%20with%20space",
+      expect.objectContaining({ credentials: "same-origin" }),
     );
   });
 

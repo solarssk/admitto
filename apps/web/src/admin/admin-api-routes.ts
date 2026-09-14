@@ -261,7 +261,7 @@ export async function handleGetAdminEvents(c: Context, db: PrismaClient): Promis
   return c.json({ events: withWeather });
 }
 
-/** GET /api/admin/events/:eventId — one admin-visible event for a deep-linked staff route. */
+/** GET /api/admin/events/:eventId: one admin-visible event for a deep-linked staff route. */
 export async function handleGetAdminEvent(c: Context, db: PrismaClient): Promise<Response> {
   const auth = c.get("auth");
   const eventId = c.req.param("eventId");
