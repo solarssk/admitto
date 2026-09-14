@@ -105,7 +105,7 @@ function preloadEventRoute(pathname: string, eventId: string | undefined): void 
   // Resolve static nested paths before the dynamic attendee detail route so
   // /attendees/import starts its own chunk, not the attendees-list chunk.
   const directLoad = EVENT_ROUTE_LOADERS[routePath];
-  const attendeeDetail = routePath.match(/^attendees\/[^/]+$/);
+  const attendeeDetail = /^attendees\/[^/]+$/.exec(routePath);
   const load = directLoad ?? (attendeeDetail ? loadAttendeeDetailPage : undefined);
   if (load) void load();
 }
