@@ -99,6 +99,16 @@ describe("EmailChannel", () => {
     expect(send.mock.calls[0]![0].logRecipientUnmasked).toBe(true);
   });
 
+  it("never inherits the org's configured Reply-To - a self-audience alert sent to the account it concerns would otherwise land with Reply-To == To, a pattern spam filters flag on its own", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    await channel.send(EVENT, ["u-a"]);
+
+    expect(send.mock.calls[0]![0].suppressReplyTo).toBe(true);
+  });
+
   it("keeps extra_email_recipients masked - an admin-typed, arbitrary address list, not a verified staff account", async () => {
     const db = createStubDb();
     db.user.findMany.mockResolvedValue([]);
@@ -505,6 +515,15 @@ describe("EmailChannel", () => {
 
       expect(db.notificationSettings.findUnique).not.toHaveBeenCalled();
       expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it("also suppresses the org's configured Reply-To - same reasoning as send()", async () => {
+      const db = createStubDb();
+      const channel = new EmailChannel(db as unknown as PrismaClient);
+
+      await channel.sendToAddress(EVENT, "ops@example.com");
+
+      expect(send.mock.calls[0]![0].suppressReplyTo).toBe(true);
     });
 
     it("returns a sanitized failure when the mailer reports a failed send, without throwing", async () => {
