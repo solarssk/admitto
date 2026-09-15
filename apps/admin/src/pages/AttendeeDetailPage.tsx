@@ -978,16 +978,20 @@ function AttendeeOverviewTab({
                   </div>
                 )}
                 {/* Admitto's own capture (WalletPass.user_agent's schema comment) - same source
-                    Passcreator's hosted pass page reads its "Device" info from, just seen on our
-                    own redirect hop instead. Gated on first_confirmed_at too, not just user_agent:
-                    a corporate mail scanner pre-fetching the wallet link can create a real pass and
-                    populate user_agent with its own identity before the attendee ever opens the
-                    email, but it can't fake a real wallet app confirming the pass was added, so
-                    first_confirmed_at stays null for it - showing Device only once a confirmed
-                    registration exists keeps a bot's hit from ever displaying as "the" device. */}
+                    Passcreator's hosted pass page reads its own device info from, just seen on our
+                    own redirect hop instead. Labeled "Added from", not "Device": the browser that
+                    opened the wallet link isn't guaranteed to be the device the pass ends up
+                    installed on (e.g. Google Wallet's own "save to your account" flow can add it to
+                    a different, already-signed-in Android phone - CodeRabbit review), so this row
+                    states only what Admitto actually knows. Gated on first_confirmed_at too, not
+                    just user_agent: a corporate mail scanner pre-fetching the wallet link can create
+                    a real pass and populate user_agent with its own identity before the attendee
+                    ever opens the email, but it can't fake a real wallet app confirming the pass was
+                    added, so first_confirmed_at stays null for it - showing this row only once a
+                    confirmed registration exists keeps a bot's hit from ever surfacing here. */}
                 {detail.wallet_pass.user_agent && detail.wallet_pass.first_confirmed_at && (
                   <div className="attendee-detail-row">
-                    <span>Device</span>
+                    <span>Added from</span>
                     <span>{parseUserAgentWithVersion(detail.wallet_pass.user_agent)}</span>
                   </div>
                 )}

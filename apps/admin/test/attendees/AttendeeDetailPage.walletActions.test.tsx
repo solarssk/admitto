@@ -759,7 +759,7 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
     expect(screen.getByText("wallet_provider_unauthorized")).toBeTruthy();
   });
 
-  it("shows a Device row parsed from the captured User-Agent once the registration is confirmed", async () => {
+  it("shows an Added from row parsed from the captured User-Agent once the registration is confirmed", async () => {
     mockLoad(
       baseDetail({
         wallet_pass: walletPass({
@@ -771,19 +771,19 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
-    expect(screen.getByText("Device")).toBeTruthy();
+    expect(screen.getByText("Added from")).toBeTruthy();
     expect(screen.getByText("Safari 18.7 / iOS 18.7")).toBeTruthy();
   });
 
-  it("omits the Device row when no User-Agent has been captured yet", async () => {
+  it("omits the Added from row when no User-Agent has been captured yet", async () => {
     mockLoad(baseDetail({ wallet_pass: walletPass() }));
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
-    expect(screen.queryByText("Device")).toBeNull();
+    expect(screen.queryByText("Added from")).toBeNull();
   });
 
-  it("omits the Device row when a User-Agent was captured but the registration isn't confirmed yet (e.g. a mail security scanner pre-fetched the wallet link)", async () => {
+  it("omits the Added from row when a User-Agent was captured but the registration isn't confirmed yet (e.g. a mail security scanner pre-fetched the wallet link)", async () => {
     mockLoad(
       baseDetail({
         wallet_pass: walletPass({
@@ -795,7 +795,7 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });
 
-    expect(screen.queryByText("Device")).toBeNull();
+    expect(screen.queryByText("Added from")).toBeNull();
   });
 });
 

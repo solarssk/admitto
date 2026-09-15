@@ -412,15 +412,17 @@ model WalletPass {
   // Raw request User-Agent captured on Admitto's own /t/:token/wallet/:platform redirect (the
   // attendee's first hop, before PassCreator's own apple_url/android_url) - same
   // store-raw-parse-at-read-time convention as Session.user_agent/ApiKey.user_agent, parsed via
-  // apps/admin/src/utils/parseUserAgent.ts. Refreshed on every click of that link UNTIL
-  // first_confirmed_at is set (handleWalletRedirect's updateMany), then frozen - a corporate mail
-  // scanner can hit this same redirect and create a real pass before the attendee ever opens the
-  // email, and freezing prevents its own User-Agent from displacing the attendee's real one once a
-  // confirmed registration exists. The admin UI only shows this field once first_confirmed_at is
-  // also set (AttendeeDetailPage.tsx), so a bot's pre-fetch of a pass nobody ever really installed
-  // never surfaces. A pass issued before this column existed stays null until the attendee's next
-  // click - there is no way to recover it retroactively (never captured, and PassCreator's own
-  // hosted pass-activity log isn't exposed via their API either).
+  // apps/admin/src/utils/parseUserAgent.ts. Refreshed on every click of that link until BOTH this
+  // column and first_confirmed_at are set, then frozen (handleWalletRedirect's updateMany) - a
+  // corporate mail scanner can hit this same redirect and create a real pass before the attendee
+  // ever opens the email, and freezing prevents its own User-Agent from displacing the attendee's
+  // real one once a confirmed registration exists. Requiring BOTH conditions (not just
+  // first_confirmed_at alone) matters for a pass that was already confirmed before this column
+  // existed: it still gets exactly one real capture on the attendee's next click instead of being
+  // permanently excluded. The admin UI only shows this field once first_confirmed_at is also set
+  // (AttendeeDetailPage.tsx), so a bot's pre-fetch of a pass nobody ever really installed never
+  // surfaces. There is no way to recover a click that happened before this column existed -
+  // PassCreator's own hosted pass-activity log isn't exposed via their API either.
   user_agent             String?
   user_agent_captured_at DateTime?
 

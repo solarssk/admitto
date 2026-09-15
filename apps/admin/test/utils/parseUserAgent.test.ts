@@ -34,6 +34,15 @@ describe("parseUserAgent", () => {
   it("falls back to a truncated raw string when nothing matches", () => {
     expect(parseUserAgent("curl/8.7.1")).toBe("curl/8.7.1");
   });
+
+  it("labels iOS Chrome/Firefox/Edge by their own identifier, not the trailing WebKit Safari/ tag they all carry", () => {
+    const chrome = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/125.0.6422.80 Mobile/15E148 Safari/604.1";
+    const firefox = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/130.0 Mobile/15E148 Safari/604.1";
+    const edge = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/128.0.0.0 Mobile/15E148 Safari/604.1";
+    expect(parseUserAgent(chrome)).toBe("Chrome / iOS");
+    expect(parseUserAgent(firefox)).toBe("Firefox / iOS");
+    expect(parseUserAgent(edge)).toBe("Edge / iOS");
+  });
 });
 
 describe("parseUserAgentWithVersion", () => {
@@ -63,5 +72,10 @@ describe("parseUserAgentWithVersion", () => {
 
   it("falls back to a truncated raw string when nothing matches", () => {
     expect(parseUserAgentWithVersion("curl/8.7.1")).toBe("curl/8.7.1");
+  });
+
+  it("includes the version for iOS Chrome (CriOS), not the plain Safari fallback", () => {
+    const ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/125.0.6422.80 Mobile/15E148 Safari/604.1";
+    expect(parseUserAgentWithVersion(ua)).toBe("Chrome 125.0.6422.80 / iOS 18.7");
   });
 });

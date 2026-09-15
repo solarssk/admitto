@@ -370,6 +370,46 @@ describe("On-demand wallet routes", () => {
     expect(saved?.user_agent).toBe("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15");
   });
 
+  it("still captures a pass that was already confirmed before this column existed (CodeRabbit review) - the freeze must not permanently exclude a legacy row", async () => {
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: ATTENDEE_MODE_A_ID,
+        provider: "passcreator",
+        provider_pass_id: "pc-legacy-confirmed",
+        user_provided_id: `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
+        status: "active",
+        apple_url: "https://pc.test/apple/x",
+        android_url: "https://pc.test/android/x",
+        // Confirmed long before user_agent capture shipped - first_confirmed_at set, user_agent
+        // still null, exactly the state every real pre-existing row is in on migration day.
+        first_confirmed_at: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    });
+    const provider = stubProvider();
+    const app = makeApp(provider);
+
+    await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, {
+      redirect: "manual",
+      headers: { "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15" },
+    });
+
+    const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(saved?.user_agent).toBe("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15");
+    expect(provider.createPass).not.toHaveBeenCalled();
+  });
+
+  it("does not fail the redirect when the device-capture write itself throws", async () => {
+    const provider = stubProvider();
+    const app = makeApp(provider);
+    const updateManySpy = vi.spyOn(prisma.walletPass, "updateMany").mockRejectedValueOnce(new Error("db down"));
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("https://pc.test/apple/x");
+    updateManySpy.mockRestore();
+  });
+
   it("is idempotent on repeat clicks — does not call createPass twice", async () => {
     const provider = stubProvider();
     const app = makeApp(provider);
