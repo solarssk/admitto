@@ -197,7 +197,22 @@ async function beginRegistration(cookie: string, attachment: "platform" | "cross
  * Waiting for it here, then deleting that row and clearing its throttle claim, closes that gap for
  * every caller and keeps each call self-contained - a second call in the same test (or a later
  * test's own action) always finds a clean slate for this same title, rather than tripping over a
- * row an earlier call already accounted for. */
+ * row an earlier call already accounted for.
+ *
+ * A handful of tests below complete a real registration directly against `app.request(...)`
+ * instead of through this helper (they're exercising something registerCredential's own fixed
+ * `attachment`/cookie shape can't, e.g. a challenge replayed against the same finish endpoint
+ * twice, or a second `Hono` app instance for a path-carrying Instance URL) - those call this same
+ * drain themselves, for the same reason. */
+async function drainAddedNotification(): Promise<void> {
+  const addedTitle = "A new passkey was added";
+  await expectAuthFactorChangedNotification(userId, addedTitle);
+  await prisma.notification.deleteMany({
+    where: { user_id: userId, notification_type: "account.auth_factor.changed", title: addedTitle },
+  });
+  await prisma.notificationThrottle.deleteMany({ where: { event_type: "account.auth_factor.changed" } });
+}
+
 async function registerCredential(
   cookie: string,
   attachment: "platform" | "cross-platform",
@@ -213,14 +228,7 @@ async function registerCredential(
     body: JSON.stringify({ attachment, label, response }),
   });
   const finishBody = await finishRes.json();
-  if (finishRes.status === 200) {
-    const addedTitle = "A new passkey was added";
-    await expectAuthFactorChangedNotification(userId, addedTitle);
-    await prisma.notification.deleteMany({
-      where: { user_id: userId, notification_type: "account.auth_factor.changed", title: addedTitle },
-    });
-    await prisma.notificationThrottle.deleteMany({ where: { event_type: "account.auth_factor.changed" } });
-  }
+  if (finishRes.status === 200) await drainAddedNotification();
   return { authenticator, credentialId: response.id, finishRes, finishBody };
 }
 
@@ -397,6 +405,10 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
       body: JSON.stringify({ attachment: "platform", response }),
     });
     expect(first.status).toBe(200);
+    // This registration succeeded directly against app.request, not through registerCredential -
+    // drain its own account.auth_factor.changed notification the same way that helper does (see
+    // its own doc comment) so it can't straggle into a later test.
+    await drainAddedNotification();
 
     const replay = await app.request("/api/account/mfa/webauthn/register/finish", {
       method: "POST",
@@ -475,6 +487,10 @@ describe("WebAuthn RP origin, an Instance URL with a path", () => {
     });
     expect(finishRes.status).toBe(200);
     expect(((await finishRes.json()) as { ok: boolean }).ok).toBe(true);
+    // Registered directly against pathedApp, not through registerCredential - drain its own
+    // notification the same way that helper does (see its own doc comment) so it can't straggle
+    // into a later test. pathedApp shares this file's own `prisma`, so the same drain applies.
+    await drainAddedNotification();
   });
 });
 
