@@ -296,6 +296,12 @@ export class EmailChannel implements NotificationChannel {
         // sendToAddress's caller-supplied test address are NOT staff accounts - could be any
         // external address an admin typed in - and stay masked by default (bot review finding).
         logRecipientUnmasked: unmaskInLogs,
+        // Never inherit the org's configured Reply-To (meant for attendee-facing correspondence)
+        // - a self-audience alert sent to the account it concerns would otherwise end up with
+        // Reply-To == To, a pattern spam filters commonly flag on its own, and nobody is meant to
+        // reply to an automated system notice anyway. See MailMessage.suppressReplyTo's own doc
+        // comment (PO report: a real "you signed in from a new location" alert landed in Spam).
+        suppressReplyTo: true,
       }));
 
       // Bounded concurrency (EMAIL_SEND_CONCURRENCY), Promise.allSettled result shape: SmtpAdapter
