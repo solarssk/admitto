@@ -1334,7 +1334,13 @@ describe("attendee wallet actions — void/restore/reissue", () => {
   async function seedActionAttendee(
     id: string,
     eventId: string,
-    opts: { withPass?: boolean; userProvidedId?: string } = {},
+    opts: {
+      withPass?: boolean;
+      userProvidedId?: string;
+      firstConfirmedAt?: Date;
+      userAgent?: string;
+      userAgentCapturedAt?: Date;
+    } = {},
   ): Promise<void> {
     await prisma.attendee.create({
       data: {
@@ -1356,6 +1362,9 @@ describe("attendee wallet actions — void/restore/reissue", () => {
           apple_url: "https://pc.test/apple/old",
           android_url: "https://pc.test/android/old",
           user_provided_id: opts.userProvidedId,
+          first_confirmed_at: opts.firstConfirmedAt,
+          user_agent: opts.userAgent,
+          user_agent_captured_at: opts.userAgentCapturedAt,
         },
       });
     }
@@ -1384,6 +1393,37 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       });
       expect(audit).not.toBeNull();
       expect(audit!.metadata).toMatchObject({ previous_status: "active" });
+    });
+
+    it("serializes first_confirmed_at and user_agent_captured_at as ISO strings when the pass has a confirmed device", async () => {
+      const attendeeId = "att-wallet-action-void-confirmed-device";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+        withPass: true,
+        firstConfirmedAt: new Date("2026-02-01T00:00:00.000Z"),
+        userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15",
+        userAgentCapturedAt: new Date("2026-02-01T00:00:00.000Z"),
+      });
+      try {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/void`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as {
+          first_confirmed_at: string | null;
+          user_agent: string | null;
+          user_agent_captured_at: string | null;
+        };
+        expect(body.first_confirmed_at).toBe("2026-02-01T00:00:00.000Z");
+        expect(body.user_agent).toBe("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15");
+        expect(body.user_agent_captured_at).toBe("2026-02-01T00:00:00.000Z");
+      } finally {
+        // Keep this describe's total WALLET_ACTION_EVENT attendee count from drifting past what
+        // the later "wallet_status on GET list" block's unfiltered (25-per-page) list call expects.
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
     });
 
     it("returns 404 when the attendee has no wallet pass yet", async () => {

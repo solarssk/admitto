@@ -268,6 +268,9 @@ export interface WalletPassActionDto {
    * AttendeeDetailPage.tsx. */
   first_downloaded_at: string | null;
   registration_checked_at: string | null;
+  first_confirmed_at: string | null;
+  user_agent: string | null;
+  user_agent_captured_at: string | null;
 }
 
 export interface AttendeeRowDto {

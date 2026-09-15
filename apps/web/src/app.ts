@@ -1127,6 +1127,37 @@ export function createApp(options: CreateAppOptions = {}) {
     if (!url) {
       return c.redirect(`${backHref}?walletError=1`, 302);
     }
+
+    // Best-effort device capture: this is Admitto's own hop before the attendee's browser ever
+    // reaches PassCreator's URL, so it's the only place Admitto can see the real request
+    // User-Agent (PassCreator's own "Pass Activity" log isn't exposed via their API - see
+    // WalletPass.user_agent's own doc comment). Runs on every click, not only pass creation, so a
+    // pass issued before this existed still fills in on the attendee's next tap. A DB error here
+    // must never block the redirect the attendee is actually waiting on.
+    //
+    // The `OR` below is deliberate, not just "no throw on missing row" (bare updateMany already
+    // gives that): a corporate mail security scanner (Microsoft Safe Links, Proofpoint, etc.) can
+    // hit this exact redirect and create a real pass before the attendee ever opens the email - it
+    // can't fake a real device actually adding the pass to a wallet app, so first_confirmed_at
+    // (only ever set by PassCreator's own confirmed-registration webhook) never gets set for it.
+    // `first_confirmed_at: null` alone freezes the column the moment a real confirmation lands,
+    // which is what stops a later scanner re-fetch (or stray re-click) from overwriting a genuine
+    // captured device - but on its own it also permanently locks out every pass that was ALREADY
+    // confirmed before this column existed (CodeRabbit review): those rows have first_confirmed_at
+    // set and user_agent still null from day one, so that lone condition would never be true for
+    // them again, breaking the "fills in on the attendee's next click" promise for exactly the
+    // passes that most need it. `user_agent: null` as the other half of the OR covers that case:
+    // still-uncaptured passes always get one write regardless of confirmation state, and only a
+    // pass that is BOTH confirmed AND already has a captured device gets frozen going forward.
+    try {
+      await db.walletPass.updateMany({
+        where: { attendee_id: attendee.id, OR: [{ user_agent: null }, { first_confirmed_at: null }] },
+        data: { user_agent: c.req.header("user-agent") ?? null, user_agent_captured_at: new Date() },
+      });
+    } catch (err) {
+      console.error("walletPass update (user_agent) failed:", err);
+    }
+
     return c.redirect(url, 302);
   }
 
