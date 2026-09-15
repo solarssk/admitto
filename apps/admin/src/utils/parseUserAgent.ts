@@ -24,12 +24,15 @@ const BROWSER_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
 // normalized to dots in matchPattern. The optional capture group is each pattern's real version
 // number where one exists (Windows/Linux never expose a meaningful one here).
 const OS_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/Android(?: ([\d.]+))?/, "Android"],
-  // Two entries, not one combined alternation: "iPhone;" and "CPU iPhone OS 18_7" both appear in
-  // the same real UA, and a single /a|b/ regex resolves to whichever alternative starts at the
-  // leftmost string position ("iPhone;" comes first, with no version group) - checking the
-  // version-bearing pattern as its own entry first means matchPattern tries it against the whole
-  // string before ever falling back to the bare, versionless one.
+  // Two entries per OS, not one combined optional-group/alternation regex: "iPhone;" and
+  // "CPU iPhone OS 18_7" both appear in the same real UA, and a single /a|b/ (or an optional
+  // group) resolves to whichever alternative starts at the leftmost string position ("iPhone;"
+  // comes first, with no version) - checking the version-bearing pattern as its own entry first
+  // means matchPattern tries it against the whole string before ever falling back to the bare,
+  // versionless one. Also sidesteps eslint-plugin-security's detect-unsafe-regex false positive on
+  // an optional group wrapping a character-class quantifier.
+  [/Android ([\d.]+)/, "Android"],
+  [/Android/, "Android"],
   [/CPU (?:iPhone )?OS ([\d_]+)/, "iOS"],
   [/iPhone|iPad/, "iOS"],
   [/Mac OS X ([\d_]+)/, "macOS"],
