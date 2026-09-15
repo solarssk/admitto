@@ -268,9 +268,7 @@ export interface WalletPassActionDto {
    * AttendeeDetailPage.tsx. */
   first_downloaded_at: string | null;
   registration_checked_at: string | null;
-  /** Set only by PassCreator's confirmed-registration webhook - gates the "Added from" row. */
   first_confirmed_at: string | null;
-  /** Raw captured User-Agent - parse with parseUserAgent.ts before display. */
   user_agent: string | null;
   user_agent_captured_at: string | null;
 }
