@@ -20,6 +20,7 @@ import { Button, Card, Input, Notice, Tooltip } from "@admitto/ui";
 import type { EventDto } from "../api/types.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
+import "./communication.css";
 import {
   HIDDEN_PLACEHOLDERS,
   WALLET_PLACEHOLDERS,
