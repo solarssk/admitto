@@ -3889,13 +3889,9 @@ type WalletPassActionDto = {
    * WalletPass.first_downloaded_at for why (unconfirmed timezone). */
   first_downloaded_at: string | null;
   registration_checked_at: string | null;
-  /** Only ever set by PassCreator's own confirmed-registration webhook - see
-   * WalletPass.first_confirmed_at's schema comment. Gates the Device row client-side (a bot's
-   * pre-fetch of the wallet redirect can populate user_agent but never this). */
+  /** Set only by PassCreator's confirmed-registration webhook - see WalletPass.first_confirmed_at. */
   first_confirmed_at: string | null;
-  /** Raw request User-Agent from Admitto's own wallet redirect - see WalletPass.user_agent's
-   * schema comment. Parsed to a human label client-side (parseUserAgent.ts), same as
-   * Session.user_agent. */
+  /** Raw captured User-Agent - see WalletPass.user_agent's schema comment. */
   user_agent: string | null;
   user_agent_captured_at: string | null;
 };
