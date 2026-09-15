@@ -53,6 +53,7 @@ Active automated checks in this repository:
 | Codecov | Test coverage reporting; `codecov/project` and `codecov/patch` status checks + PR comment configured (`codecov.yml`), not yet in `main`'s required checks so still non-blocking today | Every PR | `.github/workflows/ci.yml` (`test-web` / `test-admin` / `test-rest`) |
 | SonarCloud | Code quality and maintainability (SAST-adjacent, e.g. hardcoded-secret patterns, injection-prone constructs). Automatic Analysis cannot ingest coverage under any configuration (confirmed from SonarSource's own docs); a CI-based migration that would add a coverage quality-gate condition is planned but blocked on a human generating a `SONAR_TOKEN` - see [docs/dev/sonarcloud-ci-coverage-migration.md](docs/dev/sonarcloud-ci-coverage-migration.md) | Automatic analysis on every PR and `main` push | GitHub App (`sonarcloud.io`) - not a workflow file in this repo |
 | OWASP ZAP baseline | DAST, unauthenticated passive scan (no merge gate) | Manual dispatch + weekly | `.github/workflows/dast-baseline.yml` |
+| OpenSSF Scorecard | Supply-chain security posture score (branch protection, pinned dependencies, SAST presence, token permissions, etc.); report-only, not a merge gate | Push to `main` + branch-protection changes + weekly | `.github/workflows/scorecard.yml` |
 
 **DAST scope (2026-08-29):**
 
