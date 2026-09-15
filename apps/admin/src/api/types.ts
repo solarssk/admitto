@@ -268,6 +268,16 @@ export interface WalletPassActionDto {
    * AttendeeDetailPage.tsx. */
   first_downloaded_at: string | null;
   registration_checked_at: string | null;
+  /** Only ever set by PassCreator's confirmed-registration webhook - a real wallet app actually
+   * added the pass. Use this, not just user_agent's presence, to gate showing the Device row: a
+   * mail security scanner pre-fetching the wallet link can populate user_agent without this ever
+   * being true. */
+  first_confirmed_at: string | null;
+  /** Raw request User-Agent captured on Admitto's own wallet redirect - parse with
+   * parseUserAgent.ts before display, same as Session.user_agent. Refreshed on every click of the
+   * wallet link until first_confirmed_at is set, then frozen. */
+  user_agent: string | null;
+  user_agent_captured_at: string | null;
 }
 
 export interface AttendeeRowDto {

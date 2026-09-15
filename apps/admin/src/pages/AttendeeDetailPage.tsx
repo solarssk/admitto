@@ -81,6 +81,7 @@ import {
 } from "../attendees/customData.js";
 import type { CustomDataFieldDef } from "../attendees/customData.js";
 import { useMailConfigured } from "../attendees/useMailConfigured.js";
+import { parseUserAgentWithVersion } from "../utils/parseUserAgent.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import {
   ArchivedGuard,
@@ -974,6 +975,20 @@ function AttendeeOverviewTab({
                     <span className="mono">
                       {formatFirstDownloadedAt(detail.wallet_pass.first_downloaded_at)}
                     </span>
+                  </div>
+                )}
+                {/* Admitto's own capture (WalletPass.user_agent's schema comment) - same source
+                    Passcreator's hosted pass page reads its "Device" info from, just seen on our
+                    own redirect hop instead. Gated on first_confirmed_at too, not just user_agent:
+                    a corporate mail scanner pre-fetching the wallet link can create a real pass and
+                    populate user_agent with its own identity before the attendee ever opens the
+                    email, but it can't fake a real wallet app confirming the pass was added, so
+                    first_confirmed_at stays null for it - showing Device only once a confirmed
+                    registration exists keeps a bot's hit from ever displaying as "the" device. */}
+                {detail.wallet_pass.user_agent && detail.wallet_pass.first_confirmed_at && (
+                  <div className="attendee-detail-row">
+                    <span>Device</span>
+                    <span>{parseUserAgentWithVersion(detail.wallet_pass.user_agent)}</span>
                   </div>
                 )}
                 {detail.wallet_pass.issued_at && (

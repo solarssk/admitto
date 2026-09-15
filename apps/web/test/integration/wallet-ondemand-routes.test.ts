@@ -322,6 +322,54 @@ describe("On-demand wallet routes", () => {
     expect(provider.createPass).toHaveBeenCalledTimes(1);
   });
 
+  it("captures the request User-Agent on the redirect, even for an already-active pass (repeat clicks refresh it)", async () => {
+    const provider = stubProvider();
+    const app = makeApp(provider);
+
+    await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, {
+      redirect: "manual",
+      headers: { "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15" },
+    });
+    const first = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(first?.user_agent).toBe("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15");
+    expect(first?.user_agent_captured_at).not.toBeNull();
+
+    // Same pass, already active - resolvePassUrls takes the early-return branch with no upsert,
+    // but the capture below it must still run and overwrite the earlier value.
+    await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, {
+      redirect: "manual",
+      headers: { "user-agent": "Mozilla/5.0 (Linux; Android 14) Chrome/128.0" },
+    });
+    const second = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(second?.user_agent).toBe("Mozilla/5.0 (Linux; Android 14) Chrome/128.0");
+    expect(provider.createPass).toHaveBeenCalledTimes(1);
+  });
+
+  it("freezes the captured User-Agent once first_confirmed_at is set - a later click (e.g. a mail security scanner re-fetching the link) does not overwrite it", async () => {
+    const provider = stubProvider();
+    const app = makeApp(provider);
+
+    await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, {
+      redirect: "manual",
+      headers: { "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15" },
+    });
+    // Simulates PassCreator's first_pushnotification_registered webhook confirming a real device
+    // actually added the pass (applyFirstConfirmedAt) - only ever set from a real wallet app, never
+    // from a redirect click itself.
+    await prisma.walletPass.update({
+      where: { attendee_id: ATTENDEE_MODE_A_ID },
+      data: { first_confirmed_at: new Date() },
+    });
+
+    await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, {
+      redirect: "manual",
+      headers: { "user-agent": "curl/8.0 (compatible; MailScannerBot/1.0)" },
+    });
+
+    const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(saved?.user_agent).toBe("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15");
+  });
+
   it("is idempotent on repeat clicks — does not call createPass twice", async () => {
     const provider = stubProvider();
     const app = makeApp(provider);

@@ -138,6 +138,9 @@ const ATTENDEE_DETAIL_SELECT = {
       samsung_inactive_registrations: true,
       first_downloaded_at: true,
       registration_checked_at: true,
+      first_confirmed_at: true,
+      user_agent: true,
+      user_agent_captured_at: true,
     },
   },
 } as const;
@@ -977,6 +980,9 @@ async function buildAttendeeDetailDto(
       samsung_inactive_registrations: number | null;
       first_downloaded_at: string | null;
       registration_checked_at: Date | null;
+      first_confirmed_at: Date | null;
+      user_agent: string | null;
+      user_agent_captured_at: Date | null;
     } | null;
   },
   notesPage = 1,
@@ -3883,6 +3889,15 @@ type WalletPassActionDto = {
    * WalletPass.first_downloaded_at for why (unconfirmed timezone). */
   first_downloaded_at: string | null;
   registration_checked_at: string | null;
+  /** Only ever set by PassCreator's own confirmed-registration webhook - see
+   * WalletPass.first_confirmed_at's schema comment. Gates the Device row client-side (a bot's
+   * pre-fetch of the wallet redirect can populate user_agent but never this). */
+  first_confirmed_at: string | null;
+  /** Raw request User-Agent from Admitto's own wallet redirect - see WalletPass.user_agent's
+   * schema comment. Parsed to a human label client-side (parseUserAgent.ts), same as
+   * Session.user_agent. */
+  user_agent: string | null;
+  user_agent_captured_at: string | null;
 };
 
 function serializeWalletPassAction(pass: {
@@ -3901,6 +3916,9 @@ function serializeWalletPassAction(pass: {
   samsung_inactive_registrations: number | null;
   first_downloaded_at: string | null;
   registration_checked_at: Date | null;
+  first_confirmed_at: Date | null;
+  user_agent: string | null;
+  user_agent_captured_at: Date | null;
 }): WalletPassActionDto {
   return {
     status: pass.status as WalletPassStatus,
@@ -3918,6 +3936,9 @@ function serializeWalletPassAction(pass: {
     samsung_inactive_registrations: pass.samsung_inactive_registrations,
     first_downloaded_at: pass.first_downloaded_at,
     registration_checked_at: pass.registration_checked_at ? pass.registration_checked_at.toISOString() : null,
+    first_confirmed_at: pass.first_confirmed_at ? pass.first_confirmed_at.toISOString() : null,
+    user_agent: pass.user_agent,
+    user_agent_captured_at: pass.user_agent_captured_at ? pass.user_agent_captured_at.toISOString() : null,
   };
 }
 

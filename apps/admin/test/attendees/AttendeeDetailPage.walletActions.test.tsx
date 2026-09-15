@@ -96,6 +96,9 @@ function walletPass(overrides: Partial<Record<string, unknown>> = {}) {
     samsung_inactive_registrations: null,
     first_downloaded_at: null,
     registration_checked_at: null,
+    first_confirmed_at: null,
+    user_agent: null,
+    user_agent_captured_at: null,
     ...overrides,
   };
 }
@@ -754,6 +757,45 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
     expect(screen.getByText("Last system status update")).toBeTruthy();
     expect(screen.getByText("Last error")).toBeTruthy();
     expect(screen.getByText("wallet_provider_unauthorized")).toBeTruthy();
+  });
+
+  it("shows a Device row parsed from the captured User-Agent once the registration is confirmed", async () => {
+    mockLoad(
+      baseDetail({
+        wallet_pass: walletPass({
+          user_agent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.7 Mobile/15E148 Safari/604.1",
+          first_confirmed_at: "2026-02-01T00:00:00.000Z",
+        }),
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.getByText("Device")).toBeTruthy();
+    expect(screen.getByText("Safari 18.7 / iOS 18.7")).toBeTruthy();
+  });
+
+  it("omits the Device row when no User-Agent has been captured yet", async () => {
+    mockLoad(baseDetail({ wallet_pass: walletPass() }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.queryByText("Device")).toBeNull();
+  });
+
+  it("omits the Device row when a User-Agent was captured but the registration isn't confirmed yet (e.g. a mail security scanner pre-fetched the wallet link)", async () => {
+    mockLoad(
+      baseDetail({
+        wallet_pass: walletPass({
+          user_agent: "curl/8.0 (compatible; MailScannerBot/1.0)",
+          first_confirmed_at: null,
+        }),
+      }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+
+    expect(screen.queryByText("Device")).toBeNull();
   });
 });
 
