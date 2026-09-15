@@ -182,7 +182,37 @@ async function beginRegistration(cookie: string, attachment: "platform" | "cross
 
 /** Full begin → virtual-authenticator ceremony → finish round trip. `credentialId` is the raw
  * WebAuthn credential id (base64url, as it appears in `excludeCredentials`/`allowCredentials`) —
- * distinct from `finishBody.id`, which is this row's own DB id. */
+ * distinct from `finishBody.id`, which is this row's own DB id.
+ *
+ * A successful finish also fires account.auth_factor.changed via a fire-and-forget notify() call
+ * (see notifyAuthFactorChanged's own doc comment) that this helper's own caller never awaits -
+ * it's reached through the response handler returning, not through this function's return value.
+ * Every caller in this file uses `userCookie`, i.e. the same fixture `userId` and the same
+ * dedupe key, so without draining it here, that claim+insert can still be in flight when a *later*
+ * test's own afterEach/action - or, for the two tests that register a second credential, this same
+ * helper's own next call - runs. Most callers only want the credential row and never check for
+ * this notification at all, so nothing here was waiting for it to land the way the DELETE tests
+ * below explicitly do. Landing during another test's own `expectAuthFactorChangedNotification`
+ * poll surfaced as a real, rare CI flake: two rows where that test expected one (see issue #1331).
+ * Waiting for it here, then deleting that row and clearing its throttle claim, closes that gap for
+ * every caller and keeps each call self-contained - a second call in the same test (or a later
+ * test's own action) always finds a clean slate for this same title, rather than tripping over a
+ * row an earlier call already accounted for.
+ *
+ * A handful of tests below complete a real registration directly against `app.request(...)`
+ * instead of through this helper (they're exercising something registerCredential's own fixed
+ * `attachment`/cookie shape can't, e.g. a challenge replayed against the same finish endpoint
+ * twice, or a second `Hono` app instance for a path-carrying Instance URL) - those call this same
+ * drain themselves, for the same reason. */
+async function drainAddedNotification(): Promise<void> {
+  const addedTitle = "A new passkey was added";
+  await expectAuthFactorChangedNotification(userId, addedTitle);
+  await prisma.notification.deleteMany({
+    where: { user_id: userId, notification_type: "account.auth_factor.changed", title: addedTitle },
+  });
+  await prisma.notificationThrottle.deleteMany({ where: { event_type: "account.auth_factor.changed" } });
+}
+
 async function registerCredential(
   cookie: string,
   attachment: "platform" | "cross-platform",
@@ -197,7 +227,9 @@ async function registerCredential(
     headers: { Cookie: cookie, ...sameOrigin, "Content-Type": "application/json" },
     body: JSON.stringify({ attachment, label, response }),
   });
-  return { authenticator, credentialId: response.id, finishRes, finishBody: await finishRes.json() };
+  const finishBody = await finishRes.json();
+  if (finishRes.status === 200) await drainAddedNotification();
+  return { authenticator, credentialId: response.id, finishRes, finishBody };
 }
 
 describe("POST /api/account/mfa/webauthn/register/begin", () => {
@@ -303,7 +335,8 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
     expect(row?.credential_id).toBe(credentialId);
     expect(row?.credential_id).not.toBe(row?.id);
 
-    await expectAuthFactorChangedNotification(userId, "A new passkey was added");
+    // registerCredential (above) already waits for exactly one account.auth_factor.changed
+    // notification titled "A new passkey was added" before returning - see its own doc comment.
   });
 
   it("a second credential does not return fresh backup codes (already acknowledged from the first)", async () => {
@@ -372,6 +405,10 @@ describe("POST /api/account/mfa/webauthn/register/finish", () => {
       body: JSON.stringify({ attachment: "platform", response }),
     });
     expect(first.status).toBe(200);
+    // This registration succeeded directly against app.request, not through registerCredential -
+    // drain its own account.auth_factor.changed notification the same way that helper does (see
+    // its own doc comment) so it can't straggle into a later test.
+    await drainAddedNotification();
 
     const replay = await app.request("/api/account/mfa/webauthn/register/finish", {
       method: "POST",
@@ -450,6 +487,10 @@ describe("WebAuthn RP origin, an Instance URL with a path", () => {
     });
     expect(finishRes.status).toBe(200);
     expect(((await finishRes.json()) as { ok: boolean }).ok).toBe(true);
+    // Registered directly against pathedApp, not through registerCredential - drain its own
+    // notification the same way that helper does (see its own doc comment) so it can't straggle
+    // into a later test. pathedApp shares this file's own `prisma`, so the same drain applies.
+    await drainAddedNotification();
   });
 });
 
@@ -482,15 +523,11 @@ describe("GET /api/account/mfa/webauthn", () => {
 
 describe("DELETE /api/account/mfa/webauthn/:credentialId", () => {
   it("removes a credential for the non-MFA-required operator fixture without a step-up code", async () => {
+    // registerCredential already waits for account.auth_factor.changed's "added" notification to
+    // land and clears its throttle claim before returning (see the helper's own doc comment), so
+    // the DELETE below is guaranteed a clear dedupe window for its own, separate notification.
     const { finishBody } = await registerCredential(userCookie, "platform");
     const credentialId = (finishBody as { id: string }).id;
-    // The register call above already claims account.auth_factor.changed's own throttle slot for
-    // this user via its own fire-and-forget notify() - wait for that dispatch to fully land
-    // (claim + send + release-on-noop, all internal to notify()) before clearing the throttle
-    // row, otherwise a race between this cleanup and register's still-in-flight claim could
-    // re-insert the row afterward and silently throttle the DELETE's own notification below.
-    await expectAuthFactorChangedNotification(userId, "A new passkey was added");
-    await prisma.notificationThrottle.deleteMany({ where: { event_type: "account.auth_factor.changed" } });
 
     const res = await app.request(`/api/account/mfa/webauthn/${credentialId}`, {
       method: "DELETE",
