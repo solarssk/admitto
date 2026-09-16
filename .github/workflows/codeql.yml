@@ -19,6 +19,10 @@ concurrency:
 
 permissions:
   contents: read
+  # Required by github/codeql-action/analyze to upload SARIF to the Security tab - the Code
+  # Scanning API itself gates this write on the security-events scope, no narrower alternative
+  # exists (Scorecard's Token-Permissions check still flags any non-read grant, even scoped and
+  # justified like this one - accepted, not a fixable finding).
   security-events: write
 
 jobs:
