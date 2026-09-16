@@ -43,6 +43,13 @@ describe("parseUserAgent", () => {
     expect(parseUserAgent(firefox)).toBe("Firefox / iOS");
     expect(parseUserAgent(edge)).toBe("Edge / iOS");
   });
+
+  it("labels Android Samsung Internet and Edge by their own identifier, not the Chrome/ compatibility token they both also carry", () => {
+    const samsung = "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.6261.119 Mobile Safari/537.36";
+    const edge = "Mozilla/5.0 (Linux; Android 10; HD1913) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 EdgA/125.0.2535.51";
+    expect(parseUserAgent(samsung)).toBe("Samsung Internet / Android");
+    expect(parseUserAgent(edge)).toBe("Edge / Android");
+  });
 });
 
 describe("parseUserAgentWithVersion", () => {
@@ -77,5 +84,10 @@ describe("parseUserAgentWithVersion", () => {
   it("includes the version for iOS Chrome (CriOS), not the plain Safari fallback", () => {
     const ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/125.0.6422.80 Mobile/15E148 Safari/604.1";
     expect(parseUserAgentWithVersion(ua)).toBe("Chrome 125.0.6422.80 / iOS 18.7");
+  });
+
+  it("includes the Samsung Internet version, not Chrome's embedded engine version", () => {
+    const ua = "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.6261.119 Mobile Safari/537.36";
+    expect(parseUserAgentWithVersion(ua)).toBe("Samsung Internet 26.0 / Android 14");
   });
 });
