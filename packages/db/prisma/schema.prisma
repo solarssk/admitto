@@ -409,6 +409,24 @@ model WalletPass {
   registration_checked_at        DateTime?
   registration_sync_attempted_at DateTime?
 
+  // Raw request User-Agent captured on Admitto's own /t/:token/wallet/:platform redirect (the
+  // attendee's first hop, before PassCreator's own apple_url/android_url) - same
+  // store-raw-parse-at-read-time convention as Session.user_agent/ApiKey.user_agent, parsed via
+  // apps/admin/src/utils/parseUserAgent.ts. Refreshed on every click of that link only while
+  // first_confirmed_at is still null, then frozen (handleWalletRedirect's updateMany) - a
+  // corporate mail scanner can hit this same redirect and create a real pass before the attendee
+  // ever opens the email, but every click before confirmation (scanner or real, in either order)
+  // is fair game to overwrite, so only the value present at the moment of confirmation sticks.
+  // Deliberately NOT also written for a pass already confirmed before this column existed (bot
+  // review of an earlier, broader version of this predicate): that row has no unconfirmed window
+  // left in which a later real click could safely out-race a scanner's hit, so it stays null -
+  // "unknown" - rather than risking permanent misattribution to whatever request happens to land
+  // first. The admin UI only shows this field once first_confirmed_at is also set
+  // (AttendeeDetailPage.tsx). PassCreator's own hosted pass-activity log isn't exposed via their
+  // API, so there is no other source to backfill a pre-existing confirmed pass from.
+  user_agent             String?
+  user_agent_captured_at DateTime?
+
   // Legacy/native-provider seam (ADR 0009 §3) - nullable, unused while provider = passcreator.
   pass_type_id  String?
   serial_number String?

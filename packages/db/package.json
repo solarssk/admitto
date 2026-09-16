@@ -23,6 +23,10 @@
       "types": "./dist/status.d.ts",
       "default": "./dist/status.js"
     },
+    "./wallet-pass-fields": {
+      "types": "./dist/wallet-pass-fields.d.ts",
+      "default": "./dist/wallet-pass-fields.js"
+    },
     "./roles": {
       "types": "./dist/roles.d.ts",
       "default": "./dist/roles.js"

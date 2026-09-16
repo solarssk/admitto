@@ -1127,6 +1127,35 @@ export function createApp(options: CreateAppOptions = {}) {
     if (!url) {
       return c.redirect(`${backHref}?walletError=1`, 302);
     }
+
+    // Best-effort device capture: this is Admitto's own hop before the attendee's browser ever
+    // reaches PassCreator's URL, so it's the only place Admitto can see the real request
+    // User-Agent (PassCreator's own "Pass Activity" log isn't exposed via their API - see
+    // WalletPass.user_agent's own doc comment). A DB error here must never block the redirect the
+    // attendee is actually waiting on.
+    //
+    // Only writes while first_confirmed_at is still null - deliberately narrower than "capture
+    // until we have something, then freeze" (an earlier version of this used
+    // OR(user_agent: null, first_confirmed_at: null) specifically to backfill a pass confirmed
+    // before this column existed, but that reopened the exact hole this whole design exists to
+    // close: a corporate mail scanner - Safe Links, Proofpoint, etc. - can hit this same redirect
+    // before the attendee ever opens the email, and for an already-confirmed legacy row there is
+    // no unconfirmed grace window left for a later real click to overwrite it in, so the scanner's
+    // hit would win permanently - bot review). A pass first confirmed after this shipped still
+    // gets it exactly right: every click before its own confirmation (bot pre-fetch or real click,
+    // in either order) is fair game to overwrite, and only the value present at confirmation time
+    // freezes. A pass that was already confirmed before this column existed has no such window
+    // left to safely observe, so it never gets a captured device via this path - "unknown" here,
+    // not "attribute it to whoever happens to hit the link next."
+    try {
+      await db.walletPass.updateMany({
+        where: { attendee_id: attendee.id, first_confirmed_at: null },
+        data: { user_agent: c.req.header("user-agent") ?? null, user_agent_captured_at: new Date() },
+      });
+    } catch (err) {
+      console.error("walletPass update (user_agent) failed:", err);
+    }
+
     return c.redirect(url, 302);
   }
 
