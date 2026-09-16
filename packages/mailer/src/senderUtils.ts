@@ -15,8 +15,10 @@ export function formatFromHeader(sender: Pick<MailSender, "fromAddress" | "fromN
   return fromAddress;
 }
 
-/** Message replyTo wins over config default. */
+/** Message replyTo wins over config default; suppressReplyTo wins over both (see its own doc
+ * comment on MailMessage). */
 export function resolveReplyTo(configReplyTo: string | undefined, message: MailMessage): string | undefined {
+  if (message.suppressReplyTo) return undefined;
   const msgReplyTo = message.replyTo?.trim();
   return msgReplyTo || configReplyTo;
 }
