@@ -7,7 +7,8 @@
 Report vulnerabilities privately:
 
 - **GitHub private vulnerability reporting** (preferred): use the
-  [Report a vulnerability](../../security/advisories/new) button in the Security tab.
+  [Report a vulnerability](https://github.com/solarssk/admitto/security/advisories/new) button in
+  the Security tab.
 - **Direct contact**: reach @solarssk on GitHub.
 
 We will acknowledge your report within 48 hours and aim to resolve confirmed

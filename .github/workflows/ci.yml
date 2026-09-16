@@ -16,6 +16,11 @@ on:
 # pointless) run instead of replacing it, wasting runner slots and delaying feedback on the latest
 # commit. Not applied to `main`: a push there gates docker-build (image publish) and is rare enough
 # (one per merge) that every commit deserves a full, uncancelled run rather than racing the next.
+# Empty top-level default (deny-all) - every job below declares its own least-privilege set on
+# top of this. Satisfies Scorecard's Token-Permissions check, which requires a topLevel
+# `permissions:` key to exist even though the real scoping happens per job.
+permissions: {}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
