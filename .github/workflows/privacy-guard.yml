@@ -121,9 +121,17 @@ jobs:
           # additions but no `.patch` is flagged UNSCANNABLE below and fails closed rather than
           # being silently treated as "nothing added".
           #
-          # Exception: package-manager lockfiles. Their content is entirely derived from the
-          # registry (package names, semver ranges, integrity hashes) - nothing a contributor
-          # types goes into them, so they cannot carry PII/secrets no matter how large the diff
+          # Exception: package-manager lockfiles, but only when GitHub omitted the patch
+          # (UNSCANNABLE) - a lockfile small enough that the API *did* return its patch is still
+          # scanned below exactly like any other file. Skipping unconditionally on basename alone
+          # would let a manually hand-edited lockfile, or a resolved-package URL containing a
+          # token/identifier, sail through unscanned whenever its diff happens to be small enough
+          # to include. The exemption only ever waives the "can't verify, so fail closed" rule for
+          # the *hidden* case, never actual scanning of content the API did hand us.
+          #
+          # Rationale for the hidden case: lockfile content is entirely derived from the registry
+          # (package names, semver ranges, integrity hashes) - nothing a contributor types goes
+          # into them, so a hidden lockfile diff cannot carry PII/secrets no matter how large it
           # is. Without this exemption, any lockfile regeneration whose diff exceeds GitHub's
           # diff-API size cap trips UNSCANNABLE and fails closed on a file that was never at risk
           # (seen in practice: a ~3500-line package-lock.json diff from a routine dependency bump).
@@ -148,8 +156,10 @@ jobs:
             (if .status != "removed" then "FILENAME:" + .filename else empty end),
             (
               (.filename | split("/") | last) as $base |
-              if ($lf | index($base)) != null then empty
-              elif .patch == null and (.additions // 0) > 0 then "UNSCANNABLE:" + .filename
+              if .patch == null and (.additions // 0) > 0 then
+                if ($lf | index($base)) != null then empty
+                else "UNSCANNABLE:" + .filename
+                end
               else (.patch // empty)
               end
             )
