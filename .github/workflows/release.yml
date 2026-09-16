@@ -28,10 +28,17 @@ permissions:
   # `gh workflow run publish-container.yml` / `deploy-smoke.yml` below - confirmed required, not
   # a design oversight: GITHUB_TOKEN-created tag pushes deliberately do not cascade into other
   # workflow runs (GitHub's own anti-infinite-loop protection), so re-dispatching explicitly is
-  # the only way to trigger them from here. A workflow_call from this workflow was considered and
-  # rejected: both targets are also independently triggered by a real human tag push
-  # (publish-container.yml's own `on: push: tags:`), so folding them into a synchronous call here
-  # would duplicate that trigger path, not replace it.
+  # the only way to trigger them from here. A workflow_call from this workflow was considered -
+  # the two trigger paths don't actually collide the way an earlier version of this comment
+  # claimed (an ordinary release never reaches publish-container.yml's own `push: tags:`, since
+  # that's exactly the GITHUB_TOKEN limitation above; the emergency signed-tag path, in turn,
+  # never runs *this* workflow, since release.yml only triggers on `push: branches: [main]`) -
+  # but rejected anyway for a different, real reason: reusable-workflow calls can only narrow
+  # permissions down the chain, never grant more than the caller already has (GitHub's own docs:
+  # "permissions can only be maintained or reduced - not elevated"). Calling
+  # publish-container.yml's merge-and-publish job this way would mean *this* workflow needs its
+  # own `packages: write` + `id-token: write` + `attestations: write` too - trading actions:write
+  # for three broader scopes, not a narrower total surface.
   actions: write
 
 concurrency:
