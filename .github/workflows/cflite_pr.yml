@@ -1,0 +1,47 @@
+name: ClusterFuzzLite PR fuzzing
+
+# Short, code-change-mode fuzzing run on every PR - not a merge gate (10 minutes isn't enough to
+# find much beyond an immediate crash), but it exercises whatever a PR just touched in the two
+# harnesses under .clusterfuzzlite/fuzz/ with the corpus the batch job (cflite_batch.yml) has
+# already accumulated. See .clusterfuzzlite/build.sh for what each harness covers and why.
+on:
+  pull_request:
+    paths:
+      - ".clusterfuzzlite/**"
+      - "packages/shared/src/csvUtils.ts"
+      - "apps/admin/src/utils/parseUserAgent.ts"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  pr-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # output-sarif: true below uploads crash findings to the Security tab.
+      security-events: write
+    steps:
+      # No sanitizer matrix (unlike ClusterFuzzLite's own C++ examples): confirmed locally that
+      # `sanitizer: address` fails outright for language: javascript ("JavaScript projects cannot
+      # be fuzzed with sanitizers") - Jazzer.js instruments V8 bytecode for coverage instead of
+      # relying on ASan/UBSan, so the action's own default (none) is the only valid value here.
+      - name: Build fuzzers
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1  # v1
+        with:
+          language: javascript
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run fuzzers
+        id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1  # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 600
+          mode: "code-change"
+          output-sarif: true
