@@ -348,6 +348,43 @@ describe("GET /api/admin/security-audit-log", () => {
     }
   });
 
+  it("finds a multi-recipient notification-dispatch row by a listed recipient's name or email via search, even though user_id/user_email/user_display_name are null for that row (bot review finding, PR #1344)", async () => {
+    await prisma.securityAuditLog.create({
+      data: {
+        event_type: "notification.dispatch.sent",
+        user_id: null,
+        user_email: null,
+        user_display_name: null,
+        ip: null,
+        metadata: {
+          notification_type: "auth.login.repeated_failures",
+          channels_sent: ["email", "webhook"],
+          recipients: ["Multi Recipient Search <multi-recipient-search@example.com>", "second-recipient@example.com"],
+        },
+        created_at: new Date("2026-07-03T09:05:00.000Z"),
+      },
+    });
+    try {
+      const byName = await app.request(
+        `/api/admin/security-audit-log?event_type=notification.dispatch.sent&search=${encodeURIComponent("Multi Recipient Search")}`,
+        { headers: { Cookie: superCookie } },
+      );
+      const byNameBody = (await byName.json()) as { total: number };
+      expect(byNameBody.total).toBeGreaterThanOrEqual(1);
+
+      const byEmail = await app.request(
+        `/api/admin/security-audit-log?event_type=notification.dispatch.sent&search=${encodeURIComponent("second-recipient@example.com")}`,
+        { headers: { Cookie: superCookie } },
+      );
+      const byEmailBody = (await byEmail.json()) as { total: number };
+      expect(byEmailBody.total).toBeGreaterThanOrEqual(1);
+    } finally {
+      await prisma.securityAuditLog.deleteMany({
+        where: { event_type: "notification.dispatch.sent", metadata: { path: ["notification_type"], equals: "auth.login.repeated_failures" } },
+      });
+    }
+  });
+
   it("filters by event_type", async () => {
     const res = await app.request("/api/admin/security-audit-log?event_type=auth.mfa.fail", {
       headers: { Cookie: superCookie },
