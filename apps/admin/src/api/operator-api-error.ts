@@ -304,7 +304,7 @@ function isOperatorSafeDetail(detail: string): boolean {
 
 function statusFallback(err: ApiError, fallback: string): string {
   const code = normalizedCode(err);
-  if (code && CODE_MESSAGES[code]) return CODE_MESSAGES[code]!;
+  if (code && CODE_MESSAGES[code]) return CODE_MESSAGES[code];
   if (err.status === 401) {
     if (!code || code === "unauthorized" || code === "authentication_required") {
       return CODE_MESSAGES.unauthorized ?? fallback;

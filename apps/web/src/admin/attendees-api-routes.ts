@@ -764,7 +764,7 @@ async function loadAttendeeActionLogEntries(
         : "System",
       metadata:
         log.metadata && typeof log.metadata === "object" && !Array.isArray(log.metadata)
-          ? (log.metadata as Record<string, unknown>)
+          ? (log.metadata)
           : null,
       created_at: log.created_at.toISOString(),
       client_timezone: log.client_timezone,
@@ -1396,7 +1396,7 @@ function computePatchChanges(
   }
 
   if (customData) {
-    data.custom_data = customData as Prisma.InputJsonValue;
+    data.custom_data = customData;
   }
 
   if (fields.length === 0) return null;
@@ -3520,7 +3520,7 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
   let customData: Prisma.InputJsonValue | undefined;
   try {
     const built = buildCustomDataFromInput(allowedFields, custom_data);
-    customData = built as Prisma.InputJsonValue | undefined;
+    customData = built;
   } catch (err) {
     return c.json(customDataErrorPayload(err), 400);
   }

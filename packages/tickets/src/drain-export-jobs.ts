@@ -83,7 +83,7 @@ async function markExportFailed(db: PrismaClient, jobId: string, err: unknown): 
       status: "failed",
       finished_at: new Date(),
       error: (err instanceof Error ? err.message : String(err)).slice(0, 2000),
-      ...(scrubbed !== undefined && scrubbed !== null ? { result_json: scrubbed as object } : {}),
+      ...(scrubbed !== undefined && scrubbed !== null ? { result_json: scrubbed } : {}),
     },
   });
 }

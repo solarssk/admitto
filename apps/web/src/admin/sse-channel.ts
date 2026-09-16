@@ -109,7 +109,7 @@ function createSseRedisClient(url: string): RedisClientType {
     if (redisPub !== client && redisSub !== client) return;
     dropRedisConnection("SSE Redis connection dropped");
   });
-  return client as RedisClientType;
+  return client;
 }
 
 /** Lazily connects a dedicated subscriber + publisher pair on first use (a client in pub/sub

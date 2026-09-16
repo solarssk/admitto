@@ -327,7 +327,7 @@ export async function handleCreateEventItem(c: Context, db: PrismaClient): Promi
           type: "item",
           enabled: true,
           icon: normalizeEventItemIconForStorage(parsed.data.icon) ?? null,
-          config: (parsed.data.config ?? undefined) as Prisma.InputJsonValue | undefined,
+          config: (parsed.data.config ?? undefined),
         },
         select: {
           id: true,
@@ -410,7 +410,7 @@ function buildEventItemPatch(
     fields.push("enabled");
   }
   if (patchInput.config !== undefined) {
-    data.config = patchInput.config as Prisma.InputJsonValue;
+    data.config = patchInput.config;
     fields.push("config");
   }
   if (patchInput.icon !== undefined && patchInput.icon !== existing.icon) {
@@ -519,7 +519,7 @@ async function syncBadgeAtEntryOff(
       ops_config: {
         ...currentOps,
         badge_at_entry: false,
-      } as Prisma.InputJsonValue,
+      },
     },
   });
   await writeBulkActionLog(tx, {
@@ -819,7 +819,7 @@ export async function handlePatchEventOpsConfig(c: Context, db: PrismaClient): P
 
       await tx.event.update({
         where: { id: eventId },
-        data: { ops_config: next as Prisma.InputJsonValue },
+        data: { ops_config: next },
       });
       await writeBulkActionLog(tx, {
         event_id: eventId,

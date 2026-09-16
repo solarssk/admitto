@@ -4,7 +4,7 @@
   "description": "Pinned, lockfile-resolved toolchain for .clusterfuzzlite/build.sh - not a real workspace member (see build.sh's own comments for why this lives in an isolated prefix).",
   "devDependencies": {
     "typescript": "5.9.3",
-    "@jazzer.js/core": "2.1.0"
+    "@jazzer.js/core": "4.0.0"
   },
   "overrides": {
     "tar": "^7.5.21"

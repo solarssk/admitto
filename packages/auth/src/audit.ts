@@ -515,7 +515,7 @@ export async function logSuperadminBootstrapCli(
       user_display_name: null,
       ip: null,
       actor_timezone: null,
-      metadata: {} as Prisma.InputJsonValue,
+      metadata: {},
     },
   });
 }

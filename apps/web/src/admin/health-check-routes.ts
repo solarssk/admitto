@@ -1254,7 +1254,7 @@ export async function fileStorageRow(
       };
     }
     // X_OK: directory must be searchable so children can be created (Unix).
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
+     
     await access(uploadPath, constants.R_OK | constants.W_OK | constants.X_OK);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;

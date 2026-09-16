@@ -52,7 +52,7 @@ function readRequest(job: { result_json: unknown }): WalletMessageRequest | null
   if (typeof req.eventId !== "string" || !req.eventId) return null;
   if (!Array.isArray(req.attendeeIds) || !req.attendeeIds.every((id) => typeof id === "string")) return null;
   if (typeof req.text !== "string" || !req.text.trim()) return null;
-  return { eventId: req.eventId, attendeeIds: req.attendeeIds as string[], text: req.text };
+  return { eventId: req.eventId, attendeeIds: req.attendeeIds, text: req.text };
 }
 
 /** Maps the two deliberately-thrown internal signals in runOneWalletMessageJob below to their

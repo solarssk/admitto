@@ -271,7 +271,7 @@ function DraftTicketTypeRow({
         // queue the row with whatever `color` was still set at that moment (the "blue" default,
         // if the admin clicked the swatch before typing a color choice) instead of the one they
         // were about to pick (CodeRabbit review).
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+        if (!e.currentTarget.contains(e.relatedTarget)) {
           commit();
         }
       }}
