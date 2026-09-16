@@ -51,6 +51,7 @@ reason. The CI documentation check verifies this declaration and the Wiki source
 - [ ] No secrets / keys / passwords in the diff
 - [ ] No real personal data (seed/sample data uses synthetic `@example.com` addresses)
 - [ ] Tests pass locally (`npm test`; optional: `npm run coverage` to match CI)
+- [ ] New or changed functionality is covered by tests added to the automated suite
 - [ ] New fields containing personal data are justified and minimised
 - [ ] No PII in logs; token/QR contains no personal data
 - [ ] DB schema changes include a migration
