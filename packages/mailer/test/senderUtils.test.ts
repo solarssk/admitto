@@ -31,6 +31,21 @@ describe("resolveReplyTo", () => {
       "config@example.com",
     );
   });
+
+  it("suppressReplyTo wins over both the config default and an explicit message replyTo", () => {
+    expect(
+      resolveReplyTo("config@example.com", {
+        to: "a@example.com",
+        subject: "s",
+        html: "",
+        replyTo: "msg@example.com",
+        suppressReplyTo: true,
+      }),
+    ).toBeUndefined();
+    expect(
+      resolveReplyTo("config@example.com", { to: "a@example.com", subject: "s", html: "", suppressReplyTo: true }),
+    ).toBeUndefined();
+  });
 });
 
 describe("parseAddressList", () => {
