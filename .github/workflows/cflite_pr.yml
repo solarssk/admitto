@@ -1,0 +1,61 @@
+name: ClusterFuzzLite PR fuzzing
+
+# Short, code-change-mode fuzzing run on every PR - not a merge gate (10 minutes isn't enough to
+# find much beyond an immediate crash), but it exercises whatever a PR just touched in the two
+# harnesses under .clusterfuzzlite/fuzz/ with the corpus the batch job (cflite_batch.yml) has
+# already accumulated. See .clusterfuzzlite/build.sh for what each harness covers and why.
+on:
+  pull_request:
+    paths:
+      - ".clusterfuzzlite/**"
+      - "packages/shared/src/csvUtils.ts"
+      - "apps/admin/src/utils/parseUserAgent.ts"
+      # Dependabot bumps action pins in these two workflow files without touching anything else
+      # above; without this, that PR wouldn't match the filter and pr-fuzz would never exercise
+      # the updated action before merge.
+      - ".github/workflows/cflite_pr.yml"
+      - ".github/workflows/cflite_batch.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  pr-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # output-sarif: true below uploads crash findings to the Security tab.
+      security-events: write
+    steps:
+      # No sanitizer matrix (unlike ClusterFuzzLite's own C++ examples) - two separate real-run
+      # findings pinned this to exactly `coverage`, neither found by local `docker run` testing
+      # alone: (1) omitting the input defaults the action to `address`, which the container's own
+      # `compile` script rejects outright for language: javascript ("JavaScript projects cannot
+      # be fuzzed with sanitizers" - Jazzer.js instruments V8 bytecode for coverage, not
+      # ASan/UBSan); (2) the action's own input validator only accepts
+      # address/memory/undefined/coverage - the literal string `none`, which `compile` itself
+      # does accept, isn't a valid action input and fails before the container even starts.
+      # `coverage` is accepted by both.
+      # No github-token here (unlike run_fuzzers below): checked the action's own source - it's
+      # only consumed for the storage-repo/upload-build inputs, neither of which this workflow
+      # sets, so passing a token this step never uses would just be unnecessary exposure.
+      - name: Build fuzzers
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1  # v1
+        with:
+          language: javascript
+          sanitizer: coverage
+
+      - name: Run fuzzers
+        id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1  # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 600
+          mode: "code-change"
+          sanitizer: coverage
+          output-sarif: true

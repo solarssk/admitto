@@ -56,6 +56,9 @@ npm run coverage
 
 Do not commit with a broken suite unless the PR explicitly documents why.
 
+New or changed functionality MUST be covered by tests added to the automated suite (see the PR
+template's checklist).
+
 ## Commits and branches
 
 [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <description>`
