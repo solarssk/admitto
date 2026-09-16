@@ -762,7 +762,21 @@ jobs:
           # this paragraph normally warns about: a future version bump here won't automatically
           # fail this specific gate the way a sharp/libvips bump would - re-review manually, the
           # same as a REVIEWED_PACKAGE_VERSIONS entry would need on a bump.
-          allow-dependencies-licenses: "pkg:githubactions/sonarsource/sonarqube-scan-action, pkg:npm/ip-location-api"
+          #
+          # semgrep.yml's hash-pinned pip toolchain (semgrep-requirements.txt) surfaces the same
+          # way ip-location-api's manifest-entry-diff did above: hash-pinning it for Scorecard's
+          # Pinned-Dependencies check (see semgrep.yml) is what first made this action able to see
+          # these packages at all, and 4 of them carry a license outside `allow-licenses`: semgrep
+          # itself is LGPL-2.1-or-later, certifi is MPL-2.0, protobuf's license string is a
+          # BSD-3-Clause/LicenseRef-scancode-protobuf AND-compound this allowlist can't express,
+          # and typing-extensions resolves to a multi-license OR/AND string that includes
+          # GPL-1.0-or-later alongside its real PSF terms. Same reasoning as sonarqube-scan-action
+          # two paragraphs up, not ip-location-api: all four run only inside this repo's CI
+          # (semgrep the CLI, invoked as a subprocess - never imported into or shipped with
+          # Admitto's own code) and are never bundled into what a customer runs, so the
+          # version-blindness this action's own `purlsMatch()` imposes on a name-only entry isn't
+          # the same hole it would be for a real runtime dependency.
+          allow-dependencies-licenses: "pkg:githubactions/sonarsource/sonarqube-scan-action, pkg:npm/ip-location-api, pkg:pypi/semgrep, pkg:pypi/certifi, pkg:pypi/protobuf, pkg:pypi/typing-extensions"
 
   docker-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
