@@ -33,7 +33,7 @@
     "@admitto/db": "*",
     "@admitto/location": "*",
     "@admitto/shared": "*",
-    "mjml": "^5.4.0"
+    "mjml": "^5.4.1"
   },
   "devDependencies": {
     "@prisma/client": "^7.10.0",
