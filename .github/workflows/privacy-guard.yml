@@ -205,9 +205,15 @@ jobs:
                 echo "::error::Privacy guard: failed to fetch full content for lockfile '$blob_name' (blob $blob_sha) to verify its hidden diff. Failing closed rather than merging unscanned."
                 exit 1
               fi
-              blob_text="$(printf '%s' "$blob_b64" | tr -d '\n' | base64 -d 2>/dev/null)" || true
-              if [ -z "$blob_text" ]; then
-                echo "::error::Privacy guard: fetched content for lockfile '$blob_name' (blob $blob_sha) decoded to nothing. Failing closed rather than merging unscanned."
+              # GNU base64 (this runner's coreutils) can emit a partial decoded prefix and still
+              # exit nonzero on malformed input (e.g. garbage after the padding `=`) - checking
+              # only whether $blob_text is empty would accept that truncated prefix and silently
+              # drop everything after the corruption point, exactly the "unscanned content" this
+              # guard exists to prevent. The exit status is captured and checked on its own.
+              blob_decode_rc=0
+              blob_text="$(printf '%s' "$blob_b64" | tr -d '\n' | base64 -d 2>/dev/null)" || blob_decode_rc=$?
+              if [ "$blob_decode_rc" -ne 0 ] || [ -z "$blob_text" ]; then
+                echo "::error::Privacy guard: failed to base64-decode fetched content for lockfile '$blob_name' (blob $blob_sha). Failing closed rather than merging unscanned."
                 exit 1
               fi
               lockfile_blob_content="$(printf '%s\n%s\n' "$lockfile_blob_content" "$blob_text")"
