@@ -36,10 +36,13 @@ jobs:
           python-version: "3.11"
 
       - name: Install Semgrep
-        # semgrep 1.136.x still imports pkg_resources via opentelemetry; setuptools 82+ drops it
-        # on GH runners, hence setuptools==81.0.0 pinned in semgrep-requirements.in below (the
-        # newest release still inside that safe window, not just a range, so the exact installed
-        # version is reproducible - SonarCloud githubactions:S8544).
+        # semgrep==1.177.0 (bumped from 1.136.0): the lower version's own opentelemetry pin
+        # transitively capped protobuf<5.0, which was stuck on a known-vulnerable release
+        # (GHSA-7gcm-g887-7qv7) with no patched 4.x build available - only newer semgrep releases
+        # move to an opentelemetry line that allows a patched protobuf. Every package version
+        # pinned below (including setuptools==83.0.0 and pip==26.2.1) is reproducible on purpose,
+        # so the exact installed set is auditable (SonarCloud githubactions:S8544) - verified
+        # `pip-audit`-clean as a set before pinning, not just individually version-bumped.
         # --require-hashes (Scorecard's Pinned-Dependencies check) needs every package pip
         # resolves, including transitive dependencies, listed with its hash - semgrep-requirements.txt
         # is pip-compile's full closure for semgrep-requirements.in, not hand-maintained. Regenerate
@@ -47,6 +50,7 @@ jobs:
         #   pip-compile --generate-hashes --allow-unsafe \
         #     --output-file=.github/workflows/semgrep-requirements.txt \
         #     .github/workflows/semgrep-requirements.in
+        # then re-run `pip-audit -r .github/workflows/semgrep-requirements.txt` before committing.
         run: |
           python -m pip install --require-hashes -r .github/workflows/semgrep-requirements.txt --break-system-packages
 
