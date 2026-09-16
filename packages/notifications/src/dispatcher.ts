@@ -212,20 +212,30 @@ async function resolveUserSnapshots(db: Db, userIds: string[]): Promise<UserIden
 }
 
 /**
- * Recipient info for a "sent" audit row - resolved from `candidates` (who was eligible for this
- * dispatch, per the audience strategy), not from which channels happened to succeed, so the row
- * still names a recipient even when e.g. only the team webhook actually delivered. A single
- * recipient (every self-audience type - account.auth_factor.changed, account.login.new_location,
- * account.mfa.code_reused - or an org-staff type that happens to resolve to exactly one active
- * admin) maps onto SecurityAuditLog's existing single-subject user_id/user_email/
- * user_display_name columns, which the admin Logs UI already renders as "User" - no UI change
- * needed there beyond the event-label fix in AuditLogPanel.tsx. Multiple recipients (the common
- * org-staff case, several active admins) can't fit that single-subject shape, so they go into
- * metadata as a `recipients` list instead - AuditLogPanel.tsx's generic Details-popover formatter
- * already knows how to render an array of `{name, email}` objects, so no admin UI change is
- * needed for that path either.
+ * Recipient info for a dispatch outcome's audit row - resolved from `candidates` (who was
+ * eligible for this dispatch, per the audience strategy), not from which channels happened to
+ * succeed, so the row still names a recipient even when e.g. only the team webhook actually
+ * delivered, or when every channel failed. Used for every outcome that has a candidate list to
+ * resolve (sent, failed, skipped_no_recipients) - not just "sent": a partial failure (one channel
+ * delivered, another errored) is still a row about a real, identifiable recipient, not an
+ * anonymous one (bot review finding on PR #1344 - identity used to be lost entirely once
+ * `failures.length > 0` short-circuited before recipient resolution ever ran).
+ *
+ * A single recipient (every self-audience type - account.auth_factor.changed,
+ * account.login.new_location, account.mfa.code_reused - or an org-staff type that happens to
+ * resolve to exactly one active admin) maps onto SecurityAuditLog's existing single-subject
+ * user_id/user_email/user_display_name columns, which the admin Logs UI already renders as
+ * "User" - no UI change needed there beyond the event-label fix in AuditLogPanel.tsx. Multiple
+ * recipients (the common org-staff case, several active admins) can't fit that single-subject
+ * shape, so they go into metadata as a `recipients` list instead - each entry is pre-formatted as
+ * "Display Name <email>" (or bare email with no display name) rather than a `{name, email}`
+ * object, so it renders through AuditLogPanel.tsx's generic Details-popover array-of-strings path
+ * unchanged and always shows both fields together, never just whichever one that formatter's
+ * object-shape heuristic (`[obj.name, obj.email, obj.id].find(...)`) happens to pick first (bot
+ * review finding on PR #1344 - a `{name, email}` shape silently dropped the email whenever a
+ * display name was present).
  */
-async function resolveSentAuditRecipients(
+async function resolveDispatchAuditRecipients(
   db: Db,
   candidates: string[],
 ): Promise<{
@@ -240,7 +250,9 @@ async function resolveSentAuditRecipients(
   }
   if (snapshots.length > 1) {
     return {
-      metadata: { recipients: snapshots.map((u) => ({ name: u.display_name, email: u.email })) },
+      metadata: {
+        recipients: snapshots.map((u) => (u.display_name ? `${u.display_name} <${u.email}>` : u.email)),
+      },
     };
   }
   return { metadata: {} };
@@ -575,23 +587,41 @@ export async function notify(
       await releaseThrottleSlot(db, type, activeClaim.throttleKey, activeClaim.rowId);
     }
 
+    // Resolved once and attached to whichever outcome row is written below - who the dispatch's
+    // audience candidates actually were, independent of whether delivery to them succeeded,
+    // partially succeeded, or failed outright (see resolveDispatchAuditRecipients's own doc
+    // comment for why this isn't limited to the success path).
+    const recipientInfo = await resolveDispatchAuditRecipients(db, candidates);
+
     if (failures.length > 0) {
-      await writeDispatchAuditLog(db, "notification.dispatch.failed", event.organizationId, {
-        notification_type: type,
-        channels_sent: channelsSent,
-        failures,
-      });
+      await writeDispatchAuditLog(
+        db,
+        "notification.dispatch.failed",
+        event.organizationId,
+        {
+          notification_type: type,
+          channels_sent: channelsSent,
+          failures,
+          ...recipientInfo.metadata,
+        },
+        recipientInfo.userId,
+        recipientInfo.userIdentity,
+      );
       return;
     }
 
     if (channelsSent.length === 0) {
-      await writeDispatchAuditLog(db, "notification.dispatch.skipped_no_recipients", event.organizationId, {
-        notification_type: type,
-      });
+      await writeDispatchAuditLog(
+        db,
+        "notification.dispatch.skipped_no_recipients",
+        event.organizationId,
+        { notification_type: type, ...recipientInfo.metadata },
+        recipientInfo.userId,
+        recipientInfo.userIdentity,
+      );
       return;
     }
 
-    const recipientInfo = await resolveSentAuditRecipients(db, candidates);
     await writeDispatchAuditLog(
       db,
       "notification.dispatch.sent",

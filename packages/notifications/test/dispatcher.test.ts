@@ -340,7 +340,7 @@ describe("notify()", () => {
     expect(call.data.metadata["recipients"]).toBeUndefined();
   });
 
-  it("puts multiple org-staff recipients into the sent audit row's metadata.recipients, since they don't fit the single-subject user_id column", async () => {
+  it("puts multiple org-staff recipients into the sent audit row's metadata.recipients as pre-formatted 'Name <email>' strings - not a {name, email} object, which would silently drop the email whenever a display name is present (bot review finding, PR #1344)", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
     queryRawClaims(db, true);
     db.roleAssignment.findMany.mockResolvedValue([
@@ -363,11 +363,31 @@ describe("notify()", () => {
           event_type: "notification.dispatch.sent",
           user_id: null,
           metadata: expect.objectContaining({
-            recipients: [
-              { name: "Alice Admin", email: "alice@example.com" },
-              { name: null, email: "bob@example.com" },
-            ],
+            recipients: ["Alice Admin <alice@example.com>", "bob@example.com"],
           }),
+        }),
+      }),
+    );
+  });
+
+  it("still resolves and attaches recipient identity on a partial-failure row - a channel that errored must not make an otherwise-identified recipient show as Unknown (bot review finding, PR #1344)", async () => {
+    stubHappyPath(db);
+    db.user.findMany.mockResolvedValue([{ id: "u-1", email: "u1@example.com", display_name: "User One" }]);
+    const email = stubChannel({ ok: true });
+    const inApp = stubChannel({ ok: false, error: "in-app insert failed" });
+    const webhook = stubChannel({ ok: true, noop: true });
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email, in_app: inApp, webhook },
+    });
+
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event_type: "notification.dispatch.failed",
+          user_id: "u-1",
+          user_email: "u1@example.com",
+          user_display_name: "User One",
         }),
       }),
     );
