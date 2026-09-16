@@ -811,7 +811,6 @@ function PinnedNoteModal({
         onChange={(e) => setDraft(e.target.value)}
         placeholder="Short operational note visible to all staff…"
         rows={4}
-        autoFocus
       />
     </OverviewModal>
   );
@@ -905,7 +904,6 @@ function ContactModal({
         icon={<i className="ti ti-user" aria-hidden="true" />}
         value={form.name}
         onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-        autoFocus
       />
       <Input
         label="Role"
@@ -1047,7 +1045,6 @@ function ResourceModal({
         icon={<i className="ti ti-heading" aria-hidden="true" />}
         value={form.title}
         onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-        autoFocus
       />
       <div className="at-field">
         <label className="at-label" htmlFor="overview-resource-type">

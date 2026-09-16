@@ -171,11 +171,13 @@ describe("CameraOverlay manual search (#433)", () => {
     );
 
     openManualSearch();
-    expect(screen.getByLabelText("Search by name or email")).toBeTruthy();
+    const input = screen.getByLabelText("Search by name or email");
+    expect(document.activeElement).toBe(input);
 
     fireEvent.click(screen.getByText("Back to scanner"));
     expect(screen.queryByLabelText("Search by name or email")).toBeNull();
-    expect(screen.getByText("Manual search")).toBeTruthy();
+    const manualSearch = screen.getByRole("button", { name: "Manual search" });
+    await waitFor(() => expect(document.activeElement).toBe(manualSearch));
     expect(onSelectAttendee).not.toHaveBeenCalled();
   });
 

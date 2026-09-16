@@ -318,7 +318,6 @@ function CheckInScanBar({
             onChange={(e) => onBufferChange(e.target.value, e.timeStamp)}
             onPaste={onWedgePaste}
             onKeyDown={onKeyDown}
-            autoFocus
             inputMode="none"
             placeholder="Scan QR code or type name/email…"
             aria-label="QR scan or search"
