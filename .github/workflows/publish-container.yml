@@ -15,6 +15,11 @@ on:
 # the same release can't interleave digest exports or race the release-creation/upload calls.
 # cancel-in-progress stays false, matching release.yml - a publish in flight must finish, not be
 # cut off mid-push.
+# Empty top-level default (deny-all) - every job below declares its own least-privilege set on
+# top of this. Satisfies Scorecard's Token-Permissions check, which requires a topLevel
+# `permissions:` key to exist even though the real scoping happens per job.
+permissions: {}
+
 concurrency:
   group: publish-container-${{ github.event.inputs.ref || github.ref_name }}
   cancel-in-progress: false
