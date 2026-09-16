@@ -246,32 +246,12 @@ export interface CheckInStatsResponse {
 
 export type RsvpStatus = "none" | "confirmed" | "declined" | "tentative" | "cancelled";
 
-import type { AttendeeStatus, WalletPassStatus } from "@admitto/db/status";
+import type { AttendeeStatus } from "@admitto/db/status";
+import type { WalletPassApiFields } from "@admitto/db/wallet-pass-fields";
 
-export interface WalletPassActionDto {
-  status: WalletPassStatus;
-  issued_at: string | null;
-  voided_at: string | null;
-  apple_url: string | null;
-  android_url: string | null;
-  last_synced_at: string | null;
-  last_error_code: string | null;
-  apple_active_registrations: number | null;
-  apple_inactive_registrations: number | null;
-  google_active_registrations: number | null;
-  google_inactive_registrations: number | null;
-  samsung_active_registrations: number | null;
-  samsung_inactive_registrations: number | null;
-  /** Provider-reported "YYYY-MM-DD HH:MM:SS" string, deliberately not a Date. PassCreator's own
-   * docs don't state which timezone this is in; the admin UI treats it as UTC (the attendee's own
-   * action, in a timezone we have no way to know) and formats it - see formatFirstDownloadedAt in
-   * AttendeeDetailPage.tsx. */
-  first_downloaded_at: string | null;
-  registration_checked_at: string | null;
-  first_confirmed_at: string | null;
-  user_agent: string | null;
-  user_agent_captured_at: string | null;
-}
+/** See WalletPassApiFields - shared with apps/web's own mirror of this same wire shape
+ * (attendees-api-routes.ts) so the two don't drift out of sync by hand. */
+export type WalletPassActionDto = WalletPassApiFields;
 
 export interface AttendeeRowDto {
   id: string;

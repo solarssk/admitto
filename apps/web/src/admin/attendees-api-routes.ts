@@ -15,6 +15,7 @@ import {
 } from "@admitto/mail-delivery";
 import { TemplateNotFoundError } from "@admitto/mail-templates";
 import type { AttendeeStatus, WalletPassStatus } from "@admitto/db/status";
+import type { WalletPassApiFields } from "@admitto/db/wallet-pass-fields";
 import { decryptFromString } from "@admitto/crypto";
 import {
   WalletProviderError,
@@ -3852,28 +3853,9 @@ export async function handleRevokeAttendeeCheckIn(c: Context, db: PrismaClient):
   }
 }
 
-type WalletPassActionDto = {
-  status: WalletPassStatus;
-  issued_at: string | null;
-  voided_at: string | null;
-  apple_url: string | null;
-  android_url: string | null;
-  last_synced_at: string | null;
-  last_error_code: string | null;
-  apple_active_registrations: number | null;
-  apple_inactive_registrations: number | null;
-  google_active_registrations: number | null;
-  google_inactive_registrations: number | null;
-  samsung_active_registrations: number | null;
-  samsung_inactive_registrations: number | null;
-  /** Provider-reported string, deliberately not parsed to a Date - see the schema comment on
-   * WalletPass.first_downloaded_at for why (unconfirmed timezone). */
-  first_downloaded_at: string | null;
-  registration_checked_at: string | null;
-  first_confirmed_at: string | null;
-  user_agent: string | null;
-  user_agent_captured_at: string | null;
-};
+// Shared with apps/admin's own DTO of the same name (single source of truth in @admitto/db) so
+// the two don't drift out of sync by hand.
+type WalletPassActionDto = WalletPassApiFields;
 
 // Shared by buildAttendeeDetailDto's row param and serializeWalletPassAction below - both
 // independently needed this exact shape (a WalletPass row as read straight off Prisma), and
