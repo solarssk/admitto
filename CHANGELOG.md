@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Opening the staff app no longer immediately repeats its successful session check through the connection-status heartbeat. It still checks after 30 seconds and whenever the device comes back online or the tab becomes visible.
 - Security alert emails (a new-location login, a repeated failed sign-in, and every other notification type) no longer inherit the organisation's configured Reply-To address. A self-alert sent to the account it concerns previously ended up with the same address as both sender's reply target and recipient, a pattern several spam filters flag on its own - real alerts were landing in Spam for at least one deployment.
+- Logs & Audit's Security view now shows a readable label for every notification-dispatch event ("Notification sent", "Notification delivery failed", and the three skip reasons) instead of the raw internal event code, and its User column now shows who a notification actually went to instead of always reading "Unknown" - a single recipient (every self-audience alert, such as your own password or two-factor change) shows their name and email directly; multiple recipients (a team-wide alert reaching several admins) list each one's name and email in the row's Details.
 
 ## [0.7.0] - 2026-09-13
 
