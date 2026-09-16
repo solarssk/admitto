@@ -178,6 +178,11 @@ async function reclaimStaleRunningImportJob(
           created_count: historyNumber(resultJson?.created),
           updated_count: historyNumber(resultJson?.updated),
           skipped_count: historyNumber(resultJson?.skippedCount),
+          // Not actually unnecessary: without widening to `object`, Prisma's generated
+          // `result_json` input type (InputJsonValue) rejects resultJson's narrower inferred
+          // type at the tsc build step, even though eslint's structural check considers the
+          // assertion redundant.
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
           ...(resultJson ? { result_json: resultJson as object } : {}),
         },
       })

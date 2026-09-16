@@ -184,7 +184,7 @@ async function writeDispatchAuditLog(
         user_id: userId ?? null,
         user_email: userIdentity?.email ?? null,
         user_display_name: userIdentity?.displayName ?? null,
-        metadata: { organization_id: organizationId, ...metadata } as Prisma.InputJsonValue,
+        metadata: { organization_id: organizationId, ...metadata },
       },
     });
   } catch (err) {

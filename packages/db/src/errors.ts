@@ -7,7 +7,7 @@
 export function isSerializationFailure(err: unknown): boolean {
   if (typeof err !== "object" || err === null) return false;
 
-  if ("code" in err && (err as { code: unknown }).code === "P2034") return true;
+  if ("code" in err && (err).code === "P2034") return true;
 
   const metaCause = (
     err as { meta?: { driverAdapterError?: { cause?: { originalCode?: string; kind?: string } } } }

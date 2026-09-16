@@ -149,7 +149,7 @@ export async function handleUpdateContact(c: Context, db: PrismaClient): Promise
     const contact = await db.eventContact.update({
       where: { id: contactId },
       data: {
-        ...(body.name !== undefined && { name: body.name!.trim() }),
+        ...(body.name !== undefined && { name: body.name.trim() }),
         ...(body.role !== undefined && { role: body.role?.trim() || null }),
         ...(body.phone !== undefined && { phone: body.phone?.trim() || null }),
         ...(body.email !== undefined && { email: body.email?.trim() || null }),
@@ -322,9 +322,9 @@ export async function handleUpdateResource(c: Context, db: PrismaClient): Promis
     const resource = await db.eventResource.update({
       where: { id: resourceId },
       data: {
-        ...(body.title !== undefined && { title: body.title!.trim() }),
+        ...(body.title !== undefined && { title: body.title.trim() }),
         ...(body.type !== undefined && { type: body.type }),
-        ...(body.url !== undefined && { url: body.url!.trim() }),
+        ...(body.url !== undefined && { url: body.url.trim() }),
         ...(body.description !== undefined && { description: body.description?.trim() || null }),
         ...(body.sort_order !== undefined && { sort_order: body.sort_order }),
       },

@@ -76,7 +76,7 @@ export class ImapInboundProvider implements InboundMailProvider {
             uid,
             receivedAt: messageReceivedAt(msg),
             subject: typeof subject === "string" ? subject : String(subject),
-            bodyText: extractPlainTextFromSource(msg.source as Buffer | undefined),
+            bodyText: extractPlainTextFromSource(msg.source),
           });
         } catch (err) {
           // One poison MIME/HTML entity must not abort the whole folder fetch.

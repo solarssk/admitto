@@ -87,7 +87,7 @@ async function opsAuditFromBody(
 
   return {
     audit: {
-      operator: c.get("operatorUserId") as string | undefined,
+      operator: c.get("operatorUserId"),
       sessionId,
       deviceId,
       ip: resolveClientIp(c),
@@ -196,7 +196,7 @@ function historyCompany(attendee: {
 
 /** POST /api/checkin/scan */
 export async function handleCheckinScan(c: Context, db: PrismaClient): Promise<Response> {
-  const body = c.get("parsedScanBody") as Record<string, unknown>;
+  const body = c.get("parsedScanBody");
   const { scanned: rawScanned, eventId, deviceId } = body;
   const scanned = typeof rawScanned === "string" ? rawScanned.trim() : "";
   if (!scanned) return c.json({ error: "scanned required" }, 400);
@@ -228,7 +228,7 @@ export async function handleCheckinScan(c: Context, db: PrismaClient): Promise<R
 
 /** POST /api/checkin/lookup — PII in body, not URL (Lock #3) */
 export async function handleCheckinLookup(c: Context, db: PrismaClient): Promise<Response> {
-  const body = c.get("parsedScanBody") as Record<string, unknown>;
+  const body = c.get("parsedScanBody");
   const eventId = body["eventId"];
   const q = body["q"];
   if (typeof eventId !== "string" || !eventId) return c.json({ error: "eventId required" }, 400);
@@ -266,7 +266,7 @@ export async function handleGetAttendeeCard(c: Context, db: PrismaClient): Promi
 
 /** POST /api/checkin/admit */
 export async function handleCheckinAdmit(c: Context, db: PrismaClient): Promise<Response> {
-  const body = c.get("parsedScanBody") as Record<string, unknown>;
+  const body = c.get("parsedScanBody");
   const eventId = body["eventId"];
   const attendeeId = body["attendeeId"];
   const deviceId = body["deviceId"];
@@ -302,7 +302,7 @@ export async function handleCheckinAdmit(c: Context, db: PrismaClient): Promise<
 
 /** POST /api/checkin/items/:itemKey */
 export async function handleCheckinItemAction(c: Context, db: PrismaClient): Promise<Response> {
-  const body = c.get("parsedScanBody") as Record<string, unknown>;
+  const body = c.get("parsedScanBody");
   const itemKey = c.req.param("itemKey");
   if (!itemKey) return c.json({ error: "itemKey required" }, 400);
   const eventId = body["eventId"];
@@ -335,7 +335,7 @@ export async function handleCheckinItemAction(c: Context, db: PrismaClient): Pro
 
 /** POST /api/checkin/notes */
 export async function handleCheckinNote(c: Context, db: PrismaClient): Promise<Response> {
-  const body = c.get("parsedScanBody") as Record<string, unknown>;
+  const body = c.get("parsedScanBody");
   const eventId = body["eventId"];
   const attendeeId = body["attendeeId"];
   const noteBody = body["body"];
@@ -376,7 +376,7 @@ export async function handleCheckinNote(c: Context, db: PrismaClient): Promise<R
 
 /** POST /api/checkin/undo */
 export async function handleCheckinUndo(c: Context, db: PrismaClient): Promise<Response> {
-  const body = c.get("parsedScanBody") as Record<string, unknown>;
+  const body = c.get("parsedScanBody");
   const eventId = body["eventId"];
   const deviceId = body["deviceId"];
 

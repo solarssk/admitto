@@ -45,11 +45,11 @@ export async function withPinnedFetch<T>(
     const dispatcher = createPinnedDispatcher(hostname, record);
     let res: Response;
     try {
-      res = (await undiciFetch(url, {
+      res = await undiciFetch(url, {
         ...init,
         redirect: init.redirect ?? "error",
         dispatcher,
-      } as Parameters<typeof undiciFetch>[1])) as unknown as Response;
+      });
     } catch (err) {
       await dispatcher.close();
       if (!isConnectFailure(err)) throw err;

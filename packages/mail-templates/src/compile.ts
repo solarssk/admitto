@@ -30,7 +30,7 @@ export async function compileTemplate(
       err !== null &&
       typeof err === "object" &&
       "errors" in err &&
-      Array.isArray((err as { errors: unknown }).errors)
+      Array.isArray((err).errors)
     ) {
       throw new MjmlCompileError((err as { errors: MjmlRawError[] }).errors);
     }

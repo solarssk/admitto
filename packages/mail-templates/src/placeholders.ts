@@ -81,7 +81,7 @@ export function findPlaceholdersInHtmlComments(html: string): string[] {
   let match: RegExpExecArray | null;
   const re = /\{\{([a-z][a-z0-9_]*)\}\}/g;
   while ((match = re.exec(html)) !== null) {
-    if (isPlaceholderInHtmlComment(html, match.index!)) {
+    if (isPlaceholderInHtmlComment(html, match.index)) {
       names.add(match[1]!);
     }
   }
@@ -101,7 +101,7 @@ export function extractPlaceholderNamesFromHtml(html: string): string[] {
   const re = /\{\{([a-z][a-z0-9_]*)\}\}/g;
   while ((match = re.exec(html)) !== null) {
     const token = match[1]!;
-    if (ALLOWED_PLACEHOLDERS.has(token) && !isPlaceholderInHtmlComment(html, match.index!)) {
+    if (ALLOWED_PLACEHOLDERS.has(token) && !isPlaceholderInHtmlComment(html, match.index)) {
       names.add(token);
     }
   }
@@ -114,7 +114,7 @@ export function findUnquotedAttributePlaceholders(html: string): string[] {
   let match: RegExpExecArray | null;
   const re = /\{\{([a-z][a-z0-9_]*)\}\}/g;
   while ((match = re.exec(html)) !== null) {
-    const ctx = getHtmlAttributeContext(html, match.index!);
+    const ctx = getHtmlAttributeContext(html, match.index);
     if (ctx.unquotedAttributeName) {
       attributes.add(ctx.unquotedAttributeName);
     } else if (ctx.inBareTagMarkup) {

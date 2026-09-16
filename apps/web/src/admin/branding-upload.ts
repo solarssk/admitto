@@ -170,7 +170,7 @@ export async function reencodeBrandingImage(buf: Buffer, mime: string): Promise<
 }
 
 function storageWriteFailureCode(err: unknown): string {
-  if (err && typeof err === "object" && "code" in err && typeof (err as { code: unknown }).code === "string") {
+  if (err && typeof err === "object" && "code" in err && typeof (err).code === "string") {
     return (err as { code: string }).code;
   }
   return "";

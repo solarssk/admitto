@@ -41,11 +41,13 @@ const reactTsxConfig = {
     sourceType: "module",
     parserOptions: {
       ecmaFeatures: { jsx: true },
+      projectService: true,
+      tsconfigRootDir: import.meta.dirname,
     },
   },
   rules: {
     ...security.configs.recommended.rules,
-    ...tsPlugin.configs.recommended.rules,
+    ...tsPlugin.configs["recommended-type-checked"].rules,
     "@typescript-eslint/no-unused-vars": ["error", tsUnusedVarsOptions],
     // Typed records, React state, and route params — false positives.
     "security/detect-object-injection": "off",
@@ -67,10 +69,14 @@ export default [
       parser: tsParser,
       ecmaVersion: 2022,
       sourceType: "module",
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
     rules: {
       ...security.configs.recommended.rules,
-      ...tsPlugin.configs.recommended.rules,
+      ...tsPlugin.configs["recommended-type-checked"].rules,
       "@typescript-eslint/no-unused-vars": ["error", tsUnusedVarsOptions],
     },
   },

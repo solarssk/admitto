@@ -115,6 +115,6 @@ export async function handleOpsSystemLogIngest(
   }
 
   const { source, level, message, fields } = parsed.data;
-  emitSystemLog(source as SystemLogSource, level as SystemLogLevel, message, sanitizeFields(fields));
+  emitSystemLog(source, level, message, sanitizeFields(fields));
   return c.json({ ok: true }, 200);
 }

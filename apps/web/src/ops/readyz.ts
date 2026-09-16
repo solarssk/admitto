@@ -131,7 +131,7 @@ export async function checkMigrations(db: PrismaClient): Promise<ReadyzMigration
 /** Deployment env mailer config only — provider name, no credentials or live ping. */
 export function checkMailer(env: EnvLike = process.env): ReadyzMailerCheck {
   try {
-    const cfg = configFromEnv(env as NodeJS.ProcessEnv);
+    const cfg = configFromEnv(env);
     return { configured: true, provider: mapProviderForApi(cfg.provider) };
   } catch {
     return { configured: false, provider: null };
