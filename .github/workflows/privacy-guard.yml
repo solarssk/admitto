@@ -16,6 +16,11 @@ on:
 
 permissions:
   pull-requests: read
+  # `gh api repos/.../git/blobs/{sha}` below (the lockfile hidden-diff verification) needs this -
+  # GitHub's Get a blob endpoint is gated on Contents read, not Pull requests read. Read-only, and
+  # this workflow still never checks out or fetches the PR itself (see the top comment) - the blob
+  # is fetched by SHA over the REST API, not via git.
+  contents: read
 
 jobs:
   scan:
