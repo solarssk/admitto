@@ -370,7 +370,7 @@ describe("On-demand wallet routes", () => {
     expect(saved?.user_agent).toBe("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15");
   });
 
-  it("still captures a pass that was already confirmed before this column existed (CodeRabbit review) - the freeze must not permanently exclude a legacy row", async () => {
+  it("never captures a device for a pass that was already confirmed before this column existed (bot review) - no unconfirmed window left to safely tell a real click from a mail scanner's", async () => {
     await prisma.walletPass.create({
       data: {
         attendee_id: ATTENDEE_MODE_A_ID,
@@ -394,7 +394,7 @@ describe("On-demand wallet routes", () => {
     });
 
     const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
-    expect(saved?.user_agent).toBe("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15");
+    expect(saved?.user_agent).toBeNull();
     expect(provider.createPass).not.toHaveBeenCalled();
   });
 

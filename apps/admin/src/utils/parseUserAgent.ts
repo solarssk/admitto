@@ -2,12 +2,18 @@
 // pattern that could also match its UA. Every iOS browser (Chrome, Firefox, Edge - each gets its
 // own dedicated identifier since Apple requires them all to use WebKit under the hood) still ends
 // with a trailing "Safari/build" WebKit tag, so the generic Safari checks must come last, or a
-// Chrome/Firefox/Edge user on an iPhone gets mislabeled Safari. The optional capture group is each
-// pattern's real version number where one exists.
+// Chrome/Firefox/Edge user on an iPhone gets mislabeled Safari. Android Chromium-based browsers
+// (Samsung Internet, Edge) are the same problem one layer up: they still carry a "Chrome/x.y"
+// token for site-compatibility sniffing alongside their own real identifier, so the same
+// most-specific-first ordering applies there too, or they get mislabeled Chrome with Chrome's
+// embedded engine version instead of their own. The optional capture group is each pattern's real
+// version number where one exists.
 const BROWSER_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/EdgiOS\/([\d.]+)/, "Edge"],
+  [/EdgA\/([\d.]+)/, "Edge"],
   [/Edg\/([\d.]+)/, "Edge"],
   [/OPR\/([\d.]+)/, "Opera"],
+  [/SamsungBrowser\/([\d.]+)/, "Samsung Internet"],
   [/CriOS\/([\d.]+)/, "Chrome"],
   [/Chrome\/([\d.]+)/, "Chrome"],
   [/FxiOS\/([\d.]+)/, "Firefox"],
