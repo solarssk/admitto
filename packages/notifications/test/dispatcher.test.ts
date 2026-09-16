@@ -312,6 +312,101 @@ describe("notify()", () => {
     expect(db.notificationThrottle.deleteMany).not.toHaveBeenCalled();
   });
 
+  it("resolves the single candidate's identity onto the sent audit row's user_id/user_email/user_display_name, not just metadata - so the admin Logs UI's existing User column shows who a notification went to", async () => {
+    stubHappyPath(db);
+    db.user.findMany.mockResolvedValue([{ id: "u-1", email: "u1@example.com", display_name: "User One" }]);
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email: stubChannel(), webhook: stubChannel(), in_app: stubChannel() },
+    });
+
+    expect(db.user.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ["u-1"] } },
+      select: { id: true, email: true, display_name: true },
+    });
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event_type: "notification.dispatch.sent",
+          user_id: "u-1",
+          user_email: "u1@example.com",
+          user_display_name: "User One",
+        }),
+      }),
+    );
+    // A single recipient's identity already lives on the row's own user_id/user_email/
+    // user_display_name columns - a metadata.recipients list would just duplicate it.
+    const call = db.securityAuditLog.create.mock.calls.at(-1)![0] as { data: { metadata: Record<string, unknown> } };
+    expect(call.data.metadata["recipients"]).toBeUndefined();
+  });
+
+  it("puts multiple org-staff recipients into the sent audit row's metadata.recipients, since they don't fit the single-subject user_id column", async () => {
+    db.notificationSettings.findUnique.mockResolvedValue(null);
+    queryRawClaims(db, true);
+    db.roleAssignment.findMany.mockResolvedValue([
+      { user_id: "u-1", user: { is_active: true } },
+      { user_id: "u-2", user: { is_active: true } },
+    ]);
+    db.notificationPreference.findMany.mockResolvedValue([]);
+    db.user.findMany.mockResolvedValue([
+      { id: "u-1", email: "alice@example.com", display_name: "Alice Admin" },
+      { id: "u-2", email: "bob@example.com", display_name: null },
+    ]);
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email: stubChannel(), webhook: stubChannel(), in_app: stubChannel() },
+    });
+
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event_type: "notification.dispatch.sent",
+          user_id: null,
+          metadata: expect.objectContaining({
+            recipients: [
+              { name: "Alice Admin", email: "alice@example.com" },
+              { name: null, email: "bob@example.com" },
+            ],
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("never looks up recipient identities, and writes no recipient info, for a webhook-only dispatch with zero candidates", async () => {
+    db.notificationSettings.findUnique.mockResolvedValue(null);
+    queryRawClaims(db, true);
+    db.roleAssignment.findMany.mockResolvedValue([]);
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { webhook: stubChannel() },
+    });
+
+    expect(db.user.findMany).not.toHaveBeenCalled();
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ event_type: "notification.dispatch.sent", user_id: null }),
+      }),
+    );
+  });
+
+  it("degrades to no recipient info (never fails the already-successful dispatch) when the identity lookup itself errors", async () => {
+    stubHappyPath(db);
+    db.user.findMany.mockRejectedValue(new Error("db unavailable"));
+
+    await expect(
+      notify(db as unknown as PrismaClient, TYPE, EVENT, {
+        channels: { email: stubChannel(), webhook: stubChannel(), in_app: stubChannel() },
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ event_type: "notification.dispatch.sent", user_id: null }),
+      }),
+    );
+  });
+
   it("includes the organization in every dispatch outcome's audit metadata, not just the notification type - required for a superadmin to tell which tenant a given row is about", async () => {
     stubHappyPath(db);
 

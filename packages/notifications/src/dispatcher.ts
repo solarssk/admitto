@@ -152,19 +152,28 @@ async function releaseThrottleSlot(
  * remembers to add) precisely so it can never be forgotten: SecurityAuditLog is instance-wide and
  * shared with every other audit event type in the app, so without it a superadmin reviewing a
  * dispatch outcome for a notification type that fires across multiple organizations has no way to
- * tell which tenant a given "sent"/"failed"/"skipped_*" row was actually about. */
+ * tell which tenant a given "sent"/"failed"/"skipped_*" row was actually about.
+ *
+ * `userIdentity` mirrors the "immutable snapshot at write time" convention every other
+ * SecurityAuditLog writer already follows (packages/auth/src/audit.ts's own
+ * resolveUserIdentitySnapshot) - the admin Logs UI's User column reads user_email/
+ * user_display_name directly off the row, not a live join, so a later rename or deletion doesn't
+ * retroactively change what this row shows. */
 async function writeDispatchAuditLog(
   db: Db,
   eventType: string,
   organizationId: string,
   metadata: Record<string, unknown>,
   userId?: string,
+  userIdentity?: { email: string; displayName: string | null },
 ): Promise<void> {
   try {
     await db.securityAuditLog.create({
       data: {
         event_type: eventType,
         user_id: userId ?? null,
+        user_email: userIdentity?.email ?? null,
+        user_display_name: userIdentity?.displayName ?? null,
         metadata: { organization_id: organizationId, ...metadata } as Prisma.InputJsonValue,
       },
     });
@@ -178,6 +187,63 @@ async function writeDispatchAuditLog(
       }),
     );
   }
+}
+
+type UserIdentitySnapshot = { id: string; email: string; display_name: string | null };
+
+/** Best-effort batch lookup for resolveSentAuditRecipients below - never throws (same
+ * defensive-read pattern as splitRecipientsByChannel's own try/catch in dispatchToChannels): a
+ * transient DB error here must degrade to "no recipient info shown" on the audit row, not fail
+ * the dispatch that already succeeded. Returns `[]` for both a genuine empty `userIds` (skips the
+ * query entirely - the common case for a webhook-only dispatch, see resolveCandidatesOrLogSkip's
+ * own doc comment on why org-staff resolving to zero candidates is not itself unusual) and a
+ * lookup failure. */
+async function resolveUserSnapshots(db: Db, userIds: string[]): Promise<UserIdentitySnapshot[]> {
+  if (userIds.length === 0) return [];
+  try {
+    const rows = await db.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, email: true, display_name: true },
+    });
+    return rows ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Recipient info for a "sent" audit row - resolved from `candidates` (who was eligible for this
+ * dispatch, per the audience strategy), not from which channels happened to succeed, so the row
+ * still names a recipient even when e.g. only the team webhook actually delivered. A single
+ * recipient (every self-audience type - account.auth_factor.changed, account.login.new_location,
+ * account.mfa.code_reused - or an org-staff type that happens to resolve to exactly one active
+ * admin) maps onto SecurityAuditLog's existing single-subject user_id/user_email/
+ * user_display_name columns, which the admin Logs UI already renders as "User" - no UI change
+ * needed there beyond the event-label fix in AuditLogPanel.tsx. Multiple recipients (the common
+ * org-staff case, several active admins) can't fit that single-subject shape, so they go into
+ * metadata as a `recipients` list instead - AuditLogPanel.tsx's generic Details-popover formatter
+ * already knows how to render an array of `{name, email}` objects, so no admin UI change is
+ * needed for that path either.
+ */
+async function resolveSentAuditRecipients(
+  db: Db,
+  candidates: string[],
+): Promise<{
+  userId?: string;
+  userIdentity?: { email: string; displayName: string | null };
+  metadata: Record<string, unknown>;
+}> {
+  const snapshots = await resolveUserSnapshots(db, candidates);
+  const only = snapshots.length === 1 ? snapshots[0] : undefined;
+  if (only) {
+    return { userId: only.id, userIdentity: { email: only.email, displayName: only.display_name }, metadata: {} };
+  }
+  if (snapshots.length > 1) {
+    return {
+      metadata: { recipients: snapshots.map((u) => ({ name: u.display_name, email: u.email })) },
+    };
+  }
+  return { metadata: {} };
 }
 
 async function readOrgSettings(
@@ -525,11 +591,20 @@ export async function notify(
       return;
     }
 
-    await writeDispatchAuditLog(db, "notification.dispatch.sent", event.organizationId, {
-      notification_type: type,
-      channels_sent: channelsSent,
-      ...(disabledChannels.length > 0 ? { disabled_channels: disabledChannels } : {}),
-    });
+    const recipientInfo = await resolveSentAuditRecipients(db, candidates);
+    await writeDispatchAuditLog(
+      db,
+      "notification.dispatch.sent",
+      event.organizationId,
+      {
+        notification_type: type,
+        channels_sent: channelsSent,
+        ...(disabledChannels.length > 0 ? { disabled_channels: disabledChannels } : {}),
+        ...recipientInfo.metadata,
+      },
+      recipientInfo.userId,
+      recipientInfo.userIdentity,
+    );
   } catch (err) {
     if (activeClaim) {
       await releaseThrottleSlot(db, type, activeClaim.throttleKey, activeClaim.rowId);
