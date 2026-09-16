@@ -502,25 +502,52 @@ async function dispatchToChannels(
   }
 
   const { emailRecipients, inAppRecipients } = recipients;
-  const emailChannelActive = typeDef.availableChannels.includes("email") && !disabledChannels.includes("email");
-  const inAppChannelActive = typeDef.availableChannels.includes("in_app") && !disabledChannels.includes("in_app");
+  const gates = resolvePerUserChannelGates(typeDef, disabledChannels);
   // Who was actually addressed by a per-user channel (attempted, whether it ultimately succeeded
   // or failed) - not the full audience `candidates` list (see DispatchOutcome.personalRecipientUserIds's
   // own doc comment on why that distinction matters for the audit row's recipient identity).
-  outcome.personalRecipientUserIds = [
-    ...new Set([...(emailChannelActive ? emailRecipients : []), ...(inAppChannelActive ? inAppRecipients : [])]),
-  ];
+  outcome.personalRecipientUserIds = computePersonalRecipientUserIds(emailRecipients, inAppRecipients, gates);
   // EmailChannel itself no-ops (ok: true) when there is nothing to send, so calling it whenever
   // extras might apply is never wasted beyond one lightweight settings lookup.
-  if (emailChannelActive && (emailRecipients.length > 0 || includeExtraRecipients)) {
+  if (gates.emailChannelActive && (emailRecipients.length > 0 || includeExtraRecipients)) {
     dispatch("email", emailChannel.send(dispatched, emailRecipients));
   }
-  if (inAppChannelActive && inAppRecipients.length > 0) {
+  if (gates.inAppChannelActive && inAppRecipients.length > 0) {
     dispatch("in_app", inAppChannel.send(dispatched, inAppRecipients));
   }
 
   await Promise.all(pending);
   return outcome;
+}
+
+/** Whether email/in_app are available for this type AND not disabled at the org level - the same
+ * gate reused by both dispatchToChannels's actual dispatch conditions and
+ * computePersonalRecipientUserIds below, pulled into its own function purely to keep
+ * dispatchToChannels's cognitive complexity within the shared lint budget (SonarCloud S3776,
+ * PR #1344 - no behavior change from having this inline). */
+function resolvePerUserChannelGates(
+  typeDef: NotificationTypeDef,
+  disabledChannels: NotificationChannelKey[],
+): { emailChannelActive: boolean; inAppChannelActive: boolean } {
+  return {
+    emailChannelActive: typeDef.availableChannels.includes("email") && !disabledChannels.includes("email"),
+    inAppChannelActive: typeDef.availableChannels.includes("in_app") && !disabledChannels.includes("in_app"),
+  };
+}
+
+/** Union of emailRecipients/inAppRecipients, filtered to only the channels actually active for
+ * this type - see DispatchOutcome.personalRecipientUserIds's own doc comment for why this (not
+ * the raw audience `candidates` list) is what the audit row's recipient identity is resolved
+ * from. Pulled into its own function alongside resolvePerUserChannelGates above, same reason. */
+function computePersonalRecipientUserIds(
+  emailRecipients: string[],
+  inAppRecipients: string[],
+  gates: { emailChannelActive: boolean; inAppChannelActive: boolean },
+): string[] {
+  const ids = new Set<string>();
+  if (gates.emailChannelActive) for (const id of emailRecipients) ids.add(id);
+  if (gates.inAppChannelActive) for (const id of inAppRecipients) ids.add(id);
+  return [...ids];
 }
 
 async function splitRecipientsByChannel(
