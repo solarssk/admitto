@@ -393,6 +393,67 @@ describe("notify()", () => {
     );
   });
 
+  it("excludes an org-staff candidate who opted out of both email and in_app from the audit row's recipient identity, even though the team-wide webhook still succeeds - candidates is the raw eligible-admin pool, not who was personally addressed (bot review finding, PR #1344)", async () => {
+    db.notificationSettings.findUnique.mockResolvedValue(null);
+    queryRawClaims(db, true);
+    db.roleAssignment.findMany.mockResolvedValue([
+      { user_id: "u-1", user: { is_active: true } },
+      { user_id: "u-2", user: { is_active: true } },
+    ]);
+    // u-2 opted out of every personal channel this type has - still a valid webhook/candidate,
+    // but must never be snapshotted as "the recipient" of a row where they got nothing personally.
+    db.notificationPreference.findMany.mockResolvedValue([
+      { user_id: "u-2", channel: "email", enabled: false },
+      { user_id: "u-2", channel: "in_app", enabled: false },
+    ]);
+    db.user.findMany.mockResolvedValue([{ id: "u-1", email: "u1@example.com", display_name: "User One" }]);
+    const email = stubChannel();
+    const inApp = stubChannel();
+    const webhook = stubChannel();
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email, in_app: inApp, webhook },
+    });
+
+    expect(email.send).toHaveBeenCalledWith(expect.anything(), ["u-1"]);
+    expect(inApp.send).toHaveBeenCalledWith(expect.anything(), ["u-1"]);
+    // Only u-1 (the personally-addressed candidate) is looked up - u-2 is never queried at all.
+    expect(db.user.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ["u-1"] } },
+      select: { id: true, email: true, display_name: true },
+    });
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event_type: "notification.dispatch.sent",
+          user_id: "u-1",
+          user_email: "u1@example.com",
+        }),
+      }),
+    );
+  });
+
+  it("writes no recipient info on a skipped_no_recipients row when every org-staff candidate opted out of every personal channel - must not expose an opted-out admin's identity on a row where nothing was sent to anyone", async () => {
+    db.notificationSettings.findUnique.mockResolvedValue(null);
+    queryRawClaims(db, true);
+    db.roleAssignment.findMany.mockResolvedValue([{ user_id: "u-1", user: { is_active: true } }]);
+    db.notificationPreference.findMany.mockResolvedValue([
+      { user_id: "u-1", channel: "email", enabled: false },
+      { user_id: "u-1", channel: "in_app", enabled: false },
+    ]);
+
+    await notify(db as unknown as PrismaClient, TYPE, EVENT, {
+      channels: { email: stubChannel({ ok: true, noop: true }), in_app: stubChannel({ ok: true, noop: true }) },
+    });
+
+    expect(db.user.findMany).not.toHaveBeenCalled();
+    expect(db.securityAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ event_type: "notification.dispatch.skipped_no_recipients", user_id: null }),
+      }),
+    );
+  });
+
   it("never looks up recipient identities, and writes no recipient info, for a webhook-only dispatch with zero candidates", async () => {
     db.notificationSettings.findUnique.mockResolvedValue(null);
     queryRawClaims(db, true);
