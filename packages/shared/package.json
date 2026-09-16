@@ -55,7 +55,7 @@
     "@vvo/tzdb": "^6.198.0",
     "ip-location-api": "5.0.2",
     "tzdata": "^1.0.50",
-    "undici": "^8.10.0"
+    "undici": "^8.10.2"
   },
   "devDependencies": {
     "@types/node": "^24.13.4",
