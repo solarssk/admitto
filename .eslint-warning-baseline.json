@@ -1323,33 +1323,6 @@
     "contextAfter": "return;"
   },
   {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "packages/mailer/src/adapters/smtp.ts",
-    "message": "Unsafe assignment of an `any` value.",
-    "codeLine": "const info = await this.transporter.sendMail(mail);",
-    "column": 13,
-    "contextBefore": "try {",
-    "contextAfter": "logMailSent(this.provider, message.logRecipientUnmasked ? message.to : redactEmail(message.to));"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "packages/mailer/src/adapters/smtp.ts",
-    "message": "Unsafe assignment of an `any` value.",
-    "codeLine": "providerMessageId: info.messageId,",
-    "column": 9,
-    "contextBefore": "provider: this.provider,",
-    "contextAfter": "idempotencyKey: message.idempotencyKey,"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-member-access",
-    "filePath": "packages/mailer/src/adapters/smtp.ts",
-    "message": "Unsafe member access .messageId on an `any` value.",
-    "codeLine": "providerMessageId: info.messageId,",
-    "column": 33,
-    "contextBefore": "provider: this.provider,",
-    "contextAfter": "idempotencyKey: message.idempotencyKey,"
-  },
-  {
     "ruleId": "@typescript-eslint/require-await",
     "filePath": "packages/mailer/src/adapters/smtp.ts",
     "message": "Async method 'close' has no 'await' expression.",
