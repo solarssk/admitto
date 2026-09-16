@@ -45,6 +45,16 @@ export interface MailMessage {
   /** Optional Reply-To (overrides config replyTo when set). */
   replyTo?: string;
   /**
+   * When true, send with no Reply-To header at all - not even the org's configured default
+   * (MailSenderConfig.replyTo, resolveReplyTo's own fallback). For an automated system alert
+   * (e.g. `@admitto/notifications`' EmailChannel) sent to the same address the org's Reply-To is
+   * configured to, an inherited Reply-To leaves Reply-To == To, a pattern spam filters commonly
+   * flag on its own (SpamAssassin's REPLYTO_EQ_TO_ADDR) - and "reply to this" makes no sense for
+   * a notice nobody is meant to answer anyway. Distinct from simply omitting `replyTo` above,
+   * which still falls back to the config default.
+   */
+  suppressReplyTo?: boolean;
+  /**
    * Optional idempotency key (e.g. EmailDelivery record id or attendee token).
    * Dedup is the caller's responsibility; this field is used for log correlation.
    */
