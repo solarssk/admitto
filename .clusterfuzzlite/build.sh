@@ -14,7 +14,13 @@ cd "$SRC/admitto"
 # native fuzzer addon requires GLIBC_2.32+, which this base image's Ubuntu userland (GLIBC 2.31)
 # doesn't have ("ERR_DLOPEN_FAILED ... GLIBC_2.32 not found"). 2.1.0 is the last release before
 # that jump (there is no 3.x on npm) and its own prebuilt loads correctly here.
-npm install --no-save --prefix .clusterfuzzlite typescript@5.9 @jazzer.js/core@2.1.0
+# --ignore-scripts is deliberately NOT used here (SonarCloud shell:S6505): confirmed by testing
+# both ways that @jazzer.js/fuzzer's postinstall (prebuild-install) is what places its native
+# addon - with --ignore-scripts, that step never runs and jazzer.js fails at run time with
+# "Could not locate the bindings file" (tried every standard native-addon search path). typescript
+# has no install scripts of its own, so this only ever runs jazzer.js's own required step, in an
+# isolated prefix with nothing else nearby to run scripts for.
+npm install --no-save --prefix .clusterfuzzlite typescript@5.9 @jazzer.js/core@2.1.0  # NOSONAR - see comment above
 TSC=.clusterfuzzlite/node_modules/.bin/tsc
 
 # --target/--lib ES2022 matches tsconfig.base.json's own setting for the whole monorepo - a
