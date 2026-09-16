@@ -16,6 +16,11 @@ on:
 
 permissions:
   pull-requests: read
+  # `gh api repos/.../git/blobs/{sha}` below (the lockfile hidden-diff verification) needs this -
+  # GitHub's Get a blob endpoint is gated on Contents read, not Pull requests read. Read-only, and
+  # this workflow still never checks out or fetches the PR itself (see the top comment) - the blob
+  # is fetched by SHA over the REST API, not via git.
+  contents: read
 
 jobs:
   scan:
@@ -121,16 +126,46 @@ jobs:
           # additions but no `.patch` is flagged UNSCANNABLE below and fails closed rather than
           # being silently treated as "nothing added".
           #
+          # Exception: package-manager lockfiles, but only when GitHub omitted the patch
+          # (UNSCANNABLE) - a lockfile small enough that the API *did* return its patch is still
+          # scanned below exactly like any other file, unchanged. A hidden lockfile diff is NOT
+          # trusted by basename alone either (a file merely named package-lock.json could contain
+          # anything, and even a genuine lockfile's resolved-package URLs could in principle carry
+          # embedded credentials for a misconfigured private registry) - instead its full content
+          # at this PR's head is fetched via the git blobs API below and folded into scan_targets,
+          # so the denylist is checked against what the file actually contains. The blobs API has
+          # no practical size cap here (up to 100MB; this repo's lockfile is under 1MB), unlike the
+          # diff view, which is exactly why this path exists: routine lockfile regenerations
+          # regularly exceed the diff view's undocumented size cap and trip UNSCANNABLE on a file
+          # that was never at risk (seen in practice: a ~3500-line package-lock.json diff from a
+          # single dependency bump). The filename itself is still scanned below like any other file.
+          #
           # `.filename` matters just as much as content (a new file whose own path leaks a value,
           # e.g. an export literally named after someone's email, would otherwise sail through
           # unscanned) - but only for statuses that introduce or keep that path in the tree.
           # A "removed" entry's `.filename` is the path being deleted: flagging it as a hit would
           # block a PR that's cleaning up an old leak, exactly backwards from the intent here.
+          # `gh api --jq` (unlike plain jq) accepts exactly one positional argument and has no
+          # `--arg` passthrough, so the CSV crosses the shell/jq boundary via jq's builtin `env`
+          # object instead - export it, then read `env.LOCKFILE_BASENAMES` from inside the program.
+          export LOCKFILE_BASENAMES="package-lock.json,npm-shrinkwrap.json,yarn.lock,pnpm-lock.yaml,Gemfile.lock,poetry.lock,Pipfile.lock,Cargo.lock,go.sum,composer.lock"
           api_rc=0
+          # $lf and $base below are jq variables, not shell ones - the whole program is
+          # deliberately single-quoted so the shell leaves them alone.
+          # shellcheck disable=SC2016
           raw_scan="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '
+            (env.LOCKFILE_BASENAMES | split(",")) as $lf |
             .[] |
             (if .status != "removed" then "FILENAME:" + .filename else empty end),
-            (if .patch == null and (.additions // 0) > 0 then "UNSCANNABLE:" + .filename else (.patch // empty) end)
+            (
+              (.filename | split("/") | last) as $base |
+              if .patch == null and (.additions // 0) > 0 then
+                if ($lf | index($base)) != null then "LOCKFILEBLOB:" + .sha + " " + .filename
+                else "UNSCANNABLE:" + .filename
+                end
+              else (.patch // empty)
+              end
+            )
           ')" || api_rc=$?
           if [ "$api_rc" -ne 0 ]; then
             echo "::error::Privacy guard: failed to fetch the PR diff via the GitHub API (exit $api_rc). Failing closed rather than merging unscanned."
@@ -154,7 +189,38 @@ jobs:
           # value whose own real content starts with "+" would be scanned with a synthetic extra
           # one prepended.
           added_lines="$(printf '%s\n' "$raw_scan" | grep -Ev '^(FILENAME|UNSCANNABLE):' | grep -E '^\+' | sed 's/^+//')" || true
-          scan_targets="$(printf '%s\n%s\n' "$filenames" "$added_lines")"
+
+          # A hidden lockfile diff (see the LOCKFILEBLOB case above) is verified here by fetching
+          # its full head-ref content and folding it in, rather than skipped on trust in the name.
+          lockfile_blob_refs="$(printf '%s\n' "$raw_scan" | grep '^LOCKFILEBLOB:' | sed 's/^LOCKFILEBLOB://')" || true
+          lockfile_blob_content=""
+          if [ -n "$lockfile_blob_refs" ]; then
+            while IFS= read -r ref; do
+              [ -z "$ref" ] && continue
+              blob_sha="${ref%% *}"
+              blob_name="${ref#* }"
+              blob_b64_rc=0
+              blob_b64="$(gh api "repos/$REPO/git/blobs/$blob_sha" --jq '.content')" || blob_b64_rc=$?
+              if [ "$blob_b64_rc" -ne 0 ] || [ -z "$blob_b64" ]; then
+                echo "::error::Privacy guard: failed to fetch full content for lockfile '$blob_name' (blob $blob_sha) to verify its hidden diff. Failing closed rather than merging unscanned."
+                exit 1
+              fi
+              # GNU base64 (this runner's coreutils) can emit a partial decoded prefix and still
+              # exit nonzero on malformed input (e.g. garbage after the padding `=`) - checking
+              # only whether $blob_text is empty would accept that truncated prefix and silently
+              # drop everything after the corruption point, exactly the "unscanned content" this
+              # guard exists to prevent. The exit status is captured and checked on its own.
+              blob_decode_rc=0
+              blob_text="$(printf '%s' "$blob_b64" | tr -d '\n' | base64 -d 2>/dev/null)" || blob_decode_rc=$?
+              if [ "$blob_decode_rc" -ne 0 ] || [ -z "$blob_text" ]; then
+                echo "::error::Privacy guard: failed to base64-decode fetched content for lockfile '$blob_name' (blob $blob_sha). Failing closed rather than merging unscanned."
+                exit 1
+              fi
+              lockfile_blob_content="$(printf '%s\n%s\n' "$lockfile_blob_content" "$blob_text")"
+            done <<< "$lockfile_blob_refs"
+          fi
+
+          scan_targets="$(printf '%s\n%s\n%s\n' "$filenames" "$added_lines" "$lockfile_blob_content")"
 
           if [ -z "$(printf '%s' "$scan_targets" | tr -d '[:space:]')" ]; then
             echo "Privacy guard: nothing to scan (no changed filenames or added lines)."
