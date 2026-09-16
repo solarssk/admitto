@@ -1422,6 +1422,60 @@ describe("AuditLogPanel Security view rendering", () => {
     expect(within(table).queryByText("auth.login.new_country")).toBeNull();
   });
 
+  it("renders notification.dispatch.sent/failed with their labels and ok/error tones, not the raw machine code", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [
+        makeSecurityEntry({ id: "sec-sent", event_type: "notification.dispatch.sent" }),
+        makeSecurityEntry({ id: "sec-failed", event_type: "notification.dispatch.failed" }),
+      ],
+      total: 2,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderSecurityPanel();
+
+    const table = await screen.findByRole("table");
+    const sentBadge = within(table).getByText("Notification sent");
+    expect(sentBadge.className).toContain("at-badge--ok");
+    const failedBadge = within(table).getByText("Notification delivery failed");
+    expect(failedBadge.className).toContain("at-badge--error");
+    expect(within(table).queryByText("notification.dispatch.sent")).toBeNull();
+    expect(within(table).queryByText("notification.dispatch.failed")).toBeNull();
+  });
+
+  it("renders a notification.dispatch.sent row's multi-recipient metadata as a humanized Recipients list, showing both name and email per recipient", async () => {
+    vi.mocked(fetchSecurityAuditLog).mockResolvedValueOnce({
+      entries: [
+        makeSecurityEntry({
+          event_type: "notification.dispatch.sent",
+          // Multiple org-staff recipients can't fit the single-subject user_id column -
+          // dispatcher.ts's resolveDispatchAuditRecipients puts them here instead, as
+          // pre-formatted "Name <email>" strings (see its own doc comment on why not a
+          // {name, email} object).
+          user_id: null,
+          user_email: null,
+          user_display_name: null,
+          metadata: {
+            notification_type: "auth.login.repeated_failures",
+            channels_sent: ["email", "in_app"],
+            recipients: ["Alice Admin <alice@example.com>", "bob@example.com"],
+          },
+        }),
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderSecurityPanel();
+
+    const table = await screen.findByRole("table");
+    fireEvent.click(within(table).getByText("View"));
+    expect(within(table).getByText("Recipients")).toBeTruthy();
+    expect(within(table).getByText("Alice Admin <alice@example.com>, bob@example.com")).toBeTruthy();
+  });
+
   it("offers auth.login.new_country in the Event dropdown, filtering by it", async () => {
     renderSecurityPanel();
     await waitFor(() => expect(fetchSecurityAuditLog).toHaveBeenCalledTimes(1));
