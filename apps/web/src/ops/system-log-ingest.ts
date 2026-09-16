@@ -6,11 +6,7 @@
  */
 import type { Context } from "hono";
 import { z } from "zod";
-import {
-  emitSystemLog,
-  type SystemLogLevel,
-  type SystemLogSource,
-} from "@admitto/shared/system-log";
+import { emitSystemLog } from "@admitto/shared/system-log";
 import { isValidOpsToken } from "./readyz.js";
 
 const bodySchema = z
@@ -115,6 +111,6 @@ export async function handleOpsSystemLogIngest(
   }
 
   const { source, level, message, fields } = parsed.data;
-  emitSystemLog(source as SystemLogSource, level as SystemLogLevel, message, sanitizeFields(fields));
+  emitSystemLog(source, level, message, sanitizeFields(fields));
   return c.json({ ok: true }, 200);
 }

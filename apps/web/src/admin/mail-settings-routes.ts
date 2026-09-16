@@ -9,7 +9,6 @@ import {
   setMailSettings,
   validateOrgMailSettingsUpdate,
   type ConfigDescriptor,
-  type MailSettingsInput,
 } from "@admitto/mailer-config";
 import { sendTransportTestEmail, type MailDeliveryDeps } from "@admitto/mail-delivery";
 import { writeAdminAuditLog } from "@admitto/tickets";
@@ -88,14 +87,14 @@ export async function handlePutMailSettings(c: Context, db: PrismaClient): Promi
 
   if (!firstRun) {
     for (const key of Object.keys(body) as Array<keyof typeof body>) {
-      const fd = descriptorForKey(current, key as keyof MailSettingsInput);
+      const fd = descriptorForKey(current, key);
       if (fd.locked) {
         return c.json({ error: "managed by environment" }, 400);
       }
     }
   }
 
-  const transportCheck = validateOrgMailSettingsUpdate(orgRow, body as MailSettingsInput, process.env);
+  const transportCheck = validateOrgMailSettingsUpdate(orgRow, body, process.env);
   if (!transportCheck.ok) {
     return c.json({ error: "incomplete_transport", detail: transportCheck.error }, 400);
   }
@@ -103,7 +102,7 @@ export async function handlePutMailSettings(c: Context, db: PrismaClient): Promi
   const { fieldsChanged, secretsRotated, secretsCleared } = classifyMailSettingsFields(body);
 
   await db.$transaction(async (tx) => {
-    await setMailSettings({ scopeType: "organization", scopeId: orgId }, body as MailSettingsInput, tx);
+    await setMailSettings({ scopeType: "organization", scopeId: orgId }, body, tx);
 
     const audit = adminAuditFromContext(c);
     await writeAdminAuditLog(tx, {

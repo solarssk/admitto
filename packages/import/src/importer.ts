@@ -322,7 +322,7 @@ function classifyNewRow(
       ...(row.company !== undefined && { company: row.company }),
       ...(row.department !== undefined && { department: row.department }),
       ...(row.custom_data !== undefined && {
-        custom_data: row.custom_data as Prisma.InputJsonValue,
+        custom_data: row.custom_data,
       }),
       client_timezone: options.timezone ?? null,
     },

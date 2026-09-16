@@ -1,5 +1,257 @@
 [
   {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/App.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "(async () => {",
+    "column": 5,
+    "contextBefore": "let cancelled = false;",
+    "contextAfter": "try {"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/App.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(`${location.pathname}${location.search}`, { replace: true, state: null });",
+    "column": 7,
+    "contextBefore": "// the fallback fetch instead (Codex review).",
+    "contextAfter": "return;"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "copyTextToClipboard(enrollData.otpauthUri).then((copied) => {",
+    "column": 5,
+    "contextBefore": "",
+    "contextAfter": "if (!copied) {"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "<Button type=\"button\" variant=\"primary\" disabled={mfaEnrolling} onClick={async () => {",
+    "column": 89,
+    "contextBefore": "{!totpEnrolled && (",
+    "contextAfter": "setMfaEnrolling(true); setTotpCode(\"\"); setUriCopied(false); setShowUriManual(false); setQrRenderFailed(false); setBackupCodesSaved(false);"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "<ConfirmDialog open={!!revokeTarget} icon={<i className=\"ti ti-device-laptop-off\" aria-hidden=\"true\" />} title=\"Revoke session\" message={revokeTarget ? `Revoke this session? Last active ${formatRelativeTime(revokeTarget.lastSeenAt)}.` : \"\"} confirmLabel=\"Revoke\" confirmVariant=\"danger\" loading={revoking} errorMessage={revokeError ?? undefined} onConfirm={handleRevokeConfirm} onCancel={handleRevokeCancel} />",
+    "column": 363,
+    "contextBefore": "",
+    "contextAfter": ""
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "<ConfirmDialog open={forgetDevicesOpen} icon={<i className=\"ti ti-devices-off\" aria-hidden=\"true\" />} title=\"Forget all trusted devices\" message=\"You'll be asked to verify with two-factor again the next time you sign in on any device you previously chose to remember.\" confirmLabel=\"Forget devices\" loading={forgetDevicesBusy} errorMessage={forgetDevicesError ?? undefined} onConfirm={handleForgetDevicesConfirm} onCancel={handleForgetDevicesCancel} />",
+    "column": 391,
+    "contextBefore": "",
+    "contextAfter": ""
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "<ConfirmDialog open={revokeAllOpen} icon={<i className=\"ti ti-device-laptop-off\" aria-hidden=\"true\" />} title=\"Revoke all other sessions\" message={`This will end ${otherSessions.length} other active session${otherSessions.length === 1 ? \"\" : \"s\"}.`} confirmLabel=\"Revoke\" confirmVariant=\"danger\" loading={revokeAllBusy} errorMessage={revokeError ?? undefined} onConfirm={handleRevokeAllConfirm} onCancel={handleRevokeAllCancel} />",
+    "column": 377,
+    "contextBefore": "",
+    "contextAfter": ""
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "footer={<div className=\"mail-transport-footer\"><Button type=\"button\" variant=\"primary\" disabled={profileSaving || !profileDirty} onClick={async () => {",
+    "column": 146,
+    "contextBefore": "}",
+    "contextAfter": "setProfileSaving(true);"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onCancel={handleTotpEnrollCancel}",
+    "column": 18,
+    "contextBefore": "onConfirm={handleTotpEnrollConfirm}",
+    "contextAfter": ">"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onConfirm={async () => {",
+    "column": 19,
+    "contextBefore": "}",
+    "contextAfter": "setRegeneratingBackupCodes(true);"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onConfirm={handleAddPasskeyConfirm}",
+    "column": 19,
+    "contextBefore": "disableConfirm={!!addPasskeyBackupCodes || !addPasskeyLabel.trim()}",
+    "contextAfter": "onCancel={handleAddPasskeyCancel}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onConfirm={handleAddSecurityKeyConfirm}",
+    "column": 19,
+    "contextBefore": "disableConfirm={!!addSecurityKeyBackupCodes || !addSecurityKeyLabel.trim()}",
+    "contextAfter": "onCancel={handleAddSecurityKeyCancel}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onConfirm={handlePasswordStepUpConfirm}",
+    "column": 19,
+    "contextBefore": "disableConfirm={!passwordCode}",
+    "contextAfter": "onCancel={handlePasswordStepUpCancel}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onConfirm={handleRemoveCredentialConfirm}",
+    "column": 19,
+    "contextBefore": "disableConfirm={removeCredentialCodeRequired && !removeCredentialCode}",
+    "contextAfter": "onCancel={handleRemoveCredentialCancel}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onConfirm={handleRemoveTotpConfirm}",
+    "column": 19,
+    "contextBefore": "disableConfirm={removeTotpCodeRequired && !removeTotpCode}",
+    "contextAfter": "onCancel={handleRemoveTotpCancel}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onConfirm={handleResetMfaConfirm}",
+    "column": 19,
+    "contextBefore": "disableConfirm={!resetPassword || (resetCodeRequired && !resetCode)}",
+    "contextAfter": "onCancel={handleResetMfaCancel}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onConfirm={handleTotpEnrollConfirm}",
+    "column": 19,
+    "contextBefore": "}",
+    "contextAfter": "onCancel={handleTotpEnrollCancel}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onConfirm={handleUnlinkSsoConfirm}",
+    "column": 19,
+    "contextBefore": "}",
+    "contextAfter": "onCancel={handleUnlinkSsoCancel}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onConfirm={handleUnlinkStepUpConfirm}",
+    "column": 19,
+    "contextBefore": "disableConfirm={!unlinkCode}",
+    "contextAfter": "onCancel={handleUnlinkStepUpCancel}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/AccountPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onSubmit={async (e) => {",
+    "column": 22,
+    "contextBefore": "autoComplete=\"on\"",
+    "contextAfter": "e.preventDefault();"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/account/WebauthnStepUpButton.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onClick={async () => {",
+    "column": 17,
+    "contextBefore": "disabled={busy}",
+    "contextAfter": "onBusyChange(true);"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-return",
+    "filePath": "apps/admin/src/api/operator-api-error.ts",
+    "message": "Unsafe return of a value of type `any[]`.",
+    "codeLine": ".flatMap((value) => (Array.isArray(value) ? value : []))",
+    "column": 26,
+    "contextBefore": "const messages = Object.values(fieldErrors)",
+    "contextAfter": ".filter((message): message is string => typeof message === \"string\" && message.trim().length > 0);"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/checkin/AttendeeCard.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "Promise.resolve(onItemAction?.(itemKey, action)).finally(() => itemGuard.finish(itemKey));",
+    "column": 5,
+    "contextBefore": "if (!itemGuard.start(itemKey)) return;",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/checkin/AttendeeCard.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "Promise.resolve(onRevokeItem?.(itemKey)).finally(() => itemGuard.finish(itemKey));",
+    "column": 5,
+    "contextBefore": "if (!itemGuard.start(itemKey)) return;",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/checkin/AttendeeCard.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "Promise.resolve(onUndo()).finally(() => undoGuard.finish(\"undo\"));",
+    "column": 19,
+    "contextBefore": "if (!undoGuard.start(\"undo\")) return;",
+    "contextAfter": "}}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/checkin/CameraOverlayItemIssuing.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "Promise.resolve(onUndo()).finally(() => undoGuard.finish(\"undo\"));",
+    "column": 15,
+    "contextBefore": "if (!undoGuard.start(\"undo\")) return;",
+    "contextAfter": "}}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/checkin/NoteModal.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "<Button type=\"button\" variant=\"primary\" disabled={!value.trim() || submitting} onClick={handleSubmit}>",
+    "column": 98,
+    "contextBefore": "</Button>",
+    "contextAfter": "{submitting ? \"Saving…\" : \"Add note\"}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/components/LogoUploadZone.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "if (f) openCropForFile(f);",
+    "column": 20,
+    "contextBefore": "const f = e.target.files?.[0];",
+    "contextAfter": "e.target.value = \"\";"
+  },
+  {
     "ruleId": "react-hooks/exhaustive-deps",
     "filePath": "apps/admin/src/components/LogoUploadZone.tsx",
     "message": "The ref value 'provisionalUrlsRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'provisionalUrlsRef.current' to a variable inside the effect, and use that variable in the cleanup function.",
@@ -9,22 +261,355 @@
     "contextAfter": "void deleteUploadedFile(url);"
   },
   {
-    "ruleId": null,
-    "filePath": "apps/admin/src/hooks/useEventStream.ts",
-    "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-possible-timing-attacks').",
-    "codeLine": "// eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret probe status string",
-    "column": 11,
-    "contextBefore": "if (cancelled) return;",
-    "contextAfter": "if (probeResult === \"denied\") {"
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/components/SystemStatus.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(`${SETTINGS_INDEX_PATH}?tab=health`);",
+    "column": 19,
+    "contextBefore": "close();",
+    "contextAfter": "}}"
   },
   {
-    "ruleId": null,
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/components/SystemStatus.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(`${SETTINGS_INDEX_PATH}?tab=logs`);",
+    "column": 19,
+    "contextBefore": "close();",
+    "contextAfter": "}}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/components/UserMenu.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(\"/account\");",
+    "column": 15,
+    "contextBefore": "close();",
+    "contextAfter": "}}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/components/crop/CropImageModal.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "runCropApply(img, completedCrop, crop, zoom, sourceMime, onApply)",
+    "column": 5,
+    "contextBefore": "setError(null);",
+    "contextAfter": ".then((errMsg) => {"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-argument",
     "filePath": "apps/admin/src/hooks/useEventStream.ts",
-    "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-possible-timing-attacks').",
-    "codeLine": "// eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret probe status string",
+    "message": "Unsafe argument of type `any` assigned to a parameter of type `string`.",
+    "codeLine": "const data = JSON.parse(msg.data) as { type: string };",
+    "column": 35,
+    "contextBefore": "try {",
+    "contextAfter": "if (data.type === \"ping\") return;"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/identity/CfAccessEditor.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(IDENTITY_PROVIDERS_ROUTE);",
+    "column": 9,
+    "contextBefore": "skipBlockRef.current = true;",
+    "contextAfter": "} catch (err) {"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/identity/CfAccessEditor.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(IDENTITY_PROVIDERS_ROUTE);",
     "column": 11,
-    "contextBefore": "}",
-    "contextAfter": "if (probeResult === \"rate_limited\") {"
+    "contextBefore": "skipBlockRef.current = true;",
+    "contextAfter": "}}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/identity/CfAccessEditor.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onSubmit={handleSubmit}",
+    "column": 18,
+    "contextBefore": "dirty={dirty}",
+    "contextAfter": "onCancel={handleCancel}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/identity/CfAccessEditor.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onTest={handleTest}",
+    "column": 16,
+    "contextBefore": "onCancel={handleCancel}",
+    "contextAfter": "/>"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/identity/IdentityProviderEditor.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(IDENTITY_PROVIDERS_ROUTE);",
+    "column": 9,
+    "contextBefore": "skipBlockRef.current = true;",
+    "contextAfter": "} catch (err) {"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/identity/IdentityProviderEditor.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(IDENTITY_PROVIDERS_ROUTE);",
+    "column": 11,
+    "contextBefore": "skipBlockRef.current = true;",
+    "contextAfter": "}}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/identity/IdentityProviderEditor.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "<Button variant=\"secondary\" onClick={() => navigate(IDENTITY_PROVIDERS_ROUTE)}>",
+    "column": 43,
+    "contextBefore": "<p>This provider no longer exists.</p>",
+    "contextAfter": "Back to providers"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/identity/IdentityProviderEditor.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "<form className=\"identity-editor\" onSubmit={handleSubmit} noValidate>",
+    "column": 48,
+    "contextBefore": "const formContent = (",
+    "contextAfter": "{mode === \"create\" && ("
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/identity/IdentityProviderEditor.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onClick={handleDiscover}",
+    "column": 23,
+    "contextBefore": "size=\"sm\"",
+    "contextAfter": "disabled={isActionBusy(saving, testing, discovering)}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/identity/IdentityProviderEditor.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onClick={handleTest}",
+    "column": 19,
+    "contextBefore": "variant=\"secondary\"",
+    "contextAfter": "disabled={actionsDisabled(saving, testing, discovering, mode, loadState)}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/identity/IdentityProvidersPanel.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onToggle={handleToggle}",
+    "column": 26,
+    "contextBefore": "provider={provider}",
+    "contextAfter": "disabled={togglingIds.has(provider.id)}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-assignment",
+    "filePath": "apps/admin/src/identity/cfAccessValidation.ts",
+    "message": "Unsafe assignment of an `any` value.",
+    "codeLine": "const parsed = JSON.parse(trimmed);",
+    "column": 13,
+    "contextBefore": "try {",
+    "contextAfter": "if (Array.isArray(parsed)) {"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/identity/useUnsavedChangesGuard.ts",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(IDENTITY_PROVIDERS_ROUTE);",
+    "column": 5,
+    "contextBefore": "skipBlockRef.current = true;",
+    "contextAfter": "}, [isBusy, dirty, navigate]);"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/layouts/SettingsLayout.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(IDENTITY_PROVIDERS_ROUTE);",
+    "column": 9,
+    "contextBefore": "if (id === \"identity\") {",
+    "contextAfter": "return;"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/layouts/SettingsLayout.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(IDENTITY_PROVIDERS_ROUTE, { replace: true });",
+    "column": 7,
+    "contextBefore": "if (!onIdentity && searchParams.get(\"tab\") === \"identity\") {",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/layouts/SettingsLayout.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(`${SETTINGS_INDEX_PATH}?tab=${id}`, { replace: true });",
+    "column": 7,
+    "contextBefore": "// Identity detail view triggers the editor's `useBlocker` when dirty.",
+    "contextAfter": "},"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/pages/AttendeeDetailPage.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "else navigate(-1);",
+    "column": 10,
+    "contextBefore": "if (eventId) navigate(`/admin/events/${eventId}/attendees`);",
+    "contextAfter": "};"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/pages/AttendeeDetailPage.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "if (eventId) navigate(`/admin/events/${eventId}/attendees`);",
+    "column": 18,
+    "contextBefore": "const goBack = () => {",
+    "contextAfter": "else navigate(-1);"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/pages/AttendeeDetailPage.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(`/admin/events/${eventId}/attendees`);",
+    "column": 7,
+    "contextBefore": "addToast(\"Attendee permanently deleted\", \"success\");",
+    "contextAfter": "} catch (err) {"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/pages/AttendeeDetailPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "<form ref={editPanelRef} className=\"attendee-edit-modal__panel\" onSubmit={handleSave}>",
+    "column": 84,
+    "contextBefore": "<ModalBackdrop onClose={handleCancelEdit} />",
+    "contextAfter": "<h2 id={editTitleId} className=\"attendee-edit-modal__title\">"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/pages/AttendeeDetailPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "<form ref={resendPanelRef} className=\"attendee-resend-modal__panel\" onSubmit={handleResend}>",
+    "column": 88,
+    "contextBefore": "<ModalBackdrop onClose={() => setResendOpen(false)} />",
+    "contextAfter": "<h3 id={resendTitleId} className=\"attendee-resend-modal__title\">Resend ticket</h3>"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/pages/AttendeesPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onExport={handleExport}",
+    "column": 24,
+    "contextBefore": "exportingFormat={exportingFormat}",
+    "contextAfter": "walletPlatforms={walletPlatforms}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/pages/AttendeesPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onImport={() => navigate(`/admin/events/${eventId}/attendees/import`)}",
+    "column": 24,
+    "contextBefore": "archived={isEventArchived(event)}",
+    "contextAfter": "sendBusy={sendBusy}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/pages/AttendeesPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onViewAttendee={(id) => navigate(`/admin/events/${eventId}/attendees/${id}`)}",
+    "column": 24,
+    "contextBefore": "}}",
+    "contextAfter": "onPageChange={setPage}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/pages/AttendeesPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "{isDesktop && <ExportMenu exportingFormat={exportingFormat} onExport={handleExport} />}",
+    "column": 82,
+    "contextBefore": "* few enough to sit beside the \"Attendees\" title (attendees.css). */}",
+    "contextAfter": "</>"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/pages/CheckInEntryPage.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "(async () => {",
+    "column": 5,
+    "contextBefore": "setError(null);",
+    "contextAfter": "try {"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/pages/CheckInEntryPage.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(`/operator/events/${list[0]!.id}/checkin`, { replace: true });",
+    "column": 11,
+    "contextBefore": "if (list.length === 1) {",
+    "contextAfter": "return;"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/pages/CheckInPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onSelectAttendee={openLookupResult}",
+    "column": 26,
+    "contextBefore": "allowManualLookup={allowManualLookup}",
+    "contextAfter": "onManualEntry={submitOrLookup}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/pages/CheckInPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onSelectAttendee={openLookupResult}",
+    "column": 32,
+    "contextBefore": "ticketTypes={ticketTypes}",
+    "contextAfter": "/>"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/pages/CheckInPage.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onSelectSuggestion={openLookupResult}",
+    "column": 32,
+    "contextBefore": "onKeyDown={onKeyDown}",
+    "contextAfter": "/>"
+  },
+  {
+    "ruleId": "@typescript-eslint/restrict-template-expressions",
+    "filePath": "apps/admin/src/pages/CustomFieldsReportsTab.tsx",
+    "message": "Invalid type \"ValueType | undefined\" of template literal expression.",
+    "codeLine": "formatter={(value) => `${value} attendee${value === 1 ? \"\" : \"s\"}`}",
+    "column": 40,
+    "contextBefore": "<Tooltip",
+    "contextAfter": "position={{ y: 256 }}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/pages/EventSettingsPage.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(\"/admin\");",
+    "column": 5,
+    "contextBefore": "addToast(\"Event permanently deleted\", \"success\");",
+    "contextAfter": "} catch (err) {"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/pages/EventSettingsPage.tsx",
+    "message": "Promise-returning function provided to property where a void return was expected.",
+    "codeLine": "const earlyExit = renderEventSettingsEarlyExit({ eventId, loading, showLoading, event, notFound, goBack });",
+    "column": 100,
+    "contextBefore": "",
+    "contextAfter": "if (earlyExit !== undefined) return earlyExit;"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/pages/EventsPickerPage.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(`/admin/events/${event.id}/overview`, { state: { event } });",
+    "column": 5,
+    "contextBefore": "// immediately instead of re-fetching the events list (#274).",
+    "contextAfter": "};"
   },
   {
     "ruleId": "react-hooks/exhaustive-deps",
@@ -36,6 +621,69 @@
     "contextAfter": "event.wallet_enabled,"
   },
   {
+    "ruleId": "@typescript-eslint/restrict-template-expressions",
+    "filePath": "apps/admin/src/pages/WalletsReportsTab.tsx",
+    "message": "Invalid type \"ValueType | undefined\" of template literal expression.",
+    "codeLine": "return [`${count} attendee${count === 1 ? \"\" : \"s\"} (${value}%)`, undefined];",
+    "column": 70,
+    "contextBefore": "const count = (props.payload as (typeof rows)[number]).count;",
+    "contextAfter": "}}"
+  },
+  {
+    "ruleId": "@typescript-eslint/restrict-template-expressions",
+    "filePath": "apps/admin/src/pages/reports-charts.tsx",
+    "message": "Invalid type \"ValueType | undefined\" of template literal expression.",
+    "codeLine": "<Tooltip formatter={(value) => `${value} ${pluralizeUnit(unit, Number(value))}`} position={{ y: 256 }} />",
+    "column": 47,
+    "contextBefore": "the hovered slice) so it never competes with that overlay. */}",
+    "contextAfter": "</PieChart>"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/pages/users/ActiveSessionsTab.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "<Button type=\"button\" variant=\"secondary\" onClick={load}>",
+    "column": 63,
+    "contextBefore": "<p>{error}</p>",
+    "contextAfter": "Retry"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/pages/wizard/WizardStep5Ready.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(\"/admin\", { replace: true });",
+    "column": 9,
+    "contextBefore": "} else {",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-floating-promises",
+    "filePath": "apps/admin/src/pages/wizard/WizardStep5Ready.tsx",
+    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
+    "codeLine": "navigate(`/admin/events/${selectedEventId}/overview`, { replace: true });",
+    "column": 9,
+    "contextBefore": "if (selectedEventId) {",
+    "contextAfter": "} else {"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/settings/EventMailSettingsCard.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onOpenInstanceSettings={() => navigate(\"/admin/settings?tab=mail\")}",
+    "column": 40,
+    "contextBefore": "canOpenInstanceSettings={isSa}",
+    "contextAfter": "/>"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/settings/ExternalServicesPanel.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "<Button type=\"button\" variant=\"secondary\" onClick={() => navigate(\"/admin/settings?tab=general\")}>",
+    "column": 67,
+    "contextBefore": "action={",
+    "contextAfter": "Open Support contact"
+  },
+  {
     "ruleId": "react-hooks/exhaustive-deps",
     "filePath": "apps/admin/src/settings/FontFamilyModal.tsx",
     "message": "The ref value 'rowGenerationRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'rowGenerationRef.current' to a variable inside the effect, and use that variable in the cleanup function.",
@@ -43,6 +691,15 @@
     "column": 26,
     "contextBefore": "for (const [id, gen] of rowGenerationRef.current) {",
     "contextAfter": "}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/settings/LocationSettingsPanel.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "onClick={() => navigate(\"/admin/settings?tab=general\")}",
+    "column": 29,
+    "contextBefore": "size=\"sm\"",
+    "contextAfter": ">"
   },
   {
     "ruleId": "security/detect-unsafe-regex",
@@ -54,6 +711,15 @@
     "contextAfter": ""
   },
   {
+    "ruleId": "@typescript-eslint/no-misused-promises",
+    "filePath": "apps/admin/src/settings/SecurityPanel.tsx",
+    "message": "Promise-returning function provided to attribute where a void return was expected.",
+    "codeLine": "<Button type=\"button\" variant=\"secondary\" onClick={load}>",
+    "column": 61,
+    "contextBefore": "<p>{error ?? \"Unexpected error.\"}</p>",
+    "contextAfter": "Retry"
+  },
+  {
     "ruleId": "security/detect-unsafe-regex",
     "filePath": "apps/admin/src/settings/mailSettingsValidation.ts",
     "message": "Unsafe Regular Expression",
@@ -63,22 +729,139 @@
     "contextAfter": "}"
   },
   {
-    "ruleId": null,
-    "filePath": "apps/web/src/admin/admin-build-meta.ts",
-    "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-non-literal-fs-filename').",
-    "codeLine": "// eslint-disable-next-line security/detect-non-literal-fs-filename -- path from trusted dist root candidates",
-    "column": 7,
-    "contextBefore": "try {",
-    "contextAfter": "accessSync(join(root, \"index.html\"), constants.R_OK);"
+    "ruleId": "@typescript-eslint/require-await",
+    "filePath": "apps/cli/src/lib/sse-publish.ts",
+    "message": "Async function 'closeSsePublishClient' has no 'await' expression.",
+    "codeLine": "export async function closeSsePublishClient(): Promise<void> {",
+    "column": 8,
+    "contextBefore": "* keeps the process alive past a SIGTERM/SIGINT) and from tests between cases. */",
+    "contextAfter": "// Shutdown must not wait on a Redis server that is itself unavailable."
   },
   {
-    "ruleId": null,
-    "filePath": "apps/web/src/admin/health-check-routes.ts",
-    "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-non-literal-fs-filename').",
-    "codeLine": "// eslint-disable-next-line security/detect-non-literal-fs-filename",
-    "column": 5,
-    "contextBefore": "// X_OK: directory must be searchable so children can be created (Unix).",
-    "contextAfter": "await access(uploadPath, constants.R_OK | constants.W_OK | constants.X_OK);"
+    "ruleId": "@typescript-eslint/no-unsafe-assignment",
+    "filePath": "apps/web/src/admin/admin-helpers.ts",
+    "message": "Unsafe assignment of an `any` value.",
+    "codeLine": "const map: Record<string, UserDisplayRow> = Object.create(null);",
+    "column": 9,
+    "contextBefore": ": [];",
+    "contextAfter": "for (const u of users) map[u.id] = u;"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-assignment",
+    "filePath": "apps/web/src/admin/attendees-api-routes.ts",
+    "message": "Unsafe assignment of an `any` value.",
+    "codeLine": "const body = await c.req.json().catch(() => null);",
+    "column": 9,
+    "contextBefore": "async function requireNoteBody(c: Context): Promise<string | Response> {",
+    "contextAfter": "const noteBody = body && typeof body === \"object\" ? (body as Record<string, unknown>).body : undefined;"
+  },
+  {
+    "ruleId": "@typescript-eslint/only-throw-error",
+    "filePath": "apps/web/src/admin/attendees-api-routes.ts",
+    "message": "Expected an error object to be thrown.",
+    "codeLine": "if (capacityResult instanceof Response) throw capacityResult;",
+    "column": 49,
+    "contextBefore": "const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, 1);",
+    "contextAfter": "if (capacityResult && \"forced\" in capacityResult) return capacityResult;"
+  },
+  {
+    "ruleId": "@typescript-eslint/only-throw-error",
+    "filePath": "apps/web/src/admin/attendees-api-routes.ts",
+    "message": "Expected an error object to be thrown.",
+    "codeLine": "if (capacityResult instanceof Response) throw capacityResult;",
+    "column": 53,
+    "contextBefore": "const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, 1);",
+    "contextAfter": "const capacityForced ="
+  },
+  {
+    "ruleId": "@typescript-eslint/only-throw-error",
+    "filePath": "apps/web/src/admin/attendees-api-routes.ts",
+    "message": "Expected an error object to be thrown.",
+    "codeLine": "if (ticketTypeError) throw c.json(ticketTypeError, 400);",
+    "column": 30,
+    "contextBefore": "const ticketTypeError = await validateTicketTypeCatalog(tx, eventId, nextTicketType);",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "@typescript-eslint/only-throw-error",
+    "filePath": "apps/web/src/admin/attendees-api-routes.ts",
+    "message": "Expected an error object to be thrown.",
+    "codeLine": "if (ticketTypeError) throw c.json(ticketTypeError, 400);",
+    "column": 34,
+    "contextBefore": "const ticketTypeError = await validateTicketTypeCatalog(tx, eventId, ticket_type);",
+    "contextAfter": ""
+  },
+  {
+    "ruleId": "@typescript-eslint/only-throw-error",
+    "filePath": "apps/web/src/admin/attendees-api-routes.ts",
+    "message": "Expected an error object to be thrown.",
+    "codeLine": "if (ticketTypeError) throw c.json(ticketTypeError, 400);",
+    "column": 36,
+    "contextBefore": "const ticketTypeError = await validateTicketTypeCatalog(tx, eventId, ticket_type);",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-return",
+    "filePath": "apps/web/src/admin/audit-routes.ts",
+    "message": "Unsafe return of a value of type `any`.",
+    "codeLine": "if (!needsJoin) return Object.create(null);",
+    "column": 19,
+    "contextBefore": "const needsJoin = rows.some((r) => !r.actor_email);",
+    "contextAfter": "const actorIds = [...new Set(rows.filter((r) => !r.actor_email).map((r) => r.actor_user_id))];"
+  },
+  {
+    "ruleId": "@typescript-eslint/require-await",
+    "filePath": "apps/web/src/admin/checkin-api-routes.ts",
+    "message": "Async function 'emitRejectedCheckinLog' has no 'await' expression.",
+    "codeLine": "async function emitRejectedCheckinLog(",
+    "column": 1,
+    "contextBefore": "* for the authenticated session flow; emergency bearer requests keep the device context only. */",
+    "contextAfter": "eventId: string,"
+  },
+  {
+    "ruleId": "@typescript-eslint/only-throw-error",
+    "filePath": "apps/web/src/admin/event-settings-routes.ts",
+    "message": "Expected an error object to be thrown.",
+    "codeLine": "if (issuedCount > 0) throw c.json({ error: \"wallet_template_locked\" }, 409);",
+    "column": 30,
+    "contextBefore": "const issuedCount = await loadIssuedWalletPassCount(tx, eventId);",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "@typescript-eslint/require-await",
+    "filePath": "apps/web/src/admin/geocoding-routes.ts",
+    "message": "Async function 'mapProviderError' has no 'await' expression.",
+    "codeLine": "async function mapProviderError(err: unknown): Promise<Response | null> {",
+    "column": 1,
+    "contextBefore": "",
+    "contextAfter": "if (err instanceof GeocodingProviderError) {"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-assignment",
+    "filePath": "apps/web/src/admin/reports-routes.ts",
+    "message": "Unsafe spread of an `any` value in an array.",
+    "codeLine": "...new Array(opts.columns.length - 1).fill(quoteCsvCell(\"\")),",
+    "column": 9,
+    "contextBefore": "),",
+    "contextAfter": "].join(\",\")"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-assignment",
+    "filePath": "apps/web/src/admin/security-audit-routes.ts",
+    "message": "Unsafe assignment of an `any` value.",
+    "codeLine": "const userMap: Record<string, UserRow> = Object.create(null);",
+    "column": 9,
+    "contextBefore": ": [];",
+    "contextAfter": "for (const u of users) userMap[u.id] = u;"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-return",
+    "filePath": "apps/web/src/admin/security-audit-routes.ts",
+    "message": "Unsafe return of a value of type `any`.",
+    "codeLine": "if (!needsJoin) return Object.create(null);",
+    "column": 19,
+    "contextBefore": "const needsJoin = rows.some((r) => r.user_id && !r.user_email);",
+    "contextAfter": ""
   },
   {
     "ruleId": "security/detect-unsafe-regex",
@@ -88,6 +871,123 @@
     "column": 72,
     "contextBefore": "const host = url.hostname.toLowerCase();",
     "contextAfter": "}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-base-to-string",
+    "filePath": "apps/web/src/admin/xlsx-to-csv.ts",
+    "message": "'value' may use Object's default stringification format ('[object Object]') when stringified.",
+    "codeLine": "return String(value);",
+    "column": 17,
+    "contextBefore": "}",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-base-to-string",
+    "filePath": "apps/web/src/admin/xlsx-to-csv.ts",
+    "message": "'value.result' may use Object's default stringification format ('[object Object]') when stringified.",
+    "codeLine": "if (\"result\" in value && value.result != null) return String(value.result);",
+    "column": 66,
+    "contextBefore": "if (\"text\" in value && value.text != null) return String(value.text);",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "@typescript-eslint/unbound-method",
+    "filePath": "apps/web/src/graceful-shutdown.ts",
+    "message": "A method that is not declared with `this: void` may cause unintentional scoping of `this` when separated from its object.\nConsider using an arrow function or explicitly `.bind()`ing the method to avoid calling the method with an unintended `this` value. \nIf a function does not access `this`, it can be annotated with `this: void`.",
+    "codeLine": "exit: (code: number) => void = process.exit,",
+    "column": 34,
+    "contextBefore": "disconnect: () => Promise<void>,",
+    "contextAfter": "): void {"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-argument",
+    "filePath": "apps/web/src/maps/nominatim-provider.ts",
+    "message": "Unsafe argument of type `any` assigned to a parameter of type `Uint8Array<ArrayBufferLike>`.",
+    "codeLine": "chunks.push(value);",
+    "column": 19,
+    "contextBefore": "}",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-assignment",
+    "filePath": "apps/web/src/maps/nominatim-provider.ts",
+    "message": "Unsafe object destructuring of a property with an `any` value.",
+    "codeLine": "const { done, value } = await reader.read();",
+    "column": 21,
+    "contextBefore": "for (;;) {",
+    "contextAfter": "if (done) break;"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-member-access",
+    "filePath": "apps/web/src/maps/nominatim-provider.ts",
+    "message": "Unsafe member access .byteLength on an `any` value.",
+    "codeLine": "if (!value || value.byteLength === 0) continue;",
+    "column": 27,
+    "contextBefore": "if (done) break;",
+    "contextAfter": "total += value.byteLength;"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-member-access",
+    "filePath": "apps/web/src/maps/nominatim-provider.ts",
+    "message": "Unsafe member access .byteLength on an `any` value.",
+    "codeLine": "total += value.byteLength;",
+    "column": 22,
+    "contextBefore": "if (!value || value.byteLength === 0) continue;",
+    "contextAfter": "if (total > maxBytes) {"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-argument",
+    "filePath": "apps/web/src/maps/static-map.ts",
+    "message": "Unsafe argument of type `any` assigned to a parameter of type `Uint8Array<ArrayBufferLike>`.",
+    "codeLine": "chunks.push(value);",
+    "column": 19,
+    "contextBefore": "}",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-assignment",
+    "filePath": "apps/web/src/maps/static-map.ts",
+    "message": "Unsafe object destructuring of a property with an `any` value.",
+    "codeLine": "const { done, value } = await reader.read();",
+    "column": 21,
+    "contextBefore": "for (;;) {",
+    "contextAfter": "if (done) break;"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-member-access",
+    "filePath": "apps/web/src/maps/static-map.ts",
+    "message": "Unsafe member access .byteLength on an `any` value.",
+    "codeLine": "if (!value || value.byteLength === 0) continue;",
+    "column": 27,
+    "contextBefore": "if (done) break;",
+    "contextAfter": "total += value.byteLength;"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-member-access",
+    "filePath": "apps/web/src/maps/static-map.ts",
+    "message": "Unsafe member access .byteLength on an `any` value.",
+    "codeLine": "total += value.byteLength;",
+    "column": 22,
+    "contextBefore": "if (!value || value.byteLength === 0) continue;",
+    "contextAfter": "if (total > maxBytes) {"
+  },
+  {
+    "ruleId": "@typescript-eslint/require-await",
+    "filePath": "apps/web/src/maps/ttl-string-cache.ts",
+    "message": "Async method 'get' has no 'await' expression.",
+    "codeLine": "async get(key: string): Promise<string | null> {",
+    "column": 3,
+    "contextBefore": "",
+    "contextAfter": "const entry = this.store.get(key);"
+  },
+  {
+    "ruleId": "@typescript-eslint/require-await",
+    "filePath": "apps/web/src/maps/ttl-string-cache.ts",
+    "message": "Async method 'set' has no 'await' expression.",
+    "codeLine": "async set(key: string, value: string, ttlMs: number): Promise<void> {",
+    "column": 3,
+    "contextBefore": "",
+    "contextAfter": "this.store.set(key, { value, expiresAt: Date.now() + ttlMs });"
   },
   {
     "ruleId": "security/detect-non-literal-fs-filename",
@@ -106,6 +1006,78 @@
     "column": 19,
     "contextBefore": "// Logo: rasterize the real product lockup, 3x for retina (displayed at width=118 in email HTML).",
     "contextAfter": "const logoOut = join(targetDir, \"admitto-logo.png\");"
+  },
+  {
+    "ruleId": "@typescript-eslint/require-await",
+    "filePath": "apps/web/src/rate-limit/in-memory.ts",
+    "message": "Async method 'health' has no 'await' expression.",
+    "codeLine": "async health(): Promise<{ ok: boolean; latencyMs: number | null }> {",
+    "column": 3,
+    "contextBefore": "/** In-memory store has no external backend to ping. */",
+    "contextAfter": "return { ok: true, latencyMs: null };"
+  },
+  {
+    "ruleId": "@typescript-eslint/require-await",
+    "filePath": "apps/web/src/rate-limit/in-memory.ts",
+    "message": "Async method 'hit' has no 'await' expression.",
+    "codeLine": "async hit(key: string, windowMs: number, max: number): Promise<RateLimitHitResult> {",
+    "column": 3,
+    "contextBefore": "/** Record one request for `key` within a fixed window of `windowMs`. */",
+    "contextAfter": "const now = Date.now();"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-return",
+    "filePath": "packages/auth/src/cloudflare-access/extract-token.ts",
+    "message": "Unsafe return of a value of type `any`.",
+    "codeLine": "Object.getOwnPropertyDescriptor(headers, name)?.value;",
+    "column": 5,
+    "contextBefore": "const getHeader = (name: string): string | undefined =>",
+    "contextAfter": "const header ="
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-argument",
+    "filePath": "packages/auth/src/settings/resolver.ts",
+    "message": "Unsafe argument of type `any` assigned to a parameter of type `string`.",
+    "codeLine": "return parseEnvValue(raw, SETTING_DEFAULTS.get(key));",
+    "column": 24,
+    "contextBefore": "if (raw === undefined || raw.trim() === \"\") return undefined;",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-assignment",
+    "filePath": "packages/auth/src/settings/resolver.ts",
+    "message": "Unsafe assignment of an `any` value.",
+    "codeLine": "const raw = Object.getOwnPropertyDescriptor(process.env, envName)?.value;",
+    "column": 9,
+    "contextBefore": "if (!envName) return undefined;",
+    "contextAfter": "if (raw === undefined || raw.trim() === \"\") return undefined;"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-call",
+    "filePath": "packages/auth/src/settings/resolver.ts",
+    "message": "Unsafe call of an `any` typed value.",
+    "codeLine": "if (raw === undefined || raw.trim() === \"\") return undefined;",
+    "column": 28,
+    "contextBefore": "const raw = Object.getOwnPropertyDescriptor(process.env, envName)?.value;",
+    "contextAfter": "return parseEnvValue(raw, SETTING_DEFAULTS.get(key));"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-member-access",
+    "filePath": "packages/auth/src/settings/resolver.ts",
+    "message": "Unsafe member access .trim on an `any` value.",
+    "codeLine": "if (raw === undefined || raw.trim() === \"\") return undefined;",
+    "column": 32,
+    "contextBefore": "const raw = Object.getOwnPropertyDescriptor(process.env, envName)?.value;",
+    "contextAfter": "return parseEnvValue(raw, SETTING_DEFAULTS.get(key));"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-return",
+    "filePath": "packages/import/src/custom-data-import.ts",
+    "message": "Unsafe return of a value of type `any`.",
+    "codeLine": "return Object.getOwnPropertyDescriptor(record, key)?.value;",
+    "column": 3,
+    "contextBefore": "function ownStringValue(record: Record<string, string>, key: string): string | undefined {",
+    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-object-injection",
@@ -270,6 +1242,123 @@
     "contextAfter": "parseOneDsnBlock(block, out, seen);"
   },
   {
+    "ruleId": "@typescript-eslint/no-unsafe-assignment",
+    "filePath": "packages/mail-delivery/src/configDescribe.ts",
+    "message": "Unsafe assignment of an `any` value.",
+    "codeLine": "const field = Object.getOwnPropertyDescriptor(desc, key)?.value;",
+    "column": 11,
+    "contextBefore": "for (const key of Object.keys(desc) as (keyof ConfigDescriptor)[]) {",
+    "contextAfter": "if (!field) continue;"
+  },
+  {
+    "ruleId": "@typescript-eslint/require-await",
+    "filePath": "packages/mail-delivery/src/send.ts",
+    "message": "Async function 'resolvePlaintextToken' has no 'await' expression.",
+    "codeLine": "async function resolvePlaintextToken(",
+    "column": 1,
+    "contextBefore": "",
+    "contextAfter": "attendee: { id: string; token_enc: string | null },"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-return",
+    "filePath": "packages/mail-templates/src/escape.ts",
+    "message": "Unsafe return of a value of type `any`.",
+    "codeLine": "return Object.getOwnPropertyDescriptor(labels, field)?.value ?? field;",
+    "column": 3,
+    "contextBefore": "const labels = context === \"branding\" ? BRANDING_FIELD_LABELS : TEMPLATE_FIELD_LABELS;",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-return",
+    "filePath": "packages/mail-templates/src/escape.ts",
+    "message": "Unsafe return of a value of type `any`.",
+    "codeLine": "return value.replace(/[&<>\"']/g, (ch) => Object.getOwnPropertyDescriptor(map, ch)?.value ?? ch);",
+    "column": 44,
+    "contextBefore": "function escapeWithMap(value: string, map: Record<string, string>): string {",
+    "contextAfter": "}"
+  },
+  {
+    "ruleId": "@typescript-eslint/require-await",
+    "filePath": "packages/mailer/src/adapters/exportOnly.ts",
+    "message": "Async method 'close' has no 'await' expression.",
+    "codeLine": "async close(): Promise<void> {",
+    "column": 3,
+    "contextBefore": "",
+    "contextAfter": "return;"
+  },
+  {
+    "ruleId": "@typescript-eslint/require-await",
+    "filePath": "packages/mailer/src/adapters/graph.ts",
+    "message": "Async method 'close' has no 'await' expression.",
+    "codeLine": "async close(): Promise<void> {",
+    "column": 3,
+    "contextBefore": "",
+    "contextAfter": "return;"
+  },
+  {
+    "ruleId": "@typescript-eslint/require-await",
+    "filePath": "packages/mailer/src/adapters/mock.ts",
+    "message": "Async method 'close' has no 'await' expression.",
+    "codeLine": "async close(): Promise<void> {",
+    "column": 3,
+    "contextBefore": "",
+    "contextAfter": "return;"
+  },
+  {
+    "ruleId": "@typescript-eslint/require-await",
+    "filePath": "packages/mailer/src/adapters/mock.ts",
+    "message": "Async method 'send' has no 'await' expression.",
+    "codeLine": "async send(message: MailMessage): Promise<SendResult> {",
+    "column": 3,
+    "contextBefore": "",
+    "contextAfter": "const validationError = validateMailMessage(message);"
+  },
+  {
+    "ruleId": "@typescript-eslint/require-await",
+    "filePath": "packages/mailer/src/adapters/powerAutomate.ts",
+    "message": "Async method 'close' has no 'await' expression.",
+    "codeLine": "async close(): Promise<void> {",
+    "column": 3,
+    "contextBefore": "",
+    "contextAfter": "return;"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-assignment",
+    "filePath": "packages/mailer/src/adapters/smtp.ts",
+    "message": "Unsafe assignment of an `any` value.",
+    "codeLine": "const info = await this.transporter.sendMail(mail);",
+    "column": 13,
+    "contextBefore": "try {",
+    "contextAfter": "logMailSent(this.provider, message.logRecipientUnmasked ? message.to : redactEmail(message.to));"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-assignment",
+    "filePath": "packages/mailer/src/adapters/smtp.ts",
+    "message": "Unsafe assignment of an `any` value.",
+    "codeLine": "providerMessageId: info.messageId,",
+    "column": 9,
+    "contextBefore": "provider: this.provider,",
+    "contextAfter": "idempotencyKey: message.idempotencyKey,"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-member-access",
+    "filePath": "packages/mailer/src/adapters/smtp.ts",
+    "message": "Unsafe member access .messageId on an `any` value.",
+    "codeLine": "providerMessageId: info.messageId,",
+    "column": 33,
+    "contextBefore": "provider: this.provider,",
+    "contextAfter": "idempotencyKey: message.idempotencyKey,"
+  },
+  {
+    "ruleId": "@typescript-eslint/require-await",
+    "filePath": "packages/mailer/src/adapters/smtp.ts",
+    "message": "Async method 'close' has no 'await' expression.",
+    "codeLine": "async close(): Promise<void> {",
+    "column": 3,
+    "contextBefore": "/** Close the underlying nodemailer connection pool. */",
+    "contextAfter": "this.transporter.close();"
+  },
+  {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/notifications/src/dispatcher.ts",
     "message": "Generic Object Injection Sink",
@@ -297,6 +1386,15 @@
     "contextAfter": "}"
   },
   {
+    "ruleId": "@typescript-eslint/prefer-promise-reject-errors",
+    "filePath": "packages/shared/src/ssrfGuard.ts",
+    "message": "Expected the Promise rejection reason to be an Error.",
+    "codeLine": "reject(err);",
+    "column": 9,
+    "contextBefore": "signal.removeEventListener(\"abort\", onAbort);",
+    "contextAfter": "},"
+  },
+  {
     "ruleId": "security/detect-unsafe-regex",
     "filePath": "packages/shared/src/timezones.ts",
     "message": "Unsafe Regular Expression",
@@ -304,15 +1402,6 @@
     "column": 23,
     "contextBefore": "const NICE_ABBREVIATION_RE = /^[A-Za-z]{2,5}$/;",
     "contextAfter": ""
-  },
-  {
-    "ruleId": null,
-    "filePath": "packages/storage/src/adapters/local.ts",
-    "message": "Unused eslint-disable directive (no problems were reported from 'security/detect-non-literal-fs-filename').",
-    "codeLine": "// eslint-disable-next-line security/detect-non-literal-fs-filename",
-    "column": 5,
-    "contextBefore": "// dir is always under root (starts at root, descends via readdir join).",
-    "contextAfter": "entries = await resolved.readdir(dir, { withFileTypes: true });"
   },
   {
     "ruleId": "security/detect-unsafe-regex",
@@ -468,6 +1557,51 @@
     "contextAfter": "}"
   },
   {
+    "ruleId": "@typescript-eslint/no-unsafe-argument",
+    "filePath": "packages/tickets/src/attendees-export.ts",
+    "message": "Unsafe argument of type `any` assigned to a parameter of type `EventItemContent[]`.",
+    "codeLine": "const exportColumns = buildExportColumns(attributeFieldsResult);",
+    "column": 44,
+    "contextBefore": "",
+    "contextAfter": "const exportRows = buildSanitizedExportRows(rows, attributeFieldsResult, timeZone, ticketTypes);"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-argument",
+    "filePath": "packages/tickets/src/attendees-export.ts",
+    "message": "Unsafe argument of type `any` assigned to a parameter of type `EventItemContent[]`.",
+    "codeLine": "const exportRows = buildSanitizedExportRows(rows, attributeFieldsResult, timeZone, ticketTypes);",
+    "column": 53,
+    "contextBefore": "const exportColumns = buildExportColumns(attributeFieldsResult);",
+    "contextAfter": "const csv = buildExportCsv(exportRows, exportColumns);"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-assignment",
+    "filePath": "packages/tickets/src/attendees-export.ts",
+    "message": "Unsafe array destructuring of a tuple element with an `any` value.",
+    "codeLine": "const [rows, attributeFieldsResult, ticketTypes] = await Promise.all([",
+    "column": 16,
+    "contextBefore": "",
+    "contextAfter": "findFilteredAttendeesForExport(db, eventId, filters),"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-return",
+    "filePath": "packages/tickets/src/attendees-export.ts",
+    "message": "Unsafe return of a value of type `any`.",
+    "codeLine": "loadEventCustomDataFields(db, eventId).catch((err) => err),",
+    "column": 59,
+    "contextBefore": "findFilteredAttendeesForExport(db, eventId, filters),",
+    "contextAfter": "loadEventTicketTypes(db, eventId),"
+  },
+  {
+    "ruleId": "@typescript-eslint/no-unsafe-assignment",
+    "filePath": "packages/tickets/src/custom-data.ts",
+    "message": "Unsafe assignment of an `any` value.",
+    "codeLine": "const v = Object.getOwnPropertyDescriptor(raw, field)?.value;",
+    "column": 9,
+    "contextBefore": "if (!raw || typeof raw !== \"object\" || Array.isArray(raw)) return null;",
+    "contextAfter": "if (typeof v !== \"string\") return null;"
+  },
+  {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/tickets/src/resolve.ts",
     "message": "Generic Object Injection Sink",
@@ -495,13 +1629,13 @@
     "contextAfter": "if (!match) return \"Z\";"
   },
   {
-    "ruleId": null,
-    "filePath": "packages/ui/src/components/Tooltip.tsx",
-    "message": "Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps').",
-    "codeLine": "// eslint-disable-next-line react-hooks/exhaustive-deps -- hide/show are stable per render, not deps",
-    "column": 5,
-    "contextBefore": "return () => observer.disconnect();",
-    "contextAfter": "}, [visible]);"
+    "ruleId": "@typescript-eslint/no-unsafe-return",
+    "filePath": "packages/ui/src/status-map.ts",
+    "message": "Unsafe return of a value of type `any`.",
+    "codeLine": "return Object.getOwnPropertyDescriptor(STATUS_MAP, status)?.value ?? {",
+    "column": 3,
+    "contextBefore": "export function resolveStatusMeta(status: string): StatusMeta {",
+    "contextAfter": "variant: \"neutral\","
   },
   {
     "ruleId": "security/detect-object-injection",
@@ -529,5 +1663,14 @@
     "column": 19,
     "contextBefore": "for (const [key, placeholder] of Object.entries(fieldMapping)) {",
     "contextAfter": "if (value) custom[key] = value;"
+  },
+  {
+    "ruleId": "@typescript-eslint/only-throw-error",
+    "filePath": "packages/wallet/src/registration-sync.ts",
+    "message": "Expected an error object to be thrown.",
+    "codeLine": "if (err) throw err;",
+    "column": 18,
+    "contextBefore": "});",
+    "contextAfter": "}"
   }
 ]

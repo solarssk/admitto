@@ -623,7 +623,7 @@ export function LocationSettingsPanel({
               <span className="location-map-footer__verified">{provenanceBadge}</span>
               <span className="location-map-footer__coords">
                 <i className="ti ti-map-pin" aria-hidden="true" />
-                {hasCoordinates ? formatMapCoordinates(latitude!, longitude!) : "-"}
+                {hasCoordinates ? formatMapCoordinates(latitude, longitude) : "-"}
               </span>
             </div>
             <div className="location-map-footer__links">

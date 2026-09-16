@@ -376,7 +376,7 @@ export function formatAdmissionDisplay(
  */
 function previousIsoDate(isoDate: string): string {
   const [y, m, d] = isoDate.split("-").map(Number);
-  const prev = new Date(Date.UTC(y!, m! - 1, d!));
+  const prev = new Date(Date.UTC(y!, m! - 1, d));
   prev.setUTCDate(prev.getUTCDate() - 1);
   return prev.toISOString().slice(0, 10);
 }

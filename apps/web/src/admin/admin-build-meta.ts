@@ -26,7 +26,7 @@ export function resolveDefaultAdminDistRoot(): string {
   const candidates = adminDistCandidates();
   for (const root of candidates) {
     try {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- path from trusted dist root candidates
+       
       accessSync(join(root, "index.html"), constants.R_OK);
       return root;
     } catch {
