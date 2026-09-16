@@ -24,7 +24,6 @@ const STATUS_OK = "#2fb344"; // --status-ok / --at-green
 const DANGER_RED = "#d63939"; // --at-red / --status-error
 const GRAY_400 = "#94a3b8"; // --at-gray-400
 
-type MailStatus = EventMailReportsResponse["delivery"]["by_status"][number]["status"];
 const STATUS_LABELS: Record<string, string> = {
   queued: "Queued",
   accepted: "Accepted",
@@ -52,8 +51,8 @@ const STATUS_COLORS: Record<string, string> = {
 
 function statusSlices(byStatus: EventMailReportsResponse["delivery"]["by_status"]): ReportsDonutSlice[] {
   return byStatus.map((row) => ({
-    label: STATUS_LABELS[row.status as MailStatus] ?? row.status,
-    color: STATUS_COLORS[row.status as MailStatus] ?? GRAY_400,
+    label: STATUS_LABELS[row.status] ?? row.status,
+    color: STATUS_COLORS[row.status] ?? GRAY_400,
     count: row.count,
   }));
 }
@@ -61,10 +60,10 @@ function statusSlices(byStatus: EventMailReportsResponse["delivery"]["by_status"
 function statusBreakdownRows(byStatus: EventMailReportsResponse["delivery"]["by_status"], total: number): BreakdownRow[] {
   return byStatus.map((row) => ({
     id: row.status,
-    label: STATUS_LABELS[row.status as MailStatus] ?? row.status,
+    label: STATUS_LABELS[row.status] ?? row.status,
     meta: `${row.count} · ${pctOf(row.count, total)}%`,
     pct: pctOf(row.count, total),
-    color: STATUS_COLORS[row.status as MailStatus] ?? GRAY_400,
+    color: STATUS_COLORS[row.status] ?? GRAY_400,
   }));
 }
 

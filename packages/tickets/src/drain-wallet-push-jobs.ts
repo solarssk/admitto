@@ -80,7 +80,7 @@ export function readWalletPushRequest(job: { result_json: unknown }): WalletPush
   }
   if (req.kind !== "attendee_ids") return null;
   if (!Array.isArray(req.attendeeIds) || !req.attendeeIds.every((id) => typeof id === "string")) return null;
-  return { kind: "attendee_ids", eventId: req.eventId, attendeeIds: req.attendeeIds as string[] };
+  return { kind: "attendee_ids", eventId: req.eventId, attendeeIds: req.attendeeIds };
 }
 
 function chunk<T>(items: T[], size: number): T[][] {

@@ -970,7 +970,7 @@ function ResourceModal({
   const titleId = useId();
   const [form, setForm] = useState({
     title: resource?.title ?? "",
-    type: resource?.type ?? ("link" as "link" | "file"),
+    type: resource?.type ?? ("link"),
     url: resource?.url ?? "",
     description: resource?.description ?? "",
   });

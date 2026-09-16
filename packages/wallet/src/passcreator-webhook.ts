@@ -109,7 +109,7 @@ export function parseWebhookData(signedData: string): PassCreatorWebhookData | n
   if (typeof r["noOfActivePasses"] === "number") data.noOfActivePasses = r["noOfActivePasses"];
   if (typeof r["noOfInactivePasses"] === "number") data.noOfInactivePasses = r["noOfInactivePasses"];
   if (typeof r["firstDownloadedAt"] === "string" || r["firstDownloadedAt"] === null) {
-    data.firstDownloadedAt = r["firstDownloadedAt"] as string | null;
+    data.firstDownloadedAt = r["firstDownloadedAt"];
   }
   return data;
 }

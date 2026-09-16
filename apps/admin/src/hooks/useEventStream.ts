@@ -147,12 +147,12 @@ export function useEventStream(
         if (rateLimited || consecutiveFailureCount >= MAX_CONSECUTIVE_FAILURES) {
           const probeResult = await probeStreamAuth(eventId);
           if (cancelled) return;
-          // eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret probe status string
+           
           if (probeResult === "denied") {
             setStatus("auth_error");
             return;
           }
-          // eslint-disable-next-line security/detect-possible-timing-attacks -- non-secret probe status string
+           
           if (probeResult === "rate_limited") {
             rateLimited = true;
             setStatus("rate_limited");

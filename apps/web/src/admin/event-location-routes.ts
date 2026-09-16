@@ -171,7 +171,7 @@ export function componentsToJson(
   if (components === undefined) return undefined;
   if (components === null) return Prisma.JsonNull;
   // AddressComponents has no index signature; spread to a plain record for Prisma JSON input.
-  return { ...components } as Record<string, string | null> as Prisma.InputJsonValue;
+  return { ...components };
 }
 
 type LocationPatch = ReturnType<typeof normalizeEventLocationInput>;

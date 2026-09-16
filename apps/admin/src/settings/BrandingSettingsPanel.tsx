@@ -856,7 +856,7 @@ export function BrandingSettingsPanel() {
     // default explicitly (e.g. Admin panel = Manrope, Ticket page = Admitto Sans) instead of only
     // ever following whatever Admin panel currently is.
     { id: DEFAULT_BRANDING_FONT_FAMILY_NAME, label: DEFAULT_BRANDING_FONT_FAMILY_NAME },
-    ...FONT_OPTIONS.filter((f) => f.name !== undefined).map((f) => ({ id: f.name!, label: f.label })),
+    ...FONT_OPTIONS.filter((f) => f.name !== undefined).map((f) => ({ id: f.name, label: f.label })),
     ...customFamilies.map((f) => ({ id: f.name, label: f.name })),
   ];
 

@@ -147,7 +147,7 @@ async function* walkManagedFiles(
   let entries;
   try {
     // dir is always under root (starts at root, descends via readdir join).
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
+     
     entries = await resolved.readdir(dir, { withFileTypes: true });
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
