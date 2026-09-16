@@ -47,6 +47,8 @@ jobs:
         # pinned below (including setuptools==83.0.0 and pip==26.2.1) is reproducible on purpose,
         # so the exact installed set is auditable (SonarCloud githubactions:S8544) - verified
         # `pip-audit`-clean as a set before pinning, not just individually version-bumped.
+        # --only-binary=:all: rejects source distributions, whose build hooks could run arbitrary
+        # code during installation. The locked set is verified to publish Linux/Python 3.11 wheels.
         # --require-hashes (Scorecard's Pinned-Dependencies check) needs every package pip
         # resolves, including transitive dependencies, listed with its hash - semgrep-requirements.txt
         # is pip-compile's full closure for semgrep-requirements.in, not hand-maintained. Regenerate
@@ -56,7 +58,7 @@ jobs:
         #     .github/workflows/semgrep-requirements.in
         # then re-run `pip-audit -r .github/workflows/semgrep-requirements.txt` before committing.
         run: |
-          python -m pip install --require-hashes -r .github/workflows/semgrep-requirements.txt --break-system-packages
+          python -m pip install --only-binary=:all: --require-hashes -r .github/workflows/semgrep-requirements.txt --break-system-packages
 
       - name: Run Semgrep
         # --error: any finding fails the job, on PRs, main merges, and the weekly schedule alike.

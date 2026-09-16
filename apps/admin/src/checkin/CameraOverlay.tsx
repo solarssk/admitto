@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@admitto/ui";
 import type {
   AttendeeCardDto,
@@ -95,6 +95,7 @@ export function CameraOverlay({
 }: Readonly<CameraOverlayProps>) {
   const [scanSoundMuted, toggleScanSoundMuted] = useScanSoundMuted();
   const [manualMode, setManualMode] = useState(false);
+  const manualSearchButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) setManualMode(false);
@@ -258,6 +259,7 @@ export function CameraOverlay({
 
           <div className="ck-overlay__manual">
             <Button
+              ref={manualSearchButtonRef}
               type="button"
               variant="secondary"
               size="sm"
@@ -303,6 +305,7 @@ export function CameraOverlay({
           onBack={() => {
             setManualMode(false);
             onClearManualError?.();
+            requestAnimationFrame(() => manualSearchButtonRef.current?.focus());
           }}
           ticketTypes={ticketTypes}
         />

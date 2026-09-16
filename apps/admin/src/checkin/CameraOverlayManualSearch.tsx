@@ -40,6 +40,13 @@ export function CameraOverlayManualSearch({
   const [searched, setSearched] = useState(false);
   const timerRef = useRef<number | null>(null);
   const seqRef = useRef(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // This view mounts only after the operator explicitly selects “Manual search”. Focus the
+  // primary field for that user-initiated transition instead of using the page-level autoFocus.
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -98,7 +105,7 @@ export function CameraOverlayManualSearch({
         <div className="ms__input">
           <i className="ti ti-search" aria-hidden="true" />
           <input
-            autoFocus
+            ref={inputRef}
             type="text"
             id="ck-overlay-manual-search"
             name="ck-overlay-manual-search"
