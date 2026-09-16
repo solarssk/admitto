@@ -12,9 +12,12 @@ const BROWSER_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
   [/Chrome\/([\d.]+)/, "Chrome"],
   [/FxiOS\/([\d.]+)/, "Firefox"],
   [/Firefox\/([\d.]+)/, "Firefox"],
-  // Safari's own release version rides in "Version/x.y", not the "Safari/build" WebKit tag next
-  // to it - checked before the plain fallback below, which has no version to offer.
-  [/Version\/([\d.]+).*Safari\//, "Safari"],
+  // By this point every other browser above (desktop and iOS) has already failed to match, so a
+  // "Version/x.y" token left over only ever belongs to genuine Safari - no need to also require a
+  // trailing "Safari/build" tag, which would need an unbounded `.*` scan between the two and was
+  // flagged by SonarCloud for super-linear backtracking (S8786) on attacker-controlled input (this
+  // parses a raw request User-Agent, e.g. WalletPass.user_agent).
+  [/Version\/([\d.]+)/, "Safari"],
   [/Safari\//, "Safari"],
 ];
 
@@ -49,7 +52,7 @@ function matchPattern(
     const match = pattern.exec(ua);
     if (!match) continue;
     const version = match[1];
-    return withVersion && version ? `${label} ${version.replace(/_/g, ".")}` : label;
+    return withVersion && version ? `${label} ${version.replaceAll("_", ".")}` : label;
   }
   return null;
 }
