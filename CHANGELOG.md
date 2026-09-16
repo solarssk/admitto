@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- An attendee's Wallet card now shows an "Added from" row (browser and OS, e.g. "Safari 18.7 / iOS 18.7") once their wallet pass has a confirmed registration - captured on Admitto's own redirect, the same hop that already issues and refreshes the pass, so it fills in on the next click even for a pass added before this existed. The row only appears once the pass is genuinely confirmed installed, so a corporate mail security scanner pre-fetching the wallet link can never show up here.
+- An attendee's Wallet card now shows an "Added from" row (browser and OS, e.g. "Safari 18.7 / iOS 18.7") for a pass confirmed installed after this shipped - captured on Admitto's own redirect, the same hop that already issues and refreshes the pass. The row only appears once the pass is genuinely confirmed installed, so a corporate mail security scanner pre-fetching the wallet link can never show up here; a pass already confirmed before this shipped has no safe way to backfill this and stays without one.
 
 ### Changed
 
