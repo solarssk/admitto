@@ -6,11 +6,7 @@
  */
 import type { Context } from "hono";
 import { z } from "zod";
-import {
-  emitSystemLog,
-  type SystemLogLevel,
-  type SystemLogSource,
-} from "@admitto/shared/system-log";
+import { emitSystemLog } from "@admitto/shared/system-log";
 import { isValidOpsToken } from "./readyz.js";
 
 const bodySchema = z

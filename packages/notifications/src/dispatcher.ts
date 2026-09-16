@@ -1,5 +1,5 @@
 import { emitSystemLog } from "@admitto/shared/system-log";
-import { Prisma, type PrismaClient } from "@admitto/db";
+import type { PrismaClient } from "@admitto/db";
 import { getNotificationTypeDef } from "./registry.js";
 import { resolveAudienceCandidates } from "./audience.js";
 import { resolveEnabledChannelsForUsers } from "./preferences.js";

@@ -9,7 +9,6 @@ import {
   setMailSettings,
   validateOrgMailSettingsUpdate,
   type ConfigDescriptor,
-  type MailSettingsInput,
 } from "@admitto/mailer-config";
 import { sendTransportTestEmail, type MailDeliveryDeps } from "@admitto/mail-delivery";
 import { writeAdminAuditLog } from "@admitto/tickets";

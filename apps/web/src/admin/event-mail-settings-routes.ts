@@ -24,7 +24,6 @@ import {
   resolveMailConfig,
   setMailSettings,
   validateEventMailSettingsUpdate,
-  type MailSettingsInput,
 } from "@admitto/mailer-config";
 import {
   sendEventTransportTestEmail,

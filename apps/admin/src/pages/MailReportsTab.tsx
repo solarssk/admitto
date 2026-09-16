@@ -24,7 +24,6 @@ const STATUS_OK = "#2fb344"; // --status-ok / --at-green
 const DANGER_RED = "#d63939"; // --at-red / --status-error
 const GRAY_400 = "#94a3b8"; // --at-gray-400
 
-type MailStatus = EventMailReportsResponse["delivery"]["by_status"][number]["status"];
 const STATUS_LABELS: Record<string, string> = {
   queued: "Queued",
   accepted: "Accepted",

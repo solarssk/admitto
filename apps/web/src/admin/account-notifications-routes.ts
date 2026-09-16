@@ -19,7 +19,6 @@ import {
   NOTIFICATION_TYPES,
   resolvePersonalPreferences,
   setNotificationPreference,
-  type NotificationChannelKey,
 } from "@admitto/notifications";
 
 const PERSONAL_CHANNEL_KINDS = ["email", "in_app"] as const;
