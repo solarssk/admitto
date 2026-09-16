@@ -1,7 +1,9 @@
-# NOSONAR - docker:S6471: this is a CI-only build image (compiles fuzz binaries, never runs as
-# a service or handles network traffic), so it has no runtime USER to switch to the way the
-# production Dockerfile at the repo root does (ADR 0043) - OSS-Fuzz's own base images are
-# designed to build as root.
+# SonarCloud docker:S6471 (root user) flags this FROM line - accepted, not suppressible: Docker
+# doesn't allow trailing comments on an instruction, so its own Docker analyzer has no NOSONAR
+# mechanism at all (confirmed against SonarSource's community forum), only a dashboard-level
+# Won't Fix/False Positive action. This is a CI-only build image that compiles fuzz binaries and
+# never runs as a service, unlike the production Dockerfile's runtime `USER node` (ADR 0043) -
+# OSS-Fuzz's own base images are designed to build as root.
 FROM gcr.io/oss-fuzz-base/base-builder-javascript@sha256:2e218dedc1603f15e34cec784030789e06db1df8eb5356f0a8e27285619ac8c2
 
 # Only the exact files build.sh compiles, plus its own directory - not `COPY . $SRC/admitto`
