@@ -232,7 +232,7 @@ export async function patchNotificationSettings(
   if (patch.disabledChannels !== undefined) {
     updateData.disabled_channels = normalizeDisabledChannels(
       patch.disabledChannels,
-    ) as Prisma.InputJsonValue;
+    );
   }
 
   await db.notificationSettings.upsert({
@@ -243,7 +243,7 @@ export async function patchNotificationSettings(
       webhook_url_enc: webhookUrlEnc ?? null,
       webhook_kind: patch.webhookKind ?? null,
       extra_email_recipients: (nextRecipients ?? []) as unknown as Prisma.InputJsonValue,
-      disabled_channels: normalizeDisabledChannels(patch.disabledChannels) as Prisma.InputJsonValue,
+      disabled_channels: normalizeDisabledChannels(patch.disabledChannels),
     },
     update: updateData,
   });

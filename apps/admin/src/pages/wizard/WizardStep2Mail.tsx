@@ -132,7 +132,7 @@ export const WizardStep2Mail = forwardRef<WizardStep2MailHandle, WizardStep2Mail
         setMailSkipped(false);
         setSummary({
           mailLabel: provider
-            ? `Configured (${PROVIDER_LABELS[provider as MailProvider] ?? provider})`
+            ? `Configured (${PROVIDER_LABELS[provider] ?? provider})`
             : "Not configured",
         });
         return true;

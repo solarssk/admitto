@@ -367,7 +367,7 @@ export class PassCreatorClient implements WalletPassProvider {
     const res = await this.requestRaw("GET", path);
     const body = await this.validateHookResponse("GET", path, res);
     const data =
-      body && typeof body === "object" && "data" in body ? (body as { data: unknown }).data : body;
+      body && typeof body === "object" && "data" in body ? (body).data : body;
     const rows = Array.isArray(data) ? data : [];
     // Each row is also of unknown shape - a row that isn't an object (or is missing a field) must
     // fall back to a default rather than throw, same reasoning as the success:false check above

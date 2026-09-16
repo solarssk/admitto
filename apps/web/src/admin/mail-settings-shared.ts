@@ -205,7 +205,7 @@ export function descriptorForKey(
   desc: ConfigDescriptor,
   key: keyof MailSettingsInput,
 ): FieldDescriptor<unknown> {
-  return desc[key as keyof ConfigDescriptor] as FieldDescriptor<unknown>;
+  return desc[key];
 }
 
 export function isProductionEnv(env: NodeJS.ProcessEnv): boolean {

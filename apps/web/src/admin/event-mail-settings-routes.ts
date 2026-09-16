@@ -24,7 +24,6 @@ import {
   resolveMailConfig,
   setMailSettings,
   validateEventMailSettingsUpdate,
-  type MailSettingsInput,
 } from "@admitto/mailer-config";
 import {
   sendEventTransportTestEmail,
@@ -175,21 +174,21 @@ export async function handlePutEventMailSettings(c: Context, db: PrismaClient): 
       ]);
 
       for (const key of Object.keys(body) as Array<keyof typeof body>) {
-        const fd = descriptorForKey(current, key as keyof MailSettingsInput);
+        const fd = descriptorForKey(current, key);
         if (fd.locked) throw new LockedFieldError();
       }
 
       const transportCheck = validateEventMailSettingsUpdate(
         eventRow,
         orgRow,
-        body as MailSettingsInput,
+        body,
         process.env,
       );
       if (!transportCheck.ok) throw new IncompleteTransportError(transportCheck.error);
 
       const { fieldsChanged, secretsRotated, secretsCleared } = classifyMailSettingsFields(body);
 
-      await setMailSettings({ scopeType: "event", scopeId: eventId }, body as MailSettingsInput, tx);
+      await setMailSettings({ scopeType: "event", scopeId: eventId }, body, tx);
 
       const audit = adminAuditFromContext(c);
       await writeAdminAuditLog(tx, {

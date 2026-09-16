@@ -183,7 +183,7 @@ function probeResultToastMessage(
   if (result.ok) return result.message?.trim() || opts.successFallback;
   const raw = result.error?.trim() ?? "";
   if (!raw) return opts.errorFallback;
-  if (opts.errorCopy[raw]) return opts.errorCopy[raw]!;
+  if (opts.errorCopy[raw]) return opts.errorCopy[raw];
   // Machine-looking codes must never land in the toast.
   if (/^[a-z][a-z0-9_]*$/.test(raw)) return opts.errorFallback;
   return raw;

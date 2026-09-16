@@ -110,7 +110,7 @@ function findInvalidCustomDataField(
     const value = readAttributeCell(raw, field, duplicateLabels);
     if (!value) continue;
     try {
-      normalizeCustomDataFieldValue(field as EventItemContent, value);
+      normalizeCustomDataFieldValue(field, value);
     } catch {
       return field;
     }
@@ -158,7 +158,7 @@ export function extractCustomDataFromRow(
 
   try {
     const custom_data = buildPartialCustomDataFromInput(
-      fields as EventItemContent[],
+      fields,
       input,
     );
     return { ok: true, custom_data };
