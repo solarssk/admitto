@@ -26,16 +26,19 @@ jobs:
       # output-sarif: true below uploads crash findings to the Security tab.
       security-events: write
     steps:
-      # No sanitizer matrix (unlike ClusterFuzzLite's own C++ examples): confirmed locally that
-      # `sanitizer: address` fails outright for language: javascript ("JavaScript projects cannot
-      # be fuzzed with sanitizers") - Jazzer.js instruments V8 bytecode for coverage instead of
-      # relying on ASan/UBSan, so the action's own default (none) is the only valid value here.
+      # No sanitizer matrix (unlike ClusterFuzzLite's own C++ examples): `sanitizer: address`
+      # fails outright for language: javascript ("JavaScript projects cannot be fuzzed with
+      # sanitizers") - Jazzer.js instruments V8 bytecode for coverage instead of relying on
+      # ASan/UBSan. Confirmed on a real run of this workflow that the action's own default is
+      # `address`, not `none`, despite omitting the input working in local `docker run` testing -
+      # `sanitizer: none` below must be explicit.
       - name: Build fuzzers
         id: build
         uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1  # v1
         with:
           language: javascript
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          sanitizer: none
 
       - name: Run fuzzers
         id: run
@@ -44,4 +47,5 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           fuzz-seconds: 600
           mode: "code-change"
+          sanitizer: none
           output-sarif: true
