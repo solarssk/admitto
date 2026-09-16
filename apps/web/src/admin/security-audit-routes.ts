@@ -11,13 +11,39 @@ import {
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { resolveIpLocation } from "../rate-limit/ip-location.js";
 
-/** Free-text search over snapshot columns, live User rows, and failed-login metadata emails.
- * Snapshot columns cover deleted accounts; the User lookup keeps matching current staff who have
- * not yet triggered a new audit row since the migration. Failed logins keep `user_id` /
- * `user_email` null and store the attempted address only in `metadata.email` (legacy rows:
- * `metadata.email_redacted`), so those keys must be searched explicitly or investigations cannot
- * find attempts against a specific address. JSON path filters are case-sensitive; emails are
- * stored normalized lowercase, so the metadata predicates use a lowercased needle. */
+/** Row ids whose `metadata.recipients` array (a multi-recipient notification-dispatch row's list
+ * of pre-formatted "Name <email>" strings, see packages/notifications' dispatcher.ts) has at
+ * least one entry containing `search`, case-insensitively. Prisma's typed JSON filters
+ * (`string_contains` etc.) only match a known scalar path, not "any element of this array" - so
+ * this falls back to raw SQL, the same shape as claimThrottleSlot's own tagged-template
+ * `$queryRaw` in dispatcher.ts (interpolated values are parameterized by Prisma, not
+ * string-concatenated, so this is injection-safe). Without it, searching by a listed recipient's
+ * name or email silently hid their notification rows from the Security view's "Search user…" -
+ * the single-recipient case doesn't need this, since that identity already lives in the
+ * user_id/user_email/user_display_name columns searched below (bot review finding, PR #1344). */
+async function findSecurityAuditLogRowsWithMatchingRecipient(
+  db: PrismaClient,
+  search: string,
+): Promise<string[]> {
+  const rows = await db.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM "SecurityAuditLog"
+    WHERE metadata ? 'recipients'
+      AND EXISTS (
+        SELECT 1 FROM jsonb_array_elements_text(metadata->'recipients') AS recipient
+        WHERE recipient ILIKE ${`%${search}%`}
+      )
+  `;
+  return rows.map((row) => row.id);
+}
+
+/** Free-text search over snapshot columns, live User rows, failed-login metadata emails, and
+ * multi-recipient notification-dispatch rows. Snapshot columns cover deleted accounts; the User
+ * lookup keeps matching current staff who have not yet triggered a new audit row since the
+ * migration. Failed logins keep `user_id` / `user_email` null and store the attempted address
+ * only in `metadata.email` (legacy rows: `metadata.email_redacted`), so those keys must be
+ * searched explicitly or investigations cannot find attempts against a specific address. JSON
+ * path filters are case-sensitive; emails are stored normalized lowercase, so the metadata
+ * predicates use a lowercased needle. */
 async function resolveSecuritySearchMatch(
   db: PrismaClient,
   search: string,
@@ -32,6 +58,7 @@ async function resolveSecuritySearchMatch(
     select: { id: true },
   });
   const metadataEmailNeedle = search.toLowerCase();
+  const recipientMatchIds = await findSecurityAuditLogRowsWithMatchingRecipient(db, search);
   return {
     OR: [
       { user_id: { in: users.map((u) => u.id) } },
@@ -39,6 +66,7 @@ async function resolveSecuritySearchMatch(
       { user_display_name: { contains: search, mode: "insensitive" } },
       { metadata: { path: ["email"], string_contains: metadataEmailNeedle } },
       { metadata: { path: ["email_redacted"], string_contains: metadataEmailNeedle } },
+      { id: { in: recipientMatchIds } },
     ],
   };
 }

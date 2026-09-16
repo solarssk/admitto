@@ -162,6 +162,11 @@ const SECURITY_EVENT_LABELS: Record<string, string> = {
   "auth.access.denied": "Access denied",
   "auth.trusted_device.created": "Trusted device remembered",
   "auth.trusted_device.used": "2FA skipped (trusted device)",
+  "notification.dispatch.sent": "Notification sent",
+  "notification.dispatch.failed": "Notification delivery failed",
+  "notification.dispatch.skipped_throttled": "Notification throttled (duplicate)",
+  "notification.dispatch.skipped_org_disabled": "Notification skipped (disabled by organization)",
+  "notification.dispatch.skipped_no_recipients": "Notification skipped (no recipients)",
 };
 
 function securityEventLabel(type: string): string {
@@ -184,6 +189,8 @@ const TONE_BY_SECURITY_EVENT: Record<string, BadgeVariant> = {
   "auth.mfa.recovery_consumed": "warn",
   "auth.login.repeated_failures": "warn",
   "auth.mfa.repeated_failures": "warn",
+  "notification.dispatch.sent": "ok",
+  "notification.dispatch.failed": "error",
 };
 
 function securityEventTone(type: string): BadgeVariant {
