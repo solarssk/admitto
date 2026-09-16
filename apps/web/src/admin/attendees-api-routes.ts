@@ -15,6 +15,7 @@ import {
 } from "@admitto/mail-delivery";
 import { TemplateNotFoundError } from "@admitto/mail-templates";
 import type { AttendeeStatus, WalletPassStatus } from "@admitto/db/status";
+import type { WalletPassApiFields } from "@admitto/db/wallet-pass-fields";
 import { decryptFromString } from "@admitto/crypto";
 import {
   WalletProviderError,
@@ -138,6 +139,9 @@ const ATTENDEE_DETAIL_SELECT = {
       samsung_inactive_registrations: true,
       first_downloaded_at: true,
       registration_checked_at: true,
+      first_confirmed_at: true,
+      user_agent: true,
+      user_agent_captured_at: true,
     },
   },
 } as const;
@@ -961,23 +965,7 @@ async function buildAttendeeDetailDto(
     rsvp_status: string;
     rsvp_updated_at: Date | null;
     rsvp_source: string | null;
-    wallet_pass: {
-      status: string;
-      issued_at: Date | null;
-      voided_at: Date | null;
-      apple_url: string | null;
-      android_url: string | null;
-      last_synced_at: Date | null;
-      last_error_code: string | null;
-      apple_active_registrations: number | null;
-      apple_inactive_registrations: number | null;
-      google_active_registrations: number | null;
-      google_inactive_registrations: number | null;
-      samsung_active_registrations: number | null;
-      samsung_inactive_registrations: number | null;
-      first_downloaded_at: string | null;
-      registration_checked_at: Date | null;
-    } | null;
+    wallet_pass: WalletPassRow | null;
   },
   notesPage = 1,
 ): Promise<AttendeeDetailDto> {
@@ -3865,27 +3853,14 @@ export async function handleRevokeAttendeeCheckIn(c: Context, db: PrismaClient):
   }
 }
 
-type WalletPassActionDto = {
-  status: WalletPassStatus;
-  issued_at: string | null;
-  voided_at: string | null;
-  apple_url: string | null;
-  android_url: string | null;
-  last_synced_at: string | null;
-  last_error_code: string | null;
-  apple_active_registrations: number | null;
-  apple_inactive_registrations: number | null;
-  google_active_registrations: number | null;
-  google_inactive_registrations: number | null;
-  samsung_active_registrations: number | null;
-  samsung_inactive_registrations: number | null;
-  /** Provider-reported string, deliberately not parsed to a Date - see the schema comment on
-   * WalletPass.first_downloaded_at for why (unconfirmed timezone). */
-  first_downloaded_at: string | null;
-  registration_checked_at: string | null;
-};
+// Shared with apps/admin's own DTO of the same name (single source of truth in @admitto/db) so
+// the two don't drift out of sync by hand.
+type WalletPassActionDto = WalletPassApiFields;
 
-function serializeWalletPassAction(pass: {
+// Shared by buildAttendeeDetailDto's row param and serializeWalletPassAction below - both
+// independently needed this exact shape (a WalletPass row as read straight off Prisma), and
+// keeping two inline copies in sync had already started drifting into new-code duplication.
+type WalletPassRow = {
   status: string;
   issued_at: Date | null;
   voided_at: Date | null;
@@ -3901,7 +3876,12 @@ function serializeWalletPassAction(pass: {
   samsung_inactive_registrations: number | null;
   first_downloaded_at: string | null;
   registration_checked_at: Date | null;
-}): WalletPassActionDto {
+  first_confirmed_at: Date | null;
+  user_agent: string | null;
+  user_agent_captured_at: Date | null;
+};
+
+function serializeWalletPassAction(pass: WalletPassRow): WalletPassActionDto {
   return {
     status: pass.status as WalletPassStatus,
     issued_at: pass.issued_at ? pass.issued_at.toISOString() : null,
@@ -3918,6 +3898,9 @@ function serializeWalletPassAction(pass: {
     samsung_inactive_registrations: pass.samsung_inactive_registrations,
     first_downloaded_at: pass.first_downloaded_at,
     registration_checked_at: pass.registration_checked_at ? pass.registration_checked_at.toISOString() : null,
+    first_confirmed_at: pass.first_confirmed_at ? pass.first_confirmed_at.toISOString() : null,
+    user_agent: pass.user_agent,
+    user_agent_captured_at: pass.user_agent_captured_at ? pass.user_agent_captured_at.toISOString() : null,
   };
 }
 

@@ -322,6 +322,94 @@ describe("On-demand wallet routes", () => {
     expect(provider.createPass).toHaveBeenCalledTimes(1);
   });
 
+  it("captures the request User-Agent on the redirect, even for an already-active pass (repeat clicks refresh it)", async () => {
+    const provider = stubProvider();
+    const app = makeApp(provider);
+
+    await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, {
+      redirect: "manual",
+      headers: { "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15" },
+    });
+    const first = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(first?.user_agent).toBe("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15");
+    expect(first?.user_agent_captured_at).not.toBeNull();
+
+    // Same pass, already active - resolvePassUrls takes the early-return branch with no upsert,
+    // but the capture below it must still run and overwrite the earlier value.
+    await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, {
+      redirect: "manual",
+      headers: { "user-agent": "Mozilla/5.0 (Linux; Android 14) Chrome/128.0" },
+    });
+    const second = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(second?.user_agent).toBe("Mozilla/5.0 (Linux; Android 14) Chrome/128.0");
+    expect(provider.createPass).toHaveBeenCalledTimes(1);
+  });
+
+  it("freezes the captured User-Agent once first_confirmed_at is set - a later click (e.g. a mail security scanner re-fetching the link) does not overwrite it", async () => {
+    const provider = stubProvider();
+    const app = makeApp(provider);
+
+    await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, {
+      redirect: "manual",
+      headers: { "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15" },
+    });
+    // Simulates PassCreator's first_pushnotification_registered webhook confirming a real device
+    // actually added the pass (applyFirstConfirmedAt) - only ever set from a real wallet app, never
+    // from a redirect click itself.
+    await prisma.walletPass.update({
+      where: { attendee_id: ATTENDEE_MODE_A_ID },
+      data: { first_confirmed_at: new Date() },
+    });
+
+    await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, {
+      redirect: "manual",
+      headers: { "user-agent": "curl/8.0 (compatible; MailScannerBot/1.0)" },
+    });
+
+    const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(saved?.user_agent).toBe("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15");
+  });
+
+  it("never captures a device for a pass that was already confirmed before this column existed (bot review) - no unconfirmed window left to safely tell a real click from a mail scanner's", async () => {
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: ATTENDEE_MODE_A_ID,
+        provider: "passcreator",
+        provider_pass_id: "pc-legacy-confirmed",
+        user_provided_id: `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
+        status: "active",
+        apple_url: "https://pc.test/apple/x",
+        android_url: "https://pc.test/android/x",
+        // Confirmed long before user_agent capture shipped - first_confirmed_at set, user_agent
+        // still null, exactly the state every real pre-existing row is in on migration day.
+        first_confirmed_at: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    });
+    const provider = stubProvider();
+    const app = makeApp(provider);
+
+    await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, {
+      redirect: "manual",
+      headers: { "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15" },
+    });
+
+    const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(saved?.user_agent).toBeNull();
+    expect(provider.createPass).not.toHaveBeenCalled();
+  });
+
+  it("does not fail the redirect when the device-capture write itself throws", async () => {
+    const provider = stubProvider();
+    const app = makeApp(provider);
+    const updateManySpy = vi.spyOn(prisma.walletPass, "updateMany").mockRejectedValueOnce(new Error("db down"));
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("https://pc.test/apple/x");
+    updateManySpy.mockRestore();
+  });
+
   it("is idempotent on repeat clicks — does not call createPass twice", async () => {
     const provider = stubProvider();
     const app = makeApp(provider);
