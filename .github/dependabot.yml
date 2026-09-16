@@ -60,6 +60,12 @@ updates:
       codeql-action:
         patterns:
           - "github/codeql-action/*"
+  # semgrep.yml's hash-pinned toolchain (Scorecard's Pinned-Dependencies check) - Dependabot
+  # resolves pip-compile's requirements.in/.txt pair and regenerates the hashes on a bump.
+  - package-ecosystem: "pip"
+    directory: "/.github/workflows"
+    schedule:
+      interval: "weekly"
   - package-ecosystem: "docker"
     directory: "/"
     schedule:

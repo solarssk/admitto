@@ -1,0 +1,4 @@
+pip==26.1.2
+wheel==0.47.0
+setuptools==81.0.0
+semgrep==1.136.0
