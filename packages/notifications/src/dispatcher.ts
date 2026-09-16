@@ -45,6 +45,16 @@ export interface DispatchDeps {
 interface DispatchOutcome {
   channelsSent: string[];
   failures: Array<{ channel: string; error?: string }>;
+  /** Union of emailRecipients/inAppRecipients - who was actually addressed by a per-user channel
+   * (email or in_app), regardless of whether that specific send succeeded or failed. Deliberately
+   * NOT the full audience `candidates` list: for an org-staff type, candidates includes every
+   * eligible admin before personal preferences are applied, so an admin who opted out of both
+   * email and in_app would otherwise still get snapshotted into the audit row's recipient identity
+   * even though they received nothing personally - a real delivery-accuracy and unnecessary-PII
+   * issue (bot review finding, PR #1344), not just cosmetic: the team-wide webhook can succeed
+   * with zero personal recipients, and the row must not misattribute that as "sent to" someone who
+   * opted out. */
+  personalRecipientUserIds: string[];
 }
 
 function reportUnknownType(type: string): void {
@@ -152,19 +162,28 @@ async function releaseThrottleSlot(
  * remembers to add) precisely so it can never be forgotten: SecurityAuditLog is instance-wide and
  * shared with every other audit event type in the app, so without it a superadmin reviewing a
  * dispatch outcome for a notification type that fires across multiple organizations has no way to
- * tell which tenant a given "sent"/"failed"/"skipped_*" row was actually about. */
+ * tell which tenant a given "sent"/"failed"/"skipped_*" row was actually about.
+ *
+ * `userIdentity` mirrors the "immutable snapshot at write time" convention every other
+ * SecurityAuditLog writer already follows (packages/auth/src/audit.ts's own
+ * resolveUserIdentitySnapshot) - the admin Logs UI's User column reads user_email/
+ * user_display_name directly off the row, not a live join, so a later rename or deletion doesn't
+ * retroactively change what this row shows. */
 async function writeDispatchAuditLog(
   db: Db,
   eventType: string,
   organizationId: string,
   metadata: Record<string, unknown>,
   userId?: string,
+  userIdentity?: { email: string; displayName: string | null },
 ): Promise<void> {
   try {
     await db.securityAuditLog.create({
       data: {
         event_type: eventType,
         user_id: userId ?? null,
+        user_email: userIdentity?.email ?? null,
+        user_display_name: userIdentity?.displayName ?? null,
         metadata: { organization_id: organizationId, ...metadata } as Prisma.InputJsonValue,
       },
     });
@@ -178,6 +197,79 @@ async function writeDispatchAuditLog(
       }),
     );
   }
+}
+
+type UserIdentitySnapshot = { id: string; email: string; display_name: string | null };
+
+/** Best-effort batch lookup for resolveSentAuditRecipients below - never throws (same
+ * defensive-read pattern as splitRecipientsByChannel's own try/catch in dispatchToChannels): a
+ * transient DB error here must degrade to "no recipient info shown" on the audit row, not fail
+ * the dispatch that already succeeded. Returns `[]` for both a genuine empty `userIds` (skips the
+ * query entirely - the common case for a webhook-only dispatch, see resolveCandidatesOrLogSkip's
+ * own doc comment on why org-staff resolving to zero candidates is not itself unusual) and a
+ * lookup failure. */
+async function resolveUserSnapshots(db: Db, userIds: string[]): Promise<UserIdentitySnapshot[]> {
+  if (userIds.length === 0) return [];
+  try {
+    const rows = await db.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, email: true, display_name: true },
+    });
+    return rows ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Recipient info for a dispatch outcome's audit row - resolved from `personalRecipientUserIds`
+ * (who was actually addressed by a per-user channel: email or in_app, whether that send succeeded
+ * or failed), deliberately NOT the raw audience `candidates` list. For an org-staff type,
+ * `candidates` is every eligible admin before personal preferences are applied - an admin who
+ * opted out of both email and in_app is still a valid webhook/team-distro candidate, but has no
+ * personal delivery to be named as "the recipient" of; using the raw candidate list here would
+ * misattribute a webhook-only send to them and needlessly snapshot their identity even on a row
+ * where they received nothing (bot review finding, PR #1344). Used for every outcome that has a
+ * recipient list to resolve (sent, failed, skipped_no_recipients) - not just "sent": a partial
+ * failure (one channel delivered, another errored) is still a row about a real, identifiable
+ * recipient, not an anonymous one (an earlier bot review finding, same PR - identity used to be
+ * lost entirely once `failures.length > 0` short-circuited before recipient resolution ever ran).
+ *
+ * A single recipient (every self-audience type - account.auth_factor.changed,
+ * account.login.new_location, account.mfa.code_reused - or an org-staff type that happens to
+ * resolve to exactly one personally-addressed admin) maps onto SecurityAuditLog's existing
+ * single-subject user_id/user_email/user_display_name columns, which the admin Logs UI already
+ * renders as "User" - no UI change needed there beyond the event-label fix in AuditLogPanel.tsx.
+ * Multiple recipients (the common org-staff case, several active admins) can't fit that
+ * single-subject shape, so they go into metadata as a `recipients` list instead - each entry is
+ * pre-formatted as "Display Name <email>" (or bare email with no display name) rather than a
+ * `{name, email}` object, so it renders through AuditLogPanel.tsx's generic Details-popover
+ * array-of-strings path unchanged and always shows both fields together, never just whichever one
+ * that formatter's object-shape heuristic (`[obj.name, obj.email, obj.id].find(...)`) happens to
+ * pick first (an earlier bot review finding, same PR - a `{name, email}` shape silently dropped
+ * the email whenever a display name was present).
+ */
+async function resolveDispatchAuditRecipients(
+  db: Db,
+  personalRecipientUserIds: string[],
+): Promise<{
+  userId?: string;
+  userIdentity?: { email: string; displayName: string | null };
+  metadata: Record<string, unknown>;
+}> {
+  const snapshots = await resolveUserSnapshots(db, personalRecipientUserIds);
+  const only = snapshots.length === 1 ? snapshots[0] : undefined;
+  if (only) {
+    return { userId: only.id, userIdentity: { email: only.email, displayName: only.display_name }, metadata: {} };
+  }
+  if (snapshots.length > 1) {
+    return {
+      metadata: {
+        recipients: snapshots.map((u) => (u.display_name ? `${u.display_name} <${u.email}>` : u.email)),
+      },
+    };
+  }
+  return { metadata: {} };
 }
 
 async function readOrgSettings(
@@ -355,7 +447,7 @@ async function dispatchToChannels(
   const webhookChannel = deps.channels?.webhook ?? new WebhookChannel(db, { env: deps.env });
   const inAppChannel = deps.channels?.in_app ?? new InAppChannel(db);
 
-  const outcome: DispatchOutcome = { channelsSent: [], failures: [] };
+  const outcome: DispatchOutcome = { channelsSent: [], failures: [], personalRecipientUserIds: [] };
   const record = (channel: string, result: NotificationSendResult): void => {
     // A noop success (nothing configured, nothing to send) must not be reported as a delivery -
     // SecurityAuditLog.metadata.channels_sent is read as "the alert actually reached these
@@ -410,25 +502,52 @@ async function dispatchToChannels(
   }
 
   const { emailRecipients, inAppRecipients } = recipients;
+  const gates = resolvePerUserChannelGates(typeDef, disabledChannels);
+  // Who was actually addressed by a per-user channel (attempted, whether it ultimately succeeded
+  // or failed) - not the full audience `candidates` list (see DispatchOutcome.personalRecipientUserIds's
+  // own doc comment on why that distinction matters for the audit row's recipient identity).
+  outcome.personalRecipientUserIds = computePersonalRecipientUserIds(emailRecipients, inAppRecipients, gates);
   // EmailChannel itself no-ops (ok: true) when there is nothing to send, so calling it whenever
   // extras might apply is never wasted beyond one lightweight settings lookup.
-  if (
-    typeDef.availableChannels.includes("email") &&
-    !disabledChannels.includes("email") &&
-    (emailRecipients.length > 0 || includeExtraRecipients)
-  ) {
+  if (gates.emailChannelActive && (emailRecipients.length > 0 || includeExtraRecipients)) {
     dispatch("email", emailChannel.send(dispatched, emailRecipients));
   }
-  if (
-    typeDef.availableChannels.includes("in_app") &&
-    !disabledChannels.includes("in_app") &&
-    inAppRecipients.length > 0
-  ) {
+  if (gates.inAppChannelActive && inAppRecipients.length > 0) {
     dispatch("in_app", inAppChannel.send(dispatched, inAppRecipients));
   }
 
   await Promise.all(pending);
   return outcome;
+}
+
+/** Whether email/in_app are available for this type AND not disabled at the org level - the same
+ * gate reused by both dispatchToChannels's actual dispatch conditions and
+ * computePersonalRecipientUserIds below, pulled into its own function purely to keep
+ * dispatchToChannels's cognitive complexity within the shared lint budget (SonarCloud S3776,
+ * PR #1344 - no behavior change from having this inline). */
+function resolvePerUserChannelGates(
+  typeDef: NotificationTypeDef,
+  disabledChannels: NotificationChannelKey[],
+): { emailChannelActive: boolean; inAppChannelActive: boolean } {
+  return {
+    emailChannelActive: typeDef.availableChannels.includes("email") && !disabledChannels.includes("email"),
+    inAppChannelActive: typeDef.availableChannels.includes("in_app") && !disabledChannels.includes("in_app"),
+  };
+}
+
+/** Union of emailRecipients/inAppRecipients, filtered to only the channels actually active for
+ * this type - see DispatchOutcome.personalRecipientUserIds's own doc comment for why this (not
+ * the raw audience `candidates` list) is what the audit row's recipient identity is resolved
+ * from. Pulled into its own function alongside resolvePerUserChannelGates above, same reason. */
+function computePersonalRecipientUserIds(
+  emailRecipients: string[],
+  inAppRecipients: string[],
+  gates: { emailChannelActive: boolean; inAppChannelActive: boolean },
+): string[] {
+  const ids = new Set<string>();
+  if (gates.emailChannelActive) for (const id of emailRecipients) ids.add(id);
+  if (gates.inAppChannelActive) for (const id of inAppRecipients) ids.add(id);
+  return [...ids];
 }
 
 async function splitRecipientsByChannel(
@@ -489,7 +608,7 @@ export async function notify(
     }
 
     const dispatched = buildDispatchedNotification(event, type, typeDef);
-    const { channelsSent, failures } = await dispatchToChannels(
+    const { channelsSent, failures, personalRecipientUserIds } = await dispatchToChannels(
       db,
       dispatched,
       typeDef,
@@ -509,27 +628,56 @@ export async function notify(
       await releaseThrottleSlot(db, type, activeClaim.throttleKey, activeClaim.rowId);
     }
 
+    // Resolved once and attached to whichever outcome row is written below, from
+    // personalRecipientUserIds (who was actually addressed by a per-user channel) - deliberately
+    // NOT the raw audience `candidates` list, so an admin who opted out of both email and in_app
+    // never gets snapshotted as "the recipient" of a row where they received nothing personally
+    // (bot review finding, PR #1344). See DispatchOutcome.personalRecipientUserIds and
+    // resolveDispatchAuditRecipients's own doc comments for the full reasoning.
+    const recipientInfo = await resolveDispatchAuditRecipients(db, personalRecipientUserIds);
+
     if (failures.length > 0) {
-      await writeDispatchAuditLog(db, "notification.dispatch.failed", event.organizationId, {
-        notification_type: type,
-        channels_sent: channelsSent,
-        failures,
-      });
+      await writeDispatchAuditLog(
+        db,
+        "notification.dispatch.failed",
+        event.organizationId,
+        {
+          notification_type: type,
+          channels_sent: channelsSent,
+          failures,
+          ...recipientInfo.metadata,
+        },
+        recipientInfo.userId,
+        recipientInfo.userIdentity,
+      );
       return;
     }
 
     if (channelsSent.length === 0) {
-      await writeDispatchAuditLog(db, "notification.dispatch.skipped_no_recipients", event.organizationId, {
-        notification_type: type,
-      });
+      await writeDispatchAuditLog(
+        db,
+        "notification.dispatch.skipped_no_recipients",
+        event.organizationId,
+        { notification_type: type, ...recipientInfo.metadata },
+        recipientInfo.userId,
+        recipientInfo.userIdentity,
+      );
       return;
     }
 
-    await writeDispatchAuditLog(db, "notification.dispatch.sent", event.organizationId, {
-      notification_type: type,
-      channels_sent: channelsSent,
-      ...(disabledChannels.length > 0 ? { disabled_channels: disabledChannels } : {}),
-    });
+    await writeDispatchAuditLog(
+      db,
+      "notification.dispatch.sent",
+      event.organizationId,
+      {
+        notification_type: type,
+        channels_sent: channelsSent,
+        ...(disabledChannels.length > 0 ? { disabled_channels: disabledChannels } : {}),
+        ...recipientInfo.metadata,
+      },
+      recipientInfo.userId,
+      recipientInfo.userIdentity,
+    );
   } catch (err) {
     if (activeClaim) {
       await releaseThrottleSlot(db, type, activeClaim.throttleKey, activeClaim.rowId);
