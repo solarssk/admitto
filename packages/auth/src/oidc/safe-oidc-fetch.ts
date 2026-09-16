@@ -101,10 +101,10 @@ async function pinnedUndiciFetch(
     dispatcher: Agent;
   },
 ): Promise<Response> {
-  return (await undiciFetch(urlString, {
+  return await undiciFetch(urlString, {
     ...init,
     redirect: "manual",
-  } as Parameters<typeof undiciFetch>[1])) as unknown as Response;
+  } as Parameters<typeof undiciFetch>[1]);
 }
 
 async function fetchPinnedNoFollow(urlString: string, init?: OidcFetchInit): Promise<Response> {

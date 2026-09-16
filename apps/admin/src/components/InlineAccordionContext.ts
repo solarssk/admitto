@@ -28,7 +28,7 @@ export function useInlineOpenState(
   const setOpen: Dispatch<SetStateAction<boolean>> = (updater) => {
     accordion.setOpenId((current) => {
       const wasOpen = current === id;
-      const next = typeof updater === "function" ? (updater as (prev: boolean) => boolean)(wasOpen) : updater;
+      const next = typeof updater === "function" ? (updater)(wasOpen) : updater;
       return next ? id : null;
     });
   };

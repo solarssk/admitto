@@ -7,9 +7,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 // already a dependency (used to make ESLint understand TS/TSX syntax), but no plugin was wired in,
 // so no @typescript-eslint/* rule ever actually ran — including the rule named by the repo's own
 // `eslint-disable-next-line @typescript-eslint/no-explicit-any` comments. Started on the
-// non-type-checked `recommended` rule set only; `recommended-type-checked` / `strict-type-checked`
-// (and therefore `no-floating-promises`) need a heavier type-aware lint setup this repo doesn't
-// have yet, so those stay out of scope for now. `npm run lint` came back with 20 total violations
+// non-type-checked `recommended` rule set only. `npm run lint` came back with 20 total violations
 // under `recommended` across apps/*/src and packages/*/src, all `no-unused-vars` and all
 // mechanical, so every rule ships at its recommended "error" severity — nothing had to be
 // downgraded to "warn". Two `no-unused-vars` options were added (not a severity change) to match
@@ -23,6 +21,32 @@ const tsUnusedVarsOptions = {
   varsIgnorePattern: "^_",
   caughtErrorsIgnorePattern: "^_",
   ignoreRestSiblings: true,
+};
+
+// chore/eslint-type-aware: switched from `recommended` to `recommended-type-checked`, which needs
+// real type info (parserOptions.projectService below) and adds real async/type-safety rules
+// `recommended` couldn't run at all. The mechanical, `--fix`-able finding
+// (no-unnecessary-type-assertion, 72 instances) is already fixed and stays at its recommended
+// "error" severity. The rules below found real, pre-existing issues (133 errors across ~50 files:
+// mostly no-misused-promises / no-floating-promises in mail/webhook/export code, plus
+// no-unsafe-assignment/return/member-access/argument/call where external data crosses a type
+// boundary untyped) that need one-by-one review, not a blind bulk fix — downgraded to "warn" so
+// this config change itself can land without blocking on unrelated pre-existing bugs. Tracked as
+// follow-up work; each rule should move back to "error" as its findings are fixed to zero.
+const typeAwareFollowUpRules = {
+  "@typescript-eslint/no-misused-promises": "warn",
+  "@typescript-eslint/no-floating-promises": "warn",
+  "@typescript-eslint/require-await": "warn",
+  "@typescript-eslint/no-unsafe-assignment": "warn",
+  "@typescript-eslint/no-unsafe-return": "warn",
+  "@typescript-eslint/only-throw-error": "warn",
+  "@typescript-eslint/no-unsafe-member-access": "warn",
+  "@typescript-eslint/no-unsafe-argument": "warn",
+  "@typescript-eslint/restrict-template-expressions": "warn",
+  "@typescript-eslint/no-base-to-string": "warn",
+  "@typescript-eslint/unbound-method": "warn",
+  "@typescript-eslint/prefer-promise-reject-errors": "warn",
+  "@typescript-eslint/no-unsafe-call": "warn",
 };
 
 // Shared by packages/ui's own *.tsx files and every apps/*/src file below — both are React/TSX,
@@ -41,11 +65,14 @@ const reactTsxConfig = {
     sourceType: "module",
     parserOptions: {
       ecmaFeatures: { jsx: true },
+      projectService: true,
+      tsconfigRootDir: import.meta.dirname,
     },
   },
   rules: {
     ...security.configs.recommended.rules,
-    ...tsPlugin.configs.recommended.rules,
+    ...tsPlugin.configs["recommended-type-checked"].rules,
+    ...typeAwareFollowUpRules,
     "@typescript-eslint/no-unused-vars": ["error", tsUnusedVarsOptions],
     // Typed records, React state, and route params — false positives.
     "security/detect-object-injection": "off",
@@ -67,10 +94,15 @@ export default [
       parser: tsParser,
       ecmaVersion: 2022,
       sourceType: "module",
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
     rules: {
       ...security.configs.recommended.rules,
-      ...tsPlugin.configs.recommended.rules,
+      ...tsPlugin.configs["recommended-type-checked"].rules,
+      ...typeAwareFollowUpRules,
       "@typescript-eslint/no-unused-vars": ["error", tsUnusedVarsOptions],
     },
   },

@@ -150,7 +150,7 @@ export function Tooltip({ content, children, className, axis = "vertical" }: Rea
     });
     observer.observe(trigger, { attributes: true, attributeFilter: ["aria-expanded"], subtree: true });
     return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- hide/show are stable per render, not deps
+     
   }, [visible]);
 
   // Always the same wrapper element, whether or not there's content right now: some callers'

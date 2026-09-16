@@ -19,7 +19,6 @@ import {
   NOTIFICATION_TYPES,
   resolvePersonalPreferences,
   setNotificationPreference,
-  type NotificationChannelKey,
 } from "@admitto/notifications";
 
 const PERSONAL_CHANNEL_KINDS = ["email", "in_app"] as const;
@@ -95,7 +94,7 @@ export async function handlePatchAccountNotificationPreference(
   if (!typeDef?.userConfigurable) {
     return c.json({ error: "invalid_notification_type" }, 400);
   }
-  if (!typeDef.availableChannels.includes(parsed.data.channel as NotificationChannelKey)) {
+  if (!typeDef.availableChannels.includes(parsed.data.channel)) {
     return c.json({ error: "invalid_channel" }, 400);
   }
 

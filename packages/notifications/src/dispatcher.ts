@@ -1,5 +1,5 @@
 import { emitSystemLog } from "@admitto/shared/system-log";
-import { Prisma, type PrismaClient } from "@admitto/db";
+import type { PrismaClient } from "@admitto/db";
 import { getNotificationTypeDef } from "./registry.js";
 import { resolveAudienceCandidates } from "./audience.js";
 import { resolveEnabledChannelsForUsers } from "./preferences.js";
@@ -184,7 +184,7 @@ async function writeDispatchAuditLog(
         user_id: userId ?? null,
         user_email: userIdentity?.email ?? null,
         user_display_name: userIdentity?.displayName ?? null,
-        metadata: { organization_id: organizationId, ...metadata } as Prisma.InputJsonValue,
+        metadata: { organization_id: organizationId, ...metadata },
       },
     });
   } catch (err) {

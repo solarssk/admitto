@@ -65,7 +65,7 @@ async function failExportJob(
       status: "failed",
       error: error.slice(0, 2000),
       finished_at: now,
-      ...(scrubbed !== undefined && scrubbed !== null ? { result_json: scrubbed as object } : {}),
+      ...(scrubbed !== undefined && scrubbed !== null ? { result_json: scrubbed } : {}),
     },
   });
   return updated.count > 0;
