@@ -77,3 +77,18 @@ updates:
     directory: "/deploy"
     schedule:
       interval: "weekly"
+  # .clusterfuzzlite/Dockerfile pins its OSS-Fuzz base image by digest (SonarCloud docker:S6596) -
+  # without this entry that pin only ever moves via a manual bump, unlike every other Dockerfile
+  # in this repo.
+  - package-ecosystem: "docker"
+    directory: "/.clusterfuzzlite"
+    schedule:
+      interval: "weekly"
+  # .clusterfuzzlite/package.json is deliberately not a workspace member (see its own
+  # description) - the root npm entry above only covers this repo's declared packages/*
+  # and apps/* workspaces, so without this entry Dependabot would never see Jazzer.js,
+  # TypeScript, or transitive lockfile updates/security fixes for the fuzzing toolchain.
+  - package-ecosystem: "npm"
+    directory: "/.clusterfuzzlite"
+    schedule:
+      interval: "weekly"

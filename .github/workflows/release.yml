@@ -20,8 +20,34 @@ on:
     branches: [main]
 
 permissions:
+  # `gh release create` below (Releases API) hard-requires this - no narrower alternative exists.
   contents: write
+  # `gh api -X PATCH .../milestones/${MID} -f state=closed` below - closing a milestone is gated
+  # on the issues scope, no narrower alternative exists.
   issues: write
+  # `gh workflow run publish-container.yml` / `deploy-smoke.yml` below - confirmed required, not
+  # a design oversight: GITHUB_TOKEN-created tag pushes deliberately do not cascade into other
+  # workflow runs (GitHub's own anti-infinite-loop protection), so re-dispatching explicitly is
+  # the only way to trigger them from here. A workflow_call alternative was raised twice in PR
+  # review and this comment got the analysis wrong both times, so treat the question as still
+  # open rather than settled: (1) the two trigger paths don't actually collide the way an even
+  # earlier version of this comment claimed (an ordinary release never reaches
+  # publish-container.yml's own `push: tags:`, since that's exactly the GITHUB_TOKEN limitation
+  # above; the emergency signed-tag path never runs *this* workflow, since release.yml only
+  # triggers on `push: branches: [main]`) - confirmed correct. (2) A follow-up claimed switching
+  # to workflow_call would still cost more than it saves, since GitHub's reusable-workflow docs
+  # say permissions "can only be maintained or reduced - not elevated" down the call chain, so
+  # *this* workflow would need packages/id-token/attestations write too - also successfully
+  # disputed: a *separate* caller job (not the one already holding contents/issues:write) could
+  # hold just that ceiling, and publish-container.yml's own jobs already carry those exact scopes
+  # today regardless of how they're triggered, so no *new* capability would exist anywhere that
+  # doesn't already exist now. Whether that nets out better for Scorecard's own literal per-line
+  # counting - which flags every job-level `write` grant as its own finding, so a second job in
+  # this file carrying the union ceiling might just relocate the count rather than shrink it - is
+  # genuinely unresolved: GitHub's own docs don't say whether a `uses:`-only job's `permissions:`
+  # block registers as a "grant" the same way a job with real steps does. Left as `actions: write`
+  # here pending either clearer documentation or an actual test against this repo's release
+  # pipeline, which is too high-stakes to experiment on speculatively.
   actions: write
 
 concurrency:
