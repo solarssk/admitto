@@ -123,19 +123,17 @@ jobs:
           #
           # Exception: package-manager lockfiles, but only when GitHub omitted the patch
           # (UNSCANNABLE) - a lockfile small enough that the API *did* return its patch is still
-          # scanned below exactly like any other file. Skipping unconditionally on basename alone
-          # would let a manually hand-edited lockfile, or a resolved-package URL containing a
-          # token/identifier, sail through unscanned whenever its diff happens to be small enough
-          # to include. The exemption only ever waives the "can't verify, so fail closed" rule for
-          # the *hidden* case, never actual scanning of content the API did hand us.
-          #
-          # Rationale for the hidden case: lockfile content is entirely derived from the registry
-          # (package names, semver ranges, integrity hashes) - nothing a contributor types goes
-          # into them, so a hidden lockfile diff cannot carry PII/secrets no matter how large it
-          # is. Without this exemption, any lockfile regeneration whose diff exceeds GitHub's
-          # diff-API size cap trips UNSCANNABLE and fails closed on a file that was never at risk
-          # (seen in practice: a ~3500-line package-lock.json diff from a routine dependency bump).
-          # The filename itself is still scanned below like any other file.
+          # scanned below exactly like any other file, unchanged. A hidden lockfile diff is NOT
+          # trusted by basename alone either (a file merely named package-lock.json could contain
+          # anything, and even a genuine lockfile's resolved-package URLs could in principle carry
+          # embedded credentials for a misconfigured private registry) - instead its full content
+          # at this PR's head is fetched via the git blobs API below and folded into scan_targets,
+          # so the denylist is checked against what the file actually contains. The blobs API has
+          # no practical size cap here (up to 100MB; this repo's lockfile is under 1MB), unlike the
+          # diff view, which is exactly why this path exists: routine lockfile regenerations
+          # regularly exceed the diff view's undocumented size cap and trip UNSCANNABLE on a file
+          # that was never at risk (seen in practice: a ~3500-line package-lock.json diff from a
+          # single dependency bump). The filename itself is still scanned below like any other file.
           #
           # `.filename` matters just as much as content (a new file whose own path leaks a value,
           # e.g. an export literally named after someone's email, would otherwise sail through
@@ -157,7 +155,7 @@ jobs:
             (
               (.filename | split("/") | last) as $base |
               if .patch == null and (.additions // 0) > 0 then
-                if ($lf | index($base)) != null then empty
+                if ($lf | index($base)) != null then "LOCKFILEBLOB:" + .sha + " " + .filename
                 else "UNSCANNABLE:" + .filename
                 end
               else (.patch // empty)
@@ -186,7 +184,32 @@ jobs:
           # value whose own real content starts with "+" would be scanned with a synthetic extra
           # one prepended.
           added_lines="$(printf '%s\n' "$raw_scan" | grep -Ev '^(FILENAME|UNSCANNABLE):' | grep -E '^\+' | sed 's/^+//')" || true
-          scan_targets="$(printf '%s\n%s\n' "$filenames" "$added_lines")"
+
+          # A hidden lockfile diff (see the LOCKFILEBLOB case above) is verified here by fetching
+          # its full head-ref content and folding it in, rather than skipped on trust in the name.
+          lockfile_blob_refs="$(printf '%s\n' "$raw_scan" | grep '^LOCKFILEBLOB:' | sed 's/^LOCKFILEBLOB://')" || true
+          lockfile_blob_content=""
+          if [ -n "$lockfile_blob_refs" ]; then
+            while IFS= read -r ref; do
+              [ -z "$ref" ] && continue
+              blob_sha="${ref%% *}"
+              blob_name="${ref#* }"
+              blob_b64_rc=0
+              blob_b64="$(gh api "repos/$REPO/git/blobs/$blob_sha" --jq '.content')" || blob_b64_rc=$?
+              if [ "$blob_b64_rc" -ne 0 ] || [ -z "$blob_b64" ]; then
+                echo "::error::Privacy guard: failed to fetch full content for lockfile '$blob_name' (blob $blob_sha) to verify its hidden diff. Failing closed rather than merging unscanned."
+                exit 1
+              fi
+              blob_text="$(printf '%s' "$blob_b64" | tr -d '\n' | base64 -d 2>/dev/null)" || true
+              if [ -z "$blob_text" ]; then
+                echo "::error::Privacy guard: fetched content for lockfile '$blob_name' (blob $blob_sha) decoded to nothing. Failing closed rather than merging unscanned."
+                exit 1
+              fi
+              lockfile_blob_content="$(printf '%s\n%s\n' "$lockfile_blob_content" "$blob_text")"
+            done <<< "$lockfile_blob_refs"
+          fi
+
+          scan_targets="$(printf '%s\n%s\n%s\n' "$filenames" "$added_lines" "$lockfile_blob_content")"
 
           if [ -z "$(printf '%s' "$scan_targets" | tr -d '[:space:]')" ]; then
             echo "Privacy guard: nothing to scan (no changed filenames or added lines)."
