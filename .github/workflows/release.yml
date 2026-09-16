@@ -20,8 +20,18 @@ on:
     branches: [main]
 
 permissions:
+  # `gh release create` below (Releases API) hard-requires this - no narrower alternative exists.
   contents: write
+  # `gh api -X PATCH .../milestones/${MID} -f state=closed` below - closing a milestone is gated
+  # on the issues scope, no narrower alternative exists.
   issues: write
+  # `gh workflow run publish-container.yml` / `deploy-smoke.yml` below - confirmed required, not
+  # a design oversight: GITHUB_TOKEN-created tag pushes deliberately do not cascade into other
+  # workflow runs (GitHub's own anti-infinite-loop protection), so re-dispatching explicitly is
+  # the only way to trigger them from here. A workflow_call from this workflow was considered and
+  # rejected: both targets are also independently triggered by a real human tag push
+  # (publish-container.yml's own `on: push: tags:`), so folding them into a synchronous call here
+  # would duplicate that trigger path, not replace it.
   actions: write
 
 concurrency:
