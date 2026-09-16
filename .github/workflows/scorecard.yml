@@ -13,11 +13,13 @@ on:
   push:
     branches: [main]
 
-# No workflow-level `permissions:` block - the single job below declares its
-# own, more specific set, which is the least-privilege pattern SonarCloud's
-# githubactions:S8234 (and Scorecard's own Token-Permissions check) expect;
-# a workflow-level `read-all` was flagged as too broad even though the job
-# already narrows it further.
+# Empty top-level default (deny-all) - the single job below declares its own, more specific
+# set on top of this, which is the least-privilege pattern SonarCloud's githubactions:S8234
+# expects. A workflow-level `read-all` was flagged as too broad even though the job already
+# narrowed it further; `{}` is narrower still and also satisfies Scorecard's own
+# Token-Permissions check, which separately requires a topLevel `permissions:` key to exist.
+permissions: {}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
