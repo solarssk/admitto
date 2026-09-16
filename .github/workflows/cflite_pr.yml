@@ -35,12 +35,14 @@ jobs:
       # address/memory/undefined/coverage - the literal string `none`, which `compile` itself
       # does accept, isn't a valid action input and fails before the container even starts.
       # `coverage` is accepted by both.
+      # No github-token here (unlike run_fuzzers below): checked the action's own source - it's
+      # only consumed for the storage-repo/upload-build inputs, neither of which this workflow
+      # sets, so passing a token this step never uses would just be unnecessary exposure.
       - name: Build fuzzers
         id: build
         uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1  # v1
         with:
           language: javascript
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           sanitizer: coverage
 
       - name: Run fuzzers
