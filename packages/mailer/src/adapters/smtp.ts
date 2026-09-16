@@ -1,4 +1,8 @@
-import nodemailer, { type Transporter } from "nodemailer";
+import nodemailer, {
+  type SendMailOptions,
+  type Transporter,
+  type TransportOptions,
+} from "nodemailer";
 import type { SmtpConfig } from "../config.js";
 import { SMTP_CAPABILITIES } from "../capabilities.js";
 import { extractSmtpCode, mapSmtpError } from "../errorMapping.js";
@@ -67,7 +71,7 @@ export class SmtpAdapter implements MailerAdapter {
         minVersion: "TLSv1.2",
       },
       auth: { user: config.user, pass: config.password },
-    } as nodemailer.TransportOptions);
+    } as TransportOptions);
   }
 
   /** Close the underlying nodemailer connection pool. */
@@ -112,7 +116,7 @@ export class SmtpAdapter implements MailerAdapter {
 
     const from = formatFromHeader(this.config);
     const replyTo = resolveReplyTo(this.config.replyTo, message);
-    const mail: nodemailer.SendMailOptions = {
+    const mail: SendMailOptions = {
       from,
       to: message.to,
       cc: message.cc,
