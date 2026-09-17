@@ -1005,20 +1005,28 @@ export async function logLoginNewCountry(
   });
   const accountLabel = identity?.display_name ?? identity?.email ?? "An admin account";
   const countryName = countryDisplayName(ctx.countryCode);
-  // The notification's own "here's what to check" detail line - device/browser and exact IP/time
-  // let the reader judge for themselves whether this was really them, beyond just the country
-  // name already in the title (PO report: the country code alone made these alerts too sparse to
-  // act on). `device` reuses the same isomorphic parser apps/admin's Sessions list already shows
-  // this exact string as ("Chrome / Windows") - see parseUserAgent's own doc comment.
-  const notificationMetadata = {
-    country: countryName,
-    device: parseUserAgent(ctx.userAgent ?? null),
-    ip: ctx.ip ?? "Unknown",
-    time: `${new Date().toISOString().slice(0, 19).replace("T", " ")} UTC`,
-  };
+  // `device` reuses the same isomorphic parser apps/admin's Sessions list already shows this
+  // exact string as ("Chrome / Windows") - see parseUserAgent's own doc comment.
+  const device = parseUserAgent(ctx.userAgent ?? null);
+  const ip = ctx.ip ?? "Unknown";
+  const time = `${new Date().toISOString().slice(0, 19).replace("T", " ")} UTC`;
+  // Baked directly into `body`, not just `metadata`, so every channel carries the full detail -
+  // not every channel renders metadata (webhook.ts's Slack payload is title/body text only; the
+  // in-app inbox's own read path (inbox.ts) never selects metadata off the stored row at all), so
+  // a reader relying on either would otherwise still see only the country name, too sparse to
+  // judge whether a login was really them (bot review finding: device/IP/time were only reaching
+  // the email and Discord channels, which DO render metadata - webhook.ts's buildMetadataFields
+  // and buildMetadataLine in channels/email.ts). IP/time trail after the actionable facts (who,
+  // where, what device - self gets the "secure your account" call to action right after those)
+  // since the in-app bell dropdown clips a notification's body to 2 lines
+  // (.notif-bell__row-body, staff.css) - if anything gets visually clipped there, it's the
+  // lower-priority audit-trail detail, not the at-a-glance signal. metadata below still carries
+  // the same four fields as structured data for the channels that use it (email's "Details" box,
+  // Discord's embed fields).
+  const notificationMetadata = { country: countryName, device, ip, time };
   void dispatchSecurityNotification(db, "auth.login.new_country", {
     title: "Admin login from a new country",
-    body: `${accountLabel} signed in from ${countryName}, not seen in this account's recent successful logins.`,
+    body: `${accountLabel} signed in from ${countryName} using ${device}, not seen in this account's recent successful logins. (IP ${ip} at ${time})`,
     // Composite, not just userId: the same admin logging in from two different new countries
     // within the 15-minute throttle window is two distinct signals worth two alerts, not one
     // suppressed by the other - see checkNewCountryLogin's own doc comment.
@@ -1036,7 +1044,7 @@ export async function logLoginNewCountry(
   // notifications-module-foundation plan's Luka A).
   void dispatchSecurityNotification(db, "account.login.new_location", {
     title: "You signed in from a new location",
-    body: `Your account signed in from ${countryName}, a location not seen in your recent successful logins. If this wasn't you, secure your account immediately.`,
+    body: `Your account signed in from ${countryName} using ${device}. If this wasn't you, secure your account immediately. (IP ${ip} at ${time})`,
     dedupeKey: `${ctx.userId}:${ctx.countryCode}`,
     targetUserId: ctx.userId,
     metadata: notificationMetadata,

@@ -1337,6 +1337,34 @@ describe("audit", () => {
       });
     });
 
+    // metadata alone isn't enough: not every channel renders it (webhook.ts's Slack payload used
+    // to be title/body only, and the in-app inbox's read path never selects metadata off the
+    // stored row - bot review finding). Baking device/IP/time into `body` too means every channel
+    // that renders body text (email, Slack, in-app, Discord's description) carries the full
+    // detail, not just the two that also happen to render metadata (email, Discord).
+    it("also bakes device, IP, and time into both notifications' body text, not just metadata", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb(vi.fn(), { email: "admin@example.com", display_name: null });
+      const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36";
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", userAgent: ua, countryCode: "IN" });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.new_country",
+          expect.objectContaining({
+            body: expect.stringMatching(/India using Chrome \/ Windows.*IP 203\.0\.113\.5 at \d{4}-\d{2}-\d{2}/),
+          }),
+        );
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "account.login.new_location",
+          expect.objectContaining({
+            body: expect.stringMatching(/India using Chrome \/ Windows.*IP 203\.0\.113\.5 at \d{4}-\d{2}-\d{2}/),
+          }),
+        );
+      });
+    });
+
     it("falls back to a device of 'Unknown' when no user agent was captured, and the raw country code when Intl.DisplayNames can't resolve it", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const db = fakeDb();

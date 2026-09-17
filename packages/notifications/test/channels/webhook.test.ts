@@ -233,7 +233,7 @@ describe("WebhookChannel", () => {
     expect((init as { signal?: AbortSignal }).signal).toBeInstanceOf(AbortSignal);
   });
 
-  it("sends a Slack text payload for webhook_kind slack", async () => {
+  it("sends a Slack text payload for webhook_kind slack, with metadata appended as humanized 'Key: value' lines - not silently dropped the way a title/body-only payload would (bot review finding)", async () => {
     const db = createStubDb();
     db.notificationSettings.findUnique.mockResolvedValue(
       settingsWith("https://hooks.slack.com/services/x", "slack"),
@@ -248,7 +248,48 @@ describe("WebhookChannel", () => {
     expect(result).toEqual({ ok: true });
     const [, , , init] = withPinnedFetch.mock.calls[0]!;
     const payload = JSON.parse((init as { body: string }).body);
+    expect(payload).toEqual({ text: `*${EVENT.title}*\n${EVENT.body}\nUser: admin@example.com` });
+  });
+
+  it("omits the trailing metadata block from the Slack payload entirely when there is no metadata", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(
+      settingsWith("https://hooks.slack.com/services/x", "slack"),
+    );
+    withPinnedFetch.mockImplementation(async (_url, _hostname, _records, _init, handler) =>
+      handler(mockResponse(200)),
+    );
+    const channel = new WebhookChannel(db as unknown as PrismaClient);
+    const eventWithoutMetadata: DispatchedNotification = { ...EVENT, metadata: undefined };
+
+    await channel.send(eventWithoutMetadata, []);
+
+    const [, , , init] = withPinnedFetch.mock.calls[0]!;
+    const payload = JSON.parse((init as { body: string }).body);
     expect(payload).toEqual({ text: `*${EVENT.title}*\n${EVENT.body}` });
+  });
+
+  it("renders each Slack metadata line in insertion order, one per line, for a multi-key metadata object", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue(
+      settingsWith("https://hooks.slack.com/services/x", "slack"),
+    );
+    withPinnedFetch.mockImplementation(async (_url, _hostname, _records, _init, handler) =>
+      handler(mockResponse(200)),
+    );
+    const channel = new WebhookChannel(db as unknown as PrismaClient);
+    const event: DispatchedNotification = {
+      ...EVENT,
+      metadata: { country: "India", device: "Chrome / Windows", ip: "203.0.113.5" },
+    };
+
+    await channel.send(event, []);
+
+    const [, , , init] = withPinnedFetch.mock.calls[0]!;
+    const payload = JSON.parse((init as { body: string }).body) as { text: string };
+    expect(payload.text).toBe(
+      `*${EVENT.title}*\n${EVENT.body}\nCountry: India\nDevice: Chrome / Windows\nIp: 203.0.113.5`,
+    );
   });
 
   it("allows an IPv4 loopback URL over HTTP outside production, skipping DNS resolution", async () => {
