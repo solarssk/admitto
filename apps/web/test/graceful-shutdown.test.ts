@@ -178,7 +178,7 @@ describe("installGracefulShutdown", () => {
     signal: "SIGTERM" | "SIGINT",
     servers: readonly CloseableServer[],
     disconnect: () => Promise<void>,
-    exit: (code: number) => void,
+    exit?: (code: number) => void,
   ): Promise<void> {
     const before = process.listeners(signal);
     installGracefulShutdown(servers, disconnect, exit);
@@ -210,6 +210,14 @@ describe("installGracefulShutdown", () => {
 
     expect(disconnect).toHaveBeenCalledOnce();
     expect(exit).toHaveBeenCalledWith(0);
+  });
+
+  it("uses process.exit when no exit function is supplied", async () => {
+    const processExit = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+
+    await triggerSignal("SIGTERM", [instantServer()], vi.fn().mockResolvedValue(undefined));
+
+    expect(processExit).toHaveBeenCalledWith(0);
   });
 
   it("does not exit early when a second signal arrives mid-shutdown", async () => {

@@ -202,6 +202,29 @@ export async function resolveSafeHostname(hostname: string): Promise<LookupAddre
   return records;
 }
 
+/** Marks a rejection whose original reason was not an Error object. */
+export class NonErrorPromiseRejectionError extends Error {
+  constructor(reason: unknown) {
+    let message: string;
+    try {
+      message = String(reason);
+    } catch {
+      message = "Promise rejected with a non-Error value";
+    }
+    super(message);
+    this.name = "NonErrorPromiseRejectionError";
+  }
+}
+
+function rejectionError(reason: unknown): Error {
+  try {
+    if (reason instanceof Error) return reason;
+  } catch {
+    // A Proxy can throw while `instanceof` reads its prototype; normalize it below.
+  }
+  return new NonErrorPromiseRejectionError(reason);
+}
+
 /**
  * Reject `promise` when `signal` aborts. `dns.lookup` (used by {@link resolveSafeHostname})
  * takes no AbortSignal of its own, so without this a stalled/unresponsive DNS server would
@@ -224,7 +247,7 @@ export function awaitWithAbortSignal<T>(promise: Promise<T>, signal: AbortSignal
       },
       (err: unknown) => {
         signal.removeEventListener("abort", onAbort);
-        reject(err);
+        reject(rejectionError(err));
       },
     );
   });

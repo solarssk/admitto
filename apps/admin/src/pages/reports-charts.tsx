@@ -142,7 +142,7 @@ export function ReportsDonutChart({
                this size lands inside the empty center hole - directly on top of the HTML center
                label overlay above. Pinned to just below the 256px chart instead (x still follows
                the hovered slice) so it never competes with that overlay. */}
-            <Tooltip formatter={(value) => `${value} ${pluralizeUnit(unit, Number(value))}`} position={{ y: 256 }} />
+            <Tooltip formatter={(value) => `${String(value ?? "")} ${pluralizeUnit(unit, Number(value))}`} position={{ y: 256 }} />
           </PieChart>
         </ResponsiveContainer>
       )}

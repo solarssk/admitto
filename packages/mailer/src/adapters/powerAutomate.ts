@@ -10,7 +10,7 @@ import { MailDestinationError, resolveSafeMailDestination } from "../ssrfGuard.j
 import { isSendSuccess, type FetchFn, type MailMessage, type MailerAdapter, type SendResult } from "../types.js";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import { redactEmail } from "@admitto/shared";
-import { awaitWithAbortSignal } from "@admitto/shared/ssrf-guard";
+import { awaitWithAbortSignal, NonErrorPromiseRejectionError } from "@admitto/shared/ssrf-guard";
 
 /**
  * Power Automate — sends via an HTTP-triggered flow (Admitto POSTs a ready-to-send
@@ -170,7 +170,10 @@ export class PowerAutomateAdapter implements MailerAdapter {
       // Propagate typed destination failures so ticket send/resend can map them to 422
       // instead of a soft-failed delivery with opaque copy.
       if (e instanceof MailDestinationError) throw e;
-      const error = e instanceof Error ? e.message : "mail transport destination is not permitted";
+      const error =
+        e instanceof Error && !(e instanceof NonErrorPromiseRejectionError)
+          ? e.message
+          : "mail transport destination is not permitted";
       return { ok: false, result: rejectedSendResult(this.provider, error, idempotencyKey) };
     }
   }

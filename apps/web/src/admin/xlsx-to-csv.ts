@@ -96,6 +96,12 @@ function assertZipWithinUncompressedLimits(buf: ArrayBuffer): void {
   }
 }
 
+function formulaResultToString(result: NonNullable<ExcelJS.CellFormulaValue["result"]>): string {
+  if (result instanceof Date) return result.toISOString();
+  if (typeof result === "object") return result.error;
+  return String(result);
+}
+
 /** Normalize an ExcelJS cell value to a plain string for CSV export. */
 function cellToString(value: ExcelJS.CellValue | undefined): string {
   if (value == null || value === "") return "";
@@ -104,10 +110,13 @@ function cellToString(value: ExcelJS.CellValue | undefined): string {
     if ("richText" in value && Array.isArray(value.richText)) {
       return value.richText.map((part) => part.text).join("");
     }
-    if ("text" in value && value.text != null) return String(value.text);
-    if ("result" in value && value.result != null) return String(value.result);
+    if ("text" in value && value.text != null) return value.text;
+    if ("result" in value && value.result != null) return formulaResultToString(value.result);
+    if ("error" in value) return value.error;
   }
-  return String(value);
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+    ? String(value)
+    : "";
 }
 
 /** Quote and escape a CSV field when it contains special characters. */
@@ -143,10 +152,12 @@ export async function xlsxBufferToCsv(buf: ArrayBuffer): Promise<string> {
 }
 
 /** Build a minimal XLSX buffer for tests (header + data rows). */
-export async function buildXlsxBuffer(rows: string[][]): Promise<ArrayBuffer> {
+export async function buildXlsxBuffer(
+  rows: readonly (readonly ExcelJS.CellValue[])[],
+): Promise<ArrayBuffer> {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Sheet1");
-  for (const row of rows) sheet.addRow(row);
+  for (const row of rows) sheet.addRow([...row]);
   const written = await workbook.xlsx.writeBuffer();
   if (written instanceof ArrayBuffer) return written;
   const bytes = new Uint8Array(written);

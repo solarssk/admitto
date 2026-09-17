@@ -53,6 +53,7 @@ vi.mock("recharts", () => {
         data-slices={JSON.stringify(slices.map((s) => ({ key: s.key, count: s.count, color: s.color })))}
         data-tooltip-one={tooltip?.formatter?.(1)}
         data-tooltip-many={tooltip?.formatter?.(3)}
+        data-tooltip-empty={tooltip?.formatter?.(undefined)}
       />
     );
   };
@@ -248,6 +249,7 @@ describe("CustomFieldsReportsTab", () => {
     const shirtPie = shirtCard.querySelector('[data-testid="rc-pie"]')!;
     expect(shirtPie.getAttribute("data-tooltip-one")).toBe("1 attendee");
     expect(shirtPie.getAttribute("data-tooltip-many")).toBe("3 attendees");
+    expect(shirtPie.getAttribute("data-tooltip-empty")).toBe(" attendees");
 
     // boolean field: same donut/list rendering as select, generically - no "Yes is green" special
     // casing, same not-answered-is-gray rule.

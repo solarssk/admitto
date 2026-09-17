@@ -103,7 +103,7 @@ function CategoryDonut({
               ))}
             </Pie>
             <Tooltip
-              formatter={(value) => `${value} attendee${value === 1 ? "" : "s"}`}
+              formatter={(value) => `${String(value ?? "")} attendee${value === 1 ? "" : "s"}`}
               position={{ y: 256 }}
             />
           </PieChart>

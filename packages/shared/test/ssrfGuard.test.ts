@@ -5,6 +5,7 @@ import {
   canonicalizeAllowlistHost,
   isBlockedPrivateOrMetadataHost,
   isLoopbackHost,
+  NonErrorPromiseRejectionError,
   resolveSafeHostname,
   SafeHostnameError,
   unbracketHostname,
@@ -191,5 +192,37 @@ describe("awaitWithAbortSignal", () => {
     await expect(
       awaitWithAbortSignal(Promise.reject(err), new AbortController().signal),
     ).rejects.toBe(err);
+  });
+
+  it("normalizes a non-Error wrapped rejection while retaining its message and provenance", async () => {
+    await expect(
+      awaitWithAbortSignal(Promise.reject("dns lookup failed"), new AbortController().signal),
+    ).rejects.toBeInstanceOf(NonErrorPromiseRejectionError);
+    await expect(
+      awaitWithAbortSignal(Promise.reject("dns lookup failed"), new AbortController().signal),
+    ).rejects.toThrow("dns lookup failed");
+  });
+
+  it.each([
+    [Object.create(null), "Promise rejected with a non-Error value"],
+    [
+      {
+        [Symbol.toPrimitive]() {
+          throw new Error("coercion failed");
+        },
+      },
+      "Promise rejected with a non-Error value",
+    ],
+    [
+      new Proxy({}, { getPrototypeOf: () => { throw new Error("prototype trap"); } }),
+      "[object Object]",
+    ],
+  ])("settles with a safe Error when a rejection reason cannot be classified or stringified", async (reason, message) => {
+    await expect(
+      awaitWithAbortSignal(Promise.reject(reason), new AbortController().signal),
+    ).rejects.toMatchObject({
+      name: "NonErrorPromiseRejectionError",
+      message,
+    });
   });
 });

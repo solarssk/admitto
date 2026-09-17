@@ -106,7 +106,7 @@ export function createGracefulShutdown(
 export function installGracefulShutdown(
   servers: readonly CloseableServer[],
   disconnect: () => Promise<void>,
-  exit: (code: number) => void = process.exit,
+  exit: (code: number) => void = (code) => process.exit(code),
 ): void {
   const shutdown = createGracefulShutdown({ servers, disconnect });
   // Every signal's own onSignal closure chains its own `.then()` onto the *same* shutdown
