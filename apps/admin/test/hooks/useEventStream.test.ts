@@ -136,6 +136,21 @@ describe("useEventStream", () => {
     expect(onCheckin.mock.calls[0]?.[0]).toMatchObject({ attendeeId: "att-1" });
   });
 
+  it("ignores non-text and malformed stream messages", () => {
+    const onCheckin = vi.fn();
+    const onActivityChanged = vi.fn();
+    renderHook(() => useEventStream("evt-1", onCheckin, onActivityChanged));
+
+    act(() => {
+      instances[0]?.listeners.onmessage?.({ data: { type: "checkin" } } as MessageEvent);
+      instances[0]?.listeners.onmessage?.({ data: JSON.stringify({}) } as MessageEvent);
+      instances[0]?.listeners.onmessage?.({ data: JSON.stringify(null) } as MessageEvent);
+    });
+
+    expect(onCheckin).not.toHaveBeenCalled();
+    expect(onActivityChanged).not.toHaveBeenCalled();
+  });
+
   it("ignores activity_changed when no onActivityChanged callback was given", () => {
     const onCheckin = vi.fn();
     expect(() => {
