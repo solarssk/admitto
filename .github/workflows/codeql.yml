@@ -19,15 +19,20 @@ concurrency:
 
 permissions:
   contents: read
-  # Required by github/codeql-action/analyze to upload SARIF to the Security tab - the Code
-  # Scanning API itself gates this write on the security-events scope, no narrower alternative
-  # exists (Scorecard's Token-Permissions check still flags any non-read grant, even scoped and
-  # justified like this one - accepted, not a fixable finding).
-  security-events: write
 
 jobs:
   analyze:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required by github/codeql-action/analyze below to upload SARIF to the Security tab - the
+      # Code Scanning API itself gates this write on the security-events scope, no narrower
+      # alternative exists. Declared at job level rather than top level on purpose: Scorecard's
+      # Token-Permissions check only recognizes this as a permitted SARIF-upload pattern (and
+      # skips flagging it) when the grant is job-scoped - verified against its own source
+      # (checks/raw/permissions.go's validateTopLevelPermissions always passes an empty exemption
+      # map; only validatejobLevelPermissions receives the codeql-action allowlist).
+      security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
