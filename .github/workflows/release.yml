@@ -42,28 +42,6 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      # Mints a short-lived installation token for the dedicated "admitto-release-automation"
-      # GitHub App instead of using GITHUB_TOKEN for the contents:write (release/tag) operation
-      # below - see this file's own git history for why contents:write was unavoidable on
-      # GITHUB_TOKEN. The App holds only Contents:write on this one repo, so this job's own
-      # GITHUB_TOKEN permissions above can stay read-only + the unrelated issues:write for
-      # milestone closing.
-      #
-      # Side effect this relies on, not just a permission swap: unlike GITHUB_TOKEN, a tag pushed
-      # with a GitHub App token is NOT exempt from triggering other workflows' own `push:` events
-      # (GitHub's anti-recursion suppression is specific to GITHUB_TOKEN). So creating the tag
-      # below with this token is what makes publish-container.yml's and deploy-smoke.yml's own
-      # `push: tags:` triggers fire for an ordinary release now - this workflow used to dispatch
-      # both explicitly for exactly that reason, and must not also do so any more: a real bot
-      # review on this repo's history caught that leaving both in place double-triggers each one
-      # per release.
-      - name: Mint release automation token
-        id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
-        with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-
       - name: Detect product version bump
         id: bump
         env:
@@ -111,6 +89,34 @@ jobs:
           grep -q "## \\[${VERSION}\\]" CHANGELOG.md
           python3 scripts/sync-release-docs.py --check
           echo "Release artifacts OK for v${VERSION}"
+
+      # Mints a short-lived installation token for the dedicated "admitto-release-automation"
+      # GitHub App instead of using GITHUB_TOKEN for the contents:write (release/tag) operation
+      # below - see this file's own git history for why contents:write was unavoidable on
+      # GITHUB_TOKEN. The App holds only Contents:write on this one repo, so this job's own
+      # GITHUB_TOKEN permissions above can stay read-only + the unrelated issues:write for
+      # milestone closing. permission-contents pins the minted token to exactly that scope
+      # regardless of what else the App's installation is ever granted, so a compromise of this
+      # job can't also do whatever else the App holds. Gated on skip and placed here (not before
+      # detection) so an ordinary non-release push to main never depends on the App secrets or
+      # the token-minting service at all.
+      #
+      # Side effect this relies on, not just a permission swap: unlike GITHUB_TOKEN, a tag pushed
+      # with a GitHub App token is NOT exempt from triggering other workflows' own `push:` events
+      # (GitHub's anti-recursion suppression is specific to GITHUB_TOKEN). So creating the tag
+      # below with this token is what makes publish-container.yml's and deploy-smoke.yml's own
+      # `push: tags:` triggers fire for an ordinary release now - this workflow used to dispatch
+      # both explicitly for exactly that reason, and must not also do so any more: a real bot
+      # review on this repo's history caught that leaving both in place double-triggers each one
+      # per release.
+      - name: Mint release automation token
+        id: app-token
+        if: steps.bump.outputs.skip != 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
 
       - name: Create GitHub Release and tag
         if: steps.bump.outputs.skip != 'true'
