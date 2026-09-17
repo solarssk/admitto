@@ -29,7 +29,7 @@ function fakeDb(opts: {
   } as unknown as PrismaClient;
 }
 
-const ctx = { userId: "user-1", ip: "203.0.113.5" };
+const ctx = { userId: "user-1", ip: "203.0.113.5", userAgent: "test-agent" };
 
 describe("checkNewCountryLogin", () => {
   beforeEach(() => {
@@ -118,6 +118,7 @@ describe("checkNewCountryLogin", () => {
     expect(mocks.logLoginNewCountry).toHaveBeenCalledWith(db, {
       userId: "user-1",
       ip: "203.0.113.5",
+      userAgent: "test-agent",
       countryCode: "FR",
     });
   });

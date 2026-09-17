@@ -1302,7 +1302,111 @@ describe("audit", () => {
             organizationId: "org_default",
             dedupeKey: "user-1:FR",
             body: expect.stringContaining("admin@example.com"),
-            metadata: { country: "FR" },
+            metadata: expect.objectContaining({ country: "France" }),
+          }),
+        );
+      });
+    });
+
+    // The notification's own metadata carries the full country name (not the raw code - see
+    // countryDisplayName's own doc comment) plus device/browser, IP, and exact time, so the
+    // reader can judge for themselves whether a login was really them (PO report: the country
+    // code alone made these alerts too sparse to act on).
+    it("includes the full country name, parsed device/browser, IP, and a UTC timestamp in both notifications' metadata", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb();
+      const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36";
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", userAgent: ua, countryCode: "IN" });
+      await vi.waitFor(() => {
+        const expectedMetadata = {
+          country: "India",
+          device: "Chrome / Windows",
+          ip: "203.0.113.5",
+          time: expect.stringMatching(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC$/),
+        };
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.new_country",
+          expect.objectContaining({ metadata: expectedMetadata }),
+        );
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "account.login.new_location",
+          expect.objectContaining({ metadata: expectedMetadata }),
+        );
+      });
+    });
+
+    // metadata alone isn't enough: not every channel renders it (webhook.ts's Slack payload used
+    // to be title/body only, and the in-app inbox's read path never selects metadata off the
+    // stored row - bot review finding). Baking device/IP/time into `body` too means every channel
+    // that renders body text (email, Slack, in-app, Discord's description) carries the full
+    // detail, not just the two that also happen to render metadata (email, Discord).
+    it("also bakes device, IP, and time into both notifications' body text, not just metadata", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb(vi.fn(), { email: "admin@example.com", display_name: null });
+      const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36";
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", userAgent: ua, countryCode: "IN" });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.new_country",
+          expect.objectContaining({
+            body: expect.stringMatching(/India using Chrome \/ Windows.*IP 203\.0\.113\.5 at \d{4}-\d{2}-\d{2}/),
+          }),
+        );
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "account.login.new_location",
+          expect.objectContaining({
+            body: expect.stringMatching(/India using Chrome \/ Windows.*IP 203\.0\.113\.5 at \d{4}-\d{2}-\d{2}/),
+          }),
+        );
+      });
+    });
+
+    it("falls back to a device of 'Unrecognized device' when no user agent was captured, and the raw country code when Intl.DisplayNames can't resolve it", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb();
+      // A malformed region code (Intl.DisplayNames only accepts a 2-letter alpha or 3-digit
+      // numeric region) - resolveIpLocation's own countryCode is always a real ISO 3166-1
+      // alpha-2 in practice, so this exercises countryDisplayName's defensive catch branch, not
+      // a realistic input.
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", countryCode: "ABC" });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.new_country",
+          expect.objectContaining({
+            metadata: expect.objectContaining({ country: "ABC", device: "Unrecognized device" }),
+          }),
+        );
+      });
+    });
+
+    // checkNewCountryLogin fires at first-factor login success, before MFA - an attacker with a
+    // stolen password but no second factor still controls the User-Agent header that produces
+    // `device`, and this notification's body/metadata reach a Slack/Discord/generic webhook
+    // message a third party sees as if Admitto wrote it. A raw, unrecognized User-Agent must
+    // never appear verbatim there (bot review finding, PR #1366) - only the fixed "Unrecognized
+    // device" label, never attacker-chosen text.
+    it("never echoes an unrecognized user agent's raw text into body or metadata, even one crafted to inject chat-client markup", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb();
+      const maliciousUa = "<!channel> <https://evil.example|urgent>";
+      await logLoginNewCountry(db, {
+        userId: "user-1",
+        ip: "203.0.113.5",
+        userAgent: maliciousUa,
+        countryCode: "FR",
+      });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.new_country",
+          expect.objectContaining({
+            body: expect.not.stringContaining(maliciousUa),
+            metadata: expect.objectContaining({ device: "Unrecognized device" }),
           }),
         );
       });
@@ -1386,8 +1490,8 @@ describe("audit", () => {
             organizationId: "org_default",
             targetUserId: "user-1",
             dedupeKey: "user-1:FR",
-            body: expect.stringContaining("FR"),
-            metadata: { country: "FR" },
+            body: expect.stringContaining("France"),
+            metadata: expect.objectContaining({ country: "France" }),
           }),
         );
       });

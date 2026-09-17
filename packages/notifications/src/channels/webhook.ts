@@ -102,10 +102,13 @@ function buildPayload(kind: WebhookKind, event: DispatchedNotification): Record<
           },
         ],
       };
-    case "slack":
+    case "slack": {
+      const lines = buildMetadataLines(event.metadata);
+      const details = lines.length > 0 ? `\n${lines.join("\n")}` : "";
       return {
-        text: `*${event.title}*\n${event.body}`,
+        text: `*${event.title}*\n${event.body}${details}`,
       };
+    }
     case "generic":
     default:
       return {
@@ -140,6 +143,19 @@ function buildMetadataFields(
     // Not inline - Discord packs inline fields 3-per-row, which crowds out longer values (a URL,
     // a user agent string); full-width, one per line, is what makes Kuma's embeds easy to read.
     .map(([key, value]) => ({ name: humanizeMetadataKey(key), value: String(value), inline: false }));
+}
+
+/** Slack's own equivalent of buildMetadataFields above - plain "Key: value" lines, since a Slack
+ * message has no structured-fields concept the way a Discord embed does. Without this, Slack's
+ * own text-only payload carried nothing beyond title/body, so any notification type's metadata
+ * (this package's own new-location login alerts' device/IP/time, auth.settings.changed's
+ * resource/action, ...) was invisible there even though Discord's embed already showed it (bot
+ * review finding). */
+function buildMetadataLines(metadata: Record<string, unknown> | undefined): string[] {
+  if (!metadata) return [];
+  return Object.entries(metadata)
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .map(([key, value]) => `${humanizeMetadataKey(key)}: ${String(value)}`);
 }
 
 /**

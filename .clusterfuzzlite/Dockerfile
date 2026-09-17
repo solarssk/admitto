@@ -15,7 +15,7 @@ FROM gcr.io/oss-fuzz-base/base-builder-javascript@sha256:2e218dedc1603f15e34cec7
 # committed). If any source path below moves, build.sh's own hardcoded references to it break
 # identically either way, so there's no staleness tradeoff in naming every one of them here too.
 COPY packages/shared/src/csvUtils.ts $SRC/admitto/packages/shared/src/csvUtils.ts
-COPY apps/admin/src/utils/parseUserAgent.ts $SRC/admitto/apps/admin/src/utils/parseUserAgent.ts
+COPY packages/shared/src/parseUserAgent.ts $SRC/admitto/packages/shared/src/parseUserAgent.ts
 COPY .clusterfuzzlite/package.json $SRC/admitto/.clusterfuzzlite/package.json
 COPY .clusterfuzzlite/package-lock.json $SRC/admitto/.clusterfuzzlite/package-lock.json
 COPY .clusterfuzzlite/fuzz/split-csv-line.fuzz.cjs $SRC/admitto/.clusterfuzzlite/fuzz/split-csv-line.fuzz.cjs
