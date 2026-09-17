@@ -28,8 +28,6 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      # output-sarif: true below uploads crash findings to the Security tab.
-      security-events: write
     steps:
       # No sanitizer matrix (unlike ClusterFuzzLite's own C++ examples) - two separate real-run
       # findings pinned this to exactly `coverage`, neither found by local `docker run` testing
@@ -50,6 +48,13 @@ jobs:
           language: javascript
           sanitizer: coverage
 
+      # No output-sarif here: checked the action's own upstream source (oss-fuzz's
+      # sarif_utils.py/run_fuzzers.py) - `output-sarif: true` only writes a local
+      # cifuzz-sarif/results.sarif file inside the container, it never calls the GitHub API
+      # itself. A previous version of this workflow set it and granted security-events: write on
+      # the strength of that assumption, but nothing ever read the file or uploaded it, so the
+      # permission was dead weight. Wiring up a real upload (github/codeql-action/upload-sarif
+      # against that path) is real follow-up work, not done here.
       - name: Run fuzzers
         id: run
         uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1  # v1
@@ -58,4 +63,3 @@ jobs:
           fuzz-seconds: 600
           mode: "code-change"
           sanitizer: coverage
-          output-sarif: true
