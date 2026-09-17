@@ -282,7 +282,7 @@ async function readTileBodyCapped(res: Response, maxBytes: number, url: string):
     }
   }
 
-  const reader = res.body.getReader();
+  const reader = res.body.getReader() as ReadableStreamDefaultReader<Uint8Array>;
   const chunks: Uint8Array[] = [];
   let total = 0;
 
