@@ -44,6 +44,16 @@ const config: SmtpConfig = {
 };
 
 describe("SmtpAdapter", () => {
+  it("close delegates to the transporter and rejects synchronous failures", async () => {
+    const close = vi.fn(() => {
+      throw new Error("close failed");
+    });
+    const adapter = new SmtpAdapter(config, { close, sendMail: vi.fn() } as unknown as nodemailer.Transporter);
+
+    await expect(adapter.close()).rejects.toThrow("close failed");
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it("verifyConnection delegates to transporter.verify", async () => {
     const verify = vi.fn(async () => undefined);
     const adapter = new SmtpAdapter(config, { verify, sendMail: vi.fn() } as unknown as nodemailer.Transporter);

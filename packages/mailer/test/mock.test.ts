@@ -30,6 +30,36 @@ describe("MockAdapter", () => {
     expect(adapter.sent).toEqual([]);
   });
 
+  it("returns accepted when failOn does not match", async () => {
+    const adapter = new MockAdapter({ provider: "smtp", failOn: () => false });
+
+    await expect(adapter.send({ to: "jan@example.com", subject: "Hi", html: "<p>x</p>" })).resolves.toMatchObject({
+      status: "accepted",
+      provider: "smtp",
+    });
+  });
+
+  it("returns rejected when message validation fails", async () => {
+    const adapter = new MockAdapter();
+
+    await expect(adapter.send({ to: "not-an-email", subject: "Hi", html: "<p>x</p>" })).resolves.toMatchObject({
+      status: "rejected",
+      provider: "powerautomate",
+    });
+  });
+
+  it("rejects when failOn throws", async () => {
+    const adapter = new MockAdapter({
+      failOn: () => {
+        throw new Error("test predicate failed");
+      },
+    });
+
+    await expect(adapter.send({ to: "jan@example.com", subject: "Hi", html: "<p>x</p>" })).rejects.toThrow(
+      "test predicate failed",
+    );
+  });
+
   it("close() resolves (no persistent connection to release)", async () => {
     const adapter = new MockAdapter();
     await expect(adapter.close()).resolves.toBeUndefined();

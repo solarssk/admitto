@@ -107,12 +107,12 @@ function serializeScanResult(result: CheckInScanResult): unknown {
 
 /** Emit a safe security signal for a rejected admission attempt. Staff identity is included only
  * for the authenticated session flow; emergency bearer requests keep the device context only. */
-async function emitRejectedCheckinLog(
+function emitRejectedCheckinLog(
   eventId: string,
   result: CheckInScanResult,
   audit: OpsAuditContext,
   actorEmail?: string,
-): Promise<void> {
+): void {
   if (
     result.status !== "INVALID" &&
     result.status !== "REVOKED" &&
@@ -167,17 +167,17 @@ function recordCheckinOperationFailure(
 
 /** Finish a scan/manual-admission response with the shared success-side effects. Kept inside the
  * caller's `try` so an unexpected emit failure follows its existing operation-specific catch. */
-async function respondToCheckinResult(
+function respondToCheckinResult(
   c: Context,
   eventId: string,
   result: CheckInScanResult,
   audit: OpsAuditContext,
   actorEmail?: string,
-): Promise<Response> {
+): Response {
   if (result.status === "VALID") {
     publishCheckinIfValid(c, eventId, result, audit.deviceId);
   }
-  await emitRejectedCheckinLog(eventId, result, audit, actorEmail);
+  emitRejectedCheckinLog(eventId, result, audit, actorEmail);
   return c.json(serializeScanResult(result), 200);
 }
 
@@ -218,7 +218,7 @@ export async function handleCheckinScan(c: Context, db: PrismaClient): Promise<R
       },
       db,
     );
-    return await respondToCheckinResult(c, eventId, result, audit, requestAudit.actorEmail);
+    return respondToCheckinResult(c, eventId, result, audit, requestAudit.actorEmail);
   } catch (err) {
     console.error("checkInScan failed:", err);
     recordCheckinOperationFailure(c, eventId, "scan", deviceId, requestAudit?.actorEmail);
@@ -292,7 +292,7 @@ export async function handleCheckinAdmit(c: Context, db: PrismaClient): Promise<
       },
       db,
     );
-    return await respondToCheckinResult(c, eventId, result, audit, requestAudit.actorEmail);
+    return respondToCheckinResult(c, eventId, result, audit, requestAudit.actorEmail);
   } catch (err) {
     console.error("admitAttendee failed:", err);
     recordCheckinOperationFailure(c, eventId, "admit", deviceId, requestAudit?.actorEmail);
