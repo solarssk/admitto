@@ -1,9 +1,10 @@
 name: Release
 
-# After a `release: vX.Y.Z` commit on main bumps package.json, create the git tag,
-# GitHub Release (notes + required .title tagline), close the milestone, and trigger
-# publish-container.yml and deploy-smoke.yml (GITHUB_TOKEN tag pushes do not start other
-# workflows, so each needs an explicit dispatch here rather than relying on its own tag trigger).
+# After a `release: vX.Y.Z` commit on main bumps package.json, create the git tag and GitHub
+# Release (notes + required .title tagline), then close the milestone. publish-container.yml and
+# deploy-smoke.yml are NOT dispatched from here - their own `push: tags:` triggers fire on the tag
+# push below on their own, because that push is made with a GitHub App installation token, not
+# GITHUB_TOKEN (see the "Mint release automation token" step's own comment for why that matters).
 #
 # The release commit isn't always HEAD: a "Create a merge commit" merge of the release
 # PR puts it one or more commits behind the merge commit that actually triggers this push
@@ -42,12 +43,20 @@ jobs:
           persist-credentials: false
 
       # Mints a short-lived installation token for the dedicated "admitto-release-automation"
-      # GitHub App instead of using GITHUB_TOKEN for the contents:write (release/tag) and
-      # actions:write (cross-workflow dispatch) operations below - see this file's own git
-      # history for the two permissions this replaced and why they were unavoidable on
-      # GITHUB_TOKEN. The App holds only Contents:write and Actions:write on this one repo, so
-      # this job's own GITHUB_TOKEN permissions above can stay read-only + the unrelated
-      # issues:write for milestone closing.
+      # GitHub App instead of using GITHUB_TOKEN for the contents:write (release/tag) operation
+      # below - see this file's own git history for why contents:write was unavoidable on
+      # GITHUB_TOKEN. The App holds only Contents:write on this one repo, so this job's own
+      # GITHUB_TOKEN permissions above can stay read-only + the unrelated issues:write for
+      # milestone closing.
+      #
+      # Side effect this relies on, not just a permission swap: unlike GITHUB_TOKEN, a tag pushed
+      # with a GitHub App token is NOT exempt from triggering other workflows' own `push:` events
+      # (GitHub's anti-recursion suppression is specific to GITHUB_TOKEN). So creating the tag
+      # below with this token is what makes publish-container.yml's and deploy-smoke.yml's own
+      # `push: tags:` triggers fire for an ordinary release now - this workflow used to dispatch
+      # both explicitly for exactly that reason, and must not also do so any more: a real bot
+      # review on this repo's history caught that leaving both in place double-triggers each one
+      # per release.
       - name: Mint release automation token
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
@@ -124,35 +133,6 @@ jobs:
             --notes-file "$NOTES" \
             --latest
           echo "Created $TAG ($DISPLAY_TITLE)."
-
-      - name: Trigger container publish
-        if: steps.bump.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          set -euo pipefail
-          VERSION='${{ steps.bump.outputs.version }}'
-          TAG="v${VERSION}"
-          gh workflow run publish-container.yml \
-            --ref "$TAG" \
-            -f "ref=refs/tags/${TAG}"
-          echo "Triggered publish-container for ${TAG}."
-
-      # deploy-smoke.yml's own `push: tags:` trigger never fires for this - GITHUB_TOKEN tag
-      # pushes don't start other workflows (same reason publish-container above needs a manual
-      # dispatch), so without this call every ordinary release would ship with no automated
-      # functional smoke test, silently. That push trigger stays useful only for the emergency
-      # signed-tag path (scripts/release-tag.sh), which pushes with a real user's credentials.
-      - name: Trigger deploy smoke test
-        if: steps.bump.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          set -euo pipefail
-          VERSION='${{ steps.bump.outputs.version }}'
-          TAG="v${VERSION}"
-          gh workflow run deploy-smoke.yml --ref "$TAG"
-          echo "Triggered deploy-smoke for ${TAG}."
 
       - name: Close matching GitHub milestone
         if: steps.bump.outputs.skip != 'true'
