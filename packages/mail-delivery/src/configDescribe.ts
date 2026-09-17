@@ -43,7 +43,7 @@ export function serializeConfigDescriptionForCli(desc: ConfigDescriptor): string
   const out: Record<string, FieldDescriptor | SecretPresenceField> = {};
 
   for (const key of Object.keys(desc) as (keyof ConfigDescriptor)[]) {
-    const field = Object.getOwnPropertyDescriptor(desc, key)?.value;
+    const field: unknown = Object.getOwnPropertyDescriptor(desc, key)?.value;
     if (!field) continue;
     const value = (SECRET_FIELD_KEYS as readonly string[]).includes(key)
       ? secretPresenceField(field as FieldDescriptor<"••••" | null>)

@@ -396,15 +396,6 @@
     "contextAfter": "disabled={togglingIds.has(provider.id)}"
   },
   {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "apps/admin/src/identity/cfAccessValidation.ts",
-    "message": "Unsafe assignment of an `any` value.",
-    "codeLine": "const parsed = JSON.parse(trimmed);",
-    "column": 13,
-    "contextBefore": "try {",
-    "contextAfter": "if (Array.isArray(parsed)) {"
-  },
-  {
     "ruleId": "@typescript-eslint/no-floating-promises",
     "filePath": "apps/admin/src/identity/useUnsavedChangesGuard.ts",
     "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
@@ -693,24 +684,6 @@
     "contextAfter": "}"
   },
   {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "apps/web/src/admin/admin-helpers.ts",
-    "message": "Unsafe assignment of an `any` value.",
-    "codeLine": "const map: Record<string, UserDisplayRow> = Object.create(null);",
-    "column": 9,
-    "contextBefore": ": [];",
-    "contextAfter": "for (const u of users) map[u.id] = u;"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "apps/web/src/admin/attendees-api-routes.ts",
-    "message": "Unsafe assignment of an `any` value.",
-    "codeLine": "const body = await c.req.json().catch(() => null);",
-    "column": 9,
-    "contextBefore": "async function requireNoteBody(c: Context): Promise<string | Response> {",
-    "contextAfter": "const noteBody = body && typeof body === \"object\" ? (body as Record<string, unknown>).body : undefined;"
-  },
-  {
     "ruleId": "@typescript-eslint/only-throw-error",
     "filePath": "apps/web/src/admin/attendees-api-routes.ts",
     "message": "Expected an error object to be thrown.",
@@ -772,24 +745,6 @@
     "column": 30,
     "contextBefore": "const issuedCount = await loadIssuedWalletPassCount(tx, eventId);",
     "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "apps/web/src/admin/reports-routes.ts",
-    "message": "Unsafe spread of an `any` value in an array.",
-    "codeLine": "...new Array(opts.columns.length - 1).fill(quoteCsvCell(\"\")),",
-    "column": 9,
-    "contextBefore": "),",
-    "contextAfter": "].join(\",\")"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "apps/web/src/admin/security-audit-routes.ts",
-    "message": "Unsafe assignment of an `any` value.",
-    "codeLine": "const userMap: Record<string, UserRow> = Object.create(null);",
-    "column": 9,
-    "contextBefore": ": [];",
-    "contextAfter": "for (const u of users) userMap[u.id] = u;"
   },
   {
     "ruleId": "@typescript-eslint/no-unsafe-return",
@@ -1017,15 +972,6 @@
     "contextAfter": "parseOneDsnBlock(block, out, seen);"
   },
   {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "packages/mail-delivery/src/configDescribe.ts",
-    "message": "Unsafe assignment of an `any` value.",
-    "codeLine": "const field = Object.getOwnPropertyDescriptor(desc, key)?.value;",
-    "column": 11,
-    "contextBefore": "for (const key of Object.keys(desc) as (keyof ConfigDescriptor)[]) {",
-    "contextAfter": "if (!field) continue;"
-  },
-  {
     "ruleId": "@typescript-eslint/no-unsafe-return",
     "filePath": "packages/mail-templates/src/escape.ts",
     "message": "Unsafe return of a value of type `any`.",
@@ -1231,15 +1177,6 @@
     "column": 12,
     "contextBefore": "doc.text(exportColumns[i]!, x, y, cellOptions(plan.contentWidths[i]!, headerHeight));",
     "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "packages/tickets/src/custom-data.ts",
-    "message": "Unsafe assignment of an `any` value.",
-    "codeLine": "const v = Object.getOwnPropertyDescriptor(raw, field)?.value;",
-    "column": 9,
-    "contextBefore": "if (!raw || typeof raw !== \"object\" || Array.isArray(raw)) return null;",
-    "contextAfter": "if (typeof v !== \"string\") return null;"
   },
   {
     "ruleId": "security/detect-object-injection",

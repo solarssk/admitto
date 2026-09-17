@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Admin and API boundaries now keep untrusted parsed, descriptor, and null-prototype values explicitly typed before use.
 - Admin check-in streams now reject malformed event payloads before dispatch, while attendee exports keep custom-field metadata typed throughout their existing parallel load path.
 - Map-provider and static-map responses are now handled as byte streams while enforcing their existing response-size limits, making that boundary explicit without changing map availability or provider settings.
 - System-setting environment overrides now use a typed configuration read while retaining the existing behavior that ignores blank values, so an empty deployment variable cannot make an administrator-facing setting look locked.
