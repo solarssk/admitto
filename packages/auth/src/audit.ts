@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Prisma, PrismaClient } from "@admitto/db/client";
 import type { ScopeType } from "@admitto/db";
 import { resolveInstanceOrganizationId } from "@admitto/db/instance-org";
-import { redactEmail } from "@admitto/shared";
+import { parseUserAgentSafe, redactEmail } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
 import { notify } from "@admitto/notifications";
 
@@ -953,6 +953,23 @@ export async function logRoleElevated(
   });
 }
 
+/** Full English country name for a notification's human-facing title/body/metadata (e.g. "IN" ->
+ * "India") - the raw ISO code stays exact/machine-queryable everywhere else (writeSecurityAuditLog's
+ * own metadata below, the throttle dedupeKey, resolveIpLocation's own return value), only the text
+ * a person reads gets the friendly form. Fixed "en" locale: unlike apps/admin's own
+ * countryDisplayName (GeoCell.tsx), which reads the viewing admin's preferred locale, notification
+ * content has no per-recipient locale to read (it's composed once, before audience resolution, and
+ * may go to several recipients at once) - matches every other notification type's copy, which is
+ * fixed English throughout (see registry.ts's own doc comment). Falls back to the raw code on an
+ * unresolvable/malformed input, same as GeoCell.tsx's own fallback. */
+function countryDisplayName(countryCode: string): string {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(countryCode.toUpperCase()) ?? countryCode;
+  } catch {
+    return countryCode;
+  }
+}
+
 /**
  * Record and alert on a successful admin/superadmin login from a country not seen among that
  * account's recent successful logins - the decision of WHETHER a login qualifies (role gate,
@@ -972,7 +989,7 @@ export async function logRoleElevated(
  */
 export async function logLoginNewCountry(
   db: Db,
-  ctx: { userId: string; ip?: string; countryCode: string },
+  ctx: { userId: string; ip?: string; userAgent?: string; countryCode: string },
 ): Promise<void> {
   const identity = await resolveUserIdentitySnapshot(db, ctx.userId);
   emitAuditEvent("auth.login.new_country", {
@@ -987,9 +1004,36 @@ export async function logLoginNewCountry(
     metadata: { country: ctx.countryCode },
   });
   const accountLabel = identity?.display_name ?? identity?.email ?? "An admin account";
+  const countryName = countryDisplayName(ctx.countryCode);
+  // `device` reuses the same isomorphic parser apps/admin's Sessions list already shows this
+  // exact string as ("Chrome / Windows") - see parseUserAgentSafe's own doc comment. The "safe"
+  // variant specifically (not parseUserAgent): this value reaches a Slack/Discord/generic webhook
+  // message a third party sees as if Admitto wrote it, and checkNewCountryLogin fires at
+  // first-factor login success, before MFA - an attacker with a stolen password but no second
+  // factor still controls the User-Agent header that produces it. parseUserAgent's own raw-slice
+  // fallback for an unrecognized UA would otherwise let arbitrary header bytes (Slack mrkdwn
+  // injection, e.g. `<!channel>`) through unescaped (bot review finding); a fixed "Unrecognized
+  // device" label can't carry attacker-chosen content no matter what the header says.
+  const device = parseUserAgentSafe(ctx.userAgent ?? null) ?? "Unrecognized device";
+  const ip = ctx.ip ?? "Unknown";
+  const time = `${new Date().toISOString().slice(0, 19).replace("T", " ")} UTC`;
+  // Baked directly into `body`, not just `metadata`, so every channel carries the full detail -
+  // not every channel renders metadata (webhook.ts's Slack payload is title/body text only; the
+  // in-app inbox's own read path (inbox.ts) never selects metadata off the stored row at all), so
+  // a reader relying on either would otherwise still see only the country name, too sparse to
+  // judge whether a login was really them (bot review finding: device/IP/time were only reaching
+  // the email and Discord channels, which DO render metadata - webhook.ts's buildMetadataFields
+  // and buildMetadataLine in channels/email.ts). IP/time trail after the actionable facts (who,
+  // where, what device - self gets the "secure your account" call to action right after those)
+  // since the in-app bell dropdown clips a notification's body to 2 lines
+  // (.notif-bell__row-body, staff.css) - if anything gets visually clipped there, it's the
+  // lower-priority audit-trail detail, not the at-a-glance signal. metadata below still carries
+  // the same four fields as structured data for the channels that use it (email's "Details" box,
+  // Discord's embed fields).
+  const notificationMetadata = { country: countryName, device, ip, time };
   void dispatchSecurityNotification(db, "auth.login.new_country", {
     title: "Admin login from a new country",
-    body: `${accountLabel} signed in from ${ctx.countryCode}, not seen in this account's recent successful logins.`,
+    body: `${accountLabel} signed in from ${countryName} using ${device}, not seen in this account's recent successful logins. (IP ${ip} at ${time})`,
     // Composite, not just userId: the same admin logging in from two different new countries
     // within the 15-minute throttle window is two distinct signals worth two alerts, not one
     // suppressed by the other - see checkNewCountryLogin's own doc comment.
@@ -1000,16 +1044,16 @@ export async function logLoginNewCountry(
     // dispatch's candidate list and get a second email/in-app alert about the same login (bot
     // review finding, PR #1309). The rest of the admin team, and the team webhook, are unaffected.
     excludeUserId: ctx.userId,
-    metadata: { country: ctx.countryCode },
+    metadata: notificationMetadata,
   });
   // ASVS V6.3.5 self-audience counterpart to the org-staff alert above: the account OWNER, not
   // just the rest of the admin team, learns their own account signed in somewhere new (PR5c,
   // notifications-module-foundation plan's Luka A).
   void dispatchSecurityNotification(db, "account.login.new_location", {
     title: "You signed in from a new location",
-    body: `Your account signed in from ${ctx.countryCode}, a location not seen in your recent successful logins. If this wasn't you, secure your account immediately.`,
+    body: `Your account signed in from ${countryName} using ${device}. If this wasn't you, secure your account immediately. (IP ${ip} at ${time})`,
     dedupeKey: `${ctx.userId}:${ctx.countryCode}`,
     targetUserId: ctx.userId,
-    metadata: { country: ctx.countryCode },
+    metadata: notificationMetadata,
   });
 }

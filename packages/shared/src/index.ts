@@ -1,5 +1,6 @@
 export { splitCsvLine } from "./csvUtils.js";
 export { redactEmail } from "./redact.js";
+export { parseUserAgent, parseUserAgentSafe, parseUserAgentWithVersion } from "./parseUserAgent.js";
 export { NO_COMPRESSION_HEADERS } from "./noCompressionHeaders.js";
 export type { DeliveryDetailDto, DeliveryDto } from "./deliveryDto.js";
 export type { EventWalletReportsResponse } from "./eventWalletReportsDto.js";

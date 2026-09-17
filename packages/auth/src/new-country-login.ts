@@ -74,7 +74,10 @@ async function hasElevatedRole(db: Db, userId: string): Promise<boolean> {
  * never-breaks-the-caller way `dispatchSecurityNotification`/`writeSecurityAuditLog` already
  * handle their own failures elsewhere in this module.
  */
-export async function checkNewCountryLogin(db: Db, ctx: { userId: string; ip?: string }): Promise<void> {
+export async function checkNewCountryLogin(
+  db: Db,
+  ctx: { userId: string; ip?: string; userAgent?: string },
+): Promise<void> {
   if (!ctx.ip) return;
   // Dynamic, not a static top-level import: @admitto/shared/ip-location pulls in ip-location-api,
   // whose own top-level `await reload(true)` can make a real network call (and throw) the moment
@@ -106,7 +109,12 @@ export async function checkNewCountryLogin(db: Db, ctx: { userId: string; ip?: s
     );
     if (seenCountries.size === 0 || seenCountries.has(current.countryCode)) return;
 
-    await logLoginNewCountry(db, { userId: ctx.userId, ip: ctx.ip, countryCode: current.countryCode });
+    await logLoginNewCountry(db, {
+      userId: ctx.userId,
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+      countryCode: current.countryCode,
+    });
   } catch (err) {
     console.error(
       JSON.stringify({
