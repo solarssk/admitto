@@ -9,9 +9,7 @@
   <a href="https://codecov.io/gh/solarssk/admitto"><img src="https://codecov.io/gh/solarssk/admitto/branch/main/graph/badge.svg" alt="Codecov"></a>
   &nbsp;
   <a href="https://sonarcloud.io/summary/new_code?id=solarssk_admitto"><img src="https://sonarcloud.io/api/project_badges/measure?project=solarssk_admitto&metric=alert_status" alt="Quality Gate Status"></a>
-</p>
-
-<p align="center">
+  &nbsp;
   <a href="https://www.bestpractices.dev/projects/14670"><img src="https://www.bestpractices.dev/projects/14670/badge" alt="OpenSSF Best Practices"></a>
   &nbsp;
   <a href="https://securityscorecards.dev/viewer/?uri=github.com/solarssk/admitto"><img src="https://api.securityscorecards.dev/projects/github.com/solarssk/admitto/badge" alt="OpenSSF Scorecard"></a>
