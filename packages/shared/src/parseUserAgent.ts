@@ -90,3 +90,26 @@ export function parseUserAgentWithVersion(ua: string | null): string {
   const parts = [browser, os].filter(Boolean);
   return parts.length ? parts.join(" / ") : ua.slice(0, 40);
 }
+
+/** Same matching as parseUserAgent, but returns null instead of an unbounded raw slice of the
+ * input when neither side matches - for a context where the User-Agent header is untrusted (the
+ * caller hasn't otherwise authenticated who's presenting it) and the result flows into content a
+ * third party can see as if Admitto wrote it: a Slack/Discord/generic webhook message, a stored
+ * notification's title/body. `checkNewCountryLogin` (packages/auth) fires at first-factor login
+ * success, before MFA - an attacker with a stolen password but no second factor still controls
+ * this header and can make it trigger. Every matched label here is one of the fixed strings in
+ * BROWSER_PATTERNS/OS_PATTERNS ("Chrome", "Windows", ...), never captured input, so a match is
+ * always safe to echo back; only the previous raw-slice fallback let arbitrary request-header
+ * bytes (e.g. Slack mrkdwn like `<!channel>` or `<https://evil.example|text>`) reach a
+ * destination Admitto doesn't control the rendering of (bot review finding, PR #1366). Callers
+ * building a display string for the CURRENT account's own device list (apps/admin's Sessions
+ * list, the Wallet card) should keep using parseUserAgent/parseUserAgentWithVersion instead - the
+ * viewer and the account whose session it is share one trust boundary there, and React already
+ * renders it as escaped text, not markup a chat client would interpret. */
+export function parseUserAgentSafe(ua: string | null): string | null {
+  if (!ua) return null;
+  const browser = matchPattern(ua, BROWSER_PATTERNS, false);
+  const os = matchPattern(ua, OS_PATTERNS, false);
+  const parts = [browser, os].filter(Boolean);
+  return parts.length ? parts.join(" / ") : null;
+}

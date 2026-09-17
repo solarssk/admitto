@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseUserAgent, parseUserAgentWithVersion } from "../src/parseUserAgent.js";
+import { parseUserAgent, parseUserAgentSafe, parseUserAgentWithVersion } from "../src/parseUserAgent.js";
 
 describe("parseUserAgent", () => {
   it("returns Unknown for null", () => {
@@ -89,5 +89,27 @@ describe("parseUserAgentWithVersion", () => {
   it("includes the Samsung Internet version, not Chrome's embedded engine version", () => {
     const ua = "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.6261.119 Mobile Safari/537.36";
     expect(parseUserAgentWithVersion(ua)).toBe("Samsung Internet 26.0 / Android 14");
+  });
+});
+
+describe("parseUserAgentSafe", () => {
+  it("returns null for null", () => {
+    expect(parseUserAgentSafe(null)).toBeNull();
+  });
+
+  it("labels a recognized browser/OS the same as parseUserAgent", () => {
+    expect(
+      parseUserAgentSafe("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"),
+    ).toBe("Chrome / Windows");
+  });
+
+  // The security-relevant behavior this function exists for: unlike parseUserAgent (which falls
+  // back to `ua.slice(0, 40)`, letting arbitrary attacker-controlled request-header bytes reach
+  // a downstream chat client's markup as if Admitto wrote it), an unrecognized UA returns null,
+  // never a raw slice of the input - see this function's own doc comment (bot review finding,
+  // PR #1366).
+  it("returns null (not a raw slice of the input) for an unrecognized user agent, even one crafted to inject chat-client markup", () => {
+    expect(parseUserAgentSafe("curl/8.7.1")).toBeNull();
+    expect(parseUserAgentSafe("<!channel> <https://evil.example|urgent>")).toBeNull();
   });
 });

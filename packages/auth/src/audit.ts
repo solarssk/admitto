@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Prisma, PrismaClient } from "@admitto/db/client";
 import type { ScopeType } from "@admitto/db";
 import { resolveInstanceOrganizationId } from "@admitto/db/instance-org";
-import { parseUserAgent, redactEmail } from "@admitto/shared";
+import { parseUserAgentSafe, redactEmail } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
 import { notify } from "@admitto/notifications";
 
@@ -1006,8 +1006,15 @@ export async function logLoginNewCountry(
   const accountLabel = identity?.display_name ?? identity?.email ?? "An admin account";
   const countryName = countryDisplayName(ctx.countryCode);
   // `device` reuses the same isomorphic parser apps/admin's Sessions list already shows this
-  // exact string as ("Chrome / Windows") - see parseUserAgent's own doc comment.
-  const device = parseUserAgent(ctx.userAgent ?? null);
+  // exact string as ("Chrome / Windows") - see parseUserAgentSafe's own doc comment. The "safe"
+  // variant specifically (not parseUserAgent): this value reaches a Slack/Discord/generic webhook
+  // message a third party sees as if Admitto wrote it, and checkNewCountryLogin fires at
+  // first-factor login success, before MFA - an attacker with a stolen password but no second
+  // factor still controls the User-Agent header that produces it. parseUserAgent's own raw-slice
+  // fallback for an unrecognized UA would otherwise let arbitrary header bytes (Slack mrkdwn
+  // injection, e.g. `<!channel>`) through unescaped (bot review finding); a fixed "Unrecognized
+  // device" label can't carry attacker-chosen content no matter what the header says.
+  const device = parseUserAgentSafe(ctx.userAgent ?? null) ?? "Unrecognized device";
   const ip = ctx.ip ?? "Unknown";
   const time = `${new Date().toISOString().slice(0, 19).replace("T", " ")} UTC`;
   // Baked directly into `body`, not just `metadata`, so every channel carries the full detail -

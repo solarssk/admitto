@@ -1365,7 +1365,7 @@ describe("audit", () => {
       });
     });
 
-    it("falls back to a device of 'Unknown' when no user agent was captured, and the raw country code when Intl.DisplayNames can't resolve it", async () => {
+    it("falls back to a device of 'Unrecognized device' when no user agent was captured, and the raw country code when Intl.DisplayNames can't resolve it", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const db = fakeDb();
       // A malformed region code (Intl.DisplayNames only accepts a 2-letter alpha or 3-digit
@@ -1377,7 +1377,37 @@ describe("audit", () => {
         expect(notify).toHaveBeenCalledWith(
           db,
           "auth.login.new_country",
-          expect.objectContaining({ metadata: expect.objectContaining({ country: "ABC", device: "Unknown" }) }),
+          expect.objectContaining({
+            metadata: expect.objectContaining({ country: "ABC", device: "Unrecognized device" }),
+          }),
+        );
+      });
+    });
+
+    // checkNewCountryLogin fires at first-factor login success, before MFA - an attacker with a
+    // stolen password but no second factor still controls the User-Agent header that produces
+    // `device`, and this notification's body/metadata reach a Slack/Discord/generic webhook
+    // message a third party sees as if Admitto wrote it. A raw, unrecognized User-Agent must
+    // never appear verbatim there (bot review finding, PR #1366) - only the fixed "Unrecognized
+    // device" label, never attacker-chosen text.
+    it("never echoes an unrecognized user agent's raw text into body or metadata, even one crafted to inject chat-client markup", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb();
+      const maliciousUa = "<!channel> <https://evil.example|urgent>";
+      await logLoginNewCountry(db, {
+        userId: "user-1",
+        ip: "203.0.113.5",
+        userAgent: maliciousUa,
+        countryCode: "FR",
+      });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.new_country",
+          expect.objectContaining({
+            body: expect.not.stringContaining(maliciousUa),
+            metadata: expect.objectContaining({ device: "Unrecognized device" }),
+          }),
         );
       });
     });
