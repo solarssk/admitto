@@ -297,15 +297,6 @@
     "contextAfter": ".then((errMsg) => {"
   },
   {
-    "ruleId": "@typescript-eslint/no-unsafe-argument",
-    "filePath": "apps/admin/src/hooks/useEventStream.ts",
-    "message": "Unsafe argument of type `any` assigned to a parameter of type `string`.",
-    "codeLine": "const data = JSON.parse(msg.data) as { type: string };",
-    "column": 35,
-    "contextBefore": "try {",
-    "contextAfter": "if (data.type === \"ping\") return;"
-  },
-  {
     "ruleId": "@typescript-eslint/no-floating-promises",
     "filePath": "apps/admin/src/identity/CfAccessEditor.tsx",
     "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
@@ -1240,42 +1231,6 @@
     "column": 12,
     "contextBefore": "doc.text(exportColumns[i]!, x, y, cellOptions(plan.contentWidths[i]!, headerHeight));",
     "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-argument",
-    "filePath": "packages/tickets/src/attendees-export.ts",
-    "message": "Unsafe argument of type `any` assigned to a parameter of type `EventItemContent[]`.",
-    "codeLine": "const exportColumns = buildExportColumns(attributeFieldsResult);",
-    "column": 44,
-    "contextBefore": "",
-    "contextAfter": "const exportRows = buildSanitizedExportRows(rows, attributeFieldsResult, timeZone, ticketTypes);"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-argument",
-    "filePath": "packages/tickets/src/attendees-export.ts",
-    "message": "Unsafe argument of type `any` assigned to a parameter of type `EventItemContent[]`.",
-    "codeLine": "const exportRows = buildSanitizedExportRows(rows, attributeFieldsResult, timeZone, ticketTypes);",
-    "column": 53,
-    "contextBefore": "const exportColumns = buildExportColumns(attributeFieldsResult);",
-    "contextAfter": "const csv = buildExportCsv(exportRows, exportColumns);"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "packages/tickets/src/attendees-export.ts",
-    "message": "Unsafe array destructuring of a tuple element with an `any` value.",
-    "codeLine": "const [rows, attributeFieldsResult, ticketTypes] = await Promise.all([",
-    "column": 16,
-    "contextBefore": "",
-    "contextAfter": "findFilteredAttendeesForExport(db, eventId, filters),"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "packages/tickets/src/attendees-export.ts",
-    "message": "Unsafe return of a value of type `any`.",
-    "codeLine": "loadEventCustomDataFields(db, eventId).catch((err) => err),",
-    "column": 59,
-    "contextBefore": "findFilteredAttendeesForExport(db, eventId, filters),",
-    "contextAfter": "loadEventTicketTypes(db, eventId),"
   },
   {
     "ruleId": "@typescript-eslint/no-unsafe-assignment",

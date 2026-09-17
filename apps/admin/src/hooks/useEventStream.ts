@@ -14,6 +14,15 @@ export interface StreamCheckinEvent {
   deviceLabel: string | null;
 }
 
+function hasStreamEventType(data: unknown): data is { type: string } {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "type" in data &&
+    typeof data.type === "string"
+  );
+}
+
 const MAX_CONSECUTIVE_FAILURES = 3;
 /** Reconnect backoff schedule (ms) after SSE disconnect. */
 export const STREAM_BACKOFF_MS = [2000, 4000, 8000, 30000] as const;
@@ -118,7 +127,9 @@ export function useEventStream(
 
       es.onmessage = (msg) => {
         try {
-          const data = JSON.parse(msg.data) as { type: string };
+          if (typeof msg.data !== "string") return;
+          const data: unknown = JSON.parse(msg.data);
+          if (!hasStreamEventType(data)) return;
           if (data.type === "ping") return;
           if (data.type === "checkin") {
             onCheckinRef.current(data as StreamCheckinEvent);
