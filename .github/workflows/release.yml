@@ -1,9 +1,10 @@
 name: Release
 
-# After a `release: vX.Y.Z` commit on main bumps package.json, create the git tag,
-# GitHub Release (notes + required .title tagline), close the milestone, and trigger
-# publish-container.yml and deploy-smoke.yml (GITHUB_TOKEN tag pushes do not start other
-# workflows, so each needs an explicit dispatch here rather than relying on its own tag trigger).
+# After a `release: vX.Y.Z` commit on main bumps package.json, create the git tag and GitHub
+# Release (notes + required .title tagline), then close the milestone. publish-container.yml and
+# deploy-smoke.yml are NOT dispatched from here - their own `push: tags:` triggers fire on the tag
+# push below on their own, because that push is made with a GitHub App installation token, not
+# GITHUB_TOKEN (see the "Mint release automation token" step's own comment for why that matters).
 #
 # The release commit isn't always HEAD: a "Create a merge commit" merge of the release
 # PR puts it one or more commits behind the merge commit that actually triggers this push
@@ -20,35 +21,13 @@ on:
     branches: [main]
 
 permissions:
-  # `gh release create` below (Releases API) hard-requires this - no narrower alternative exists.
-  contents: write
+  contents: read
   # `gh api -X PATCH .../milestones/${MID} -f state=closed` below - closing a milestone is gated
-  # on the issues scope, no narrower alternative exists.
+  # on the issues scope, no narrower alternative exists. Not exempted by Scorecard's
+  # Token-Permissions check either, but "issues" isn't in that check's list of permissions it
+  # flags at all (checks/raw/permissions.go's permissionsOfInterest), so this one was never the
+  # problem.
   issues: write
-  # `gh workflow run publish-container.yml` / `deploy-smoke.yml` below - confirmed required, not
-  # a design oversight: GITHUB_TOKEN-created tag pushes deliberately do not cascade into other
-  # workflow runs (GitHub's own anti-infinite-loop protection), so re-dispatching explicitly is
-  # the only way to trigger them from here. A workflow_call alternative was raised twice in PR
-  # review and this comment got the analysis wrong both times, so treat the question as still
-  # open rather than settled: (1) the two trigger paths don't actually collide the way an even
-  # earlier version of this comment claimed (an ordinary release never reaches
-  # publish-container.yml's own `push: tags:`, since that's exactly the GITHUB_TOKEN limitation
-  # above; the emergency signed-tag path never runs *this* workflow, since release.yml only
-  # triggers on `push: branches: [main]`) - confirmed correct. (2) A follow-up claimed switching
-  # to workflow_call would still cost more than it saves, since GitHub's reusable-workflow docs
-  # say permissions "can only be maintained or reduced - not elevated" down the call chain, so
-  # *this* workflow would need packages/id-token/attestations write too - also successfully
-  # disputed: a *separate* caller job (not the one already holding contents/issues:write) could
-  # hold just that ceiling, and publish-container.yml's own jobs already carry those exact scopes
-  # today regardless of how they're triggered, so no *new* capability would exist anywhere that
-  # doesn't already exist now. Whether that nets out better for Scorecard's own literal per-line
-  # counting - which flags every job-level `write` grant as its own finding, so a second job in
-  # this file carrying the union ceiling might just relocate the count rather than shrink it - is
-  # genuinely unresolved: GitHub's own docs don't say whether a `uses:`-only job's `permissions:`
-  # block registers as a "grant" the same way a job with real steps does. Left as `actions: write`
-  # here pending either clearer documentation or an actual test against this repo's release
-  # pipeline, which is too high-stakes to experiment on speculatively.
-  actions: write
 
 concurrency:
   group: release-${{ github.repository }}
@@ -111,10 +90,38 @@ jobs:
           python3 scripts/sync-release-docs.py --check
           echo "Release artifacts OK for v${VERSION}"
 
+      # Mints a short-lived installation token for the dedicated "admitto-release-automation"
+      # GitHub App instead of using GITHUB_TOKEN for the contents:write (release/tag) operation
+      # below - see this file's own git history for why contents:write was unavoidable on
+      # GITHUB_TOKEN. The App holds only Contents:write on this one repo, so this job's own
+      # GITHUB_TOKEN permissions above can stay read-only + the unrelated issues:write for
+      # milestone closing. permission-contents pins the minted token to exactly that scope
+      # regardless of what else the App's installation is ever granted, so a compromise of this
+      # job can't also do whatever else the App holds. Gated on skip and placed here (not before
+      # detection) so an ordinary non-release push to main never depends on the App secrets or
+      # the token-minting service at all.
+      #
+      # Side effect this relies on, not just a permission swap: unlike GITHUB_TOKEN, a tag pushed
+      # with a GitHub App token is NOT exempt from triggering other workflows' own `push:` events
+      # (GitHub's anti-recursion suppression is specific to GITHUB_TOKEN). So creating the tag
+      # below with this token is what makes publish-container.yml's and deploy-smoke.yml's own
+      # `push: tags:` triggers fire for an ordinary release now - this workflow used to dispatch
+      # both explicitly for exactly that reason, and must not also do so any more: a real bot
+      # review on this repo's history caught that leaving both in place double-triggers each one
+      # per release.
+      - name: Mint release automation token
+        id: app-token
+        if: steps.bump.outputs.skip != 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - name: Create GitHub Release and tag
         if: steps.bump.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           VERSION='${{ steps.bump.outputs.version }}'
@@ -132,35 +139,6 @@ jobs:
             --notes-file "$NOTES" \
             --latest
           echo "Created $TAG ($DISPLAY_TITLE)."
-
-      - name: Trigger container publish
-        if: steps.bump.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          VERSION='${{ steps.bump.outputs.version }}'
-          TAG="v${VERSION}"
-          gh workflow run publish-container.yml \
-            --ref "$TAG" \
-            -f "ref=refs/tags/${TAG}"
-          echo "Triggered publish-container for ${TAG}."
-
-      # deploy-smoke.yml's own `push: tags:` trigger never fires for this - GITHUB_TOKEN tag
-      # pushes don't start other workflows (same reason publish-container above needs a manual
-      # dispatch), so without this call every ordinary release would ship with no automated
-      # functional smoke test, silently. That push trigger stays useful only for the emergency
-      # signed-tag path (scripts/release-tag.sh), which pushes with a real user's credentials.
-      - name: Trigger deploy smoke test
-        if: steps.bump.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          VERSION='${{ steps.bump.outputs.version }}'
-          TAG="v${VERSION}"
-          gh workflow run deploy-smoke.yml --ref "$TAG"
-          echo "Triggered deploy-smoke for ${TAG}."
 
       - name: Close matching GitHub milestone
         if: steps.bump.outputs.skip != 'true'
