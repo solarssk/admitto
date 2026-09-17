@@ -3,7 +3,10 @@
 cd "$SRC/admitto"
 
 # Both fuzz targets exercise a pure, dependency-free source file (verified by hand: neither
-# csvUtils.ts nor parseUserAgent.ts has a single import statement). typescript and @jazzer.js/core
+# csvUtils.ts nor parseUserAgent.ts has a single import statement) - both now live in
+# packages/shared/src (parseUserAgent.ts moved there from apps/admin/src/utils so packages/auth's
+# server-side notification content could reuse it too; apps/admin's own file is now a re-export
+# from @admitto/shared, which this isolated single-file tsc compile can't resolve). typescript and @jazzer.js/core
 # are installed from this directory's own package.json/package-lock.json into the isolated
 # .clusterfuzzlite/ prefix, rather than at this workspace root - a plain `npm install <pkg>` run
 # directly at the root was tried first and failed: even with --ignore-scripts, npm still ran every
@@ -45,8 +48,8 @@ TSC=.clusterfuzzlite/node_modules/.bin/tsc
 mkdir -p .clusterfuzzlite/.build
 "$TSC" packages/shared/src/csvUtils.ts \
   --outDir .clusterfuzzlite/.build/shared --module commonjs --target es2022 --lib es2022 --skipLibCheck
-"$TSC" apps/admin/src/utils/parseUserAgent.ts \
-  --outDir .clusterfuzzlite/.build/admin --module commonjs --target es2022 --lib es2022 --skipLibCheck
+"$TSC" packages/shared/src/parseUserAgent.ts \
+  --outDir .clusterfuzzlite/.build/shared --module commonjs --target es2022 --lib es2022 --skipLibCheck
 
 # Renamed .js -> .cjs: this workspace's root package.json (copied in alongside these compiled
 # files) declares "type": "module", so Node treats any plain .js file under it as ESM by
@@ -54,7 +57,7 @@ mkdir -p .clusterfuzzlite/.build
 # "exports is not defined" (or the fuzz targets' own require() calls into them would fail with
 # "require is not defined in ES module scope"), confirmed locally on both counts.
 mv .clusterfuzzlite/.build/shared/csvUtils.js .clusterfuzzlite/.build/shared/csvUtils.cjs
-mv .clusterfuzzlite/.build/admin/parseUserAgent.js .clusterfuzzlite/.build/admin/parseUserAgent.cjs
+mv .clusterfuzzlite/.build/shared/parseUserAgent.js .clusterfuzzlite/.build/shared/parseUserAgent.cjs
 
 # compile_javascript_fuzzer's own comment says it "installs Jazzer.js into the project", but the
 # script itself only copies $SRC/admitto into $OUT/admitto - the generated wrapper then execs
