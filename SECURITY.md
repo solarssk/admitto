@@ -102,6 +102,14 @@ Only `.env.example` belongs in this repository. Real credentials (Graph, SMTP, d
 TLS keys, API tokens) must be supplied via environment variables or a secret manager at
 deploy time - never committed. See **What counts as a secret** above.
 
+### Known cryptographic limitations
+
+**PassCreator webhook signatures:** wallet/PassCreator integration is optional and not required to
+run Admitto. Its webhook signature verification uses SHA-1 because PassCreator's own API defaults
+to it and offers no alternative - documented in the code
+([packages/wallet/src/passcreator-webhook.ts](packages/wallet/src/passcreator-webhook.ts)).
+Verification fails closed: a wrong or unverifiable signature is rejected, never accepted.
+
 ### Supported versions
 
 Only the **latest minor release** is supported (currently `0.7.x`, latest <!-- admitto:latest-patch -->`0.7.0`<!-- /admitto:latest-patch -->). Deploy from
