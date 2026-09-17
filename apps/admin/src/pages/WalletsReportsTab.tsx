@@ -464,7 +464,7 @@ function BucketBarChart({ rows, isActive }: Readonly<{ rows: BucketChartRow[]; i
           <Tooltip
             formatter={(value, _name, props) => {
               const count = (props.payload as (typeof rows)[number]).count;
-              return [`${count} attendee${count === 1 ? "" : "s"} (${value}%)`, undefined];
+              return [`${count} attendee${count === 1 ? "" : "s"} (${String(value ?? "")}%)`, undefined];
             }}
           />
           <Bar dataKey="pct" shape={BarShape} isAnimationActive={false} barSize={40} />

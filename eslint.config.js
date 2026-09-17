@@ -42,10 +42,10 @@ const typeAwareFollowUpRules = {
   "@typescript-eslint/only-throw-error": "warn",
   "@typescript-eslint/no-unsafe-member-access": "warn",
   "@typescript-eslint/no-unsafe-argument": "warn",
-  "@typescript-eslint/restrict-template-expressions": "warn",
-  "@typescript-eslint/no-base-to-string": "warn",
-  "@typescript-eslint/unbound-method": "warn",
-  "@typescript-eslint/prefer-promise-reject-errors": "warn",
+  "@typescript-eslint/restrict-template-expressions": "error",
+  "@typescript-eslint/no-base-to-string": "error",
+  "@typescript-eslint/unbound-method": "error",
+  "@typescript-eslint/prefer-promise-reject-errors": "error",
   "@typescript-eslint/no-unsafe-call": "warn",
 };
 

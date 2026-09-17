@@ -715,6 +715,10 @@ describe("IdentityProviderEditor — legacy invalid mapping scope_type (Codex P2
     await screen.findByDisplayValue("execs");
     // Confirm the row actually displays the healed (instance) scope.
     expect(screen.getByRole("button", { name: /^Scope, instance/ })).toBeTruthy();
+    // The self-heal must already count as a pending change before a navigation can exercise the
+    // blocker. Save is enabled exactly when the editor's dirty calculation has observed the
+    // healed mapping against its unhealed baseline.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(false));
 
     // Navigate away (router-level, exercising the same useBlocker a real in-app link would)
     // without touching anything else in the form.

@@ -20,7 +20,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
 }));
 
 // Donut/cumulative/bar Tooltip and axis formatters (see below).
-let capturedDonut: { values: number[]; tooltipFormatter?: (value: number) => string } | undefined;
+let capturedDonut: { values: number[]; tooltipFormatter?: (value: unknown) => string } | undefined;
 let capturedCumulative:
   | {
       points: Array<{ date: number; value: number }>;
@@ -36,7 +36,7 @@ let capturedTap:
       yTickFormatter?: (v: number) => string;
       yWidth?: number;
       tooltipFormatter?: (
-        value: number,
+        value: unknown,
         name: string,
         props: { payload: { count: number } },
       ) => [string, undefined];
@@ -638,6 +638,7 @@ describe("WalletsReportsTab", () => {
     expect(capturedDonut?.tooltipFormatter?.(1)).toBe("1 pass");
     expect(capturedDonut?.tooltipFormatter?.(2)).toBe("2 passes");
     expect(capturedDonut?.tooltipFormatter?.(0)).toBe("0 passes");
+    expect(capturedDonut?.tooltipFormatter?.(undefined)).toBe(" passes");
 
     // buckets fixture: [{count:5},{count:3},{count:1},{count:1}] - index 2 is one of the
     // fixture's two count===1 buckets (pct 10, below the 15% "label fits inside the bar"
@@ -670,6 +671,10 @@ describe("WalletsReportsTab", () => {
 
     expect(capturedTap?.tooltipFormatter?.(50, "pct", { payload: { count: 5 } })).toEqual([
       "5 attendees (50%)",
+      undefined,
+    ]);
+    expect(capturedTap?.tooltipFormatter?.(undefined, "pct", { payload: { count: 5 } })).toEqual([
+      "5 attendees (%)",
       undefined,
     ]);
     expect(capturedTap?.tooltipFormatter?.(10, "pct", { payload: { count: 1 } })).toEqual([

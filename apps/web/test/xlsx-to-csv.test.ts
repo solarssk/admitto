@@ -46,4 +46,33 @@ describe("xlsxBufferToCsv zip guards", () => {
       'name,note\nAda,"said ""hello"""\nGrace,plain text',
     );
   });
+
+  it("exports cached formula values and Excel error results without object stringification", async () => {
+    const buf = await buildXlsxBuffer([
+      ["name", "calculation"],
+      ["Ada", { formula: "1+1", result: 2 }],
+      ["Grace", { formula: "1/0", result: { error: "#DIV/0!" as const } }],
+    ]);
+
+    await expect(xlsxBufferToCsv(buf)).resolves.toBe("name,calculation\nAda,2\nGrace,#DIV/0!");
+  });
+
+  it("preserves the other supported XLSX cell value shapes", async () => {
+    const formulaDate = new Date("2026-09-17T12:00:00.000Z");
+    const buf = await buildXlsxBuffer([
+      ["rich text", "link", "error", "formula date", "boolean", "formula without result"],
+      [
+        { richText: [{ text: "Ada" }, { text: " Lovelace" }] },
+        { text: "Admitto", hyperlink: "https://admitto.example.com" },
+        { error: "#N/A" },
+        { formula: "DATE(2026,9,17)", result: formulaDate },
+        true,
+        { formula: "1+1" },
+      ],
+    ]);
+
+    await expect(xlsxBufferToCsv(buf)).resolves.toBe(
+      "rich text,link,error,formula date,boolean,formula without result\nAda Lovelace,Admitto,#N/A,2026-09-17T12:00:00.000Z,true,",
+    );
+  });
 });
