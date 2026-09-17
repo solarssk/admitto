@@ -6,6 +6,8 @@
 <p align="center">
   <a href="https://github.com/solarssk/admitto/actions/workflows/ci.yml"><img src="https://github.com/solarssk/admitto/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   &nbsp;
+  <a href="https://www.bestpractices.dev/projects/14670"><img src="https://www.bestpractices.dev/projects/14670/badge" alt="OpenSSF Best Practices"></a>
+  &nbsp;
   <a href="https://github.com/solarssk/admitto/releases"><img src="https://img.shields.io/github/v/tag/solarssk/admitto?sort=semver&label=release&color=066fd1" alt="release"></a>
   &nbsp;
   <a href="https://github.com/solarssk/admitto/pkgs/container/admitto"><img src="https://img.shields.io/badge/docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white" alt="Docker: amd64 and arm64"></a>
