@@ -6,6 +6,10 @@
 <p align="center">
   <a href="https://github.com/solarssk/admitto/actions/workflows/ci.yml"><img src="https://github.com/solarssk/admitto/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   &nbsp;
+  <a href="https://codecov.io/gh/solarssk/admitto"><img src="https://codecov.io/gh/solarssk/admitto/branch/main/graph/badge.svg" alt="Codecov"></a>
+  &nbsp;
+  <a href="https://sonarcloud.io/summary/new_code?id=solarssk_admitto"><img src="https://sonarcloud.io/api/project_badges/measure?project=solarssk_admitto&metric=alert_status" alt="Quality Gate Status"></a>
+  &nbsp;
   <a href="https://www.bestpractices.dev/projects/14670"><img src="https://www.bestpractices.dev/projects/14670/badge" alt="OpenSSF Best Practices"></a>
   &nbsp;
   <a href="https://github.com/solarssk/admitto/releases"><img src="https://img.shields.io/github/v/tag/solarssk/admitto?sort=semver&label=release&color=066fd1" alt="release"></a>
