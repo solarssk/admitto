@@ -11,6 +11,7 @@ import {
   getWebauthnEnabled,
   getPasskeyLoginEnabled,
   getPasskeyConditionalUiEnabled,
+  isSettingEnvLocked,
   setSetting,
 } from "../../src/settings/resolver.js";
 import {
@@ -92,6 +93,15 @@ describe("env lock parsing", () => {
 
     process.env.CF_ACCESS_ENABLED = "0";
     await expect(getSetting<boolean>(envOnlyMockPrisma, "cf_access_enabled")).resolves.toBe(false);
+  });
+
+  it("does not lock a setting when its environment value is blank", async () => {
+    process.env.TRUSTED_DEVICE_DAYS = "   ";
+
+    expect(isSettingEnvLocked("trusted_device_days")).toBe(false);
+    await expect(getSetting<number>(envOnlyMockPrisma, "trusted_device_days")).resolves.toBe(
+      DEFAULT_TRUSTED_DEVICE_DAYS,
+    );
   });
 });
 

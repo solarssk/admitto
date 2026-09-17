@@ -23,7 +23,7 @@ function parseEnvValue(raw: string, fallback: unknown): unknown {
 function envOverride(key: string): unknown {
   const envName = SETTING_ENV_LOCKS.get(key);
   if (!envName) return undefined;
-  const raw = Object.getOwnPropertyDescriptor(process.env, envName)?.value;
+  const raw = process.env[envName];
   if (raw === undefined || raw.trim() === "") return undefined;
   return parseEnvValue(raw, SETTING_DEFAULTS.get(key));
 }

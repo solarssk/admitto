@@ -46,7 +46,7 @@ const typeAwareFollowUpRules = {
   "@typescript-eslint/no-base-to-string": "error",
   "@typescript-eslint/unbound-method": "error",
   "@typescript-eslint/prefer-promise-reject-errors": "error",
-  "@typescript-eslint/no-unsafe-call": "warn",
+  "@typescript-eslint/no-unsafe-call": "error",
 };
 
 // Shared by packages/ui's own *.tsx files and every apps/*/src file below — both are React/TSX,

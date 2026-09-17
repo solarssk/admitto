@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- System-setting environment overrides now use a typed configuration read while retaining the existing behavior that ignores blank values, so an empty deployment variable cannot make an administrator-facing setting look locked.
 - Staff deep links now begin loading their destination screen while the event context is being resolved, and load one event instead of the complete event picker list. Session and branding checks also start together, so administrators on higher-latency connections reach the event workspace with fewer sequential network waits.
 
 ### Fixed
