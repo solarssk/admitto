@@ -9,12 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  # Pushing to the repo's wiki git remote (below) is gated by the parent repo's `contents`
-  # permission - GitHub has no separate, narrower wiki-write scope for GITHUB_TOKEN. Confirmed:
-  # no alternative exists short of a PAT with the same effective access (Scorecard's
-  # Token-Permissions check still flags any non-read grant, even scoped and justified like
-  # this one - accepted, not a fixable finding).
-  contents: write
+  contents: read
 
 concurrency:
   group: publish-wiki
@@ -29,9 +24,20 @@ jobs:
           persist-credentials: false
       - name: Validate Wiki source
         run: node scripts/check-wiki-docs.mjs
+      # GitHub has no separate, narrower wiki-write scope - pushing to the wiki git remote is
+      # gated by the same Contents permission as the parent repo. Mints a short-lived token from
+      # the dedicated "admitto-release-automation" GitHub App instead of using GITHUB_TOKEN, so
+      # this job's own GITHUB_TOKEN permissions above can stay read-only.
+      - name: Mint release automation token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
       - name: Synchronize GitHub Wiki
         env:
-          WIKI_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.wiki.git
+          WIKI_REMOTE: https://x-access-token:${{ steps.app-token.outputs.token }}@github.com/${{ github.repository }}.wiki.git
         run: |
           wiki_publish_dir=$(mktemp -d)
           trap 'rm -rf "$wiki_publish_dir"' EXIT
