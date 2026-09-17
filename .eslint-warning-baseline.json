@@ -702,15 +702,6 @@
     "contextAfter": "}"
   },
   {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "apps/cli/src/lib/sse-publish.ts",
-    "message": "Async function 'closeSsePublishClient' has no 'await' expression.",
-    "codeLine": "export async function closeSsePublishClient(): Promise<void> {",
-    "column": 8,
-    "contextBefore": "* keeps the process alive past a SIGTERM/SIGINT) and from tests between cases. */",
-    "contextAfter": "// Shutdown must not wait on a Redis server that is itself unavailable."
-  },
-  {
     "ruleId": "@typescript-eslint/no-unsafe-assignment",
     "filePath": "apps/web/src/admin/admin-helpers.ts",
     "message": "Unsafe assignment of an `any` value.",
@@ -783,15 +774,6 @@
     "contextAfter": "const actorIds = [...new Set(rows.filter((r) => !r.actor_email).map((r) => r.actor_user_id))];"
   },
   {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "apps/web/src/admin/checkin-api-routes.ts",
-    "message": "Async function 'emitRejectedCheckinLog' has no 'await' expression.",
-    "codeLine": "async function emitRejectedCheckinLog(",
-    "column": 1,
-    "contextBefore": "* for the authenticated session flow; emergency bearer requests keep the device context only. */",
-    "contextAfter": "eventId: string,"
-  },
-  {
     "ruleId": "@typescript-eslint/only-throw-error",
     "filePath": "apps/web/src/admin/event-settings-routes.ts",
     "message": "Expected an error object to be thrown.",
@@ -799,15 +781,6 @@
     "column": 30,
     "contextBefore": "const issuedCount = await loadIssuedWalletPassCount(tx, eventId);",
     "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "apps/web/src/admin/geocoding-routes.ts",
-    "message": "Async function 'mapProviderError' has no 'await' expression.",
-    "codeLine": "async function mapProviderError(err: unknown): Promise<Response | null> {",
-    "column": 1,
-    "contextBefore": "",
-    "contextAfter": "if (err instanceof GeocodingProviderError) {"
   },
   {
     "ruleId": "@typescript-eslint/no-unsafe-assignment",
@@ -918,24 +891,6 @@
     "contextAfter": "if (total > maxBytes) {"
   },
   {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "apps/web/src/maps/ttl-string-cache.ts",
-    "message": "Async method 'get' has no 'await' expression.",
-    "codeLine": "async get(key: string): Promise<string | null> {",
-    "column": 3,
-    "contextBefore": "",
-    "contextAfter": "const entry = this.store.get(key);"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "apps/web/src/maps/ttl-string-cache.ts",
-    "message": "Async method 'set' has no 'await' expression.",
-    "codeLine": "async set(key: string, value: string, ttlMs: number): Promise<void> {",
-    "column": 3,
-    "contextBefore": "",
-    "contextAfter": "this.store.set(key, { value, expiresAt: Date.now() + ttlMs });"
-  },
-  {
     "ruleId": "security/detect-non-literal-fs-filename",
     "filePath": "apps/web/src/notification-email-assets.ts",
     "message": "Found existsSync from package \"node:fs\" with non literal argument at index 0",
@@ -952,24 +907,6 @@
     "column": 19,
     "contextBefore": "// Logo: rasterize the real product lockup, 3x for retina (displayed at width=118 in email HTML).",
     "contextAfter": "const logoOut = join(targetDir, \"admitto-logo.png\");"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "apps/web/src/rate-limit/in-memory.ts",
-    "message": "Async method 'health' has no 'await' expression.",
-    "codeLine": "async health(): Promise<{ ok: boolean; latencyMs: number | null }> {",
-    "column": 3,
-    "contextBefore": "/** In-memory store has no external backend to ping. */",
-    "contextAfter": "return { ok: true, latencyMs: null };"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "apps/web/src/rate-limit/in-memory.ts",
-    "message": "Async method 'hit' has no 'await' expression.",
-    "codeLine": "async hit(key: string, windowMs: number, max: number): Promise<RateLimitHitResult> {",
-    "column": 3,
-    "contextBefore": "/** Record one request for `key` within a fixed window of `windowMs`. */",
-    "contextAfter": "const now = Date.now();"
   },
   {
     "ruleId": "@typescript-eslint/no-unsafe-return",
@@ -1197,15 +1134,6 @@
     "contextAfter": "if (!field) continue;"
   },
   {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "packages/mail-delivery/src/send.ts",
-    "message": "Async function 'resolvePlaintextToken' has no 'await' expression.",
-    "codeLine": "async function resolvePlaintextToken(",
-    "column": 1,
-    "contextBefore": "",
-    "contextAfter": "attendee: { id: string; token_enc: string | null },"
-  },
-  {
     "ruleId": "@typescript-eslint/no-unsafe-return",
     "filePath": "packages/mail-templates/src/escape.ts",
     "message": "Unsafe return of a value of type `any`.",
@@ -1222,60 +1150,6 @@
     "column": 44,
     "contextBefore": "function escapeWithMap(value: string, map: Record<string, string>): string {",
     "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "packages/mailer/src/adapters/exportOnly.ts",
-    "message": "Async method 'close' has no 'await' expression.",
-    "codeLine": "async close(): Promise<void> {",
-    "column": 3,
-    "contextBefore": "",
-    "contextAfter": "return;"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "packages/mailer/src/adapters/graph.ts",
-    "message": "Async method 'close' has no 'await' expression.",
-    "codeLine": "async close(): Promise<void> {",
-    "column": 3,
-    "contextBefore": "",
-    "contextAfter": "return;"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "packages/mailer/src/adapters/mock.ts",
-    "message": "Async method 'close' has no 'await' expression.",
-    "codeLine": "async close(): Promise<void> {",
-    "column": 3,
-    "contextBefore": "",
-    "contextAfter": "return;"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "packages/mailer/src/adapters/mock.ts",
-    "message": "Async method 'send' has no 'await' expression.",
-    "codeLine": "async send(message: MailMessage): Promise<SendResult> {",
-    "column": 3,
-    "contextBefore": "",
-    "contextAfter": "const validationError = validateMailMessage(message);"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "packages/mailer/src/adapters/powerAutomate.ts",
-    "message": "Async method 'close' has no 'await' expression.",
-    "codeLine": "async close(): Promise<void> {",
-    "column": 3,
-    "contextBefore": "",
-    "contextAfter": "return;"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "packages/mailer/src/adapters/smtp.ts",
-    "message": "Async method 'close' has no 'await' expression.",
-    "codeLine": "async close(): Promise<void> {",
-    "column": 3,
-    "contextBefore": "/** Close the underlying nodemailer connection pool. */",
-    "contextAfter": "this.transporter.close();"
   },
   {
     "ruleId": "security/detect-object-injection",

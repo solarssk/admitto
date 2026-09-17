@@ -24,6 +24,10 @@ describe("InMemoryRateLimitStore", () => {
     expect(result.remaining).toBe(0);
   });
 
+  it("reports healthy without an external backend", async () => {
+    await expect(store.health()).resolves.toEqual({ ok: true, latencyMs: null });
+  });
+
   it("rejects non-positive maxBuckets", () => {
     expect(() => new InMemoryRateLimitStore(0)).toThrow("maxBuckets must be a positive integer");
   });

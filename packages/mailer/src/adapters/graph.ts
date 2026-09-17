@@ -100,8 +100,8 @@ export class GraphAdapter implements MailerAdapter {
     return accessToken;
   }
 
-  async close(): Promise<void> {
-    return;
+  close(): Promise<void> {
+    return Promise.resolve();
   }
 
   /** App-only token fetch - proves tenant/client credentials without sending mail. */

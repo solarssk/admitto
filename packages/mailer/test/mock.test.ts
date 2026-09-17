@@ -30,6 +30,18 @@ describe("MockAdapter", () => {
     expect(adapter.sent).toEqual([]);
   });
 
+  it("rejects when failOn throws", async () => {
+    const adapter = new MockAdapter({
+      failOn: () => {
+        throw new Error("test predicate failed");
+      },
+    });
+
+    await expect(adapter.send({ to: "jan@example.com", subject: "Hi", html: "<p>x</p>" })).rejects.toThrow(
+      "test predicate failed",
+    );
+  });
+
   it("close() resolves (no persistent connection to release)", async () => {
     const adapter = new MockAdapter();
     await expect(adapter.close()).resolves.toBeUndefined();

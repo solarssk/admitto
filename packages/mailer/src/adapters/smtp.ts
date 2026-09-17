@@ -75,8 +75,11 @@ export class SmtpAdapter implements MailerAdapter {
   }
 
   /** Close the underlying nodemailer connection pool. */
-  async close(): Promise<void> {
-    this.transporter.close();
+  close(): Promise<void> {
+    return new Promise((resolve) => {
+      this.transporter.close();
+      resolve();
+    });
   }
 
   /** SMTP AUTH + greeting check without sending a message (nodemailer `verify`). */

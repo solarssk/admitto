@@ -26,8 +26,8 @@ export class PowerAutomateAdapter implements MailerAdapter {
     private readonly fetchFn?: FetchFn,
   ) {}
 
-  async close(): Promise<void> {
-    return;
+  close(): Promise<void> {
+    return Promise.resolve();
   }
 
   async send(message: MailMessage): Promise<SendResult> {

@@ -29,7 +29,7 @@ const reverseBodySchema = z
 
 const timezoneBodySchema = reverseBodySchema;
 
-async function mapProviderError(err: unknown): Promise<Response | null> {
+function mapProviderError(err: unknown): Response | null {
   if (err instanceof GeocodingProviderError) {
     const status = err.kind === "timeout" ? 503 : 502;
     return Response.json({ error: "geocoding_unavailable" }, { status });
@@ -62,7 +62,7 @@ export async function handlePostGeocodingSearch(
     ]);
     return c.json({ results, contact_configured: contactConfigured });
   } catch (err) {
-    const mapped = await mapProviderError(err);
+    const mapped = mapProviderError(err);
     if (mapped) return mapped;
     throw err;
   }
@@ -93,7 +93,7 @@ export async function handlePostGeocodingReverse(
     ]);
     return c.json({ result, contact_configured: contactConfigured });
   } catch (err) {
-    const mapped = await mapProviderError(err);
+    const mapped = mapProviderError(err);
     if (mapped) return mapped;
     throw err;
   }
