@@ -105,10 +105,13 @@ deploy time - never committed. See **What counts as a secret** above.
 ### Known cryptographic limitations
 
 **PassCreator webhook signatures:** wallet/PassCreator integration is optional and not required to
-run Admitto. Its webhook signature verification uses SHA-1 because PassCreator's own API defaults
-to it and offers no alternative - documented in the code
-([packages/wallet/src/passcreator-webhook.ts](packages/wallet/src/passcreator-webhook.ts)).
-Verification fails closed: a wrong or unverifiable signature is rejected, never accepted.
+run Admitto. Its webhook signature verification uses SHA-1. PassCreator's docs never state this
+explicitly; it's inferred from their own PHP code example, which omits `openssl_verify()`'s
+algorithm argument - PHP defaults that to SHA-1 - and their API exposes no way to choose a
+different algorithm. This is an observed constraint, not a documented vendor guarantee; see
+[packages/wallet/src/passcreator-webhook.ts](packages/wallet/src/passcreator-webhook.ts) for the
+full reasoning. Verification fails closed: a wrong or unverifiable signature is rejected, never
+accepted.
 
 ### Supported versions
 
