@@ -1417,6 +1417,9 @@ export type IpLocationKind = "internal" | "resolved" | "unknown";
 export interface IpLocationDto {
   kind: IpLocationKind;
   countryCode?: string;
+  /** City name, when the configured dataset resolves one (ILA_FIELDS=country,city) - absent for
+   * a country-only lookup result, or when the dataset has no city entry for this specific IP. */
+  city?: string;
 }
 
 export interface SessionListDto {

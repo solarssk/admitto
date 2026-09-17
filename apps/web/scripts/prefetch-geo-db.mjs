@@ -3,7 +3,11 @@
 // site in the Dockerfile) so the running container never fetches it at startup or per-request.
 import { lookup } from "ip-location-api";
 
-const result = lookup("1.1.1.1"); // NOSONAR - a well-known public IP used only as a local lookup key to sanity-check the just-fetched dataset; no network call is made to it
+// 8.8.8.8 (Google Public DNS), not 1.1.1.1 - MaxMind's GeoLite2 database (see the ILA_LICENSE_KEY/
+// ILA_FIELDS env vars around this script's call site in the Dockerfile) has no entry for some
+// anycast addresses including 1.1.1.1/1.0.0.1/9.9.9.9, confirmed empirically against the actual
+// downloaded database; 8.8.8.8 resolves reliably.
+const result = lookup("8.8.8.8"); // NOSONAR - a well-known public IP used only as a local lookup key to sanity-check the just-fetched dataset; no network call is made to it
 if (!result?.country) {
   console.error("ip-location-api: pre-fetch failed - no country resolved for a known public IP.");
   process.exit(1);

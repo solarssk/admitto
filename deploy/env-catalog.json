@@ -505,13 +505,32 @@
       "summary": "Sleep between nightly dumps (default 86400)."
     },
     {
+      "name": "ILA_LICENSE_KEY",
+      "group": "ops",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "MaxMind GeoLite2 source for audit/session/login-alert city+country geo (default redist: node-geolite2-redist mirror, no account needed). Set your own MaxMind license key instead for a more durable source."
+    },
+    {
+      "name": "ILA_FIELDS",
+      "group": "ops",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Fields to resolve from the geo dataset (default country,city). country alone downloads the smaller Country-only edition."
+    },
+    {
       "name": "ILA_IP_LOCATION_DB",
       "group": "ops",
       "boot": "optional",
       "consumers": ["app"],
       "secret": false,
       "ui": "none",
-      "summary": "Offline IP→country dataset id for audit/session geo (default user). No third-party lookup API."
+      "catalogOnly": true,
+      "summary": "Optional override to use the offline, no-account ip-location-db country-only dataset instead of MaxMind GeoLite2. Not set anywhere in this repo (ip-location-api's own supported knob, documented here for a self-hoster who wants to opt back into the lighter dataset). No third-party lookup API either way."
     },
     {
       "name": "ILA_DATA_DIR",

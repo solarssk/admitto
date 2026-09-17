@@ -21,6 +21,12 @@ describe("GeoCell", () => {
     expect(screen.getByText("United States")).toBeTruthy();
   });
 
+  it("renders city, country when the dataset resolved a city", () => {
+    render(<GeoCell location={{ kind: "resolved", countryCode: "in", city: "Mumbai" }} />);
+    expect(screen.getByText("🇮🇳")).toBeTruthy();
+    expect(screen.getByText("Mumbai, India")).toBeTruthy();
+  });
+
   it("renders nothing for a resolved kind with no country code (defensive)", () => {
     const { container } = render(<GeoCell location={{ kind: "resolved" }} />);
     expect(container.textContent).toBe("");
@@ -39,6 +45,10 @@ describe("geoLocationText", () => {
 
   it("returns the country name for a resolved address", () => {
     expect(geoLocationText({ kind: "resolved", countryCode: "de" })).toBe("Germany");
+  });
+
+  it("returns 'city, country' for a resolved address with a city", () => {
+    expect(geoLocationText({ kind: "resolved", countryCode: "in", city: "Mumbai" })).toBe("Mumbai, India");
   });
 
   it("returns an empty string for a resolved kind with no country code", () => {

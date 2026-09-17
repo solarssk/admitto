@@ -123,6 +123,22 @@ describe("checkNewCountryLogin", () => {
     });
   });
 
+  it("passes the current login's resolved city through to logLoginNewCountry, when the dataset resolved one", async () => {
+    const db = fakeDb({ priorLoginIps: ["1.2.3.4", "5.6.7.8"] });
+    mocks.resolveIpLocation
+      .mockReturnValueOnce({ kind: "resolved", countryCode: "FR", city: "Paris" }) // current login
+      .mockReturnValueOnce({ kind: "resolved", countryCode: "DE" }) // prior #1
+      .mockReturnValueOnce({ kind: "internal" }); // prior #2
+    await checkNewCountryLogin(db, ctx);
+    expect(mocks.logLoginNewCountry).toHaveBeenCalledWith(db, {
+      userId: "user-1",
+      ip: "203.0.113.5",
+      userAgent: "test-agent",
+      countryCode: "FR",
+      city: "Paris",
+    });
+  });
+
   it("swallows and logs a role-query failure instead of propagating it (the caller's session already exists)", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     mocks.resolveIpLocation.mockReturnValue({ kind: "resolved", countryCode: "FR" });

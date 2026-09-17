@@ -120,7 +120,9 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 
 | Variable | Boot | Consumers | UI | Secret | Summary |
 |----------|------|-----------|----|--------|---------|
-| `ILA_IP_LOCATION_DB` | optional | app | none | no | Offline IP→country dataset id for audit/session geo (default user). No third-party lookup API. |
+| `ILA_LICENSE_KEY` | optional | app | none | no | MaxMind GeoLite2 source for audit/session/login-alert city+country geo (default redist: node-geolite2-redist mirror, no account needed). Set your own MaxMind license key instead for a more durable source. |
+| `ILA_FIELDS` | optional | app | none | no | Fields to resolve from the geo dataset (default country,city). country alone downloads the smaller Country-only edition. |
+| `ILA_IP_LOCATION_DB` | optional | app | none | no | Optional override to use the offline, no-account ip-location-db country-only dataset instead of MaxMind GeoLite2. Not set anywhere in this repo (ip-location-api's own supported knob, documented here for a self-hoster who wants to opt back into the lighter dataset). No third-party lookup API either way. |
 | `ILA_DATA_DIR` | optional | app | none | no | Directory for the offline geoip dataset cache. |
 | `ILA_AUTO_UPDATE` | optional | app | none | no | Keep false so the process does not fetch dataset updates on its own. |
 | `OPS_HEALTH_TOKEN` | optional | app, worker | none | yes | Bearer/X-Ops-Token (≥32 chars) for /readyz and worker System Logs bridge. Unset = /readyz disabled. |
@@ -192,4 +194,4 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 3. Run `npm run docs:env` and commit `ENV.md`.
 4. `npm run docs:check` fails if this file is stale or a scanned key is missing from the catalog.
 
-_Last generated from 107 distinct keys seen in scan (tests excluded)._
+_Last generated from 108 distinct keys seen in scan (tests excluded)._

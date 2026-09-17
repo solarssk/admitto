@@ -13,13 +13,17 @@ COPY apps ./apps
 ENV npm_config_ignore_scripts=true
 RUN npm ci
 
-# Bake the offline IP->country dataset into the image at build time (apps/web/src/rate-limit/
-# ip-location.ts never fetches it at request time). ILA_IP_LOCATION_DB=user selects the
-# PDDL/CDLA-Permissive-licensed ip-location-db "user" dataset instead of ip-location-api's default
-# MaxMind GeoLite2 mode, which needs a MaxMind account/license key — unnecessary friction repeated
-# across every self-hosted deployment. These ENV vars are re-declared in the production stage
-# below so the running container reads the same, already-baked data instead of re-fetching it.
-ENV ILA_IP_LOCATION_DB=user
+# Bake the offline IP->city dataset into the image at build time (apps/web/src/rate-limit/
+# ip-location.ts never fetches it at request time). ILA_LICENSE_KEY=redist (ip-location-api's own
+# default when unset — set explicitly here so the choice is visible, not implicit) downloads
+# MaxMind's GeoLite2 database from the node-geolite2-redist community mirror, needing no MaxMind
+# account/license key of our own. ILA_FIELDS=country,city is what actually selects the City
+# edition of the database over the lighter Country-only one — country alone (this project's
+# previous default) resolves to the ~7MB Country edition regardless of ILA_LICENSE_KEY. These ENV
+# vars are re-declared in the production stage below so the running container reads the same,
+# already-baked data instead of re-fetching it.
+ENV ILA_LICENSE_KEY=redist
+ENV ILA_FIELDS=country,city
 ENV ILA_DATA_DIR=/app/data/geoip
 ENV ILA_AUTO_UPDATE=false
 # The dataset is downloaded from a public GitHub Release. Retry brief upstream
@@ -130,8 +134,12 @@ RUN chmod +x ./deploy/docker-entrypoint.sh \
 USER node
 
 ENV NODE_ENV=production
-# Read-only offline dataset baked in above (builder stage) — never re-fetched at runtime.
-ENV ILA_IP_LOCATION_DB=user
+# Read-only offline dataset baked in above (builder stage) — never re-fetched at runtime. Must
+# match the builder stage's ILA_FIELDS/ILA_LICENSE_KEY exactly, or ip-location-api's own
+# fieldDir-hashing (src/setting.mjs) resolves a different data directory than the one actually
+# baked in and finds nothing there.
+ENV ILA_LICENSE_KEY=redist
+ENV ILA_FIELDS=country,city
 ENV ILA_DATA_DIR=/app/data/geoip
 ENV ILA_AUTO_UPDATE=false
 EXPOSE 3000
