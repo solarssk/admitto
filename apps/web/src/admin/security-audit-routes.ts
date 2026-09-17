@@ -134,7 +134,7 @@ async function resolveUserMap(
           select: { id: true, email: true, display_name: true },
         })
       : [];
-  const userMap: Record<string, UserRow> = Object.create(null);
+  const userMap = Object.create(null) as Record<string, UserRow>;
   for (const u of users) userMap[u.id] = u;
   return userMap;
 }
