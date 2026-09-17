@@ -176,6 +176,24 @@ describe("login privileged failure tracking", () => {
     );
   });
 
+  it("passes the request's user agent through to the new-country check, for the notification's device/browser detail", async () => {
+    mocks.findUserByEmail.mockResolvedValue(testUser);
+    mocks.verifyPasswordOrDummy.mockResolvedValue(true);
+
+    await login(prisma, {
+      email: testUser.email,
+      password: "correct",
+      ip: "203.0.113.5",
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
+    });
+
+    expect(mocks.checkNewCountryLogin).toHaveBeenCalledWith(prisma, {
+      userId: testUser.id,
+      ip: "203.0.113.5",
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36",
+    });
+  });
+
   it("still runs the new-country check when MFA is still pending, matching auth.login.success's own first-factor-success semantics", async () => {
     mocks.findUserByEmail.mockResolvedValue(testUser);
     mocks.verifyPasswordOrDummy.mockResolvedValue(true);

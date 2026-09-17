@@ -203,7 +203,7 @@ async function finalizeOidcLogin(
     setSessionCookie(c, rawToken);
     // Before logOidcLoginSuccess persists this login's own SecurityAuditLog row - see
     // checkNewCountryLogin's own doc comment for why that ordering matters.
-    await checkNewCountryLogin(db, { userId, ip: resolveClientIp(c) });
+    await checkNewCountryLogin(db, { userId, ip: resolveClientIp(c), userAgent: c.req.header("user-agent") });
     await logOidcLoginSuccess(db, {
       providerId: provider.id,
       userId,

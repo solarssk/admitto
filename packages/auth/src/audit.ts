@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Prisma, PrismaClient } from "@admitto/db/client";
 import type { ScopeType } from "@admitto/db";
 import { resolveInstanceOrganizationId } from "@admitto/db/instance-org";
-import { redactEmail } from "@admitto/shared";
+import { parseUserAgent, redactEmail } from "@admitto/shared";
 import { recordSystemLog } from "@admitto/shared/system-log";
 import { notify } from "@admitto/notifications";
 
@@ -953,6 +953,23 @@ export async function logRoleElevated(
   });
 }
 
+/** Full English country name for a notification's human-facing title/body/metadata (e.g. "IN" ->
+ * "India") - the raw ISO code stays exact/machine-queryable everywhere else (writeSecurityAuditLog's
+ * own metadata below, the throttle dedupeKey, resolveIpLocation's own return value), only the text
+ * a person reads gets the friendly form. Fixed "en" locale: unlike apps/admin's own
+ * countryDisplayName (GeoCell.tsx), which reads the viewing admin's preferred locale, notification
+ * content has no per-recipient locale to read (it's composed once, before audience resolution, and
+ * may go to several recipients at once) - matches every other notification type's copy, which is
+ * fixed English throughout (see registry.ts's own doc comment). Falls back to the raw code on an
+ * unresolvable/malformed input, same as GeoCell.tsx's own fallback. */
+function countryDisplayName(countryCode: string): string {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(countryCode.toUpperCase()) ?? countryCode;
+  } catch {
+    return countryCode;
+  }
+}
+
 /**
  * Record and alert on a successful admin/superadmin login from a country not seen among that
  * account's recent successful logins - the decision of WHETHER a login qualifies (role gate,
@@ -972,7 +989,7 @@ export async function logRoleElevated(
  */
 export async function logLoginNewCountry(
   db: Db,
-  ctx: { userId: string; ip?: string; countryCode: string },
+  ctx: { userId: string; ip?: string; userAgent?: string; countryCode: string },
 ): Promise<void> {
   const identity = await resolveUserIdentitySnapshot(db, ctx.userId);
   emitAuditEvent("auth.login.new_country", {
@@ -987,9 +1004,21 @@ export async function logLoginNewCountry(
     metadata: { country: ctx.countryCode },
   });
   const accountLabel = identity?.display_name ?? identity?.email ?? "An admin account";
+  const countryName = countryDisplayName(ctx.countryCode);
+  // The notification's own "here's what to check" detail line - device/browser and exact IP/time
+  // let the reader judge for themselves whether this was really them, beyond just the country
+  // name already in the title (PO report: the country code alone made these alerts too sparse to
+  // act on). `device` reuses the same isomorphic parser apps/admin's Sessions list already shows
+  // this exact string as ("Chrome / Windows") - see parseUserAgent's own doc comment.
+  const notificationMetadata = {
+    country: countryName,
+    device: parseUserAgent(ctx.userAgent ?? null),
+    ip: ctx.ip ?? "Unknown",
+    time: `${new Date().toISOString().slice(0, 19).replace("T", " ")} UTC`,
+  };
   void dispatchSecurityNotification(db, "auth.login.new_country", {
     title: "Admin login from a new country",
-    body: `${accountLabel} signed in from ${ctx.countryCode}, not seen in this account's recent successful logins.`,
+    body: `${accountLabel} signed in from ${countryName}, not seen in this account's recent successful logins.`,
     // Composite, not just userId: the same admin logging in from two different new countries
     // within the 15-minute throttle window is two distinct signals worth two alerts, not one
     // suppressed by the other - see checkNewCountryLogin's own doc comment.
@@ -1000,16 +1029,16 @@ export async function logLoginNewCountry(
     // dispatch's candidate list and get a second email/in-app alert about the same login (bot
     // review finding, PR #1309). The rest of the admin team, and the team webhook, are unaffected.
     excludeUserId: ctx.userId,
-    metadata: { country: ctx.countryCode },
+    metadata: notificationMetadata,
   });
   // ASVS V6.3.5 self-audience counterpart to the org-staff alert above: the account OWNER, not
   // just the rest of the admin team, learns their own account signed in somewhere new (PR5c,
   // notifications-module-foundation plan's Luka A).
   void dispatchSecurityNotification(db, "account.login.new_location", {
     title: "You signed in from a new location",
-    body: `Your account signed in from ${ctx.countryCode}, a location not seen in your recent successful logins. If this wasn't you, secure your account immediately.`,
+    body: `Your account signed in from ${countryName}, a location not seen in your recent successful logins. If this wasn't you, secure your account immediately.`,
     dedupeKey: `${ctx.userId}:${ctx.countryCode}`,
     targetUserId: ctx.userId,
-    metadata: { country: ctx.countryCode },
+    metadata: notificationMetadata,
   });
 }

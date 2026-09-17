@@ -1302,8 +1302,54 @@ describe("audit", () => {
             organizationId: "org_default",
             dedupeKey: "user-1:FR",
             body: expect.stringContaining("admin@example.com"),
-            metadata: { country: "FR" },
+            metadata: expect.objectContaining({ country: "France" }),
           }),
+        );
+      });
+    });
+
+    // The notification's own metadata carries the full country name (not the raw code - see
+    // countryDisplayName's own doc comment) plus device/browser, IP, and exact time, so the
+    // reader can judge for themselves whether a login was really them (PO report: the country
+    // code alone made these alerts too sparse to act on).
+    it("includes the full country name, parsed device/browser, IP, and a UTC timestamp in both notifications' metadata", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb();
+      const ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36";
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", userAgent: ua, countryCode: "IN" });
+      await vi.waitFor(() => {
+        const expectedMetadata = {
+          country: "India",
+          device: "Chrome / Windows",
+          ip: "203.0.113.5",
+          time: expect.stringMatching(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC$/),
+        };
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.new_country",
+          expect.objectContaining({ metadata: expectedMetadata }),
+        );
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "account.login.new_location",
+          expect.objectContaining({ metadata: expectedMetadata }),
+        );
+      });
+    });
+
+    it("falls back to a device of 'Unknown' when no user agent was captured, and the raw country code when Intl.DisplayNames can't resolve it", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb();
+      // A malformed region code (Intl.DisplayNames only accepts a 2-letter alpha or 3-digit
+      // numeric region) - resolveIpLocation's own countryCode is always a real ISO 3166-1
+      // alpha-2 in practice, so this exercises countryDisplayName's defensive catch branch, not
+      // a realistic input.
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", countryCode: "ABC" });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.new_country",
+          expect.objectContaining({ metadata: expect.objectContaining({ country: "ABC", device: "Unknown" }) }),
         );
       });
     });
@@ -1386,8 +1432,8 @@ describe("audit", () => {
             organizationId: "org_default",
             targetUserId: "user-1",
             dedupeKey: "user-1:FR",
-            body: expect.stringContaining("FR"),
-            metadata: { country: "FR" },
+            body: expect.stringContaining("France"),
+            metadata: expect.objectContaining({ country: "France" }),
           }),
         );
       });

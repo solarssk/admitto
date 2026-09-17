@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseUserAgent, parseUserAgentWithVersion } from "../../src/utils/parseUserAgent.js";
+import { parseUserAgent, parseUserAgentWithVersion } from "../src/parseUserAgent.js";
 
 describe("parseUserAgent", () => {
   it("returns Unknown for null", () => {
