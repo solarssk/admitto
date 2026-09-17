@@ -9,7 +9,7 @@ on:
     paths:
       - ".clusterfuzzlite/**"
       - "packages/shared/src/csvUtils.ts"
-      - "apps/admin/src/utils/parseUserAgent.ts"
+      - "packages/shared/src/parseUserAgent.ts"
       # Dependabot bumps action pins in these two workflow files without touching anything else
       # above; without this, that PR wouldn't match the filter and pr-fuzz would never exercise
       # the updated action before merge.
