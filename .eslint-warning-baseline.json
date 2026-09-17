@@ -918,40 +918,13 @@
     "contextAfter": "const header ="
   },
   {
-    "ruleId": "@typescript-eslint/no-unsafe-argument",
+    "ruleId": "security/detect-object-injection",
     "filePath": "packages/auth/src/settings/resolver.ts",
-    "message": "Unsafe argument of type `any` assigned to a parameter of type `string`.",
-    "codeLine": "return parseEnvValue(raw, SETTING_DEFAULTS.get(key));",
-    "column": 24,
-    "contextBefore": "if (raw === undefined || raw.trim() === \"\") return undefined;",
-    "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "packages/auth/src/settings/resolver.ts",
-    "message": "Unsafe assignment of an `any` value.",
-    "codeLine": "const raw = Object.getOwnPropertyDescriptor(process.env, envName)?.value;",
-    "column": 9,
+    "message": "Variable Assigned to Object Injection Sink",
+    "codeLine": "const raw = process.env[envName];",
+    "column": 15,
     "contextBefore": "if (!envName) return undefined;",
     "contextAfter": "if (raw === undefined || raw.trim() === \"\") return undefined;"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-call",
-    "filePath": "packages/auth/src/settings/resolver.ts",
-    "message": "Unsafe call of an `any` typed value.",
-    "codeLine": "if (raw === undefined || raw.trim() === \"\") return undefined;",
-    "column": 28,
-    "contextBefore": "const raw = Object.getOwnPropertyDescriptor(process.env, envName)?.value;",
-    "contextAfter": "return parseEnvValue(raw, SETTING_DEFAULTS.get(key));"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-member-access",
-    "filePath": "packages/auth/src/settings/resolver.ts",
-    "message": "Unsafe member access .trim on an `any` value.",
-    "codeLine": "if (raw === undefined || raw.trim() === \"\") return undefined;",
-    "column": 32,
-    "contextBefore": "const raw = Object.getOwnPropertyDescriptor(process.env, envName)?.value;",
-    "contextAfter": "return parseEnvValue(raw, SETTING_DEFAULTS.get(key));"
   },
   {
     "ruleId": "@typescript-eslint/no-unsafe-return",
