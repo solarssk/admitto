@@ -18,31 +18,35 @@ export class MockAdapter implements MailerAdapter {
     this.failOn = opts.failOn;
   }
 
-  async close(): Promise<void> {
-    return;
+  close(): Promise<void> {
+    return Promise.resolve();
   }
 
-  async send(message: MailMessage): Promise<SendResult> {
-    const validationError = validateMailMessage(message);
-    if (validationError) {
-      return rejectedSendResult(this.provider, validationError, message.idempotencyKey);
-    }
+  send(message: MailMessage): Promise<SendResult> {
+    return new Promise((resolve) => {
+      const validationError = validateMailMessage(message);
+      if (validationError) {
+        resolve(rejectedSendResult(this.provider, validationError, message.idempotencyKey));
+        return;
+      }
 
-    if (this.failOn?.(message)) {
-      return {
-        status: "failed",
+      if (this.failOn?.(message)) {
+        resolve({
+          status: "failed",
+          provider: this.provider,
+          error: "MockAdapter: forced failure",
+          retryable: false,
+          idempotencyKey: message.idempotencyKey,
+        });
+        return;
+      }
+      this.sent.push(message);
+      resolve({
+        status: "accepted",
         provider: this.provider,
-        error: "MockAdapter: forced failure",
-        retryable: false,
+        providerMessageId: `mock-${this.sent.length}`,
         idempotencyKey: message.idempotencyKey,
-      };
-    }
-    this.sent.push(message);
-    return {
-      status: "accepted",
-      provider: this.provider,
-      providerMessageId: `mock-${this.sent.length}`,
-      idempotencyKey: message.idempotencyKey,
-    };
+      });
+    });
   }
 }
