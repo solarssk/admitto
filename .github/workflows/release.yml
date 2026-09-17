@@ -20,35 +20,13 @@ on:
     branches: [main]
 
 permissions:
-  # `gh release create` below (Releases API) hard-requires this - no narrower alternative exists.
-  contents: write
+  contents: read
   # `gh api -X PATCH .../milestones/${MID} -f state=closed` below - closing a milestone is gated
-  # on the issues scope, no narrower alternative exists.
+  # on the issues scope, no narrower alternative exists. Not exempted by Scorecard's
+  # Token-Permissions check either, but "issues" isn't in that check's list of permissions it
+  # flags at all (checks/raw/permissions.go's permissionsOfInterest), so this one was never the
+  # problem.
   issues: write
-  # `gh workflow run publish-container.yml` / `deploy-smoke.yml` below - confirmed required, not
-  # a design oversight: GITHUB_TOKEN-created tag pushes deliberately do not cascade into other
-  # workflow runs (GitHub's own anti-infinite-loop protection), so re-dispatching explicitly is
-  # the only way to trigger them from here. A workflow_call alternative was raised twice in PR
-  # review and this comment got the analysis wrong both times, so treat the question as still
-  # open rather than settled: (1) the two trigger paths don't actually collide the way an even
-  # earlier version of this comment claimed (an ordinary release never reaches
-  # publish-container.yml's own `push: tags:`, since that's exactly the GITHUB_TOKEN limitation
-  # above; the emergency signed-tag path never runs *this* workflow, since release.yml only
-  # triggers on `push: branches: [main]`) - confirmed correct. (2) A follow-up claimed switching
-  # to workflow_call would still cost more than it saves, since GitHub's reusable-workflow docs
-  # say permissions "can only be maintained or reduced - not elevated" down the call chain, so
-  # *this* workflow would need packages/id-token/attestations write too - also successfully
-  # disputed: a *separate* caller job (not the one already holding contents/issues:write) could
-  # hold just that ceiling, and publish-container.yml's own jobs already carry those exact scopes
-  # today regardless of how they're triggered, so no *new* capability would exist anywhere that
-  # doesn't already exist now. Whether that nets out better for Scorecard's own literal per-line
-  # counting - which flags every job-level `write` grant as its own finding, so a second job in
-  # this file carrying the union ceiling might just relocate the count rather than shrink it - is
-  # genuinely unresolved: GitHub's own docs don't say whether a `uses:`-only job's `permissions:`
-  # block registers as a "grant" the same way a job with real steps does. Left as `actions: write`
-  # here pending either clearer documentation or an actual test against this repo's release
-  # pipeline, which is too high-stakes to experiment on speculatively.
-  actions: write
 
 concurrency:
   group: release-${{ github.repository }}
@@ -62,6 +40,20 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+
+      # Mints a short-lived installation token for the dedicated "admitto-release-automation"
+      # GitHub App instead of using GITHUB_TOKEN for the contents:write (release/tag) and
+      # actions:write (cross-workflow dispatch) operations below - see this file's own git
+      # history for the two permissions this replaced and why they were unavoidable on
+      # GITHUB_TOKEN. The App holds only Contents:write and Actions:write on this one repo, so
+      # this job's own GITHUB_TOKEN permissions above can stay read-only + the unrelated
+      # issues:write for milestone closing.
+      - name: Mint release automation token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
       - name: Detect product version bump
         id: bump
@@ -114,7 +106,7 @@ jobs:
       - name: Create GitHub Release and tag
         if: steps.bump.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           VERSION='${{ steps.bump.outputs.version }}'
@@ -136,7 +128,7 @@ jobs:
       - name: Trigger container publish
         if: steps.bump.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           VERSION='${{ steps.bump.outputs.version }}'
@@ -154,7 +146,7 @@ jobs:
       - name: Trigger deploy smoke test
         if: steps.bump.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           VERSION='${{ steps.bump.outputs.version }}'
