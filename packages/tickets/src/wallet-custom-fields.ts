@@ -52,7 +52,9 @@ export async function resolveWalletCustomFieldPlaceholders(
     // stale, not a real answer. Treating it as "No" would put a fabricated negative on the pass;
     // omit it instead, same as an attendee who never answered at all (bot review).
     if (field.type === "boolean" && raw !== "true" && raw !== "false") continue;
-    const value = field.type === "boolean" ? (raw === "true" ? "Yes" : "No") : raw;
+    // `raw` is already narrowed to "true"/"false" for a boolean field by the guard above.
+    let value = raw;
+    if (field.type === "boolean") value = raw === "true" ? "Yes" : "No";
     out[`${WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX}${field.source_field}`] = value;
   }
   return out;
