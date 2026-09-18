@@ -334,7 +334,7 @@ function zodDetailMessage(err: ApiError): string | undefined {
   const fieldErrors = err.details?.fieldErrors;
   if (!fieldErrors) return undefined;
   const messages = Object.values(fieldErrors)
-    .flatMap((value) => (Array.isArray(value) ? value : []))
+    .flatMap((value): unknown[] => (Array.isArray(value) ? value : []))
     .filter((message): message is string => typeof message === "string" && message.trim().length > 0);
   if (messages.length === 0) return undefined;
   const joined = messages.join(" ");

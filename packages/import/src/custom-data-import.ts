@@ -11,7 +11,8 @@ function normalizedLabelKey(label: string): string {
 }
 
 function ownStringValue(record: Record<string, string>, key: string): string | undefined {
-  return Object.getOwnPropertyDescriptor(record, key)?.value;
+  const descriptor = Object.getOwnPropertyDescriptor(record, key) as TypedPropertyDescriptor<string>;
+  return descriptor?.value;
 }
 
 function setOwnStringValue(record: Record<string, string>, key: string, value: string): void {

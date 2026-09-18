@@ -122,7 +122,7 @@ async function resolveUserMap(
   rows: SecurityIdentityRow[],
 ): Promise<Record<string, UserRow>> {
   const needsJoin = rows.some((r) => r.user_id && !r.user_email);
-  if (!needsJoin) return Object.create(null);
+  if (!needsJoin) return Object.create(null) as Record<string, UserRow>;
 
   const userIds = [
     ...new Set(rows.filter((r) => r.user_id && !r.user_email).map((r) => r.user_id as string)),

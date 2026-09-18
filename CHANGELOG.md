@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Internal API, import, authentication, and UI mapping boundaries now retain their declared return types when reading own properties, so the stricter static checks can guard future changes without changing operator-facing behavior.
 - Admin and API boundaries now keep untrusted parsed, descriptor, and null-prototype values explicitly typed before use.
 - Admin check-in streams now reject malformed event payloads before dispatch, while attendee exports keep custom-field metadata typed throughout their existing parallel load path.
 - Map-provider and static-map responses are now handled as byte streams while enforcing their existing response-size limits, making that boundary explicit without changing map availability or provider settings.
