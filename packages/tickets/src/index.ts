@@ -45,6 +45,10 @@ export {
   UndoNotAllowedError,
 } from "./undo.js";
 export { parseCustomData, customDataValue } from "./custom-data.js";
+export {
+  resolveWalletCustomFieldPlaceholders,
+  WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX,
+} from "./wallet-custom-fields.js";
 export { buildItemDetail } from "./event-item-contents.js";
 export {
   loadEventCustomDataFields,

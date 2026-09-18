@@ -79,6 +79,7 @@ import {
   buildAttendeesExportArtifact,
   resolveTicketPageDisplay,
   buildWalletPassInput,
+  resolveWalletCustomFieldPlaceholders,
   reissueOneWalletPass,
   resolveEventWalletProvider,
   issueTicket,
@@ -4085,7 +4086,13 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
   if (!resolved) return c.json({ error: "attendee_not_issued" }, 409);
 
   const display = await resolveTicketPageDisplay(db, resolved);
-  const input = buildWalletPassInput(display, scanned);
+  const customFieldPlaceholders = await resolveWalletCustomFieldPlaceholders(
+    db,
+    eventId,
+    display.attendee.custom_data,
+    display.event.walletFieldMapping,
+  );
+  const input = buildWalletPassInput(display, scanned, customFieldPlaceholders);
 
   let result;
   try {

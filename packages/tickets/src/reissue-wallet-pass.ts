@@ -3,6 +3,7 @@ import { decryptFromString } from "@admitto/crypto";
 import { WalletProviderError, type WalletPassProvider } from "@admitto/wallet";
 import { resolveTicket } from "./resolve.js";
 import { resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
+import { resolveWalletCustomFieldPlaceholders } from "./wallet-custom-fields.js";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 
 /**
@@ -33,7 +34,13 @@ export async function reissueOneWalletPass(
   if (!resolved) return "skipped";
 
   const display = await resolveTicketPageDisplay(db, resolved);
-  const input = buildWalletPassInput(display, scanned);
+  const customFieldPlaceholders = await resolveWalletCustomFieldPlaceholders(
+    db,
+    eventId,
+    display.attendee.custom_data,
+    display.event.walletFieldMapping,
+  );
+  const input = buildWalletPassInput(display, scanned, customFieldPlaceholders);
 
   let result;
   try {

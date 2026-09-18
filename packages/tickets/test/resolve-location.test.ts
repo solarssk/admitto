@@ -58,6 +58,7 @@ describe("toResolved location fields", () => {
     name: "Guest",
     status: "confirmed",
     admitted_at: null,
+    custom_data: null,
     first_name: null,
     last_name: null,
     company: null,
