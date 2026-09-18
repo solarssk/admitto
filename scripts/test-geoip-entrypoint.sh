@@ -15,6 +15,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENTRYPOINT="$ROOT/deploy/docker-entrypoint.sh"
 FAKEBIN="$ROOT/scripts/fixtures/fake-node-geoip"
+PREFETCH_SCRIPT="prefetch-geo-db.mjs"
 
 chmod +x "$ENTRYPOINT" "$FAKEBIN/node"
 
@@ -65,7 +66,7 @@ calls="$tmpdir/a-calls.log"
 run_serve "$data_dir" "key-a" 0 "$calls"
 assert_eq "$(cat "$data_dir/fake-dataset-key")" "key-a" "scenario A: dataset reflects key-a"
 assert_eq "$(cat "$data_dir/.maxmind-key-sha256")" "$(printf '%s' key-a | sha256sum | cut -d' ' -f1)" "scenario A: marker hash matches key-a"
-assert_eq "$(grep -c 'prefetch-geo-db.mjs' "$calls")" "1" "scenario A: prefetch called once"
+assert_eq "$(grep -c "$PREFETCH_SCRIPT" "$calls")" "1" "scenario A: prefetch called once"
 assert_file_missing "$tmpdir/a.staging" "scenario A: staging dir cleaned up"
 
 echo ""
@@ -73,7 +74,7 @@ echo "== Scenario B: unchanged key skips re-fetching entirely =="
 calls="$tmpdir/b-calls.log"
 : >"$calls"
 run_serve "$data_dir" "key-a" 0 "$calls"
-assert_eq "$(grep -c 'prefetch-geo-db.mjs' "$calls" || true)" "0" "scenario B: prefetch not called again for the same key"
+assert_eq "$(grep -c "$PREFETCH_SCRIPT" "$calls" || true)" "0" "scenario B: prefetch not called again for the same key"
 assert_eq "$(cat "$data_dir/fake-dataset-key")" "key-a" "scenario B: dataset still reflects key-a"
 
 echo ""
@@ -110,7 +111,7 @@ calls="$tmpdir/f-calls.log"
 : >"$calls"
 run_serve "$data_dir" "" 0 "$calls"
 assert_file_missing "$data_dir" "scenario F: data dir never created when no key is set"
-assert_eq "$(grep -c 'prefetch-geo-db.mjs' "$calls" || true)" "0" "scenario F: prefetch never called when no key is set"
+assert_eq "$(grep -c "$PREFETCH_SCRIPT" "$calls" || true)" "0" "scenario F: prefetch never called when no key is set"
 
 echo ""
 echo "== Scenario G: MAXMIND_DATA_DIR as a real Docker bind mount survives a key rotation =="
@@ -154,7 +155,7 @@ run_serve "$data_dir" "key-a" 0 "$calls"
 rm -f "$data_dir"/*
 : >"$calls"
 run_serve "$data_dir" "key-a" 0 "$calls"
-assert_eq "$(grep -c 'prefetch-geo-db.mjs' "$calls" || true)" "1" "scenario H: prefetch re-run despite an unchanged, still-matching marker"
+assert_eq "$(grep -c "$PREFETCH_SCRIPT" "$calls" || true)" "1" "scenario H: prefetch re-run despite an unchanged, still-matching marker"
 assert_eq "$(cat "$data_dir/fake-dataset-key")" "key-a" "scenario H: dataset re-populated for the same key"
 assert_file_exists "$data_dir/4-1.dat" "scenario H: dataset file exists again"
 
