@@ -549,7 +549,7 @@
       "secret": false,
       "ui": "none",
       "catalogOnly": true,
-      "summary": "Optional override to use the offline, no-account ip-location-db country-only dataset instead of MaxMind GeoLite2. Not set anywhere in this repo (ip-location-api's own supported knob, documented here for a self-hoster who wants to opt back into the lighter dataset). No third-party lookup API either way."
+      "summary": "Build-time-only setting (ip-location-api's own knob) to bake the offline, no-account ip-location-db country-only dataset instead of MaxMind GeoLite2 - takes priority over ILA_LICENSE_KEY/ILA_FIELDS in the Dockerfile that builds the image. NOT a runtime override on the published image: ip-location-api only re-downloads when its data files are absent at the computed path, so setting this alone on an already-built image either silently keeps using the baked-in MaxMind data (no-op) or, if ILA_FIELDS is also changed to match this dataset's country-only fields, triggers a live fetch at every container start - which can hang or fail with no outbound network access. A self-hoster who wants this dataset must build their own image with ILA_IP_LOCATION_DB=user set instead of ILA_LICENSE_KEY=redist in the Dockerfile. No third-party lookup API either way."
     },
     {
       "name": "ILA_DATA_DIR",

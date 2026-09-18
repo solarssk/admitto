@@ -56,13 +56,21 @@ maybe_refresh_geoip_from_maxmind() {
   # live directory across a key rotation would silently keep serving the previous key's dataset
   # forever, while this function's own marker claimed the new key was in effect. Staging also
   # means a failed fetch can never destroy an already-working dataset - only a verified-good
-  # download ever replaces it (rm+mv, atomic on the same filesystem).
+  # download ever replaces it.
   rm -rf "$MAXMIND_STAGING_DIR"
   mkdir -p "$MAXMIND_STAGING_DIR"
   if ILA_LICENSE_KEY="$key" ILA_FIELDS=country,city ILA_DATA_DIR="$MAXMIND_STAGING_DIR" ILA_AUTO_UPDATE=false \
       node apps/web/scripts/prefetch-geo-db.mjs; then
-    rm -rf "$MAXMIND_DATA_DIR"
-    mv "$MAXMIND_STAGING_DIR" "$MAXMIND_DATA_DIR"
+    # $MAXMIND_DATA_DIR is a Docker bind-mount root when MAXMIND_LICENSE_KEY is used through the
+    # shipped Compose stack (docker-compose.yml) - `rm -rf` can empty a mount point's contents but
+    # the kernel refuses to remove the mount point itself ("Resource busy"), which `set -e` would
+    # then treat as a fatal error and crash-loop the container. Clear its contents and move the
+    # staged files in instead of replacing the directory wholesale. mkdir -p first: on a first-ever
+    # run without a prior bind mount populated, this path may not exist yet at all.
+    mkdir -p "$MAXMIND_DATA_DIR"
+    find "$MAXMIND_DATA_DIR" -mindepth 1 -delete
+    mv "$MAXMIND_STAGING_DIR"/* "$MAXMIND_DATA_DIR"/
+    rmdir "$MAXMIND_STAGING_DIR"
     printf '%s' "$key_hash" >"$MAXMIND_KEY_MARKER"
     export ILA_DATA_DIR="$MAXMIND_DATA_DIR"
     log "geoip: MaxMind dataset ready"

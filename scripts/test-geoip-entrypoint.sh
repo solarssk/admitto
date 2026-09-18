@@ -104,4 +104,34 @@ assert_file_missing "$data_dir" "scenario F: data dir never created when no key 
 assert_eq "$(grep -c 'prefetch-geo-db.mjs' "$calls" || true)" "0" "scenario F: prefetch never called when no key is set"
 
 echo ""
+echo "== Scenario G: MAXMIND_DATA_DIR as a real Docker bind mount survives a key rotation =="
+# Scenarios A-F above use an ordinary temporary directory, which `rm -rf` can remove outright -
+# they can't catch a bug that only manifests when MAXMIND_DATA_DIR is a genuine bind-mount root
+# (as it is via the shipped docker-compose.yml): the kernel refuses to remove a mount point itself
+# ("Resource busy"), even though `rm -rf` can still empty its contents first. Reproduce that here
+# with a real container instead of a tmpdir.
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  BASE_IMAGE="node:24-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553"
+  host_dir="$tmpdir/g-host"
+  mkdir -p "$host_dir"
+  run_serve_docker() {
+    local key="$1" fail="$2"
+    docker run --rm \
+      -v "$host_dir:/mnt/geoip-custom" \
+      -v "$ENTRYPOINT:/opt/entrypoint.sh:ro" \
+      -v "$FAKEBIN/node:/usr/local/bin/node:ro" \
+      -e MAXMIND_DATA_DIR=/mnt/geoip-custom \
+      -e MAXMIND_LICENSE_KEY="$key" \
+      -e FAKE_PREFETCH_FAIL="$fail" \
+      -e FAKE_NODE_CALL_LOG=/tmp/calls.log \
+      --entrypoint sh "$BASE_IMAGE" /opt/entrypoint.sh serve
+  }
+  run_serve_docker "key-a" 0
+  run_serve_docker "key-b" 0
+  assert_eq "$(cat "$host_dir/fake-dataset-key")" "key-b" "scenario G: dataset reflects key-b after rotation through a real bind mount"
+else
+  echo "skip: scenario G requires a running Docker daemon"
+fi
+
+echo ""
 echo "test-geoip-entrypoint.sh: all passed"
