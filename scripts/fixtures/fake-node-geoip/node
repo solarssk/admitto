@@ -19,11 +19,15 @@ if [ "${1:-}" = "apps/web/scripts/prefetch-geo-db.mjs" ]; then
     echo "fake prefetch: simulating a failed fetch" >&2
     exit 1
   fi
-  marker="$ILA_DATA_DIR/fake-dataset-key"
-  if [ -f "$marker" ]; then
+  # 4-1.dat is the exact "is data already here" signal - real ip-location-api's own sync reload
+  # checks this same filename (main.mjs's `dataFiles.v41`) before deciding whether to download.
+  # fake-dataset-key is purely a test-assertion artifact recording which key actually populated
+  # the data, separate from that existence check.
+  if [ -f "$ILA_DATA_DIR/4-1.dat" ]; then
     echo "fake prefetch: data already present at $ILA_DATA_DIR - reusing (mimics real ip-location-api behavior)" >&2
   else
-    printf '%s' "$ILA_LICENSE_KEY" >"$marker"
+    : >"$ILA_DATA_DIR/4-1.dat"
+    printf '%s' "$ILA_LICENSE_KEY" >"$ILA_DATA_DIR/fake-dataset-key"
     echo "fake prefetch: wrote fresh data for key $ILA_LICENSE_KEY" >&2
   fi
   echo "ip-location-api: database ready (fake)."

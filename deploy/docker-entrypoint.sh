@@ -44,7 +44,12 @@ maybe_refresh_geoip_from_maxmind() {
   key="${MAXMIND_LICENSE_KEY:-}"
   [ -n "$key" ] || return 0
   key_hash="$(printf '%s' "$key" | sha256sum | cut -d' ' -f1)"
-  if [ -f "$MAXMIND_KEY_MARKER" ] && [ "$(cat "$MAXMIND_KEY_MARKER")" = "$key_hash" ]; then
+  # 4-1.dat: the same file ip-location-api's own sync reload checks for existence before deciding
+  # whether to (re-)download (node_modules/ip-location-api/src/main.mjs's `dataFiles.v41`). The
+  # marker alone isn't enough - it only proves a download once succeeded for this key, not that
+  # the actual dataset is still there (an operator's `rm geoip-data/*` leaves this dotfile marker
+  # untouched while deleting every real data file, since a bare `*` glob skips dotfiles).
+  if [ -f "$MAXMIND_KEY_MARKER" ] && [ "$(cat "$MAXMIND_KEY_MARKER")" = "$key_hash" ] && [ -f "$MAXMIND_DATA_DIR/4-1.dat" ]; then
     log "geoip: MAXMIND_LICENSE_KEY unchanged - reusing the already-downloaded dataset"
     export ILA_DATA_DIR="$MAXMIND_DATA_DIR"
     return 0

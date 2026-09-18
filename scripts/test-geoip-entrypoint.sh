@@ -33,7 +33,7 @@ run_serve() {
 
 assert_eq() {
   local actual="$1" expected="$2" label="$3"
-  if [ "$actual" != "$expected" ]; then
+  if [[ "$actual" != "$expected" ]]; then
     echo "FAIL: $label - expected [$expected], got [$actual]" >&2
     exit 1
   fi
@@ -42,8 +42,17 @@ assert_eq() {
 
 assert_file_missing() {
   local path="$1" label="$2"
-  if [ -e "$path" ]; then
+  if [[ -e "$path" ]]; then
     echo "FAIL: $label - expected $path to not exist" >&2
+    exit 1
+  fi
+  echo "ok: $label"
+}
+
+assert_file_exists() {
+  local path="$1" label="$2"
+  if [[ ! -e "$path" ]]; then
+    echo "FAIL: $label - expected $path to exist" >&2
     exit 1
   fi
   echo "ok: $label"
@@ -132,6 +141,22 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
 else
   echo "skip: scenario G requires a running Docker daemon"
 fi
+
+echo ""
+echo "== Scenario H: a stale marker with deleted dataset files forces a re-fetch =="
+# Reproduces an operator running `rm geoip-data/*` on the host: a bare shell glob skips dotfiles,
+# so the hidden .maxmind-key-sha256 marker survives while every real data file is deleted. The
+# fast path must not trust the marker alone.
+data_dir="$tmpdir/h"
+calls="$tmpdir/h-calls.log"
+: >"$calls"
+run_serve "$data_dir" "key-a" 0 "$calls"
+rm -f "$data_dir"/*
+: >"$calls"
+run_serve "$data_dir" "key-a" 0 "$calls"
+assert_eq "$(grep -c 'prefetch-geo-db.mjs' "$calls" || true)" "1" "scenario H: prefetch re-run despite an unchanged, still-matching marker"
+assert_eq "$(cat "$data_dir/fake-dataset-key")" "key-a" "scenario H: dataset re-populated for the same key"
+assert_file_exists "$data_dir/4-1.dat" "scenario H: dataset file exists again"
 
 echo ""
 echo "test-geoip-entrypoint.sh: all passed"
