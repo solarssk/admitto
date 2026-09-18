@@ -34,6 +34,12 @@ export async function resolveWalletCustomFieldPlaceholders(
     if (!field.type || !WALLET_MAPPABLE_CUSTOM_FIELD_TYPES.has(field.type)) continue;
     const raw = customDataValue(attendeeCustomData, field.source_field);
     if (!raw) continue;
+    // A boolean field only ever normalizes to the literal strings "true"/"false"
+    // (normalizeCustomDataFieldValue, validate-custom-data.ts) - anything else stored under this
+    // source_field predates the field being retyped to boolean (it used to be select/text) and is
+    // stale, not a real answer. Treating it as "No" would put a fabricated negative on the pass;
+    // omit it instead, same as an attendee who never answered at all (bot review).
+    if (field.type === "boolean" && raw !== "true" && raw !== "false") continue;
     const value = field.type === "boolean" ? (raw === "true" ? "Yes" : "No") : raw;
     out[`${WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX}${field.source_field}`] = value;
   }

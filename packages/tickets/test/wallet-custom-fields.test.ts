@@ -29,6 +29,19 @@ describe("resolveWalletCustomFieldPlaceholders", () => {
     expect(no).toEqual({ "custom:vip_access": "No" });
   });
 
+  it("omits a boolean field's stale, non-true/false stored value instead of treating it as No (bot review)", async () => {
+    vi.mocked(loadEventCustomDataFields).mockResolvedValueOnce([
+      { label: "VIP access", source_field: "vip_access", type: "boolean" },
+    ]);
+
+    // "Maybe" can't come from a live boolean field's own input (only true/false are accepted at
+    // write time) - it's what's left over from before this field was retyped from select/text to
+    // boolean, and no longer means anything.
+    const result = await resolveWalletCustomFieldPlaceholders(db, "evt-1", { vip_access: "Maybe" });
+
+    expect(result).toEqual({});
+  });
+
   it("excludes text-type fields entirely, even when the attendee has an answer", async () => {
     vi.mocked(loadEventCustomDataFields).mockResolvedValueOnce([
       { label: "Dietary requirements", source_field: "dietary", type: "text" },
