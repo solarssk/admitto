@@ -73,7 +73,7 @@ const WALLET_ATTENDEE_SCOPED_HINTS: Partial<Record<(typeof WALLET_MAPPING_PLACEH
   ticket_status: "e.g. Valid",
 };
 
-const WALLET_VALUE_NOT_SET = "Not set for this event - this field won't be sent.";
+export const WALLET_VALUE_NOT_SET = "Not set for this event - this field won't be sent.";
 
 /** event_hours preview - country deliberately not threaded through (same as
  * formatWalletDatePreview above), so this stays exact for events with no address, an
@@ -165,7 +165,7 @@ function computeWalletLocationPlaceholderPreview(
  * other attendee-scoped hint, this can't show a real per-attendee answer on an event-level
  * settings page, so it shows an example instead - a stale mapping (the custom field was deleted
  * or retyped to `text` after being mapped) reads the same as any other unmapped field. */
-function computeWalletCustomFieldPreview(
+export function computeWalletCustomFieldPreview(
   id: string,
   customFields: EventCustomFieldDto[] | undefined,
 ): string | undefined {

@@ -52,25 +52,31 @@ export function useWalletLocationPreview(
  * PassCreator property (v0.7.1) - same fetch-once-on-visit shape as useWalletLocationPreview
  * above, for the same reason (this is a read-only preview list, not the editable copy owned by
  * EventCustomFieldsCard). `undefined` while loading; an empty array is a valid loaded state
- * (no custom fields defined for this event yet). */
+ * (no custom fields defined for this event yet).
+ *
+ * The cached result is keyed by the `eventId` it was fetched for, not just "has a fetch already
+ * happened" - EventSettingsPage stays mounted across a `/events/:eventId/settings` navigation
+ * (same pattern useWalletPushHistory above already has to account for), so a bare "already have a
+ * value" check would keep showing event A's custom fields - and let an admin save a `custom:...`
+ * mapping event B's own attendees can never resolve - after switching to event B (bot review). */
 export function useWalletCustomFields(
   eventId: string | undefined,
   visitedTabs: ReadonlySet<EventSettingsTab>,
 ): EventCustomFieldDto[] | undefined {
-  const [walletCustomFields, setWalletCustomFields] = useState<EventCustomFieldDto[] | undefined>(undefined);
+  const [cached, setCached] = useState<{ eventId: string; items: EventCustomFieldDto[] } | undefined>(undefined);
   useEffect(() => {
-    if (!eventId || !visitedTabs.has("wallet") || walletCustomFields !== undefined) return;
+    if (!eventId || !visitedTabs.has("wallet") || cached?.eventId === eventId) return;
     const controller = new AbortController();
     fetchEventCustomFields(eventId, controller.signal)
       .then((items) => {
-        if (!controller.signal.aborted) setWalletCustomFields(items);
+        if (!controller.signal.aborted) setCached({ eventId, items });
       })
       .catch(() => {
         /* preview-only: a failed fetch just leaves the dropdown without custom-field options */
       });
     return () => controller.abort();
-  }, [eventId, visitedTabs, walletCustomFields]);
-  return walletCustomFields;
+  }, [eventId, visitedTabs, cached]);
+  return cached && cached.eventId === eventId ? cached.items : undefined;
 }
 
 export interface WalletPushHistoryState {
