@@ -234,17 +234,22 @@ We have not tested or documented Synology ARM vs Intel paths separately - pick t
 
 ## GeoIP dataset: your own MaxMind license key (optional)
 
-The published `ghcr.io`/`docker.io` images resolve IP addresses to a country and city using MaxMind's GeoLite2 database, downloaded at image-build time from the [node-geolite2-redist](https://github.com/sapics/node-geolite2-redist) community mirror - no MaxMind account is needed to pull and run them.
+Admitto resolves IP addresses to a country and city (Logs & Audit, Active sessions, new-location sign-in alerts) using MaxMind's GeoLite2 database. By default this is baked into the image at build time from the [node-geolite2-redist](https://github.com/sapics/node-geolite2-redist) community mirror - no MaxMind account needed, whether you pull the published `ghcr.io`/`docker.io` image or build your own.
 
-If you build your own image and have a MaxMind GeoLite2 license key (a real, auditable license relationship with MaxMind - useful where your organisation's compliance process expects that over a community mirror), pass it as a Docker build **secret**, never a build arg or an env var - a secret is the only one of the three that Docker never writes into the image's layer history:
+If you have a MaxMind GeoLite2 license key (a real, auditable license relationship with MaxMind - useful where your organisation's compliance process expects that over a community mirror), set `MAXMIND_LICENSE_KEY` in `deploy/.env` and restart the stack - no image rebuild needed, works with the published image too:
 
 ```bash
-echo -n "YOUR_MAXMIND_LICENSE_KEY" > maxmind.key
-docker build --secret id=maxmind_license_key,src=maxmind.key -f Dockerfile -t admitto-app .
-rm maxmind.key
+# deploy/.env
+MAXMIND_LICENSE_KEY=YOUR_MAXMIND_LICENSE_KEY
 ```
 
-Omit `--secret` (the default `docker compose up -d --build` path above does) and the build falls back to the community mirror, exactly like the published images.
+```bash
+docker compose up -d
+```
+
+At startup, `docker-entrypoint.sh` fetches a fresh GeoLite2 City database directly from MaxMind into `./geoip-data` (a bind mount, initialised by `./scripts/init-host-dirs.sh` like `uploads`/`emergency-exports` above) and caches it there - a later restart with the same key reuses that download instead of re-fetching it, and a failed fetch (bad key, network issue) falls back to the last good download rather than breaking startup. Remove `MAXMIND_LICENSE_KEY` and restart to go back to the default community-mirror dataset.
+
+In Portainer: add `MAXMIND_LICENSE_KEY` under the stack's **Environment variables**, then **Update the stack** - the same flow as any other setting here, no build-secret or compose-file editing needed.
 
 ## Quick start
 

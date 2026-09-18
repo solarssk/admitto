@@ -1,7 +1,3 @@
-# syntax=docker/dockerfile:1
-# The line above pins the BuildKit Dockerfile frontend explicitly - required for the
-# `RUN --mount=type=secret` below (the GeoIP dataset stage), which a legacy (non-BuildKit)
-# builder can't parse at all.
 FROM node:24-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553 AS builder
 
 RUN apt-get update \
@@ -18,28 +14,25 @@ ENV npm_config_ignore_scripts=true
 RUN npm ci
 
 # Bake the offline IP->city dataset into the image at build time (apps/web/src/rate-limit/
-# ip-location.ts never fetches it at request time). ILA_FIELDS=country,city is what selects the
-# City edition of the database over the lighter Country-only one — country alone (this project's
-# previous default) resolves to the ~7MB Country edition regardless of ILA_LICENSE_KEY. ILA_FIELDS
-# is re-declared in the production stage below so the running container reads the same,
-# already-baked data instead of re-fetching it (ip-location-api hashes ILA_FIELDS into the data
-# directory name — mismatched values between stages would silently look in the wrong place).
+# ip-location.ts never fetches it at request time). ILA_LICENSE_KEY=redist (ip-location-api's own
+# default when unset — set explicitly here so the choice is visible, not implicit) downloads
+# MaxMind's GeoLite2 database from the node-geolite2-redist community mirror, needing no MaxMind
+# account/license key of our own. This is the always-present fallback dataset; a self-hoster or
+# corporate deployer with their own MaxMind account can instead set MAXMIND_LICENSE_KEY at
+# container runtime to fetch a fresh copy directly from MaxMind into a separate, persistent
+# location (see deploy/docker-entrypoint.sh and deploy/README.md) - no image rebuild needed.
+# ILA_FIELDS=country,city is what actually selects the City edition of the database over the
+# lighter Country-only one — country alone (this project's previous default) resolves to the
+# ~7MB Country edition regardless of ILA_LICENSE_KEY. These ENV vars are re-declared in the
+# production stage below so the running container reads the same, already-baked data instead of
+# re-fetching it.
+ENV ILA_LICENSE_KEY=redist
 ENV ILA_FIELDS=country,city
 ENV ILA_DATA_DIR=/app/data/geoip
 ENV ILA_AUTO_UPDATE=false
-# ILA_LICENSE_KEY: downloads from the node-geolite2-redist community mirror by default
-# (ip-location-api's own default when unset - no MaxMind account/license key needed), or directly
-# from MaxMind's own servers using a real GeoLite2 license key when one is supplied as a build
-# secret (`docker build --secret id=maxmind_license_key,src=<path-to-key-file> ...` - see
-# deploy/README.md). A build secret, unlike a build ARG or a baked ENV, is never written to any
-# image layer or `docker history` - required for a real credential. This project's own published
-# image (publish-container.yml) never passes this secret, so it always uses redist; a self-hoster
-# or corporate deployer with their own MaxMind account can supply theirs for a direct, auditable
-# license relationship instead. Retries brief upstream outages during the image build, but still
-# fails after the final attempt.
-RUN --mount=type=secret,id=maxmind_license_key \
-    for attempt in 1 2 3; do \
-      export ILA_LICENSE_KEY="$(cat /run/secrets/maxmind_license_key 2>/dev/null || echo redist)"; \
+# The dataset is downloaded from a public GitHub Release. Retry brief upstream
+# outages during the image build, but still fail after the final attempt.
+RUN for attempt in 1 2 3; do \
       if node apps/web/scripts/prefetch-geo-db.mjs; then exit 0; fi; \
       if [ "$attempt" -lt 3 ]; then \
         echo "GeoIP prefetch attempt $attempt failed; retrying..."; \
@@ -135,6 +128,10 @@ COPY --from=builder /app/packages/mail-delivery/dist ./packages/mail-delivery/di
 COPY --from=builder /app/packages/notifications/dist ./packages/notifications/dist
 COPY --from=builder /app/packages/import/dist ./packages/import/dist
 COPY --from=builder /app/data/geoip ./data/geoip
+# Raw source, not dist - reused at container startup (not just image build time) by
+# docker-entrypoint.sh's "serve" branch, when MAXMIND_LICENSE_KEY is set. Only imports
+# ip-location-api (already in node_modules above), so it runs standalone without a build step.
+COPY --from=builder /app/apps/web/scripts/prefetch-geo-db.mjs ./apps/web/scripts/prefetch-geo-db.mjs
 
 COPY deploy/docker-entrypoint.sh ./deploy/docker-entrypoint.sh
 

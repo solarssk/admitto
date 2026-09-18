@@ -26,6 +26,41 @@ ensure_emergency_export_dir_writable() {
   fi
 }
 
+# A corporate/self-hosted deployment with its own MaxMind GeoLite2 license key can set
+# MAXMIND_LICENSE_KEY to fetch a fresh copy directly from MaxMind, without rebuilding the image
+# (deploy/README.md). Downloaded into a SEPARATE directory from the image's own baked-in
+# node-geolite2-redist dataset (/app/data/geoip) - never bind-mount over that path directly: an
+# empty host directory there would shadow the baked-in data for everyone who hasn't set a key,
+# which is the common case. The marker file avoids re-downloading ~60MB on every restart when the
+# key hasn't changed; a failed fetch falls back to the last good download (or, on a first-ever
+# failed fetch, to the image's baked-in dataset) rather than breaking app startup.
+MAXMIND_DATA_DIR="/app/data/geoip-custom"
+MAXMIND_KEY_MARKER="$MAXMIND_DATA_DIR/.maxmind-key-sha256"
+
+maybe_refresh_geoip_from_maxmind() {
+  key="${MAXMIND_LICENSE_KEY:-}"
+  [ -n "$key" ] || return 0
+  key_hash="$(printf '%s' "$key" | sha256sum | cut -d' ' -f1)"
+  if [ -f "$MAXMIND_KEY_MARKER" ] && [ "$(cat "$MAXMIND_KEY_MARKER")" = "$key_hash" ]; then
+    log "geoip: MAXMIND_LICENSE_KEY unchanged - reusing the already-downloaded dataset"
+    export ILA_DATA_DIR="$MAXMIND_DATA_DIR"
+    return 0
+  fi
+  log "geoip: MAXMIND_LICENSE_KEY set - fetching the GeoLite2 City database from MaxMind"
+  mkdir -p "$MAXMIND_DATA_DIR"
+  if ILA_LICENSE_KEY="$key" ILA_FIELDS=country,city ILA_DATA_DIR="$MAXMIND_DATA_DIR" ILA_AUTO_UPDATE=false \
+      node apps/web/scripts/prefetch-geo-db.mjs; then
+    printf '%s' "$key_hash" >"$MAXMIND_KEY_MARKER"
+    export ILA_DATA_DIR="$MAXMIND_DATA_DIR"
+    log "geoip: MaxMind dataset ready"
+  elif [ -f "$MAXMIND_KEY_MARKER" ]; then
+    log "geoip: warning: MaxMind fetch failed - reusing the last known-good dataset"
+    export ILA_DATA_DIR="$MAXMIND_DATA_DIR"
+  else
+    log "geoip: warning: MaxMind fetch failed and no prior dataset exists - falling back to the built-in community-mirror dataset"
+  fi
+}
+
 run_as_node() {
   if [ "$(id -u)" = "0" ]; then
     # Argv goes to `su` as positional args after `--`, not spliced into the -c string, so no
@@ -87,6 +122,7 @@ fi
 # (compose depends_on: condition: service_completed_successfully).
 # Retention runs only on the Admitto worker (ADR 0042), not on every app start.
 if [ "${1:-}" = "serve" ]; then
+  maybe_refresh_geoip_from_maxmind
   exec node apps/web/dist/src/index.js
 fi
 
