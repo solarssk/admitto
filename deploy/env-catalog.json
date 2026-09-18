@@ -539,7 +539,7 @@
       "consumers": ["app"],
       "secret": false,
       "ui": "none",
-      "summary": "Fields to resolve from the geo dataset (default country,city). country alone downloads the smaller Country-only edition."
+      "summary": "ip-location-api's own field selection, baked to country,city at image build time (selects the City edition over the lighter Country-only one). Not a runtime override for deployers: the published image only has country,city data actually baked in, so changing this alone in deploy/.env computes a different (unpopulated) data path and makes ip-location-api attempt a live download at every app start - which can hang or fail with no outbound network access. Only meaningful if also rebuilding the image with this value set in the Dockerfile."
     },
     {
       "name": "ILA_IP_LOCATION_DB",

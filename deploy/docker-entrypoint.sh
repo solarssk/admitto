@@ -81,11 +81,14 @@ maybe_refresh_geoip_from_maxmind() {
     log "geoip: MaxMind dataset ready"
   else
     rm -rf "$MAXMIND_STAGING_DIR"
-    if [ -f "$MAXMIND_KEY_MARKER" ]; then
+    # Same 4-1.dat check as the fast path above - a marker alone doesn't prove the last-good
+    # dataset is still actually there (it could have been deleted since, the exact scenario that
+    # got us into this failed-refetch branch in the first place).
+    if [ -f "$MAXMIND_KEY_MARKER" ] && [ -f "$MAXMIND_DATA_DIR/4-1.dat" ]; then
       log "geoip: warning: MaxMind fetch failed - reusing the last known-good dataset"
       export ILA_DATA_DIR="$MAXMIND_DATA_DIR"
     else
-      log "geoip: warning: MaxMind fetch failed and no prior dataset exists - falling back to the built-in community-mirror dataset"
+      log "geoip: warning: MaxMind fetch failed and no usable prior dataset exists - falling back to the built-in community-mirror dataset"
     fi
   fi
 }

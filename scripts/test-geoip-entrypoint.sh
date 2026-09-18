@@ -160,4 +160,21 @@ assert_eq "$(cat "$data_dir/fake-dataset-key")" "key-a" "scenario H: dataset re-
 assert_file_exists "$data_dir/4-1.dat" "scenario H: dataset file exists again"
 
 echo ""
+echo "== Scenario I: stale marker + deleted dataset + a failed refetch falls back to the built-in dataset =="
+# Same setup as Scenario H (marker survives rm geoip-data/*), but this time the re-fetch attempt
+# also fails (network down while the operator was mid-cleanup) - the failure branch must not trust
+# the marker alone either, or it would export ILA_DATA_DIR at an unusable directory instead of
+# falling back to the image's own baked-in dataset.
+data_dir="$tmpdir/i"
+calls="$tmpdir/i-calls.log"
+output="$tmpdir/i-output.log"
+: >"$calls"
+run_serve "$data_dir" "key-a" 0 "$calls"
+rm -f "$data_dir"/*
+: >"$calls"
+run_serve "$data_dir" "key-a" 1 "$calls" >"$output" 2>&1
+assert_eq "$(grep -c 'ILA_DATA_DIR=unset' "$output" || true)" "1" "scenario I: falls back to the built-in dataset instead of an unusable directory"
+assert_file_missing "$data_dir/4-1.dat" "scenario I: no dataset file left behind by the failed refetch"
+
+echo ""
 echo "test-geoip-entrypoint.sh: all passed"
