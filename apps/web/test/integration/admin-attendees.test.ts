@@ -7235,6 +7235,42 @@ describe("Attendees v2 — RSVP and manual create", () => {
     expect(row).toBeNull();
   });
 
+  it("POST create accepts a ticket_type in the event's catalog", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+      method: "POST",
+      headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "known-type@example.com",
+        first_name: "Known Type",
+        last_name: "Test",
+        ticket_type: "vip",
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: string; ticket_type: string | null };
+    expect(body.ticket_type).toBe("vip");
+
+    await prisma.attendee.delete({ where: { id: body.id } });
+  });
+
+  it("POST create returns a generic 500 without leaking an unexpected transaction error", async () => {
+    await resetEventACustomFields();
+    const transactionSpy = vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("db exploded"));
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
+        method: "POST",
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "transaction-fails@example.com", first_name: "Failure", last_name: "Test" }),
+      });
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ error: "server error" });
+    } finally {
+      transactionSpy.mockRestore();
+      consoleSpy.mockRestore();
+    }
+  });
+
   it("POST create duplicate email returns 409 email_taken", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_A}/attendees`, {
       method: "POST",

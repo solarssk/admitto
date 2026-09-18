@@ -39,7 +39,7 @@ const typeAwareFollowUpRules = {
   "@typescript-eslint/require-await": "error",
   "@typescript-eslint/no-unsafe-assignment": "error",
   "@typescript-eslint/no-unsafe-return": "error",
-  "@typescript-eslint/only-throw-error": "warn",
+  "@typescript-eslint/only-throw-error": "error",
   "@typescript-eslint/no-unsafe-member-access": "error",
   "@typescript-eslint/no-unsafe-argument": "error",
   "@typescript-eslint/restrict-template-expressions": "error",
