@@ -1,0 +1,39 @@
+#!/bin/sh
+# Fake `node` for scripts/test-geoip-entrypoint.sh - stands in for both `node` invocations the
+# "serve" branch of deploy/docker-entrypoint.sh ever makes, so the test needs neither network
+# access nor a real, built apps/web/dist/src/index.js.
+#
+# The prefetch-script branch deliberately mimics ip-location-api's real (buggy-if-misused)
+# behavior: if $ILA_DATA_DIR already contains data, it leaves it untouched and reports success,
+# regardless of $ILA_LICENSE_KEY - see node_modules/ip-location-api/src/main.mjs's `reload`,
+# which only re-downloads when its data files are absent. A fake that instead always overwrote
+# with the current key would pass even against the unfixed (no-staging) entrypoint code, so it
+# wouldn't actually catch the bug this test exists for.
+set -eu
+
+FAKE_NODE_CALL_LOG="${FAKE_NODE_CALL_LOG:-/dev/null}"
+echo "$*" >>"$FAKE_NODE_CALL_LOG"
+
+if [ "${1:-}" = "apps/web/scripts/prefetch-geo-db.mjs" ]; then
+  if [ "${FAKE_PREFETCH_FAIL:-0}" = "1" ]; then
+    echo "fake prefetch: simulating a failed fetch" >&2
+    exit 1
+  fi
+  marker="$ILA_DATA_DIR/fake-dataset-key"
+  if [ -f "$marker" ]; then
+    echo "fake prefetch: data already present at $ILA_DATA_DIR - reusing (mimics real ip-location-api behavior)" >&2
+  else
+    printf '%s' "$ILA_LICENSE_KEY" >"$marker"
+    echo "fake prefetch: wrote fresh data for key $ILA_LICENSE_KEY" >&2
+  fi
+  echo "ip-location-api: database ready (fake)."
+  exit 0
+fi
+
+if [ "${1:-}" = "apps/web/dist/src/index.js" ]; then
+  echo "fake app: would start serving now (ILA_DATA_DIR=${ILA_DATA_DIR:-unset})" >&2
+  exit 0
+fi
+
+echo "fake node: unexpected invocation: $*" >&2
+exit 90

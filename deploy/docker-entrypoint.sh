@@ -34,7 +34,10 @@ ensure_emergency_export_dir_writable() {
 # which is the common case. The marker file avoids re-downloading ~60MB on every restart when the
 # key hasn't changed; a failed fetch falls back to the last good download (or, on a first-ever
 # failed fetch, to the image's baked-in dataset) rather than breaking app startup.
-MAXMIND_DATA_DIR="/app/data/geoip-custom"
+# MAXMIND_DATA_DIR is overridable (same convention as EMERGENCY_EXPORT_DIR/UPLOAD_DIR above) so
+# scripts/test-geoip-entrypoint.sh can point it at a throwaway directory instead of /app/data.
+MAXMIND_DATA_DIR="${MAXMIND_DATA_DIR:-/app/data/geoip-custom}"
+MAXMIND_STAGING_DIR="${MAXMIND_DATA_DIR}.staging"
 MAXMIND_KEY_MARKER="$MAXMIND_DATA_DIR/.maxmind-key-sha256"
 
 maybe_refresh_geoip_from_maxmind() {
@@ -46,18 +49,31 @@ maybe_refresh_geoip_from_maxmind() {
     export ILA_DATA_DIR="$MAXMIND_DATA_DIR"
     return 0
   fi
-  log "geoip: MAXMIND_LICENSE_KEY set - fetching the GeoLite2 City database from MaxMind"
-  mkdir -p "$MAXMIND_DATA_DIR"
-  if ILA_LICENSE_KEY="$key" ILA_FIELDS=country,city ILA_DATA_DIR="$MAXMIND_DATA_DIR" ILA_AUTO_UPDATE=false \
+  log "geoip: MAXMIND_LICENSE_KEY set (new or changed) - fetching the GeoLite2 City database from MaxMind"
+  # Fetch into a fresh staging directory, never $MAXMIND_DATA_DIR directly: ip-location-api's own
+  # sync reload only re-downloads when its data files are absent (existence check, not by which
+  # key produced them - see node_modules/ip-location-api/src/main.mjs's `reload`), so reusing the
+  # live directory across a key rotation would silently keep serving the previous key's dataset
+  # forever, while this function's own marker claimed the new key was in effect. Staging also
+  # means a failed fetch can never destroy an already-working dataset - only a verified-good
+  # download ever replaces it (rm+mv, atomic on the same filesystem).
+  rm -rf "$MAXMIND_STAGING_DIR"
+  mkdir -p "$MAXMIND_STAGING_DIR"
+  if ILA_LICENSE_KEY="$key" ILA_FIELDS=country,city ILA_DATA_DIR="$MAXMIND_STAGING_DIR" ILA_AUTO_UPDATE=false \
       node apps/web/scripts/prefetch-geo-db.mjs; then
+    rm -rf "$MAXMIND_DATA_DIR"
+    mv "$MAXMIND_STAGING_DIR" "$MAXMIND_DATA_DIR"
     printf '%s' "$key_hash" >"$MAXMIND_KEY_MARKER"
     export ILA_DATA_DIR="$MAXMIND_DATA_DIR"
     log "geoip: MaxMind dataset ready"
-  elif [ -f "$MAXMIND_KEY_MARKER" ]; then
-    log "geoip: warning: MaxMind fetch failed - reusing the last known-good dataset"
-    export ILA_DATA_DIR="$MAXMIND_DATA_DIR"
   else
-    log "geoip: warning: MaxMind fetch failed and no prior dataset exists - falling back to the built-in community-mirror dataset"
+    rm -rf "$MAXMIND_STAGING_DIR"
+    if [ -f "$MAXMIND_KEY_MARKER" ]; then
+      log "geoip: warning: MaxMind fetch failed - reusing the last known-good dataset"
+      export ILA_DATA_DIR="$MAXMIND_DATA_DIR"
+    else
+      log "geoip: warning: MaxMind fetch failed and no prior dataset exists - falling back to the built-in community-mirror dataset"
+    fi
   fi
 }
 
