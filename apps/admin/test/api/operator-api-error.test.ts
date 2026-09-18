@@ -21,6 +21,13 @@ describe("operatorApiErrorMessage", () => {
     );
   });
 
+  it("ignores a non-array Zod field-error entry", () => {
+    const err = new ApiError(400, "validation_failed", "validation_failed", undefined, undefined, {
+      fieldErrors: { api_key: "not an array", base_url: ["Enter a valid public http(s) URL."] },
+    });
+    expect(operatorApiErrorMessage(err, "Failed.")).toBe("Enter a valid public http(s) URL.");
+  });
+
   it("falls back to the generic validation_failed mapping when details has no field messages", () => {
     const err = new ApiError(400, "validation_failed", "validation_failed", undefined, undefined, {
       fieldErrors: {},

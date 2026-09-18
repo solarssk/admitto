@@ -6,8 +6,12 @@ export const CF_ACCESS_COOKIE = "CF_Authorization";
 export function extractAccessTokenFromHeaders(
   headers: Record<string, string | undefined>,
 ): string | null {
-  const getHeader = (name: string): string | undefined =>
-    Object.getOwnPropertyDescriptor(headers, name)?.value;
+  const getHeader = (name: string): string | undefined => {
+    const descriptor = Object.getOwnPropertyDescriptor(headers, name) as TypedPropertyDescriptor<
+      string | undefined
+    >;
+    return descriptor?.value;
+  };
   const header =
     getHeader(CF_ACCESS_HEADER) ??
     getHeader(CF_ACCESS_HEADER.toLowerCase()) ??

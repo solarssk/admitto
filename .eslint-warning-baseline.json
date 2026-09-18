@@ -189,15 +189,6 @@
     "contextAfter": "onBusyChange(true);"
   },
   {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "apps/admin/src/api/operator-api-error.ts",
-    "message": "Unsafe return of a value of type `any[]`.",
-    "codeLine": ".flatMap((value) => (Array.isArray(value) ? value : []))",
-    "column": 26,
-    "contextBefore": "const messages = Object.values(fieldErrors)",
-    "contextAfter": ".filter((message): message is string => typeof message === \"string\" && message.trim().length > 0);"
-  },
-  {
     "ruleId": "@typescript-eslint/no-floating-promises",
     "filePath": "apps/admin/src/checkin/AttendeeCard.tsx",
     "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
@@ -250,15 +241,6 @@
     "column": 20,
     "contextBefore": "const f = e.target.files?.[0];",
     "contextAfter": "e.target.value = \"\";"
-  },
-  {
-    "ruleId": "react-hooks/exhaustive-deps",
-    "filePath": "apps/admin/src/components/LogoUploadZone.tsx",
-    "message": "The ref value 'provisionalUrlsRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'provisionalUrlsRef.current' to a variable inside the effect, and use that variable in the cleanup function.",
-    "codeLine": "for (const url of provisionalUrlsRef.current) {",
-    "column": 44,
-    "contextBefore": "}",
-    "contextAfter": "void deleteUploadedFile(url);"
   },
   {
     "ruleId": "@typescript-eslint/no-floating-promises",
@@ -585,15 +567,6 @@
     "contextAfter": "};"
   },
   {
-    "ruleId": "react-hooks/exhaustive-deps",
-    "filePath": "apps/admin/src/pages/ReportsPage.tsx",
-    "message": "React Hook useMemo has a missing dependency: 'event'. Either include it or remove the dependency array.",
-    "codeLine": "[",
-    "column": 5,
-    "contextBefore": "() => enabledWalletPlatforms(event),",
-    "contextAfter": "event.wallet_enabled,"
-  },
-  {
     "ruleId": "@typescript-eslint/no-misused-promises",
     "filePath": "apps/admin/src/pages/users/ActiveSessionsTab.tsx",
     "message": "Promise-returning function provided to attribute where a void return was expected.",
@@ -637,15 +610,6 @@
     "column": 67,
     "contextBefore": "action={",
     "contextAfter": "Open Support contact"
-  },
-  {
-    "ruleId": "react-hooks/exhaustive-deps",
-    "filePath": "apps/admin/src/settings/FontFamilyModal.tsx",
-    "message": "The ref value 'rowGenerationRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'rowGenerationRef.current' to a variable inside the effect, and use that variable in the cleanup function.",
-    "codeLine": "rowGenerationRef.current.set(id, gen + 1);",
-    "column": 26,
-    "contextBefore": "for (const [id, gen] of rowGenerationRef.current) {",
-    "contextAfter": "}"
   },
   {
     "ruleId": "@typescript-eslint/no-misused-promises",
@@ -729,15 +693,6 @@
     "contextAfter": "}"
   },
   {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "apps/web/src/admin/audit-routes.ts",
-    "message": "Unsafe return of a value of type `any`.",
-    "codeLine": "if (!needsJoin) return Object.create(null);",
-    "column": 19,
-    "contextBefore": "const needsJoin = rows.some((r) => !r.actor_email);",
-    "contextAfter": "const actorIds = [...new Set(rows.filter((r) => !r.actor_email).map((r) => r.actor_user_id))];"
-  },
-  {
     "ruleId": "@typescript-eslint/only-throw-error",
     "filePath": "apps/web/src/admin/event-settings-routes.ts",
     "message": "Expected an error object to be thrown.",
@@ -745,15 +700,6 @@
     "column": 30,
     "contextBefore": "const issuedCount = await loadIssuedWalletPassCount(tx, eventId);",
     "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "apps/web/src/admin/security-audit-routes.ts",
-    "message": "Unsafe return of a value of type `any`.",
-    "codeLine": "if (!needsJoin) return Object.create(null);",
-    "column": 19,
-    "contextBefore": "const needsJoin = rows.some((r) => r.user_id && !r.user_email);",
-    "contextAfter": ""
   },
   {
     "ruleId": "security/detect-unsafe-regex",
@@ -783,15 +729,6 @@
     "contextAfter": "const logoOut = join(targetDir, \"admitto-logo.png\");"
   },
   {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "packages/auth/src/cloudflare-access/extract-token.ts",
-    "message": "Unsafe return of a value of type `any`.",
-    "codeLine": "Object.getOwnPropertyDescriptor(headers, name)?.value;",
-    "column": 5,
-    "contextBefore": "const getHeader = (name: string): string | undefined =>",
-    "contextAfter": "const header ="
-  },
-  {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/auth/src/settings/resolver.ts",
     "message": "Variable Assigned to Object Injection Sink",
@@ -799,15 +736,6 @@
     "column": 15,
     "contextBefore": "if (!envName) return undefined;",
     "contextAfter": "if (raw === undefined || raw.trim() === \"\") return undefined;"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "packages/import/src/custom-data-import.ts",
-    "message": "Unsafe return of a value of type `any`.",
-    "codeLine": "return Object.getOwnPropertyDescriptor(record, key)?.value;",
-    "column": 3,
-    "contextBefore": "function ownStringValue(record: Record<string, string>, key: string): string | undefined {",
-    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-object-injection",
@@ -970,24 +898,6 @@
     "column": 40,
     "contextBefore": "// Split on blank lines into header-like field groups (RFC 3464 §2).",
     "contextAfter": "parseOneDsnBlock(block, out, seen);"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "packages/mail-templates/src/escape.ts",
-    "message": "Unsafe return of a value of type `any`.",
-    "codeLine": "return Object.getOwnPropertyDescriptor(labels, field)?.value ?? field;",
-    "column": 3,
-    "contextBefore": "const labels = context === \"branding\" ? BRANDING_FIELD_LABELS : TEMPLATE_FIELD_LABELS;",
-    "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "packages/mail-templates/src/escape.ts",
-    "message": "Unsafe return of a value of type `any`.",
-    "codeLine": "return value.replace(/[&<>\"']/g, (ch) => Object.getOwnPropertyDescriptor(map, ch)?.value ?? ch);",
-    "column": 44,
-    "contextBefore": "function escapeWithMap(value: string, map: Record<string, string>): string {",
-    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-object-injection",
@@ -1204,15 +1114,6 @@
     "column": 17,
     "contextBefore": "if (!part || part === \"GMT\") return \"Z\";",
     "contextAfter": "if (!match) return \"Z\";"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "packages/ui/src/status-map.ts",
-    "message": "Unsafe return of a value of type `any`.",
-    "codeLine": "return Object.getOwnPropertyDescriptor(STATUS_MAP, status)?.value ?? {",
-    "column": 3,
-    "contextBefore": "export function resolveStatusMeta(status: string): StatusMeta {",
-    "contextAfter": "variant: \"neutral\","
   },
   {
     "ruleId": "security/detect-object-injection",

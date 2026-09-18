@@ -38,7 +38,7 @@ const typeAwareFollowUpRules = {
   "@typescript-eslint/no-floating-promises": "warn",
   "@typescript-eslint/require-await": "error",
   "@typescript-eslint/no-unsafe-assignment": "error",
-  "@typescript-eslint/no-unsafe-return": "warn",
+  "@typescript-eslint/no-unsafe-return": "error",
   "@typescript-eslint/only-throw-error": "warn",
   "@typescript-eslint/no-unsafe-member-access": "error",
   "@typescript-eslint/no-unsafe-argument": "error",
@@ -77,7 +77,7 @@ const reactTsxConfig = {
     // Typed records, React state, and route params — false positives.
     "security/detect-object-injection": "off",
     "react-hooks/rules-of-hooks": "error",
-    "react-hooks/exhaustive-deps": "warn",
+    "react-hooks/exhaustive-deps": "error",
   },
 };
 
