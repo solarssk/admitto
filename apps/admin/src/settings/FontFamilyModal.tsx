@@ -206,10 +206,11 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
   };
 
   useEffect(() => {
+    const rowGenerations = rowGenerationRef.current;
     if (!open) {
       discardSessionUploads();
-      for (const [id, gen] of rowGenerationRef.current) {
-        rowGenerationRef.current.set(id, gen + 1);
+      for (const [id, gen] of rowGenerations) {
+        rowGenerations.set(id, gen + 1);
       }
       return;
     }
@@ -256,8 +257,8 @@ export function FontFamilyModal({ open, onClose, onSaved, initialFamily = null }
       // Unmount (or close) while open: discard provisional uploads the parent never received
       // via onSaved, and invalidate in-flight row loads so late resolves cannot re-add them.
       discardSessionUploads();
-      for (const [id, gen] of rowGenerationRef.current) {
-        rowGenerationRef.current.set(id, gen + 1);
+      for (const [id, gen] of rowGenerations) {
+        rowGenerations.set(id, gen + 1);
       }
     };
     // Only re-run when the modal opens or closes, not on every render's fresh initialFamily
