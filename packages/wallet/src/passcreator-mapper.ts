@@ -140,7 +140,10 @@ export function toPassCreatorData(
 
   if (!fieldMapping) return base;
 
-  const values = walletPlaceholderValues(input);
+  // customFieldLabels' keys are already namespaced ("custom:<source_field>", see
+  // wallet-custom-fields.ts) so they can never collide with a WALLET_MAPPING_PLACEHOLDERS entry -
+  // a plain merge is enough, no precedence rule needed between the two sources.
+  const values: Record<string, string | undefined> = { ...walletPlaceholderValues(input), ...input.customFieldLabels };
   const custom: Record<string, unknown> = {};
   for (const [key, placeholder] of Object.entries(fieldMapping)) {
     const value = values[placeholder];

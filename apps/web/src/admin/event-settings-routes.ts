@@ -112,10 +112,16 @@ const patchEventSchema = z
     wallet_apple_enabled: z.boolean().optional(),
     wallet_google_enabled: z.boolean().optional(),
     wallet_samsung_enabled: z.boolean().optional(),
+    // Value is either a fixed WALLET_MAPPING_PLACEHOLDERS entry or a "custom:<source_field>"
+    // reference to one of this event's select/boolean EventCustomField rows (WALLET_CUSTOM_
+    // FIELD_PLACEHOLDER_PREFIX, packages/tickets/src/wallet-custom-fields.ts; source_field charset
+    // matches event-custom-fields-routes.ts's own slugField). Not checked against the event's live
+    // custom-field set here - a mapping pointing at a deleted/retyped field just resolves to
+    // nothing at send time, the same as any other stale placeholder (ROADMAP.md v0.7.1 decision).
     wallet_field_mapping: z
       .record(
         z.string().trim().min(1).max(60).regex(/^[A-Za-z]\w*$/),
-        z.enum(WALLET_MAPPING_PLACEHOLDERS),
+        z.union([z.enum(WALLET_MAPPING_PLACEHOLDERS), z.string().regex(/^custom:[a-z0-9_]+$/)]),
       )
       .nullish(),
     logo_url: z.string().trim().max(2000).nullish(),

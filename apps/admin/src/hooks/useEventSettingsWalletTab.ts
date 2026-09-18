@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchEventLocation, fetchWalletPushHistory, type WalletPushHistoryEntry } from "../api/client.js";
-import type { EventLocationDto } from "../api/types.js";
+import {
+  fetchEventCustomFields,
+  fetchEventLocation,
+  fetchWalletPushHistory,
+  type WalletPushHistoryEntry,
+} from "../api/client.js";
+import type { EventCustomFieldDto, EventLocationDto } from "../api/types.js";
 import type { EventSettingsTab } from "../settings/eventSettingsTabs.js";
 import { WALLET_PUSH_HISTORY_PAGE_SIZE_DEFAULT } from "../settings/EventWalletPanel.js";
 import { useDelayedLoading } from "./useDelayedLoading.js";
@@ -40,6 +45,32 @@ export function useWalletLocationPreview(
   }, [eventId, visitedTabs, walletLocationPreview]);
   const invalidateWalletLocationPreview = useCallback(() => setWalletLocationPreview(undefined), []);
   return { walletLocationPreview, invalidateWalletLocationPreview };
+}
+
+/** The event's own custom-field registry (Requirements/Registrations tab), reused by the Wallet
+ * tab's field mapping dropdown so an admin can map a select/boolean custom field onto a
+ * PassCreator property (v0.7.1) - same fetch-once-on-visit shape as useWalletLocationPreview
+ * above, for the same reason (this is a read-only preview list, not the editable copy owned by
+ * EventCustomFieldsCard). `undefined` while loading; an empty array is a valid loaded state
+ * (no custom fields defined for this event yet). */
+export function useWalletCustomFields(
+  eventId: string | undefined,
+  visitedTabs: ReadonlySet<EventSettingsTab>,
+): EventCustomFieldDto[] | undefined {
+  const [walletCustomFields, setWalletCustomFields] = useState<EventCustomFieldDto[] | undefined>(undefined);
+  useEffect(() => {
+    if (!eventId || !visitedTabs.has("wallet") || walletCustomFields !== undefined) return;
+    const controller = new AbortController();
+    fetchEventCustomFields(eventId, controller.signal)
+      .then((items) => {
+        if (!controller.signal.aborted) setWalletCustomFields(items);
+      })
+      .catch(() => {
+        /* preview-only: a failed fetch just leaves the dropdown without custom-field options */
+      });
+    return () => controller.abort();
+  }, [eventId, visitedTabs, walletCustomFields]);
+  return walletCustomFields;
 }
 
 export interface WalletPushHistoryState {

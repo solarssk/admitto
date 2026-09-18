@@ -28,6 +28,7 @@ function fullResolved(overrides: { attendee?: Record<string, unknown>; event?: R
       ticket_type: "vip",
       status: "registered",
       admitted_at: null,
+      custom_data: null,
       ...overrides.attendee,
     },
     event: {
@@ -127,6 +128,7 @@ describe("buildWalletPassInput", () => {
       addressCountryLabel: "United Kingdom",
       ticketTypeLabel: "vip",
       ticketStatusLabel: "Valid",
+      customFieldLabels: {},
       userProvidedId: "admitto:evt-1:att-1",
       barcodeValue: "barcode-123",
       relevantDate: "2026-09-24 09:00",
@@ -288,6 +290,18 @@ describe("buildWalletPassInput — ticket status placeholder", () => {
     expect(
       buildWalletPassInput(fullResolved({ attendee: { status: "cancelled", admitted_at: null } }), "b").ticketStatusLabel,
     ).toBe("Cancelled");
+  });
+});
+
+describe("buildWalletPassInput — custom field placeholders", () => {
+  it("passes the resolved custom field placeholder bag through unchanged", () => {
+    const input = buildWalletPassInput(fullResolved(), "b", { "custom:t_shirt_size": "L" });
+    expect(input.customFieldLabels).toEqual({ "custom:t_shirt_size": "L" });
+  });
+
+  it("defaults to an empty object when no third argument is given", () => {
+    const input = buildWalletPassInput(fullResolved(), "b");
+    expect(input.customFieldLabels).toEqual({});
   });
 });
 

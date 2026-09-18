@@ -1,4 +1,5 @@
 import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet/passcreator-mapper";
+import type { EventCustomFieldDto } from "../api/types.js";
 
 /** One editable row of the Wallet field mapping - PassCreator field key -> Admitto placeholder.
  * `id` is a client-only React key, generated once per row (never sent to the server) - the
@@ -59,6 +60,28 @@ export const WALLET_PLACEHOLDER_OPTIONS = WALLET_MAPPING_PLACEHOLDERS.map((id) =
   label: WALLET_PLACEHOLDER_META[id].label,
 }));
 
+/** Namespace prefix for a wallet field-mapping value backed by an event custom field, not a fixed
+ * WALLET_MAPPING_PLACEHOLDERS entry (v0.7.1). Kept as its own local literal, matching
+ * packages/tickets/src/wallet-custom-fields.ts's WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX exactly -
+ * apps/admin must not import @admitto/tickets' root barrel (pulls in Prisma/pdfkit, see AGENTS.md),
+ * and this one string is simpler to keep in sync by hand than to add a new safe subpath for. */
+export const WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX = "custom:";
+
+/** Only select (dictionary) and boolean custom fields are offered here - free text is excluded,
+ * same scope decision as the server side (ROADMAP.md v0.7.1, resolveWalletCustomFieldPlaceholders). */
+export function buildWalletCustomFieldOptions(
+  customFields: EventCustomFieldDto[] | undefined,
+): { id: string; icon: string; label: string }[] {
+  if (!customFields) return [];
+  return customFields
+    .filter((field) => field.type === "select" || field.type === "boolean")
+    .map((field) => ({
+      id: `${WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX}${field.source_field}`,
+      icon: "forms",
+      label: field.label,
+    }));
+}
+
 /** Renders field mapping rows grouped by category (attendee, event, notes, maps, address,
  * ticket - WALLET_MAPPING_PLACEHOLDERS' own order) instead of insertion order, so a row's
  * position is always determined by what it's mapped to, never by editing history. A row with no
@@ -88,13 +111,19 @@ export function buildWalletFieldMappingPatch(rows: WalletFieldMappingRow[]): Rec
  * saving the rest), but neither has any other signal. Surfaced here so the Wallet tab's own
  * SettingsFooter can show it instead of the row just quietly not being there after "Event
  * settings saved". */
-export function computeWalletFieldMappingErrors(rows: WalletFieldMappingRow[]): string[] {
+export function computeWalletFieldMappingErrors(
+  rows: WalletFieldMappingRow[],
+  extraOptions: { id: string; label: string }[] = [],
+): string[] {
   const errors: string[] = [];
   const keyCounts = new Map<string, number>();
   for (const row of rows) {
     const key = row.key.trim();
     if (row.value && !key) {
-      const label = WALLET_PLACEHOLDER_OPTIONS.find((o) => o.id === row.value)?.label ?? row.value;
+      const label =
+        WALLET_PLACEHOLDER_OPTIONS.find((o) => o.id === row.value)?.label ??
+        extraOptions.find((o) => o.id === row.value)?.label ??
+        row.value;
       errors.push(`"${label}" has no PassCreator field key - this row won't be saved.`);
     }
     if (key) keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);

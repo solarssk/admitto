@@ -33,6 +33,13 @@ export interface WalletPassInput {
    * below. Nothing today automatically re-issues a pass on check-in or revoke, so a mapped pass
    * keeps showing the value from when it was last created/reissued, not a live state. */
   ticketStatusLabel: string;
+  /** One entry per event custom field of type `select`/`boolean` the attendee has an answer for,
+   * keyed by the already-namespaced placeholder id ("custom:<source_field>", see
+   * packages/tickets/src/wallet-custom-fields.ts) - resolved separately before
+   * buildWalletPassInput is called, same as ticketTypeLabel's own resolveTicketPageDisplay step,
+   * so this stays a plain data bag rather than requiring db access here. Empty object when the
+   * event has no mappable custom fields or the attendee answered none of them. */
+  customFieldLabels: Record<string, string>;
   /** Stable idempotency key, e.g. "admitto:{eventId}:{attendeeId}". */
   userProvidedId: string;
   /** The exact same QR payload the ticket page's own QR code encodes (the raw internal token for

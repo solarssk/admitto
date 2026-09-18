@@ -14,7 +14,7 @@ import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet/passcreator-mapper"
 import { formatEventHoursRange } from "@admitto/shared/region-date-format";
 import { isMapReady, resolveAppleMapsUrl, resolveGoogleMapsUrl } from "@admitto/location";
 import type { WalletPushHistoryEntry, WalletPushHistoryScope } from "../api/client.js";
-import type { EventLocationDto, EventSettingsDto } from "../api/types.js";
+import type { EventCustomFieldDto, EventLocationDto, EventSettingsDto } from "../api/types.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { SamsungWalletIcon } from "../components/SamsungWalletIcon.js";
@@ -28,8 +28,10 @@ import {
 import { EVENT_TYPE_LABELS } from "./eventTypeOptions.js";
 import { NO_AUTOFILL_PROPS, SecretFieldRow, SettingsFooter } from "./mailTransportFormParts.js";
 import {
+  buildWalletCustomFieldOptions,
   computeWalletFieldMappingErrors,
   sortWalletFieldMappingByCategory,
+  WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX,
   WALLET_PLACEHOLDER_OPTIONS,
   type WalletFieldMappingRow,
 } from "./walletFieldMapping.js";
@@ -96,7 +98,7 @@ function computeWalletEventHoursPreview(
  * its own cognitive complexity down (SonarCloud S3776). Only reached once `location` has loaded
  * (the caller handles the `undefined` "still loading" case first). */
 function computeWalletLocationPlaceholderPreview(
-  id: (typeof WALLET_MAPPING_PLACEHOLDERS)[number],
+  id: string,
   location: EventLocationDto | null,
 ): string {
   switch (id) {
@@ -158,16 +160,38 @@ function computeWalletLocationPlaceholderPreview(
   }
 }
 
+/** Preview for a `custom:<source_field>` row (v0.7.1) - undefined when `id` isn't one of these at
+ * all, so the caller falls through to the fixed-vocabulary handling below unchanged. Like every
+ * other attendee-scoped hint, this can't show a real per-attendee answer on an event-level
+ * settings page, so it shows an example instead - a stale mapping (the custom field was deleted
+ * or retyped to `text` after being mapped) reads the same as any other unmapped field. */
+function computeWalletCustomFieldPreview(
+  id: string,
+  customFields: EventCustomFieldDto[] | undefined,
+): string | undefined {
+  if (!id.startsWith(WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX)) return undefined;
+  if (customFields === undefined) return "Loading…";
+  const sourceField = id.slice(WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX.length);
+  const field = customFields.find(
+    (f) => f.source_field === sourceField && (f.type === "select" || f.type === "boolean"),
+  );
+  if (!field) return WALLET_VALUE_NOT_SET;
+  return field.type === "boolean" ? "e.g. Yes" : `e.g. ${field.options?.[0] ?? "…"}`;
+}
+
 /** The real value a field mapping row's hint icon shows on hover - what this specific event
  * would actually send for the selected placeholder right now (apps/web/src/app.ts's own
  * buildWalletPassInput), not a generic description of the field. `location` is `undefined` while
  * still loading (see the effect that fetches it), `null` once loaded with nothing saved. */
 function computeWalletPlaceholderPreview(
-  id: (typeof WALLET_MAPPING_PLACEHOLDERS)[number],
+  id: string,
   form: Pick<SettingsForm, "title" | "date" | "eventHoursStart" | "eventHoursEnd" | "timezone" | "eventType">,
   location: EventLocationDto | null | undefined,
+  customFields: EventCustomFieldDto[] | undefined,
 ): string {
-  const attendeeHint = WALLET_ATTENDEE_SCOPED_HINTS[id];
+  const customFieldPreview = computeWalletCustomFieldPreview(id, customFields);
+  if (customFieldPreview !== undefined) return customFieldPreview;
+  const attendeeHint = (WALLET_ATTENDEE_SCOPED_HINTS as Record<string, string | undefined>)[id];
   if (attendeeHint) return attendeeHint;
   if (id === "event_name") return form.title;
   if (id === "event_date") return formatWalletDatePreview(form.date) ?? WALLET_VALUE_NOT_SET;
@@ -359,6 +383,7 @@ export function EventWalletPanel({
   walletTesting,
   onTestWallet,
   walletLocationPreview,
+  walletCustomFields,
   walletPushHistory,
   walletPushHistoryTotal,
   walletPushHistoryError,
@@ -374,6 +399,7 @@ export function EventWalletPanel({
     walletTesting: boolean;
     onTestWallet: () => void;
     walletLocationPreview: EventLocationDto | null | undefined;
+    walletCustomFields: EventCustomFieldDto[] | undefined;
     walletPushHistory: WalletPushHistoryEntry[] | null;
     walletPushHistoryTotal: number;
     walletPushHistoryError: string | null;
@@ -385,6 +411,11 @@ export function EventWalletPanel({
     onWalletPushHistoryPageSizeChange: (pageSize: number) => void;
   }
 >) {
+  // Computed once per render, not per field-mapping row (v0.7.1) - the fixed vocabulary plus this
+  // event's own select/boolean custom fields, in that order (custom fields always sort after the
+  // fixed categories, same as an unset row - see sortWalletFieldMappingByCategory's own doc comment).
+  const walletCustomFieldOptions = buildWalletCustomFieldOptions(walletCustomFields);
+  const allWalletPlaceholderOptions = [...WALLET_PLACEHOLDER_OPTIONS, ...walletCustomFieldOptions];
   return (
     <>
       <Card
@@ -548,12 +579,12 @@ export function EventWalletPanel({
                 const usedByOtherRows = new Set(
                   form.walletFieldMapping.filter((r) => r.id !== row.id).map((r) => r.value),
                 );
-                const availableOptions = WALLET_PLACEHOLDER_OPTIONS.filter(
+                const availableOptions = allWalletPlaceholderOptions.filter(
                   (o) => o.id === row.value || !usedByOtherRows.has(o.id),
                 );
-                const selectedOption = WALLET_PLACEHOLDER_OPTIONS.find((o) => o.id === row.value);
+                const selectedOption = allWalletPlaceholderOptions.find((o) => o.id === row.value);
                 const hintPreview = selectedOption
-                  ? computeWalletPlaceholderPreview(selectedOption.id, form, walletLocationPreview)
+                  ? computeWalletPlaceholderPreview(selectedOption.id, form, walletLocationPreview, walletCustomFields)
                   : undefined;
                 return (
                   <div className="wallet-field-mapping__row" key={row.id}>
@@ -639,7 +670,7 @@ export function EventWalletPanel({
       />
       {!isArchived && (
         <SettingsFooter
-          validationErrors={computeWalletFieldMappingErrors(form.walletFieldMapping)}
+          validationErrors={computeWalletFieldMappingErrors(form.walletFieldMapping, walletCustomFieldOptions)}
           validationErrorsRef={validationErrorsRef}
           hasUnsavedChanges={dirty}
           saving={saving}

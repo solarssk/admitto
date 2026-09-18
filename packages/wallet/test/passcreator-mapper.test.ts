@@ -21,6 +21,7 @@ const baseInput: WalletPassInput = {
   eventDateShortLabel: "10 Aug 2026",
   ticketTypeLabel: "VIP",
   ticketStatusLabel: "Valid",
+  customFieldLabels: {},
   userProvidedId: "admitto:evt-1:att-1",
   barcodeValue: "https://tickets.example.com/t/tok-1",
 };
@@ -172,6 +173,22 @@ describe("toPassCreatorData", () => {
       true,
     );
     expect(data.status).toBe("Checked in");
+  });
+
+  it("maps a namespaced custom:<source_field> placeholder from customFieldLabels", () => {
+    const data = toPassCreatorData(
+      { ...baseInput, customFieldLabels: { "custom:t_shirt_size": "L", "custom:vip_access": "Yes" } },
+      "tmpl-1",
+      { shirt: "custom:t_shirt_size", vip: "custom:vip_access" },
+      true,
+    );
+    expect(data.shirt).toBe("L");
+    expect(data.vip).toBe("Yes");
+  });
+
+  it("drops a mapped custom field placeholder the attendee has no value for (not present in customFieldLabels)", () => {
+    const data = toPassCreatorData(baseInput, "tmpl-1", { shirt: "custom:t_shirt_size" }, true);
+    expect(data).not.toHaveProperty("shirt");
   });
 
   it("maps event_date_short alongside the existing long event_date placeholder", () => {

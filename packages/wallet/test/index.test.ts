@@ -17,6 +17,7 @@ describe("@admitto/wallet", () => {
       eventDateShortLabel: "12 Aug 2026",
       ticketTypeLabel: "General",
       ticketStatusLabel: "Valid",
+      customFieldLabels: {},
       userProvidedId: "admitto:event1:attendee1",
       barcodeValue: "https://tickets.example.com/t/tok-jane",
     });

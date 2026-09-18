@@ -6,18 +6,20 @@ vi.mock("../src/wallet-pass-input.js", () => ({
   resolveTicketPageDisplay: vi.fn(),
   buildWalletPassInput: vi.fn(),
 }));
+vi.mock("../src/wallet-custom-fields.js", () => ({ resolveWalletCustomFieldPlaceholders: vi.fn() }));
 vi.mock("../src/ops-audit.js", () => ({ writeActionLog: vi.fn() }));
 
 import { decryptFromString } from "@admitto/crypto";
 import { WalletProviderError } from "@admitto/wallet";
 import { resolveTicket } from "../src/resolve.js";
 import { resolveTicketPageDisplay, buildWalletPassInput } from "../src/wallet-pass-input.js";
+import { resolveWalletCustomFieldPlaceholders } from "../src/wallet-custom-fields.js";
 import { writeActionLog } from "../src/ops-audit.js";
 import { reissueOneWalletPass } from "../src/reissue-wallet-pass.js";
 
 const audit = { operator: "user-1", sessionId: "sess-1", timezone: "Europe/Warsaw" };
 const target = { attendeeId: "att-1", providerPassId: "pc-1" };
-const resolvedTicket = { attendee: { id: "att-1" }, event: { id: "evt-1" } };
+const resolvedTicket = { attendee: { id: "att-1", custom_data: null }, event: { id: "evt-1" } };
 const walletPassInput = { attendeeName: "Jane Doe" };
 
 function makeDb() {
@@ -39,6 +41,7 @@ describe("reissueOneWalletPass", () => {
     vi.mocked(decryptFromString).mockReset();
     vi.mocked(resolveTicket).mockReset();
     vi.mocked(resolveTicketPageDisplay).mockReset().mockResolvedValue(resolvedTicket as never);
+    vi.mocked(resolveWalletCustomFieldPlaceholders).mockReset().mockResolvedValue({});
     vi.mocked(buildWalletPassInput).mockReset().mockReturnValue(walletPassInput as never);
     vi.mocked(writeActionLog).mockReset().mockResolvedValue(undefined);
     provider.updatePass.mockReset();
@@ -99,6 +102,8 @@ describe("reissueOneWalletPass", () => {
     const result = await reissueOneWalletPass(db as never, "evt-1", target, provider as never, audit);
 
     expect(result).toBe("reissued");
+    expect(resolveWalletCustomFieldPlaceholders).toHaveBeenCalledWith(db, "evt-1", null);
+    expect(buildWalletPassInput).toHaveBeenCalledWith(resolvedTicket, "qr-1", {});
     expect(provider.updatePass).toHaveBeenCalledWith("pc-1", walletPassInput);
     expect(txWalletPassUpdate).toHaveBeenCalledWith({
       where: { attendee_id: "att-1" },
