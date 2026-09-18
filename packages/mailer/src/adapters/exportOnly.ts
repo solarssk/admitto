@@ -22,8 +22,8 @@ export class ExportOnlyAdapter implements MailerAdapter {
     private readonly exportSink?: ExportSink,
   ) {}
 
-  async close(): Promise<void> {
-    return;
+  close(): Promise<void> {
+    return Promise.resolve();
   }
 
   async send(message: MailMessage): Promise<SendResult> {

@@ -36,17 +36,17 @@ const tsUnusedVarsOptions = {
 const typeAwareFollowUpRules = {
   "@typescript-eslint/no-misused-promises": "warn",
   "@typescript-eslint/no-floating-promises": "warn",
-  "@typescript-eslint/require-await": "warn",
-  "@typescript-eslint/no-unsafe-assignment": "warn",
+  "@typescript-eslint/require-await": "error",
+  "@typescript-eslint/no-unsafe-assignment": "error",
   "@typescript-eslint/no-unsafe-return": "warn",
   "@typescript-eslint/only-throw-error": "warn",
-  "@typescript-eslint/no-unsafe-member-access": "warn",
-  "@typescript-eslint/no-unsafe-argument": "warn",
+  "@typescript-eslint/no-unsafe-member-access": "error",
+  "@typescript-eslint/no-unsafe-argument": "error",
   "@typescript-eslint/restrict-template-expressions": "error",
   "@typescript-eslint/no-base-to-string": "error",
   "@typescript-eslint/unbound-method": "error",
   "@typescript-eslint/prefer-promise-reject-errors": "error",
-  "@typescript-eslint/no-unsafe-call": "warn",
+  "@typescript-eslint/no-unsafe-call": "error",
 };
 
 // Shared by packages/ui's own *.tsx files and every apps/*/src file below — both are React/TSX,

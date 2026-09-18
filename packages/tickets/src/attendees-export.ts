@@ -186,12 +186,9 @@ export async function exportAttendeesCsv(
 
   const [rows, attributeFieldsResult, ticketTypes] = await Promise.all([
     findFilteredAttendeesForExport(db, eventId, filters),
-    loadEventCustomDataFields(db, eventId).catch((err) => err),
+    loadEventCustomDataFields(db, eventId),
     loadEventTicketTypes(db, eventId),
   ]);
-  if (attributeFieldsResult instanceof Error) {
-    throw attributeFieldsResult;
-  }
 
   const exportColumns = buildExportColumns(attributeFieldsResult);
   const exportRows = buildSanitizedExportRows(rows, attributeFieldsResult, timeZone, ticketTypes);

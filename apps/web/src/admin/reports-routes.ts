@@ -1836,7 +1836,7 @@ async function finishCsvExport(
         quoteCsvCell(
           sanitizeCsvCell(`Export truncated: first ${CSV_EXPORT_MAX} of ${opts.totalCount} ${opts.truncationNoun}.`),
         ),
-        ...new Array(opts.columns.length - 1).fill(quoteCsvCell("")),
+        ...new Array<string>(opts.columns.length - 1).fill(quoteCsvCell("")),
       ].join(",")
     : null;
   const csvBody = [header, ...(truncationNotice ? [truncationNotice] : []), ...opts.dataRows].join("\r\n");

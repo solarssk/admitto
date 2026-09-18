@@ -80,10 +80,11 @@ export async function publishActivityChanged(eventIds: readonly string[]): Promi
 
 /** Closes the publisher connection, if open. Call on worker shutdown (an open socket otherwise
  * keeps the process alive past a SIGTERM/SIGINT) and from tests between cases. */
-export async function closeSsePublishClient(): Promise<void> {
+export function closeSsePublishClient(): Promise<void> {
   // Shutdown must not wait on a Redis server that is itself unavailable.
   client?.destroy();
   client = null;
   connecting = null;
   unavailableUntil = 0;
+  return Promise.resolve();
 }

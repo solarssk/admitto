@@ -297,15 +297,6 @@
     "contextAfter": ".then((errMsg) => {"
   },
   {
-    "ruleId": "@typescript-eslint/no-unsafe-argument",
-    "filePath": "apps/admin/src/hooks/useEventStream.ts",
-    "message": "Unsafe argument of type `any` assigned to a parameter of type `string`.",
-    "codeLine": "const data = JSON.parse(msg.data) as { type: string };",
-    "column": 35,
-    "contextBefore": "try {",
-    "contextAfter": "if (data.type === \"ping\") return;"
-  },
-  {
     "ruleId": "@typescript-eslint/no-floating-promises",
     "filePath": "apps/admin/src/identity/CfAccessEditor.tsx",
     "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
@@ -403,15 +394,6 @@
     "column": 26,
     "contextBefore": "provider={provider}",
     "contextAfter": "disabled={togglingIds.has(provider.id)}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "apps/admin/src/identity/cfAccessValidation.ts",
-    "message": "Unsafe assignment of an `any` value.",
-    "codeLine": "const parsed = JSON.parse(trimmed);",
-    "column": 13,
-    "contextBefore": "try {",
-    "contextAfter": "if (Array.isArray(parsed)) {"
   },
   {
     "ruleId": "@typescript-eslint/no-floating-promises",
@@ -702,33 +684,6 @@
     "contextAfter": "}"
   },
   {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "apps/cli/src/lib/sse-publish.ts",
-    "message": "Async function 'closeSsePublishClient' has no 'await' expression.",
-    "codeLine": "export async function closeSsePublishClient(): Promise<void> {",
-    "column": 8,
-    "contextBefore": "* keeps the process alive past a SIGTERM/SIGINT) and from tests between cases. */",
-    "contextAfter": "// Shutdown must not wait on a Redis server that is itself unavailable."
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "apps/web/src/admin/admin-helpers.ts",
-    "message": "Unsafe assignment of an `any` value.",
-    "codeLine": "const map: Record<string, UserDisplayRow> = Object.create(null);",
-    "column": 9,
-    "contextBefore": ": [];",
-    "contextAfter": "for (const u of users) map[u.id] = u;"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "apps/web/src/admin/attendees-api-routes.ts",
-    "message": "Unsafe assignment of an `any` value.",
-    "codeLine": "const body = await c.req.json().catch(() => null);",
-    "column": 9,
-    "contextBefore": "async function requireNoteBody(c: Context): Promise<string | Response> {",
-    "contextAfter": "const noteBody = body && typeof body === \"object\" ? (body as Record<string, unknown>).body : undefined;"
-  },
-  {
     "ruleId": "@typescript-eslint/only-throw-error",
     "filePath": "apps/web/src/admin/attendees-api-routes.ts",
     "message": "Expected an error object to be thrown.",
@@ -783,15 +738,6 @@
     "contextAfter": "const actorIds = [...new Set(rows.filter((r) => !r.actor_email).map((r) => r.actor_user_id))];"
   },
   {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "apps/web/src/admin/checkin-api-routes.ts",
-    "message": "Async function 'emitRejectedCheckinLog' has no 'await' expression.",
-    "codeLine": "async function emitRejectedCheckinLog(",
-    "column": 1,
-    "contextBefore": "* for the authenticated session flow; emergency bearer requests keep the device context only. */",
-    "contextAfter": "eventId: string,"
-  },
-  {
     "ruleId": "@typescript-eslint/only-throw-error",
     "filePath": "apps/web/src/admin/event-settings-routes.ts",
     "message": "Expected an error object to be thrown.",
@@ -799,33 +745,6 @@
     "column": 30,
     "contextBefore": "const issuedCount = await loadIssuedWalletPassCount(tx, eventId);",
     "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "apps/web/src/admin/geocoding-routes.ts",
-    "message": "Async function 'mapProviderError' has no 'await' expression.",
-    "codeLine": "async function mapProviderError(err: unknown): Promise<Response | null> {",
-    "column": 1,
-    "contextBefore": "",
-    "contextAfter": "if (err instanceof GeocodingProviderError) {"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "apps/web/src/admin/reports-routes.ts",
-    "message": "Unsafe spread of an `any` value in an array.",
-    "codeLine": "...new Array(opts.columns.length - 1).fill(quoteCsvCell(\"\")),",
-    "column": 9,
-    "contextBefore": "),",
-    "contextAfter": "].join(\",\")"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "apps/web/src/admin/security-audit-routes.ts",
-    "message": "Unsafe assignment of an `any` value.",
-    "codeLine": "const userMap: Record<string, UserRow> = Object.create(null);",
-    "column": 9,
-    "contextBefore": ": [];",
-    "contextAfter": "for (const u of users) userMap[u.id] = u;"
   },
   {
     "ruleId": "@typescript-eslint/no-unsafe-return",
@@ -846,96 +765,6 @@
     "contextAfter": "}"
   },
   {
-    "ruleId": "@typescript-eslint/no-unsafe-argument",
-    "filePath": "apps/web/src/maps/nominatim-provider.ts",
-    "message": "Unsafe argument of type `any` assigned to a parameter of type `Uint8Array<ArrayBufferLike>`.",
-    "codeLine": "chunks.push(value);",
-    "column": 19,
-    "contextBefore": "}",
-    "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "apps/web/src/maps/nominatim-provider.ts",
-    "message": "Unsafe object destructuring of a property with an `any` value.",
-    "codeLine": "const { done, value } = await reader.read();",
-    "column": 21,
-    "contextBefore": "for (;;) {",
-    "contextAfter": "if (done) break;"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-member-access",
-    "filePath": "apps/web/src/maps/nominatim-provider.ts",
-    "message": "Unsafe member access .byteLength on an `any` value.",
-    "codeLine": "if (!value || value.byteLength === 0) continue;",
-    "column": 27,
-    "contextBefore": "if (done) break;",
-    "contextAfter": "total += value.byteLength;"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-member-access",
-    "filePath": "apps/web/src/maps/nominatim-provider.ts",
-    "message": "Unsafe member access .byteLength on an `any` value.",
-    "codeLine": "total += value.byteLength;",
-    "column": 22,
-    "contextBefore": "if (!value || value.byteLength === 0) continue;",
-    "contextAfter": "if (total > maxBytes) {"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-argument",
-    "filePath": "apps/web/src/maps/static-map.ts",
-    "message": "Unsafe argument of type `any` assigned to a parameter of type `Uint8Array<ArrayBufferLike>`.",
-    "codeLine": "chunks.push(value);",
-    "column": 19,
-    "contextBefore": "}",
-    "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "apps/web/src/maps/static-map.ts",
-    "message": "Unsafe object destructuring of a property with an `any` value.",
-    "codeLine": "const { done, value } = await reader.read();",
-    "column": 21,
-    "contextBefore": "for (;;) {",
-    "contextAfter": "if (done) break;"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-member-access",
-    "filePath": "apps/web/src/maps/static-map.ts",
-    "message": "Unsafe member access .byteLength on an `any` value.",
-    "codeLine": "if (!value || value.byteLength === 0) continue;",
-    "column": 27,
-    "contextBefore": "if (done) break;",
-    "contextAfter": "total += value.byteLength;"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-member-access",
-    "filePath": "apps/web/src/maps/static-map.ts",
-    "message": "Unsafe member access .byteLength on an `any` value.",
-    "codeLine": "total += value.byteLength;",
-    "column": 22,
-    "contextBefore": "if (!value || value.byteLength === 0) continue;",
-    "contextAfter": "if (total > maxBytes) {"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "apps/web/src/maps/ttl-string-cache.ts",
-    "message": "Async method 'get' has no 'await' expression.",
-    "codeLine": "async get(key: string): Promise<string | null> {",
-    "column": 3,
-    "contextBefore": "",
-    "contextAfter": "const entry = this.store.get(key);"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "apps/web/src/maps/ttl-string-cache.ts",
-    "message": "Async method 'set' has no 'await' expression.",
-    "codeLine": "async set(key: string, value: string, ttlMs: number): Promise<void> {",
-    "column": 3,
-    "contextBefore": "",
-    "contextAfter": "this.store.set(key, { value, expiresAt: Date.now() + ttlMs });"
-  },
-  {
     "ruleId": "security/detect-non-literal-fs-filename",
     "filePath": "apps/web/src/notification-email-assets.ts",
     "message": "Found existsSync from package \"node:fs\" with non literal argument at index 0",
@@ -954,24 +783,6 @@
     "contextAfter": "const logoOut = join(targetDir, \"admitto-logo.png\");"
   },
   {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "apps/web/src/rate-limit/in-memory.ts",
-    "message": "Async method 'health' has no 'await' expression.",
-    "codeLine": "async health(): Promise<{ ok: boolean; latencyMs: number | null }> {",
-    "column": 3,
-    "contextBefore": "/** In-memory store has no external backend to ping. */",
-    "contextAfter": "return { ok: true, latencyMs: null };"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "apps/web/src/rate-limit/in-memory.ts",
-    "message": "Async method 'hit' has no 'await' expression.",
-    "codeLine": "async hit(key: string, windowMs: number, max: number): Promise<RateLimitHitResult> {",
-    "column": 3,
-    "contextBefore": "/** Record one request for `key` within a fixed window of `windowMs`. */",
-    "contextAfter": "const now = Date.now();"
-  },
-  {
     "ruleId": "@typescript-eslint/no-unsafe-return",
     "filePath": "packages/auth/src/cloudflare-access/extract-token.ts",
     "message": "Unsafe return of a value of type `any`.",
@@ -981,40 +792,13 @@
     "contextAfter": "const header ="
   },
   {
-    "ruleId": "@typescript-eslint/no-unsafe-argument",
+    "ruleId": "security/detect-object-injection",
     "filePath": "packages/auth/src/settings/resolver.ts",
-    "message": "Unsafe argument of type `any` assigned to a parameter of type `string`.",
-    "codeLine": "return parseEnvValue(raw, SETTING_DEFAULTS.get(key));",
-    "column": 24,
-    "contextBefore": "if (raw === undefined || raw.trim() === \"\") return undefined;",
-    "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "packages/auth/src/settings/resolver.ts",
-    "message": "Unsafe assignment of an `any` value.",
-    "codeLine": "const raw = Object.getOwnPropertyDescriptor(process.env, envName)?.value;",
-    "column": 9,
+    "message": "Variable Assigned to Object Injection Sink",
+    "codeLine": "const raw = process.env[envName];",
+    "column": 15,
     "contextBefore": "if (!envName) return undefined;",
     "contextAfter": "if (raw === undefined || raw.trim() === \"\") return undefined;"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-call",
-    "filePath": "packages/auth/src/settings/resolver.ts",
-    "message": "Unsafe call of an `any` typed value.",
-    "codeLine": "if (raw === undefined || raw.trim() === \"\") return undefined;",
-    "column": 28,
-    "contextBefore": "const raw = Object.getOwnPropertyDescriptor(process.env, envName)?.value;",
-    "contextAfter": "return parseEnvValue(raw, SETTING_DEFAULTS.get(key));"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-member-access",
-    "filePath": "packages/auth/src/settings/resolver.ts",
-    "message": "Unsafe member access .trim on an `any` value.",
-    "codeLine": "if (raw === undefined || raw.trim() === \"\") return undefined;",
-    "column": 32,
-    "contextBefore": "const raw = Object.getOwnPropertyDescriptor(process.env, envName)?.value;",
-    "contextAfter": "return parseEnvValue(raw, SETTING_DEFAULTS.get(key));"
   },
   {
     "ruleId": "@typescript-eslint/no-unsafe-return",
@@ -1188,24 +972,6 @@
     "contextAfter": "parseOneDsnBlock(block, out, seen);"
   },
   {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "packages/mail-delivery/src/configDescribe.ts",
-    "message": "Unsafe assignment of an `any` value.",
-    "codeLine": "const field = Object.getOwnPropertyDescriptor(desc, key)?.value;",
-    "column": 11,
-    "contextBefore": "for (const key of Object.keys(desc) as (keyof ConfigDescriptor)[]) {",
-    "contextAfter": "if (!field) continue;"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "packages/mail-delivery/src/send.ts",
-    "message": "Async function 'resolvePlaintextToken' has no 'await' expression.",
-    "codeLine": "async function resolvePlaintextToken(",
-    "column": 1,
-    "contextBefore": "",
-    "contextAfter": "attendee: { id: string; token_enc: string | null },"
-  },
-  {
     "ruleId": "@typescript-eslint/no-unsafe-return",
     "filePath": "packages/mail-templates/src/escape.ts",
     "message": "Unsafe return of a value of type `any`.",
@@ -1222,60 +988,6 @@
     "column": 44,
     "contextBefore": "function escapeWithMap(value: string, map: Record<string, string>): string {",
     "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "packages/mailer/src/adapters/exportOnly.ts",
-    "message": "Async method 'close' has no 'await' expression.",
-    "codeLine": "async close(): Promise<void> {",
-    "column": 3,
-    "contextBefore": "",
-    "contextAfter": "return;"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "packages/mailer/src/adapters/graph.ts",
-    "message": "Async method 'close' has no 'await' expression.",
-    "codeLine": "async close(): Promise<void> {",
-    "column": 3,
-    "contextBefore": "",
-    "contextAfter": "return;"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "packages/mailer/src/adapters/mock.ts",
-    "message": "Async method 'close' has no 'await' expression.",
-    "codeLine": "async close(): Promise<void> {",
-    "column": 3,
-    "contextBefore": "",
-    "contextAfter": "return;"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "packages/mailer/src/adapters/mock.ts",
-    "message": "Async method 'send' has no 'await' expression.",
-    "codeLine": "async send(message: MailMessage): Promise<SendResult> {",
-    "column": 3,
-    "contextBefore": "",
-    "contextAfter": "const validationError = validateMailMessage(message);"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "packages/mailer/src/adapters/powerAutomate.ts",
-    "message": "Async method 'close' has no 'await' expression.",
-    "codeLine": "async close(): Promise<void> {",
-    "column": 3,
-    "contextBefore": "",
-    "contextAfter": "return;"
-  },
-  {
-    "ruleId": "@typescript-eslint/require-await",
-    "filePath": "packages/mailer/src/adapters/smtp.ts",
-    "message": "Async method 'close' has no 'await' expression.",
-    "codeLine": "async close(): Promise<void> {",
-    "column": 3,
-    "contextBefore": "/** Close the underlying nodemailer connection pool. */",
-    "contextAfter": "this.transporter.close();"
   },
   {
     "ruleId": "security/detect-object-injection",
@@ -1465,51 +1177,6 @@
     "column": 12,
     "contextBefore": "doc.text(exportColumns[i]!, x, y, cellOptions(plan.contentWidths[i]!, headerHeight));",
     "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-argument",
-    "filePath": "packages/tickets/src/attendees-export.ts",
-    "message": "Unsafe argument of type `any` assigned to a parameter of type `EventItemContent[]`.",
-    "codeLine": "const exportColumns = buildExportColumns(attributeFieldsResult);",
-    "column": 44,
-    "contextBefore": "",
-    "contextAfter": "const exportRows = buildSanitizedExportRows(rows, attributeFieldsResult, timeZone, ticketTypes);"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-argument",
-    "filePath": "packages/tickets/src/attendees-export.ts",
-    "message": "Unsafe argument of type `any` assigned to a parameter of type `EventItemContent[]`.",
-    "codeLine": "const exportRows = buildSanitizedExportRows(rows, attributeFieldsResult, timeZone, ticketTypes);",
-    "column": 53,
-    "contextBefore": "const exportColumns = buildExportColumns(attributeFieldsResult);",
-    "contextAfter": "const csv = buildExportCsv(exportRows, exportColumns);"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "packages/tickets/src/attendees-export.ts",
-    "message": "Unsafe array destructuring of a tuple element with an `any` value.",
-    "codeLine": "const [rows, attributeFieldsResult, ticketTypes] = await Promise.all([",
-    "column": 16,
-    "contextBefore": "",
-    "contextAfter": "findFilteredAttendeesForExport(db, eventId, filters),"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "packages/tickets/src/attendees-export.ts",
-    "message": "Unsafe return of a value of type `any`.",
-    "codeLine": "loadEventCustomDataFields(db, eventId).catch((err) => err),",
-    "column": 59,
-    "contextBefore": "findFilteredAttendeesForExport(db, eventId, filters),",
-    "contextAfter": "loadEventTicketTypes(db, eventId),"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-assignment",
-    "filePath": "packages/tickets/src/custom-data.ts",
-    "message": "Unsafe assignment of an `any` value.",
-    "codeLine": "const v = Object.getOwnPropertyDescriptor(raw, field)?.value;",
-    "column": 9,
-    "contextBefore": "if (!raw || typeof raw !== \"object\" || Array.isArray(raw)) return null;",
-    "contextAfter": "if (typeof v !== \"string\") return null;"
   },
   {
     "ruleId": "security/detect-object-injection",
