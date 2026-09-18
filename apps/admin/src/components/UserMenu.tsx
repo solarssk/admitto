@@ -81,7 +81,7 @@ export function UserMenu({ user, assignments }: Readonly<{ user: AuthUser; assig
             className="user-menu__item"
             onClick={() => {
               close();
-              navigate("/account");
+              void navigate("/account");
             }}
           >
             <span className="user-menu__item-icon">

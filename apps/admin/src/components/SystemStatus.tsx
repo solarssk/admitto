@@ -365,7 +365,7 @@ export function SystemStatus({
                 className="user-menu__item"
                 onClick={() => {
                   close();
-                  navigate(`${SETTINGS_INDEX_PATH}?tab=health`);
+                  void navigate(`${SETTINGS_INDEX_PATH}?tab=health`);
                 }}
               >
                 <span className="user-menu__item-icon">
@@ -381,7 +381,7 @@ export function SystemStatus({
                 className="user-menu__item"
                 onClick={() => {
                   close();
-                  navigate(`${SETTINGS_INDEX_PATH}?tab=logs`);
+                  void navigate(`${SETTINGS_INDEX_PATH}?tab=logs`);
                 }}
               >
                 <span className="user-menu__item-icon">

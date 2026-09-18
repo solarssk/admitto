@@ -28,7 +28,7 @@ export function SettingsLayout() {
   // Legacy entry: /admin/settings?tab=identity → canonical Identity overview.
   useEffect(() => {
     if (!onIdentity && searchParams.get("tab") === "identity") {
-      navigate(IDENTITY_PROVIDERS_ROUTE, { replace: true });
+      void navigate(IDENTITY_PROVIDERS_ROUTE, { replace: true });
     }
   }, [searchParams, navigate, onIdentity]);
 
@@ -36,12 +36,12 @@ export function SettingsLayout() {
     (id: string) => {
       if (!isSettingsTab(id)) return;
       if (id === "identity") {
-        navigate(IDENTITY_PROVIDERS_ROUTE);
+        void navigate(IDENTITY_PROVIDERS_ROUTE);
         return;
       }
       // Always replace so tab clicks don't accumulate history entries. Leaving an
       // Identity detail view triggers the editor's `useBlocker` when dirty.
-      navigate(`${SETTINGS_INDEX_PATH}?tab=${id}`, { replace: true });
+      void navigate(`${SETTINGS_INDEX_PATH}?tab=${id}`, { replace: true });
     },
     [navigate],
   );

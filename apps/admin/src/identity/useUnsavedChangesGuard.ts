@@ -56,7 +56,7 @@ export function useUnsavedChangesGuard(
       return;
     }
     skipBlockRef.current = true;
-    navigate(IDENTITY_PROVIDERS_ROUTE);
+    void navigate(IDENTITY_PROVIDERS_ROUTE);
   }, [isBusy, dirty, navigate]);
 
   // Suspended while either discard dialog is open - otherwise the editor's own Escape/keydown

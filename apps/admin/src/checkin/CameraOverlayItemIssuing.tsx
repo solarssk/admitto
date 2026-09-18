@@ -84,7 +84,7 @@ function SummaryScreen({ items, stepKeys, isDone, onDone, onUndo, showUndo, pend
             disabled={!canAct || pending || undoGuard.ids.has("undo")}
             onClick={() => {
               if (!undoGuard.start("undo")) return;
-              Promise.resolve(onUndo()).finally(() => undoGuard.finish("undo"));
+              void Promise.resolve(onUndo()).finally(() => undoGuard.finish("undo"));
             }}
           >
             Undo last check-in

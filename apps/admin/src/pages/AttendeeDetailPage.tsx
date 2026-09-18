@@ -1866,8 +1866,8 @@ export function AttendeeDetailPage() {
   const isDirty = isAttendeeFormDirty(form, baseline);
 
   const goBack = () => {
-    if (eventId) navigate(`/admin/events/${eventId}/attendees`);
-    else navigate(-1);
+    if (eventId) void navigate(`/admin/events/${eventId}/attendees`);
+    else void navigate(-1);
   };
 
   const handleBack = () => {
@@ -1888,7 +1888,7 @@ export function AttendeeDetailPage() {
       await deleteAttendee(eventId, attendeeId);
       if (!isStillSelected(target)) return;
       addToast("Attendee permanently deleted", "success");
-      navigate(`/admin/events/${eventId}/attendees`);
+      void navigate(`/admin/events/${eventId}/attendees`);
     } catch (err) {
       if (!isStillSelected(target)) return;
       setDeleteError(operatorApiErrorMessage(err, "Could not delete attendee. Try again."));

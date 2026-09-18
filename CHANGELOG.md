@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Admin navigation and existing background UI actions now explicitly mark their intentionally unawaited work, so future accidental floating promises are caught during development without changing current operator flows.
 - Internal transaction aborts now carry Error values while preserving the same attendee-validation and wallet-template responses for administrators.
 - Simultaneous wallet-link taps now re-check the saved pass before a second creation attempt, preventing a stale lookup from issuing a duplicate pass.
 - Notification email asset generation now records that its module-relative logo paths are fixed repository assets, keeping static security checks focused on real dynamic file input.
