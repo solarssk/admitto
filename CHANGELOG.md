@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Simultaneous wallet-link taps now re-check the saved pass before a second creation attempt, preventing a stale lookup from issuing a duplicate pass.
 - Admin cleanup effects now retain their current upload-tracking collections, while report wallet status depends only on the event's wallet toggles; this keeps a close, navigation, or live update from acting on stale state.
 - Internal API, import, authentication, and UI mapping boundaries now retain their declared return types when reading own properties, so the stricter static checks can guard future changes without changing operator-facing behavior.
 - Admin and API boundaries now keep untrusted parsed, descriptor, and null-prototype values explicitly typed before use.

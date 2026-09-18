@@ -1110,6 +1110,28 @@ export function createApp(options: CreateAppOptions = {}) {
       if (inFlight) return inFlight;
 
       const created = (async () => {
+        // A second request can read "no pass" just before the first request commits, then reach
+        // this point after the first lock has settled and been removed. Re-read under this new
+        // creation attempt so that stale lookup cannot call the provider a second time.
+        let latest: Awaited<ReturnType<typeof db.walletPass.findUnique>>;
+        try {
+          latest = await db.walletPass.findUnique({ where: { attendee_id: attendee.id } });
+        } catch (err) {
+          console.error("walletPass recheck failed:", err);
+          recordSystemLog({
+            level: "error",
+            source: "api",
+            message: "wallet_pass_lookup_failed",
+            fields: { eventId: event.id, attendeeId: attendee.id },
+          });
+          return null;
+        }
+        if (latest?.status === "active") {
+          return { apple_url: latest.apple_url, android_url: latest.android_url };
+        }
+        if (latest?.status === "voided" && latest.provider_pass_id) {
+          return restoreExistingPass(latest.provider_pass_id);
+        }
         const display = await resolveTicketPageDisplay(db, resolved);
         const input = buildWalletPassInput(display, qrPayload);
         return createOrRecoverPass(input);
