@@ -12,6 +12,15 @@ import {
 } from "../instance-base-url.js";
 import { attachmentContentDisposition } from "./content-disposition.js";
 
+/** Carries an intentional HTTP response through a database transaction, which can only abort by
+ * rejecting with an Error. Route handlers unwrap it at their transaction boundary. */
+export class TransactionResponseError extends Error {
+  constructor(readonly response: Response) {
+    super("Transaction aborted with an HTTP response");
+    this.name = "TransactionResponseError";
+  }
+}
+
 /** Resolve mail/preview base URL or return 422 when unset in production. */
 export async function resolveMailInstanceBaseUrl(
   c: Context,

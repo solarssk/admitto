@@ -93,6 +93,7 @@ import {
   requireEventId,
   resolveClientTimezone,
   resolveMailInstanceBaseUrl,
+  TransactionResponseError,
 } from "./admin-helpers.js";
 import { loadEventAdminJob } from "./admin-job-http.js";
 import { enqueueWalletPushJob } from "./wallet-push-routes.js";
@@ -1584,7 +1585,7 @@ function buildPatchUpdateData(
  * review) - same rationale as handleCreateEventAttendee. Only taken when ticket_type is actually
  * changing to a new, non-empty value: computePatchChanges already excludes it from `fields` when
  * the patch leaves it untouched or resubmits the same value, and clearing it to null can't
- * orphan a reference, so neither case needs the lock. Throws the 400 Response for the
+ * orphan a reference, so neither case needs the lock. Throws a TransactionResponseError for the
  * transaction's catch to surface. */
 async function guardPatchTicketTypeChange(
   c: Context,
@@ -1596,14 +1597,14 @@ async function guardPatchTicketTypeChange(
   if (!profileChanges?.fields.includes("ticket_type") || !nextTicketType) return;
   await acquireEventTicketTypesLock(tx, eventId);
   const ticketTypeError = await validateTicketTypeCatalog(tx, eventId, nextTicketType);
-  if (ticketTypeError) throw c.json(ticketTypeError, 400);
+  if (ticketTypeError) throw new TransactionResponseError(c.json(ticketTypeError, 400));
 }
 
 /** Re-checks event capacity when a PATCH restores a previously non-admittable attendee to an
  * admittable status (capacity_reactivation), under the same advisory lock the create/check-in
  * paths use — returns the forced-admit detail for the audit log, or undefined when nothing
- * needed forcing (or no restore happened at all). Throws the capacity Response for the
- * transaction's catch to surface. */
+ * needed forcing (or no restore happened at all). Throws a TransactionResponseError carrying the
+ * capacity response for the transaction's catch to surface. */
 async function guardPatchCapacityRestore(
   c: Context,
   tx: Prisma.TransactionClient,
@@ -1614,7 +1615,7 @@ async function guardPatchCapacityRestore(
   if (!isCapacityReactivation(existingStatus, statusChange)) return undefined;
   await acquireEventCapacityLock(tx, eventId);
   const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, 1);
-  if (capacityResult instanceof Response) throw capacityResult;
+  if (capacityResult instanceof Response) throw new TransactionResponseError(capacityResult);
   if (capacityResult && "forced" in capacityResult) return capacityResult;
   return undefined;
 }
@@ -1768,7 +1769,7 @@ async function runPatchAttendeeTransaction(
 /** Maps a thrown error from the PATCH transaction to its HTTP response — extracted from
  * `handlePatchEventAttendee`'s catch block. */
 function patchAttendeeErrorResponse(c: Context, err: unknown): Response {
-  if (err instanceof Response) return err;
+  if (err instanceof TransactionResponseError) return err.response;
   if (err instanceof StaleWriteError) {
     return c.json({ error: "stale_write" }, 409);
   }
@@ -2436,7 +2437,7 @@ export async function handleBulkTicketTypeEventAttendees(
     const { updatedIds, ...counts } = await db.$transaction(async (tx) => {
       await acquireEventTicketTypesLock(tx, eventId);
       const ticketTypeError = await validateTicketTypeCatalog(tx, eventId, ticket_type);
-      if (ticketTypeError) throw c.json(ticketTypeError, 400);
+      if (ticketTypeError) throw new TransactionResponseError(c.json(ticketTypeError, 400));
 
       const owned = await tx.attendee.findMany({
         where: { id: { in: attendeeIds }, event_id: eventId },
@@ -2486,7 +2487,7 @@ export async function handleBulkTicketTypeEventAttendees(
 
     return c.json({ ...counts, walletPushJobId });
   } catch (err) {
-    if (err instanceof Response) return err;
+    if (err instanceof TransactionResponseError) return err.response;
     console.error("handleBulkTicketTypeEventAttendees failed:", err);
     return c.json({ error: "server error" }, 500);
   }
@@ -3536,12 +3537,12 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
       if (ticket_type) {
         await acquireEventTicketTypesLock(tx, eventId);
         const ticketTypeError = await validateTicketTypeCatalog(tx, eventId, ticket_type);
-        if (ticketTypeError) throw c.json(ticketTypeError, 400);
+        if (ticketTypeError) throw new TransactionResponseError(c.json(ticketTypeError, 400));
       }
 
       await acquireEventCapacityLock(tx, eventId);
       const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, 1);
-      if (capacityResult instanceof Response) throw capacityResult;
+      if (capacityResult instanceof Response) throw new TransactionResponseError(capacityResult);
       const capacityForced =
         capacityResult && "forced" in capacityResult ? capacityResult : undefined;
 
@@ -3624,7 +3625,7 @@ export async function handleCreateEventAttendee(c: Context, db: PrismaClient): P
     const dto = await buildAttendeeDetailDto(db, eventId, dtoSourceRow);
     return c.json(dto, 201);
   } catch (err) {
-    if (err instanceof Response) return err;
+    if (err instanceof TransactionResponseError) return err.response;
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       return c.json(
         { code: "email_taken", error: "This email is already registered for this event." },

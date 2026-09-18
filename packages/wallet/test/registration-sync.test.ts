@@ -108,6 +108,20 @@ describe("runWalletRegistrationSync", () => {
     expect(result).toEqual({ checked: 2, updated: 1, skippedNoProvider: 0, failed: 1 });
   });
 
+  it("counts a non-Error provider rejection as failed without blocking its siblings", async () => {
+    const rows = [row(), row({ attendee_id: "att-2", user_provided_id: "admitto:evt-1:att-2" })];
+    const db = makeDb(rows);
+    const getRegistrationStatus = vi
+      .fn()
+      .mockRejectedValueOnce(Object.create(null))
+      .mockResolvedValueOnce(STATUS);
+    mockResolveWalletProvider.mockReturnValue({ getRegistrationStatus });
+
+    const result = await runWalletRegistrationSync(db);
+
+    expect(result).toEqual({ checked: 2, updated: 1, skippedNoProvider: 0, failed: 1 });
+  });
+
   it("bumps registration_sync_attempted_at (only) on a failed row, leaving registration_checked_at untouched so the UI's last-known-good time doesn't drift on a failing retry", async () => {
     const db = makeDb([row()]);
     const getRegistrationStatus = vi.fn().mockRejectedValueOnce(new Error("network down"));

@@ -45,6 +45,7 @@ import {
   parseEventDateInput,
   requireEventId,
   resolveActorEmailForLog,
+  TransactionResponseError,
 } from "./admin-helpers.js";
 import { resolvePassCreatorBaseUrl } from "../config.js";
 import { resolveInstanceBaseUrl } from "../instance-base-url.js";
@@ -990,9 +991,10 @@ async function guardWalletCredentialChange(
  * handlePatchEvent's transaction instead of running there. Acquires the same per-event advisory
  * lock issuance's own markActive (apps/web/src/app.ts) takes before its recheck, so whichever
  * request - this PATCH or an in-flight issuance - starts first fully commits before the other's
- * own recheck runs; each then sees the other's result rather than stale state. Throws the 409
- * Response for the transaction's own catch to surface (same pattern as
- * attendees-api-routes.ts's guardPatchCapacityRestore). No-op when the template isn't changing. */
+ * own recheck runs; each then sees the other's result rather than stale state. Throws a
+ * TransactionResponseError carrying the 409 response for the transaction's own catch to surface
+ * (same pattern as attendees-api-routes.ts's guardPatchCapacityRestore). No-op when the template
+ * isn't changing. */
 async function guardWalletTemplateChangeInTx(
   c: Context,
   tx: Prisma.TransactionClient,
@@ -1002,7 +1004,9 @@ async function guardWalletTemplateChangeInTx(
   if (!templateChanging) return;
   await acquireWalletTemplateLock(tx, eventId);
   const issuedCount = await loadIssuedWalletPassCount(tx, eventId);
-  if (issuedCount > 0) throw c.json({ error: "wallet_template_locked" }, 409);
+  if (issuedCount > 0) {
+    throw new TransactionResponseError(c.json({ error: "wallet_template_locked" }, 409));
+  }
 }
 
 /** Parses and validates a PATCH body, and enforces the wallet-fields superadmin gate - returns
@@ -1058,7 +1062,7 @@ function handlePatchEventTransactionError(
   changedFields: string[],
   actorUserId: string,
 ): Response {
-  if (err instanceof Response) return err;
+  if (err instanceof TransactionResponseError) return err.response;
   console.error("[audit] event_updated transaction failed", err);
   recordSystemLog({
     level: "error",
