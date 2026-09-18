@@ -49,6 +49,12 @@ const typeAwareFollowUpRules = {
   "@typescript-eslint/no-unsafe-call": "error",
 };
 
+// The only remaining uses are audited, module-relative build-time assets with narrow local
+// suppressions. New dynamic filesystem filenames must now fail lint rather than add debt.
+const securityFollowUpRules = {
+  "security/detect-non-literal-fs-filename": "error",
+};
+
 // Shared by packages/ui's own *.tsx files and every apps/*/src file below — both are React/TSX,
 // so the plugin set, parser options, and rule list were byte-for-byte identical two ways (only
 // `files` differed), which is exactly what SonarCloud's new-code duplication gate flagged. One
@@ -73,6 +79,7 @@ const reactTsxConfig = {
     ...security.configs.recommended.rules,
     ...tsPlugin.configs["recommended-type-checked"].rules,
     ...typeAwareFollowUpRules,
+    ...securityFollowUpRules,
     "@typescript-eslint/no-unused-vars": ["error", tsUnusedVarsOptions],
     // Typed records, React state, and route params — false positives.
     "security/detect-object-injection": "off",
@@ -103,6 +110,7 @@ export default [
       ...security.configs.recommended.rules,
       ...tsPlugin.configs["recommended-type-checked"].rules,
       ...typeAwareFollowUpRules,
+      ...securityFollowUpRules,
       "@typescript-eslint/no-unused-vars": ["error", tsUnusedVarsOptions],
     },
   },

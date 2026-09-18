@@ -83,6 +83,7 @@ export function buildNotificationBadgeSvg(color: string, glyph: string): string 
 function repoRoot(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   for (const candidate of [join(here, "../../.."), join(here, "../../../..")]) {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixed marker below trusted module-relative repo root
     if (existsSync(join(candidate, "packages/ui/src/assets/admitto-logo.svg"))) return candidate;
   }
   throw new Error(`Could not locate the repo root from ${here}`);
@@ -100,6 +101,7 @@ export async function generateNotificationEmailAssets(outDir?: string): Promise<
   const written: string[] = [];
 
   // Logo: rasterize the real product lockup, 3x for retina (displayed at width=118 in email HTML).
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixed asset below trusted module-relative repo root
   const logoSvg = readFileSync(join(root, "packages/ui/src/assets/admitto-logo.svg"));
   const logoOut = join(targetDir, "admitto-logo.png");
   await sharp(logoSvg).resize(354, 108).png().toFile(logoOut);
