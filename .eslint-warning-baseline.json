@@ -711,24 +711,6 @@
     "contextAfter": "}"
   },
   {
-    "ruleId": "security/detect-non-literal-fs-filename",
-    "filePath": "apps/web/src/notification-email-assets.ts",
-    "message": "Found existsSync from package \"node:fs\" with non literal argument at index 0",
-    "codeLine": "if (existsSync(join(candidate, \"packages/ui/src/assets/admitto-logo.svg\"))) return candidate;",
-    "column": 9,
-    "contextBefore": "for (const candidate of [join(here, \"../../..\"), join(here, \"../../../..\")]) {",
-    "contextAfter": "}"
-  },
-  {
-    "ruleId": "security/detect-non-literal-fs-filename",
-    "filePath": "apps/web/src/notification-email-assets.ts",
-    "message": "Found readFileSync from package \"node:fs\" with non literal argument at index 0",
-    "codeLine": "const logoSvg = readFileSync(join(root, \"packages/ui/src/assets/admitto-logo.svg\"));",
-    "column": 19,
-    "contextBefore": "// Logo: rasterize the real product lockup, 3x for retina (displayed at width=118 in email HTML).",
-    "contextAfter": "const logoOut = join(targetDir, \"admitto-logo.png\");"
-  },
-  {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/auth/src/settings/resolver.ts",
     "message": "Variable Assigned to Object Injection Sink",

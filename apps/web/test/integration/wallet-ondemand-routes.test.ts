@@ -489,6 +489,23 @@ describe("On-demand wallet routes", () => {
   it("calls createPass only once for two near-simultaneous requests for the same attendee (e.g. a work computer and a phone both clicking before either has a WalletPass row yet)", async () => {
     const provider = stubProvider();
     let releaseCreate: (() => void) | undefined;
+    let releaseSecondLookup: (() => void) | undefined;
+    let secondLookupStarted: (() => void) | undefined;
+    const originalFindUnique = prisma.walletPass.findUnique.bind(prisma.walletPass);
+    let walletLookups = 0;
+    vi.spyOn(prisma.walletPass, "findUnique").mockImplementation((args) => {
+      const pending = (async () => {
+        const pass = await originalFindUnique(args);
+        if (args.where?.attendee_id === ATTENDEE_MODE_A_ID && ++walletLookups === 3) {
+          secondLookupStarted?.();
+          await new Promise<void>((resolve) => {
+            releaseSecondLookup = resolve;
+          });
+        }
+        return pass;
+      })();
+      return pending as unknown as ReturnType<typeof prisma.walletPass.findUnique>;
+    });
     const createStarted = new Promise<void>((resolveStarted) => {
       provider.createPass.mockImplementationOnce(async (input: WalletPassInput) => {
         resolveStarted();
@@ -510,9 +527,15 @@ describe("On-demand wallet routes", () => {
     // this deterministically exercises the same-tick race the lock exists for, rather than
     // depending on timing luck.
     await createStarted;
+    const secondLookup = new Promise<void>((resolve) => {
+      secondLookupStarted = resolve;
+    });
     const second = app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+    await secondLookup;
     releaseCreate?.();
-    const [firstRes, secondRes] = await Promise.all([first, second]);
+    const firstRes = await first;
+    releaseSecondLookup?.();
+    const secondRes = await second;
 
     expect(firstRes.status).toBe(302);
     expect(secondRes.status).toBe(302);
@@ -521,6 +544,50 @@ describe("On-demand wallet routes", () => {
     expect(provider.createPass).toHaveBeenCalledTimes(1);
     const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
     expect(saved?.provider_pass_id).toBe(`pc-admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`);
+  });
+
+  it("redirects safely when the post-lock wallet-pass recheck fails", async () => {
+    const provider = stubProvider();
+    const originalFindUnique = prisma.walletPass.findUnique.bind(prisma.walletPass);
+    vi.spyOn(prisma.walletPass, "findUnique")
+      .mockImplementationOnce((args) => originalFindUnique(args))
+      .mockRejectedValueOnce(new Error("db down"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+    expect(provider.createPass).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it("restores a pass found by the post-lock recheck instead of creating another", async () => {
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: ATTENDEE_MODE_A_ID,
+        provider: "passcreator",
+        provider_pass_id: "pc-stale-voided",
+        user_provided_id: `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
+        download_url: "https://pc.test/p/stale",
+        apple_url: "https://pc.test/apple/stale",
+        android_url: "https://pc.test/android/stale",
+        status: "voided",
+        issued_at: new Date(),
+        voided_at: new Date(),
+      },
+    });
+    const provider = stubProvider();
+    vi.spyOn(prisma.walletPass, "findUnique").mockResolvedValueOnce(null);
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("https://pc.test/apple/stale");
+    expect(provider.restorePass).toHaveBeenCalledWith("pc-stale-voided");
+    expect(provider.createPass).not.toHaveBeenCalled();
   });
 
   it("recovers a pass a concurrent request already created instead of marking it failed", async () => {
