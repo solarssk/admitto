@@ -96,7 +96,7 @@ async function resolveLegacyActorMap(
   rows: ActorIdentityRow[],
 ): Promise<Record<string, UserDisplayRow>> {
   const needsJoin = rows.some((r) => !r.actor_email);
-  if (!needsJoin) return Object.create(null);
+  if (!needsJoin) return Object.create(null) as Record<string, UserDisplayRow>;
   const actorIds = [...new Set(rows.filter((r) => !r.actor_email).map((r) => r.actor_user_id))];
   return resolveUserDisplayMap(db, actorIds);
 }
