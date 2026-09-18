@@ -58,16 +58,18 @@ function chunk<T>(items: T[], size: number): T[][] {
  * making the row look freshly, successfully synced. Checking `status` (not `err`) for the write
  * decision below fixes this uniformly: both "no match" and "provider error" already resolve
  * `status` to null, so both take the same preserve-everything-but-attempted_at path without
- * needing a third branch. Still rejects on a genuine error so the caller's Promise.allSettled
- * counts it as `failed`, matching its existing contract - only the DB write's shape changed. */
+ * needing a third branch. Still rejects after a provider failure so the caller's Promise.allSettled
+ * counts it as `failed`, including when a provider rejects with a non-Error value. */
 async function syncOne(db: PrismaClient, provider: WalletPassProvider, row: CandidateRow): Promise<void> {
   let status: Awaited<ReturnType<WalletPassProvider["getRegistrationStatus"]>> | null = null;
-  let err: unknown;
+  let failure: unknown;
+  let registrationStatusFailed = false;
   if (row.user_provided_id) {
     try {
       status = await provider.getRegistrationStatus(row.user_provided_id);
     } catch (error_) {
-      err = error_;
+      registrationStatusFailed = true;
+      failure = error_;
     }
   }
   await db.walletPass.update({
@@ -80,7 +82,9 @@ async function syncOne(db: PrismaClient, provider: WalletPassProvider, row: Cand
         }
       : { registration_sync_attempted_at: new Date() },
   });
-  if (err) throw err;
+  if (registrationStatusFailed) {
+    throw failure instanceof Error ? failure : new Error("Wallet registration status lookup failed");
+  }
 }
 
 /** Resolves one event's provider and syncs its rows, mutating `result` in place - split out of

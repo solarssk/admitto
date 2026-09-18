@@ -239,6 +239,19 @@ describe("MapPicker", () => {
     invalidateSize.mockRestore();
   });
 
+  it("sets a referrerPolicy on the tile layer so OpenStreetMap sees an identifying Referer", () => {
+    const tileLayerSpy = vi.spyOn(L, "tileLayer");
+    render(
+      <MapPicker latitude={null} longitude={null} zoom={15} tileConfig={TILE_CONFIG} onPick={() => {}} />,
+    );
+
+    expect(tileLayerSpy).toHaveBeenCalledWith(
+      TILE_CONFIG.tile_url,
+      expect.objectContaining({ referrerPolicy: "strict-origin-when-cross-origin" }),
+    );
+    tileLayerSpy.mockRestore();
+  });
+
   it("reports zoom changes via onZoomChange", () => {
     const onZoomChange = vi.fn();
     const originalMap = L.map;

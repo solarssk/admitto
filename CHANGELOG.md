@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Internal transaction aborts now carry Error values while preserving the same attendee-validation and wallet-template responses for administrators.
 - Simultaneous wallet-link taps now re-check the saved pass before a second creation attempt, preventing a stale lookup from issuing a duplicate pass.
 - Notification email asset generation now records that its module-relative logo paths are fixed repository assets, keeping static security checks focused on real dynamic file input.
 - Admin cleanup effects now retain their current upload-tracking collections, while report wallet status depends only on the event's wallet toggles; this keeps a close, navigation, or live update from acting on stale state.
@@ -33,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Security alert emails (a new-location login, a repeated failed sign-in, and every other notification type) no longer inherit the organisation's configured Reply-To address. A self-alert sent to the account it concerns previously ended up with the same address as both sender's reply target and recipient, a pattern several spam filters flag on its own - real alerts were landing in Spam for at least one deployment.
 - Logs & Audit's Security view now shows a readable label for every notification-dispatch event ("Notification sent", "Notification delivery failed", and the three skip reasons) instead of the raw internal event code, and its User column now shows who a notification actually went to instead of always reading "Unknown" - a single recipient (every self-audience alert, such as your own password or two-factor change) shows their name and email directly; multiple recipients (a team-wide alert reaching several admins) list each one's name and email in the row's Details.
 - New-location sign-in alerts (both the "admin login from a new country" alert to the rest of the team and the account's own "you signed in from a new location" notice) now show the full country name instead of its two-letter code, plus the device and browser, IP address, and exact time of the sign-in - enough detail to judge whether it was really you without leaving the email.
+- Event Settings' interactive location map no longer shows "403 Access blocked" tiles from OpenStreetMap's public servers - the app's global same-origin `Referrer-Policy` was leaving every tile request without a `Referer` header, which OpenStreetMap's tile usage policy requires for identification; the map now sends its own instance-origin referrer without weakening the app-wide policy.
 
 ## [0.7.0] - 2026-09-13
 

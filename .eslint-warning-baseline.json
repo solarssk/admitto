@@ -648,60 +648,6 @@
     "contextAfter": "}"
   },
   {
-    "ruleId": "@typescript-eslint/only-throw-error",
-    "filePath": "apps/web/src/admin/attendees-api-routes.ts",
-    "message": "Expected an error object to be thrown.",
-    "codeLine": "if (capacityResult instanceof Response) throw capacityResult;",
-    "column": 49,
-    "contextBefore": "const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, 1);",
-    "contextAfter": "if (capacityResult && \"forced\" in capacityResult) return capacityResult;"
-  },
-  {
-    "ruleId": "@typescript-eslint/only-throw-error",
-    "filePath": "apps/web/src/admin/attendees-api-routes.ts",
-    "message": "Expected an error object to be thrown.",
-    "codeLine": "if (capacityResult instanceof Response) throw capacityResult;",
-    "column": 53,
-    "contextBefore": "const capacityResult = await assertEventCapacityForIncoming(c, tx, eventId, 1);",
-    "contextAfter": "const capacityForced ="
-  },
-  {
-    "ruleId": "@typescript-eslint/only-throw-error",
-    "filePath": "apps/web/src/admin/attendees-api-routes.ts",
-    "message": "Expected an error object to be thrown.",
-    "codeLine": "if (ticketTypeError) throw c.json(ticketTypeError, 400);",
-    "column": 30,
-    "contextBefore": "const ticketTypeError = await validateTicketTypeCatalog(tx, eventId, nextTicketType);",
-    "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/only-throw-error",
-    "filePath": "apps/web/src/admin/attendees-api-routes.ts",
-    "message": "Expected an error object to be thrown.",
-    "codeLine": "if (ticketTypeError) throw c.json(ticketTypeError, 400);",
-    "column": 34,
-    "contextBefore": "const ticketTypeError = await validateTicketTypeCatalog(tx, eventId, ticket_type);",
-    "contextAfter": ""
-  },
-  {
-    "ruleId": "@typescript-eslint/only-throw-error",
-    "filePath": "apps/web/src/admin/attendees-api-routes.ts",
-    "message": "Expected an error object to be thrown.",
-    "codeLine": "if (ticketTypeError) throw c.json(ticketTypeError, 400);",
-    "column": 36,
-    "contextBefore": "const ticketTypeError = await validateTicketTypeCatalog(tx, eventId, ticket_type);",
-    "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/only-throw-error",
-    "filePath": "apps/web/src/admin/event-settings-routes.ts",
-    "message": "Expected an error object to be thrown.",
-    "codeLine": "if (issuedCount > 0) throw c.json({ error: \"wallet_template_locked\" }, 409);",
-    "column": 30,
-    "contextBefore": "const issuedCount = await loadIssuedWalletPassCount(tx, eventId);",
-    "contextAfter": "}"
-  },
-  {
     "ruleId": "security/detect-unsafe-regex",
     "filePath": "apps/web/src/admin/sse-channel.ts",
     "message": "Unsafe Regular Expression",
@@ -1123,14 +1069,5 @@
     "column": 19,
     "contextBefore": "for (const [key, placeholder] of Object.entries(fieldMapping)) {",
     "contextAfter": "if (value) custom[key] = value;"
-  },
-  {
-    "ruleId": "@typescript-eslint/only-throw-error",
-    "filePath": "packages/wallet/src/registration-sync.ts",
-    "message": "Expected an error object to be thrown.",
-    "codeLine": "if (err) throw err;",
-    "column": 18,
-    "contextBefore": "});",
-    "contextAfter": "}"
   }
 ]
