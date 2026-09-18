@@ -171,6 +171,8 @@ export type ResolvedTicket = {
     company: string | null;
     department: string | null;
     status: string;
+    /** Set atomically on first VALID check-in (schema.prisma:314); null = not checked in yet. */
+    admitted_at: Date | null;
     token_hash: string | null;
     qr_payload: string | null;
     external_uuid: string | null;

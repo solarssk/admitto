@@ -57,6 +57,7 @@ describe("toResolved location fields", () => {
     email: "a@example.com",
     name: "Guest",
     status: "confirmed",
+    admitted_at: null,
     first_name: null,
     last_name: null,
     company: null,

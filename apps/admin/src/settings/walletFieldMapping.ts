@@ -35,6 +35,7 @@ const WALLET_PLACEHOLDER_META: Record<
   country: { label: "Country", icon: "map-pin" },
   ticket_type: { label: "Ticket type", icon: "ticket" },
   ticket_url: { label: "Ticket/QR value", icon: "ticket" },
+  ticket_status: { label: "Ticket status", icon: "circle-check" },
   event_type: { label: "Event type", icon: "category" },
   venue_room: { label: "Venue room", icon: "map-pin" },
   venue_entrance: { label: "Venue entrance", icon: "map-pin" },

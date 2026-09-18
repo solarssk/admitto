@@ -66,6 +66,9 @@ const WALLET_ATTENDEE_SCOPED_HINTS: Partial<Record<(typeof WALLET_MAPPING_PLACEH
   department: "e.g. Marketing",
   ticket_type: "e.g. VIP",
   ticket_url: "e.g. 8f14e45fceea167a5a36",
+  // A value from when the pass was last created/reissued, not live - nothing today auto-refreshes
+  // an issued pass on check-in or revoke (see WalletPassInput.ticketStatusLabel's own doc comment).
+  ticket_status: "e.g. Valid",
 };
 
 const WALLET_VALUE_NOT_SET = "Not set for this event - this field won't be sent.";
