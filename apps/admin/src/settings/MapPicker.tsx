@@ -78,6 +78,10 @@ export function MapPicker({
     L.tileLayer(tileConfig.tile_url, {
       attribution: tileConfig.attribution,
       maxZoom: tileConfig.max_zoom,
+      // Tile requests otherwise carry no Referer under the app's global same-origin
+      // Referrer-Policy (staff-spa.ts), which OpenStreetMap's tile usage policy rejects
+      // with a 403. This still sends only the instance origin, never the event page path.
+      referrerPolicy: "strict-origin-when-cross-origin",
     }).addTo(map);
     map.on("dblclick", (e: L.LeafletMouseEvent) => {
       if (disabledRef.current) return;
