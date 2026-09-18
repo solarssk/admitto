@@ -39,7 +39,8 @@ ENV ILA_AUTO_UPDATE=false
 # fails after the final attempt.
 RUN --mount=type=secret,id=maxmind_license_key \
     for attempt in 1 2 3; do \
-      if ILA_LICENSE_KEY="$(cat /run/secrets/maxmind_license_key 2>/dev/null || echo redist)" node apps/web/scripts/prefetch-geo-db.mjs; then exit 0; fi; \
+      export ILA_LICENSE_KEY="$(cat /run/secrets/maxmind_license_key 2>/dev/null || echo redist)"; \
+      if node apps/web/scripts/prefetch-geo-db.mjs; then exit 0; fi; \
       if [ "$attempt" -lt 3 ]; then \
         echo "GeoIP prefetch attempt $attempt failed; retrying..."; \
         sleep "$attempt"; \
