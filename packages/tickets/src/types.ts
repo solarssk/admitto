@@ -173,6 +173,8 @@ export type ResolvedTicket = {
     status: string;
     /** Set atomically on first VALID check-in (schema.prisma:314); null = not checked in yet. */
     admitted_at: Date | null;
+    /** Raw JSON - read via customDataValue()/resolveWalletCustomFieldPlaceholders(), never indexed directly. */
+    custom_data: unknown;
     token_hash: string | null;
     qr_payload: string | null;
     external_uuid: string | null;

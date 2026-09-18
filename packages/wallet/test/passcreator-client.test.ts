@@ -19,6 +19,7 @@ const INPUT: WalletPassInput = {
   eventLocationLabel: "Test Venue",
   ticketTypeLabel: "General",
   ticketStatusLabel: "Valid",
+  customFieldLabels: {},
   userProvidedId: "admitto:event1:attendee1",
   barcodeValue: "https://tickets.example.com/t/tok-jane",
 };

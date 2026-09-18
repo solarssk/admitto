@@ -166,8 +166,15 @@ const EVENT_TYPE_TO_APPLE: Record<string, string> = {
  * WalletPassInput shape. `barcodeValue` is the caller's concern - the on-demand flow threads
  * through the same QR payload the attendee's own ticket page encodes, and reissue must reuse that
  * exact same value (never mint a new one, or the pass's barcode stops matching the real ticket).
+ * `customFieldPlaceholders` is the caller's own resolveWalletCustomFieldPlaceholders() result
+ * (wallet-custom-fields.ts) - defaults to none, same reasoning as barcodeValue: this function
+ * stays pure/db-free, callers resolve db-backed data before calling in.
  */
-export function buildWalletPassInput(resolved: ResolvedTicket, barcodeValue: string): WalletPassInput {
+export function buildWalletPassInput(
+  resolved: ResolvedTicket,
+  barcodeValue: string,
+  customFieldPlaceholders: Record<string, string> = {},
+): WalletPassInput {
   const { attendee, event } = resolved;
   const mapLabel = event.location ?? event.formattedAddress ?? undefined;
   const mapReady = isMapReady(event);
@@ -208,6 +215,7 @@ export function buildWalletPassInput(resolved: ResolvedTicket, barcodeValue: str
     addressCountryLabel: event.addressComponents?.country || undefined,
     ticketTypeLabel: attendee.ticket_type || "General",
     ticketStatusLabel: computeTicketStatusLabel(attendee.status, attendee.admitted_at),
+    customFieldLabels: customFieldPlaceholders,
     userProvidedId: `admitto:${event.id}:${attendee.id}`,
     barcodeValue,
     relevantDate: computeRelevantDate(event),

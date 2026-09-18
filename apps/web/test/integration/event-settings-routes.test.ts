@@ -1279,6 +1279,34 @@ describe("PATCH /api/admin/events/:eventId", () => {
     expect(res.status).toBe(400);
   });
 
+  it("accepts a namespaced custom:<source_field> wallet field mapping value (v0.7.1)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_field_mapping: { shirt: "custom:t_shirt_size" } }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { event: { wallet_field_mapping: Record<string, string> | null } };
+    expect(body.event.wallet_field_mapping).toEqual({ shirt: "custom:t_shirt_size" });
+
+    // Reset back to null - later tests in this describe block (e.g. the 403 case below) assert
+    // EVENT_SET's wallet_field_mapping is null, same convention as "sets and clears" above.
+    await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_field_mapping: null }),
+    });
+  });
+
+  it("rejects a custom: value with an invalid source_field charset (uppercase/spaces not allowed)", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
+      method: "PATCH",
+      headers: { Cookie: superCookie, ...sameOrigin, "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet_field_mapping: { shirt: "custom:T Shirt Size" } }),
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("returns 403 when an organisation admin tries to patch the wallet field mapping", async () => {
     const res = await app.request(`/api/admin/events/${EVENT_SET}`, {
       method: "PATCH",

@@ -57,7 +57,11 @@ import { isSuperadmin } from "../auth/capabilities.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { ScrollFadeTabs } from "../components/ScrollFadeTabs.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
-import { useWalletLocationPreview, useWalletPushHistory } from "../hooks/useEventSettingsWalletTab.js";
+import {
+  useWalletCustomFields,
+  useWalletLocationPreview,
+  useWalletPushHistory,
+} from "../hooks/useEventSettingsWalletTab.js";
 import {
   EVENT_SETTINGS_TABS,
   inPageTabFromSearch,
@@ -1055,6 +1059,7 @@ export function EventSettingsPage() {
     eventId,
     visitedTabs,
   );
+  const walletCustomFields = useWalletCustomFields(eventId, visitedTabs);
   const {
     walletPushHistory,
     walletPushHistoryTotal,
@@ -1525,6 +1530,7 @@ export function EventSettingsPage() {
             walletTesting={walletTesting}
             onTestWallet={() => void handleTestWallet()}
             walletLocationPreview={walletLocationPreview}
+            walletCustomFields={walletCustomFields}
             walletPushHistory={walletPushHistory}
             walletPushHistoryTotal={walletPushHistoryTotal}
             walletPushHistoryError={walletPushHistoryError}
