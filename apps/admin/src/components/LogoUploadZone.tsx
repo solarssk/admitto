@@ -236,6 +236,7 @@ export function LogoUploadZone({
   };
 
   useEffect(() => {
+    const provisionalUrls = provisionalUrlsRef.current;
     return () => {
       uploadSeqRef.current += 1;
       const abandoned = cropSessionRef.current?.uploadedOriginalUrl;
@@ -246,10 +247,10 @@ export function LogoUploadZone({
       ) {
         void deleteUploadedFile(abandoned);
       }
-      for (const url of provisionalUrlsRef.current) {
+      for (const url of provisionalUrls) {
         void deleteUploadedFile(url);
       }
-      provisionalUrlsRef.current.clear();
+      provisionalUrls.clear();
     };
   }, []);
 

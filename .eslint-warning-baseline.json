@@ -243,15 +243,6 @@
     "contextAfter": "e.target.value = \"\";"
   },
   {
-    "ruleId": "react-hooks/exhaustive-deps",
-    "filePath": "apps/admin/src/components/LogoUploadZone.tsx",
-    "message": "The ref value 'provisionalUrlsRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'provisionalUrlsRef.current' to a variable inside the effect, and use that variable in the cleanup function.",
-    "codeLine": "for (const url of provisionalUrlsRef.current) {",
-    "column": 44,
-    "contextBefore": "}",
-    "contextAfter": "void deleteUploadedFile(url);"
-  },
-  {
     "ruleId": "@typescript-eslint/no-floating-promises",
     "filePath": "apps/admin/src/components/SystemStatus.tsx",
     "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
@@ -576,15 +567,6 @@
     "contextAfter": "};"
   },
   {
-    "ruleId": "react-hooks/exhaustive-deps",
-    "filePath": "apps/admin/src/pages/ReportsPage.tsx",
-    "message": "React Hook useMemo has a missing dependency: 'event'. Either include it or remove the dependency array.",
-    "codeLine": "[",
-    "column": 5,
-    "contextBefore": "() => enabledWalletPlatforms(event),",
-    "contextAfter": "event.wallet_enabled,"
-  },
-  {
     "ruleId": "@typescript-eslint/no-misused-promises",
     "filePath": "apps/admin/src/pages/users/ActiveSessionsTab.tsx",
     "message": "Promise-returning function provided to attribute where a void return was expected.",
@@ -628,15 +610,6 @@
     "column": 67,
     "contextBefore": "action={",
     "contextAfter": "Open Support contact"
-  },
-  {
-    "ruleId": "react-hooks/exhaustive-deps",
-    "filePath": "apps/admin/src/settings/FontFamilyModal.tsx",
-    "message": "The ref value 'rowGenerationRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'rowGenerationRef.current' to a variable inside the effect, and use that variable in the cleanup function.",
-    "codeLine": "rowGenerationRef.current.set(id, gen + 1);",
-    "column": 26,
-    "contextBefore": "for (const [id, gen] of rowGenerationRef.current) {",
-    "contextAfter": "}"
   },
   {
     "ruleId": "@typescript-eslint/no-misused-promises",

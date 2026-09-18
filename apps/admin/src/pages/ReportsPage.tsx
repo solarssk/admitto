@@ -791,7 +791,13 @@ export function ReportsPage() {
   // works if every prop it receives (this one included) keeps the same reference when nothing it
   // actually depends on has changed.
   const walletPlatforms = useMemo(
-    () => enabledWalletPlatforms(event),
+    () =>
+      enabledWalletPlatforms({
+        wallet_enabled: event.wallet_enabled,
+        wallet_apple_enabled: event.wallet_apple_enabled,
+        wallet_google_enabled: event.wallet_google_enabled,
+        wallet_samsung_enabled: event.wallet_samsung_enabled,
+      }),
     [
       event.wallet_enabled,
       event.wallet_apple_enabled,
