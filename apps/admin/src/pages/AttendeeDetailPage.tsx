@@ -1865,20 +1865,6 @@ export function AttendeeDetailPage() {
   const baseline = detail != null ? toAttendeeForm(detail, attributeFields) : null;
   const isDirty = isAttendeeFormDirty(form, baseline);
 
-  const goBack = () => {
-    if (eventId) void navigate(`/admin/events/${eventId}/attendees`);
-    else void navigate(-1);
-  };
-
-  const handleBack = () => {
-    if (isDirty) {
-      setDiscardIntent("back");
-      setDiscardOpen(true);
-    } else {
-      goBack();
-    }
-  };
-
   async function handleDeleteConfirm() {
     if (!eventId || !attendeeId) return;
     const target = { eventId, attendeeId };
@@ -2314,6 +2300,19 @@ export function AttendeeDetailPage() {
   const showLoadingSkeleton = useDelayedLoading(loading);
 
   if (!eventId || !attendeeId) return <p>Missing event or attendee.</p>;
+
+  const goBack = () => {
+    void navigate(`/admin/events/${eventId}/attendees`);
+  };
+
+  const handleBack = () => {
+    if (isDirty) {
+      setDiscardIntent("back");
+      setDiscardOpen(true);
+    } else {
+      goBack();
+    }
+  };
 
   if (loading && !detail) {
     return whenShown(
