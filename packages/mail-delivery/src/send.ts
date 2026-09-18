@@ -88,10 +88,10 @@ function deliveryUpdateFromBatchError(err: unknown): DeliveryStatusUpdate {
   };
 }
 
-async function resolvePlaintextToken(
+function resolvePlaintextToken(
   attendee: { id: string; token_enc: string | null },
   issueResult: Awaited<ReturnType<typeof issueTicket>>,
-): Promise<string | undefined> {
+): string | undefined {
   if (issueResult.mode === "agency") return undefined;
   if (issueResult.status === "issued") return issueResult.token;
   if (issueResult.status === "already_issued") {
@@ -232,7 +232,7 @@ async function processAttendeeForSend({
 
   let plaintextToken: string | undefined;
   try {
-    plaintextToken = await resolvePlaintextToken(attendee, issueResult);
+    plaintextToken = resolvePlaintextToken(attendee, issueResult);
   } catch (err) {
     return {
       kind: "skip",

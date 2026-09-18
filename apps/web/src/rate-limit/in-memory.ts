@@ -45,7 +45,7 @@ export class InMemoryRateLimitStore implements RateLimitStore {
   }
 
   /** Record one request for `key` within a fixed window of `windowMs`. */
-  async hit(key: string, windowMs: number, max: number): Promise<RateLimitHitResult> {
+  hit(key: string, windowMs: number, max: number): Promise<RateLimitHitResult> {
     const now = Date.now();
     const bucket = this.buckets.get(key);
     if (!bucket || now >= bucket.resetAt) {
@@ -60,22 +60,22 @@ export class InMemoryRateLimitStore implements RateLimitStore {
       }
       const resetAt = now + windowMs;
       this.buckets.set(key, { count: 1, resetAt });
-      return { allowed: true, remaining: max - 1, resetAt };
+      return Promise.resolve({ allowed: true, remaining: max - 1, resetAt });
     }
     if (bucket.count >= max) {
-      return { allowed: false, remaining: 0, resetAt: bucket.resetAt };
+      return Promise.resolve({ allowed: false, remaining: 0, resetAt: bucket.resetAt });
     }
     bucket.count += 1;
-    return {
+    return Promise.resolve({
       allowed: true,
       remaining: Math.max(0, max - bucket.count),
       resetAt: bucket.resetAt,
-    };
+    });
   }
 
   /** In-memory store has no external backend to ping. */
-  async health(): Promise<{ ok: boolean; latencyMs: number | null }> {
-    return { ok: true, latencyMs: null };
+  health(): Promise<{ ok: boolean; latencyMs: number | null }> {
+    return Promise.resolve({ ok: true, latencyMs: null });
   }
 
   /** @internal test helper */

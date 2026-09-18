@@ -146,7 +146,7 @@ export async function resolveUserDisplayMap(
           select: { id: true, email: true, display_name: true },
         })
       : [];
-  const map: Record<string, UserDisplayRow> = Object.create(null);
+  const map = Object.create(null) as Record<string, UserDisplayRow>;
   for (const u of users) map[u.id] = u;
   return map;
 }

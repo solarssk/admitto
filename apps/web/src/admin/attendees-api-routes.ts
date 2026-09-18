@@ -452,7 +452,7 @@ function requireNoteId(c: Context): string {
 }
 
 async function requireNoteBody(c: Context): Promise<string | Response> {
-  const body = await c.req.json().catch(() => null);
+  const body: unknown = await c.req.json().catch(() => null);
   const noteBody = body && typeof body === "object" ? (body as Record<string, unknown>).body : undefined;
   if (typeof noteBody !== "string" || !noteBody.trim()) {
     return c.json({ error: "body required" }, 400);

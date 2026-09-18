@@ -181,7 +181,7 @@ export async function readBodyCapped(
     throw new GeocodingProviderError("unavailable");
   }
 
-  const reader = res.body.getReader();
+  const reader = res.body.getReader() as ReadableStreamDefaultReader<Uint8Array>;
   const chunks: Uint8Array[] = [];
   let total = 0;
 
