@@ -55,6 +55,27 @@ describe("buildWalletCustomFieldOptions", () => {
     ]);
     expect(options.map((o) => o.id)).toEqual(["custom:t_shirt_size", "custom:vip_access"]);
   });
+
+  it("appends the source_field slug when two mappable fields share the same label (bot review)", () => {
+    const options = buildWalletCustomFieldOptions([
+      makeField({ source_field: "shirt_size", label: "Size", type: "select", options: ["S", "M", "L"] }),
+      makeField({ source_field: "shoe_size", label: "Size", type: "select", options: ["8", "9", "10"] }),
+    ]);
+    expect(options).toEqual([
+      { id: "custom:shirt_size", icon: "forms", label: "Size (shirt_size)" },
+      { id: "custom:shoe_size", icon: "forms", label: "Size (shoe_size)" },
+    ]);
+  });
+
+  it("leaves a unique label alone even when another field shares its label but isn't mappable (text-type)", () => {
+    const options = buildWalletCustomFieldOptions([
+      makeField({ source_field: "shirt_size", label: "Size", type: "select", options: ["S", "M", "L"] }),
+      makeField({ source_field: "notes_size", label: "Size", type: "text", options: null }),
+    ]);
+    // Only one mappable field is actually named "Size" once the text-type sibling is filtered out
+    // - no collision among the options actually offered, so no disambiguation is needed.
+    expect(options).toEqual([{ id: "custom:shirt_size", icon: "forms", label: "Size" }]);
+  });
 });
 
 describe("computeWalletFieldMappingErrors — custom field label lookup", () => {

@@ -1,5 +1,6 @@
 import { WALLET_MAPPING_PLACEHOLDERS } from "@admitto/wallet/passcreator-mapper";
 import type { EventCustomFieldDto } from "../api/types.js";
+import { disambiguatedLabel, findDuplicateLabels } from "../requirements/duplicateLabels.js";
 
 /** One editable row of the Wallet field mapping - PassCreator field key -> Admitto placeholder.
  * `id` is a client-only React key, generated once per row (never sent to the server) - the
@@ -68,18 +69,21 @@ export const WALLET_PLACEHOLDER_OPTIONS = WALLET_MAPPING_PLACEHOLDERS.map((id) =
 export const WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX = "custom:";
 
 /** Only select (dictionary) and boolean custom fields are offered here - free text is excluded,
- * same scope decision as the server side (ROADMAP.md v0.7.1, resolveWalletCustomFieldPlaceholders). */
+ * same scope decision as the server side (ROADMAP.md v0.7.1, resolveWalletCustomFieldPlaceholders).
+ * Two custom fields can share a display label (only source_field is required to be unique,
+ * EventCustomField has no unique constraint on label) - append the slug to disambiguate, same
+ * trigger and format EventItemDrawer's own content_fields picker already uses (bot review). */
 export function buildWalletCustomFieldOptions(
   customFields: EventCustomFieldDto[] | undefined,
 ): { id: string; icon: string; label: string }[] {
   if (!customFields) return [];
-  return customFields
-    .filter((field) => field.type === "select" || field.type === "boolean")
-    .map((field) => ({
-      id: `${WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX}${field.source_field}`,
-      icon: "forms",
-      label: field.label,
-    }));
+  const mappable = customFields.filter((field) => field.type === "select" || field.type === "boolean");
+  const duplicateLabels = findDuplicateLabels(mappable.map((field) => field.label));
+  return mappable.map((field) => ({
+    id: `${WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX}${field.source_field}`,
+    icon: "forms",
+    label: disambiguatedLabel(field.label, field.source_field, duplicateLabels),
+  }));
 }
 
 /** Renders field mapping rows grouped by category (attendee, event, notes, maps, address,
