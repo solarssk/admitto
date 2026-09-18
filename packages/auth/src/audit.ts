@@ -989,7 +989,7 @@ function countryDisplayName(countryCode: string): string {
  */
 export async function logLoginNewCountry(
   db: Db,
-  ctx: { userId: string; ip?: string; userAgent?: string; countryCode: string },
+  ctx: { userId: string; ip?: string; userAgent?: string; countryCode: string; city?: string },
 ): Promise<void> {
   const identity = await resolveUserIdentitySnapshot(db, ctx.userId);
   emitAuditEvent("auth.login.new_country", {
@@ -1001,10 +1001,17 @@ export async function logLoginNewCountry(
     event_type: "auth.login.new_country",
     user_id: ctx.userId,
     ip: ctx.ip ?? null,
-    metadata: { country: ctx.countryCode },
+    // country stays the raw ISO code here too (see countryDisplayName's own doc comment) - city,
+    // unlike country, has no code-vs-name ambiguity, so it's stored as-is when the dataset
+    // resolved one (ILA_FIELDS=country,city).
+    metadata: { country: ctx.countryCode, ...(ctx.city ? { city: ctx.city } : {}) },
   });
   const accountLabel = identity?.display_name ?? identity?.email ?? "An admin account";
   const countryName = countryDisplayName(ctx.countryCode);
+  // "Mumbai, India" when the dataset resolved a city for this specific IP, else just "India" -
+  // matches apps/admin's own GeoCell.tsx convention (locationLabel there) so an admin sees the
+  // same phrasing in the notification as in Logs & Audit.
+  const locationLabel = ctx.city ? `${ctx.city}, ${countryName}` : countryName;
   // `device` reuses the same isomorphic parser apps/admin's Sessions list already shows this
   // exact string as ("Chrome / Windows") - see parseUserAgentSafe's own doc comment. The "safe"
   // variant specifically (not parseUserAgent): this value reaches a Slack/Discord/generic webhook
@@ -1028,12 +1035,15 @@ export async function logLoginNewCountry(
   // since the in-app bell dropdown clips a notification's body to 2 lines
   // (.notif-bell__row-body, staff.css) - if anything gets visually clipped there, it's the
   // lower-priority audit-trail detail, not the at-a-glance signal. metadata below still carries
-  // the same four fields as structured data for the channels that use it (email's "Details" box,
-  // Discord's embed fields).
-  const notificationMetadata = { country: countryName, device, ip, time };
+  // the same fields as structured data for the channels that use it (email's "Details" box,
+  // Discord's embed fields). `city: undefined` (not a placeholder string) when the dataset
+  // resolved a country but no city for this specific IP - every metadata renderer in this
+  // codebase already drops undefined/null/empty values, so an unresolved city is cleanly
+  // omitted instead of cluttering the alert with a fake "city: Unknown" line.
+  const notificationMetadata = { country: countryName, city: ctx.city, device, ip, time };
   void dispatchSecurityNotification(db, "auth.login.new_country", {
     title: "Admin login from a new country",
-    body: `${accountLabel} signed in from ${countryName} using ${device}, not seen in this account's recent successful logins. (IP ${ip} at ${time})`,
+    body: `${accountLabel} signed in from ${locationLabel} using ${device}, not seen in this account's recent successful logins. (IP ${ip} at ${time})`,
     // Composite, not just userId: the same admin logging in from two different new countries
     // within the 15-minute throttle window is two distinct signals worth two alerts, not one
     // suppressed by the other - see checkNewCountryLogin's own doc comment.
@@ -1051,7 +1061,7 @@ export async function logLoginNewCountry(
   // notifications-module-foundation plan's Luka A).
   void dispatchSecurityNotification(db, "account.login.new_location", {
     title: "You signed in from a new location",
-    body: `Your account signed in from ${countryName} using ${device}. If this wasn't you, secure your account immediately. (IP ${ip} at ${time})`,
+    body: `Your account signed in from ${locationLabel} using ${device}. If this wasn't you, secure your account immediately. (IP ${ip} at ${time})`,
     dedupeKey: `${ctx.userId}:${ctx.countryCode}`,
     targetUserId: ctx.userId,
     metadata: notificationMetadata,

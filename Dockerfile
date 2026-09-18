@@ -13,13 +13,21 @@ COPY apps ./apps
 ENV npm_config_ignore_scripts=true
 RUN npm ci
 
-# Bake the offline IP->country dataset into the image at build time (apps/web/src/rate-limit/
-# ip-location.ts never fetches it at request time). ILA_IP_LOCATION_DB=user selects the
-# PDDL/CDLA-Permissive-licensed ip-location-db "user" dataset instead of ip-location-api's default
-# MaxMind GeoLite2 mode, which needs a MaxMind account/license key — unnecessary friction repeated
-# across every self-hosted deployment. These ENV vars are re-declared in the production stage
-# below so the running container reads the same, already-baked data instead of re-fetching it.
-ENV ILA_IP_LOCATION_DB=user
+# Bake the offline IP->city dataset into the image at build time (apps/web/src/rate-limit/
+# ip-location.ts never fetches it at request time). ILA_LICENSE_KEY=redist (ip-location-api's own
+# default when unset — set explicitly here so the choice is visible, not implicit) downloads
+# MaxMind's GeoLite2 database from the node-geolite2-redist community mirror, needing no MaxMind
+# account/license key of our own. This is the always-present fallback dataset; a self-hoster or
+# corporate deployer with their own MaxMind account can instead set MAXMIND_LICENSE_KEY at
+# container runtime to fetch a fresh copy directly from MaxMind into a separate, persistent
+# location (see deploy/docker-entrypoint.sh and deploy/README.md) - no image rebuild needed.
+# ILA_FIELDS=country,city is what actually selects the City edition of the database over the
+# lighter Country-only one — country alone (this project's previous default) resolves to the
+# ~7MB Country edition regardless of ILA_LICENSE_KEY. These ENV vars are re-declared in the
+# production stage below so the running container reads the same, already-baked data instead of
+# re-fetching it.
+ENV ILA_LICENSE_KEY=redist
+ENV ILA_FIELDS=country,city
 ENV ILA_DATA_DIR=/app/data/geoip
 ENV ILA_AUTO_UPDATE=false
 # The dataset is downloaded from a public GitHub Release. Retry brief upstream
@@ -120,6 +128,10 @@ COPY --from=builder /app/packages/mail-delivery/dist ./packages/mail-delivery/di
 COPY --from=builder /app/packages/notifications/dist ./packages/notifications/dist
 COPY --from=builder /app/packages/import/dist ./packages/import/dist
 COPY --from=builder /app/data/geoip ./data/geoip
+# Raw source, not dist - reused at container startup (not just image build time) by
+# docker-entrypoint.sh's "serve" branch, when MAXMIND_LICENSE_KEY is set. Only imports
+# ip-location-api (already in node_modules above), so it runs standalone without a build step.
+COPY --from=builder /app/apps/web/scripts/prefetch-geo-db.mjs ./apps/web/scripts/prefetch-geo-db.mjs
 
 COPY deploy/docker-entrypoint.sh ./deploy/docker-entrypoint.sh
 
@@ -130,8 +142,12 @@ RUN chmod +x ./deploy/docker-entrypoint.sh \
 USER node
 
 ENV NODE_ENV=production
-# Read-only offline dataset baked in above (builder stage) — never re-fetched at runtime.
-ENV ILA_IP_LOCATION_DB=user
+# Read-only offline dataset baked in above (builder stage) — never re-fetched at runtime
+# (ILA_AUTO_UPDATE=false below), so ILA_LICENSE_KEY isn't needed here regardless of which source
+# the builder stage actually used. ILA_FIELDS must still match the builder stage exactly, since
+# ip-location-api's own fieldDir-hashing (src/setting.mjs) resolves a different data directory
+# than the one actually baked in and finds nothing there otherwise.
+ENV ILA_FIELDS=country,city
 ENV ILA_DATA_DIR=/app/data/geoip
 ENV ILA_AUTO_UPDATE=false
 EXPOSE 3000

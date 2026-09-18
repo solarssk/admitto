@@ -54,6 +54,10 @@ services:
     volumes:
       - ./emergency-exports:/app/emergency-exports
       - ./uploads:/app/uploads
+      # Only written to when MAXMIND_LICENSE_KEY is set (deploy/.env, deploy/README.md) - the
+      # image's own baked-in GeoIP dataset lives at a different, unmounted path and is unaffected
+      # either way.
+      - ./geoip-data:/app/data/geoip-custom
     depends_on:
       migrate:
         condition: service_completed_successfully

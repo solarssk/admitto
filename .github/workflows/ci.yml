@@ -696,6 +696,8 @@ jobs:
         run: bash scripts/check-migrations-destructive.test.sh
       - name: Migrate entrypoint smoke (docker compose)
         run: bash scripts/test-migrate-entrypoint.sh
+      - name: GeoIP entrypoint unit tests (MAXMIND_LICENSE_KEY)
+        run: bash scripts/test-geoip-entrypoint.sh
 
   # Complements `npm audit --audit-level=high` in lint-and-typecheck: that check re-audits the
   # whole resolved tree on every run regardless of what changed, while this action diffs the

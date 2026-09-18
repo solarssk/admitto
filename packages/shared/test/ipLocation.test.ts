@@ -33,6 +33,18 @@ describe("resolveIpLocation", () => {
     expect(resolveIpLocation("8.8.8.8")).toEqual({ kind: "resolved", countryCode: "US" });
   });
 
+  it("also returns the city when the configured dataset resolves one (ILA_FIELDS=country,city)", () => {
+    mockedLookup.mockReturnValue({ country: "IN", city: "Mumbai" } as ReturnType<typeof lookup>);
+    expect(resolveIpLocation("203.0.113.9")).toEqual({ kind: "resolved", countryCode: "IN", city: "Mumbai" });
+  });
+
+  it("omits city (not an empty string) when the dataset resolves a country but no city for this specific IP", () => {
+    mockedLookup.mockReturnValue({ country: "IN", city: "" } as ReturnType<typeof lookup>);
+    const result = resolveIpLocation("203.0.113.9");
+    expect(result).toEqual({ kind: "resolved", countryCode: "IN" });
+    expect(result.city).toBeUndefined();
+  });
+
   it("returns unknown when the dataset has no entry for a public IP", () => {
     mockedLookup.mockReturnValue(null);
     expect(resolveIpLocation("203.0.113.5")).toEqual({ kind: "unknown" });

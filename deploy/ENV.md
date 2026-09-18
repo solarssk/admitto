@@ -120,7 +120,11 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 
 | Variable | Boot | Consumers | UI | Secret | Summary |
 |----------|------|-----------|----|--------|---------|
-| `ILA_IP_LOCATION_DB` | optional | app | none | no | Offline IP→country dataset id for audit/session geo (default user). No third-party lookup API. |
+| `ILA_LICENSE_KEY` | optional | app | none | no | ip-location-api's own key setting, baked to redist (node-geolite2-redist mirror, no account needed) at image build time. Not set directly by deployers - see MAXMIND_LICENSE_KEY for the supported way to use your own MaxMind account. |
+| `MAXMIND_LICENSE_KEY` | optional | app | none | yes | A deployment's own MaxMind GeoLite2 license key. When set, docker-entrypoint.sh fetches a fresh City database directly from MaxMind at container startup into ./geoip-data instead of using the baked-in community-mirror dataset - no image rebuild needed. |
+| `MAXMIND_DATA_DIR` | optional | app | none | no | Override for where docker-entrypoint.sh stores the MAXMIND_LICENSE_KEY dataset (default /app/data/geoip-custom). Not set in any shipped compose/env file - exists so scripts/test-geoip-entrypoint.sh can point it at a throwaway directory instead of /app/data. |
+| `ILA_FIELDS` | optional | app | none | no | ip-location-api's own field selection, baked to country,city at image build time (selects the City edition over the lighter Country-only one). Not a runtime override for deployers: the published image only has country,city data actually baked in, so changing this alone in deploy/.env computes a different (unpopulated) data path and makes ip-location-api attempt a live download at every app start - which can hang or fail with no outbound network access. Only meaningful if also rebuilding the image with this value set in the Dockerfile. |
+| `ILA_IP_LOCATION_DB` | optional | app | none | no | Build-time-only setting (ip-location-api's own knob) to bake the offline, no-account ip-location-db country-only dataset instead of MaxMind GeoLite2 - takes priority over ILA_LICENSE_KEY/ILA_FIELDS in the Dockerfile that builds the image. NOT a runtime override on the published image: ip-location-api only re-downloads when its data files are absent at the computed path, so setting this alone on an already-built image either silently keeps using the baked-in MaxMind data (no-op) or, if ILA_FIELDS is also changed to match this dataset's country-only fields, triggers a live fetch at every container start - which can hang or fail with no outbound network access. A self-hoster who wants this dataset must build their own image with ILA_IP_LOCATION_DB=user set instead of ILA_LICENSE_KEY=redist in the Dockerfile. No third-party lookup API either way. |
 | `ILA_DATA_DIR` | optional | app | none | no | Directory for the offline geoip dataset cache. |
 | `ILA_AUTO_UPDATE` | optional | app | none | no | Keep false so the process does not fetch dataset updates on its own. |
 | `OPS_HEALTH_TOKEN` | optional | app, worker | none | yes | Bearer/X-Ops-Token (≥32 chars) for /readyz and worker System Logs bridge. Unset = /readyz disabled. |
@@ -192,4 +196,4 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 3. Run `npm run docs:env` and commit `ENV.md`.
 4. `npm run docs:check` fails if this file is stale or a scanned key is missing from the catalog.
 
-_Last generated from 107 distinct keys seen in scan (tests excluded)._
+_Last generated from 110 distinct keys seen in scan (tests excluded)._

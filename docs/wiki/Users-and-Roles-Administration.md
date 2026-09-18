@@ -17,7 +17,7 @@ Decide what the person must do, which organisation or event they need, and when 
 3. When inviting or editing a user, choose exactly one role type: **Superadmin**, **Administrator**, or **Operator**. Organisation and event scopes still stack within that role type.
 4. Optionally enter an internal staff **phone** (country code + number). It is never shown on tickets.
 5. Open **Role assignments** to add or review scoped roles. Superadmins and admins can filter assignments by event. **Granted** shows UTC and your local time.
-6. Superadmins can open **Active sessions** to see every signed-in staff session (device, IP with country when known, sign-in time, last activity), **Edit** a session's device label, end one session, or end every operator session for one event at once.
+6. Superadmins can open **Active sessions** to see every signed-in staff session (device, IP with country and city when known, sign-in time, last activity), **Edit** a session's device label, end one session, or end every operator session for one event at once.
 7. In **Edit user**:
    - **Profile:** fields (including email) save with **Save profile**.
    - **Role & access:** role and scope changes save immediately.

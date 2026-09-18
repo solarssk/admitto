@@ -13,6 +13,7 @@ Dev/CI database stack remains in [`../infra/docker-compose.yml`](../infra/docker
 - [Upgrading](#upgrading)
 - [Self-hosted SMTP on a private address](#self-hosted-smtp-on-a-private-address)
 - [Self-hosted identity provider (SSO) on a private address](#self-hosted-identity-provider-sso-on-a-private-address)
+- [GeoIP dataset: your own MaxMind license key (optional)](#geoip-dataset-your-own-maxmind-license-key-optional)
 - [Container startup (entrypoint)](#container-startup-entrypoint)
 - [Container logs (what to expect where)](#container-logs-what-to-expect-where)
 - [First superadmin](#first-superadmin)
@@ -313,6 +314,25 @@ SSO_PRIVATE_DESTINATION_ALLOWLIST=auth.example.lan
 HTTPS is still required. Register the Redirect URI after the first provider save
 (`https://<Instance URL>/api/auth/oidc/<provider-id>/callback`). See [ENV.md](./ENV.md) and the
 Wiki Identity and SSO page.
+
+## GeoIP dataset: your own MaxMind license key (optional)
+
+Admitto resolves IP addresses to a country and city (Logs & Audit, Active sessions, new-location sign-in alerts) using MaxMind's GeoLite2 database. By default this is baked into the image at build time from the [node-geolite2-redist](https://github.com/sapics/node-geolite2-redist) community mirror - no MaxMind account needed, whether you pull the published `ghcr.io`/`docker.io` image or build your own.
+
+If you have a MaxMind GeoLite2 license key (a real, auditable license relationship with MaxMind - useful where your organisation's compliance process expects that over a community mirror), set `MAXMIND_LICENSE_KEY` in `deploy/.env` and restart the stack - no image rebuild needed, works with the published image too:
+
+```bash
+# deploy/.env
+MAXMIND_LICENSE_KEY=YOUR_MAXMIND_LICENSE_KEY
+```
+
+```bash
+docker compose up -d
+```
+
+At startup, `docker-entrypoint.sh` fetches a fresh GeoLite2 City database directly from MaxMind into `./geoip-data` (a bind mount, initialised by `./scripts/init-host-dirs.sh` like `uploads`/`emergency-exports` above) and caches it there - a later restart with the same key reuses that download instead of re-fetching it, and a failed fetch (bad key, network issue) falls back to the last good download rather than breaking startup. Remove `MAXMIND_LICENSE_KEY` and restart to go back to the default community-mirror dataset.
+
+In Portainer: add `MAXMIND_LICENSE_KEY` under the stack's **Environment variables**, then **Update the stack** - the same flow as any other setting here, no build-secret or compose-file editing needed.
 
 ## Container startup (entrypoint)
 

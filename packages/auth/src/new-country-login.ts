@@ -114,6 +114,7 @@ export async function checkNewCountryLogin(
       ip: ctx.ip,
       userAgent: ctx.userAgent,
       countryCode: current.countryCode,
+      city: current.city,
     });
   } catch (err) {
     console.error(

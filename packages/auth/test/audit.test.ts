@@ -1290,6 +1290,20 @@ describe("audit", () => {
       });
     });
 
+    it("also includes the city in the durable SecurityAuditLog row's metadata when the dataset resolved one", async () => {
+      const create = vi.fn().mockResolvedValue({});
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      await logLoginNewCountry(fakeDb(create), {
+        userId: "user-1",
+        ip: "203.0.113.5",
+        countryCode: "FR",
+        city: "Paris",
+      });
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ metadata: { country: "FR", city: "Paris" } }) }),
+      );
+    });
+
     it("dispatches a real notification, deduped on the user+country pair, naming the account by its real email", async () => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const db = fakeDb(vi.fn(), { email: "admin@example.com", display_name: null });
@@ -1334,6 +1348,50 @@ describe("audit", () => {
           "account.login.new_location",
           expect.objectContaining({ metadata: expectedMetadata }),
         );
+      });
+    });
+
+    // The dataset resolves a city for most IPs once ILA_FIELDS=country,city selects the MaxMind
+    // City edition (see resolveIpLocation's own doc comment) - this notification must surface it
+    // both as a separate `city` metadata field (its own line in email's Details/Discord's
+    // fields) and folded into the body's "City, Country" phrasing (matching apps/admin's own
+    // GeoCell.tsx convention), not just the bare country name.
+    it("includes the city in both notifications' body ('City, Country') and metadata when the dataset resolved one", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb(vi.fn(), { email: "admin@example.com", display_name: null });
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", countryCode: "IN", city: "Mumbai" });
+      await vi.waitFor(() => {
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "auth.login.new_country",
+          expect.objectContaining({
+            body: expect.stringContaining("Mumbai, India"),
+            metadata: expect.objectContaining({ country: "India", city: "Mumbai" }),
+          }),
+        );
+        expect(notify).toHaveBeenCalledWith(
+          db,
+          "account.login.new_location",
+          expect.objectContaining({
+            body: expect.stringContaining("Mumbai, India"),
+            metadata: expect.objectContaining({ country: "India", city: "Mumbai" }),
+          }),
+        );
+      });
+    });
+
+    it("omits city from metadata (not a placeholder string) and uses the plain country name in body when the dataset resolved no city for this IP", async () => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const db = fakeDb();
+      await logLoginNewCountry(db, { userId: "user-1", ip: "203.0.113.5", countryCode: "IN" });
+      await vi.waitFor(() => {
+        const call = notify.mock.calls.find(([, type]) => type === "auth.login.new_country");
+        expect(call?.[2].body).toContain("signed in from India using");
+        expect(call?.[2].body).not.toContain("Mumbai");
+        // `city` may be present as a key with value `undefined` (every metadata renderer in this
+        // codebase already drops undefined values, see notificationMetadata's own doc comment) -
+        // asserting the value, not key presence, is what actually matters here.
+        expect(call?.[2].metadata.city).toBeUndefined();
       });
     });
 
