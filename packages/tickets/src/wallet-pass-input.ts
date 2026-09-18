@@ -136,6 +136,17 @@ function computeRelevantDate(event: {
   return `${dayStr} ${event.eventHoursStart}`;
 }
 
+/** Attendee-facing wallet status word - mirrors packages/ui/src/status-map.ts's wording
+ * (registered -> "Registered"/confirmed -> "Confirmed", admitted -> "Checked in") without adding
+ * a dependency on that (React-facing) package, same idea as EVENT_TYPE_TO_APPLE below. registered
+ * and confirmed intentionally collapse into a single "Valid" - what matters on a pass is whether
+ * the ticket is currently usable and not yet scanned, not the internal confirmation step. */
+function computeTicketStatusLabel(status: string, admittedAt: Date | null): string {
+  if (status === "revoked") return "Revoked";
+  if (status === "cancelled") return "Cancelled";
+  return admittedAt ? "Checked in" : "Valid";
+}
+
 /** Admitto's `event_type` DB key -> Apple's PKEventType semantic-tag literal. Used only to
  * translate the value before it becomes the `event_type` WALLET_MAPPING_PLACEHOLDERS entry -
  * PassCreator itself never sees Admitto's own key, only the Apple-vocabulary string. */
@@ -196,6 +207,7 @@ export function buildWalletPassInput(resolved: ResolvedTicket, barcodeValue: str
     addressRegionLabel: event.addressComponents?.region || undefined,
     addressCountryLabel: event.addressComponents?.country || undefined,
     ticketTypeLabel: attendee.ticket_type || "General",
+    ticketStatusLabel: computeTicketStatusLabel(attendee.status, attendee.admitted_at),
     userProvidedId: `admitto:${event.id}:${attendee.id}`,
     barcodeValue,
     relevantDate: computeRelevantDate(event),

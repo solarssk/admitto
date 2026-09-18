@@ -18,6 +18,7 @@ const INPUT: WalletPassInput = {
   eventHoursLabel: "18:00-22:00",
   eventLocationLabel: "Test Venue",
   ticketTypeLabel: "General",
+  ticketStatusLabel: "Valid",
   userProvidedId: "admitto:event1:attendee1",
   barcodeValue: "https://tickets.example.com/t/tok-jane",
 };

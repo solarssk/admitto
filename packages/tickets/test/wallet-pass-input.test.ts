@@ -26,6 +26,8 @@ function fullResolved(overrides: { attendee?: Record<string, unknown>; event?: R
       company: "Acme",
       department: "Engineering",
       ticket_type: "vip",
+      status: "registered",
+      admitted_at: null,
       ...overrides.attendee,
     },
     event: {
@@ -124,6 +126,7 @@ describe("buildWalletPassInput", () => {
       addressRegionLabel: "Greater London",
       addressCountryLabel: "United Kingdom",
       ticketTypeLabel: "vip",
+      ticketStatusLabel: "Valid",
       userProvidedId: "admitto:evt-1:att-1",
       barcodeValue: "barcode-123",
       relevantDate: "2026-09-24 09:00",
@@ -245,6 +248,46 @@ describe("buildWalletPassInput — relevantDate (PassCreator Lock Screen surfaci
   it("is omitted when there's no start time to anchor it to", () => {
     const input = buildWalletPassInput(fullResolved({ event: { eventHoursStart: null } }), "b");
     expect(input.relevantDate).toBeUndefined();
+  });
+});
+
+describe("buildWalletPassInput — ticket status placeholder", () => {
+  it("is 'Valid' for a registered attendee not yet checked in", () => {
+    const input = buildWalletPassInput(fullResolved({ attendee: { status: "registered", admitted_at: null } }), "b");
+    expect(input.ticketStatusLabel).toBe("Valid");
+  });
+
+  it("is 'Valid' for a confirmed attendee too - registered and confirmed collapse into one word", () => {
+    const input = buildWalletPassInput(fullResolved({ attendee: { status: "confirmed", admitted_at: null } }), "b");
+    expect(input.ticketStatusLabel).toBe("Valid");
+  });
+
+  it("is 'Checked in' once admitted_at is set, regardless of registered vs confirmed", () => {
+    const admittedAt = new Date("2026-09-24T09:05:00.000Z");
+    expect(
+      buildWalletPassInput(fullResolved({ attendee: { status: "registered", admitted_at: admittedAt } }), "b")
+        .ticketStatusLabel,
+    ).toBe("Checked in");
+    expect(
+      buildWalletPassInput(fullResolved({ attendee: { status: "confirmed", admitted_at: admittedAt } }), "b")
+        .ticketStatusLabel,
+    ).toBe("Checked in");
+  });
+
+  it("is 'Revoked' regardless of admitted_at - a revoked ticket never reads as checked in", () => {
+    const admittedAt = new Date("2026-09-24T09:05:00.000Z");
+    expect(buildWalletPassInput(fullResolved({ attendee: { status: "revoked", admitted_at: null } }), "b").ticketStatusLabel).toBe(
+      "Revoked",
+    );
+    expect(buildWalletPassInput(fullResolved({ attendee: { status: "revoked", admitted_at: admittedAt } }), "b").ticketStatusLabel).toBe(
+      "Revoked",
+    );
+  });
+
+  it("is 'Cancelled' regardless of admitted_at", () => {
+    expect(
+      buildWalletPassInput(fullResolved({ attendee: { status: "cancelled", admitted_at: null } }), "b").ticketStatusLabel,
+    ).toBe("Cancelled");
   });
 });
 

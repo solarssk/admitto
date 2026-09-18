@@ -28,6 +28,11 @@ export interface WalletPassInput {
   addressRegionLabel?: string;
   addressCountryLabel?: string;
   ticketTypeLabel: string;
+  /** Attendee-facing status word: "Valid" / "Checked in" / "Revoked" / "Cancelled" - derived from
+   * Attendee.status + admitted_at, computed once at issue/reissue time like every other field
+   * below. Nothing today automatically re-issues a pass on check-in or revoke, so a mapped pass
+   * keeps showing the value from when it was last created/reissued, not a live state. */
+  ticketStatusLabel: string;
   /** Stable idempotency key, e.g. "admitto:{eventId}:{attendeeId}". */
   userProvidedId: string;
   /** The exact same QR payload the ticket page's own QR code encodes (the raw internal token for

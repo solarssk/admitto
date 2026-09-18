@@ -20,6 +20,7 @@ const baseInput: WalletPassInput = {
   eventDateLabel: "10 August 2026",
   eventDateShortLabel: "10 Aug 2026",
   ticketTypeLabel: "VIP",
+  ticketStatusLabel: "Valid",
   userProvidedId: "admitto:evt-1:att-1",
   barcodeValue: "https://tickets.example.com/t/tok-1",
 };
@@ -161,6 +162,16 @@ describe("toPassCreatorData", () => {
       region: "Mazovia",
       country: "Poland",
     });
+  });
+
+  it("maps ticket_status alongside ticket_type/ticket_url", () => {
+    const data = toPassCreatorData(
+      { ...baseInput, ticketStatusLabel: "Checked in" },
+      "tmpl-1",
+      { status: "ticket_status" },
+      true,
+    );
+    expect(data.status).toBe("Checked in");
   });
 
   it("maps event_date_short alongside the existing long event_date placeholder", () => {
