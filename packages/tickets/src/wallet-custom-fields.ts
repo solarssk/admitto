@@ -22,12 +22,24 @@ const WALLET_MAPPABLE_CUSTOM_FIELD_TYPES = new Set(["select", "boolean"]);
  * toPassCreatorData (packages/wallet/src/passcreator-mapper.ts) silently sends nothing for that
  * key - the same "stale mapping goes quiet" behavior every other wallet placeholder already has,
  * not a new failure mode.
+ *
+ * `fieldMapping` (the event's current Event.wallet_field_mapping, ResolvedTicket.event.
+ * walletFieldMapping) is checked first so an event with no `custom:`-mapped field skips the
+ * EventCustomField query entirely - the caller with the widest blast radius, an event-wide bulk
+ * wallet push, would otherwise run this same full-registry read once per attendee for nothing
+ * (bot review).
  */
 export async function resolveWalletCustomFieldPlaceholders(
   db: PrismaClient,
   eventId: string,
   attendeeCustomData: unknown,
+  fieldMapping: Record<string, string> | null,
 ): Promise<Record<string, string>> {
+  const hasCustomFieldMapping = fieldMapping
+    ? Object.values(fieldMapping).some((value) => value.startsWith(WALLET_CUSTOM_FIELD_PLACEHOLDER_PREFIX))
+    : false;
+  if (!hasCustomFieldMapping) return {};
+
   const fields = await loadEventCustomDataFields(db, eventId);
   const out: Record<string, string> = {};
   for (const field of fields) {

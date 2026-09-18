@@ -34,7 +34,12 @@ export async function reissueOneWalletPass(
   if (!resolved) return "skipped";
 
   const display = await resolveTicketPageDisplay(db, resolved);
-  const customFieldPlaceholders = await resolveWalletCustomFieldPlaceholders(db, eventId, display.attendee.custom_data);
+  const customFieldPlaceholders = await resolveWalletCustomFieldPlaceholders(
+    db,
+    eventId,
+    display.attendee.custom_data,
+    display.event.walletFieldMapping,
+  );
   const input = buildWalletPassInput(display, scanned, customFieldPlaceholders);
 
   let result;

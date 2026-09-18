@@ -1134,7 +1134,12 @@ export function createApp(options: CreateAppOptions = {}) {
           return restoreExistingPass(latest.provider_pass_id);
         }
         const display = await resolveTicketPageDisplay(db, resolved);
-        const customFieldPlaceholders = await resolveWalletCustomFieldPlaceholders(db, event.id, display.attendee.custom_data);
+        const customFieldPlaceholders = await resolveWalletCustomFieldPlaceholders(
+          db,
+          event.id,
+          display.attendee.custom_data,
+          display.event.walletFieldMapping,
+        );
         const input = buildWalletPassInput(display, qrPayload, customFieldPlaceholders);
         return createOrRecoverPass(input);
       })().finally(() => {

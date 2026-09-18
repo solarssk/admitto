@@ -19,7 +19,10 @@ import { reissueOneWalletPass } from "../src/reissue-wallet-pass.js";
 
 const audit = { operator: "user-1", sessionId: "sess-1", timezone: "Europe/Warsaw" };
 const target = { attendeeId: "att-1", providerPassId: "pc-1" };
-const resolvedTicket = { attendee: { id: "att-1", custom_data: null }, event: { id: "evt-1" } };
+const resolvedTicket = {
+  attendee: { id: "att-1", custom_data: null },
+  event: { id: "evt-1", walletFieldMapping: null },
+};
 const walletPassInput = { attendeeName: "Jane Doe" };
 
 function makeDb() {
@@ -102,7 +105,7 @@ describe("reissueOneWalletPass", () => {
     const result = await reissueOneWalletPass(db as never, "evt-1", target, provider as never, audit);
 
     expect(result).toBe("reissued");
-    expect(resolveWalletCustomFieldPlaceholders).toHaveBeenCalledWith(db, "evt-1", null);
+    expect(resolveWalletCustomFieldPlaceholders).toHaveBeenCalledWith(db, "evt-1", null, null);
     expect(buildWalletPassInput).toHaveBeenCalledWith(resolvedTicket, "qr-1", {});
     expect(provider.updatePass).toHaveBeenCalledWith("pc-1", walletPassInput);
     expect(txWalletPassUpdate).toHaveBeenCalledWith({
