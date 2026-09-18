@@ -232,6 +232,20 @@ docker build --platform linux/amd64 -f Dockerfile -t admitto-app ..
 
 We have not tested or documented Synology ARM vs Intel paths separately - pick the platform flag that matches your NAS/CPU.
 
+## GeoIP dataset: your own MaxMind license key (optional)
+
+The published `ghcr.io`/`docker.io` images resolve IP addresses to a country and city using MaxMind's GeoLite2 database, downloaded at image-build time from the [node-geolite2-redist](https://github.com/sapics/node-geolite2-redist) community mirror - no MaxMind account is needed to pull and run them.
+
+If you build your own image and have a MaxMind GeoLite2 license key (a real, auditable license relationship with MaxMind - useful where your organisation's compliance process expects that over a community mirror), pass it as a Docker build **secret**, never a build arg or an env var - a secret is the only one of the three that Docker never writes into the image's layer history:
+
+```bash
+echo -n "YOUR_MAXMIND_LICENSE_KEY" > maxmind.key
+docker build --secret id=maxmind_license_key,src=maxmind.key -f Dockerfile -t admitto-app .
+rm maxmind.key
+```
+
+Omit `--secret` (the default `docker compose up -d --build` path above does) and the build falls back to the community mirror, exactly like the published images.
+
 ## Quick start
 
 ```bash

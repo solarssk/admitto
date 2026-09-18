@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - An attendee's Wallet card now shows an "Added from" row (browser and OS, e.g. "Safari 18.7 / iOS 18.7") for a pass confirmed installed after this shipped - captured on Admitto's own redirect, the same hop that already issues and refreshes the pass. The row only appears once the pass is genuinely confirmed installed, so a corporate mail security scanner pre-fetching the wallet link can never show up here; a pass already confirmed before this shipped has no safe way to backfill this and stays without one.
-- Audit/Security logs, active sessions, and new-location sign-in alerts now show a city alongside the country when it can be resolved (e.g. "Mumbai, India" instead of just "India") - the offline geolocation dataset switched from a country-only source to MaxMind's GeoLite2 City database. No account or API key is required to self-host this; a self-hoster who prefers the previous, lighter country-only dataset can opt back into it (see `deploy/ENV.md`).
+- Audit/Security logs, active sessions, and new-location sign-in alerts now show a city alongside the country when it can be resolved (e.g. "Mumbai, India" instead of just "India") - the offline geolocation dataset switched from a country-only source to MaxMind's GeoLite2 City database. No account or API key is required to self-host this; a self-hoster who prefers the previous, lighter country-only dataset can opt back into it (see `deploy/ENV.md`). Anyone building their own image can instead supply a real MaxMind GeoLite2 license key as a Docker build secret to fetch directly from MaxMind under their own account (see `deploy/README.md`).
 
 ### Changed
 
