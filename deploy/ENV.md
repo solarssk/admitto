@@ -122,6 +122,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 |----------|------|-----------|----|--------|---------|
 | `ILA_LICENSE_KEY` | optional | app | none | no | ip-location-api's own key setting, baked to redist (node-geolite2-redist mirror, no account needed) at image build time. Not set directly by deployers - see MAXMIND_LICENSE_KEY for the supported way to use your own MaxMind account. |
 | `MAXMIND_LICENSE_KEY` | optional | app | none | yes | A deployment's own MaxMind GeoLite2 license key. When set, docker-entrypoint.sh fetches a fresh City database directly from MaxMind at container startup into ./geoip-data instead of using the baked-in community-mirror dataset - no image rebuild needed. |
+| `MAXMIND_DATA_DIR` | optional | app | none | no | Override for where docker-entrypoint.sh stores the MAXMIND_LICENSE_KEY dataset (default /app/data/geoip-custom). Not set in any shipped compose/env file - exists so scripts/test-geoip-entrypoint.sh can point it at a throwaway directory instead of /app/data. |
 | `ILA_FIELDS` | optional | app | none | no | Fields to resolve from the geo dataset (default country,city). country alone downloads the smaller Country-only edition. |
 | `ILA_IP_LOCATION_DB` | optional | app | none | no | Optional override to use the offline, no-account ip-location-db country-only dataset instead of MaxMind GeoLite2. Not set anywhere in this repo (ip-location-api's own supported knob, documented here for a self-hoster who wants to opt back into the lighter dataset). No third-party lookup API either way. |
 | `ILA_DATA_DIR` | optional | app | none | no | Directory for the offline geoip dataset cache. |
@@ -195,4 +196,4 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 3. Run `npm run docs:env` and commit `ENV.md`.
 4. `npm run docs:check` fails if this file is stale or a scanned key is missing from the catalog.
 
-_Last generated from 109 distinct keys seen in scan (tests excluded)._
+_Last generated from 110 distinct keys seen in scan (tests excluded)._

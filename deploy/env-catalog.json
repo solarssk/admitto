@@ -523,6 +523,16 @@
       "summary": "A deployment's own MaxMind GeoLite2 license key. When set, docker-entrypoint.sh fetches a fresh City database directly from MaxMind at container startup into ./geoip-data instead of using the baked-in community-mirror dataset - no image rebuild needed."
     },
     {
+      "name": "MAXMIND_DATA_DIR",
+      "group": "ops",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "catalogOnly": true,
+      "summary": "Override for where docker-entrypoint.sh stores the MAXMIND_LICENSE_KEY dataset (default /app/data/geoip-custom). Not set in any shipped compose/env file - exists so scripts/test-geoip-entrypoint.sh can point it at a throwaway directory instead of /app/data."
+    },
+    {
       "name": "ILA_FIELDS",
       "group": "ops",
       "boot": "optional",
