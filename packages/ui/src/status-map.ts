@@ -52,7 +52,8 @@ export const STATUS_MAP: Record<string, StatusMeta> = {
 };
 
 export function resolveStatusMeta(status: string): StatusMeta {
-  return Object.getOwnPropertyDescriptor(STATUS_MAP, status)?.value ?? {
+  const descriptor = Object.getOwnPropertyDescriptor(STATUS_MAP, status) as TypedPropertyDescriptor<StatusMeta>;
+  return descriptor?.value ?? {
     variant: "neutral",
     label: status,
   };

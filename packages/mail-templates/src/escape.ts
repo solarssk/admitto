@@ -20,7 +20,8 @@ const TEMPLATE_FIELD_LABELS: Record<string, string> = {
 
 function fieldLabel(field: string, context: UrlValidationContext): string {
   const labels = context === "branding" ? BRANDING_FIELD_LABELS : TEMPLATE_FIELD_LABELS;
-  return Object.getOwnPropertyDescriptor(labels, field)?.value ?? field;
+  const descriptor = Object.getOwnPropertyDescriptor(labels, field) as TypedPropertyDescriptor<string>;
+  return descriptor?.value ?? field;
 }
 
 /** Human-readable URL validation message — shared by branding save and template render. */
@@ -61,7 +62,10 @@ const HTML_ATTR_ESCAPE: Record<string, string> = {
 };
 
 function escapeWithMap(value: string, map: Record<string, string>): string {
-  return value.replace(/[&<>"']/g, (ch) => Object.getOwnPropertyDescriptor(map, ch)?.value ?? ch);
+  return value.replace(/[&<>"']/g, (ch) => {
+    const descriptor = Object.getOwnPropertyDescriptor(map, ch) as TypedPropertyDescriptor<string>;
+    return descriptor?.value ?? ch;
+  });
 }
 
 /** Escape for HTML text nodes. */

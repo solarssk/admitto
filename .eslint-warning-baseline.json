@@ -189,15 +189,6 @@
     "contextAfter": "onBusyChange(true);"
   },
   {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "apps/admin/src/api/operator-api-error.ts",
-    "message": "Unsafe return of a value of type `any[]`.",
-    "codeLine": ".flatMap((value) => (Array.isArray(value) ? value : []))",
-    "column": 26,
-    "contextBefore": "const messages = Object.values(fieldErrors)",
-    "contextAfter": ".filter((message): message is string => typeof message === \"string\" && message.trim().length > 0);"
-  },
-  {
     "ruleId": "@typescript-eslint/no-floating-promises",
     "filePath": "apps/admin/src/checkin/AttendeeCard.tsx",
     "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
@@ -729,15 +720,6 @@
     "contextAfter": "}"
   },
   {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "apps/web/src/admin/audit-routes.ts",
-    "message": "Unsafe return of a value of type `any`.",
-    "codeLine": "if (!needsJoin) return Object.create(null);",
-    "column": 19,
-    "contextBefore": "const needsJoin = rows.some((r) => !r.actor_email);",
-    "contextAfter": "const actorIds = [...new Set(rows.filter((r) => !r.actor_email).map((r) => r.actor_user_id))];"
-  },
-  {
     "ruleId": "@typescript-eslint/only-throw-error",
     "filePath": "apps/web/src/admin/event-settings-routes.ts",
     "message": "Expected an error object to be thrown.",
@@ -745,15 +727,6 @@
     "column": 30,
     "contextBefore": "const issuedCount = await loadIssuedWalletPassCount(tx, eventId);",
     "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "apps/web/src/admin/security-audit-routes.ts",
-    "message": "Unsafe return of a value of type `any`.",
-    "codeLine": "if (!needsJoin) return Object.create(null);",
-    "column": 19,
-    "contextBefore": "const needsJoin = rows.some((r) => r.user_id && !r.user_email);",
-    "contextAfter": ""
   },
   {
     "ruleId": "security/detect-unsafe-regex",
@@ -783,15 +756,6 @@
     "contextAfter": "const logoOut = join(targetDir, \"admitto-logo.png\");"
   },
   {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "packages/auth/src/cloudflare-access/extract-token.ts",
-    "message": "Unsafe return of a value of type `any`.",
-    "codeLine": "Object.getOwnPropertyDescriptor(headers, name)?.value;",
-    "column": 5,
-    "contextBefore": "const getHeader = (name: string): string | undefined =>",
-    "contextAfter": "const header ="
-  },
-  {
     "ruleId": "security/detect-object-injection",
     "filePath": "packages/auth/src/settings/resolver.ts",
     "message": "Variable Assigned to Object Injection Sink",
@@ -799,15 +763,6 @@
     "column": 15,
     "contextBefore": "if (!envName) return undefined;",
     "contextAfter": "if (raw === undefined || raw.trim() === \"\") return undefined;"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "packages/import/src/custom-data-import.ts",
-    "message": "Unsafe return of a value of type `any`.",
-    "codeLine": "return Object.getOwnPropertyDescriptor(record, key)?.value;",
-    "column": 3,
-    "contextBefore": "function ownStringValue(record: Record<string, string>, key: string): string | undefined {",
-    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-object-injection",
@@ -970,24 +925,6 @@
     "column": 40,
     "contextBefore": "// Split on blank lines into header-like field groups (RFC 3464 §2).",
     "contextAfter": "parseOneDsnBlock(block, out, seen);"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "packages/mail-templates/src/escape.ts",
-    "message": "Unsafe return of a value of type `any`.",
-    "codeLine": "return Object.getOwnPropertyDescriptor(labels, field)?.value ?? field;",
-    "column": 3,
-    "contextBefore": "const labels = context === \"branding\" ? BRANDING_FIELD_LABELS : TEMPLATE_FIELD_LABELS;",
-    "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "packages/mail-templates/src/escape.ts",
-    "message": "Unsafe return of a value of type `any`.",
-    "codeLine": "return value.replace(/[&<>\"']/g, (ch) => Object.getOwnPropertyDescriptor(map, ch)?.value ?? ch);",
-    "column": 44,
-    "contextBefore": "function escapeWithMap(value: string, map: Record<string, string>): string {",
-    "contextAfter": "}"
   },
   {
     "ruleId": "security/detect-object-injection",
@@ -1204,15 +1141,6 @@
     "column": 17,
     "contextBefore": "if (!part || part === \"GMT\") return \"Z\";",
     "contextAfter": "if (!match) return \"Z\";"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-unsafe-return",
-    "filePath": "packages/ui/src/status-map.ts",
-    "message": "Unsafe return of a value of type `any`.",
-    "codeLine": "return Object.getOwnPropertyDescriptor(STATUS_MAP, status)?.value ?? {",
-    "column": 3,
-    "contextBefore": "export function resolveStatusMeta(status: string): StatusMeta {",
-    "contextAfter": "variant: \"neutral\","
   },
   {
     "ruleId": "security/detect-object-injection",
