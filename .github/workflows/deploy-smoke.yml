@@ -60,8 +60,11 @@ jobs:
 
       - name: Smoke checks
         run: |
-          curl -sf http://127.0.0.1:8080/healthz | grep -q '"status":"ok"'
-          curl -sf http://127.0.0.1:8080/login -o /dev/null -w '%{http_code}\n' | grep -q 200
+          set -x
+          curl -sSf http://127.0.0.1:8080/healthz | tee /tmp/healthz-body
+          echo
+          grep -q '"status":"ok"' /tmp/healthz-body
+          curl -sSf http://127.0.0.1:8080/login -o /dev/null -w '%{http_code}\n' | grep -q 200
           login_code=$(curl -s -o /tmp/login-post-body -w '%{http_code}' -X POST http://127.0.0.1:8080/login \
             -H 'Content-Type: application/x-www-form-urlencoded' \
             -H 'Origin: http://127.0.0.1:8080' \
