@@ -5,7 +5,11 @@ name: GHCR cleanup
 # failed or repeated builds leave orphans behind. Deleting "untagged" versions by hand or with a
 # naive filter breaks pulls of live tags, because those child manifests are still referenced by a
 # tagged index. dataaxiom/ghcr-cleanup-action understands multi-arch and only removes what no
-# tagged image references. Tagged versions are never touched here (no tags/keep-n-tagged rules).
+# tagged image references. Tagged versions are never deleted here: no tags/keep-n-tagged rules,
+# and delete-ghost-images / delete-partial-images are deliberately left off, because they delete
+# whole (tagged) multi-arch images that are missing a child manifest and would break pulls of the
+# architectures that still work. The one tagged thing removed is a stranded `sha256-...` referrer
+# (attestation/cosign) artifact whose parent digest no longer exists (delete-orphaned-images).
 #
 # Defaults to a dry run: read the log, then re-run with dry_run=false to actually delete.
 
@@ -40,8 +44,6 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           package: admitto
           delete-untagged: true
-          delete-ghost-images: true
-          delete-partial-images: true
           delete-orphaned-images: true
           older-than: ${{ inputs.older_than }}
           validate: true
