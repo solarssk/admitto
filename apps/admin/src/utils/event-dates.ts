@@ -443,6 +443,17 @@ export function formatUtcDateTime(iso: string): string {
 }
 
 /**
+ * The staff UI's standard primary timestamp: "YYYY-MM-DD HH:MM:SS UTC". `iso` is already an ISO
+ * string in UTC (`created_at`, `loginAt`), so this only trims it. Rendered on top, with
+ * ActorOrViewerLocalTimeLine underneath - Users' Active sessions, My Account's sessions, the
+ * Audit/Security logs, and the topbar notification dialog all show times this way. Previously
+ * copied privately into each of the first three.
+ */
+export function formatUtcPrimaryTime(iso: string): string {
+  return `${iso.slice(0, 19).replace("T", " ")} UTC`;
+}
+
+/**
  * Compact "N min/hours/days ago" for recency-focused UI (session/staff activity, live feeds) -
  * an alternative to formatUtcDateTime's absolute timestamp for contexts where how recent
  * something was matters more than the exact instant. Canonical version: previously duplicated

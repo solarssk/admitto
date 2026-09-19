@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Clicking a notification in the topbar bell now opens a window with its full message. Before, the list showed only the first two lines and cut the rest off with no way to read it, so the most important part (for example "If this wasn't you, secure your account immediately") was hidden. The window also shows which organisation the notification is from and exactly when it arrived, in UTC and in your local time. Clicking an unread notification still marks it as read.
+
 ## [0.7.1] - 2026-09-19
 
 ### Added

@@ -13,6 +13,7 @@ import { formatRelativeTime } from "../utils/event-dates.js";
 import { NOTIFICATION_SEVERITY_ICON } from "./notificationSeverity.js";
 import { useDropdownMenu } from "./useDropdownMenu.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
+import { NotificationDetailDialog } from "./NotificationDetailDialog.js";
 
 /** Silent poll interval for the unread count - same cadence as SystemStatus's own health poll,
  * but independently defined (not imported) since it's a different concern with its own reason
@@ -40,10 +41,20 @@ export function resetNotificationBellCache(): void {
 export function NotificationBell() {
   const { addToast } = useToast();
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  // Snapshot of the row that was clicked, not an id looked up in `notifications` on each render -
+  // the dialog keeps showing exactly what was clicked even if the list is refetched or cleared
+  // underneath it.
+  const [detail, setDetail] = useState<NotificationDto | null>(null);
+  // The toast stack (--z-toast) sits below the dialog (--z-modal) and auto-dismisses, so a failed
+  // mark-as-read would be invisible while a dialog is open. The ref answers "which notification is
+  // on screen?" for an async failure that lands after the dialog closed or moved on to another row.
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const detailIdRef = useRef<string | null>(null);
+  const deferredReadErrorsRef = useRef<string[]>([]);
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
     gap: 8,
-    escapeSuspended: clearConfirmOpen,
+    escapeSuspended: clearConfirmOpen || detail !== null,
   });
   const [unreadCount, setUnreadCount] = useState(
     unreadCountCache && unreadCountCache.expiresAt > Date.now() ? unreadCountCache.value : 0,
@@ -172,7 +183,25 @@ export function NotificationBell() {
     return () => ac.abort();
   }, [open, loadList]);
 
+  function closeDetail() {
+    detailIdRef.current = null;
+    setDetail(null);
+    setDetailError(null);
+    for (const message of deferredReadErrorsRef.current.splice(0)) addToast(message, "error");
+  }
+
+  function reportReadFailure(notificationId: string, message: string) {
+    if (detailIdRef.current === notificationId) setDetailError(message);
+    // A different notification's dialog is open: a toast would sit under it, and an inline notice
+    // there would blame the wrong message. Hold it until that dialog closes.
+    else if (detailIdRef.current === null) addToast(message, "error");
+    else deferredReadErrorsRef.current.push(message);
+  }
+
   async function handleRowClick(notification: NotificationDto) {
+    detailIdRef.current = notification.id;
+    setDetail(notification);
+    setDetailError(null);
     if (notification.read_at) return;
     setNotifications((prev) =>
       prev.map((n) => (n.id === notification.id ? { ...n, read_at: new Date().toISOString() } : n)),
@@ -193,7 +222,7 @@ export function NotificationBell() {
           prev.map((n) => (n.id === notification.id ? { ...n, read_at: null } : n)),
         );
         setUnreadCount((c) => c + 1);
-        addToast(operatorApiErrorMessage(err, "Failed to mark notification as read."), "error");
+        reportReadFailure(notification.id, operatorApiErrorMessage(err, "Failed to mark notification as read."));
       }
     });
   }
@@ -342,6 +371,7 @@ export function NotificationBell() {
                   key={n.id}
                   type="button"
                   role="menuitem"
+                  aria-haspopup="dialog"
                   className={`user-menu__item notif-bell__row${n.read_at ? "" : " notif-bell__row--unread"}`}
                   onClick={() => void handleRowClick(n)}
                 >
@@ -365,6 +395,7 @@ export function NotificationBell() {
           )}
         </div>
       )}
+      <NotificationDetailDialog notification={detail} errorMessage={detailError} onClose={closeDetail} />
       <ConfirmDialog
         open={clearConfirmOpen}
         icon={<i className="ti ti-trash" />}

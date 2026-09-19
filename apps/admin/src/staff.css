@@ -855,6 +855,71 @@
   color: var(--text-secondary);
 }
 
+/* Full-text dialog opened from a bell row (NotificationDetailDialog). Sits on ConfirmDialog's own
+   overlay/panel classes (z-index --z-modal, above the dropdown panel it's opened from); only what
+   ConfirmDialog doesn't already have lives here. Compound selectors (not a bare single class) so
+   they win over confirm-dialog.css regardless of which stylesheet the bundle orders first. */
+.confirm-dialog__panel.notif-detail__panel {
+  width: min(480px, 100%);
+  /* The overlay is a fixed, viewport-tall flex box: without a cap, a long message or a short
+     viewport pushes the panel past the edges with body scroll locked and no way to reach the rest
+     (or the Close button). The body scrolls first; the panel itself is the fallback for a
+     viewport too short to fit even the title, details and actions. */
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.notif-detail__title .status-circle {
+  flex-shrink: 0;
+}
+
+.notif-detail__body {
+  margin: 0;
+  min-height: 0;
+  overflow-y: auto;
+  color: var(--text-primary);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+/* Grey "Details" box, same look as the one in the notification email (muted surface, thin border,
+   small uppercase label) so the dialog and the email read as the same alert. */
+.notif-detail__box {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+
+.notif-detail__box-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.notif-detail__meta {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--fs-sm);
+}
+
+.notif-detail__meta dt {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.notif-detail__meta dd {
+  margin: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
 /* ─── Page header ─────────────────────────────────────────────────────────── */
 .placeholder-note {
   color: var(--text-secondary);

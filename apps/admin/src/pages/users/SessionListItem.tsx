@@ -2,14 +2,9 @@ import { Avatar, Badge, IconButton, Tooltip } from "@admitto/ui";
 import type { SessionListDto } from "../../api/types.js";
 import { roleBadgeVariant, roleLabel } from "../../auth/role-labels.js";
 import { ActorOrViewerLocalTimeLine } from "../../components/ActorOrViewerLocalTimeLine.js";
-import { formatRelativeTime } from "../../utils/event-dates.js";
+import { formatRelativeTime, formatUtcPrimaryTime } from "../../utils/event-dates.js";
 import { parseUserAgent } from "../../utils/parseUserAgent.js";
 import { GeoCell } from "../../components/GeoCell.js";
-
-/** "2026-01-01 12:00:00" - matches the Audit/Security log's own UTC-primary convention. */
-function formatPrimaryTime(iso: string): string {
-  return iso.slice(0, 19).replace("T", " ");
-}
 
 export const LOGGED_IN_HINT =
   "UTC on top. Below (user icon): the signer's local time at login. Missing for older sessions - then your browser timezone (desktop icon).";
@@ -74,7 +69,7 @@ export function SessionTableRow({ session: s, onEdit, onRevoke }: Readonly<Sessi
         {s.ip && <div className="sessions-subdued"><GeoCell location={s.country} /></div>}
       </td>
       <td>
-        {formatPrimaryTime(s.loginAt)} UTC
+        {formatUtcPrimaryTime(s.loginAt)}
         <ActorOrViewerLocalTimeLine
           iso={s.loginAt}
           actorTimezone={s.timezone}
@@ -141,7 +136,7 @@ export function SessionCard({ session: s, onEdit, onRevoke }: Readonly<SessionRo
         <div>
           <dt>Logged in</dt>
           <dd>
-            {formatPrimaryTime(s.loginAt)} UTC
+            {formatUtcPrimaryTime(s.loginAt)}
             <ActorOrViewerLocalTimeLine
               iso={s.loginAt}
               actorTimezone={s.timezone}
