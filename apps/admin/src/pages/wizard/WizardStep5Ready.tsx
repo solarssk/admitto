@@ -78,9 +78,9 @@ export const WizardStep5Ready = forwardRef<WizardStep5ReadyHandle, WizardStep5Re
       await completeSetup();
       await onComplete();
       if (selectedEventId) {
-        navigate(`/admin/events/${selectedEventId}/overview`, { replace: true });
+        void navigate(`/admin/events/${selectedEventId}/overview`, { replace: true });
       } else {
-        navigate("/admin", { replace: true });
+        void navigate("/admin", { replace: true });
       }
     } catch (err) {
       if (err instanceof ApiError && hasApiErrorCode(err, "setup_not_ready")) {

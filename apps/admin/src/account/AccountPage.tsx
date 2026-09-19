@@ -713,7 +713,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
   function handleCopyEnrollmentUri(): void {
     if (!enrollData) return;
 
-    copyTextToClipboard(enrollData.otpauthUri).then((copied) => {
+    void copyTextToClipboard(enrollData.otpauthUri).then((copied) => {
       if (!copied) {
         setShowUriManual(true);
         return;

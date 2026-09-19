@@ -512,7 +512,7 @@ export function IdentityProviderEditor({
         }
         addToast(mode === "create" ? "Provider created." : "Provider updated.", "success");
         skipBlockRef.current = true;
-        navigate(IDENTITY_PROVIDERS_ROUTE);
+        void navigate(IDENTITY_PROVIDERS_ROUTE);
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           redirectToLogin();
@@ -996,7 +996,7 @@ export function IdentityProviderEditor({
         onCancelDialogConfirm={() => {
           setDiscardConfirmOpen(false);
           skipBlockRef.current = true;
-          navigate(IDENTITY_PROVIDERS_ROUTE);
+          void navigate(IDENTITY_PROVIDERS_ROUTE);
         }}
         onCancelDialogDismiss={() => setDiscardConfirmOpen(false)}
         blockerDialogOpen={blocker.state === "blocked"}

@@ -542,7 +542,7 @@ export function CropImageModal({
     if (!img || !completedCrop || applying) return;
     setApplying(true);
     setError(null);
-    runCropApply(img, completedCrop, crop, zoom, sourceMime, onApply)
+    void runCropApply(img, completedCrop, crop, zoom, sourceMime, onApply)
       .then((errMsg) => {
         if (errMsg) setError(errMsg);
       })

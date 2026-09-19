@@ -158,12 +158,12 @@ export function AttendeeCard({
   // > onClick > .finally).
   function handleItemAction(itemKey: string, action: string) {
     if (!itemGuard.start(itemKey)) return;
-    Promise.resolve(onItemAction?.(itemKey, action)).finally(() => itemGuard.finish(itemKey));
+    void Promise.resolve(onItemAction?.(itemKey, action)).finally(() => itemGuard.finish(itemKey));
   }
 
   function handleRevokeItem(itemKey: string) {
     if (!itemGuard.start(itemKey)) return;
-    Promise.resolve(onRevokeItem?.(itemKey)).finally(() => itemGuard.finish(itemKey));
+    void Promise.resolve(onRevokeItem?.(itemKey)).finally(() => itemGuard.finish(itemKey));
   }
 
   async function handleRevokeConfirm() {
@@ -367,7 +367,7 @@ export function AttendeeCard({
                 disabled={!canAct || pending || undoGuard.ids.has("undo")}
                 onClick={() => {
                   if (!undoGuard.start("undo")) return;
-                  Promise.resolve(onUndo()).finally(() => undoGuard.finish("undo"));
+                  void Promise.resolve(onUndo()).finally(() => undoGuard.finish("undo"));
                 }}
                 icon={<i className="ti ti-arrow-back-up" aria-hidden="true" />}
               >

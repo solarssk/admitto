@@ -1,32 +1,5 @@
 [
   {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/App.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "(async () => {",
-    "column": 5,
-    "contextBefore": "let cancelled = false;",
-    "contextAfter": "try {"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/App.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(`${location.pathname}${location.search}`, { replace: true, state: null });",
-    "column": 7,
-    "contextBefore": "// the fallback fetch instead (Codex review).",
-    "contextAfter": "return;"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/account/AccountPage.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "copyTextToClipboard(enrollData.otpauthUri).then((copied) => {",
-    "column": 5,
-    "contextBefore": "",
-    "contextAfter": "if (!copied) {"
-  },
-  {
     "ruleId": "@typescript-eslint/no-misused-promises",
     "filePath": "apps/admin/src/account/AccountPage.tsx",
     "message": "Promise-returning function provided to attribute where a void return was expected.",
@@ -189,42 +162,6 @@
     "contextAfter": "onBusyChange(true);"
   },
   {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/checkin/AttendeeCard.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "Promise.resolve(onItemAction?.(itemKey, action)).finally(() => itemGuard.finish(itemKey));",
-    "column": 5,
-    "contextBefore": "if (!itemGuard.start(itemKey)) return;",
-    "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/checkin/AttendeeCard.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "Promise.resolve(onRevokeItem?.(itemKey)).finally(() => itemGuard.finish(itemKey));",
-    "column": 5,
-    "contextBefore": "if (!itemGuard.start(itemKey)) return;",
-    "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/checkin/AttendeeCard.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "Promise.resolve(onUndo()).finally(() => undoGuard.finish(\"undo\"));",
-    "column": 19,
-    "contextBefore": "if (!undoGuard.start(\"undo\")) return;",
-    "contextAfter": "}}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/checkin/CameraOverlayItemIssuing.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "Promise.resolve(onUndo()).finally(() => undoGuard.finish(\"undo\"));",
-    "column": 15,
-    "contextBefore": "if (!undoGuard.start(\"undo\")) return;",
-    "contextAfter": "}}"
-  },
-  {
     "ruleId": "@typescript-eslint/no-misused-promises",
     "filePath": "apps/admin/src/checkin/NoteModal.tsx",
     "message": "Promise-returning function provided to attribute where a void return was expected.",
@@ -232,69 +169,6 @@
     "column": 98,
     "contextBefore": "</Button>",
     "contextAfter": "{submitting ? \"Saving…\" : \"Add note\"}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/components/LogoUploadZone.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "if (f) openCropForFile(f);",
-    "column": 20,
-    "contextBefore": "const f = e.target.files?.[0];",
-    "contextAfter": "e.target.value = \"\";"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/components/SystemStatus.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(`${SETTINGS_INDEX_PATH}?tab=health`);",
-    "column": 19,
-    "contextBefore": "close();",
-    "contextAfter": "}}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/components/SystemStatus.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(`${SETTINGS_INDEX_PATH}?tab=logs`);",
-    "column": 19,
-    "contextBefore": "close();",
-    "contextAfter": "}}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/components/UserMenu.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(\"/account\");",
-    "column": 15,
-    "contextBefore": "close();",
-    "contextAfter": "}}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/components/crop/CropImageModal.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "runCropApply(img, completedCrop, crop, zoom, sourceMime, onApply)",
-    "column": 5,
-    "contextBefore": "setError(null);",
-    "contextAfter": ".then((errMsg) => {"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/identity/CfAccessEditor.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(IDENTITY_PROVIDERS_ROUTE);",
-    "column": 9,
-    "contextBefore": "skipBlockRef.current = true;",
-    "contextAfter": "} catch (err) {"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/identity/CfAccessEditor.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(IDENTITY_PROVIDERS_ROUTE);",
-    "column": 11,
-    "contextBefore": "skipBlockRef.current = true;",
-    "contextAfter": "}}"
   },
   {
     "ruleId": "@typescript-eslint/no-misused-promises",
@@ -313,24 +187,6 @@
     "column": 16,
     "contextBefore": "onCancel={handleCancel}",
     "contextAfter": "/>"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/identity/IdentityProviderEditor.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(IDENTITY_PROVIDERS_ROUTE);",
-    "column": 9,
-    "contextBefore": "skipBlockRef.current = true;",
-    "contextAfter": "} catch (err) {"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/identity/IdentityProviderEditor.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(IDENTITY_PROVIDERS_ROUTE);",
-    "column": 11,
-    "contextBefore": "skipBlockRef.current = true;",
-    "contextAfter": "}}"
   },
   {
     "ruleId": "@typescript-eslint/no-misused-promises",
@@ -376,69 +232,6 @@
     "column": 26,
     "contextBefore": "provider={provider}",
     "contextAfter": "disabled={togglingIds.has(provider.id)}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/identity/useUnsavedChangesGuard.ts",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(IDENTITY_PROVIDERS_ROUTE);",
-    "column": 5,
-    "contextBefore": "skipBlockRef.current = true;",
-    "contextAfter": "}, [isBusy, dirty, navigate]);"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/layouts/SettingsLayout.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(IDENTITY_PROVIDERS_ROUTE);",
-    "column": 9,
-    "contextBefore": "if (id === \"identity\") {",
-    "contextAfter": "return;"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/layouts/SettingsLayout.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(IDENTITY_PROVIDERS_ROUTE, { replace: true });",
-    "column": 7,
-    "contextBefore": "if (!onIdentity && searchParams.get(\"tab\") === \"identity\") {",
-    "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/layouts/SettingsLayout.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(`${SETTINGS_INDEX_PATH}?tab=${id}`, { replace: true });",
-    "column": 7,
-    "contextBefore": "// Identity detail view triggers the editor's `useBlocker` when dirty.",
-    "contextAfter": "},"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/pages/AttendeeDetailPage.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "else navigate(-1);",
-    "column": 10,
-    "contextBefore": "if (eventId) navigate(`/admin/events/${eventId}/attendees`);",
-    "contextAfter": "};"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/pages/AttendeeDetailPage.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "if (eventId) navigate(`/admin/events/${eventId}/attendees`);",
-    "column": 18,
-    "contextBefore": "const goBack = () => {",
-    "contextAfter": "else navigate(-1);"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/pages/AttendeeDetailPage.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(`/admin/events/${eventId}/attendees`);",
-    "column": 7,
-    "contextBefore": "addToast(\"Attendee permanently deleted\", \"success\");",
-    "contextAfter": "} catch (err) {"
   },
   {
     "ruleId": "@typescript-eslint/no-misused-promises",
@@ -495,24 +288,6 @@
     "contextAfter": "</>"
   },
   {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/pages/CheckInEntryPage.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "(async () => {",
-    "column": 5,
-    "contextBefore": "setError(null);",
-    "contextAfter": "try {"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/pages/CheckInEntryPage.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(`/operator/events/${list[0]!.id}/checkin`, { replace: true });",
-    "column": 11,
-    "contextBefore": "if (list.length === 1) {",
-    "contextAfter": "return;"
-  },
-  {
     "ruleId": "@typescript-eslint/no-misused-promises",
     "filePath": "apps/admin/src/pages/CheckInPage.tsx",
     "message": "Promise-returning function provided to attribute where a void return was expected.",
@@ -540,15 +315,6 @@
     "contextAfter": "/>"
   },
   {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/pages/EventSettingsPage.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(\"/admin\");",
-    "column": 5,
-    "contextBefore": "addToast(\"Event permanently deleted\", \"success\");",
-    "contextAfter": "} catch (err) {"
-  },
-  {
     "ruleId": "@typescript-eslint/no-misused-promises",
     "filePath": "apps/admin/src/pages/EventSettingsPage.tsx",
     "message": "Promise-returning function provided to property where a void return was expected.",
@@ -558,15 +324,6 @@
     "contextAfter": "if (earlyExit !== undefined) return earlyExit;"
   },
   {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/pages/EventsPickerPage.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(`/admin/events/${event.id}/overview`, { state: { event } });",
-    "column": 5,
-    "contextBefore": "// immediately instead of re-fetching the events list (#274).",
-    "contextAfter": "};"
-  },
-  {
     "ruleId": "@typescript-eslint/no-misused-promises",
     "filePath": "apps/admin/src/pages/users/ActiveSessionsTab.tsx",
     "message": "Promise-returning function provided to attribute where a void return was expected.",
@@ -574,24 +331,6 @@
     "column": 63,
     "contextBefore": "<p>{error}</p>",
     "contextAfter": "Retry"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/pages/wizard/WizardStep5Ready.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(\"/admin\", { replace: true });",
-    "column": 9,
-    "contextBefore": "} else {",
-    "contextAfter": "}"
-  },
-  {
-    "ruleId": "@typescript-eslint/no-floating-promises",
-    "filePath": "apps/admin/src/pages/wizard/WizardStep5Ready.tsx",
-    "message": "Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator.",
-    "codeLine": "navigate(`/admin/events/${selectedEventId}/overview`, { replace: true });",
-    "column": 9,
-    "contextBefore": "if (selectedEventId) {",
-    "contextAfter": "} else {"
   },
   {
     "ruleId": "@typescript-eslint/no-misused-promises",

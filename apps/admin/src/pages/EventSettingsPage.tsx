@@ -668,7 +668,7 @@ async function confirmDeleteEvent(deps: DeleteEventDeps): Promise<void> {
   try {
     await deleteEvent(eventId);
     addToast("Event permanently deleted", "success");
-    navigate("/admin");
+    void navigate("/admin");
   } catch (err) {
     setDeleteError(operatorApiErrorMessage(err, "Delete failed"));
   } finally {

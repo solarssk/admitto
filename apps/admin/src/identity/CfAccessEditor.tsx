@@ -318,7 +318,7 @@ export function CfAccessEditor() {
         setErrors({});
         addToast("Cloudflare Access settings saved.", "success");
         skipBlockRef.current = true;
-        navigate(IDENTITY_PROVIDERS_ROUTE);
+        void navigate(IDENTITY_PROVIDERS_ROUTE);
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           redirectToLogin();
@@ -438,7 +438,7 @@ export function CfAccessEditor() {
         onCancelDialogConfirm={() => {
           setDiscardConfirmOpen(false);
           skipBlockRef.current = true;
-          navigate(IDENTITY_PROVIDERS_ROUTE);
+          void navigate(IDENTITY_PROVIDERS_ROUTE);
         }}
         onCancelDialogDismiss={() => setDiscardConfirmOpen(false)}
         blockerDialogOpen={blocker.state === "blocked"}

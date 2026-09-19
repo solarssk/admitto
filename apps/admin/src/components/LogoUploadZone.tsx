@@ -563,7 +563,7 @@ export function LogoUploadZone({
           className="logo-upload__file-input"
           onChange={(e) => {
             const f = e.target.files?.[0];
-            if (f) openCropForFile(f);
+            if (f) void openCropForFile(f);
             e.target.value = "";
           }}
           disabled={uploading || disabled}

@@ -19,12 +19,12 @@ export function CheckInEntryPage() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    (async () => {
+    void (async () => {
       try {
         const list = await fetchCheckInEvents({ includeAttendeeCount: true });
         if (cancelled) return;
         if (list.length === 1) {
-          navigate(`/operator/events/${list[0]!.id}/checkin`, { replace: true });
+          void navigate(`/operator/events/${list[0]!.id}/checkin`, { replace: true });
           return;
         }
         setEvents(list);

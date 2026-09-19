@@ -1865,20 +1865,6 @@ export function AttendeeDetailPage() {
   const baseline = detail != null ? toAttendeeForm(detail, attributeFields) : null;
   const isDirty = isAttendeeFormDirty(form, baseline);
 
-  const goBack = () => {
-    if (eventId) navigate(`/admin/events/${eventId}/attendees`);
-    else navigate(-1);
-  };
-
-  const handleBack = () => {
-    if (isDirty) {
-      setDiscardIntent("back");
-      setDiscardOpen(true);
-    } else {
-      goBack();
-    }
-  };
-
   async function handleDeleteConfirm() {
     if (!eventId || !attendeeId) return;
     const target = { eventId, attendeeId };
@@ -1888,7 +1874,7 @@ export function AttendeeDetailPage() {
       await deleteAttendee(eventId, attendeeId);
       if (!isStillSelected(target)) return;
       addToast("Attendee permanently deleted", "success");
-      navigate(`/admin/events/${eventId}/attendees`);
+      void navigate(`/admin/events/${eventId}/attendees`);
     } catch (err) {
       if (!isStillSelected(target)) return;
       setDeleteError(operatorApiErrorMessage(err, "Could not delete attendee. Try again."));
@@ -2314,6 +2300,19 @@ export function AttendeeDetailPage() {
   const showLoadingSkeleton = useDelayedLoading(loading);
 
   if (!eventId || !attendeeId) return <p>Missing event or attendee.</p>;
+
+  const goBack = () => {
+    void navigate(`/admin/events/${eventId}/attendees`);
+  };
+
+  const handleBack = () => {
+    if (isDirty) {
+      setDiscardIntent("back");
+      setDiscardOpen(true);
+    } else {
+      goBack();
+    }
+  };
 
   if (loading && !detail) {
     return whenShown(

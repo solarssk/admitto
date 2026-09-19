@@ -177,13 +177,13 @@ export function EventLayout() {
       // e.g. after the admin's org assignment is revoked in the same browser
       // session. Clearing it forces any future visit to this entry through
       // the fallback fetch instead (Codex review).
-      navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+      void navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
       return;
     }
     // Fallback (deep link, refresh without usable state): resolve the event
     // from the API before the shell can render.
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const found = await fetchAdminEvent(eventId!);
         if (cancelled) return;

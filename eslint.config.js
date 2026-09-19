@@ -35,7 +35,7 @@ const tsUnusedVarsOptions = {
 // follow-up work; each rule should move back to "error" as its findings are fixed to zero.
 const typeAwareFollowUpRules = {
   "@typescript-eslint/no-misused-promises": "warn",
-  "@typescript-eslint/no-floating-promises": "warn",
+  "@typescript-eslint/no-floating-promises": "error",
   "@typescript-eslint/require-await": "error",
   "@typescript-eslint/no-unsafe-assignment": "error",
   "@typescript-eslint/no-unsafe-return": "error",

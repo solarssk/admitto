@@ -135,6 +135,16 @@ describe("LogoUploadZone", () => {
     });
   });
 
+  it("ignores a file-input change when no file was selected", () => {
+    renderWithToast(<LogoUploadZone value="" onChange={() => {}} />);
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+    fireEvent.change(input, { target: { files: [] } });
+
+    expect(mockUploadFile).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Adjust image" })).toBeNull();
+  });
+
   it("Edit image re-opens the original upload URL, not a blob: of the local file", async () => {
     mockUploadFile
       .mockResolvedValueOnce({ url: "/uploads/default/orig.png" })
