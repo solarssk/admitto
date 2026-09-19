@@ -855,6 +855,47 @@
   color: var(--text-secondary);
 }
 
+/* Full-text dialog opened from a bell row (NotificationDetailDialog). Sits on ConfirmDialog's own
+   overlay/panel classes (z-index --z-modal, above the dropdown panel it's opened from); only what
+   ConfirmDialog doesn't already have lives here. Compound selectors (not a bare single class) so
+   they win over confirm-dialog.css regardless of which stylesheet the bundle orders first. */
+.confirm-dialog__panel.notif-detail__panel {
+  width: min(480px, 100%);
+}
+
+.notif-detail__title .status-circle {
+  flex-shrink: 0;
+}
+
+.notif-detail__body {
+  margin: 0;
+  color: var(--text-primary);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.notif-detail__meta {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.notif-detail__meta dt {
+  font-weight: 600;
+}
+
+.notif-detail__meta dd {
+  margin: 0;
+}
+
+.notif-detail__local {
+  display: block;
+}
+
 /* ─── Page header ─────────────────────────────────────────────────────────── */
 .placeholder-note {
   color: var(--text-secondary);

@@ -887,3 +887,115 @@ describe("Clear all", () => {
     expect(screen.getByRole("button", { name: "Notifications, 1 unread" })).toBeTruthy();
   });
 });
+
+const LONG_BODY =
+  "Your account signed in from Singapore, Singapore using Chrome / macOS, not seen in this account's recent successful logins. If this wasn't you, secure your account immediately. (IP 203.0.113.7 at 2026-09-18 05:39:23 UTC)";
+
+async function openBellWith(notifications: NotificationDto[]) {
+  fetchAccountNotificationsUnreadCount.mockResolvedValue({
+    unread_count: notifications.filter((n) => !n.read_at).length,
+  });
+  fetchAccountNotifications.mockResolvedValue({
+    notifications,
+    unread_count: notifications.filter((n) => !n.read_at).length,
+  });
+  markAccountNotificationRead.mockResolvedValue({ unread_count: 0 });
+  renderWithToast(<NotificationBell />);
+  await act(async () => {});
+  openBell();
+  await screen.findByRole("menuitem", { name: /You signed in from a new location/ });
+}
+
+describe("Notification detail dialog", () => {
+  const notification = () =>
+    makeNotification({
+      id: "notif-long",
+      severity: "warn",
+      title: "You signed in from a new location",
+      body: LONG_BODY,
+    });
+
+  it("opens the full, untruncated message when a row is clicked", async () => {
+    await openBellWith([notification()]);
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /You signed in from a new location/ }));
+
+    const dialog = await screen.findByRole("dialog", { name: "You signed in from a new location" });
+    expect(within(dialog).getByText(LONG_BODY)).toBeTruthy();
+    expect(within(dialog).getByText("Demo Org")).toBeTruthy();
+    expect(within(dialog).getByText(/Received/)).toBeTruthy();
+    expect(within(dialog).getByText(/Your local time:/)).toBeTruthy();
+  });
+
+  it("still marks an unread notification as read when opening it", async () => {
+    await openBellWith([notification()]);
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /You signed in from a new location/ }));
+
+    await screen.findByRole("dialog", { name: "You signed in from a new location" });
+    await waitFor(() => expect(markAccountNotificationRead).toHaveBeenCalledWith("notif-long"));
+  });
+
+  it("opens an already-read notification without marking it read again", async () => {
+    await openBellWith([{ ...notification(), read_at: "2026-09-10T10:05:00.000Z" }]);
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /You signed in from a new location/ }));
+
+    await screen.findByRole("dialog", { name: "You signed in from a new location" });
+    expect(markAccountNotificationRead).not.toHaveBeenCalled();
+  });
+
+  it("omits the organisation line when the notification has none", async () => {
+    await openBellWith([{ ...notification(), organization_name: null }]);
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /You signed in from a new location/ }));
+
+    const dialog = await screen.findByRole("dialog", { name: "You signed in from a new location" });
+    expect(within(dialog).queryByText("Organisation")).toBeNull();
+  });
+
+  it("closes only the dialog with the Close button, leaving the dropdown open", async () => {
+    await openBellWith([notification()]);
+    fireEvent.click(screen.getByRole("menuitem", { name: /You signed in from a new location/ }));
+    const dialog = await screen.findByRole("dialog", { name: "You signed in from a new location" });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("menuitem", { name: /You signed in from a new location/ })).toBeTruthy();
+  });
+
+  it("closes only the dialog on Escape, leaving the dropdown open behind it", async () => {
+    // Same regression the Clear-all dialog guards against: the dropdown must step aside for the
+    // dialog's own Escape handling instead of closing the panel out from under it.
+    await openBellWith([notification()]);
+    fireEvent.click(screen.getByRole("menuitem", { name: /You signed in from a new location/ }));
+    await screen.findByRole("dialog", { name: "You signed in from a new location" });
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("menuitem", { name: /You signed in from a new location/ })).toBeTruthy();
+  });
+
+  it("closes the dialog when the backdrop is clicked, leaving the dropdown open", async () => {
+    await openBellWith([notification()]);
+    fireEvent.click(screen.getByRole("menuitem", { name: /You signed in from a new location/ }));
+    const dialog = await screen.findByRole("dialog", { name: "You signed in from a new location" });
+
+    const backdrop = dialog.querySelector(".at-modal-backdrop");
+    expect(backdrop).toBeTruthy();
+    fireEvent.click(backdrop as Element);
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("menuitem", { name: /You signed in from a new location/ })).toBeTruthy();
+  });
+
+  it("marks each row as opening a dialog, for assistive technology", async () => {
+    await openBellWith([notification()]);
+
+    expect(
+      screen.getByRole("menuitem", { name: /You signed in from a new location/ }).getAttribute("aria-haspopup"),
+    ).toBe("dialog");
+  });
+});
