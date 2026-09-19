@@ -339,15 +339,6 @@ jobs:
           subject-digest: ${{ steps.manifest.outputs.digest }}
           push-to-registry: true
 
-      - name: Sync Docker Hub repository description
-        uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa  # v5.0.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: solarssk/admitto
-          short-description: "Self-hosted registration-to-check-in for internal corporate events. No SaaS, no recurring fees."
-          readme-filepath: deploy/dockerhub-readme.md
-
       - name: Download SBOMs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
@@ -373,3 +364,14 @@ jobs:
               gh release create "$TAG" --title "$TAG" --generate-notes --latest /tmp/sboms/*.cdx.json
             fi
           fi
+
+      # Kept last on purpose: a failure here (e.g. a Docker Hub token without description
+      # write scope) must not skip the SBOM upload to the GitHub Release above.
+      - name: Sync Docker Hub repository description
+        uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa  # v5.0.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: solarssk/admitto
+          short-description: "Self-hosted registration-to-check-in for internal corporate events. No SaaS, no recurring fees."
+          readme-filepath: deploy/dockerhub-readme.md
