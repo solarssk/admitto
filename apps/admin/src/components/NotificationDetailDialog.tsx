@@ -1,7 +1,8 @@
 import { useId, useRef } from "react";
 import { Button, ModalBackdrop } from "@admitto/ui";
 import type { NotificationDto } from "../api/types.js";
-import { formatUtcDateTime, viewerLocalTime } from "../utils/event-dates.js";
+import { formatUtcPrimaryTime } from "../utils/event-dates.js";
+import { ActorOrViewerLocalTimeLine } from "./ActorOrViewerLocalTimeLine.js";
 import { NOTIFICATION_SEVERITY_ICON } from "./notificationSeverity.js";
 import { useModalFocusTrap } from "./useModalFocusTrap.js";
 import "./confirm-dialog.css";
@@ -14,7 +15,8 @@ import "./confirm-dialog.css";
  *
  * Reuses ConfirmDialog's overlay classes rather than the standard add-attendee-modal shell: that
  * one sits at z-index 300, below the bell's own dropdown panel (--z-dropdown: 1000) this is
- * always opened from, so it would render hidden behind it.
+ * always opened from, so it would render hidden behind it. The time renders the same way as
+ * everywhere else in the staff UI (UTC on top, the viewer's local time beneath).
  */
 export function NotificationDetailDialog({
   notification,
@@ -49,19 +51,13 @@ export function NotificationDetailDialog({
         <p id={bodyId} className="notif-detail__body">
           {notification.body}
         </p>
-        <dl className="notif-detail__meta">
+        <div>
+          {formatUtcPrimaryTime(notification.created_at)}
+          <ActorOrViewerLocalTimeLine iso={notification.created_at} actorTimezone={null} />
           {notification.organization_name && (
-            <>
-              <dt>Organisation</dt>
-              <dd>{notification.organization_name}</dd>
-            </>
+            <div className="sessions-subdued">Organisation: {notification.organization_name}</div>
           )}
-          <dt>Received</dt>
-          <dd>
-            {formatUtcDateTime(notification.created_at)}
-            <span className="notif-detail__local">Your local time: {viewerLocalTime(notification.created_at)}</span>
-          </dd>
-        </dl>
+        </div>
         <div className="confirm-dialog__actions">
           <Button type="button" variant="secondary" onClick={onClose}>
             Close

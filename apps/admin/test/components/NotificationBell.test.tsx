@@ -922,8 +922,9 @@ describe("Notification detail dialog", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "You signed in from a new location" });
     expect(within(dialog).getByText(LONG_BODY)).toBeTruthy();
-    expect(within(dialog).getByText("Demo Org")).toBeTruthy();
-    expect(within(dialog).getByText(/Received/)).toBeTruthy();
+    expect(within(dialog).getByText("Organisation: Demo Org")).toBeTruthy();
+    // Same standard as Sessions and the Audit log: UTC on top, the viewer's local time beneath.
+    expect(within(dialog).getByText("2026-09-10 10:00:00 UTC")).toBeTruthy();
     expect(within(dialog).getByText(/Your local time:/)).toBeTruthy();
   });
 
@@ -951,7 +952,7 @@ describe("Notification detail dialog", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /You signed in from a new location/ }));
 
     const dialog = await screen.findByRole("dialog", { name: "You signed in from a new location" });
-    expect(within(dialog).queryByText("Organisation")).toBeNull();
+    expect(within(dialog).queryByText(/Organisation:/)).toBeNull();
   });
 
   it("closes only the dialog with the Close button, leaving the dropdown open", async () => {

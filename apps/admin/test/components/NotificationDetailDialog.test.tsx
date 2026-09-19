@@ -27,14 +27,13 @@ describe("NotificationDetailDialog", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("shows the full title, body, organisation, and both timestamps", () => {
+  it("shows the full title, body, organisation, and the standard UTC plus local time", () => {
     render(<NotificationDetailDialog notification={makeNotification()} onClose={vi.fn()} />);
 
     const dialog = screen.getByRole("dialog", { name: "You signed in from a new location" });
     expect(dialog.textContent).toContain("If this wasn't you, secure your account immediately.");
-    expect(dialog.textContent).toContain("Demo Org");
-    expect(dialog.textContent).toContain("2026");
-    expect(dialog.textContent).toContain("UTC");
+    expect(dialog.textContent).toContain("Organisation: Demo Org");
+    expect(dialog.textContent).toContain("2026-09-18 05:39:23 UTC");
     expect(dialog.textContent).toContain("Your local time:");
   });
 

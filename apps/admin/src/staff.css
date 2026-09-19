@@ -875,27 +875,6 @@
   white-space: pre-line;
 }
 
-.notif-detail__meta {
-  margin: 0;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: var(--space-1) var(--space-3);
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-}
-
-.notif-detail__meta dt {
-  font-weight: 600;
-}
-
-.notif-detail__meta dd {
-  margin: 0;
-}
-
-.notif-detail__local {
-  display: block;
-}
-
 /* ─── Page header ─────────────────────────────────────────────────────────── */
 .placeholder-note {
   color: var(--text-secondary);
