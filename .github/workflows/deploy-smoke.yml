@@ -61,14 +61,12 @@ jobs:
       - name: Smoke checks
         run: |
           curl -sSf http://127.0.0.1:8080/healthz | grep -q '"status":"ok"'
-          # A fresh stack has no users yet, so the staff entry point is /setup, not /login:
-          # GET /login answers 302 -> /setup (auth/html-routes.ts handleGetLogin).
-          login_get=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' http://127.0.0.1:8080/login)
-          if [ "$login_get" != "302 http://127.0.0.1:8080/setup" ]; then
-            echo "GET /login expected 302 to /setup on a fresh stack, got: $login_get"
-            exit 1
-          fi
-          curl -sSf http://127.0.0.1:8080/setup -o /dev/null -w '%{http_code}\n' | grep -q 200
+          # A fresh stack has no users, and GET/POST /login then redirect to /setup
+          # (auth/html-routes.ts). Bootstrap a throwaway superadmin first so the login
+          # page itself and the invalid-credentials path are exercised.
+          printf '%s\n' 'Smoke-Test-Only-Passw0rd-2026!' | docker compose -f deploy/docker-compose.yml exec -T app \
+            node packages/auth/dist/cli.js bootstrap-superadmin --email smoke-admin@example.com
+          curl -sSf http://127.0.0.1:8080/login -o /dev/null -w '%{http_code}\n' | grep -q 200
           login_code=$(curl -s -o /tmp/login-post-body -w '%{http_code}' -X POST http://127.0.0.1:8080/login \
             -H 'Content-Type: application/x-www-form-urlencoded' \
             -H 'Origin: http://127.0.0.1:8080' \
