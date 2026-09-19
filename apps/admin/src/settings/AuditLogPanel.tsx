@@ -24,7 +24,13 @@ import { Segmented, type SegmentedOption } from "../components/Segmented.js";
 import { useClickOutside } from "../components/useClickOutside.js";
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
-import { localeDateInputPattern, utcDayEndIso, utcDayStartIso, zonedTimeLabel } from "../utils/event-dates.js";
+import {
+  formatUtcPrimaryTime,
+  localeDateInputPattern,
+  utcDayEndIso,
+  utcDayStartIso,
+  zonedTimeLabel,
+} from "../utils/event-dates.js";
 import { getPreferredLocale } from "../utils/locale-store.js";
 import { MAIL_PROVIDER_LABELS } from "./mailProviderOptions.js";
 import { getPollIntervalMs, POLL_DEGRADED_THRESHOLD, SystemLogsPanel, type SystemLogsPanelHandle } from "./SystemLogsPanel.js";
@@ -204,12 +210,6 @@ const SECURITY_EVENT_TYPE_OPTIONS = Object.keys(SECURITY_EVENT_LABELS).sort((a, 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 const SEARCH_DEBOUNCE_MS = 300;
 
-/** UTC instant as "YYYY-MM-DD HH:MM:SS" - `created_at` is already an ISO string in UTC, so this
- * is just trimming it, matching the mockup's compact monospace time format exactly. */
-function formatAuditPrimaryTime(iso: string): string {
-  return iso.slice(0, 19).replace("T", " ");
-}
-
 /** Cached formatter for the hour/minute part of userLocalTimeText/viewerLocalTimeText below -
  * SECURITY_COLUMNS calls these once per visible row on every live poll (~1.75s), so constructing
  * a fresh Intl.DateTimeFormat per cell per tick was measurable churn on a tab left open all day.
@@ -379,7 +379,7 @@ function buildRowSummary(entry: AuditLogEntryDto, eventTitleById: Map<string, st
   const locationText = entry.ip ? geoLocationText(entry.country) : "";
   const locationSuffix = locationText ? ` (${locationText})` : "";
   const lines = [
-    `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC${localTimeSuffix}`,
+    `Time: ${formatUtcPrimaryTime(entry.created_at)}${localTimeSuffix}`,
     `Action: ${actionLabel(entry.action_type)}`,
     `Scope: ${scopeLabel(entry, eventTitleById)}`,
     `User: ${actorDisplay(entry)}${actorEmailSuffix}`,
@@ -724,7 +724,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
       className: "audit-log-time",
     cell: (entry) => (
       <>
-        <div>{formatAuditPrimaryTime(entry.created_at)} UTC</div>
+        <div>{formatUtcPrimaryTime(entry.created_at)}</div>
         <UserLocalTimeLine entry={entry} />
       </>
     ),
@@ -777,7 +777,7 @@ function renderAuditCardTop(entry: AuditLogEntryDto): ReactNode {
         <Badge variant={actionTone(entry.action_type)}>{label}</Badge>
       </div>
       <div className="audit-log-time audit-log-card__time">
-        <div>{formatAuditPrimaryTime(entry.created_at)} UTC</div>
+        <div>{formatUtcPrimaryTime(entry.created_at)}</div>
         <UserLocalTimeLine entry={entry} />
       </div>
     </>
@@ -863,7 +863,7 @@ function buildSecurityRowSummary(entry: SecurityAuditLogEntryDto): string {
     ? `User's local time · ${actorLocal}`
     : `Your local time · ${viewerLocalTimeText(entry.created_at)}`;
   const lines = [
-    `Time: ${formatAuditPrimaryTime(entry.created_at)} UTC (${localLine})`,
+    `Time: ${formatUtcPrimaryTime(entry.created_at)} (${localLine})`,
     `Event: ${securityEventLabel(entry.event_type)}`,
     `User: ${securityUserDisplay(entry)}${userEmailSuffix}`,
     `IP address: ${entry.ip ?? "-"}${locationSuffix}`,
@@ -888,7 +888,7 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
     className: "audit-log-time",
     cell: (entry) => (
       <>
-        <div>{formatAuditPrimaryTime(entry.created_at)} UTC</div>
+        <div>{formatUtcPrimaryTime(entry.created_at)}</div>
         <ActorOrViewerLocalTimeLine iso={entry.created_at} actorTimezone={entry.actor_timezone} />
       </>
     ),
@@ -930,7 +930,7 @@ function renderSecurityCardTop(entry: SecurityAuditLogEntryDto): ReactNode {
     <>
       <Badge variant={securityEventTone(entry.event_type)}>{securityEventLabel(entry.event_type)}</Badge>
       <div className="audit-log-time audit-log-card__time">
-        <div>{formatAuditPrimaryTime(entry.created_at)} UTC</div>
+        <div>{formatUtcPrimaryTime(entry.created_at)}</div>
         <ActorOrViewerLocalTimeLine iso={entry.created_at} actorTimezone={entry.actor_timezone} />
       </div>
     </>

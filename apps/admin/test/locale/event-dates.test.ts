@@ -10,6 +10,7 @@ import {
   formatRelativeTime,
   formatRelativeAdmissionDisplay,
   formatUtcDateTime,
+  formatUtcPrimaryTime,
   calendarDateValidationHint,
   localeDateInputPattern,
   parseFlexibleCalendarDate,
@@ -125,6 +126,21 @@ describe("formatEventDateTime and formatUtcDateTime", () => {
     setPreferredLocale("en-GB");
     expect(formatEventDateTime("2026-06-28T13:00:00.000Z")).toMatch(/UTC$/);
     expect(formatEventTime("2026-06-28T13:00:00.000Z")).toMatch(/UTC$/);
+  });
+});
+
+describe("formatUtcPrimaryTime", () => {
+  it("trims a UTC ISO instant to the standard 'YYYY-MM-DD HH:MM:SS UTC' form", () => {
+    expect(formatUtcPrimaryTime("2026-09-19T12:57:18.482Z")).toBe("2026-09-19 12:57:18 UTC");
+  });
+
+  it("does not depend on the preferred locale", () => {
+    setPreferredLocale("en-GB");
+    try {
+      expect(formatUtcPrimaryTime("2026-01-01T00:00:00.000Z")).toBe("2026-01-01 00:00:00 UTC");
+    } finally {
+      setPreferredLocale(null);
+    }
   });
 });
 

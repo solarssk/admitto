@@ -52,7 +52,7 @@ import { SessionRevokeAction, SessionSignIn } from "../pages/users/SessionListIt
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useIsDesktop } from "../hooks/useIsDesktop.js";
 import { ActorOrViewerLocalTimeLine } from "../components/ActorOrViewerLocalTimeLine.js";
-import { formatRelativeTime } from "../utils/event-dates.js";
+import { formatRelativeTime, formatUtcPrimaryTime } from "../utils/event-dates.js";
 import {
   LOCALE_OPTIONS,
   setPreferredLocale as setPreferredLocaleStore,
@@ -92,11 +92,6 @@ const stepUpCodeFieldAttrs = {
   "data-1p-ignore": "",
   "data-form-type": "other",
 } as const;
-
-/** "2026-01-01 12:00:00" - same UTC-primary convention as Users → Active sessions. */
-function formatSessionPrimaryTime(iso: string): string {
-  return `${iso.slice(0, 19).replace("T", " ")} UTC`;
-}
 
 /** Same .txt format and filename as the server-rendered MFA enrollment download. */
 function downloadBackupCodes(codes: string[]): void {
@@ -2042,7 +2037,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
                       {s.ip && <div className="sessions-subdued"><GeoCell location={s.country} /></div>}
                     </td>
                     <td>
-                      {formatSessionPrimaryTime(s.loginAt)}
+                      {formatUtcPrimaryTime(s.loginAt)}
                       <ActorOrViewerLocalTimeLine
                         iso={s.loginAt}
                         actorTimezone={s.timezone}
@@ -2100,7 +2095,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
                   <div>
                     <dt>Logged in</dt>
                     <dd>
-                      {formatSessionPrimaryTime(s.loginAt)}
+                      {formatUtcPrimaryTime(s.loginAt)}
                       <ActorOrViewerLocalTimeLine
                         iso={s.loginAt}
                         actorTimezone={s.timezone}
