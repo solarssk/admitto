@@ -61,6 +61,7 @@ Most of the staff-facing account actions you might expect to send an email do no
 
 - Rows marked "Yes, by default" push a real-time alert the moment they happen, with no setup required first: in-app always, and email too once the organisation's mail transport is configured.
 - Organisation Settings → Notifications is where a Superadmin turns a type or channel off, or adds a webhook URL to also receive these alerts there. It's an opt-out screen, not something that has to be visited first to start receiving them.
+- Notification emails (security alerts) are sent without the organisation's configured Reply-To address, so a self-alert never shows the same address as both sender's reply target and recipient, which several spam filters flag. Replying to one goes to the From address instead.
 - Every other row leaves an audit trail only. If you need to know about one of those as it happens, someone has to be watching the log.
 
 ## Related pages

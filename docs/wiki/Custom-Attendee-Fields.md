@@ -33,6 +33,7 @@ The field appears in supported attendee and import workflows with the label, typ
 - A required field can prevent incomplete attendee data from being saved or imported.
 - Select values must match an allowed option.
 - A field used by an event item cannot be deleted until that reference is removed.
+- Single choice and Yes/No fields can also be mapped onto a wallet pass field in Event Settings → Wallet (Field mapping); free-text fields are not offered there. A field mapped this way and later deleted or changed to free text simply stops being sent to the pass. See [Wallet Passes PassCreator Setup](Wallet-Passes-PassCreator-Setup).
 - Renaming or removing a Select option is a real content change, not a display tweak: any attendee currently holding that exact value stops matching it and needs to be reassigned. Clearing an option's text down to nothing has the same effect as removing it.
 
 ## What changes after this action
