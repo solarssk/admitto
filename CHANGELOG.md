@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-19
+
 ### Added
 
 - Event Settings' Wallet field mapping has a new **Ticket status** value you can map onto a PassCreator field, showing "Valid", "Checked in", "Revoked", or "Cancelled" on the wallet pass - it reflects the attendee's status at the time the pass was created or last reissued, not live; nothing today automatically refreshes an already-issued pass when the attendee is later checked in or revoked.
@@ -1447,7 +1449,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/solarssk/admitto/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/solarssk/admitto/compare/v0.6.8...v0.7.0
 [0.6.8]: https://github.com/solarssk/admitto/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/solarssk/admitto/compare/v0.6.6...v0.6.7
