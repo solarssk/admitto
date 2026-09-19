@@ -53,6 +53,27 @@ describe("NotificationDetailDialog", () => {
     expect(document.querySelector(".ti-info-circle")).toBeTruthy();
   });
 
+  it("shows an error message inline as an alert, and none when there is no error", () => {
+    const { rerender } = render(<NotificationDetailDialog notification={makeNotification()} onClose={vi.fn()} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    rerender(
+      <NotificationDetailDialog
+        notification={makeNotification()}
+        errorMessage="Failed to mark notification as read."
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("alert").textContent).toContain("Failed to mark notification as read.");
+  });
+
+  it("makes the message body keyboard-focusable so an overflowing message can be scrolled", () => {
+    render(<NotificationDetailDialog notification={makeNotification()} onClose={vi.fn()} />);
+
+    const body = screen.getByText(/secure your account immediately/);
+    expect(body.getAttribute("tabindex")).toBe("0");
+  });
+
   it("calls onClose from the Close button", () => {
     const onClose = vi.fn();
     render(<NotificationDetailDialog notification={makeNotification()} onClose={onClose} />);

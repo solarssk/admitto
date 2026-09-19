@@ -213,7 +213,7 @@ describe("NotificationBell dropdown", () => {
     expect(await screen.findByText("You’re all caught up.")).toBeTruthy();
   });
 
-  it("shows a toast and keeps the row unread when marking one as read fails", async () => {
+  it("reports the failure and keeps the row unread when marking one as read fails", async () => {
     fetchAccountNotificationsUnreadCount.mockResolvedValue({ unread_count: 2 });
     fetchAccountNotifications.mockResolvedValue({
       notifications: [
@@ -994,6 +994,58 @@ describe("Notification detail dialog", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByRole("menuitem", { name: /You signed in from a new location/ })).toBeTruthy();
+  });
+
+  it("shows a failed mark-as-read inside the dialog, where the toast stack would sit hidden beneath it", async () => {
+    markAccountNotificationRead.mockRejectedValue(new Error("network down"));
+    await openBellWith([notification()]);
+    markAccountNotificationRead.mockRejectedValue(new Error("network down"));
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /You signed in from a new location/ }));
+
+    const dialog = await screen.findByRole("dialog", { name: "You signed in from a new location" });
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert.textContent).toContain("Failed to mark notification as read.");
+    // Once, inside the dialog - not also as a toast rendered under it.
+    expect(screen.getAllByText("Failed to mark notification as read.")).toHaveLength(1);
+  });
+
+  it("does not carry a previous failure into the next time the dialog opens", async () => {
+    await openBellWith([notification()]);
+    markAccountNotificationRead.mockRejectedValueOnce(new Error("network down"));
+    fireEvent.click(screen.getByRole("menuitem", { name: /You signed in from a new location/ }));
+    const first = await screen.findByRole("dialog", { name: "You signed in from a new location" });
+    await within(first).findByRole("alert");
+    fireEvent.click(within(first).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    markAccountNotificationRead.mockResolvedValue({ unread_count: 0 });
+    fireEvent.click(screen.getByRole("menuitem", { name: /You signed in from a new location/ }));
+
+    const second = await screen.findByRole("dialog", { name: "You signed in from a new location" });
+    await act(async () => {});
+    expect(within(second).queryByRole("alert")).toBeNull();
+  });
+
+  it("falls back to a toast when the failure lands after the dialog was already closed", async () => {
+    let rejectRead: (reason: Error) => void = () => {};
+    await openBellWith([notification()]);
+    markAccountNotificationRead.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectRead = reject;
+      }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: /You signed in from a new location/ }));
+    const dialog = await screen.findByRole("dialog", { name: "You signed in from a new location" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    await act(async () => {
+      rejectRead(new Error("network down"));
+    });
+
+    expect(await screen.findByText("Failed to mark notification as read.")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("marks each row as opening a dialog, for assistive technology", async () => {

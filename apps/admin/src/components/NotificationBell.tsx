@@ -45,6 +45,12 @@ export function NotificationBell() {
   // the dialog keeps showing exactly what was clicked even if the list is refetched or cleared
   // underneath it.
   const [detail, setDetail] = useState<NotificationDto | null>(null);
+  // The toast stack (--z-toast) sits below the dialog (--z-modal) and auto-dismisses, so a failed
+  // mark-as-read would be invisible while the dialog is open - it is shown inside the dialog
+  // instead. The ref answers "is this notification still the one on screen?" for an async failure
+  // that lands after the dialog closed or moved on to another row.
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const detailIdRef = useRef<string | null>(null);
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
     gap: 8,
@@ -177,8 +183,16 @@ export function NotificationBell() {
     return () => ac.abort();
   }, [open, loadList]);
 
+  function closeDetail() {
+    detailIdRef.current = null;
+    setDetail(null);
+    setDetailError(null);
+  }
+
   async function handleRowClick(notification: NotificationDto) {
+    detailIdRef.current = notification.id;
     setDetail(notification);
+    setDetailError(null);
     if (notification.read_at) return;
     setNotifications((prev) =>
       prev.map((n) => (n.id === notification.id ? { ...n, read_at: new Date().toISOString() } : n)),
@@ -199,7 +213,9 @@ export function NotificationBell() {
           prev.map((n) => (n.id === notification.id ? { ...n, read_at: null } : n)),
         );
         setUnreadCount((c) => c + 1);
-        addToast(operatorApiErrorMessage(err, "Failed to mark notification as read."), "error");
+        const message = operatorApiErrorMessage(err, "Failed to mark notification as read.");
+        if (detailIdRef.current === notification.id) setDetailError(message);
+        else addToast(message, "error");
       }
     });
   }
@@ -372,7 +388,7 @@ export function NotificationBell() {
           )}
         </div>
       )}
-      <NotificationDetailDialog notification={detail} onClose={() => setDetail(null)} />
+      <NotificationDetailDialog notification={detail} errorMessage={detailError} onClose={closeDetail} />
       <ConfirmDialog
         open={clearConfirmOpen}
         icon={<i className="ti ti-trash" />}

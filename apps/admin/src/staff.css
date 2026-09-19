@@ -861,6 +861,12 @@
    they win over confirm-dialog.css regardless of which stylesheet the bundle orders first. */
 .confirm-dialog__panel.notif-detail__panel {
   width: min(480px, 100%);
+  /* The overlay is a fixed, viewport-tall flex box: without a cap, a long message or a short
+     viewport pushes the panel past the edges with body scroll locked and no way to reach the rest
+     (or the Close button). The body scrolls first; the panel itself is the fallback for a
+     viewport too short to fit even the title, details and actions. */
+  max-height: 100%;
+  overflow-y: auto;
 }
 
 .notif-detail__title .status-circle {
@@ -869,6 +875,8 @@
 
 .notif-detail__body {
   margin: 0;
+  min-height: 0;
+  overflow-y: auto;
   color: var(--text-primary);
   line-height: 1.5;
   overflow-wrap: anywhere;
