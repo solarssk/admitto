@@ -15,8 +15,9 @@ import "./confirm-dialog.css";
  *
  * Reuses ConfirmDialog's overlay classes rather than the standard add-attendee-modal shell: that
  * one sits at z-index 300, below the bell's own dropdown panel (--z-dropdown: 1000) this is
- * always opened from, so it would render hidden behind it. The time renders the same way as
- * everywhere else in the staff UI (UTC on top, the viewer's local time beneath).
+ * always opened from, so it would render hidden behind it. The details box mirrors the one in the
+ * notification email, and the time renders the way it does everywhere else in the staff UI (UTC on
+ * top, the viewer's local time beneath).
  */
 export function NotificationDetailDialog({
   notification,
@@ -51,12 +52,21 @@ export function NotificationDetailDialog({
         <p id={bodyId} className="notif-detail__body">
           {notification.body}
         </p>
-        <div>
-          {formatUtcPrimaryTime(notification.created_at)}
-          <ActorOrViewerLocalTimeLine iso={notification.created_at} actorTimezone={null} />
-          {notification.organization_name && (
-            <div className="sessions-subdued">Organisation: {notification.organization_name}</div>
-          )}
+        <div className="notif-detail__box">
+          <h4 className="notif-detail__box-title">Details</h4>
+          <dl className="notif-detail__meta">
+            {notification.organization_name && (
+              <>
+                <dt>Organisation</dt>
+                <dd>{notification.organization_name}</dd>
+              </>
+            )}
+            <dt>Received</dt>
+            <dd>
+              {formatUtcPrimaryTime(notification.created_at)}
+              <ActorOrViewerLocalTimeLine iso={notification.created_at} actorTimezone={null} />
+            </dd>
+          </dl>
         </div>
         <div className="confirm-dialog__actions">
           <Button type="button" variant="secondary" onClick={onClose}>

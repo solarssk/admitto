@@ -32,7 +32,10 @@ describe("NotificationDetailDialog", () => {
 
     const dialog = screen.getByRole("dialog", { name: "You signed in from a new location" });
     expect(dialog.textContent).toContain("If this wasn't you, secure your account immediately.");
-    expect(dialog.textContent).toContain("Organisation: Demo Org");
+    expect(dialog.textContent).toContain("Details");
+    expect(dialog.textContent).toContain("Organisation");
+    expect(dialog.textContent).toContain("Demo Org");
+    expect(dialog.textContent).toContain("Received");
     expect(dialog.textContent).toContain("2026-09-18 05:39:23 UTC");
     expect(dialog.textContent).toContain("Your local time:");
   });

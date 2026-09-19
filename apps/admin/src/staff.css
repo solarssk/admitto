@@ -875,6 +875,43 @@
   white-space: pre-line;
 }
 
+/* Grey "Details" box, same look as the one in the notification email (muted surface, thin border,
+   small uppercase label) so the dialog and the email read as the same alert. */
+.notif-detail__box {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+
+.notif-detail__box-title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.notif-detail__meta {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--fs-sm);
+}
+
+.notif-detail__meta dt {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.notif-detail__meta dd {
+  margin: 0;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
 /* ─── Page header ─────────────────────────────────────────────────────────── */
 .placeholder-note {
   color: var(--text-secondary);
