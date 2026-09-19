@@ -1,0 +1,48 @@
+name: GHCR cleanup
+
+# Manual-only housekeeping for ghcr.io/solarssk/admitto. A multi-arch image shows up in GHCR as
+# many extra untagged versions (per-architecture manifests, attestations, SBOM/provenance), and
+# failed or repeated builds leave orphans behind. Deleting "untagged" versions by hand or with a
+# naive filter breaks pulls of live tags, because those child manifests are still referenced by a
+# tagged index. dataaxiom/ghcr-cleanup-action understands multi-arch and only removes what no
+# tagged image references. Tagged versions are never touched here (no tags/keep-n-tagged rules).
+#
+# Defaults to a dry run: read the log, then re-run with dry_run=false to actually delete.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only log what would be deleted (uncheck to delete for real)
+        type: boolean
+        default: true
+      older_than:
+        description: Only consider versions older than this (guards an in-flight publish, whose per-arch digests are briefly untagged)
+        type: string
+        default: 3 days
+
+concurrency:
+  group: ghcr-cleanup
+  cancel-in-progress: false
+
+# Empty top-level default (deny-all); the job declares its own least-privilege set.
+permissions: {}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      packages: write
+    steps:
+      - uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f  # v1.2.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          package: admitto
+          delete-untagged: true
+          delete-ghost-images: true
+          delete-partial-images: true
+          delete-orphaned-images: true
+          older-than: ${{ inputs.older_than }}
+          validate: true
+          dry-run: ${{ inputs.dry_run }}
