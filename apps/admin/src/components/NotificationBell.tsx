@@ -46,11 +46,11 @@ export function NotificationBell() {
   // underneath it.
   const [detail, setDetail] = useState<NotificationDto | null>(null);
   // The toast stack (--z-toast) sits below the dialog (--z-modal) and auto-dismisses, so a failed
-  // mark-as-read would be invisible while the dialog is open - it is shown inside the dialog
-  // instead. The ref answers "is this notification still the one on screen?" for an async failure
-  // that lands after the dialog closed or moved on to another row.
+  // mark-as-read would be invisible while a dialog is open. The ref answers "which notification is
+  // on screen?" for an async failure that lands after the dialog closed or moved on to another row.
   const [detailError, setDetailError] = useState<string | null>(null);
   const detailIdRef = useRef<string | null>(null);
+  const deferredReadErrorsRef = useRef<string[]>([]);
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
     gap: 8,
@@ -187,6 +187,15 @@ export function NotificationBell() {
     detailIdRef.current = null;
     setDetail(null);
     setDetailError(null);
+    for (const message of deferredReadErrorsRef.current.splice(0)) addToast(message, "error");
+  }
+
+  function reportReadFailure(notificationId: string, message: string) {
+    if (detailIdRef.current === notificationId) setDetailError(message);
+    // A different notification's dialog is open: a toast would sit under it, and an inline notice
+    // there would blame the wrong message. Hold it until that dialog closes.
+    else if (detailIdRef.current === null) addToast(message, "error");
+    else deferredReadErrorsRef.current.push(message);
   }
 
   async function handleRowClick(notification: NotificationDto) {
@@ -213,9 +222,7 @@ export function NotificationBell() {
           prev.map((n) => (n.id === notification.id ? { ...n, read_at: null } : n)),
         );
         setUnreadCount((c) => c + 1);
-        const message = operatorApiErrorMessage(err, "Failed to mark notification as read.");
-        if (detailIdRef.current === notification.id) setDetailError(message);
-        else addToast(message, "error");
+        reportReadFailure(notification.id, operatorApiErrorMessage(err, "Failed to mark notification as read."));
       }
     });
   }

@@ -1048,6 +1048,41 @@ describe("Notification detail dialog", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("holds a late failure until the dialog now on screen closes, instead of toasting beneath it", async () => {
+    let rejectRead: (reason: Error) => void = () => {};
+    const other = makeNotification({
+      id: "notif-other",
+      title: "MFA break-glass used",
+      body: "An operator used the emergency two-factor bypass.",
+      read_at: "2026-09-10T10:05:00.000Z",
+    });
+    await openBellWith([notification(), other]);
+    markAccountNotificationRead.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rejectRead = reject;
+      }),
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: /You signed in from a new location/ }));
+    const first = await screen.findByRole("dialog", { name: "You signed in from a new location" });
+    fireEvent.click(within(first).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(screen.getByRole("menuitem", { name: /MFA break-glass used/ }));
+    const second = await screen.findByRole("dialog", { name: "MFA break-glass used" });
+
+    await act(async () => {
+      rejectRead(new Error("network down"));
+    });
+
+    // Neither a toast under the open dialog, nor an inline notice blaming the wrong message.
+    expect(screen.queryByText("Failed to mark notification as read.")).toBeNull();
+    expect(within(second).queryByRole("alert")).toBeNull();
+
+    fireEvent.click(within(second).getByRole("button", { name: "Close" }));
+
+    expect(await screen.findByText("Failed to mark notification as read.")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("marks each row as opening a dialog, for assistive technology", async () => {
     await openBellWith([notification()]);
 

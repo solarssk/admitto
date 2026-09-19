@@ -53,7 +53,7 @@ export function NotificationDetailDialog({
           {notification.title}
         </h3>
         {/* Focusable so a keyboard user can scroll a body long enough to overflow the panel. */}
-        <p id={bodyId} className="notif-detail__body" tabIndex={0}>
+        <p id={bodyId} className="notif-detail__body" tabIndex={0} /* NOSONAR - keyboard-scrollable region (WCAG 2.1.1), not a control; see comment above (typescript:S6845) */>
           {notification.body}
         </p>
         {errorMessage && (
