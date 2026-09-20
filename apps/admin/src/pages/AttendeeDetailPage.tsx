@@ -103,10 +103,8 @@ import { DeliveryDetailsModal } from "../communication/DeliveryDetailsModal.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isOrgAdmin, isSuperadmin } from "../auth/capabilities.js";
+import { ACTIVITY_PAGE_SIZE_OPTIONS, useActivityLog } from "../attendees/useActivityLog.js";
 import "../attendees/attendees.css";
-
-const ACTIVITY_PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
-const DEFAULT_ACTIVITY_PAGE_SIZE = 25;
 
 const TAB_IDS = ["overview", "activity", "notes"] as const;
 type TabId = (typeof TAB_IDS)[number];
@@ -1818,19 +1816,21 @@ export function AttendeeDetailPage() {
   const [noteDeleting, setNoteDeleting] = useState(false);
   const [noteDeleteError, setNoteDeleteError] = useState<string | null>(null);
   const [notesPage, setNotesPage] = useState(1);
-  // The operator's rows-per-page choice for the Activity log. Detail is replaced wholesale by many
-  // flows (edit, pass/wallet actions, notes) using the server's default size, so the choice can't
-  // live only in detail.action_log_page_size.
-  const [activityPageSize, setActivityPageSize] = useState<number>(DEFAULT_ACTIVITY_PAGE_SIZE);
-  const activityRequestRef = useRef(0);
-  // Every whole-detail replacement (edit, note, wallet action, reload) carries a fresher log than any
-  // activity-page request already in flight, so it invalidates those synchronously - success and
-  // failure alike - instead of waiting for a later render or effect.
-  const applyDetail = useCallback((next: AttendeeDetailDto) => {
-    activityRequestRef.current += 1;
-    setDetail(next);
-  }, []);
-  const loadedActivityPageSizeRef = useRef<number | undefined>(undefined);
+  const activity = useActivityLog({
+    eventId,
+    attendeeId,
+    onError: (err) => addToast(operatorApiErrorMessage(err, "Could not load activity."), "error"),
+  });
+  const resetActivity = activity.reset;
+  // Every whole-detail replacement (edit, note, wallet action, reload) also reseeds the Activity log,
+  // which invalidates any page request still in flight.
+  const applyDetail = useCallback(
+    (next: AttendeeDetailDto) => {
+      resetActivity(next);
+      setDetail(next);
+    },
+    [resetActivity],
+  );
 
   /** Guards async handlers when route params change before a request completes. */
   const selectionRef = useRef({ eventId, attendeeId });
@@ -2276,64 +2276,6 @@ export function AttendeeDetailPage() {
     }
   }
 
-  // Re-apply the selected rows-per-page whenever the loaded log came back at a different size (the
-  // server default after any whole-detail replacement, or right after the operator picks a new size).
-  // Keyed on the log's identity, not just the two sizes: every replacement (edit, note, wallet action,
-  // reload, another attendee) is a new log, so the correction is retriggered after each one even when
-  // consecutive details carry the same size and an earlier correction was dropped as stale.
-  const activityLog = detail?.action_log;
-  const loadedActivityPageSize = detail?.action_log_page_size;
-  loadedActivityPageSizeRef.current = loadedActivityPageSize;
-  useEffect(() => {
-    if (loadedActivityPageSize === undefined || loadedActivityPageSize === activityPageSize) return;
-    void loadActivityPage(1, activityPageSize);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadActivityPage is recreated every render; only the log identity and the selected size should retrigger it
-  }, [activityLog, activityPageSize]);
-
-  /** Loads one page of the Activity log and merges only its log fields into the current detail,
-   * so flipping pages never reloads (and so never discards unsaved edits in) the profile form. */
-  async function loadActivityPage(nextPage: number, nextPageSize: number) {
-    // The Activity tab only renders once the route params and detail are present.
-    const target = { eventId: eventId!, attendeeId: attendeeId! };
-    // Later pages are counted against the snapshot the first page returned, so an entry added by
-    // someone else meanwhile can't shift the boundaries; page 1 is always the live log.
-    const snapshot = nextPage > 1 ? detail!.action_log_snapshot : undefined;
-    // Only the newest request may apply: a slower older response must not overwrite it, and a
-    // whole-detail replacement (see applyDetail) counts as newer than any request in flight.
-    const request = ++activityRequestRef.current;
-    const isCurrent = () => isStillSelected(target) && request === activityRequestRef.current;
-    try {
-      const fetched = await fetchAttendeeDetail(
-        target.eventId,
-        target.attendeeId,
-        undefined,
-        1,
-        nextPage,
-        nextPageSize,
-        snapshot,
-      );
-      if (!isCurrent()) return;
-      setDetail((current) => ({
-        ...current!,
-        action_log: fetched.action_log,
-        action_log_total: fetched.action_log_total,
-        action_log_page: fetched.action_log_page,
-        action_log_page_size: fetched.action_log_page_size,
-        action_log_first_action_type: fetched.action_log_first_action_type,
-        action_log_snapshot: fetched.action_log_snapshot,
-      }));
-      // A server that answers with another size than asked (e.g. one that predates the parameter)
-      // would otherwise be corrected again on every response; follow what it actually shows.
-      if (fetched.action_log_page_size !== nextPageSize) setActivityPageSize(fetched.action_log_page_size);
-    } catch (err) {
-      if (!isCurrent()) return;
-      // Fall back to the size the log is actually showing (detail is loaded while this tab renders),
-      // so choosing the same size again retries.
-      setActivityPageSize(loadedActivityPageSizeRef.current!);
-      addToast(operatorApiErrorMessage(err, "Could not load activity."), "error");
-    }
-  }
-
   /** Adds a staff note from the Notes tab - same AttendeeNote model as check-in's note
    * composer, so the response's full detail DTO (incl. the new note) replaces local state
    * directly, matching handlePassStatusChange's toast-on-success / inline-error-on-failure split. */
@@ -2483,6 +2425,8 @@ export function AttendeeDetailPage() {
   // as ticketTypeBadge.tsx's catalog resolver).
   const orphanedTicketType = resolveOrphanedTicketType(form.ticket_type, ticketTypes);
   const attendeeSource = deriveAttendeeSource(detail.action_log_first_action_type);
+  // Seeded together with `detail` by applyDetail, so it exists whenever a detail does.
+  const activityLog = activity.log!;
   const customDataEntries = allCustomDataEntries(detail.custom_data, attributeFields, humanizeFieldKey);
   // Falls back to [] against a stale API response missing this field (e.g. an apps/web dev
   // server running from before event_items was added - it doesn't hot-reload) instead of
@@ -2641,12 +2585,12 @@ export function AttendeeDetailPage() {
 
       {tab === "activity" && (
         <AttendeeActivityTab
-          actionLog={detail.action_log}
-          total={detail.action_log_total}
-          page={detail.action_log_page}
-          pageSize={detail.action_log_page_size}
-          onPageChange={(next) => void loadActivityPage(next, activityPageSize)}
-          onPageSizeChange={setActivityPageSize}
+          actionLog={activityLog.action_log}
+          total={activityLog.action_log_total}
+          page={activityLog.action_log_page}
+          pageSize={activityLog.action_log_page_size}
+          onPageChange={activity.goToPage}
+          onPageSizeChange={activity.setPageSize}
           attributeFields={attributeFields}
           eventItems={eventItems}
           ticketTypes={ticketTypes}
