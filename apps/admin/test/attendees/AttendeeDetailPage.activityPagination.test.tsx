@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import type { RoleAssignment } from "../../src/api/types.js";
 import { AttendeeDetailPage } from "../../src/pages/AttendeeDetailPage.js";
 import { makeOrgAdminAssignment, mockMatchMedia, renderWithToast } from "../test-utils.js";
@@ -93,11 +93,28 @@ function detailWithLog(page: number, entries: number[], total = 30) {
   };
 }
 
+function SwitchAttendee() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate("/admin/events/evt-2/attendees/att-2")}>
+      Switch attendee
+    </button>
+  );
+}
+
 function renderPage() {
   renderWithToast(
     <MemoryRouter initialEntries={["/admin/events/evt-1/attendees/att-1"]}>
       <Routes>
-        <Route path="/admin/events/:eventId/attendees/:attendeeId" element={<AttendeeDetailPage />} />
+        <Route
+          path="/admin/events/:eventId/attendees/:attendeeId"
+          element={
+            <>
+              <SwitchAttendee />
+              <AttendeeDetailPage />
+            </>
+          }
+        />
       </Routes>
     </MemoryRouter>,
   );
@@ -153,6 +170,11 @@ describe("AttendeeDetailPage - Activity log pagination", () => {
     expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
     // Flipping a page never reloads the whole detail (that would reset the profile form).
     expect(loadAttendeeDetailData).toHaveBeenCalledTimes(1);
+
+    fetchAttendeeDetail.mockResolvedValueOnce(detailWithLog(1, [1, 2, 3]));
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    await waitFor(() => expect(screen.getByText("Page 1 of 2")).toBeTruthy());
+    expect(fetchAttendeeDetail).toHaveBeenLastCalledWith("evt-1", "att-1", undefined, 1, 1, 25);
   });
 
   it("refetches from page 1 with the chosen rows per page", async () => {
@@ -207,5 +229,58 @@ describe("AttendeeDetailPage - Activity log pagination", () => {
     await screen.findByRole("heading", { name: "Anna" });
 
     expect(screen.getByText("CSV/XLSX import")).toBeTruthy();
+  });
+
+  it("ignores a page that finishes loading after switching to another attendee", async () => {
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: detailWithLog(1, [1, 2, 3]),
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    let resolvePage!: (value: ReturnType<typeof detailWithLog>) => void;
+    fetchAttendeeDetail.mockReturnValueOnce(new Promise((resolve) => { resolvePage = resolve; }));
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: { ...detailWithLog(1, [9], 1), id: "att-2", name: "Bea" },
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    await openActivityTab();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
+    await screen.findByRole("heading", { name: "Bea" });
+    resolvePage(detailWithLog(2, [26, 27]));
+    await Promise.resolve();
+
+    expect(screen.queryByText("Page 2 of 2")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Bea" })).toBeTruthy();
+  });
+
+  it("stays silent when a page fails after switching to another attendee", async () => {
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: detailWithLog(1, [1, 2, 3]),
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    let rejectPage!: (reason: Error) => void;
+    fetchAttendeeDetail.mockReturnValueOnce(new Promise((_, reject) => { rejectPage = reject; }));
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: { ...detailWithLog(1, [9], 1), id: "att-2", name: "Bea" },
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    await openActivityTab();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
+    await screen.findByRole("heading", { name: "Bea" });
+    rejectPage(new Error("boom"));
+    await Promise.resolve();
+
+    expect(screen.queryByText("Could not load activity.")).toBeNull();
   });
 });

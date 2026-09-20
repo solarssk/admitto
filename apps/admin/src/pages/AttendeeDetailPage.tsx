@@ -2244,23 +2244,19 @@ export function AttendeeDetailPage() {
   /** Loads one page of the Activity log and merges only its log fields into the current detail,
    * so flipping pages never reloads (and so never discards unsaved edits in) the profile form. */
   async function loadActivityPage(nextPage: number, nextPageSize: number) {
-    if (!eventId || !attendeeId) return;
-    const target = { eventId, attendeeId };
+    // The Activity tab only renders once the route params and detail are present.
+    const target = { eventId: eventId!, attendeeId: attendeeId! };
     try {
-      const fetched = await fetchAttendeeDetail(eventId, attendeeId, undefined, 1, nextPage, nextPageSize);
+      const fetched = await fetchAttendeeDetail(target.eventId, target.attendeeId, undefined, 1, nextPage, nextPageSize);
       if (!isStillSelected(target)) return;
-      setDetail((current) =>
-        current
-          ? {
-              ...current,
-              action_log: fetched.action_log,
-              action_log_total: fetched.action_log_total,
-              action_log_page: fetched.action_log_page,
-              action_log_page_size: fetched.action_log_page_size,
-              action_log_first_action_type: fetched.action_log_first_action_type,
-            }
-          : current,
-      );
+      setDetail((current) => ({
+        ...current!,
+        action_log: fetched.action_log,
+        action_log_total: fetched.action_log_total,
+        action_log_page: fetched.action_log_page,
+        action_log_page_size: fetched.action_log_page_size,
+        action_log_first_action_type: fetched.action_log_first_action_type,
+      }));
     } catch (err) {
       if (!isStillSelected(target)) return;
       addToast(operatorApiErrorMessage(err, "Could not load activity."), "error");
@@ -2575,10 +2571,10 @@ export function AttendeeDetailPage() {
       {tab === "activity" && (
         <AttendeeActivityTab
           actionLog={detail.action_log}
-          total={detail.action_log_total ?? detail.action_log.length}
-          page={detail.action_log_page ?? 1}
-          pageSize={detail.action_log_page_size ?? 25}
-          onPageChange={(next) => void loadActivityPage(next, detail.action_log_page_size ?? 25)}
+          total={detail.action_log_total}
+          page={detail.action_log_page}
+          pageSize={detail.action_log_page_size}
+          onPageChange={(next) => void loadActivityPage(next, detail.action_log_page_size)}
           onPageSizeChange={(size) => void loadActivityPage(1, size)}
           attributeFields={attributeFields}
           eventItems={eventItems}
