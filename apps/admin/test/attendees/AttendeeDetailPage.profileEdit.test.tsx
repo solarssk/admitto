@@ -664,10 +664,11 @@ describe("AttendeeDetailPage read-only view + explicit Edit mode (#361)", () => 
 });
 
 describe("AttendeeDetailPage extended guest information (#365)", () => {
-  it("shows Registered on / Added via derived from the oldest loaded action-log entry", async () => {
+  it("shows Registered on / Added via derived from the server-reported oldest action type", async () => {
     mockLoad(
       baseDetail({
         created_at: "2026-01-05T09:30:00.000Z",
+        action_log_first_action_type: "attendees_imported",
         action_log: [
           {
             id: "log-2",
@@ -694,7 +695,7 @@ describe("AttendeeDetailPage extended guest information (#365)", () => {
     expect(screen.getByText("CSV/XLSX import")).toBeTruthy();
   });
 
-  it("omits Added via when the action log doesn't include a creation entry", async () => {
+  it("omits Added via when the server reports no creation entry", async () => {
     mockLoad(baseDetail({ action_log: [] }));
     renderPage();
     await screen.findByRole("heading", { name: "Anna" });

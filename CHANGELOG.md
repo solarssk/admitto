@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Organisation Settings → Logs no longer sometimes shrinks Audit or Security history into a short, separately scrolling box after visiting My Account. The complete page now uses its normal height consistently, so the pagination controls remain directly below the full list. The smaller email, local-time, and IP-location lines in each row also now share one visual size and spacing; the time itself stays in its distinct monospace face for readability.
+- An attendee's Activity log tab is now paged like the other tables, with a Rows per page choice (10, 25, 50, or 100) and Previous/Next below the list, instead of one ever-growing list. Before, only the newest 50 entries were ever loaded and anything older was silently unreachable, and the "Added via" line on the Overview tab could go blank for a very active attendee because their creation entry had scrolled out of that window; it now always reflects the attendee's oldest entry. Switching pages does not reload the profile form, so unsaved edits stay intact. Older pages are counted against the log as it was when page 1 loaded, so an entry added by a colleague meanwhile can't repeat or hide rows at a page boundary; go back to page 1 to see the newest entries.
 
 ### Changed
 
