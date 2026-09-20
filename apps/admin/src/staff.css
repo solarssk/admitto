@@ -5661,7 +5661,10 @@ output.mail-field-hint {
   padding: var(--space-4) 0;
 }
 
-.sessions-table-wrap {
+/* Audit/Security logs deliberately grow with their rows. Account sessions use their own
+   .account-sessions-table-wrap scroll region, so lazy-loading the Account page can never cap
+   this table's height. */
+.audit-log-table-wrap {
   overflow-x: auto;
 }
 
@@ -5676,7 +5679,7 @@ output.mail-field-hint {
    never renders .at-card__body at all, so this bleed never applies there (codex review):
    with no padding to offset, the same negative margin would push that table 24px past each
    edge of its already-unpadded card instead of reaching it. */
-.at-card__body .sessions-table-wrap {
+.at-card__body .audit-log-table-wrap {
   margin: 0 calc(-1 * var(--pad-card));
 }
 
@@ -6153,17 +6156,17 @@ output.mail-field-hint {
   white-space: normal;
 }
 
-.audit-log-time .sessions-subdued {
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-}
-
 /* Secondary local-time line under UTC (block flex, not inline - otherwise it sits beside UTC). */
 .audit-log-time__local {
   display: flex;
   align-items: baseline;
   gap: 0.3rem;
   max-width: 100%;
+  /* The timestamp remains monospace via .audit-log-time. Its size, line-height, and muted
+     treatment deliberately match email and IP-location sublines in the neighbouring columns. */
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  color: var(--text-muted);
 }
 
 .audit-log-time__local .ti {
@@ -6196,6 +6199,14 @@ output.mail-field-hint {
    name on the line below. */
 .audit-log-ip {
   word-break: break-all;
+}
+
+/* Secondary details under the User and IP-address values. Kept explicit rather than borrowing
+   .sessions-subdued so the audit log's typography cannot change with Account/Sessions styles. */
+.audit-log-secondary {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  color: var(--text-muted);
 }
 
 /* Re-fetching with existing rows still on screen (filter/page change) — dim them
@@ -6679,7 +6690,7 @@ output.mail-field-hint {
   margin: var(--space-2) 0;
 }
 
-/* Negative margin only, no matching padding - see .sessions-table-wrap's own comment
+/* Negative margin only, no matching padding - see .audit-log-table-wrap's own comment
    (staff.css) for why a same-size padding here would silently cancel the bleed back to a
    plain unbled child's width (PO report: this still read narrower than Staff users' table
    after the first attempt at this fix). */

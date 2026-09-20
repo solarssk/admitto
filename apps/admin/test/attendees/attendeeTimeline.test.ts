@@ -140,47 +140,20 @@ describe("getTimelineIcon — unrecognized action_type (Codecov review)", () => 
   });
 });
 
-describe("deriveAttendeeSource (Codecov review — previously unimported/untested)", () => {
-  it("returns null for an empty action log", () => {
-    expect(deriveAttendeeSource([])).toBeNull();
+describe("deriveAttendeeSource (source comes from the server-reported oldest action_type)", () => {
+  it("returns null when there is no log entry at all", () => {
+    expect(deriveAttendeeSource(null)).toBeNull();
+    expect(deriveAttendeeSource(undefined)).toBeNull();
   });
 
-  it("returns null when the oldest entry's action_type has no configured source label", () => {
-    expect(
-      deriveAttendeeSource([
-        {
-          id: "log-1",
-          action_type: "attendee_edited",
-          actor_display: "admin",
-          metadata: null,
-          created_at: "2026-06-28T13:00:00.000Z",
-          client_timezone: null,
-        },
-      ]),
-    ).toBeNull();
+  it("returns null when the oldest action_type has no configured source label", () => {
+    expect(deriveAttendeeSource("attendee_edited")).toBeNull();
   });
 
-  it("reads the source off the oldest (last) entry, not the newest", () => {
-    expect(
-      deriveAttendeeSource([
-        {
-          id: "log-2",
-          action_type: "rsvp_status_changed",
-          actor_display: "admin",
-          metadata: null,
-          created_at: "2026-06-29T13:00:00.000Z",
-          client_timezone: null,
-        },
-        {
-          id: "log-1",
-          action_type: "attendees_imported",
-          actor_display: null,
-          metadata: null,
-          created_at: "2026-06-28T13:00:00.000Z",
-          client_timezone: null,
-        },
-      ]),
-    ).toBe("CSV/XLSX import");
+  it("maps each creation action_type to its label", () => {
+    expect(deriveAttendeeSource("attendees_imported")).toBe("CSV/XLSX import");
+    expect(deriveAttendeeSource("attendee_created_manual")).toBe("Added manually");
+    expect(deriveAttendeeSource("attendee_ingested")).toBe("Automatic import");
   });
 });
 

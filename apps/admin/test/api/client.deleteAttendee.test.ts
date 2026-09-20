@@ -121,6 +121,45 @@ describe("deleteAttendee (client) — thin wrapper coverage", () => {
     );
   });
 
+  it("requests an activity page and page size, alongside the notes page", async () => {
+    const detail = { id: "att-1", notes: [] };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => detail });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchAttendeeDetail("evt-1", "att-1", undefined, 2, 3, 50);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/events/evt-1/attendees/att-1?notes_page=2&activity_page=3&activity_page_size=50",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+  });
+
+  it("passes the activity snapshot cursor alongside a later page", async () => {
+    const detail = { id: "att-1", notes: [] };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => detail });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchAttendeeDetail("evt-1", "att-1", undefined, 1, 2, 25, "2026-06-01T09:00:00.000Z|log-3");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/events/evt-1/attendees/att-1?activity_page=2&activity_page_size=25&activity_snapshot=2026-06-01T09%3A00%3A00.000Z%7Clog-3",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+  });
+
+  it("sends a page size for the first activity page without an activity_page", async () => {
+    const detail = { id: "att-1", notes: [] };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => detail });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchAttendeeDetail("evt-1", "att-1", undefined, 1, 1, 10);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/events/evt-1/attendees/att-1?activity_page_size=10",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+  });
+
   it("requests the first notes page without a query string by default", async () => {
     const detail = { id: "att-1", notes: [] };
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => detail });

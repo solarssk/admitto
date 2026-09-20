@@ -135,7 +135,7 @@
 
 /* Wallet push history: unpadded Card so the table bleeds edge-to-edge on desktop (same framing
    as Communication's Delivery log, communication.css's .communication-table-wrap), instead of
-   the padded-Card + negative-margin-bleed trick (.sessions-table-wrap) this card used before -
+   the padded-Card + negative-margin-bleed trick (.audit-log-table-wrap) this card used before -
    the intro text and pagination footer need their own compensating padding since the Card body
    itself no longer provides any. */
 .wallet-push-history-card__intro {

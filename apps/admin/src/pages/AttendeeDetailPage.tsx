@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { useNavigate, useOutletContext, useParams } from "react-router";
+import { useNavigate, useOutletContext, useParams, useSearchParams } from "react-router";
 import { WALLET_RELEVANT_ATTENDEE_FIELDS, enabledWalletPlatforms, type EnabledWalletPlatforms } from "@admitto/shared";
 import { ATTENDEE_FIELD_PLACEHOLDERS, isWalletFieldMappingRelevant } from "@admitto/wallet/passcreator-mapper";
 import {
@@ -92,6 +92,7 @@ import {
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { SamsungGlyphIcon } from "../components/SamsungWalletIcon.js";
+import { PaginationFooter } from "../components/PaginationFooter.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
 import { ROLE_BADGE_VARIANT, ROLE_LABELS } from "../auth/role-labels.js";
@@ -102,9 +103,18 @@ import { DeliveryDetailsModal } from "../communication/DeliveryDetailsModal.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isOrgAdmin, isSuperadmin } from "../auth/capabilities.js";
+import { ACTIVITY_PAGE_SIZE_OPTIONS, useActivityLog } from "../attendees/useActivityLog.js";
 import "../attendees/attendees.css";
 
-type TabId = "overview" | "activity" | "notes";
+const TAB_IDS = ["overview", "activity", "notes"] as const;
+type TabId = (typeof TAB_IDS)[number];
+
+/** Active tab from `?tab=` (the URL is the source of truth, so a link can open a specific tab);
+ * anything missing or unrecognised falls back to Overview. */
+function attendeeTabFromSearch(searchParams: URLSearchParams): TabId {
+  const raw = searchParams.get("tab");
+  return TAB_IDS.find((id) => id === raw) ?? "overview";
+}
 type ActiveRevokeAction = "pass" | "checkin" | "items" | "restore" | null;
 type ActiveWalletAction = "void" | "restore" | "reissue" | "delete" | null;
 
@@ -1175,17 +1185,28 @@ function AttendeeOverviewTab({
  * keeps this tab's own conditional rendering out of the component's cognitive-complexity count). */
 function AttendeeActivityTab({
   actionLog,
+  total,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
   attributeFields,
   eventItems,
   ticketTypes,
   event,
 }: Readonly<{
   actionLog: AttendeeDetailDto["action_log"];
+  total: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
   attributeFields: CustomDataFieldDef[];
   eventItems: AttendeeDetailDto["event_items"];
   ticketTypes: TicketTypeDto[];
   event: EventDto;
 }>) {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
   return (
     <Card padded>
       {actionLog.length === 0 ? (
@@ -1220,6 +1241,19 @@ function AttendeeActivityTab({
             );
           })}
         </ul>
+      )}
+      {total > 0 && (
+        <PaginationFooter
+          idPrefix="attendee-activity"
+          page={page}
+          pageSize={pageSize}
+          totalPages={pageCount}
+          totalRows={total}
+          pageSizeOptions={ACTIVITY_PAGE_SIZE_OPTIONS}
+          onPageSizeChange={onPageSizeChange}
+          onPrevious={() => onPageChange(page - 1)}
+          onNext={() => onPageChange(page + 1)}
+        />
       )}
     </Card>
   );
@@ -1719,7 +1753,20 @@ export function AttendeeDetailPage() {
   const editTitleId = useId();
   const editPanelRef = useRef<HTMLFormElement>(null);
 
-  const [tab, setTab] = useState<TabId>("overview");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = attendeeTabFromSearch(searchParams);
+  // replace, so Back leaves the attendee instead of stepping through every tab visited;
+  // Overview is the default and keeps the URL clean.
+  const selectTab = (id: TabId) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (id === "overview") next.delete("tab");
+        else next.set("tab", id);
+        return next;
+      },
+      { replace: true },
+    );
   const [detail, setDetail] = useState<AttendeeDetailDto | null>(null);
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
@@ -1769,6 +1816,21 @@ export function AttendeeDetailPage() {
   const [noteDeleting, setNoteDeleting] = useState(false);
   const [noteDeleteError, setNoteDeleteError] = useState<string | null>(null);
   const [notesPage, setNotesPage] = useState(1);
+  const activity = useActivityLog({
+    eventId,
+    attendeeId,
+    onError: (err) => addToast(operatorApiErrorMessage(err, "Could not load activity."), "error"),
+  });
+  const resetActivity = activity.reset;
+  // Every whole-detail replacement (edit, note, wallet action, reload) also reseeds the Activity log,
+  // which invalidates any page request still in flight.
+  const applyDetail = useCallback(
+    (next: AttendeeDetailDto) => {
+      resetActivity(next);
+      setDetail(next);
+    },
+    [resetActivity],
+  );
 
   /** Guards async handlers when route params change before a request completes. */
   const selectionRef = useRef({ eventId, attendeeId });
@@ -1811,7 +1873,7 @@ export function AttendeeDetailPage() {
       const { detail: d, attributeFields: fields, itemsWarning: warn } =
         await loadAttendeeDetailData(eventId, attendeeId, notesPage);
       if (!isCurrentRequest()) return;
-      setDetail(d);
+      applyDetail(d);
       setAttributeFields(fields);
       setForm(toAttendeeForm(d, fields));
       setInitialEmail(d.email);
@@ -1828,7 +1890,7 @@ export function AttendeeDetailPage() {
     } finally {
       if (isCurrentRequest()) setLoading(false);
     }
-  }, [eventId, attendeeId, notesPage]);
+  }, [eventId, attendeeId, notesPage, applyDetail]);
 
   useEffect(() => {
     void loadDetail();
@@ -1912,7 +1974,7 @@ export function AttendeeDetailPage() {
         if (!currentForm || !previousDetail) return toAttendeeForm(d, fields);
         return mergeFormAfterReload(currentForm, previousDetail, d, fields);
       });
-      setDetail(d);
+      applyDetail(d);
       setInitialEmail(d.email);
       setStaleWrite(false);
       setItemsWarning(warn);
@@ -1944,7 +2006,7 @@ export function AttendeeDetailPage() {
     try {
       const updated = await updateAttendee(eventId, attendeeId, patch);
       if (!isStillSelected(target)) return;
-      setDetail(updated);
+      applyDetail(updated);
       setForm(toAttendeeForm(updated, attributeFields));
       setInitialEmail(updated.email);
       setStaleWrite(false);
@@ -1985,7 +2047,7 @@ export function AttendeeDetailPage() {
       if (!isStillSelected(target)) return;
       const refreshed = await fetchAttendeeDetail(eventId, attendeeId);
       if (!isStillSelected(target)) return;
-      setDetail(refreshed);
+      applyDetail(refreshed);
       setResendOpen(false);
       addToast(
         delivery.status === "failed"
@@ -2036,7 +2098,7 @@ export function AttendeeDetailPage() {
         { force: opts?.force },
       );
       if (!isStillSelected(target)) return;
-      setDetail(updated);
+      applyDetail(updated);
       setForm((currentForm) =>
         nextFormAfterPassStatusChange(currentForm, previousDetail, updated, attributeFields),
       );
@@ -2226,7 +2288,7 @@ export function AttendeeDetailPage() {
     try {
       const updated = await addAttendeeNote(eventId!, attendeeId!, body);
       if (!isStillSelected(target)) return;
-      setDetail(updated);
+      applyDetail(updated);
       setNotesPage(updated.notes_page);
       setNoteDraft("");
       addToast("Note added", "success");
@@ -2258,7 +2320,7 @@ export function AttendeeDetailPage() {
     try {
       const updated = await updateAttendeeNote(eventId!, attendeeId!, editingNoteId!, body);
       if (!isStillSelected(target)) return;
-      setDetail(updated);
+      applyDetail(updated);
       setNotesPage(updated.notes_page);
       setEditingNoteId(null);
       setNoteEditDraft("");
@@ -2282,7 +2344,7 @@ export function AttendeeDetailPage() {
     try {
       const updated = await deleteAttendeeNote(eventId!, attendeeId!, noteDeleteId!);
       if (!isStillSelected(target)) return;
-      setDetail(updated);
+      applyDetail(updated);
       setNotesPage(updated.notes_page);
       setNoteDeleteId(null);
       addToast("Note deleted", "success");
@@ -2362,7 +2424,9 @@ export function AttendeeDetailPage() {
   // hiding it from the admin. Surface it as its own option instead (fail-open, same philosophy
   // as ticketTypeBadge.tsx's catalog resolver).
   const orphanedTicketType = resolveOrphanedTicketType(form.ticket_type, ticketTypes);
-  const attendeeSource = deriveAttendeeSource(detail.action_log);
+  const attendeeSource = deriveAttendeeSource(detail.action_log_first_action_type);
+  // Seeded together with `detail` by applyDetail, so it exists whenever a detail does.
+  const activityLog = activity.log!;
   const customDataEntries = allCustomDataEntries(detail.custom_data, attributeFields, humanizeFieldKey);
   // Falls back to [] against a stale API response missing this field (e.g. an apps/web dev
   // server running from before event_items was added - it doesn't hot-reload) instead of
@@ -2499,7 +2563,7 @@ export function AttendeeDetailPage() {
 
       <Tabs
         value={tab}
-        onChange={(id) => setTab(id as TabId)}
+        onChange={(id) => selectTab(id as TabId)}
         tabs={[
           { id: "overview", label: "Overview" },
           { id: "activity", label: "Activity log" },
@@ -2521,7 +2585,12 @@ export function AttendeeDetailPage() {
 
       {tab === "activity" && (
         <AttendeeActivityTab
-          actionLog={detail.action_log}
+          actionLog={activityLog.action_log}
+          total={activityLog.action_log_total}
+          page={activityLog.action_log_page}
+          pageSize={activityLog.action_log_page_size}
+          onPageChange={activity.goToPage}
+          onPageSizeChange={activity.setPageSize}
           attributeFields={attributeFields}
           eventItems={eventItems}
           ticketTypes={ticketTypes}

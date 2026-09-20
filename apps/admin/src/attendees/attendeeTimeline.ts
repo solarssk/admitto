@@ -360,9 +360,8 @@ export function getTimelineDetail(
   );
 }
 
-/** How this attendee was added, read off the oldest loaded action-log entry (#365). Log rows are
- * capped at 50/newest-first (server), so a very active attendee's creation event may have scrolled
- * out of the window - in that case this returns null rather than guessing. */
+/** How this attendee was added, read off the action_type of their oldest action-log entry (#365).
+ * The server reports that across every page of the log, not just the page currently loaded. */
 const SOURCE_LABELS: Record<string, string> = {
   attendee_created_manual: "Added manually",
   attendees_imported: "CSV/XLSX import",
@@ -370,8 +369,7 @@ const SOURCE_LABELS: Record<string, string> = {
   attendee_ingested: "Automatic import",
 };
 
-export function deriveAttendeeSource(actionLog: AttendeeActionLogEntryDto[]): string | null {
-  const oldest = actionLog.at(-1);
-  if (!oldest) return null;
-  return SOURCE_LABELS[oldest.action_type] ?? null;
+export function deriveAttendeeSource(firstActionType: string | null | undefined): string | null {
+  if (!firstActionType) return null;
+  return SOURCE_LABELS[firstActionType] ?? null;
 }

@@ -6220,6 +6220,168 @@ describe("POST /api/admin/events/:eventId/attendees/:id/notes", () => {
     expect(body.notes).toHaveLength(1);
   });
 
+  it("paginates the activity log newest-first and reports the oldest action_type across all pages", async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: ATT_NOTE } });
+    const base = Date.UTC(2026, 0, 1);
+    await prisma.attendeeActionLog.createMany({
+      data: Array.from({ length: 26 }, (_, index) => ({
+        event_id: EVENT_A,
+        attendee_id: ATT_NOTE,
+        // Entry 0 is the oldest and the only creation event; 1..25 are newer copies.
+        action_type: index === 0 ? "attendees_imported" : "ticket_link_retrieved",
+        created_at: new Date(base + index * 60_000),
+      })),
+    });
+
+    const get = async (query: string) => {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE}${query}`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      return (await res.json()) as {
+        action_log: { action_type: string; created_at: string }[];
+        action_log_total: number;
+        action_log_page: number;
+        action_log_page_size: number;
+        action_log_first_action_type: string | null;
+      };
+    };
+
+    const first = await get("");
+    expect(first).toMatchObject({
+      action_log_total: 26,
+      action_log_page: 1,
+      action_log_page_size: 25,
+      action_log_first_action_type: "attendees_imported",
+    });
+    expect(first.action_log).toHaveLength(25);
+    expect(first.action_log.every((e) => e.action_type === "ticket_link_retrieved")).toBe(true);
+
+    const second = await get("?activity_page=2");
+    expect(second.action_log_page).toBe(2);
+    expect(second.action_log).toHaveLength(1);
+    expect(second.action_log[0]?.action_type).toBe("attendees_imported");
+    expect(second.action_log_first_action_type).toBe("attendees_imported");
+
+    const tenPerPage = await get("?activity_page_size=10&activity_page=3");
+    expect(tenPerPage.action_log_page_size).toBe(10);
+    expect(tenPerPage.action_log).toHaveLength(6);
+
+    // A size outside the allowed list is not trusted; it falls back to the default.
+    const unsupported = await get("?activity_page_size=7");
+    expect(unsupported.action_log_page_size).toBe(25);
+    expect(unsupported.action_log).toHaveLength(25);
+  });
+
+  it("keeps activity pages stable against a snapshot when a newer entry is added meanwhile", async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: ATT_NOTE } });
+    const base = Date.UTC(2026, 0, 1);
+    await prisma.attendeeActionLog.createMany({
+      data: Array.from({ length: 26 }, (_, index) => ({
+        event_id: EVENT_A,
+        attendee_id: ATT_NOTE,
+        action_type: index === 0 ? "attendees_imported" : "ticket_link_retrieved",
+        created_at: new Date(base + index * 60_000),
+      })),
+    });
+    const get = async (query: string) => {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE}${query}`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      return (await res.json()) as {
+        action_log: { id: string }[];
+        action_log_total: number;
+        action_log_snapshot: string | null;
+      };
+    };
+
+    const firstPage = await get("");
+    expect(firstPage.action_log_total).toBe(26);
+    const snapshot = firstPage.action_log_snapshot;
+    expect(snapshot).toMatch(/^2026-01-01T00:25:00\.000Z\|/);
+
+    // Someone else acts on the attendee after page 1 was loaded.
+    await prisma.attendeeActionLog.create({
+      data: {
+        event_id: EVENT_A,
+        attendee_id: ATT_NOTE,
+        action_type: "ticket_link_retrieved",
+        created_at: new Date(base + 60 * 60_000),
+      },
+    });
+
+    const query = `?activity_page=2&activity_snapshot=${encodeURIComponent(snapshot!)}`;
+    const pinned = await get(query);
+    expect(pinned.action_log_total).toBe(26);
+    expect(pinned.action_log).toHaveLength(1);
+    expect(pinned.action_log_snapshot).toBe(snapshot);
+
+    // Without the snapshot the live log shifted: the extra entry pushes page 2 to two rows.
+    const live = await get("?activity_page=2");
+    expect(live.action_log_total).toBe(27);
+    expect(live.action_log).toHaveLength(2);
+
+    // A malformed cursor is ignored (paged live), never trusted.
+    for (const cursor of ["not-a-cursor", "garbage|log-1", "2026-01-01T00:25:00.000Z|"]) {
+      const malformed = await get(`?activity_page=2&activity_snapshot=${encodeURIComponent(cursor)}`);
+      expect(malformed.action_log_total).toBe(27);
+    }
+  });
+
+  it("reads the first activity page consistently when an entry lands right after the boundary is fixed", async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: ATT_NOTE } });
+    const base = Date.UTC(2026, 0, 1);
+    await prisma.attendeeActionLog.createMany({
+      data: Array.from({ length: 26 }, (_, index) => ({
+        event_id: EVENT_A,
+        attendee_id: ATT_NOTE,
+        action_type: "ticket_link_retrieved",
+        created_at: new Date(base + index * 60_000),
+      })),
+    });
+
+    // A colleague's entry is committed between the boundary lookup and the page read.
+    const original = prisma.attendeeActionLog.findFirst.bind(prisma.attendeeActionLog);
+    let injected = false;
+    const spy = vi
+      .spyOn(prisma.attendeeActionLog, "findFirst")
+      .mockImplementation(((args: Parameters<typeof original>[0]) => {
+        const result = original(args);
+        if (injected) return result;
+        injected = true;
+        return result.then(async (row: unknown) => {
+          await prisma.attendeeActionLog.create({
+            data: {
+              event_id: EVENT_A,
+              attendee_id: ATT_NOTE,
+              action_type: "ticket_link_retrieved",
+              created_at: new Date(base + 120 * 60_000),
+            },
+          });
+          return row;
+        });
+      }) as unknown as typeof prisma.attendeeActionLog.findFirst);
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE}`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        action_log: unknown[];
+        action_log_total: number;
+        action_log_snapshot: string | null;
+      };
+      // Page, total and cursor all describe the log as it was when the boundary was fixed.
+      expect(body.action_log_total).toBe(26);
+      expect(body.action_log).toHaveLength(25);
+      expect(body.action_log_snapshot).toMatch(/^2026-01-01T00:25:00\.000Z\|/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("falls back to the author's email when they no longer have a display name", async () => {
     const user = await prisma.user.findUniqueOrThrow({
       where: { id: adminId },
