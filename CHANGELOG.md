@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-09-20
+
 ### Changed
 
 - Clicking a notification in the topbar bell now opens a window with its full message. Before, the list showed only the first two lines and cut the rest off with no way to read it, so the most important part (for example "If this wasn't you, secure your account immediately") was hidden. The window also shows which organisation the notification is from and exactly when it arrived, in UTC and in your local time. Clicking an unread notification still marks it as read.
@@ -1453,7 +1455,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/solarssk/admitto/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/solarssk/admitto/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/solarssk/admitto/compare/v0.6.8...v0.7.0
 [0.6.8]: https://github.com/solarssk/admitto/compare/v0.6.7...v0.6.8
