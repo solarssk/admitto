@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Organisation Settings → Logs no longer sometimes shrinks Audit or Security history into a short, separately scrolling box after visiting My Account. The complete page now uses its normal height consistently, so the pagination controls remain directly below the full list. The smaller email, local-time, and IP-location lines in each row also now share one visual size and spacing; the time itself stays in its distinct monospace face for readability.
+
 ### Changed
 
 - An attendee's page now keeps the selected tab in its address (`?tab=activity` or `?tab=notes`), so a link, bookmark, or browser refresh opens that tab directly instead of always landing on Overview. Switching tabs does not add browser history entries, so Back still leaves the attendee in one step.
