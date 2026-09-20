@@ -1823,6 +1823,13 @@ export function AttendeeDetailPage() {
   // live only in detail.action_log_page_size.
   const [activityPageSize, setActivityPageSize] = useState<number>(DEFAULT_ACTIVITY_PAGE_SIZE);
   const activityRequestRef = useRef(0);
+  // Every whole-detail replacement (edit, note, wallet action, reload) carries a fresher log than any
+  // activity-page request already in flight, so it invalidates those synchronously - success and
+  // failure alike - instead of waiting for a later render or effect.
+  const applyDetail = useCallback((next: AttendeeDetailDto) => {
+    activityRequestRef.current += 1;
+    setDetail(next);
+  }, []);
   const loadedActivityPageSizeRef = useRef<number | undefined>(undefined);
 
   /** Guards async handlers when route params change before a request completes. */
@@ -1866,7 +1873,7 @@ export function AttendeeDetailPage() {
       const { detail: d, attributeFields: fields, itemsWarning: warn } =
         await loadAttendeeDetailData(eventId, attendeeId, notesPage);
       if (!isCurrentRequest()) return;
-      setDetail(d);
+      applyDetail(d);
       setAttributeFields(fields);
       setForm(toAttendeeForm(d, fields));
       setInitialEmail(d.email);
@@ -1883,7 +1890,7 @@ export function AttendeeDetailPage() {
     } finally {
       if (isCurrentRequest()) setLoading(false);
     }
-  }, [eventId, attendeeId, notesPage]);
+  }, [eventId, attendeeId, notesPage, applyDetail]);
 
   useEffect(() => {
     void loadDetail();
@@ -1967,7 +1974,7 @@ export function AttendeeDetailPage() {
         if (!currentForm || !previousDetail) return toAttendeeForm(d, fields);
         return mergeFormAfterReload(currentForm, previousDetail, d, fields);
       });
-      setDetail(d);
+      applyDetail(d);
       setInitialEmail(d.email);
       setStaleWrite(false);
       setItemsWarning(warn);
@@ -1999,7 +2006,7 @@ export function AttendeeDetailPage() {
     try {
       const updated = await updateAttendee(eventId, attendeeId, patch);
       if (!isStillSelected(target)) return;
-      setDetail(updated);
+      applyDetail(updated);
       setForm(toAttendeeForm(updated, attributeFields));
       setInitialEmail(updated.email);
       setStaleWrite(false);
@@ -2040,7 +2047,7 @@ export function AttendeeDetailPage() {
       if (!isStillSelected(target)) return;
       const refreshed = await fetchAttendeeDetail(eventId, attendeeId);
       if (!isStillSelected(target)) return;
-      setDetail(refreshed);
+      applyDetail(refreshed);
       setResendOpen(false);
       addToast(
         delivery.status === "failed"
@@ -2091,7 +2098,7 @@ export function AttendeeDetailPage() {
         { force: opts?.force },
       );
       if (!isStillSelected(target)) return;
-      setDetail(updated);
+      applyDetail(updated);
       setForm((currentForm) =>
         nextFormAfterPassStatusChange(currentForm, previousDetail, updated, attributeFields),
       );
@@ -2288,11 +2295,11 @@ export function AttendeeDetailPage() {
   async function loadActivityPage(nextPage: number, nextPageSize: number) {
     // The Activity tab only renders once the route params and detail are present.
     const target = { eventId: eventId!, attendeeId: attendeeId! };
-    const startedFrom = detail!.action_log;
     // Later pages are counted against the snapshot the first page returned, so an entry added by
     // someone else meanwhile can't shift the boundaries; page 1 is always the live log.
     const snapshot = nextPage > 1 ? detail!.action_log_snapshot : undefined;
-    // Only the newest request may apply: a slower older response must not overwrite it.
+    // Only the newest request may apply: a slower older response must not overwrite it, and a
+    // whole-detail replacement (see applyDetail) counts as newer than any request in flight.
     const request = ++activityRequestRef.current;
     const isCurrent = () => isStillSelected(target) && request === activityRequestRef.current;
     try {
@@ -2306,21 +2313,15 @@ export function AttendeeDetailPage() {
         snapshot,
       );
       if (!isCurrent()) return;
-      // The updater sees the latest state even within one React batch, so a whole-detail replacement
-      // (which carries a fresher log) that landed after this request started always wins.
-      setDetail((current) =>
-        current!.action_log === startedFrom
-          ? {
-              ...current!,
-              action_log: fetched.action_log,
-              action_log_total: fetched.action_log_total,
-              action_log_page: fetched.action_log_page,
-              action_log_page_size: fetched.action_log_page_size,
-              action_log_first_action_type: fetched.action_log_first_action_type,
-              action_log_snapshot: fetched.action_log_snapshot,
-            }
-          : current,
-      );
+      setDetail((current) => ({
+        ...current!,
+        action_log: fetched.action_log,
+        action_log_total: fetched.action_log_total,
+        action_log_page: fetched.action_log_page,
+        action_log_page_size: fetched.action_log_page_size,
+        action_log_first_action_type: fetched.action_log_first_action_type,
+        action_log_snapshot: fetched.action_log_snapshot,
+      }));
       // A server that answers with another size than asked (e.g. one that predates the parameter)
       // would otherwise be corrected again on every response; follow what it actually shows.
       if (fetched.action_log_page_size !== nextPageSize) setActivityPageSize(fetched.action_log_page_size);
@@ -2345,7 +2346,7 @@ export function AttendeeDetailPage() {
     try {
       const updated = await addAttendeeNote(eventId!, attendeeId!, body);
       if (!isStillSelected(target)) return;
-      setDetail(updated);
+      applyDetail(updated);
       setNotesPage(updated.notes_page);
       setNoteDraft("");
       addToast("Note added", "success");
@@ -2377,7 +2378,7 @@ export function AttendeeDetailPage() {
     try {
       const updated = await updateAttendeeNote(eventId!, attendeeId!, editingNoteId!, body);
       if (!isStillSelected(target)) return;
-      setDetail(updated);
+      applyDetail(updated);
       setNotesPage(updated.notes_page);
       setEditingNoteId(null);
       setNoteEditDraft("");
@@ -2401,7 +2402,7 @@ export function AttendeeDetailPage() {
     try {
       const updated = await deleteAttendeeNote(eventId!, attendeeId!, noteDeleteId!);
       if (!isStillSelected(target)) return;
-      setDetail(updated);
+      applyDetail(updated);
       setNotesPage(updated.notes_page);
       setNoteDeleteId(null);
       addToast("Note deleted", "success");

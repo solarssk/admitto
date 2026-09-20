@@ -549,4 +549,33 @@ describe("AttendeeDetailPage - Activity log pagination", () => {
     expect(fetchAttendeeDetail).toHaveBeenNthCalledWith(4, "evt-1", "att-1", undefined, 1, 1, 25, undefined);
     expect(screen.getByText("Showing 1–25 of 61")).toBeTruthy();
   });
+
+  it("ignores a failure from a page request that another flow already superseded", async () => {
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: detailWithNotes("First page note", 1, [1, 2, 3]),
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    let rejectPending!: (reason: Error) => void;
+    fetchAttendeeDetail.mockReturnValueOnce(new Promise((_, reject) => { rejectPending = reject; }));
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: detailWithNotes("Second page note", 2, [1, 2, 3]),
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    await openActivityTab();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    fireEvent.click(screen.getByRole("tab", { name: /Notes/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("Second page note");
+
+    await act(async () => {
+      rejectPending(new Error("boom"));
+    });
+
+    expect(screen.queryByText("Could not load activity.")).toBeNull();
+  });
 });
