@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { useNavigate, useOutletContext, useParams } from "react-router";
+import { useNavigate, useOutletContext, useParams, useSearchParams } from "react-router";
 import { WALLET_RELEVANT_ATTENDEE_FIELDS, enabledWalletPlatforms, type EnabledWalletPlatforms } from "@admitto/shared";
 import { ATTENDEE_FIELD_PLACEHOLDERS, isWalletFieldMappingRelevant } from "@admitto/wallet/passcreator-mapper";
 import {
@@ -104,7 +104,15 @@ import { useAuth } from "../auth/AuthProvider.js";
 import { isOrgAdmin, isSuperadmin } from "../auth/capabilities.js";
 import "../attendees/attendees.css";
 
-type TabId = "overview" | "activity" | "notes";
+const TAB_IDS = ["overview", "activity", "notes"] as const;
+type TabId = (typeof TAB_IDS)[number];
+
+/** Active tab from `?tab=` (the URL is the source of truth, so a link can open a specific tab);
+ * anything missing or unrecognised falls back to Overview. */
+function attendeeTabFromSearch(searchParams: URLSearchParams): TabId {
+  const raw = searchParams.get("tab");
+  return TAB_IDS.find((id) => id === raw) ?? "overview";
+}
 type ActiveRevokeAction = "pass" | "checkin" | "items" | "restore" | null;
 type ActiveWalletAction = "void" | "restore" | "reissue" | "delete" | null;
 
@@ -1719,7 +1727,20 @@ export function AttendeeDetailPage() {
   const editTitleId = useId();
   const editPanelRef = useRef<HTMLFormElement>(null);
 
-  const [tab, setTab] = useState<TabId>("overview");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = attendeeTabFromSearch(searchParams);
+  // replace, so Back leaves the attendee instead of stepping through every tab visited;
+  // Overview is the default and keeps the URL clean.
+  const selectTab = (id: TabId) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (id === "overview") next.delete("tab");
+        else next.set("tab", id);
+        return next;
+      },
+      { replace: true },
+    );
   const [detail, setDetail] = useState<AttendeeDetailDto | null>(null);
   const [attributeFields, setAttributeFields] = useState<CustomDataFieldDef[]>([]);
   const [ticketTypes, setTicketTypes] = useState<TicketTypeDto[]>([]);
@@ -2499,7 +2520,7 @@ export function AttendeeDetailPage() {
 
       <Tabs
         value={tab}
-        onChange={(id) => setTab(id as TabId)}
+        onChange={(id) => selectTab(id as TabId)}
         tabs={[
           { id: "overview", label: "Overview" },
           { id: "activity", label: "Activity log" },
