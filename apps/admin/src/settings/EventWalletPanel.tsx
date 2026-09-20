@@ -273,7 +273,7 @@ function WalletPushHistoryCard({
     // settings-card-intro (already scoped to this page's own CSS) matches ImportHistoryCard's
     // muted-hint look without importing ImportPage's page-scoped import.css into this lazy chunk
     // (bot review - a component's CSS must live in its own file, per AGENTS.md's compounding
-    // rules). wallet-push-history-card__body-note adds the padding .sessions-table-wrap used to
+    // rules). wallet-push-history-card__body-note adds the padding .audit-log-table-wrap used to
     // give this card for free, now that the Card itself is unpadded (see below).
     body = showLoading ? (
       <p className="settings-card-intro wallet-push-history-card__body-note">Loading…</p>

@@ -98,13 +98,14 @@
   margin-bottom: var(--space-2, 0.5rem);
 }
 
-/* Sessions scroll */
-.sessions-table-wrap {
+/* Sessions scroll. This must stay account-specific: Audit/Security logs have their own
+   independently sized table and must never inherit this compact scroll region. */
+.account-sessions-table-wrap {
   max-height: 380px;
-  overflow-y: auto;
+  overflow: auto;
 }
 
-.sessions-table-wrap thead th {
+.account-sessions-table-wrap thead th {
   position: sticky;
   top: 0;
   background: var(--surface-sunken);
@@ -657,4 +658,3 @@
 .account-mfa-method__action {
   flex-shrink: 0;
 }
-
