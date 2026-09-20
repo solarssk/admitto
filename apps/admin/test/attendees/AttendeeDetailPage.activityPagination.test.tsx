@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import type { RoleAssignment } from "../../src/api/types.js";
@@ -120,6 +120,32 @@ function renderPage() {
   );
 }
 
+function makeNote(body: string) {
+  return {
+    id: `note-${body}`,
+    body,
+    author_display: "Ola Nowak",
+    author_user_id: "user-admin-1",
+    author_role: "admin",
+    created_at: "2026-06-01T09:00:00.000Z",
+  };
+}
+
+/** A detail with 51 notes (so the Notes tab paginates too) and the given activity page. */
+function detailWithNotes(noteBody: string, notesPage: number, entries: number[]) {
+  return {
+    ...detailWithLog(1, entries),
+    notes: [makeNote(noteBody)],
+    notes_total: 51,
+    notes_page: notesPage,
+  };
+}
+
+async function chooseRowsPerPage(size: string) {
+  fireEvent.click(screen.getByRole("button", { name: /^Rows per page,/ }));
+  fireEvent.click(screen.getByRole("button", { name: size }));
+}
+
 async function openActivityTab() {
   fireEvent.click(await screen.findByRole("tab", { name: /Activity log/ }));
 }
@@ -131,6 +157,9 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  // clearAllMocks keeps queued mockResolvedValueOnce values, which would leak into the next test.
+  loadAttendeeDetailData.mockReset();
+  fetchAttendeeDetail.mockReset();
 });
 
 describe("AttendeeDetailPage - Activity log pagination", () => {
@@ -282,5 +311,111 @@ describe("AttendeeDetailPage - Activity log pagination", () => {
     await Promise.resolve();
 
     expect(screen.queryByText("Could not load activity.")).toBeNull();
+  });
+
+  it("keeps the chosen rows per page when another flow replaces the whole detail", async () => {
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: detailWithNotes("First page note", 1, [1, 2, 3]),
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    fetchAttendeeDetail.mockResolvedValueOnce({ ...detailWithLog(1, [1, 2, 3, 4], 30), action_log_page_size: 50 });
+    // Notes pagination reloads the whole detail, which comes back at the server's default size.
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: detailWithNotes("Second page note", 2, [1, 2, 3]),
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    fetchAttendeeDetail.mockResolvedValueOnce({ ...detailWithLog(1, [1, 2, 3, 4], 30), action_log_page_size: 50 });
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    await openActivityTab();
+    await chooseRowsPerPage("50");
+    await waitFor(() => expect(fetchAttendeeDetail).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("tab", { name: /Notes/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("Second page note");
+    await waitFor(() => expect(fetchAttendeeDetail).toHaveBeenCalledTimes(2));
+    expect(fetchAttendeeDetail).toHaveBeenLastCalledWith("evt-1", "att-1", undefined, 1, 1, 50);
+
+    await openActivityTab();
+    expect(await screen.findByRole("button", { name: "Rows per page, 50" })).toBeTruthy();
+  });
+
+  it("applies only the newest activity request when an older one resolves later", async () => {
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: detailWithLog(1, [1, 2, 3]),
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    let resolveOlder!: (value: ReturnType<typeof detailWithLog>) => void;
+    fetchAttendeeDetail.mockReturnValueOnce(new Promise((resolve) => { resolveOlder = resolve; }));
+    fetchAttendeeDetail.mockResolvedValueOnce({ ...detailWithLog(1, [1, 2, 3, 4], 30), action_log_page_size: 50 });
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    await openActivityTab();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await chooseRowsPerPage("50");
+    await waitFor(() => expect(screen.getByText("Showing 1–30 of 30")).toBeTruthy());
+
+    await act(async () => {
+      resolveOlder(detailWithLog(2, [26, 27]));
+    });
+
+    expect(screen.getByText("Showing 1–30 of 30")).toBeTruthy();
+    expect(screen.getByText("Page 1 of 1")).toBeTruthy();
+  });
+
+  it("drops a pending activity page when another flow replaces the detail first", async () => {
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: detailWithNotes("First page note", 1, [1, 2, 3]),
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    let resolvePending!: (value: ReturnType<typeof detailWithLog>) => void;
+    fetchAttendeeDetail.mockReturnValueOnce(new Promise((resolve) => { resolvePending = resolve; }));
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: detailWithNotes("Second page note", 2, [1, 2, 3]),
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    await openActivityTab();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("tab", { name: /Notes/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("Second page note");
+
+    await act(async () => {
+      resolvePending(detailWithLog(2, [26, 27]));
+    });
+
+    await openActivityTab();
+    expect(await screen.findByText("Page 1 of 2")).toBeTruthy();
+  });
+
+  it("falls back to the shown page size when a new one fails to load, so choosing it again retries", async () => {
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: detailWithLog(1, [1, 2, 3]),
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    fetchAttendeeDetail.mockRejectedValueOnce(new Error("boom"));
+    fetchAttendeeDetail.mockResolvedValueOnce({ ...detailWithLog(1, [1, 2, 3, 4], 30), action_log_page_size: 50 });
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    await openActivityTab();
+
+    await chooseRowsPerPage("50");
+    expect(await screen.findByText("Could not load activity.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Rows per page, 25" })).toBeTruthy();
+
+    await chooseRowsPerPage("50");
+    await waitFor(() => expect(screen.getByText("Showing 1–30 of 30")).toBeTruthy());
+    expect(fetchAttendeeDetail).toHaveBeenCalledTimes(2);
   });
 });

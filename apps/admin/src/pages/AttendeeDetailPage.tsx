@@ -106,6 +106,7 @@ import { isOrgAdmin, isSuperadmin } from "../auth/capabilities.js";
 import "../attendees/attendees.css";
 
 const ACTIVITY_PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
+const DEFAULT_ACTIVITY_PAGE_SIZE = 25;
 
 const TAB_IDS = ["overview", "activity", "notes"] as const;
 type TabId = (typeof TAB_IDS)[number];
@@ -1817,6 +1818,12 @@ export function AttendeeDetailPage() {
   const [noteDeleting, setNoteDeleting] = useState(false);
   const [noteDeleteError, setNoteDeleteError] = useState<string | null>(null);
   const [notesPage, setNotesPage] = useState(1);
+  // The operator's rows-per-page choice for the Activity log. Detail is replaced wholesale by many
+  // flows (edit, pass/wallet actions, notes) using the server's default size, so the choice can't
+  // live only in detail.action_log_page_size.
+  const [activityPageSize, setActivityPageSize] = useState<number>(DEFAULT_ACTIVITY_PAGE_SIZE);
+  const activityRequestRef = useRef(0);
+  const loadedActivityPageSizeRef = useRef<number | undefined>(undefined);
 
   /** Guards async handlers when route params change before a request completes. */
   const selectionRef = useRef({ eventId, attendeeId });
@@ -2262,14 +2269,33 @@ export function AttendeeDetailPage() {
     }
   }
 
+  // A detail replaced by anything else (edit, note, wallet action, reload) already carries a fresh log,
+  // so an activity-page request still in flight is now stale and must not overwrite it.
+  useEffect(() => {
+    activityRequestRef.current += 1;
+  }, [detail?.action_log]);
+
+  // Re-apply the selected rows-per-page whenever the loaded detail came back at a different size
+  // (the server default after any of those flows, or right after the operator picks a new size).
+  const loadedActivityPageSize = detail?.action_log_page_size;
+  loadedActivityPageSizeRef.current = loadedActivityPageSize;
+  useEffect(() => {
+    if (loadedActivityPageSize === undefined || loadedActivityPageSize === activityPageSize) return;
+    void loadActivityPage(1, activityPageSize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadActivityPage is recreated every render; only these two values should retrigger it
+  }, [loadedActivityPageSize, activityPageSize]);
+
   /** Loads one page of the Activity log and merges only its log fields into the current detail,
    * so flipping pages never reloads (and so never discards unsaved edits in) the profile form. */
   async function loadActivityPage(nextPage: number, nextPageSize: number) {
     // The Activity tab only renders once the route params and detail are present.
     const target = { eventId: eventId!, attendeeId: attendeeId! };
+    // Only the newest request may apply: a slower older response must not overwrite it.
+    const request = ++activityRequestRef.current;
+    const isCurrent = () => isStillSelected(target) && request === activityRequestRef.current;
     try {
       const fetched = await fetchAttendeeDetail(target.eventId, target.attendeeId, undefined, 1, nextPage, nextPageSize);
-      if (!isStillSelected(target)) return;
+      if (!isCurrent()) return;
       setDetail((current) => ({
         ...current!,
         action_log: fetched.action_log,
@@ -2279,7 +2305,10 @@ export function AttendeeDetailPage() {
         action_log_first_action_type: fetched.action_log_first_action_type,
       }));
     } catch (err) {
-      if (!isStillSelected(target)) return;
+      if (!isCurrent()) return;
+      // Fall back to the size the log is actually showing (detail is loaded while this tab renders),
+      // so choosing the same size again retries.
+      setActivityPageSize(loadedActivityPageSizeRef.current!);
       addToast(operatorApiErrorMessage(err, "Could not load activity."), "error");
     }
   }
@@ -2595,8 +2624,8 @@ export function AttendeeDetailPage() {
           total={detail.action_log_total}
           page={detail.action_log_page}
           pageSize={detail.action_log_page_size}
-          onPageChange={(next) => void loadActivityPage(next, detail.action_log_page_size)}
-          onPageSizeChange={(size) => void loadActivityPage(1, size)}
+          onPageChange={(next) => void loadActivityPage(next, activityPageSize)}
+          onPageSizeChange={setActivityPageSize}
           attributeFields={attributeFields}
           eventItems={eventItems}
           ticketTypes={ticketTypes}
