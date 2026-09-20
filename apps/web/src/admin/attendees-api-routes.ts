@@ -769,19 +769,30 @@ async function loadAttendeeActionLogEntries(
   firstActionType: string | null;
   snapshot: string | null;
 }> {
-  // With a snapshot, only entries not newer than it count, so a later entry can't shift the pages.
-  // Matches the (created_at desc, id desc) ordering below.
-  const where = snapshot
+  // Fix the boundary first (the caller's snapshot, else the newest entry right now) and only then read
+  // everything bounded by it, so the page, the total and the cursor handed back all describe the same
+  // set of rows even if a colleague appends an entry mid-request - no transaction needed.
+  const boundary =
+    snapshot ??
+    (await db.attendeeActionLog
+      .findFirst({
+        where: { attendee_id: attendeeId },
+        orderBy: [{ created_at: "desc" }, { id: "desc" }],
+        select: { id: true, created_at: true },
+      })
+      .then((newest) => (newest ? { createdAt: newest.created_at, id: newest.id } : null)));
+  // Only entries not newer than the boundary count. Matches the (created_at desc, id desc) ordering below.
+  const where = boundary
     ? {
         attendee_id: attendeeId,
         OR: [
-          { created_at: { lt: snapshot.createdAt } },
-          { created_at: snapshot.createdAt, id: { lte: snapshot.id } },
+          { created_at: { lt: boundary.createdAt } },
+          { created_at: boundary.createdAt, id: { lte: boundary.id } },
         ],
       }
     : { attendee_id: attendeeId };
   // id breaks created_at ties so a row can't repeat or vanish across page boundaries.
-  const [logs, total, oldest, newest] = await Promise.all([
+  const [logs, total, oldest] = await Promise.all([
     db.attendeeActionLog.findMany({
       where,
       orderBy: [{ created_at: "desc" }, { id: "desc" }],
@@ -802,21 +813,9 @@ async function loadAttendeeActionLogEntries(
       orderBy: [{ created_at: "asc" }, { id: "asc" }],
       select: { action_type: true },
     }),
-    // The cursor to hand back: the newest entry these pages are counted against.
-    snapshot
-      ? Promise.resolve(null)
-      : db.attendeeActionLog.findFirst({
-          where,
-          orderBy: [{ created_at: "desc" }, { id: "desc" }],
-          select: { id: true, created_at: true },
-        }),
   ]);
   const firstActionType = oldest?.action_type ?? null;
-  const snapshotToken = snapshot
-    ? formatActivitySnapshot(snapshot)
-    : newest
-      ? formatActivitySnapshot({ createdAt: newest.created_at, id: newest.id })
-      : null;
+  const snapshotToken = boundary ? formatActivitySnapshot(boundary) : null;
 
   const actorIds = [
     ...new Set(logs.map((log) => log.actor_user_id).filter((id): id is string => id != null)),

@@ -6329,6 +6329,59 @@ describe("POST /api/admin/events/:eventId/attendees/:id/notes", () => {
     }
   });
 
+  it("reads the first activity page consistently when an entry lands right after the boundary is fixed", async () => {
+    await prisma.attendeeActionLog.deleteMany({ where: { attendee_id: ATT_NOTE } });
+    const base = Date.UTC(2026, 0, 1);
+    await prisma.attendeeActionLog.createMany({
+      data: Array.from({ length: 26 }, (_, index) => ({
+        event_id: EVENT_A,
+        attendee_id: ATT_NOTE,
+        action_type: "ticket_link_retrieved",
+        created_at: new Date(base + index * 60_000),
+      })),
+    });
+
+    // A colleague's entry is committed between the boundary lookup and the page read.
+    const original = prisma.attendeeActionLog.findFirst.bind(prisma.attendeeActionLog);
+    let injected = false;
+    const spy = vi
+      .spyOn(prisma.attendeeActionLog, "findFirst")
+      .mockImplementation(((args: Parameters<typeof original>[0]) => {
+        const result = original(args);
+        if (injected) return result;
+        injected = true;
+        return result.then(async (row: unknown) => {
+          await prisma.attendeeActionLog.create({
+            data: {
+              event_id: EVENT_A,
+              attendee_id: ATT_NOTE,
+              action_type: "ticket_link_retrieved",
+              created_at: new Date(base + 120 * 60_000),
+            },
+          });
+          return row;
+        });
+      }) as unknown as typeof prisma.attendeeActionLog.findFirst);
+
+    try {
+      const res = await app.request(`/api/admin/events/${EVENT_A}/attendees/${ATT_NOTE}`, {
+        headers: { Cookie: adminCookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        action_log: unknown[];
+        action_log_total: number;
+        action_log_snapshot: string | null;
+      };
+      // Page, total and cursor all describe the log as it was when the boundary was fixed.
+      expect(body.action_log_total).toBe(26);
+      expect(body.action_log).toHaveLength(25);
+      expect(body.action_log_snapshot).toMatch(/^2026-01-01T00:25:00\.000Z\|/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("falls back to the author's email when they no longer have a display name", async () => {
     const user = await prisma.user.findUniqueOrThrow({
       where: { id: adminId },
