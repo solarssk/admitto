@@ -2269,41 +2269,49 @@ export function AttendeeDetailPage() {
     }
   }
 
-  // A detail replaced by anything else (edit, note, wallet action, reload) already carries a fresh log,
-  // so an activity-page request still in flight is now stale and must not overwrite it.
-  useEffect(() => {
-    activityRequestRef.current += 1;
-  }, [detail?.action_log]);
-
-  // Re-apply the selected rows-per-page whenever the loaded detail came back at a different size
-  // (the server default after any of those flows, or right after the operator picks a new size).
+  // Re-apply the selected rows-per-page whenever the loaded log came back at a different size (the
+  // server default after any whole-detail replacement, or right after the operator picks a new size).
+  // Keyed on the log's identity, not just the two sizes: every replacement (edit, note, wallet action,
+  // reload, another attendee) is a new log, so the correction is retriggered after each one even when
+  // consecutive details carry the same size and an earlier correction was dropped as stale.
+  const activityLog = detail?.action_log;
   const loadedActivityPageSize = detail?.action_log_page_size;
   loadedActivityPageSizeRef.current = loadedActivityPageSize;
   useEffect(() => {
     if (loadedActivityPageSize === undefined || loadedActivityPageSize === activityPageSize) return;
     void loadActivityPage(1, activityPageSize);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadActivityPage is recreated every render; only these two values should retrigger it
-  }, [loadedActivityPageSize, activityPageSize]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadActivityPage is recreated every render; only the log identity and the selected size should retrigger it
+  }, [activityLog, activityPageSize]);
 
   /** Loads one page of the Activity log and merges only its log fields into the current detail,
    * so flipping pages never reloads (and so never discards unsaved edits in) the profile form. */
   async function loadActivityPage(nextPage: number, nextPageSize: number) {
     // The Activity tab only renders once the route params and detail are present.
     const target = { eventId: eventId!, attendeeId: attendeeId! };
+    const startedFrom = detail!.action_log;
     // Only the newest request may apply: a slower older response must not overwrite it.
     const request = ++activityRequestRef.current;
     const isCurrent = () => isStillSelected(target) && request === activityRequestRef.current;
     try {
       const fetched = await fetchAttendeeDetail(target.eventId, target.attendeeId, undefined, 1, nextPage, nextPageSize);
       if (!isCurrent()) return;
-      setDetail((current) => ({
-        ...current!,
-        action_log: fetched.action_log,
-        action_log_total: fetched.action_log_total,
-        action_log_page: fetched.action_log_page,
-        action_log_page_size: fetched.action_log_page_size,
-        action_log_first_action_type: fetched.action_log_first_action_type,
-      }));
+      // The updater sees the latest state even within one React batch, so a whole-detail replacement
+      // (which carries a fresher log) that landed after this request started always wins.
+      setDetail((current) =>
+        current!.action_log === startedFrom
+          ? {
+              ...current!,
+              action_log: fetched.action_log,
+              action_log_total: fetched.action_log_total,
+              action_log_page: fetched.action_log_page,
+              action_log_page_size: fetched.action_log_page_size,
+              action_log_first_action_type: fetched.action_log_first_action_type,
+            }
+          : current,
+      );
+      // A server that answers with another size than asked (e.g. one that predates the parameter)
+      // would otherwise be corrected again on every response; follow what it actually shows.
+      if (fetched.action_log_page_size !== nextPageSize) setActivityPageSize(fetched.action_log_page_size);
     } catch (err) {
       if (!isCurrent()) return;
       // Fall back to the size the log is actually showing (detail is loaded while this tab renders),

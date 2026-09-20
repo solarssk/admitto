@@ -96,9 +96,14 @@ function detailWithLog(page: number, entries: number[], total = 30) {
 function SwitchAttendee() {
   const navigate = useNavigate();
   return (
-    <button type="button" onClick={() => navigate("/admin/events/evt-2/attendees/att-2")}>
-      Switch attendee
-    </button>
+    <>
+      <button type="button" onClick={() => navigate("/admin/events/evt-2/attendees/att-2")}>
+        Switch attendee
+      </button>
+      <button type="button" onClick={() => navigate("/admin/events/evt-3/attendees/att-3")}>
+        Switch again
+      </button>
+    </>
   );
 }
 
@@ -417,5 +422,91 @@ describe("AttendeeDetailPage - Activity log pagination", () => {
     await chooseRowsPerPage("50");
     await waitFor(() => expect(screen.getByText("Showing 1–30 of 30")).toBeTruthy());
     expect(fetchAttendeeDetail).toHaveBeenCalledTimes(2);
+  });
+
+  it("drops a pending page even when the replacing detail lands in the same React batch", async () => {
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: detailWithNotes("First page note", 1, [1, 2, 3]),
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    let resolvePending!: (value: ReturnType<typeof detailWithLog>) => void;
+    fetchAttendeeDetail.mockReturnValueOnce(new Promise((resolve) => { resolvePending = resolve; }));
+    let resolveReload!: (value: unknown) => void;
+    loadAttendeeDetailData.mockReturnValueOnce(new Promise((resolve) => { resolveReload = resolve; }));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    await openActivityTab();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("tab", { name: /Notes/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    // Both settle in one act(), so no passive effect can run between them.
+    await act(async () => {
+      resolveReload({
+        detail: detailWithNotes("Second page note", 2, [7, 8, 9]),
+        attributeFields: [],
+        itemsWarning: null,
+      });
+      resolvePending(detailWithLog(2, [26, 27]));
+    });
+
+    await openActivityTab();
+    expect(await screen.findByText("Page 1 of 2")).toBeTruthy();
+  });
+
+  it("re-applies the chosen page size after every attendee, even when a correction was dropped", async () => {
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: detailWithLog(1, [1, 2, 3]),
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    fetchAttendeeDetail.mockResolvedValueOnce({ ...detailWithLog(1, [1, 2, 3, 4], 30), action_log_page_size: 50 });
+    // The second attendee's correction never settles before the operator moves on to a third.
+    fetchAttendeeDetail.mockReturnValueOnce(new Promise(() => {}));
+    fetchAttendeeDetail.mockResolvedValueOnce({ ...detailWithLog(1, [1, 2, 3, 4], 30), action_log_page_size: 50 });
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: { ...detailWithLog(1, [5, 6], 30), id: "att-2", name: "Bea" },
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: { ...detailWithLog(1, [7, 8], 30), id: "att-3", name: "Cy" },
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    await openActivityTab();
+    await chooseRowsPerPage("50");
+    await waitFor(() => expect(fetchAttendeeDetail).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch attendee" }));
+    await screen.findByRole("heading", { name: "Bea" });
+    await waitFor(() => expect(fetchAttendeeDetail).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch again" }));
+    await screen.findByRole("heading", { name: "Cy" });
+    await waitFor(() => expect(fetchAttendeeDetail).toHaveBeenCalledTimes(3));
+    expect(fetchAttendeeDetail).toHaveBeenLastCalledWith("evt-3", "att-3", undefined, 1, 1, 50);
+  });
+
+  it("follows the size the server actually returns instead of refetching in a loop", async () => {
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: detailWithLog(1, [1, 2, 3]),
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    // An older backend ignores activity_page_size and keeps answering with 25.
+    fetchAttendeeDetail.mockResolvedValue(detailWithLog(1, [1, 2, 3]));
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    await openActivityTab();
+
+    await chooseRowsPerPage("50");
+    expect(await screen.findByRole("button", { name: "Rows per page, 25" })).toBeTruthy();
+    await act(async () => {});
+    expect(fetchAttendeeDetail).toHaveBeenCalledTimes(1);
   });
 });
