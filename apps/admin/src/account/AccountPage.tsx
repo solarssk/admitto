@@ -2011,7 +2011,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             and Device/IP address are both things an admin reviewing their own sessions wants to
             keep seeing (PO review) rather than trimmed down to just Logged in/Last active. */}
         {!sessionsLoading && !sessionsError && sessions.length > 0 && isSessionsDesktop && (
-          <div className="sessions-table-wrap">
+          <div className="account-sessions-table-wrap">
             <table className="table">
               <thead>
                 <tr>

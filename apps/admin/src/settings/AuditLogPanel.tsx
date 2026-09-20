@@ -556,7 +556,7 @@ function LogTable<T>({
   onCopyRow,
 }: Readonly<LogTableProps<T>>) {
   return (
-    <div className={`sessions-table-wrap${loading ? " audit-log-table-wrap--loading" : ""}`}>
+    <div className={`audit-log-table-wrap${loading ? " audit-log-table-wrap--loading" : ""}`}>
       <table className="table audit-log-table">
         <thead>
           <tr>
@@ -748,7 +748,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
       <>
         {actorDisplay(entry)}
         {entry.actor_display_name && entry.actor_email && (
-          <div className="sessions-subdued">{entry.actor_email}</div>
+          <div className="audit-log-secondary">{entry.actor_email}</div>
         )}
       </>
     ),
@@ -760,7 +760,7 @@ function buildAuditColumns(eventTitleById: Map<string, string>): LogColumn<Audit
     cell: (entry) => (
       <>
         {entry.ip ?? "-"}
-        {entry.ip && <div className="sessions-subdued"><GeoCell location={entry.country} /></div>}
+        {entry.ip && <div className="audit-log-secondary"><GeoCell location={entry.country} /></div>}
       </>
     ),
   },
@@ -796,7 +796,7 @@ function renderAuditCardMeta(entry: AuditLogEntryDto, eventTitleById: Map<string
         {actorDisplay(entry)}
       </span>
       {entry.actor_display_name && entry.actor_email && (
-        <div className="sessions-subdued audit-log-card__email">{entry.actor_email}</div>
+        <div className="audit-log-secondary audit-log-card__email">{entry.actor_email}</div>
       )}
     </>
   );
@@ -907,7 +907,7 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
     cell: (entry) => (
       <>
         {securityUserDisplay(entry)}
-        {securityUserEmail(entry) && <div className="sessions-subdued">{securityUserEmail(entry)}</div>}
+        {securityUserEmail(entry) && <div className="audit-log-secondary">{securityUserEmail(entry)}</div>}
       </>
     ),
   },
@@ -918,7 +918,7 @@ const SECURITY_COLUMNS: LogColumn<SecurityAuditLogEntryDto>[] = [
     cell: (entry) => (
       <>
         {entry.ip ?? "-"}
-        {entry.ip && <div className="sessions-subdued"><GeoCell location={entry.country} /></div>}
+        {entry.ip && <div className="audit-log-secondary"><GeoCell location={entry.country} /></div>}
       </>
     ),
   },
@@ -945,7 +945,7 @@ function renderSecurityCardMeta(entry: SecurityAuditLogEntryDto): ReactNode {
         {securityUserDisplay(entry)}
       </span>
       {securityUserEmail(entry) && (
-        <div className="sessions-subdued audit-log-card__email">{securityUserEmail(entry)}</div>
+        <div className="audit-log-secondary audit-log-card__email">{securityUserEmail(entry)}</div>
       )}
     </>
   );
