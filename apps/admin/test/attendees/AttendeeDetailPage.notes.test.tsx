@@ -112,7 +112,7 @@ function makeNote(overrides: Partial<Record<string, unknown>> = {}) {
 function RouteChangeControl() {
   const navigate = useNavigate();
   return (
-    <button type="button" onClick={() => navigate("/admin/events/evt-2/attendees/att-2")}>
+    <button type="button" onClick={() => navigate("/admin/events/evt-2/attendees/att-2?tab=notes")}>
       Switch attendee
     </button>
   );

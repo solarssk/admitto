@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- An attendee's page now keeps the selected tab in its address (`?tab=activity` or `?tab=notes`), so a link, bookmark, or browser refresh opens that tab directly instead of always landing on Overview. Switching tabs does not add browser history entries, so Back still leaves the attendee in one step.
 - Clicking a notification in the topbar bell now opens a window with its full message. Before, the list showed only the first two lines and cut the rest off with no way to read it, so the most important part (for example "If this wasn't you, secure your account immediately") was hidden. The window also shows which organisation the notification is from and exactly when it arrived, in UTC and in your local time. Clicking an unread notification still marks it as read.
 
 ## [0.7.1] - 2026-09-19
