@@ -1027,10 +1027,16 @@ export async function fetchAttendeeDetail(
   attendeeId: string,
   signal?: AbortSignal,
   notesPage = 1,
+  activityPage = 1,
+  activityPageSize?: number,
 ): Promise<AttendeeDetailDto> {
-  const notesQuery = notesPage > 1 ? `?notes_page=${notesPage}` : "";
+  const params = new URLSearchParams();
+  if (notesPage > 1) params.set("notes_page", String(notesPage));
+  if (activityPage > 1) params.set("activity_page", String(activityPage));
+  if (activityPageSize !== undefined) params.set("activity_page_size", String(activityPageSize));
+  const query = params.size > 0 ? `?${params.toString()}` : "";
   const res = await fetch(
-    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}${notesQuery}`,
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}${query}`,
     { credentials: "same-origin", signal },
   );
   return parseJson<AttendeeDetailDto>(res);

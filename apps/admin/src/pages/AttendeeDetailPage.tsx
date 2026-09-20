@@ -92,6 +92,7 @@ import {
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { SamsungGlyphIcon } from "../components/SamsungWalletIcon.js";
+import { PaginationFooter } from "../components/PaginationFooter.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
 import { ROLE_BADGE_VARIANT, ROLE_LABELS } from "../auth/role-labels.js";
@@ -103,6 +104,8 @@ import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isOrgAdmin, isSuperadmin } from "../auth/capabilities.js";
 import "../attendees/attendees.css";
+
+const ACTIVITY_PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
 type TabId = "overview" | "activity" | "notes";
 type ActiveRevokeAction = "pass" | "checkin" | "items" | "restore" | null;
@@ -1175,17 +1178,28 @@ function AttendeeOverviewTab({
  * keeps this tab's own conditional rendering out of the component's cognitive-complexity count). */
 function AttendeeActivityTab({
   actionLog,
+  total,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
   attributeFields,
   eventItems,
   ticketTypes,
   event,
 }: Readonly<{
   actionLog: AttendeeDetailDto["action_log"];
+  total: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
   attributeFields: CustomDataFieldDef[];
   eventItems: AttendeeDetailDto["event_items"];
   ticketTypes: TicketTypeDto[];
   event: EventDto;
 }>) {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
   return (
     <Card padded>
       {actionLog.length === 0 ? (
@@ -1220,6 +1234,19 @@ function AttendeeActivityTab({
             );
           })}
         </ul>
+      )}
+      {total > 0 && (
+        <PaginationFooter
+          idPrefix="attendee-activity"
+          page={page}
+          pageSize={pageSize}
+          totalPages={pageCount}
+          totalRows={total}
+          pageSizeOptions={ACTIVITY_PAGE_SIZE_OPTIONS}
+          onPageSizeChange={onPageSizeChange}
+          onPrevious={() => onPageChange(page - 1)}
+          onNext={() => onPageChange(page + 1)}
+        />
       )}
     </Card>
   );
@@ -2214,6 +2241,32 @@ export function AttendeeDetailPage() {
     }
   }
 
+  /** Loads one page of the Activity log and merges only its log fields into the current detail,
+   * so flipping pages never reloads (and so never discards unsaved edits in) the profile form. */
+  async function loadActivityPage(nextPage: number, nextPageSize: number) {
+    if (!eventId || !attendeeId) return;
+    const target = { eventId, attendeeId };
+    try {
+      const fetched = await fetchAttendeeDetail(eventId, attendeeId, undefined, 1, nextPage, nextPageSize);
+      if (!isStillSelected(target)) return;
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              action_log: fetched.action_log,
+              action_log_total: fetched.action_log_total,
+              action_log_page: fetched.action_log_page,
+              action_log_page_size: fetched.action_log_page_size,
+              action_log_first_action_type: fetched.action_log_first_action_type,
+            }
+          : current,
+      );
+    } catch (err) {
+      if (!isStillSelected(target)) return;
+      addToast(operatorApiErrorMessage(err, "Could not load activity."), "error");
+    }
+  }
+
   /** Adds a staff note from the Notes tab - same AttendeeNote model as check-in's note
    * composer, so the response's full detail DTO (incl. the new note) replaces local state
    * directly, matching handlePassStatusChange's toast-on-success / inline-error-on-failure split. */
@@ -2362,7 +2415,7 @@ export function AttendeeDetailPage() {
   // hiding it from the admin. Surface it as its own option instead (fail-open, same philosophy
   // as ticketTypeBadge.tsx's catalog resolver).
   const orphanedTicketType = resolveOrphanedTicketType(form.ticket_type, ticketTypes);
-  const attendeeSource = deriveAttendeeSource(detail.action_log);
+  const attendeeSource = deriveAttendeeSource(detail.action_log_first_action_type);
   const customDataEntries = allCustomDataEntries(detail.custom_data, attributeFields, humanizeFieldKey);
   // Falls back to [] against a stale API response missing this field (e.g. an apps/web dev
   // server running from before event_items was added - it doesn't hot-reload) instead of
@@ -2522,6 +2575,11 @@ export function AttendeeDetailPage() {
       {tab === "activity" && (
         <AttendeeActivityTab
           actionLog={detail.action_log}
+          total={detail.action_log_total ?? detail.action_log.length}
+          page={detail.action_log_page ?? 1}
+          pageSize={detail.action_log_page_size ?? 25}
+          onPageChange={(next) => void loadActivityPage(next, detail.action_log_page_size ?? 25)}
+          onPageSizeChange={(size) => void loadActivityPage(1, size)}
           attributeFields={attributeFields}
           eventItems={eventItems}
           ticketTypes={ticketTypes}

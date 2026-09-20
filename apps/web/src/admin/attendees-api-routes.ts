@@ -382,6 +382,12 @@ export type AttendeeDetailDto = {
   notes_total: number;
   notes_page: number;
   notes_page_size: number;
+  action_log_total: number;
+  action_log_page: number;
+  action_log_page_size: number;
+  /** action_type of this attendee's oldest log entry across all pages - the detail page reads
+   * "how was this attendee added" off it, which the paginated action_log window can't provide. */
+  action_log_first_action_type: string | null;
 };
 
 /** Read-only event-day item summary for the attendee detail page — same source data as the
@@ -726,23 +732,47 @@ const ATTENDEE_NOTES_PAGE_SIZE = 50;
 const ATTENDEE_NOTES_MAX_PAGE = 10_000;
 const NOTE_AUTHOR_FALLBACK = "Staff member";
 
+/** Activity log tab page sizes (newest first, explicit pages like notes); the first is the default.
+ * A requested size outside this list falls back to the default rather than being trusted. */
+const ATTENDEE_ACTIVITY_PAGE_SIZES = [25, 10, 50, 100] as const;
+const ATTENDEE_ACTIVITY_DEFAULT_PAGE_SIZE = ATTENDEE_ACTIVITY_PAGE_SIZES[0];
+const ATTENDEE_ACTIVITY_MAX_PAGE = 10_000;
+
 async function loadAttendeeActionLogEntries(
   db: PrismaClient,
   attendeeId: string,
-): Promise<AttendeeActionLogEntryDto[]> {
-  const logs = await db.attendeeActionLog.findMany({
-    where: { attendee_id: attendeeId },
-    orderBy: { created_at: "desc" },
-    take: 50,
-    select: {
-      id: true,
-      action_type: true,
-      actor_user_id: true,
-      metadata: true,
-      created_at: true,
-      client_timezone: true,
-    },
-  });
+  page: number,
+  pageSize: number,
+): Promise<{
+  items: AttendeeActionLogEntryDto[];
+  total: number;
+  firstActionType: string | null;
+}> {
+  const where = { attendee_id: attendeeId };
+  // id breaks created_at ties so a row can't repeat or vanish across page boundaries.
+  const [logs, total, oldest] = await Promise.all([
+    db.attendeeActionLog.findMany({
+      where,
+      orderBy: [{ created_at: "desc" }, { id: "desc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true,
+        action_type: true,
+        actor_user_id: true,
+        metadata: true,
+        created_at: true,
+        client_timezone: true,
+      },
+    }),
+    db.attendeeActionLog.count({ where }),
+    db.attendeeActionLog.findFirst({
+      where,
+      orderBy: [{ created_at: "asc" }, { id: "asc" }],
+      select: { action_type: true },
+    }),
+  ]);
+  const firstActionType = oldest?.action_type ?? null;
 
   const actorIds = [
     ...new Set(logs.map((log) => log.actor_user_id).filter((id): id is string => id != null)),
@@ -756,7 +786,7 @@ async function loadAttendeeActionLogEntries(
       : [];
   const userById = new Map(users.map((user) => [user.id, user]));
 
-  return logs.map((log) => {
+  const items = logs.map((log) => {
     const actor = log.actor_user_id ? userById.get(log.actor_user_id) : undefined;
     return {
       id: log.id,
@@ -772,6 +802,7 @@ async function loadAttendeeActionLogEntries(
       client_timezone: log.client_timezone,
     };
   });
+  return { items, total, firstActionType };
 }
 
 /** Resolves each given user's effective role *in this event's context* - instance-wide
@@ -970,10 +1001,12 @@ async function buildAttendeeDetailDto(
     wallet_pass: WalletPassRow | null;
   },
   notesPage = 1,
+  activityPage = 1,
+  activityPageSize: number = ATTENDEE_ACTIVITY_DEFAULT_PAGE_SIZE,
 ): Promise<AttendeeDetailDto> {
-  const [deliveriesResult, action_log, event_items, notes, walletLinks, event] = await Promise.all([
+  const [deliveriesResult, actionLog, event_items, notes, walletLinks, event] = await Promise.all([
     listDeliveries({ eventId, filters: { attendeeId: row.id } }, db),
-    loadAttendeeActionLogEntries(db, row.id),
+    loadAttendeeActionLogEntries(db, row.id, activityPage, activityPageSize),
     loadAttendeeItemsSummary(db, eventId, row.id),
     loadAttendeeNotes(db, eventId, row.id, notesPage),
     resolveAttendeeWalletLinksForDto(db, row.id),
@@ -1005,7 +1038,11 @@ async function buildAttendeeDetailDto(
     wallet_field_mapping: parseWalletFieldMapping(event?.wallet_field_mapping),
     custom_data: row.custom_data ?? null,
     deliveries: deliveriesResult.items.map(toDeliveryDto),
-    action_log,
+    action_log: actionLog.items,
+    action_log_total: actionLog.total,
+    action_log_page: activityPage,
+    action_log_page_size: activityPageSize,
+    action_log_first_action_type: actionLog.firstActionType,
     event_items,
     notes: notes.items,
     notes_total: notes.total,
@@ -1243,7 +1280,20 @@ export async function handleGetEventAttendee(c: Context, db: PrismaClient): Prom
   if (!row) return c.json({ error: "forbidden" }, 403);
 
   const notesPage = positiveIntQuery(c.req.query("notes_page"), 1, ATTENDEE_NOTES_MAX_PAGE);
-  const dto = await buildAttendeeDetailDto(db, eventId, row, notesPage);
+  const activityPage = positiveIntQuery(
+    c.req.query("activity_page"),
+    1,
+    ATTENDEE_ACTIVITY_MAX_PAGE,
+  );
+  const requestedSize = positiveIntQuery(
+    c.req.query("activity_page_size"),
+    ATTENDEE_ACTIVITY_DEFAULT_PAGE_SIZE,
+    Math.max(...ATTENDEE_ACTIVITY_PAGE_SIZES),
+  );
+  const activityPageSize = (ATTENDEE_ACTIVITY_PAGE_SIZES as readonly number[]).includes(requestedSize)
+    ? requestedSize
+    : ATTENDEE_ACTIVITY_DEFAULT_PAGE_SIZE;
+  const dto = await buildAttendeeDetailDto(db, eventId, row, notesPage, activityPage, activityPageSize);
   c.header("Cache-Control", "no-store");
   return c.json(dto);
 }

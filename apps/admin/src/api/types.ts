@@ -348,6 +348,11 @@ export interface AttendeeDetailDto {
   custom_data: unknown;
   deliveries: DeliveryDto[];
   action_log: AttendeeActionLogEntryDto[];
+  action_log_total: number;
+  action_log_page: number;
+  action_log_page_size: number;
+  /** action_type of the oldest log entry across all pages (drives "how was this attendee added"). */
+  action_log_first_action_type: string | null;
   event_items: AttendeeDetailItemDto[];
   notes_total: number;
   notes: AttendeeNoteDto[];

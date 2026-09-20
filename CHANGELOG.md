@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An attendee's Activity log tab is now paged like the other tables, with a Rows per page choice (10, 25, 50, or 100) and Previous/Next below the list, instead of one ever-growing list. Before, only the newest 50 entries were ever loaded and anything older was silently unreachable, and the "Added via" line on the Overview tab could go blank for a very active attendee because their creation entry had scrolled out of that window; it now always reflects the attendee's oldest entry. Switching pages does not reload the profile form, so unsaved edits stay intact.
+
 ### Changed
 
 - Clicking a notification in the topbar bell now opens a window with its full message. Before, the list showed only the first two lines and cut the rest off with no way to read it, so the most important part (for example "If this wasn't you, secure your account immediately") was hidden. The window also shows which organisation the notification is from and exactly when it arrived, in UTC and in your local time. Clicking an unread notification still marks it as read.
