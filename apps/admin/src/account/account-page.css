@@ -105,6 +105,12 @@
   overflow: auto;
 }
 
+/* The desktop Sessions Card keeps its default padded body. Bleed the table back to the
+   card edges without sharing the log-table selector or its height behaviour. */
+.at-card__body .account-sessions-table-wrap {
+  margin: 0 calc(-1 * var(--pad-card));
+}
+
 .account-sessions-table-wrap thead th {
   position: sticky;
   top: 0;

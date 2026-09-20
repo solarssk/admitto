@@ -16,6 +16,7 @@ describe("log table style isolation", () => {
     expect(staffCss).toContain(".audit-log-table-wrap {");
     expect(accountPage).toContain("account-sessions-table-wrap");
     expect(accountCss).toContain(".account-sessions-table-wrap {");
+    expect(accountCss).toContain(".at-card__body .account-sessions-table-wrap {");
     expect(accountCss).not.toMatch(/(?:^|\n)\.sessions-table-wrap\s*\{/);
   });
 
