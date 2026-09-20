@@ -134,6 +134,19 @@ describe("deleteAttendee (client) — thin wrapper coverage", () => {
     );
   });
 
+  it("passes the activity snapshot cursor alongside a later page", async () => {
+    const detail = { id: "att-1", notes: [] };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => detail });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchAttendeeDetail("evt-1", "att-1", undefined, 1, 2, 25, "2026-06-01T09:00:00.000Z|log-3");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/events/evt-1/attendees/att-1?activity_page=2&activity_page_size=25&activity_snapshot=2026-06-01T09%3A00%3A00.000Z%7Clog-3",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+  });
+
   it("sends a page size for the first activity page without an activity_page", async () => {
     const detail = { id: "att-1", notes: [] };
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => detail });

@@ -2289,11 +2289,22 @@ export function AttendeeDetailPage() {
     // The Activity tab only renders once the route params and detail are present.
     const target = { eventId: eventId!, attendeeId: attendeeId! };
     const startedFrom = detail!.action_log;
+    // Later pages are counted against the snapshot the first page returned, so an entry added by
+    // someone else meanwhile can't shift the boundaries; page 1 is always the live log.
+    const snapshot = nextPage > 1 ? detail!.action_log_snapshot : undefined;
     // Only the newest request may apply: a slower older response must not overwrite it.
     const request = ++activityRequestRef.current;
     const isCurrent = () => isStillSelected(target) && request === activityRequestRef.current;
     try {
-      const fetched = await fetchAttendeeDetail(target.eventId, target.attendeeId, undefined, 1, nextPage, nextPageSize);
+      const fetched = await fetchAttendeeDetail(
+        target.eventId,
+        target.attendeeId,
+        undefined,
+        1,
+        nextPage,
+        nextPageSize,
+        snapshot,
+      );
       if (!isCurrent()) return;
       // The updater sees the latest state even within one React batch, so a whole-detail replacement
       // (which carries a fresher log) that landed after this request started always wins.
@@ -2306,6 +2317,7 @@ export function AttendeeDetailPage() {
               action_log_page: fetched.action_log_page,
               action_log_page_size: fetched.action_log_page_size,
               action_log_first_action_type: fetched.action_log_first_action_type,
+              action_log_snapshot: fetched.action_log_snapshot,
             }
           : current,
       );

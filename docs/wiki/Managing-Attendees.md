@@ -59,7 +59,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
 1. Open the attendee detail page.
 2. The profile is read-only until you open **Edit** in the header. Save profile changes from that dialog.
 3. Review the status strip: **Pass**, Attendance, Ticket delivery, Check-in, and Wallet.
-4. Use **Additional information** for custom fields, **Notes** for shared operator notes, and **Activity** for a plain-language history of changes, newest first. Activity is paged like the other tables: pick **Rows per page** (10, 25, 50, or 100) and use **Previous** and **Next** at the bottom to reach older entries. The tab you are on is kept in the page address (`?tab=activity` or `?tab=notes`), so you can bookmark or share a link that opens straight to it.
+4. Use **Additional information** for custom fields, **Notes** for shared operator notes, and **Activity** for a plain-language history of changes, newest first. Activity is paged like the other tables: pick **Rows per page** (10, 25, 50, or 100) and use **Previous** and **Next** at the bottom to reach older entries. While you browse older pages the list stays fixed even if colleagues add entries; go back to page 1 to see the newest. The tab you are on is kept in the page address (`?tab=activity` or `?tab=notes`), so you can bookmark or share a link that opens straight to it.
 5. Delivery history supports **View sent message** (the rendered mail exactly as sent, including the real ticket link and QR code) and **View delivery details**.
 6. Use the red **Revoke** control for revoke pass / revoke check-in. **More actions** holds:
    - **Resend ticket**

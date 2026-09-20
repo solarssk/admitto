@@ -85,6 +85,7 @@ function detailWithLog(page: number, entries: number[], total = 30) {
     action_log_page: page,
     action_log_page_size: 25,
     action_log_first_action_type: "attendees_imported",
+    action_log_snapshot: "2026-06-01T09:00:00.000Z|log-3",
     event_items: [],
     notes: [],
     notes_total: 0,
@@ -199,7 +200,15 @@ describe("AttendeeDetailPage - Activity log pagination", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await waitFor(() => expect(screen.getByText("Page 2 of 2")).toBeTruthy());
-    expect(fetchAttendeeDetail).toHaveBeenCalledWith("evt-1", "att-1", undefined, 1, 2, 25);
+    expect(fetchAttendeeDetail).toHaveBeenCalledWith(
+      "evt-1",
+      "att-1",
+      undefined,
+      1,
+      2,
+      25,
+      "2026-06-01T09:00:00.000Z|log-3",
+    );
     expect(screen.getAllByText("Ticket link copied")).toHaveLength(2);
     expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
     // Flipping a page never reloads the whole detail (that would reset the profile form).
@@ -208,7 +217,7 @@ describe("AttendeeDetailPage - Activity log pagination", () => {
     fetchAttendeeDetail.mockResolvedValueOnce(detailWithLog(1, [1, 2, 3]));
     fireEvent.click(screen.getByRole("button", { name: "Previous" }));
     await waitFor(() => expect(screen.getByText("Page 1 of 2")).toBeTruthy());
-    expect(fetchAttendeeDetail).toHaveBeenLastCalledWith("evt-1", "att-1", undefined, 1, 1, 25);
+    expect(fetchAttendeeDetail).toHaveBeenLastCalledWith("evt-1", "att-1", undefined, 1, 1, 25, undefined);
   });
 
   it("refetches from page 1 with the chosen rows per page", async () => {
@@ -229,7 +238,7 @@ describe("AttendeeDetailPage - Activity log pagination", () => {
     fireEvent.click(screen.getByRole("button", { name: "50" }));
 
     await waitFor(() =>
-      expect(fetchAttendeeDetail).toHaveBeenCalledWith("evt-1", "att-1", undefined, 1, 1, 50),
+      expect(fetchAttendeeDetail).toHaveBeenCalledWith("evt-1", "att-1", undefined, 1, 1, 50, undefined),
     );
     await waitFor(() => expect(screen.getByText("Showing 1–30 of 30")).toBeTruthy());
     expect(screen.getByText("Page 1 of 1")).toBeTruthy();
@@ -342,7 +351,7 @@ describe("AttendeeDetailPage - Activity log pagination", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByText("Second page note");
     await waitFor(() => expect(fetchAttendeeDetail).toHaveBeenCalledTimes(2));
-    expect(fetchAttendeeDetail).toHaveBeenLastCalledWith("evt-1", "att-1", undefined, 1, 1, 50);
+    expect(fetchAttendeeDetail).toHaveBeenLastCalledWith("evt-1", "att-1", undefined, 1, 1, 50, undefined);
 
     await openActivityTab();
     expect(await screen.findByRole("button", { name: "Rows per page, 50" })).toBeTruthy();
@@ -489,7 +498,7 @@ describe("AttendeeDetailPage - Activity log pagination", () => {
     fireEvent.click(screen.getByRole("button", { name: "Switch again" }));
     await screen.findByRole("heading", { name: "Cy" });
     await waitFor(() => expect(fetchAttendeeDetail).toHaveBeenCalledTimes(3));
-    expect(fetchAttendeeDetail).toHaveBeenLastCalledWith("evt-3", "att-3", undefined, 1, 1, 50);
+    expect(fetchAttendeeDetail).toHaveBeenLastCalledWith("evt-3", "att-3", undefined, 1, 1, 50, undefined);
   });
 
   it("follows the size the server actually returns instead of refetching in a loop", async () => {
@@ -508,5 +517,36 @@ describe("AttendeeDetailPage - Activity log pagination", () => {
     expect(await screen.findByRole("button", { name: "Rows per page, 25" })).toBeTruthy();
     await act(async () => {});
     expect(fetchAttendeeDetail).toHaveBeenCalledTimes(1);
+  });
+
+  it("pages against the snapshot from page 1, and goes live again on returning to page 1", async () => {
+    loadAttendeeDetailData.mockResolvedValueOnce({
+      detail: { ...detailWithLog(1, [1, 2, 3], 60), action_log_snapshot: "snap-first" },
+      attributeFields: [],
+      itemsWarning: null,
+    });
+    fetchAttendeeDetail.mockResolvedValueOnce({ ...detailWithLog(2, [26], 60), action_log_snapshot: "snap-first" });
+    fetchAttendeeDetail.mockResolvedValueOnce({ ...detailWithLog(3, [51], 60), action_log_snapshot: "snap-first" });
+    fetchAttendeeDetail.mockResolvedValueOnce({ ...detailWithLog(2, [26], 60), action_log_snapshot: "snap-first" });
+    fetchAttendeeDetail.mockResolvedValueOnce({ ...detailWithLog(1, [1, 2], 61), action_log_snapshot: "snap-fresh" });
+    renderPage();
+    await screen.findByRole("heading", { name: "Anna" });
+    await openActivityTab();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(screen.getByText("Page 2 of 3")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(screen.getByText("Page 3 of 3")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    await waitFor(() => expect(screen.getByText("Page 2 of 3")).toBeTruthy());
+    expect(fetchAttendeeDetail).toHaveBeenNthCalledWith(1, "evt-1", "att-1", undefined, 1, 2, 25, "snap-first");
+    expect(fetchAttendeeDetail).toHaveBeenNthCalledWith(2, "evt-1", "att-1", undefined, 1, 3, 25, "snap-first");
+    expect(fetchAttendeeDetail).toHaveBeenNthCalledWith(3, "evt-1", "att-1", undefined, 1, 2, 25, "snap-first");
+
+    // Page 1 is always the live log: no snapshot is sent, and the fresh one replaces the old.
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    await waitFor(() => expect(screen.getByText("Page 1 of 3")).toBeTruthy());
+    expect(fetchAttendeeDetail).toHaveBeenNthCalledWith(4, "evt-1", "att-1", undefined, 1, 1, 25, undefined);
+    expect(screen.getByText("Showing 1–25 of 61")).toBeTruthy();
   });
 });

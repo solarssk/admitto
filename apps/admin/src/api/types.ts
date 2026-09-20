@@ -353,6 +353,8 @@ export interface AttendeeDetailDto {
   action_log_page_size: number;
   /** action_type of the oldest log entry across all pages (drives "how was this attendee added"). */
   action_log_first_action_type: string | null;
+  /** Cursor to pass back when requesting later pages, so entries added meanwhile can't shift them. */
+  action_log_snapshot: string | null;
   event_items: AttendeeDetailItemDto[];
   notes_total: number;
   notes: AttendeeNoteDto[];

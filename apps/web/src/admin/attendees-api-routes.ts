@@ -388,6 +388,10 @@ export type AttendeeDetailDto = {
   /** action_type of this attendee's oldest log entry across all pages - the detail page reads
    * "how was this attendee added" off it, which the paginated action_log window can't provide. */
   action_log_first_action_type: string | null;
+  /** Cursor for the newest entry the pages were counted against; pass it back as activity_snapshot
+   * when requesting pages after the first, so entries added meanwhile can't shift the page
+   * boundaries. Null when the attendee has no log entries. */
+  action_log_snapshot: string | null;
 };
 
 /** Read-only event-day item summary for the attendee detail page — same source data as the
@@ -738,19 +742,46 @@ const ATTENDEE_ACTIVITY_PAGE_SIZES = [25, 10, 50, 100] as const;
 const ATTENDEE_ACTIVITY_DEFAULT_PAGE_SIZE = ATTENDEE_ACTIVITY_PAGE_SIZES[0];
 const ATTENDEE_ACTIVITY_MAX_PAGE = 10_000;
 
+type ActivitySnapshot = { createdAt: Date; id: string };
+
+function formatActivitySnapshot(snapshot: ActivitySnapshot): string {
+  return `${snapshot.createdAt.toISOString()}|${snapshot.id}`;
+}
+
+/** Parses an activity_snapshot cursor; anything malformed is ignored (paged live) rather than trusted. */
+function parseActivitySnapshot(raw: string | undefined): ActivitySnapshot | null {
+  const separator = raw?.indexOf("|") ?? -1;
+  if (!raw || separator < 1) return null;
+  const createdAt = new Date(raw.slice(0, separator));
+  const id = raw.slice(separator + 1);
+  return Number.isNaN(createdAt.getTime()) || id === "" ? null : { createdAt, id };
+}
+
 async function loadAttendeeActionLogEntries(
   db: PrismaClient,
   attendeeId: string,
   page: number,
   pageSize: number,
+  snapshot: ActivitySnapshot | null,
 ): Promise<{
   items: AttendeeActionLogEntryDto[];
   total: number;
   firstActionType: string | null;
+  snapshot: string | null;
 }> {
-  const where = { attendee_id: attendeeId };
+  // With a snapshot, only entries not newer than it count, so a later entry can't shift the pages.
+  // Matches the (created_at desc, id desc) ordering below.
+  const where = snapshot
+    ? {
+        attendee_id: attendeeId,
+        OR: [
+          { created_at: { lt: snapshot.createdAt } },
+          { created_at: snapshot.createdAt, id: { lte: snapshot.id } },
+        ],
+      }
+    : { attendee_id: attendeeId };
   // id breaks created_at ties so a row can't repeat or vanish across page boundaries.
-  const [logs, total, oldest] = await Promise.all([
+  const [logs, total, oldest, newest] = await Promise.all([
     db.attendeeActionLog.findMany({
       where,
       orderBy: [{ created_at: "desc" }, { id: "desc" }],
@@ -771,8 +802,21 @@ async function loadAttendeeActionLogEntries(
       orderBy: [{ created_at: "asc" }, { id: "asc" }],
       select: { action_type: true },
     }),
+    // The cursor to hand back: the newest entry these pages are counted against.
+    snapshot
+      ? Promise.resolve(null)
+      : db.attendeeActionLog.findFirst({
+          where,
+          orderBy: [{ created_at: "desc" }, { id: "desc" }],
+          select: { id: true, created_at: true },
+        }),
   ]);
   const firstActionType = oldest?.action_type ?? null;
+  const snapshotToken = snapshot
+    ? formatActivitySnapshot(snapshot)
+    : newest
+      ? formatActivitySnapshot({ createdAt: newest.created_at, id: newest.id })
+      : null;
 
   const actorIds = [
     ...new Set(logs.map((log) => log.actor_user_id).filter((id): id is string => id != null)),
@@ -802,7 +846,7 @@ async function loadAttendeeActionLogEntries(
       client_timezone: log.client_timezone,
     };
   });
-  return { items, total, firstActionType };
+  return { items, total, firstActionType, snapshot: snapshotToken };
 }
 
 /** Resolves each given user's effective role *in this event's context* - instance-wide
@@ -1003,10 +1047,11 @@ async function buildAttendeeDetailDto(
   notesPage = 1,
   activityPage = 1,
   activityPageSize: number = ATTENDEE_ACTIVITY_DEFAULT_PAGE_SIZE,
+  activitySnapshot: ActivitySnapshot | null = null,
 ): Promise<AttendeeDetailDto> {
   const [deliveriesResult, actionLog, event_items, notes, walletLinks, event] = await Promise.all([
     listDeliveries({ eventId, filters: { attendeeId: row.id } }, db),
-    loadAttendeeActionLogEntries(db, row.id, activityPage, activityPageSize),
+    loadAttendeeActionLogEntries(db, row.id, activityPage, activityPageSize, activitySnapshot),
     loadAttendeeItemsSummary(db, eventId, row.id),
     loadAttendeeNotes(db, eventId, row.id, notesPage),
     resolveAttendeeWalletLinksForDto(db, row.id),
@@ -1043,6 +1088,7 @@ async function buildAttendeeDetailDto(
     action_log_page: activityPage,
     action_log_page_size: activityPageSize,
     action_log_first_action_type: actionLog.firstActionType,
+    action_log_snapshot: actionLog.snapshot,
     event_items,
     notes: notes.items,
     notes_total: notes.total,
@@ -1293,7 +1339,16 @@ export async function handleGetEventAttendee(c: Context, db: PrismaClient): Prom
   const activityPageSize = (ATTENDEE_ACTIVITY_PAGE_SIZES as readonly number[]).includes(requestedSize)
     ? requestedSize
     : ATTENDEE_ACTIVITY_DEFAULT_PAGE_SIZE;
-  const dto = await buildAttendeeDetailDto(db, eventId, row, notesPage, activityPage, activityPageSize);
+  const activitySnapshot = parseActivitySnapshot(c.req.query("activity_snapshot"));
+  const dto = await buildAttendeeDetailDto(
+    db,
+    eventId,
+    row,
+    notesPage,
+    activityPage,
+    activityPageSize,
+    activitySnapshot,
+  );
   c.header("Cache-Control", "no-store");
   return c.json(dto);
 }
