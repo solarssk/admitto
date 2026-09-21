@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-09-21
+
+### Changed
+
+- The production Docker image no longer stores a second full copy of the application when assigning its runtime ownership. Its files are now owned by the non-root `node` user as they are added to the image, preserving the same deployment model, migrations, worker, GeoIP data, map rendering, and font support while substantially reducing image size.
+
 ## [0.7.2] - 2026-09-20
 
 ### Fixed
@@ -1461,7 +1467,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mail adapter groundwork
 - Gate 0 outcome recorded: Power Automate as MVP mail path; Graph/SMTP remain future re-validation candidates
 
-[Unreleased]: https://github.com/solarssk/admitto/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/solarssk/admitto/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/solarssk/admitto/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/solarssk/admitto/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/solarssk/admitto/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/solarssk/admitto/compare/v0.6.8...v0.7.0
