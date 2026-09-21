@@ -137,7 +137,7 @@ COPY --chown=node:node --from=builder /app/data/geoip ./data/geoip
 # ip-location-api (already in node_modules above), so it runs standalone without a build step.
 COPY --chown=node:node --from=builder /app/apps/web/scripts/prefetch-geo-db.mjs ./apps/web/scripts/prefetch-geo-db.mjs
 
-COPY --chown=node:node --chmod=755 deploy/docker-entrypoint.sh ./deploy/docker-entrypoint.sh
+COPY --chmod=755 deploy/docker-entrypoint.sh ./deploy/docker-entrypoint.sh
 
 # Non-root always — no compose service (app, migrate, or worker) runs as root (ADR 0043).
 USER node
