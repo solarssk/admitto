@@ -144,37 +144,7 @@ and the content rules behind it, see [docs/dev/error-and-notice-copy.md](docs/de
 
 When an agent repeats a mistake, add a precise rule here (or in a scoped `.cursor/rules/*.mdc` file). One line per gotcha; cut rules that no longer prevent real errors.
 
-**SonarCloud Automatic Analysis needs `sonar.tests` listed explicitly in `.sonarcloud.properties` (repo root).** Without it, every `*.test.ts(x)` file analyzes as production source (qualifier `FIL` instead of `UTS`), so intentional test-fixture duplication (db seeding, TOTP enrollment, login flows repeated across integration test files) counts against the "New Code Duplication" quality gate as if it were a production-code smell.
-
-Once a file is classified `UTS`, SonarCloud still analyzes Bugs and Code Smells on it (per SonarSource's own docs); it just stops counting Duplication and Security Hotspots there. This is not "tests go unanalyzed", it's Sonar's own documented, intentional scope split.
-
-- Confirmed via the public API (`api/components/tree?component=solarssk_admitto&qualifiers=UTS`): this project had **zero** files classified `UTS` project-wide before this fix, every workspace's tests were silently being scanned as source.
-**`.sonarcloud.properties` under Automatic Analysis (the GitHub App mode, no CI scanner step) does
-not support wildcard patterns** - `sonar.test.inclusions=**/*.test.ts` or `sonar.tests=packages/*/test`
-are silently ignored, not an error. List every workspace's `test/` directory as a literal,
-comma-separated path instead (every `*.test.ts(x)` file lives under a dedicated `test/` directory
-per workspace, never co-located next to source, so `sonar.tests` alone covers those with no
-`sonar.test.inclusions` glob needed) - plus the shell test harnesses `ci.yml` runs outside any
-workspace (`scripts/*.test.sh`, `scripts/fixtures/`), which are easy to forget since they don't
-follow the per-workspace `test/` convention. Verify empirically after any change here - push, wait
-for the SonarCloud re-scan, then re-query the `UTS` qualifier via the API - don't trust the docs'
-description of the property over what the dashboard actually shows for this project.
-**Setting `sonar.tests` alone, without also excluding those same paths from `sonar.sources`, fails
-the whole project scan** ("source and test file paths overlap") - `sonar.sources` defaults to `.`
-under Automatic Analysis, so every path listed in `sonar.tests` is still also a source path unless
-`sonar.exclusions` mirrors the same list (with a trailing `/**` per directory, since exclusions are
-glob patterns rather than the bare-path list `sonar.tests` takes). Confirmed broken as a hard
-failure (not a warning) on the very next push to `main` after adding `sonar.tests` without this.
-
-**SonarCloud Automatic Analysis cannot ingest coverage, full stop.** This is not a `.sonarcloud.properties` config gap: SonarSource's own docs list "Code coverage information is not supported" as a current Automatic Analysis limitation, and the JS/TS coverage page has a dedicated section titled "Use CI-based, not automatic analysis."
-
-Don't bother with any of these, none of them work under Automatic Analysis:
-
-- Setting `sonar.javascript.lcov.reportPaths` - it's real, but a CI-based-analysis-only property (`sonar-project.properties`, read by an actual `sonar-scanner`/`sonarqube-scan-action` run).
-- Adding or editing `sonar-project.properties` - Automatic Analysis never reads it at all (it reads `.sonarcloud.properties` instead).
-- Any other property-level workaround - coverage support is removed at the product level regardless of any property.
-
-See [docs/dev/sonarcloud-ci-coverage-migration.md](docs/dev/sonarcloud-ci-coverage-migration.md) for the sourced answer and the concrete (human-gated, needs a `SONAR_TOKEN`) migration path.
+**SonarCloud runs CI-based analysis only** - the `sonarcloud` job in `.github/workflows/ci.yml`, authenticated with a `SONAR_TOKEN` secret, reading `sonar-project.properties`. Automatic Analysis (the GitHub App) is off, and its config file, `.sonarcloud.properties`, has been removed - don't recreate it, and don't assume Automatic-Analysis semantics (e.g. that `sonar-project.properties` is ignored) anywhere in this repo. `sonar-project.properties`'s own comments document its `sonar.tests`/`sonar.exclusions`/coverage-exclusion gotchas (wildcards unsupported, source/test path overlap fails the whole scan, `*.config.ts`/backfill-script coverage exclusions) directly above each property - read those before editing it, not this file. See [docs/dev/sonarcloud-ci-coverage-migration.md](docs/dev/sonarcloud-ci-coverage-migration.md) for the sourced history of why Automatic Analysis couldn't stay (it cannot ingest coverage, full stop - not a config gap, a removed product capability) and the migration this repo went through.
 
 **Font formats (`apps/admin`'s own bundled fonts): woff2 only, no woff/truetype fallback** - the
 app's JS already requires a browser new enough that woff2 is a given, so older formats are pure

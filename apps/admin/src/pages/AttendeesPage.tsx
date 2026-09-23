@@ -1312,15 +1312,19 @@ export function AttendeesPage() {
     return () => listAbortRef.current?.abort();
   }, [loadList, reloadToken]);
 
-  // The events picker (EventsPickerPage) navigates here with the clicked EventCard's own DTO as
-  // router state, which EventLayout renders immediately instead of re-fetching - but that DTO
-  // comes from the picker's list endpoint, which never computes active_attendee_count (only the
-  // single-event fetch does). Without this, a capacity-full event reached via the picker would
-  // read active_attendee_count as undefined, and the "?? 0" below would leave Add attendee
-  // enabled. Keyed on event.id (not on capacity/active_attendee_count themselves) so this runs
-  // once per event entry, not again after refreshEvent's own update changes those same fields.
+  // EventLayout stays mounted across in-event navigation and only re-fetches its own event on an
+  // eventId change, so its cached active_attendee_count can be wrong by the time this page (re-)
+  // mounts, in two different ways: (1) reached via the events picker, whose EventCard snapshot
+  // never computes active_attendee_count at all (only the single-event fetch does); (2) reached
+  // by navigating back from a sibling route (e.g. AttendeeDetailPage deleting or restoring an
+  // attendee) that changed the capacity-consuming population without refreshing the layout's
+  // event. Unconditionally refreshing once per mount covers both, rather than trying to track
+  // "is this specific count stale" or teach every capacity-changing sibling mutation to refresh
+  // the layout itself. Skipped for an unlimited event (capacity null), where the count is moot.
+  // Keyed on event.id, not on capacity/active_attendee_count themselves, so this runs once per
+  // event entry, not again after refreshEvent's own update changes those same fields.
   useEffect(() => {
-    if (event.capacity != null && event.active_attendee_count === undefined) {
+    if (event.capacity != null) {
       void refreshEvent?.();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on event identity, not on capacity/active_attendee_count (see comment above)

@@ -6,3 +6,9 @@ reviews:
     # false-positive red X in CI history. Manual review is still available via the
     # @coderabbitai review command on a PR.
     enabled: false
+  # auto_review.enabled: false alone doesn't stop CodeRabbit from commenting - it still posts a
+  # "Review skipped: Auto reviews are disabled on this repository" comment on every PR regardless
+  # (confirmed on PR #1410), which is just noise once that's a known, permanent setting rather
+  # than something worth restating per PR. review_status controls exactly these skip-status
+  # messages (CodeRabbit's own config reference, "reviews.review_status").
+  review_status: false
