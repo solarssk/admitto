@@ -169,9 +169,21 @@ jobs:
             # <App> onto #root; a break here blanks the whole SPA before any route ever renders)
             # and apps/web/src/index.ts (what apps/admin/playwright.config.ts's own `webServer`
             # literally launches via `node --import tsx ... src/index.ts` - a break here means the
-            # server the test talks to never starts). A change confined to any of these can break
-            # the tested flow without touching any of the narrower paths above - caught by review
-            # on PR #1410, which had shipped without them.
+            # server the test talks to never starts), apps/web/src/auth-middleware.ts (app.ts's
+            # createRequireSession/createRequirePartialSession - gates every authenticated
+            # request the test's operator session makes), and apps/web/src/staff-spa.ts (serves
+            # /assets/* and /operator/* - what actually delivers the SPA bundle the browser runs).
+            # A change confined to any of these can break the tested flow without touching any of
+            # the narrower paths above - caught by review on PR #1410, which had shipped without
+            # them.
+            #
+            # This is inherently incomplete: apps/web/src/app.ts wires in other shared,
+            # every-request infrastructure (request logging, baseline security headers, rate-limit
+            # store setup) that a sufficiently isolated change could still break without touching
+            # app.ts itself or anything listed here. Not chased further - app.ts (already listed)
+            # is where essentially all of that wiring actually happens, so it's the practical
+            # backstop for the remaining tail; the alternative is drifting toward listing most of
+            # apps/web/src, which stops being path-aware at all.
             checkin:
               - "apps/admin/e2e/**"
               - "apps/admin/playwright.config.ts"
@@ -187,6 +199,8 @@ jobs:
               - "apps/admin/src/settings/CheckInBehaviourPanel.tsx"
               - "apps/web/src/app.ts"
               - "apps/web/src/index.ts"
+              - "apps/web/src/auth-middleware.ts"
+              - "apps/web/src/staff-spa.ts"
               - "apps/web/src/checkin-gate.ts"
               - "apps/web/src/checkin-stream-limit.ts"
               - "apps/web/src/auth/**"
