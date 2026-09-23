@@ -149,15 +149,29 @@ jobs:
             # status (what "admit" flips), auth (operator login), and the DB schema all of that
             # reads/writes. Kept separate from `code` above so this heavier job only runs on PRs
             # that plausibly affect it, not on every code change.
+            #
+            # Also includes the shared route/client entry points the test's flow runs through
+            # end-to-end, not just the check-in-specific files: apps/admin/src/App.tsx (defines
+            # the `events/:eventId/checkin` route and wraps AuthProvider), apps/admin/src/api/
+            # client.ts (every admin API call, including the check-in scan/lookup/admit requests,
+            # goes through its shared fetch/parseJson helpers), apps/web/src/app.ts (registers
+            # every /api/checkin/* route and its middleware), and apps/admin/src/auth/** (session
+            # bootstrap, role routing, the operator device gate). A change confined to any of
+            # these can break the tested flow without touching any of the narrower paths above -
+            # caught by review on PR #1410, which had shipped without them.
             checkin:
               - "apps/admin/e2e/**"
               - "apps/admin/playwright.config.ts"
+              - "apps/admin/src/App.tsx"
+              - "apps/admin/src/api/client.ts"
+              - "apps/admin/src/auth/**"
               - "apps/admin/src/checkin/**"
               - "apps/admin/src/pages/CheckInPage.tsx"
               - "apps/admin/src/pages/CheckInEntryPage.tsx"
               - "apps/admin/src/pages/AdminCheckInRoute.tsx"
               - "apps/admin/src/pages/DeviceLabelStep.tsx"
               - "apps/admin/src/settings/CheckInBehaviourPanel.tsx"
+              - "apps/web/src/app.ts"
               - "apps/web/src/checkin-gate.ts"
               - "apps/web/src/checkin-stream-limit.ts"
               - "apps/web/src/auth/**"
