@@ -2,8 +2,9 @@ name: Check-in load test
 
 # k6 against the check-in hot path (POST /api/checkin/admit): several operator accounts admitting
 # many different attendees in parallel, plus a contested set where several operators admit the same
-# attendee at once. Scheduled and manual only, never a PR gate: it is slow and its numbers need a
-# baseline before they can gate anything.
+# attendee at once. Scheduled and manual, plus a run on PRs that touch this workflow or its scripts
+# (so a change to them is exercised before merge, like cflite_pr.yml). Never a required check for
+# anything else: it is slow and its numbers need a baseline before they can gate anything.
 #
 # Fails the run on correctness only: any non-200 or unknown response from the API, and, checked
 # straight in the database afterwards, any attendee with more than one VALID check-in row (a double
@@ -15,6 +16,10 @@ name: Check-in load test
 # SSE check-in stream under load (k6 has no native SSE support).
 
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/load-test.yml"
+      - "scripts/load-test/**"
   workflow_dispatch:
   schedule:
     - cron: "0 5 * * 2" # weekly, Tuesday 05:00 UTC
