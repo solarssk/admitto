@@ -141,6 +141,8 @@ export interface EventSummary {
   map_longitude: number | null;
   map_zoom: number | null;
   organization_id: string;
+  /** Registration limit set on the Settings tab; null means unlimited. */
+  capacity: number | null;
   archived_at: Date | null;
   created_at: Date;
   created_by_user_id: string | null;
@@ -172,6 +174,7 @@ const eventSelect = {
     select: { venue_name: true, latitude: true, longitude: true, map_zoom: true },
   },
   organization_id: true,
+  capacity: true,
   archived_at: true,
   created_at: true,
   created_by_user_id: true,

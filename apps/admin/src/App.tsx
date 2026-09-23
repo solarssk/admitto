@@ -149,10 +149,19 @@ export function EventLayout() {
   // reload. Settings calls this after such a mutation succeeds so the whole
   // layout reflects the change immediately, without re-fetching on every
   // unrelated in-event navigation.
+  // Sequence guard: a page can call this more than once in quick succession (e.g. AttendeesPage
+  // fires it both on mount, when it's missing active_attendee_count, and again after the next
+  // attendee mutation) - without it, an older response landing after a newer one would overwrite
+  // the fresher snapshot and leave capacity-gated controls stuck on stale data until another
+  // refresh or navigation.
+  const refreshEventSeqRef = useRef(0);
   const refreshEvent = useCallback(async () => {
     if (!eventId) return;
+    const seq = ++refreshEventSeqRef.current;
     try {
-      setEvent(await fetchAdminEvent(eventId));
+      const fresh = await fetchAdminEvent(eventId);
+      if (refreshEventSeqRef.current !== seq) return;
+      setEvent(fresh);
     } catch {
       // Best-effort: the mutation that triggered this already reported its
       // own success/error toast, so a failed background refresh here just

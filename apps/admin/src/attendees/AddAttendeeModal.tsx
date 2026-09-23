@@ -29,6 +29,18 @@ function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(value);
 }
 
+/** Message for a 409 add-attendee failure - event_full (capacity reached) and email_taken
+ * (duplicate registration) both return the same HTTP status, so the caller must branch on the
+ * error code rather than status alone (extracted out of handleSubmit, SonarCloud S3776; same
+ * code/status distinction as AttendeeDetailPage's classifyPassStatusError). */
+function add409ErrorMessage(err: ApiError): string {
+  if (hasApiErrorCode(err, "event_full") && err.eventFull) {
+    const { current, capacity } = err.eventFull;
+    return `Event is at capacity (${current}/${capacity}). Free a slot or increase capacity before adding this attendee.`;
+  }
+  return "This email is already registered for this event.";
+}
+
 export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly<AddAttendeeModalProps>) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -170,7 +182,7 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
       onClose();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setError("This email is already registered for this event.");
+        setError(add409ErrorMessage(err));
       } else if (
         err instanceof ApiError &&
         err.status === 400 &&

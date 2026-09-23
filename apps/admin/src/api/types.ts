@@ -92,6 +92,11 @@ export interface EventDto {
   } | null;
   organization_id: string;
   attendee_count?: number;
+  /** Registration limit set on the Settings tab; null/undefined means unlimited or unknown. */
+  capacity?: number | null;
+  /** Active (non-revoked/cancelled) attendee count against `capacity` - only set on the
+   * single-event fetch (GET /api/admin/events/:eventId), not the picker list. */
+  active_attendee_count?: number;
   archived_at: string | null;
   created_at?: string;
   created_by_display_name?: string | null;

@@ -128,6 +128,7 @@ See [Identity and SSO](Identity-and-SSO) and [Cloudflare Access - Identity Linki
 | Ticket type | Must exist in the event's current ticket-type catalog - checked again at the moment you save, in case it was deleted in the meantime |
 
 - An attendee's email must be unique within the event. A second attendee with the same address is rejected: "This email is already registered for this event."
+- Adding a brand-new attendee also checks the event's capacity limit: "Event is at capacity ({current}/{capacity}). Free a slot or increase capacity before adding this attendee." Once an event is full, the Attendees page's **Add attendee** button is disabled with a tooltip showing the same count, so this is normally caught before you open the form.
 - If two staff members edit the same attendee at once, the second save is rejected instead of silently overwriting the first change: "Someone else changed this record. Reload and try again."
 - Restoring a revoked attendee re-checks the event's capacity limit, the same as adding a brand-new one.
 
