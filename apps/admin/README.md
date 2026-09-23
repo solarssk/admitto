@@ -45,11 +45,17 @@ npm test -w @admitto/admin
 
 ## E2E (Playwright)
 
-First browser-level test in this repo (`apps/admin/e2e/checkin.spec.ts`): an operator logs in,
-looks up a seeded attendee by name, and admits them through the manual check-in path (not the
-camera/QR scanner). Not part of `npm test` and not run on every PR - see
-`.github/workflows/e2e-checkin-smoke.yml` (`workflow_dispatch` + a daily schedule only, while it
-proves itself stable).
+Browser-level tests in this repo, both under `apps/admin/e2e/`:
+
+- `checkin.spec.ts`: an operator logs in, looks up a seeded attendee by name, and admits them
+  through the manual check-in path (not the camera/QR scanner).
+- `a11y.spec.ts`: an axe-core accessibility scan of the login page and the operator check-in page.
+  Report-only for now: violations are printed, written to the job summary, and saved as
+  `test-results/*/axe-*.json`, but never fail the run.
+
+Not part of `npm test`. Runs in CI as the `e2e-checkin-smoke` job in `.github/workflows/ci.yml`
+when check-in-related paths change (see the `checkin` filter in that file), and daily via
+`.github/workflows/e2e-checkin-smoke.yml`.
 
 Runs against a real dev server in the "single server (production-like)" mode above, plus its own
 disposable Postgres database.
