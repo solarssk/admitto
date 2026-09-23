@@ -114,9 +114,13 @@ describe("claimInitialDelivery", () => {
     });
     expect(row?.template_id).toBe(template.id);
     expect(row?.template_label_snapshot).toBe("VIP invite");
+    // Same value as template_id, but on a separate, non-FK column - see that column's own
+    // schema comment for why it must survive a later template deletion that template_id itself
+    // does not.
+    expect(row?.template_id_snapshot).toBe(template.id);
   });
 
-  it("leaves template_label_snapshot null when no templateLabel is provided (builtin default)", async () => {
+  it("leaves template_label_snapshot and template_id_snapshot null when no templateLabel/templateId is provided (builtin default)", async () => {
     const result = await claimInitialDelivery(
       { ...claimInput, batchId: "fresh-batch" },
       prisma,
@@ -128,6 +132,7 @@ describe("claimInitialDelivery", () => {
     });
     expect(row?.template_id).toBeNull();
     expect(row?.template_label_snapshot).toBeNull();
+    expect(row?.template_id_snapshot).toBeNull();
   });
 
   it("skips when initial delivery is already sent", async () => {
@@ -265,6 +270,49 @@ describe("claimInitialDelivery", () => {
     expect(row?.attempts).toBe(1);
     expect(row?.actor_user_id).toBe("user-reclaim-actor");
     expect(row?.session_id).toBe("session-reclaim-actor");
+  });
+
+  it("refreshes template_id_snapshot to this request's template when reclaiming a cancelled row", async () => {
+    const template = await prisma.mailTemplate.create({
+      data: {
+        scope_type: "event",
+        scope_id: EVENT_ID,
+        name: "reminder-reclaim",
+        label: "Reminder",
+        subject_template: "Subject",
+        body_template: "<p>Body</p>",
+        template_format: "html",
+        compiled_html_template: "<p>Body</p>",
+      },
+    });
+    await prisma.emailDelivery.create({
+      data: {
+        organization_id: ORG_ID,
+        event_id: EVENT_ID,
+        attendee_id: ATT_ID,
+        purpose: "initial",
+        batch_id: "old-cancelled-batch",
+        provider: "export_only",
+        status: "cancelled",
+        attempts: 1,
+        recipient_email: "claim@example.com",
+        rendered_subject: "Stale subject",
+        rendered_html: "<p>Stale body</p>",
+        queued_at: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    });
+
+    const result = await claimInitialDelivery(
+      { ...claimInput, batchId: "fresh-batch", templateId: template.id, templateLabel: template.label },
+      prisma,
+    );
+
+    expect(result.action).toBe("send");
+    const row = await prisma.emailDelivery.findFirst({
+      where: { attendee_id: ATT_ID, purpose: "initial" },
+    });
+    expect(row?.template_id).toBe(template.id);
+    expect(row?.template_id_snapshot).toBe(template.id);
   });
 
   it("bumps created_at on reclaim so it outranks a delivery the attendee received between the cancel and the reclaim", async () => {
