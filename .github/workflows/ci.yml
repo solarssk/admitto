@@ -187,6 +187,12 @@ jobs:
             checkin:
               - "apps/admin/e2e/**"
               - "apps/admin/playwright.config.ts"
+              # Playwright and @axe-core/playwright are only consumed by apps/admin/e2e, which the
+              # normal build never compiles - a dependency bump alone (Dependabot) would otherwise
+              # merge without ever exercising them. The lockfile is root-level and shared, so this
+              # also runs the job on any dependency PR; accepted, it is a ~2 minute job.
+              - "apps/admin/package.json"
+              - "package-lock.json"
               - "apps/admin/src/App.tsx"
               - "apps/admin/src/main.tsx"
               - "apps/admin/src/api/client.ts"
