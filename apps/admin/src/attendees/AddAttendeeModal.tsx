@@ -170,7 +170,14 @@ export function AddAttendeeModal({ eventId, open, onClose, onCreated }: Readonly
       onClose();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setError("This email is already registered for this event.");
+        if (hasApiErrorCode(err, "event_full") && err.eventFull) {
+          const { current, capacity } = err.eventFull;
+          setError(
+            `Event is at capacity (${current}/${capacity}). Free a slot or increase capacity before adding this attendee.`,
+          );
+        } else {
+          setError("This email is already registered for this event.");
+        }
       } else if (
         err instanceof ApiError &&
         err.status === 400 &&

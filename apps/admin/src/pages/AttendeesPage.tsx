@@ -970,7 +970,10 @@ function reportLoadListError(err: unknown, ctx: LoadListErrorContext): void {
 
 export function AttendeesPage() {
   const { eventId } = useParams();
-  const { event } = useOutletContext<{ event: EventDto }>();
+  const { event, refreshEvent } = useOutletContext<{
+    event: EventDto;
+    refreshEvent?: () => Promise<void>;
+  }>();
   const walletPlatforms = enabledWalletPlatforms(event);
   const navigate = useNavigate();
   const { addToast } = useToast();
@@ -1308,6 +1311,20 @@ export function AttendeesPage() {
     void loadList();
     return () => listAbortRef.current?.abort();
   }, [loadList, reloadToken]);
+
+  // reloadToken bumps after every attendee mutation on this page (create, delete, bulk actions,
+  // restore, …) - re-fetching the event alongside keeps active_attendee_count in sync with
+  // capacity so the Add attendee button's disabled state below reflects reality without an
+  // extra round-trip per handler. Skips the initial mount: EventLayout already fetched the event
+  // once before this page rendered.
+  const isFirstReloadRef = useRef(true);
+  useEffect(() => {
+    if (isFirstReloadRef.current) {
+      isFirstReloadRef.current = false;
+      return;
+    }
+    void refreshEvent?.();
+  }, [reloadToken, refreshEvent]);
 
   useEffect(() => {
     return () => {
@@ -2014,6 +2031,16 @@ export function AttendeesPage() {
     (row) => selectedIds.has(row.id) && row.wallet_status !== null,
   ).length;
 
+  // Undefined active_attendee_count (an event fetched before this field existed, or a stale
+  // cached snapshot) reads as "not full" rather than blocking the button on a guess - the server
+  // remains the source of truth and still rejects over capacity with the same event_full error
+  // AddAttendeeModal now shows correctly.
+  const atCapacity =
+    event.capacity != null && (event.active_attendee_count ?? 0) >= event.capacity;
+  const capacityTooltip = atCapacity
+    ? `Event is at capacity (${event.active_attendee_count}/${event.capacity}). Free a slot or increase capacity to add more attendees.`
+    : undefined;
+
   if (!eventId) return <p>Missing event.</p>;
 
   return (
@@ -2024,7 +2051,12 @@ export function AttendeesPage() {
         className="attendees-pageheader"
         actions={
           <>
-            <ArchivedGuard event={event} reasonId="add-attendee-reason">
+            <ArchivedGuard
+              event={event}
+              reasonId="add-attendee-reason"
+              disabled={atCapacity}
+              tooltip={capacityTooltip}
+            >
               {(guard) => (
                 <Button variant="primary" {...guard} onClick={() => setAddOpen(true)}>
                   {/* Shortened below 768px (attendees.css compacts these buttons to fit one

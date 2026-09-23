@@ -20,6 +20,7 @@ const baseRow = {
   event_hours_end: null,
   location: "Hall A",
   organization_id: "org-1",
+  capacity: null,
   archived_at: null,
   created_at: new Date("2026-01-01T00:00:00.000Z"),
   created_by_user_id: null,
@@ -93,6 +94,11 @@ describe("serializeEventDto — has_coordinates / map_preview_path", () => {
     expect(dto.wallet_apple_enabled).toBe(false);
     expect(dto.wallet_google_enabled).toBe(true);
     expect(dto.wallet_samsung_enabled).toBe(false);
+  });
+
+  it("passes through capacity", () => {
+    expect(serializeEventDto({ ...baseRow, capacity: 400 }).capacity).toBe(400);
+    expect(serializeEventDto({ ...baseRow, capacity: null }).capacity).toBeNull();
   });
 
   it("passes through wallet_configured", () => {
