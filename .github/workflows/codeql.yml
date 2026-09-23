@@ -12,10 +12,11 @@ on:
 
 # See ci.yml's own concurrency block for the full rationale - same group/cancel pattern so a
 # superseded PR push doesn't leave a stale `analyze` run (a required status check) racing the new
-# one, while main pushes and the weekly schedule always run to completion uncancelled.
+# one, while main pushes and the weekly schedule each get their own group (via `github.run_id`)
+# and so never queue-drop each other's run.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
