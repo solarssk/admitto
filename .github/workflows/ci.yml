@@ -622,52 +622,9 @@ jobs:
         with:
           persist-credentials: false
       - name: No real email addresses in tracked data files
-        run: |
-          # -z / xargs -0: handle filenames with spaces correctly
-          # domain anchor ($): prevent @example.com.evil bypass
-          # package-lock.json may contain maintainer emails in npm deprecation metadata — not our data.
-          HITS=$(git ls-files -z -- '*.csv' '*.tsv' '*.json' ':!package-lock.json' \
-            | xargs -0 grep -hREo '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- \
-            | grep -viE '@(example\.(com|org|net)|test\.(com|org|net))$' || true)
-          if [ -n "$HITS" ]; then
-            echo "Suspicious real email addresses found in data files:"
-            echo "$HITS"
-            exit 1
-          fi
-          echo "OK: no real email addresses in data files"
+        run: bash scripts/check-ci-pii.sh email
       - name: No phone-number-shaped strings in tracked data files
-        run: |
-          # E.164-leaning: a leading "+" (rare outside phone numbers) followed by 7-21 real
-          # digits, allowing space/dot/paren/dash separators grouped in runs of at most 2 between
-          # digits (covers a US-style grouping - country code, then an area code wrapped in
-          # parens followed by a space, then a dashed local number - without letting separators
-          # pad out the count). Each unit past the first digit is exactly one digit, optionally
-          # preceded by up to 2 separator chars - so {6,20} counts real digits, not characters: a
-          # naive `[0-9 .()-]{5,19}` (the first version of this check) let separator padding
-          # satisfy the length requirement with almost no real digits - a "+" followed by one
-          # digit, five dashes, and one more digit used to match despite having only 2 real
-          # digits (caught by review on PR #1158 before this shipped). The (^|[^0-9]) / ($|[^0-9])
-          # boundary groups require a non-digit (or line start/end) on both sides, so this does
-          # not fire on a "+" that is itself part of a longer digit run - eg. semver build
-          # metadata like "1.0.0+20130313144700", or a big numeric id - the main false-positive
-          # class for naive phone regexes. A "+"-prefixed decimal value can still match if its
-          # digit count alone happens to land in phone-number range - digit count alone can't
-          # distinguish that from a short real phone number, and no separator-shape fix changes
-          # that; unchanged from the original design intent, not a regression. Wider scope than
-          # the email check above (also .yaml/.yml/.sql): measured zero false positives against
-          # this repo's current tracked files in that scope before wiring this in as a blocking
-          # check. NOTE FOR FUTURE EDITS: this step scans .yml files too, including this workflow
-          # file itself - do not put a literal phone-shaped example in a comment near this step,
-          # it will match its own check (this is exactly how the previous comment revision broke
-          # CI; describe examples in prose instead of a quoted literal).
-          HITS=$(git ls-files -z -- '*.csv' '*.tsv' '*.json' '*.yaml' '*.yml' '*.sql' ':!package-lock.json' \
-            | xargs -0 grep -hREo '(^|[^0-9])\+[1-9]([0-9]|[ .()-]{1,2}[0-9]){6,20}($|[^0-9])' -- || true)
-          if [ -n "$HITS" ]; then
-            echo "Suspicious phone numbers found in data files:"
-            echo "$HITS"
-            exit 1
-          fi
-          echo "OK: no phone-number-shaped strings in data files"
+        run: bash scripts/check-ci-pii.sh phone
 
   migration-safety:
     runs-on: ubuntu-latest
