@@ -1,7 +1,14 @@
 # SonarCloud coverage gate: CI-based analysis migration
 
-This repo's SonarCloud project (`solarssk_admitto`) currently runs **Automatic Analysis** (the
-GitHub App, no `sonar-scanner`/`sonarqube-scan-action` step in any workflow file) and has **no
+**Status: done (PR [#1245](https://github.com/solarssk/admitto/pull/1245), 2026-09-04).** Automatic
+Analysis is off; `sonarcloud` in `ci.yml` runs CI-based analysis against `sonar-project.properties`
+with a real `SONAR_TOKEN` and does ingest coverage now. The rest of this document describes the
+**pre-migration state and the sourced reasoning** that justified the switch - read `SECURITY.md`
+and `sonar-project.properties` for the current live config, not the "currently runs..." framing
+below.
+
+This repo's SonarCloud project (`solarssk_admitto`) used to run **Automatic Analysis** (the
+GitHub App, no `sonar-scanner`/`sonarqube-scan-action` step in any workflow file) and had **no
 `coverage` / `new_coverage` metric at all**, even though `npm run coverage` already produces LCOV
 for every workspace and CI already uploads it to Codecov (`apps/**/coverage/lcov.info`,
 `apps/**/coverage-integration/lcov.info`, `packages/**/coverage/lcov.info`,
