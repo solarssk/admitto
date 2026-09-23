@@ -242,6 +242,18 @@ Why: root-caused on `packages/notifications`'s first PR (#1272), where the packa
 
 Confirm locally first (`npm run coverage -w @admitto/<name>` should produce `packages/<name>/coverage/lcov.info`), then add the workspace flag to the list.
 
+**GitHub Actions' `concurrency.queue: max` is not usable in this repo yet.** It's a real, current
+GitHub Actions feature (confirmed against GitHub's own docs) that lets more than one run wait
+`pending` in a concurrency group instead of the default `queue: single`, which is the actual fix
+for a workflow like `release.yml` where `cancel-in-progress: false` alone doesn't stop a second
+rapid push from bumping the first push's already-queued run out of the group before it starts. But
+`actionlint` 1.7.12 - the exact version this repo's `actionlint` CI job pins (`.github/workflows/ci.yml`)
+- doesn't recognize `queue` as a valid key under `concurrency` and fails with "unexpected key
+\"queue\"" (a hard syntax-check failure, not a warning); confirmed against actionlint's own latest
+GitHub release, no newer version exists yet. Don't re-attempt this without first running
+`actionlint` (`actionlint -version` should print `1.7.12` to match the pin) against the changed
+workflow file and confirming it accepts `queue` as a key.
+
 **Renaming a Vitest project (`test.name`):** grep `package.json` scripts and CI workflows for
 `--project <old-name>` first - the filter is an anchored exact match, so a stale reference fails
 at startup ("No projects matched the filter").

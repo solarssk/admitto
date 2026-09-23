@@ -11,19 +11,27 @@ on:
   # pii-guard, analyze, migration-safety) for every PR in a stack after its first link merged.
   pull_request: {}
 
-# Cancel a still-running CI for the same PR/branch the moment a newer push supersedes it - without
-# this, every push to an open PR queues a brand new set of jobs alongside the previous (now
-# pointless) run instead of replacing it, wasting runner slots and delaying feedback on the latest
-# commit. Not applied to `main`: a push there gates docker-build (image publish) and is rare enough
-# (one per merge) that every commit deserves a full, uncancelled run rather than racing the next.
+# Cancel a still-running CI for the same PR the moment a newer push supersedes it - without this,
+# every push to an open PR queues a brand new set of jobs alongside the previous (now pointless)
+# run instead of replacing it, wasting runner slots and delaying feedback on the latest commit.
+# Not applied to `main`: a push there gates docker-build (image publish) and deserves a full,
+# uncancelled run rather than racing the next.
+#
+# The group key below (not just cancel-in-progress) is what protects `main`: GitHub Actions keeps
+# at most one *pending* run per concurrency group by default, so keying the group on `github.ref`
+# (as this used to) meant two rapid `main` pushes could still bump the first push's already-queued
+# run out of the group before it ever started - silently dropping that commit's CI, Codecov, and
+# SonarCloud reporting with no error surfaced anywhere. Scoping the group to the PR number for
+# `pull_request` events, and to the run's own id otherwise, means `main` pushes never share a group
+# with each other (or anything else) - nothing to queue or drop.
 # Empty top-level default (deny-all) - every job below declares its own least-privilege set on
 # top of this. Satisfies Scorecard's Token-Permissions check, which requires a topLevel
 # `permissions:` key to exist even though the real scoping happens per job.
 permissions: {}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # Shared by every job below (only test-web/test-admin/test-rest actually use these; harmless
