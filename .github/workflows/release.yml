@@ -33,6 +33,16 @@ permissions:
 concurrency:
   group: release-${{ github.repository }}
   cancel-in-progress: false
+  # Every `main` push runs this workflow's detection step, and this job has side effects (tagging,
+  # GitHub Release, milestone close) - unlike a plain CI re-run, a dropped run here can mean a real
+  # release commit never gets tagged/released at all. GitHub Actions keeps at most one *pending*
+  # run per concurrency group by default, so two rapid `main` pushes (e.g. two PRs merged back to
+  # back) can bump the first push's already-queued run out of the group before it starts. The fix
+  # is `queue: max` (accepts up to 100 pending runs instead of one) - deliberately NOT added yet:
+  # actionlint 1.7.12 (the exact version this repo's `actionlint` CI job pins, confirmed against
+  # the tool's own latest release) doesn't recognize `queue` as a valid concurrency key and fails
+  # the workflow-lint job outright ("unexpected key \"queue\""). Revisit once actionlint ships
+  # support - don't re-add this without first confirming that job passes.
 
 jobs:
   publish-release:
