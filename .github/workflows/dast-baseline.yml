@@ -17,8 +17,11 @@ name: DAST baseline scan
 # (ZAP_AUTH_HEADER), then crawls /admin with its AJAX spider so the SPA's own API calls are
 # exercised and passively scanned too.
 #
-# What this does NOT cover yet: /operator (needs an event-scoped operator account, which the compose
-# stack has no CLI to create), and active/attack scanning (ZAP's full scan, not baseline, which is
+# A fourth scan covers /operator the same way, as a synthetic event-scoped operator (created by
+# scripts/dast-seed-operator.mjs, since the stack has no CLI for operators), starting from the
+# check-in page of a seeded event.
+#
+# What this does NOT cover yet: active/attack scanning (ZAP's full scan, not baseline, which is
 # unsuitable for a shared CI stack).
 #
 # Report-only: fail_action is false and this does not gate merges. Full HTML/JSON/MD reports are
@@ -194,6 +197,59 @@ jobs:
         run: |
           {
             echo "### DAST baseline: /admin (authenticated as superadmin)"
+            echo
+            if [ -s report_json.json ] && [ "$(jq '.site[0].alerts | length' report_json.json)" -gt 0 ]; then
+              echo "| Risk | Alert | Count |"
+              echo "|---|---|---|"
+              jq -r '.site[0].alerts[] | "| " + .riskdesc + " | " + .name + " | " + (.count|tostring) + " |"' report_json.json
+            else
+              echo "No findings."
+            fi
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The compose stack only has a CLI for superadmins, so the operator (and the org, event and
+      # attendee it needs to reach the check-in page) is created by piping a script into node in the
+      # app container, which ships the built @admitto/db and @admitto/auth packages.
+      - name: Seed a synthetic operator and event
+        working-directory: deploy
+        run: |
+          DAST_OPERATOR_PASSWORD=$(openssl rand -base64 24)
+          echo "::add-mask::$DAST_OPERATOR_PASSWORD"
+          echo "DAST_OPERATOR_PASSWORD=$DAST_OPERATOR_PASSWORD" >> "$GITHUB_ENV"
+          export DAST_OPERATOR_PASSWORD
+          EVENT_ID=$(docker compose run --rm -T -e DAST_OPERATOR_EMAIL=dast-operator@example.com -e DAST_OPERATOR_PASSWORD app node --input-type=module - < ../scripts/dast-seed-operator.mjs | tail -n 1)
+          echo "seeded event $EVENT_ID"
+          echo "DAST_EVENT_ID=$EVENT_ID" >> "$GITHUB_ENV"
+
+      - name: Sign in as the operator and capture a session cookie
+        env:
+          BASE_URL: http://127.0.0.1:8080
+          DAST_EMAIL: dast-operator@example.com
+          DAST_PASSWORD: ${{ env.DAST_OPERATOR_PASSWORD }}
+        run: |
+          COOKIE=$(node scripts/dast-login.mjs)
+          echo "::add-mask::$COOKIE"
+          echo "DAST_OPERATOR_COOKIE=$COOKIE" >> "$GITHUB_ENV"
+
+      - name: ZAP baseline scan (/operator, authenticated as an operator, AJAX spider)
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25  # v0.15.0
+        env:
+          ZAP_AUTH_HEADER: Cookie
+          ZAP_AUTH_HEADER_VALUE: ${{ env.DAST_OPERATOR_COOKIE }}
+          ZAP_AUTH_HEADER_SITE: 127.0.0.1
+        with:
+          target: "http://127.0.0.1:8080/operator/events/${{ env.DAST_EVENT_ID }}/checkin"
+          artifact_name: "zap-baseline-report-operator"
+          cmd_options: '-j -m 3 -z "-config globalexcludeurl.url_list.url(0).regex=.*/logout.* -config globalexcludeurl.url_list.url(0).enabled=true"'
+          fail_action: false
+          allow_issue_writing: false
+
+      - name: Summarize /operator scan into job summary
+        if: always()
+        run: |
+          {
+            echo "### DAST baseline: /operator (authenticated as an operator)"
             echo
             if [ -s report_json.json ] && [ "$(jq '.site[0].alerts | length' report_json.json)" -gt 0 ]; then
               echo "| Risk | Alert | Count |"
