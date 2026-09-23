@@ -1,6 +1,7 @@
 // k6 load test for the check-in hot path (.github/workflows/load-test.yml).
 //
-// Two scenarios run at once against POST /api/checkin/admit, several operator accounts at once:
+// Two scenarios run at once against POST /api/checkin/admit and /api/checkin/scan (alternating),
+// several operator accounts at once:
 //   - distinct: each attendee is admitted exactly once (many different attendees in parallel).
 //   - contested: every contender attempts each attendee in the same one-second slot; exactly one
 //     may win. The authoritative checks are database queries after the run (see the workflow: no
@@ -51,7 +52,7 @@ export const options = {
       // Every contender attempts every contested attendee, in lockstep (see admitContested).
       executor: "per-vu-iterations",
       vus: CONTENDERS,
-      iterations: seed.contestedIds.length,
+      iterations: seed.contested.length,
       maxDuration: "3m",
       exec: "admitContested",
     },
@@ -63,6 +64,8 @@ export const options = {
     // handleSummary reads p95/p99 from. Not a latency budget (there is no baseline to set one).
     "http_req_duration{name:admit}": ["max>=0"],
     "http_reqs{name:admit}": ["count>=0"],
+    "http_req_duration{name:scan}": ["max>=0"],
+    "http_reqs{name:scan}": ["count>=0"],
   },
 };
 
@@ -94,29 +97,36 @@ function ensureLoggedIn() {
     );
 }
 
-// `accepted` is the set of statuses that are correct for this caller: a fresh attendee must come back
-// VALID; a contested one may be VALID (the winner) or ALREADY_CHECKED_IN (everyone else).
-function admit(attendeeId, accepted) {
+// Alternate between the two ways a gate operator checks someone in: POST /api/checkin/admit by
+// attendee id (what the manual lookup does) and POST /api/checkin/scan with the QR payload. Both
+// end in the same admission code path, so both are covered by the same double-admit checks.
+// `accepted` is the set of statuses that are correct for this caller: a fresh attendee must come
+// back VALID; a contested one may be VALID (the winner) or ALREADY_CHECKED_IN (everyone else).
+function checkIn(person, index, accepted) {
+  const byScan = index % 2 === 1;
+  const name = byScan ? "scan" : "admit";
+  const payload = {
+    eventId: seed.eventId,
+    deviceId: `k6-vu-${exec.vu.idInTest}`,
+    ...(byScan
+      ? { scanned: person.qr }
+      : { attendeeId: person.id, method: "scan" }),
+  };
   const res = http.post(
-    `${BASE_URL}/api/checkin/admit`,
-    JSON.stringify({
-      eventId: seed.eventId,
-      attendeeId,
-      method: "scan",
-      deviceId: `k6-vu-${exec.vu.idInTest}`,
-    }),
+    `${BASE_URL}/api/checkin/${name}`,
+    JSON.stringify(payload),
     {
       headers: { "Content-Type": "application/json", Origin: BASE_URL },
-      tags: { name: "admit" },
+      tags: { name },
     },
   );
-  const ok = check(res, { "admit returned 200": (r) => r.status === 200 });
+  const ok = check(res, { [`${name} returned 200`]: (r) => r.status === 200 });
   if (!ok) {
     // Log only the first few failures per VU so a broken run is diagnosable without flooding.
     failuresLogged += 1;
     if (failuresLogged <= 3) {
       console.error(
-        `admit failed: ${res.status} ${String(res.body).slice(0, 200)}`,
+        `${name} failed: ${res.status} ${String(res.body).slice(0, 200)}`,
       );
     }
     return;
@@ -125,19 +135,17 @@ function admit(attendeeId, accepted) {
   if (status === "VALID") validAdmits.add(1);
   else if (status === "ALREADY_CHECKED_IN") alreadyAdmitted.add(1);
   else unexpected.add(1);
-  check(res, {
-    "admit status is the expected one": () => accepted.includes(status),
-  });
+  check(res, { "status is the expected one": () => accepted.includes(status) });
 }
 
 export function admitDistinct() {
   ensureLoggedIn();
   const i = exec.scenario.iterationInTest;
-  if (i >= seed.distinctIds.length) {
+  if (i >= seed.distinct.length) {
     sleep(PAUSE_SECONDS);
     return;
   }
-  admit(seed.distinctIds[i], ["VALID"]);
+  checkIn(seed.distinct[i], i, ["VALID"]);
   sleep(PAUSE_SECONDS);
 }
 
@@ -152,7 +160,7 @@ export function admitContested() {
     i * CONTEST_SLOT_MS -
     Date.now();
   if (wait > 0) sleep(wait / 1000);
-  admit(seed.contestedIds[i], ["VALID", "ALREADY_CHECKED_IN"]);
+  checkIn(seed.contested[i], i, ["VALID", "ALREADY_CHECKED_IN"]);
 }
 
 function metric(data, name, key) {
@@ -164,19 +172,22 @@ const fmt = (v) => (v === null ? "n/a" : v.toFixed(1));
 export function handleSummary(data) {
   const rows = [
     ["admit requests", metric(data, "http_reqs{name:admit}", "count")],
-    ["throughput (req/s)", fmt(metric(data, "http_reqs{name:admit}", "rate"))],
+    ["scan requests", metric(data, "http_reqs{name:scan}", "count")],
+    [
+      "throughput (check-in req/s)",
+      fmt(
+        (metric(data, "http_reqs{name:admit}", "rate") ?? 0) +
+          (metric(data, "http_reqs{name:scan}", "rate") ?? 0),
+      ),
+    ],
     [
       "http error rate",
       `${((metric(data, "http_req_failed", "rate") ?? 0) * 100).toFixed(2)}%`,
     ],
-    [
-      "p95 latency (ms)",
-      fmt(metric(data, "http_req_duration{name:admit}", "p(95)")),
-    ],
-    [
-      "p99 latency (ms)",
-      fmt(metric(data, "http_req_duration{name:admit}", "p(99)")),
-    ],
+    ...["admit", "scan"].map((name) => [
+      `${name} p95 / p99 (ms)`,
+      `${fmt(metric(data, `http_req_duration{name:${name}}`, "p(95)"))} / ${fmt(metric(data, `http_req_duration{name:${name}}`, "p(99)"))}`,
+    ]),
     ["admitted (VALID)", metric(data, "admit_valid", "count") ?? 0],
     [
       "rejected as already checked in",
@@ -188,7 +199,7 @@ export function handleSummary(data) {
     ],
   ];
   const md = [
-    "### k6: check-in admit under load",
+    "### k6: check-in admit and scan under load",
     "",
     "| Metric | Value |",
     "|---|---|",

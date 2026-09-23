@@ -12,9 +12,12 @@ name: Check-in load test
 # up with exactly one. Latency (p95/p99), error rate and throughput are recorded in the job summary, with the
 # full k6 output uploaded as an artifact, so a baseline can build up before any threshold is set.
 #
+# Two live-stream (SSE) listener accounts hold 3 streams each open during the run; afterwards every
+# stream must have received exactly one event per VALID check-in, and a fourth stream on the same
+# account must be refused (429, the per-operator cap).
+#
 # Runs the app the same way apps/admin/playwright.config.ts does (dev-mode server, ephemeral
-# Postgres and Redis service containers), so no compose stack is needed. Out of scope for now: the
-# SSE check-in stream under load (k6 has no native SSE support).
+# Postgres and Redis service containers), so no compose stack is needed. 
 
 on:
   pull_request:
@@ -91,9 +94,10 @@ jobs:
       - name: Migrate database
         run: npm run db:migrate -w @admitto/db
       # 9 operators = one per k6 VU (3 for the contested scenario, 6 for the distinct one); 12 of
-      # the 512 attendees are the contested set, the rest are admitted once each.
+      # the 512 attendees are the contested set, the rest are admitted once each; 2 more accounts
+      # listen to the live check-in stream.
       - name: Seed operators and attendees
-        run: node --import tsx scripts/load-test/seed.ts 9 512 12 "$RUNNER_TEMP/load-seed.json"
+        run: node --import tsx scripts/load-test/seed.ts 9 512 12 2 "$RUNNER_TEMP/load-seed.json"
       - name: Start the app
         working-directory: apps/web
         run: |
@@ -105,6 +109,18 @@ jobs:
           echo "app never became healthy"
           cat "$RUNNER_TEMP/web.log"
           exit 1
+      - name: Start the live check-in stream listeners
+        run: |
+          node scripts/load-test/sse-listeners.mjs "$RUNNER_TEMP/load-seed.json" "$RUNNER_TEMP/sse.json" > "$RUNNER_TEMP/sse.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/sse.pid"
+          for _ in $(seq 1 30); do
+            grep -q "streams open" "$RUNNER_TEMP/sse.log" && break
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/sse.log"
+          grep -q "streams open" "$RUNNER_TEMP/sse.log"
+          # Sign-in is limited to 10 per minute per IP: the listeners used 2, k6 uses 9 more.
+          sleep 61
       - uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1  # v1.2.2
         with:
           k6-version: "2.3.0"
@@ -126,6 +142,22 @@ jobs:
           WON=$(psql "$DATABASE_URL" -Atc "select count(*) from (select attendee_id from \"CheckIn\" where status = 'VALID' and attendee_id = any(string_to_array('$IDS', ',')) group by attendee_id having count(*) = 1) t")
           echo "contested attendees admitted exactly once: $WON of $EXPECTED"
           [ "$WON" = "$EXPECTED" ]
+      - name: Live stream delivered every check-in
+        if: always()
+        run: |
+          kill -TERM "$(cat "$RUNNER_TEMP/sse.pid")" || true
+          for _ in $(seq 1 30); do
+            [ -f "$RUNNER_TEMP/sse.json" ] && break
+            sleep 1
+          done
+          EVENT_ID=$(jq -r '.eventId' "$RUNNER_TEMP/load-seed.json")
+          VALID=$(psql "$DATABASE_URL" -Atc "select count(*) from \"CheckIn\" where status = 'VALID' and event_id = '$EVENT_ID'")
+          echo "VALID check-ins: $VALID"
+          jq -c '.streams[]' "$RUNNER_TEMP/sse.json"
+          echo "fourth stream on one account: $(jq '.fourthStreamStatus' "$RUNNER_TEMP/sse.json") (expect 429)"
+          [ "$(jq '.fourthStreamStatus' "$RUNNER_TEMP/sse.json")" = "429" ]
+          # Every stream must be open (200) and have received exactly one event per VALID check-in.
+          [ "$(jq --argjson v "$VALID" '[.streams[] | select(.status == 200 and .checkin == $v)] | length' "$RUNNER_TEMP/sse.json")" = "$(jq '.streams | length' "$RUNNER_TEMP/sse.json")" ]
       - name: Job summary
         if: always()
         run: |
@@ -138,5 +170,6 @@ jobs:
           path: |
             k6-summary.md
             k6-summary.json
+            ${{ runner.temp }}/sse.json
           retention-days: 30
           if-no-files-found: ignore
