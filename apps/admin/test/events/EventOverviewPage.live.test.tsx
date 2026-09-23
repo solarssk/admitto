@@ -472,6 +472,21 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.queryByText("Event date")).toBeNull();
   });
 
+  it("counts Tickets sent as distinct attendees with a delivered ticket, not total delivered emails", async () => {
+    // email_sent counts every delivered mail (resends, reminders), so it can exceed attendee_count.
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(5, { attendee_count: 411, email_sent: 1086, attendees_with_ticket: 380 }),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(within(statsRow()).getByText("380")).toBeTruthy();
+    });
+    expect(within(statsRow()).queryByText("1086")).toBeNull();
+    expect(within(statsRow()).getByText("Tickets sent").parentElement?.textContent).toContain("380");
+  });
+
   it("renders the 4 KPI tiles with the bespoke icon-square-left layout, not the generic Stat's icon-circle-top-right (D)", async () => {
     fetchEventOverview.mockResolvedValue(overviewFixture(5));
 
