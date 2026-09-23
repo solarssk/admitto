@@ -11,7 +11,7 @@ esac
 
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo_root/deploy"
-if [ -e .env ]; then
+if [[ -e .env ]]; then
   echo 'Refusing to replace an existing deploy/.env' >&2
   exit 1
 fi
@@ -19,7 +19,7 @@ fi
 cleanup() {
   docker compose down -v || true
   rm -f .env .env.bak
-  if [ -n "${login_body:-}" ]; then
+  if [[ -n "${login_body:-}" ]]; then
     rm -f "$login_body"
   fi
 }
@@ -52,7 +52,7 @@ for _ in $(seq 1 60); do
   fi
   sleep 5
 done
-if [ "${healthy:-0}" != 1 ]; then
+if [[ "${healthy:-0}" != 1 ]]; then
   echo 'healthz never became ready' >&2
   docker compose logs
   exit 1
@@ -69,12 +69,12 @@ login_code="$(curl -s -o "$login_body" -w '%{http_code}' -X POST http://127.0.0.
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -H 'Origin: http://127.0.0.1:8080' \
   -d 'email=smoke@example.com&password=wrong')"
-if [ "$login_code" = 403 ]; then
+if [[ "$login_code" = 403 ]]; then
   echo 'POST /login blocked by CSRF (403) — check proxy X-Forwarded-Host' >&2
   cat "$login_body"
   exit 1
 fi
-if [ "$login_code" != 401 ]; then
+if [[ "$login_code" != 401 ]]; then
   echo "POST /login expected 401 invalid credentials, got $login_code" >&2
   cat "$login_body"
   exit 1
