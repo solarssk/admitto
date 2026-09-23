@@ -149,8 +149,8 @@ describe("AttendeesPage capacity lockdown", () => {
     expect(addButton.disabled).toBe(false);
   });
 
-  it("does not re-fetch the event on mount once active_attendee_count is already known", async () => {
-    mockEvent = baseEvent({ capacity: 400, active_attendee_count: 400 });
+  it("does not refresh the event on mount when the event has no capacity limit", async () => {
+    mockEvent = baseEvent({ capacity: null, active_attendee_count: 10_000 });
     mockRefreshEvent = vi.fn().mockResolvedValue(undefined);
     renderPage();
 
@@ -158,6 +158,27 @@ describe("AttendeesPage capacity lockdown", () => {
       expect(screen.getByText("Jane Doe")).toBeTruthy();
     });
     expect(mockRefreshEvent).not.toHaveBeenCalled();
+  });
+
+  // Bug: EventLayout stays mounted across in-event navigation and only re-fetches on an eventId
+  // change - so navigating Attendees -> an attendee's Detail page -> back to Attendees (a new
+  // AttendeesPage mount, same EventLayout instance) can find a *stale but defined* count if the
+  // Detail page deleted, revoked, or restored that attendee (changing the capacity-consuming
+  // population) without refreshing the layout's cached event. Skipping the mount refresh just
+  // because a number was already present would leave Add attendee's disabled state wrong until
+  // another mutation or a full reload.
+  it("refreshes the event on mount even when active_attendee_count already looks known, to pick up a stale count from a sibling route's mutation", async () => {
+    mockEvent = baseEvent({ capacity: 400, active_attendee_count: 400 });
+    mockRefreshEvent = vi.fn().mockImplementation(async () => {
+      // Simulates a sibling AttendeeDetailPage delete that happened before this mount, which the
+      // layout's cached event never picked up.
+      mockEvent = baseEvent({ capacity: 400, active_attendee_count: 399 });
+    });
+    renderPage();
+
+    await waitFor(() => expect(mockRefreshEvent).toHaveBeenCalledTimes(1));
+    const addButton = await screen.findByRole("button", { name: "+ Add attendee" });
+    await waitFor(() => expect((addButton as HTMLButtonElement).disabled).toBe(false));
   });
 
   // Bug: EventsPickerPage navigates to an event with router state carrying that EventCard's own
