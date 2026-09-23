@@ -970,7 +970,10 @@ function reportLoadListError(err: unknown, ctx: LoadListErrorContext): void {
 
 export function AttendeesPage() {
   const { eventId } = useParams();
-  const { event } = useOutletContext<{ event: EventDto }>();
+  const { event, refreshEvent } = useOutletContext<{
+    event: EventDto;
+    refreshEvent?: () => Promise<void>;
+  }>();
   const walletPlatforms = enabledWalletPlatforms(event);
   const navigate = useNavigate();
   const { addToast } = useToast();
@@ -1308,6 +1311,34 @@ export function AttendeesPage() {
     void loadList();
     return () => listAbortRef.current?.abort();
   }, [loadList, reloadToken]);
+
+  // The events picker (EventsPickerPage) navigates here with the clicked EventCard's own DTO as
+  // router state, which EventLayout renders immediately instead of re-fetching - but that DTO
+  // comes from the picker's list endpoint, which never computes active_attendee_count (only the
+  // single-event fetch does). Without this, a capacity-full event reached via the picker would
+  // read active_attendee_count as undefined, and the "?? 0" below would leave Add attendee
+  // enabled. Keyed on event.id (not on capacity/active_attendee_count themselves) so this runs
+  // once per event entry, not again after refreshEvent's own update changes those same fields.
+  useEffect(() => {
+    if (event.capacity != null && event.active_attendee_count === undefined) {
+      void refreshEvent?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on event identity, not on capacity/active_attendee_count (see comment above)
+  }, [event.id, refreshEvent]);
+
+  // reloadToken bumps after every attendee mutation on this page (create, delete, bulk actions,
+  // restore, …) - re-fetching the event alongside keeps active_attendee_count in sync with
+  // capacity so the Add attendee button's disabled state below reflects reality without an
+  // extra round-trip per handler. Skips the initial mount: the effect above (or EventLayout's own
+  // fallback fetch) already covers getting a fresh count once, before any mutation has happened.
+  const isFirstReloadRef = useRef(true);
+  useEffect(() => {
+    if (isFirstReloadRef.current) {
+      isFirstReloadRef.current = false;
+      return;
+    }
+    void refreshEvent?.();
+  }, [reloadToken, refreshEvent]);
 
   useEffect(() => {
     return () => {
@@ -2014,6 +2045,17 @@ export function AttendeesPage() {
     (row) => selectedIds.has(row.id) && row.wallet_status !== null,
   ).length;
 
+  // Undefined active_attendee_count reads as "not full" rather than blocking the button on a
+  // guess - the effect above fetches it as soon as it's missing, so this only stays undefined
+  // for the brief window before that fetch resolves. The server remains the source of truth
+  // either way and still rejects over capacity with the same event_full error AddAttendeeModal
+  // now shows correctly.
+  const atCapacity =
+    event.capacity != null && (event.active_attendee_count ?? 0) >= event.capacity;
+  const capacityTooltip = atCapacity
+    ? `Event is at capacity (${event.active_attendee_count}/${event.capacity}). Free a slot or increase capacity to add more attendees.`
+    : undefined;
+
   if (!eventId) return <p>Missing event.</p>;
 
   return (
@@ -2024,7 +2066,12 @@ export function AttendeesPage() {
         className="attendees-pageheader"
         actions={
           <>
-            <ArchivedGuard event={event} reasonId="add-attendee-reason">
+            <ArchivedGuard
+              event={event}
+              reasonId="add-attendee-reason"
+              disabled={atCapacity}
+              tooltip={capacityTooltip}
+            >
               {(guard) => (
                 <Button variant="primary" {...guard} onClick={() => setAddOpen(true)}>
                   {/* Shortened below 768px (attendees.css compacts these buttons to fit one

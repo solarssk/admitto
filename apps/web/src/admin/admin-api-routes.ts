@@ -33,6 +33,7 @@ import {
 import { resolveInstanceOrganizationId } from "./instance-org.js";
 import { timezoneField } from "./timezone.js";
 import { addressComponentsSchema, componentsToJson } from "./event-location-routes.js";
+import { countActiveAttendees } from "./event-capacity.js";
 
 const slugField = z
   .string()
@@ -83,6 +84,7 @@ type EventJsonRow = {
   map_longitude?: number | null;
   map_zoom?: number | null;
   organization_id: string;
+  capacity: number | null;
   archived_at: Date | null;
   created_at: Date;
   created_by_user_id: string | null;
@@ -143,6 +145,7 @@ export function serializeEventDto(
     map_preview_path: mapPreviewPath,
     map_attribution: mapAttribution,
     organization_id: event.organization_id,
+    capacity: event.capacity,
     archived_at: event.archived_at?.toISOString() ?? null,
     created_at: event.created_at.toISOString(),
     created_by_display_name: createdBy?.display_name ?? null,
@@ -275,7 +278,12 @@ export async function handleGetAdminEvent(c: Context, db: PrismaClient): Promise
   const userDisplayMap = await resolveUserDisplayMap(db, actorIds);
   const dto = serializeEventDto(event, countByEvent.get(event.id) ?? 0, userDisplayMap);
   const [withWeather] = await attachWeatherToEventDtos(db, [event], [dto]);
-  return c.json({ event: withWeather! });
+  // Same active-attendee scope as the capacity check itself (excludes revoked/cancelled) - lets
+  // the Attendees page disable "Add attendee" before the server would reject it, rather than
+  // relying only on the 409 event_full error. Confined to this single-event fetch, not the
+  // picker list, to avoid an extra aggregate query per row there.
+  const activeAttendeeCount = await countActiveAttendees(db, event.id);
+  return c.json({ event: { ...withWeather!, active_attendee_count: activeAttendeeCount } });
 }
 
 /** POST /api/admin/events — create event (superadmin or org admin). */

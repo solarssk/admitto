@@ -24,14 +24,13 @@
   },
   "dependencies": {
     "@admitto/shared": "*",
-    "nodemailer": "^10.0.9",
+    "nodemailer": "^10.0.10",
     "undici": "^8.10.2",
     "zod": "^4.6.4"
   },
   "devDependencies": {
     "@types/node": "^24.13.4",
     "tsx": "^4.23.13",
-    "typescript": "^7.0.2",
-    "vitest": "5.0.0"
+    "typescript": "^7.0.2"
   }
 }

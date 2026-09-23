@@ -11,19 +11,27 @@ on:
   # pii-guard, analyze, migration-safety) for every PR in a stack after its first link merged.
   pull_request: {}
 
-# Cancel a still-running CI for the same PR/branch the moment a newer push supersedes it - without
-# this, every push to an open PR queues a brand new set of jobs alongside the previous (now
-# pointless) run instead of replacing it, wasting runner slots and delaying feedback on the latest
-# commit. Not applied to `main`: a push there gates docker-build (image publish) and is rare enough
-# (one per merge) that every commit deserves a full, uncancelled run rather than racing the next.
+# Cancel a still-running CI for the same PR the moment a newer push supersedes it - without this,
+# every push to an open PR queues a brand new set of jobs alongside the previous (now pointless)
+# run instead of replacing it, wasting runner slots and delaying feedback on the latest commit.
+# Not applied to `main`: a push there gates docker-build (image publish) and deserves a full,
+# uncancelled run rather than racing the next.
+#
+# The group key below (not just cancel-in-progress) is what protects `main`: GitHub Actions keeps
+# at most one *pending* run per concurrency group by default, so keying the group on `github.ref`
+# (as this used to) meant two rapid `main` pushes could still bump the first push's already-queued
+# run out of the group before it ever started - silently dropping that commit's CI, Codecov, and
+# SonarCloud reporting with no error surfaced anywhere. Scoping the group to the PR number for
+# `pull_request` events, and to the run's own id otherwise, means `main` pushes never share a group
+# with each other (or anything else) - nothing to queue or drop.
 # Empty top-level default (deny-all) - every job below declares its own least-privilege set on
 # top of this. Satisfies Scorecard's Token-Permissions check, which requires a topLevel
 # `permissions:` key to exist even though the real scoping happens per job.
 permissions: {}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # Shared by every job below (only test-web/test-admin/test-rest actually use these; harmless
@@ -114,6 +122,7 @@ jobs:
       pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      checkin: ${{ steps.filter.outputs.checkin }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -142,6 +151,67 @@ jobs:
               - "!docs/**"
               - "!**/README.md"
               - "!.github/*.md"
+            # Paths the check-in E2E smoke test (apps/admin/e2e/checkin.spec.ts) actually exercises
+            # or depends on: the test itself, the operator login + check-in UI it drives, the
+            # server-side check-in/session routes and stream limiting behind it, ticket/attendee
+            # status (what "admit" flips), auth (operator login), and the DB schema all of that
+            # reads/writes. Kept separate from `code` above so this heavier job only runs on PRs
+            # that plausibly affect it, not on every code change.
+            #
+            # Also includes the shared route/client entry points the test's flow runs through
+            # end-to-end, not just the check-in-specific files: apps/admin/src/App.tsx (defines
+            # the `events/:eventId/checkin` route and wraps AuthProvider), apps/admin/src/api/
+            # client.ts (every admin API call, including the check-in scan/lookup/admit requests,
+            # goes through its shared fetch/parseJson helpers), apps/web/src/app.ts (registers
+            # every /api/checkin/* route and its middleware), and apps/admin/src/auth/** (session
+            # bootstrap, role routing, the operator device gate). Also the two runtime entry
+            # points themselves: apps/admin/src/main.tsx (the actual browser bootstrap - mounts
+            # <App> onto #root; a break here blanks the whole SPA before any route ever renders)
+            # and apps/web/src/index.ts (what apps/admin/playwright.config.ts's own `webServer`
+            # literally launches via `node --import tsx ... src/index.ts` - a break here means the
+            # server the test talks to never starts), apps/web/src/auth-middleware.ts (app.ts's
+            # createRequireSession/createRequirePartialSession - gates every authenticated
+            # request the test's operator session makes), and apps/web/src/staff-spa.ts (serves
+            # /assets/* and /operator/* - what actually delivers the SPA bundle the browser runs).
+            # A change confined to any of these can break the tested flow without touching any of
+            # the narrower paths above - caught by review on PR #1410, which had shipped without
+            # them.
+            #
+            # This is inherently incomplete: apps/web/src/app.ts wires in other shared,
+            # every-request infrastructure (request logging, baseline security headers, rate-limit
+            # store setup) that a sufficiently isolated change could still break without touching
+            # app.ts itself or anything listed here. Not chased further - app.ts (already listed)
+            # is where essentially all of that wiring actually happens, so it's the practical
+            # backstop for the remaining tail; the alternative is drifting toward listing most of
+            # apps/web/src, which stops being path-aware at all.
+            checkin:
+              - "apps/admin/e2e/**"
+              - "apps/admin/playwright.config.ts"
+              - "apps/admin/src/App.tsx"
+              - "apps/admin/src/main.tsx"
+              - "apps/admin/src/api/client.ts"
+              - "apps/admin/src/auth/**"
+              - "apps/admin/src/checkin/**"
+              - "apps/admin/src/pages/CheckInPage.tsx"
+              - "apps/admin/src/pages/CheckInEntryPage.tsx"
+              - "apps/admin/src/pages/AdminCheckInRoute.tsx"
+              - "apps/admin/src/pages/DeviceLabelStep.tsx"
+              - "apps/admin/src/settings/CheckInBehaviourPanel.tsx"
+              - "apps/web/src/app.ts"
+              - "apps/web/src/index.ts"
+              - "apps/web/src/auth-middleware.ts"
+              - "apps/web/src/staff-spa.ts"
+              - "apps/web/src/checkin-gate.ts"
+              - "apps/web/src/checkin-stream-limit.ts"
+              - "apps/web/src/auth/**"
+              - "apps/web/src/admin/checkin-*.ts"
+              - "packages/auth/**"
+              - "packages/tickets/**"
+              - "packages/db/prisma/**"
+              - "packages/db/src/**"
+              # Self-reference, same reason cflite_pr.yml lists itself: a change to this job's own
+              # definition should exercise it, not silently skip on the PR that introduces it.
+              - ".github/workflows/ci.yml"
 
   # build-test used to be one sequential job (~7-8 min, mostly the coverage step across all 14
   # workspaces). Split into 4 parallel jobs so they run concurrently instead of one after another
@@ -295,7 +365,7 @@ jobs:
         run: npm run coverage -w @admitto/web --if-present -- --reporter=default --reporter=junit --outputFile.junit=./junit.xml
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: web
@@ -364,7 +434,7 @@ jobs:
         run: npm run coverage -w @admitto/admin --if-present -- --reporter=default --reporter=junit --outputFile.junit=./junit.xml
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: admin
@@ -477,7 +547,7 @@ jobs:
           -- --reporter=default --reporter=junit --outputFile.junit=./junit.xml
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: rest
@@ -538,9 +608,79 @@ jobs:
           pattern: coverage-*
           merge-multiple: true
       - name: SonarQube Cloud Scan
-        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f  # v8.2.1
+        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4  # v8.2.2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # Promoted from the standalone e2e-checkin-smoke.yml (scheduled-only) workflow after 20
+  # consecutive green daily scheduled runs, well past the 14-run bar that workflow's own comment
+  # set for promotion. Only runs when `changes.checkin` matches (see that filter's own comment for
+  # what it covers) - unlike the other build-test shards, this one is genuinely conditional, so
+  # it's kept OUT of build-test's strict "every needs: entry must be success" loop (that check has
+  # no notion of "skipped is fine here") and instead checked separately, tolerating skipped.
+  e2e-checkin-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [changes]
+    if: needs.changes.outputs.checkin == 'true'
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: admitto
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: admitto
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # apps/admin/e2e/seed.ts's own deliberate opt-in, required before it writes anything - this
+      # job's Postgres above is genuinely ephemeral/isolated (same as e2e-checkin-smoke.yml's own
+      # job), so it's safe to set unconditionally here.
+      E2E_SEED_ALLOW_WRITE: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: "24.17.0"
+          cache: "npm"
+      - run: npm ci --ignore-scripts
+      - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
+      - run: npm run db:generate -w @admitto/db
+      - run: npm run build
+      - name: Migrate database
+        run: npm run db:migrate -w @admitto/db
+      - name: Install Playwright browser (chromium)
+        run: node_modules/.bin/playwright install --with-deps chromium
+      - name: Run check-in E2E smoke test
+        run: npm run e2e -w @admitto/admin
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: playwright-report-pr
+          path: |
+            apps/admin/playwright-report/
+            apps/admin/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # main's branch protection requires a status check literally named "build-test" - this
   # aggregator keeps that name alive (and its pass/fail contract equivalent to the old monolithic
@@ -558,7 +698,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-    needs: [lint-and-typecheck, actionlint, test-web, test-admin, test-rest]
+    needs: [lint-and-typecheck, actionlint, test-web, test-admin, test-rest, e2e-checkin-smoke]
     if: always()
     steps:
       - name: Check all shards succeeded
@@ -574,6 +714,14 @@ jobs:
               exit 1
             fi
           done
+          # e2e-checkin-smoke only runs when changes.checkin is true (see that job's own
+          # comment) - "skipped" is the expected, passing outcome for every other PR; only a
+          # genuine failure/cancellation of a run that did execute should block.
+          e2e_result="${{ needs.e2e-checkin-smoke.result }}"
+          if [ "$e2e_result" != "success" ] && [ "$e2e_result" != "skipped" ]; then
+            echo "e2e-checkin-smoke did not succeed."
+            exit 1
+          fi
           echo "All build-test shards passed."
 
   secret-scan:
@@ -622,52 +770,9 @@ jobs:
         with:
           persist-credentials: false
       - name: No real email addresses in tracked data files
-        run: |
-          # -z / xargs -0: handle filenames with spaces correctly
-          # domain anchor ($): prevent @example.com.evil bypass
-          # package-lock.json may contain maintainer emails in npm deprecation metadata — not our data.
-          HITS=$(git ls-files -z -- '*.csv' '*.tsv' '*.json' ':!package-lock.json' \
-            | xargs -0 grep -hREo '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- \
-            | grep -viE '@(example\.(com|org|net)|test\.(com|org|net))$' || true)
-          if [ -n "$HITS" ]; then
-            echo "Suspicious real email addresses found in data files:"
-            echo "$HITS"
-            exit 1
-          fi
-          echo "OK: no real email addresses in data files"
+        run: bash scripts/check-ci-pii.sh email
       - name: No phone-number-shaped strings in tracked data files
-        run: |
-          # E.164-leaning: a leading "+" (rare outside phone numbers) followed by 7-21 real
-          # digits, allowing space/dot/paren/dash separators grouped in runs of at most 2 between
-          # digits (covers a US-style grouping - country code, then an area code wrapped in
-          # parens followed by a space, then a dashed local number - without letting separators
-          # pad out the count). Each unit past the first digit is exactly one digit, optionally
-          # preceded by up to 2 separator chars - so {6,20} counts real digits, not characters: a
-          # naive `[0-9 .()-]{5,19}` (the first version of this check) let separator padding
-          # satisfy the length requirement with almost no real digits - a "+" followed by one
-          # digit, five dashes, and one more digit used to match despite having only 2 real
-          # digits (caught by review on PR #1158 before this shipped). The (^|[^0-9]) / ($|[^0-9])
-          # boundary groups require a non-digit (or line start/end) on both sides, so this does
-          # not fire on a "+" that is itself part of a longer digit run - eg. semver build
-          # metadata like "1.0.0+20130313144700", or a big numeric id - the main false-positive
-          # class for naive phone regexes. A "+"-prefixed decimal value can still match if its
-          # digit count alone happens to land in phone-number range - digit count alone can't
-          # distinguish that from a short real phone number, and no separator-shape fix changes
-          # that; unchanged from the original design intent, not a regression. Wider scope than
-          # the email check above (also .yaml/.yml/.sql): measured zero false positives against
-          # this repo's current tracked files in that scope before wiring this in as a blocking
-          # check. NOTE FOR FUTURE EDITS: this step scans .yml files too, including this workflow
-          # file itself - do not put a literal phone-shaped example in a comment near this step,
-          # it will match its own check (this is exactly how the previous comment revision broke
-          # CI; describe examples in prose instead of a quoted literal).
-          HITS=$(git ls-files -z -- '*.csv' '*.tsv' '*.json' '*.yaml' '*.yml' '*.sql' ':!package-lock.json' \
-            | xargs -0 grep -hREo '(^|[^0-9])\+[1-9]([0-9]|[ .()-]{1,2}[0-9]){6,20}($|[^0-9])' -- || true)
-          if [ -n "$HITS" ]; then
-            echo "Suspicious phone numbers found in data files:"
-            echo "$HITS"
-            exit 1
-          fi
-          echo "OK: no phone-number-shaped strings in data files"
+        run: bash scripts/check-ci-pii.sh phone
 
   migration-safety:
     runs-on: ubuntu-latest

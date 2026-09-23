@@ -4,7 +4,7 @@
 # Won't Fix/False Positive action. This is a CI-only build image that compiles fuzz binaries and
 # never runs as a service, unlike the production Dockerfile's runtime `USER node` (ADR 0043) -
 # OSS-Fuzz's own base images are designed to build as root.
-FROM gcr.io/oss-fuzz-base/base-builder-javascript@sha256:2e218dedc1603f15e34cec784030789e06db1df8eb5356f0a8e27285619ac8c2
+FROM gcr.io/oss-fuzz-base/base-builder-javascript@sha256:2ea9b850d1adf753594565715366a4676962dfa4841290c0cc53f7ed52c65ec9
 
 # Only the exact files build.sh needs, named individually - not `COPY . $SRC/admitto` (SonarCloud
 # docker:S6470, CRITICAL: a recursive copy of the whole repo into a build image can pull in

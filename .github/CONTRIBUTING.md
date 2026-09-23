@@ -101,11 +101,13 @@ GitHub stacked PRs, where a later branch's base is an earlier, still-open PR's b
 routinely need to outlive their own PR's merge.
 
 **Required conversation resolution (2026-09-04):** `main` requires every review thread to be
-resolved before merge. Paired deliberately with the fact that no bot on this repo comments
-automatically on every PR - CodeRabbit is disabled by default, and the Codex/PR-Agent integrations
-(`.github/workflows/pr-agent.yml`) only run on an explicit `/review`, `/describe`, `/improve`,
-`/ask` comment or `@codex review` mention - so a thread only appears when someone deliberately
-asked for one. **Replying to a thread does not resolve it** - found by testing this directly:
+resolved before merge. CodeRabbit is disabled by default (`.coderabbit.yaml`) and PR-Agent
+(`.github/workflows/pr-agent.yml`) only runs on an explicit `/review`, `/describe`, `/improve`, or
+`/ask` comment - but Codex (the `chatgpt-codex-connector` GitHub App, a separate integration from
+both of those, configured outside this repo) reviews every PR automatically and posts real,
+resolvable inline review threads whenever it has findings, with no mention needed - confirmed on
+PRs #1408 and #1410, neither of which had anyone type `@codex review`. **Replying to a thread does
+not resolve it** - found by testing this directly:
 PR #1239's two Codex review threads were replied to and their fixes merged, but stayed
 `isResolved: false` because a reply is not the same GitHub action as clicking **Resolve
 conversation**. If that button is ever unavailable or misbehaves (the original reason this repo

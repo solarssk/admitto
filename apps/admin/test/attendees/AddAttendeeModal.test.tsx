@@ -112,6 +112,46 @@ describe("AddAttendeeModal", () => {
     });
   });
 
+  it("shows the duplicate-email message for a plain 409 email_taken response", async () => {
+    mockCreateAttendee.mockRejectedValueOnce(new ApiError(409, "email_taken", "email_taken"));
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan" } });
+    fireEvent.change(screen.getByLabelText("Last name *"), { target: { value: "Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
+    await waitFor(() => {
+      expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      );
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add attendee" }));
+    expect(await screen.findByText("This email is already registered for this event.")).toBeTruthy();
+  });
+
+  it("shows the capacity message, not the duplicate-email one, for a 409 event_full response (bug: both used to render the same 'already registered' text)", async () => {
+    mockCreateAttendee.mockRejectedValueOnce(
+      new ApiError(409, "Event has reached its capacity limit.", "event_full", {
+        capacity: 400,
+        current: 400,
+      }),
+    );
+    render(<AddAttendeeModal eventId="evt-1" open onClose={() => {}} onCreated={() => {}} />);
+    fireEvent.change(screen.getByLabelText("First name *"), { target: { value: "Jan" } });
+    fireEvent.change(screen.getByLabelText("Last name *"), { target: { value: "Kowalski" } });
+    fireEvent.change(screen.getByLabelText("Email *"), { target: { value: "jan@example.com" } });
+    await waitFor(() => {
+      expect((screen.getByRole("button", { name: "Add attendee" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      );
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add attendee" }));
+    expect(
+      await screen.findByText(
+        "Event is at capacity (400/400). Free a slot or increase capacity before adding this attendee.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("This email is already registered for this event.")).toBeNull();
+  });
+
   const dietaryField = {
     id: "fld-1",
     source_field: "dietary",

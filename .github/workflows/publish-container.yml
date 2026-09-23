@@ -34,6 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read # reject manual/emergency tags whose commit has not passed main CI
     outputs:
       publish: ${{ steps.release.outputs.publish }}
       tag: ${{ steps.release.outputs.tag }}
@@ -78,6 +79,12 @@ jobs:
           esac
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
+      - name: Verify release commit CI also for manual or emergency tags
+        if: steps.release.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: GITHUB_SHA="$(git rev-parse HEAD)" bash scripts/wait-for-release-ci.sh
+
       - name: Docker metadata
         if: steps.release.outputs.publish == 'true'
         id: meta
@@ -88,8 +95,9 @@ jobs:
             type=semver,pattern={{version}},value=${{ steps.release.outputs.tag }}
             type=semver,pattern={{major}}.{{minor}},value=${{ steps.release.outputs.tag }}
 
-  # Builds, scans, and (for a real release) pushes-by-digest one platform per native runner - no
-  # QEMU emulation, so `npm ci` inside the Dockerfile resolves each platform's own native
+  # Builds and scans one platform per native runner, then smoke-tests its immutable digest before
+  # publishing any version tags. Untagged candidate digests are staged in ghcr.io first.
+  # Native runners avoid QEMU, so `npm ci` inside the Dockerfile resolves each platform's own native
   # dependency binaries (sharp/libvips, Prisma's query engine, argon2, esbuild, lightningcss)
   # correctly, the same way it already does for amd64 today. arm64 uses GitHub's free-for-public-
   # repos hosted arm64 runner (GA since 2025-08, ubuntu-24.04-arm) - no cost, no self-hosted
@@ -127,11 +135,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4.3.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
 
       - name: Build image for scan
+        if: needs.prepare.outputs.publish != 'true'
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .
           file: Dockerfile
@@ -143,10 +152,38 @@ jobs:
             GIT_COMMIT=${{ github.sha }}
           cache-from: type=gha,scope=${{ github.workflow }}-${{ matrix.suffix }}
 
+      - name: Build and push candidate by digest
+        if: needs.prepare.outputs.publish == 'true'
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: ${{ matrix.platform }}
+          labels: ${{ needs.prepare.outputs.meta-labels }}
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+          outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ github.workflow }}-${{ matrix.suffix }}
+          cache-to: type=gha,mode=max,scope=${{ github.workflow }}-${{ matrix.suffix }}
+
+      - name: Select exact image for scan and smoke
+        id: candidate
+        env:
+          PUBLISH: ${{ needs.prepare.outputs.publish }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          if [ "$PUBLISH" = 'true' ]; then
+            [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 1
+            echo "ref=ghcr.io/${{ github.repository }}@${DIGEST}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${SCAN_IMAGE}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Trivy vulnerability scan (SARIF)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
-          image-ref: ${{ env.SCAN_IMAGE }}
+          image-ref: ${{ steps.candidate.outputs.ref }}
           format: sarif
           output: trivy-results-${{ matrix.suffix }}.sarif
           scanners: vuln
@@ -167,7 +204,7 @@ jobs:
         if: needs.prepare.outputs.publish == 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
-          image-ref: ${{ env.SCAN_IMAGE }}
+          image-ref: ${{ steps.candidate.outputs.ref }}
           format: cyclonedx
           output: sbom-${{ needs.prepare.outputs.artifact_slug }}-${{ matrix.suffix }}.cdx.json
           skip-setup-trivy: true
@@ -183,7 +220,7 @@ jobs:
       - name: Trivy gate (CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
-          image-ref: ${{ env.SCAN_IMAGE }}
+          image-ref: ${{ steps.candidate.outputs.ref }}
           format: table
           scanners: vuln
           vuln-type: os,library
@@ -192,20 +229,11 @@ jobs:
           exit-code: 1
           skip-setup-trivy: true
 
-      - name: Build and push by digest
+      - name: Smoke-test this exact platform digest
         if: needs.prepare.outputs.publish == 'true'
-        id: push
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
-        with:
-          context: .
-          file: Dockerfile
-          platforms: ${{ matrix.platform }}
-          labels: ${{ needs.prepare.outputs.meta-labels }}
-          build-args: |
-            GIT_COMMIT=${{ github.sha }}
-          outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ github.workflow }}-${{ matrix.suffix }}
-          cache-to: type=gha,mode=max,scope=${{ github.workflow }}-${{ matrix.suffix }}
+        env:
+          ADMITTO_IMAGE: ${{ steps.candidate.outputs.ref }}
+        run: bash deploy/scripts/smoke-image.sh
 
       - name: Export digest
         if: needs.prepare.outputs.publish == 'true'
@@ -268,7 +296,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4.3.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
 
       - name: Download digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
