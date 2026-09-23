@@ -95,35 +95,54 @@ test("operator check-in page", async ({ page }, testInfo) => {
 
 // Admin-side pages, scanned as the seeded superadmin. `blocking: false` marks a page whose current
 // findings have not been fixed or triaged yet: it is still scanned and reported, but does not fail.
+type Ids = { event: string; attendee: string };
+
+// Each admin page, the API requests that carry its data (a page is only scanned after they have
+// completed, so the scan sees real content rather than placeholders), and whether findings fail
+// the test (all do today; `blocking: false` would mark a page with unfixed, untriaged findings).
 const ADMIN_SURFACES: {
   name: string;
-  path: (ids: { event: string; attendee: string }) => string;
+  path: (ids: Ids) => string;
+  data: (ids: Ids) => string[];
   blocking: boolean;
 }[] = [
-  { name: "admin-events", path: () => "/admin", blocking: true },
+  {
+    name: "admin-events",
+    path: () => "/admin",
+    data: () => ["/api/admin/events"],
+    blocking: true,
+  },
   {
     name: "admin-overview",
     path: (i) => `/admin/events/${i.event}/overview`,
+    data: (i) => [`/api/admin/events/${i.event}/overview`],
     blocking: true,
   },
   {
     name: "admin-attendees",
     path: (i) => `/admin/events/${i.event}/attendees`,
+    data: (i) => [`/api/admin/events/${i.event}/attendees`],
     blocking: true,
   },
   {
     name: "admin-attendee-detail",
     path: (i) => `/admin/events/${i.event}/attendees/${i.attendee}`,
+    data: (i) => [`/api/admin/events/${i.event}/attendees/${i.attendee}`],
     blocking: true,
   },
   {
     name: "admin-event-settings",
     path: (i) => `/admin/events/${i.event}/settings`,
+    data: (i) => [`/api/admin/events/${i.event}/settings`],
     blocking: true,
   },
   {
     name: "admin-communication",
     path: (i) => `/admin/events/${i.event}/communication`,
+    data: (i) => [
+      `/api/admin/events/${i.event}/templates`,
+      `/api/admin/events/${i.event}/deliveries`,
+    ],
     blocking: true,
   },
 ];
@@ -139,13 +158,36 @@ test("admin pages", async ({ page, baseURL }, testInfo) => {
   await signInAsAdmin(page, baseURL!, seed.adminEmail, seed.adminPassword);
 
   for (const surface of ADMIN_SURFACES) {
-    await page.goto(
-      surface.path({ event: seed.eventId, attendee: seed.attendeeId }),
-    );
+    const ids = { event: seed.eventId, attendee: seed.attendeeId };
+    // Listeners are attached before navigating so a fast response cannot be missed.
+    const loaded = surface
+      .data(ids)
+      .map((pathname) =>
+        page.waitForResponse(
+          (res) =>
+            new URL(res.url()).pathname === pathname &&
+            res.request().method() === "GET" &&
+            res.ok(),
+        ),
+      );
+    await page.goto(surface.path(ids));
+    await Promise.all(loaded);
     await expect(page.getByRole("heading").first()).toBeVisible();
-    // Ready = every loading spinner (the shared Spinner renders `.at-spinner`) has gone. Waiting for
-    // network idle instead would never finish on pages that hold a live (SSE) stream open.
     await expect(page.locator(".at-spinner")).toHaveCount(0);
+    // Two animation frames let React commit what the responses just delivered, then any finite
+    // animation (notices fade in) must be over: axe reads colours mid-fade otherwise, and reports
+    // contrast against a half-transparent text colour that is not what users end up seeing.
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      await Promise.all(
+        document
+          .getAnimations()
+          .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+          .map((a) => a.finished),
+      );
+    });
     await scanAndReport(page, testInfo, surface.name, {
       blocking: surface.blocking,
     });

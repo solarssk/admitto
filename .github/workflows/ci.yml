@@ -219,7 +219,9 @@ jobs:
               - "apps/web/src/checkin-gate.ts"
               - "apps/web/src/checkin-stream-limit.ts"
               - "apps/web/src/auth/**"
-              - "apps/web/src/admin/checkin-*.ts"
+              # All admin API handlers: the check-in ones, and those behind the admin pages the
+              # accessibility scan loads (overview, attendees, settings, communication).
+              - "apps/web/src/admin/**"
               - "packages/auth/**"
               - "packages/tickets/**"
               - "packages/db/prisma/**"
