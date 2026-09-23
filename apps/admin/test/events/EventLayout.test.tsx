@@ -186,6 +186,35 @@ describe("EventLayout (#274)", () => {
     expect(fetchAdminEvent).toHaveBeenCalledWith("evt-1");
   });
 
+  it("ignores a stale refreshEvent response that resolves after a newer one (race)", async () => {
+    renderLayout({
+      pathname: "/admin/events/evt-1/overview",
+      state: { event: eventDto("evt-1", "Spring Gala") },
+    });
+
+    let resolveFirst!: (event: EventDto) => void;
+    let resolveSecond!: (event: EventDto) => void;
+    fetchAdminEvent
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveSecond = resolve)));
+
+    const refreshButton = screen.getByRole("button", { name: "refresh" });
+    refreshButton.click(); // issues the first, older refresh
+    refreshButton.click(); // issues a second, newer refresh before the first has settled
+
+    // The newer call settles first...
+    resolveSecond(eventDto("evt-1", "Spring Gala", "2026-03-01T00:00:00.000Z"));
+    await waitFor(() =>
+      expect(screen.getByTestId("shell-archived-at").textContent).toBe("2026-03-01T00:00:00.000Z"),
+    );
+
+    // ...and the older call's response, arriving late, must not overwrite it.
+    await act(async () => {
+      resolveFirst(eventDto("evt-1", "Spring Gala", "2026-01-01T00:00:00.000Z"));
+    });
+    expect(screen.getByTestId("shell-archived-at").textContent).toBe("2026-03-01T00:00:00.000Z");
+  });
+
   it("refreshEvent silently keeps the last-known snapshot when the background re-fetch fails", async () => {
     renderLayout({
       pathname: "/admin/events/evt-1/overview",
