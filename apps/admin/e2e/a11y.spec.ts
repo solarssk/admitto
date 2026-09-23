@@ -1,6 +1,7 @@
 import { appendFileSync, writeFileSync } from "node:fs";
 import AxeBuilder from "@axe-core/playwright";
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
+import { signInAsAdmin } from "./admin-login.js";
 import { readSeedData } from "./seed.js";
 
 /**
@@ -16,8 +17,15 @@ async function scanAndReport(
   page: Page,
   testInfo: TestInfo,
   surface: string,
+  { blocking: failOnSerious = true }: { blocking?: boolean } = {},
 ): Promise<void> {
-  const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+  // iframes are excluded: the only ones are the srcdoc mail-template previews on the Communication
+  // page, whose content is the template's own HTML rather than the app's UI, and axe hangs
+  // indefinitely trying to scan them.
+  const results = await new AxeBuilder({ page })
+    .exclude("iframe")
+    .withTags(WCAG_TAGS)
+    .analyze();
 
   // Guards against a silently empty scan (e.g. the page hadn't rendered) counting as "no violations".
   expect(results.passes.length + results.violations.length).toBeGreaterThan(0);
@@ -50,10 +58,15 @@ async function scanAndReport(
     );
   }
 
-  expect(
-    blocking.map((v) => `${v.id}: ${v.help}`),
-    `serious/critical accessibility violations on ${surface}`,
-  ).toEqual([]);
+  if (failOnSerious) {
+    // Soft, so one page's failure does not stop the remaining pages in the same test from being scanned.
+    expect
+      .soft(
+        blocking.map((v) => `${v.id}: ${v.help}`),
+        `serious/critical accessibility violations on ${surface}`,
+      )
+      .toEqual([]);
+  }
 }
 
 test("login page", async ({ page }, testInfo) => {
@@ -78,4 +91,60 @@ test("operator check-in page", async ({ page }, testInfo) => {
   ).toBeVisible();
 
   await scanAndReport(page, testInfo, "operator-checkin");
+});
+
+// Admin-side pages, scanned as the seeded superadmin. `blocking: false` marks a page whose current
+// findings have not been fixed or triaged yet: it is still scanned and reported, but does not fail.
+const ADMIN_SURFACES: {
+  name: string;
+  path: (ids: { event: string; attendee: string }) => string;
+  blocking: boolean;
+}[] = [
+  { name: "admin-events", path: () => "/admin", blocking: true },
+  {
+    name: "admin-overview",
+    path: (i) => `/admin/events/${i.event}/overview`,
+    blocking: true,
+  },
+  {
+    name: "admin-attendees",
+    path: (i) => `/admin/events/${i.event}/attendees`,
+    blocking: true,
+  },
+  {
+    name: "admin-attendee-detail",
+    path: (i) => `/admin/events/${i.event}/attendees/${i.attendee}`,
+    blocking: true,
+  },
+  {
+    name: "admin-event-settings",
+    path: (i) => `/admin/events/${i.event}/settings`,
+    blocking: true,
+  },
+  {
+    name: "admin-communication",
+    path: (i) => `/admin/events/${i.event}/communication`,
+    blocking: true,
+  },
+];
+
+test("admin pages", async ({ page, baseURL }, testInfo) => {
+  // Six pages, each waited for and scanned, plus the sign-in: more than the 30 s default.
+  test.setTimeout(180_000);
+  const seed = await readSeedData();
+  await signInAsAdmin(page, baseURL!, seed.adminEmail, seed.adminPassword);
+
+  for (const surface of ADMIN_SURFACES) {
+    await page.goto(
+      surface.path({ event: seed.eventId, attendee: seed.attendeeId }),
+    );
+    await expect(page.getByRole("heading").first()).toBeVisible();
+    // Pages with a live (SSE) stream never go network-idle, so settle briefly rather than wait for it.
+    await page
+      .waitForLoadState("networkidle", { timeout: 4_000 })
+      .catch(() => undefined);
+    await scanAndReport(page, testInfo, surface.name, {
+      blocking: surface.blocking,
+    });
+  }
 });

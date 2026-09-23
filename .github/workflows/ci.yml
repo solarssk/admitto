@@ -193,10 +193,11 @@ jobs:
               # also runs the job on any dependency PR; accepted, it is a ~2 minute job.
               - "apps/admin/package.json"
               - "package-lock.json"
-              # Stylesheets the accessibility scan's contrast findings come from: the global staff
-              # stylesheet (defines the check-in classes) and the colour tokens it builds on.
-              - "apps/admin/src/staff.css"
-              - "packages/ui/src/styles/tokens/colors.css"
+              # The accessibility scan (apps/admin/e2e/a11y.spec.ts) covers the check-in page and
+              # several admin pages, so any change to the admin app or the shared UI package (markup
+              # and stylesheets alike) can regress it.
+              - "apps/admin/src/**"
+              - "packages/ui/src/**"
               - "apps/admin/src/App.tsx"
               - "apps/admin/src/main.tsx"
               - "apps/admin/src/api/client.ts"
