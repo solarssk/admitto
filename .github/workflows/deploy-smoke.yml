@@ -1,104 +1,66 @@
 name: Deploy smoke
 
-# The `push: tags:` trigger below fires for both an ordinary release (release.yml's
-# `gh release create` pushes the tag using a GitHub App installation token, which - unlike
-# GITHUB_TOKEN - is not exempt from triggering other workflows' own `push:` events) and the
-# emergency signed-tag path (scripts/release-tag.sh, a real user's own credentials). Neither path
-# dispatches this workflow explicitly any more; both rely on this trigger alone.
+# The release gate in publish-container.yml smoke-tests both platform digests before tagging.
+# This independent run verifies that the final multi-arch release tag can also be pulled.
 on:
   workflow_dispatch:
+    inputs:
+      image_ref:
+        description: Published ghcr.io/solarssk/admitto image reference to test
+        required: false
   push:
     tags:
       - "v*.*.*"
 
-# Scoped per ref so a manual dispatch can't overlap a tag push's own run.
 concurrency:
   group: deploy-smoke-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   deploy-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Prepare deploy env
-        working-directory: deploy
+      - name: Log in to ghcr.io
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve published image
+        env:
+          DISPATCH_IMAGE: ${{ inputs.image_ref }}
         run: |
-          cp .env.example .env
-          sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=smoke-test-secret/' .env
-          sed -i 's|^DATABASE_URL=.*|DATABASE_URL=postgresql://admitto_app:smoke-test-secret@db:5432/admitto|' .env
-          ENCRYPTION_KEY=$(openssl rand -base64 32)
-          node -e "if (Buffer.from(process.argv[1], 'base64').length !== 32) { console.error('ENCRYPTION_KEY must decode to 32 bytes'); process.exit(1); }" "$ENCRYPTION_KEY"
-          sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|" .env
-          sed -i 's|^BASE_URL=.*|BASE_URL=http://127.0.0.1:8080|' .env
-          sed -i 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=smoke-redis-secret/' .env
-          sed -i 's|^REDIS_URL=.*|REDIS_URL=redis://:smoke-redis-secret@redis:6379|' .env
-          node validate-env.mjs .env
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
+            [ -n "$DISPATCH_IMAGE" ] || { echo 'image_ref is required for manual runs' >&2; exit 1; }
+            echo "ADMITTO_IMAGE=$DISPATCH_IMAGE" >> "$GITHUB_ENV"
+          else
+            echo "ADMITTO_IMAGE=ghcr.io/${{ github.repository }}:${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          fi
 
-      # Compose otherwise creates ./emergency-exports as root-owned on a fresh runner; the app
-      # container runs as UID 1000 and can't write to it (same fix as dast-baseline's seed step).
-      - name: Prepare host bind-mount dirs
-        working-directory: deploy
-        run: sudo ./scripts/init-host-dirs.sh
-
-      - name: Build and start stack
-        working-directory: deploy
-        run: docker compose up -d --build
-
-      - name: Wait for healthy proxy
+      # The tag event also starts Publish container. Wait until it has promoted the tested
+      # candidate digests to a version tag; if publication fails, this job fails closed.
+      - name: Wait for published image
+        if: github.event_name == 'push'
         run: |
-          for _ in $(seq 1 60); do
-            if curl -sf http://127.0.0.1:8080/healthz >/dev/null; then
+          for attempt in $(seq 1 120); do
+            if docker manifest inspect "$ADMITTO_IMAGE" >/dev/null 2>&1; then
               exit 0
             fi
-            sleep 5
+            echo "Release image not published yet (${attempt}/120)."
+            sleep 15
           done
-          echo "healthz never became ready"
-          docker compose -f deploy/docker-compose.yml logs
+          echo "Timed out waiting for $ADMITTO_IMAGE" >&2
           exit 1
 
-      - name: Smoke checks
-        run: |
-          curl -sSf http://127.0.0.1:8080/healthz | grep -q '"status":"ok"'
-          # A fresh stack has no users, and GET/POST /login then redirect to /setup
-          # (auth/html-routes.ts). Bootstrap a throwaway superadmin first so the login
-          # page itself and the invalid-credentials path are exercised.
-          printf '%s\n' 'Smoke-Test-Only-Passw0rd-2026!' | docker compose -f deploy/docker-compose.yml exec -T app \
-            node packages/auth/dist/cli.js bootstrap-superadmin --email smoke-admin@example.com
-          curl -sSf http://127.0.0.1:8080/login -o /dev/null -w '%{http_code}\n' | grep -q 200
-          login_code=$(curl -s -o /tmp/login-post-body -w '%{http_code}' -X POST http://127.0.0.1:8080/login \
-            -H 'Content-Type: application/x-www-form-urlencoded' \
-            -H 'Origin: http://127.0.0.1:8080' \
-            -d 'email=smoke@example.com&password=wrong')
-          if [ "$login_code" = "403" ]; then
-            echo "POST /login blocked by CSRF (403) — check proxy X-Forwarded-Host"
-            cat /tmp/login-post-body
-            exit 1
-          fi
-          if [ "$login_code" != "401" ]; then
-            echo "POST /login expected 401 invalid credentials, got $login_code"
-            cat /tmp/login-post-body
-            exit 1
-          fi
-          grep -q 'Invalid email or password' /tmp/login-post-body
-          if curl --connect-timeout 2 -sf http://127.0.0.1:3000/healthz >/dev/null 2>&1; then
-            echo "app port 3000 must not be published on host"
-            exit 1
-          fi
-
-      - name: Verify import package in image
-        working-directory: deploy
-        run: |
-          docker compose run --rm app node --input-type=module -e "import('@admitto/import').then(() => console.log('ok'))"
-
-      - name: Tear down
-        if: always()
-        working-directory: deploy
-        run: docker compose down -v
+      - name: Smoke-test published image
+        run: bash deploy/scripts/smoke-image.sh
