@@ -40,12 +40,13 @@ export interface EventMailReportsResponse {
     send_failed: number;
   };
   /** First-vs-repeat send, computed from each attendee's actual delivery history per template
-   * (ranked by queued_at within each (attendee, template-identity) group - template_id when
-   * present, falling back to template_label_snapshot only for a deleted template or the builtin
-   * ticket send, so a template rename can't split its history and two templates sharing a label
-   * can't merge) - NOT read from the underlying EmailDelivery.purpose column, which encodes a
-   * send-time dedup intent scoped to the built-in ticket template only, and would otherwise show
-   * every other template's first-ever send as a "resend". */
+   * (ranked by queued_at within each (attendee, template-identity) group - template_id_snapshot
+   * when present, falling back to template_label_snapshot only for the builtin ticket send or a
+   * row written before that snapshot column existed, so a template rename OR a later template
+   * deletion can't split its history, and two templates sharing a label can't merge) - NOT read
+   * from the underlying EmailDelivery.purpose column, which encodes a send-time dedup intent
+   * scoped to the built-in ticket template only, and would otherwise show every other template's
+   * first-ever send as a "resend". */
   by_purpose: {
     initial: number;
     resend: number;
