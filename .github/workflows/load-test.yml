@@ -25,9 +25,13 @@ on:
   schedule:
     - cron: "0 5 * * 2" # weekly, Tuesday 05:00 UTC
 
+# Same scheme as ci.yml: GitHub keeps only one *pending* run per concurrency group, so a single
+# shared group would let a later trigger silently replace an earlier pending one (a weekly baseline
+# or a PR's run, dropped). A PR run is scoped to its PR and cancels its own superseded push; every
+# other trigger gets a unique group and always runs.
 concurrency:
-  group: load-test
-  cancel-in-progress: false
+  group: load-test-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
