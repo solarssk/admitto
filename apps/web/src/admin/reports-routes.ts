@@ -1468,7 +1468,17 @@ const MAIL_STATUS_ORDER = ["queued", "accepted", "sent", "delivered", "failed", 
  * row, resends included), attendee-level reach (deduped per attendee, so a bounced initial
  * followed by a successful resend counts as reached exactly once), the initial/resend split,
  * a per-template success rate, a day-by-day successful-send trend, and how many reached
- * attendees went on to actually view their ticket page. */
+ * attendees went on to actually view their ticket page.
+ *
+ * The initial/resend split (by_purpose, below) is deliberately NOT read from EmailDelivery.purpose.
+ * That column records send-time INTENT for a completely different consumer - mail-delivery's own
+ * atomic per-(attendee,event) dedup claim (claimInitialDelivery, packages/mail-delivery/src/
+ * send.ts) and bulk-send-routes.ts's no_delivery-scope resolution - and by its own rules only a
+ * send of the built-in "ticket" template can ever be purpose:"initial"; every other template
+ * (a location reminder, a wallet reminder, any custom campaign) is unconditionally purpose:
+ * "resend", even the very first time that specific attendee ever receives it. Reusing that column
+ * here would make every non-ticket template read as 100% "resend" in this chart regardless of
+ * actual send history. */
 async function loadMailReportsAggregates(
   db: PrismaClient,
   eventId: string,
@@ -1553,11 +1563,28 @@ async function loadMailReportsAggregates(
       where: { event_id: eventId },
       _count: { _all: true },
     }),
-    db.emailDelivery.groupBy({
-      by: ["purpose"],
-      where: { event_id: eventId },
-      _count: { _all: true },
-    }),
+    // Ranks every delivery attempt within its own (attendee, template) group by queued_at - the
+    // one timestamp EmailDelivery always has, present even on a still-queued or failed row, so a
+    // resend that never got past "failed" still counts as an attempt here (matching by_status's
+    // own every-row scope, not just successStatuses). PARTITION BY template_label_snapshot groups
+    // NULLs together (the built-in ticket template's own sends), same as by_template's groupBy
+    // above. This is genuinely the first-vs-repeat send for THAT content, unlike the stored
+    // purpose column (see loadMailReportsAggregates's own doc comment above).
+    db.$queryRaw<Array<{ purpose: "initial" | "resend"; count: bigint }>>`
+      SELECT
+        CASE WHEN attempt_no = 1 THEN 'initial' ELSE 'resend' END AS purpose,
+        COUNT(*)::bigint AS count
+      FROM (
+        SELECT
+          ROW_NUMBER() OVER (
+            PARTITION BY attendee_id, template_label_snapshot
+            ORDER BY queued_at
+          ) AS attempt_no
+        FROM "EmailDelivery"
+        WHERE event_id = ${eventId}
+      ) ranked
+      GROUP BY 1
+    `,
     db.attendee.count({ where: { event_id: eventId, ...reachedFilter } }),
     // Two independent EXISTS checks (reached, ever viewed), not one predicate on a single row -
     // recordTicketViewed stamps viewed_at on whichever delivery was "the latest successful one"
@@ -1627,7 +1654,7 @@ async function loadMailReportsAggregates(
     .map((row) => ({ status: row.status, count: row._count._all }))
     .sort((a, b) => MAIL_STATUS_ORDER.indexOf(a.status) - MAIL_STATUS_ORDER.indexOf(b.status));
 
-  const purposeCounts = new Map(byPurposeRaw.map((row) => [row.purpose, row._count._all]));
+  const purposeCounts = new Map(byPurposeRaw.map((row) => [row.purpose, Number(row.count)]));
 
   const templateTotal = new Map(byTemplateTotalRaw.map((row) => [row.template_label_snapshot, row._count._all]));
   const templateSuccessful = new Map(

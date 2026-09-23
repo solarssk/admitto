@@ -1119,6 +1119,11 @@ async function seed(client: PrismaClient) {
         purpose: "initial",
         provider: "export_only",
         status: "bounced",
+        // Explicit queued_at (not the column's own now()-at-insert default) - this row shares its
+        // by_purpose partition (attendee_id, template_label_snapshot: both null) with the resend
+        // row below, and both land in the same createMany call, so relying on the default would
+        // tie them and leave ROW_NUMBER()'s tie-break order undefined.
+        queued_at: new Date("2027-09-03T08:55:00.000Z"),
         accepted_at: new Date("2027-09-03T09:00:00.000Z"),
         viewed_at: new Date("2027-09-03T10:00:00.000Z"),
         failed_at: new Date("2027-09-03T12:00:00.000Z"),
@@ -1130,6 +1135,7 @@ async function seed(client: PrismaClient) {
         purpose: "resend",
         provider: "export_only",
         status: "accepted",
+        queued_at: new Date("2027-09-04T09:55:00.000Z"),
         accepted_at: new Date("2027-09-04T10:00:00.000Z"),
       },
     ],
@@ -3506,7 +3512,15 @@ describe("GET /api/admin/events/:eventId/reports/mail", () => {
       send_failed: 2,
     });
 
-    expect(body.by_purpose).toEqual({ initial: 7, resend: 2 });
+    // by_purpose is ranked per (attendee, template), not read off the stored purpose column -
+    // ATT_MAIL_RECOVERED's "Reminder" send is stored as purpose:"resend" (bulk-send-routes.ts only
+    // ever marks a non-ticket template as "initial" through the no_delivery/attendee_ids filter
+    // paths), but it is genuinely the first time this attendee received that template, so it must
+    // count as initial here. Only ATT_MAIL_VIEWED_RECOVERED's pair (same attendee, same null
+    // template - the built-in ticket) is a real repeat: 1 initial + 1 resend. Every other row is
+    // the only row in its own (attendee, template) group, hence initial. 8 initial + 1 resend = 9,
+    // matching delivery.total_attempts above.
+    expect(body.by_purpose).toEqual({ initial: 8, resend: 1 });
 
     expect(body.by_template).toEqual([
       { template: null, total: 8, successful: 2, successful_pct: 25 },

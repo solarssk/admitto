@@ -39,6 +39,11 @@ export interface EventMailReportsResponse {
     never_sent: number;
     send_failed: number;
   };
+  /** First-vs-repeat send, computed from each attendee's actual delivery history per template
+   * (ranked by queued_at within each (attendee, template) group) - NOT read from the underlying
+   * EmailDelivery.purpose column, which encodes a send-time dedup intent scoped to the built-in
+   * ticket template only, and would otherwise show every other template's first-ever send as a
+   * "resend". */
   by_purpose: {
     initial: number;
     resend: number;
