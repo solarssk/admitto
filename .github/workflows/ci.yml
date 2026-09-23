@@ -122,6 +122,7 @@ jobs:
       pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      checkin: ${{ steps.filter.outputs.checkin }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -150,6 +151,67 @@ jobs:
               - "!docs/**"
               - "!**/README.md"
               - "!.github/*.md"
+            # Paths the check-in E2E smoke test (apps/admin/e2e/checkin.spec.ts) actually exercises
+            # or depends on: the test itself, the operator login + check-in UI it drives, the
+            # server-side check-in/session routes and stream limiting behind it, ticket/attendee
+            # status (what "admit" flips), auth (operator login), and the DB schema all of that
+            # reads/writes. Kept separate from `code` above so this heavier job only runs on PRs
+            # that plausibly affect it, not on every code change.
+            #
+            # Also includes the shared route/client entry points the test's flow runs through
+            # end-to-end, not just the check-in-specific files: apps/admin/src/App.tsx (defines
+            # the `events/:eventId/checkin` route and wraps AuthProvider), apps/admin/src/api/
+            # client.ts (every admin API call, including the check-in scan/lookup/admit requests,
+            # goes through its shared fetch/parseJson helpers), apps/web/src/app.ts (registers
+            # every /api/checkin/* route and its middleware), and apps/admin/src/auth/** (session
+            # bootstrap, role routing, the operator device gate). Also the two runtime entry
+            # points themselves: apps/admin/src/main.tsx (the actual browser bootstrap - mounts
+            # <App> onto #root; a break here blanks the whole SPA before any route ever renders)
+            # and apps/web/src/index.ts (what apps/admin/playwright.config.ts's own `webServer`
+            # literally launches via `node --import tsx ... src/index.ts` - a break here means the
+            # server the test talks to never starts), apps/web/src/auth-middleware.ts (app.ts's
+            # createRequireSession/createRequirePartialSession - gates every authenticated
+            # request the test's operator session makes), and apps/web/src/staff-spa.ts (serves
+            # /assets/* and /operator/* - what actually delivers the SPA bundle the browser runs).
+            # A change confined to any of these can break the tested flow without touching any of
+            # the narrower paths above - caught by review on PR #1410, which had shipped without
+            # them.
+            #
+            # This is inherently incomplete: apps/web/src/app.ts wires in other shared,
+            # every-request infrastructure (request logging, baseline security headers, rate-limit
+            # store setup) that a sufficiently isolated change could still break without touching
+            # app.ts itself or anything listed here. Not chased further - app.ts (already listed)
+            # is where essentially all of that wiring actually happens, so it's the practical
+            # backstop for the remaining tail; the alternative is drifting toward listing most of
+            # apps/web/src, which stops being path-aware at all.
+            checkin:
+              - "apps/admin/e2e/**"
+              - "apps/admin/playwright.config.ts"
+              - "apps/admin/src/App.tsx"
+              - "apps/admin/src/main.tsx"
+              - "apps/admin/src/api/client.ts"
+              - "apps/admin/src/auth/**"
+              - "apps/admin/src/checkin/**"
+              - "apps/admin/src/pages/CheckInPage.tsx"
+              - "apps/admin/src/pages/CheckInEntryPage.tsx"
+              - "apps/admin/src/pages/AdminCheckInRoute.tsx"
+              - "apps/admin/src/pages/DeviceLabelStep.tsx"
+              - "apps/admin/src/settings/CheckInBehaviourPanel.tsx"
+              - "apps/web/src/app.ts"
+              - "apps/web/src/index.ts"
+              - "apps/web/src/auth-middleware.ts"
+              - "apps/web/src/staff-spa.ts"
+              - "apps/web/src/checkin-gate.ts"
+              - "apps/web/src/checkin-stream-limit.ts"
+              - "apps/web/src/auth/**"
+              - "apps/web/src/admin/checkin-*.ts"
+              - "packages/auth/**"
+              - "packages/tickets/**"
+              - "packages/db/prisma/**"
+              - "packages/db/src/**"
+              # Self-reference, same reason cflite_pr.yml lists itself: a change to this job's own
+              # definition should exercise it, not silently skip on the PR that introduces it.
+              - ".github/workflows/ci.yml"
 
   # build-test used to be one sequential job (~7-8 min, mostly the coverage step across all 14
   # workspaces). Split into 4 parallel jobs so they run concurrently instead of one after another
@@ -550,6 +612,76 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
+  # Promoted from the standalone e2e-checkin-smoke.yml (scheduled-only) workflow after 20
+  # consecutive green daily scheduled runs, well past the 14-run bar that workflow's own comment
+  # set for promotion. Only runs when `changes.checkin` matches (see that filter's own comment for
+  # what it covers) - unlike the other build-test shards, this one is genuinely conditional, so
+  # it's kept OUT of build-test's strict "every needs: entry must be success" loop (that check has
+  # no notion of "skipped is fine here") and instead checked separately, tolerating skipped.
+  e2e-checkin-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [changes]
+    if: needs.changes.outputs.checkin == 'true'
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: admitto
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: admitto
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # apps/admin/e2e/seed.ts's own deliberate opt-in, required before it writes anything - this
+      # job's Postgres above is genuinely ephemeral/isolated (same as e2e-checkin-smoke.yml's own
+      # job), so it's safe to set unconditionally here.
+      E2E_SEED_ALLOW_WRITE: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: "24.17.0"
+          cache: "npm"
+      - run: npm ci --ignore-scripts
+      - run: npm rebuild esbuild argon2 @prisma/engines prisma @prisma/client
+      - run: npm run db:generate -w @admitto/db
+      - run: npm run build
+      - name: Migrate database
+        run: npm run db:migrate -w @admitto/db
+      - name: Install Playwright browser (chromium)
+        run: node_modules/.bin/playwright install --with-deps chromium
+      - name: Run check-in E2E smoke test
+        run: npm run e2e -w @admitto/admin
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: playwright-report-pr
+          path: |
+            apps/admin/playwright-report/
+            apps/admin/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
   # main's branch protection requires a status check literally named "build-test" - this
   # aggregator keeps that name alive (and its pass/fail contract equivalent to the old monolithic
   # job) without needing anyone to update the protection rule's required-checks list. Update this
@@ -566,7 +698,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-    needs: [lint-and-typecheck, actionlint, test-web, test-admin, test-rest]
+    needs: [lint-and-typecheck, actionlint, test-web, test-admin, test-rest, e2e-checkin-smoke]
     if: always()
     steps:
       - name: Check all shards succeeded
@@ -582,6 +714,14 @@ jobs:
               exit 1
             fi
           done
+          # e2e-checkin-smoke only runs when changes.checkin is true (see that job's own
+          # comment) - "skipped" is the expected, passing outcome for every other PR; only a
+          # genuine failure/cancellation of a run that did execute should block.
+          e2e_result="${{ needs.e2e-checkin-smoke.result }}"
+          if [ "$e2e_result" != "success" ] && [ "$e2e_result" != "skipped" ]; then
+            echo "e2e-checkin-smoke did not succeed."
+            exit 1
+          fi
           echo "All build-test shards passed."
 
   secret-scan:
