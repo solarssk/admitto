@@ -187,6 +187,16 @@ jobs:
             checkin:
               - "apps/admin/e2e/**"
               - "apps/admin/playwright.config.ts"
+              # Playwright and @axe-core/playwright are only consumed by apps/admin/e2e, which the
+              # normal build never compiles - a dependency bump alone (Dependabot) would otherwise
+              # merge without ever exercising them. The lockfile is root-level and shared, so this
+              # also runs the job on any dependency PR; accepted, it is a ~2 minute job.
+              - "apps/admin/package.json"
+              - "package-lock.json"
+              # Stylesheets the accessibility scan's contrast findings come from: the global staff
+              # stylesheet (defines the check-in classes) and the colour tokens it builds on.
+              - "apps/admin/src/staff.css"
+              - "packages/ui/src/styles/tokens/colors.css"
               - "apps/admin/src/App.tsx"
               - "apps/admin/src/main.tsx"
               - "apps/admin/src/api/client.ts"
@@ -201,6 +211,10 @@ jobs:
               - "apps/web/src/index.ts"
               - "apps/web/src/auth-middleware.ts"
               - "apps/web/src/staff-spa.ts"
+              # The /login page itself (server-rendered, not part of the SPA), scanned by
+              # apps/admin/e2e/a11y.spec.ts and exercised by the login step of checkin.spec.ts.
+              - "apps/web/src/login-page.ts"
+              - "apps/web/src/shared-auth-styles.ts"
               - "apps/web/src/checkin-gate.ts"
               - "apps/web/src/checkin-stream-limit.ts"
               - "apps/web/src/auth/**"
@@ -883,7 +897,10 @@ jobs:
           # Admitto's own code) and are never bundled into what a customer runs, so the
           # version-blindness this action's own `purlsMatch()` imposes on a name-only entry isn't
           # the same hole it would be for a real runtime dependency.
-          allow-dependencies-licenses: "pkg:githubactions/sonarsource/sonarqube-scan-action, pkg:npm/ip-location-api, pkg:pypi/semgrep, pkg:pypi/certifi, pkg:pypi/protobuf, pkg:pypi/typing-extensions"
+          # axe-core and @axe-core/playwright are MPL-2.0 devDependencies of apps/admin, used only by
+          # the Playwright accessibility scan (never shipped in the runtime image) - same
+          # version-blindness trade-off as the CI-only tools above; re-review on a major bump.
+          allow-dependencies-licenses: "pkg:githubactions/sonarsource/sonarqube-scan-action, pkg:npm/ip-location-api, pkg:npm/axe-core, pkg:npm/%40axe-core/playwright, pkg:pypi/semgrep, pkg:pypi/certifi, pkg:pypi/protobuf, pkg:pypi/typing-extensions"
 
   docker-build:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

@@ -454,6 +454,19 @@ model EmailDelivery {
   batch_id                String?
   template_id             String?
   template                MailTemplate? @relation(fields: [template_id], references: [id], onDelete: SetNull)
+  // A plain copy of template_id at send time - deliberately NOT a foreign key, so it is never
+  // SetNull'd when the live MailTemplate row is later deleted (same "templates may be deleted
+  // even once used" scenario template_label_snapshot's own comment covers). template_id alone
+  // stops identifying a specific template the moment it's deleted; anything that needs to tell
+  // one template's send history apart from another's (e.g. reports-routes.ts's by_purpose
+  // partition) must key on this instead, falling back to template_label_snapshot only for a
+  // genuine builtin send (both null) or a row that predates this column. Null when no custom
+  // template was used (builtin default), same as template_id. Rows predating this column are
+  // backfilled from their own template_id while it's still non-null (see
+  // backfill-email-delivery-template-id-snapshot.ts) - a pre-existing row whose template_id was
+  // already SetNull'd before the backfill ran has no id left to recover, which is unrecoverable
+  // (same limitation template_label_snapshot's own backfill already accepts).
+  template_id_snapshot    String?
   // The template's label at send time, independent of the live MailTemplate row - template_id
   // is SetNull'd if that row is later deleted (templates may be deleted even once used, see
   // multi-template.test.ts), which would otherwise make a deleted-template send indistinguishable

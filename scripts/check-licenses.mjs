@@ -105,6 +105,11 @@ const REVIEWED_PACKAGE_VERSIONS = new Set([
   // used unmodified, not shipped in the runtime server image.
   "lightningcss@1.33.0",
   "lightningcss-darwin-arm64@1.33.0",
+  // axe-core + @axe-core/playwright - MPL-2.0 (file-level copyleft); devDependencies of apps/admin
+  // used only by the Playwright accessibility scan (apps/admin/e2e/a11y.spec.ts), used unmodified,
+  // not shipped in the runtime server image.
+  "axe-core@4.13.0",
+  "@axe-core/playwright@4.13.0",
   // ip-location-api - package.json reports the non-SPDX string "Multiple licenses" (its own
   // LICENSE file: the library code itself is MIT; the rest documents licensing for the
   // *alternative data sources* it can be configured to use, MaxMind GeoLite2 among them). This

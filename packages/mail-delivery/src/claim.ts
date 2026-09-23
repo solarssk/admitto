@@ -57,6 +57,9 @@ function deliveryCreateData(input: ClaimInitialInput, purpose: "initial" | "rese
     purpose,
     batch_id: input.batchId,
     template_id: input.templateId,
+    // Same value as template_id above, but never SetNull'd on a later template deletion - see
+    // that column's own schema comment for why a stable identity has to be captured separately.
+    template_id_snapshot: input.templateId ?? null,
     template_label_snapshot: input.templateLabel ?? null,
     had_wallet_cta: input.hasWalletCta,
     provider: input.provider,
@@ -187,6 +190,7 @@ async function claimReclaimCancelled(
       created_at: now,
       batch_id: input.batchId,
       template_id: input.templateId,
+      template_id_snapshot: input.templateId ?? null,
       template_label_snapshot: input.templateLabel ?? null,
       had_wallet_cta: input.hasWalletCta,
       provider: input.provider,

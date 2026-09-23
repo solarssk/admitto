@@ -69,6 +69,11 @@ const EVENT_MAIL_DELIVERY_TIE = "evt-reports-mail-delivery-tie";
 // EVENT_MAIL above has no zero-delivery attendee (its 4 not-reached attendees each have exactly
 // one failed/bounced/queued/cancelled row), so it can't tell the two reasons apart on its own.
 const EVENT_MAIL_REACH_SPLIT = "evt-reports-mail-reach-split";
+// Minimal, separate event - regression fixture for by_purpose's template-identity partition (bot
+// review, PR #1417): MailTemplate.label has no uniqueness constraint and is freely editable, so
+// partitioning by template_label_snapshot alone would split one template's history across a
+// rename and merge two different templates that happen to share a label.
+const EVENT_MAIL_TEMPLATE_IDENTITY = "evt-reports-mail-template-identity";
 
 const EMAIL_ADMIN = "reports-admin@example.com";
 const EMAIL_ADMIN_B = "reports-admin-b@example.com";
@@ -124,6 +129,10 @@ const ATT_MAIL_QUEUED = "att-reports-mail-queued";
 const ATT_MAIL_CANCELLED = "att-reports-mail-cancelled";
 const ATT_MAIL_BOUNCED_AFTER_ACCEPT = "att-reports-mail-bounced-after-accept";
 const ATT_MAIL_VIEWED_RECOVERED = "att-reports-mail-viewed-recovered";
+const ATT_MAIL_TI_RENAMED = "att-reports-mail-ti-renamed";
+const ATT_MAIL_TI_DUPLICATE_LABEL = "att-reports-mail-ti-duplicate-label";
+const ATT_MAIL_TI_RENAMED_THEN_DELETED = "att-reports-mail-ti-renamed-then-deleted";
+const ATT_MAIL_TI_DUPLICATE_LABEL_DELETED = "att-reports-mail-ti-duplicate-label-deleted";
 const ATT_MAIL_REACH_SPLIT_NEVER_SENT = "att-reports-mail-reach-split-never-sent";
 const ATT_MAIL_REACH_SPLIT_SEND_FAILED = "att-reports-mail-reach-split-send-failed";
 const ATT_MAIL_REACH_SPLIT_BOUNCED_THEN_REQUEUED = "att-reports-mail-reach-split-bounced-then-requeued";
@@ -194,6 +203,7 @@ async function seed(client: PrismaClient) {
     EVENT_MAIL_DELIVERY_CAP,
     EVENT_MAIL_DELIVERY_TIE,
     EVENT_MAIL_REACH_SPLIT,
+    EVENT_MAIL_TEMPLATE_IDENTITY,
   ];
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -358,6 +368,13 @@ async function seed(client: PrismaClient) {
         title: "Mail Reach Split Event",
         slug: "reports-mail-reach-split",
         date: new Date("2027-09-08T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+      {
+        id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        title: "Mail Template Identity Event",
+        slug: "reports-mail-template-identity",
+        date: new Date("2027-09-09T12:00:00.000Z"),
         organization_id: ORG_REP,
       },
     ],
@@ -1119,6 +1136,11 @@ async function seed(client: PrismaClient) {
         purpose: "initial",
         provider: "export_only",
         status: "bounced",
+        // Explicit queued_at (not the column's own now()-at-insert default) - this row shares its
+        // by_purpose partition (attendee_id, template_label_snapshot: both null) with the resend
+        // row below, and both land in the same createMany call, so relying on the default would
+        // tie them and leave ROW_NUMBER()'s tie-break order undefined.
+        queued_at: new Date("2027-09-03T08:55:00.000Z"),
         accepted_at: new Date("2027-09-03T09:00:00.000Z"),
         viewed_at: new Date("2027-09-03T10:00:00.000Z"),
         failed_at: new Date("2027-09-03T12:00:00.000Z"),
@@ -1130,6 +1152,7 @@ async function seed(client: PrismaClient) {
         purpose: "resend",
         provider: "export_only",
         status: "accepted",
+        queued_at: new Date("2027-09-04T09:55:00.000Z"),
         accepted_at: new Date("2027-09-04T10:00:00.000Z"),
       },
     ],
@@ -1324,6 +1347,241 @@ async function seed(client: PrismaClient) {
       },
     ],
   });
+
+  // Regression fixture for by_purpose's template-identity partition (bot review round 1, PR
+  // #1417). renamedTemplate is ONE MailTemplate row, sent twice under two different label
+  // snapshots (as if an admin edited its label between the two sends) - must still count as 1
+  // initial + 1 resend, keyed on its stable template_id_snapshot, not split by the differing
+  // label. dupLabelTemplateA/B are TWO separate MailTemplate rows sharing the identical label
+  // "Announcement" (label has no uniqueness constraint - only (scope_type, scope_id, name) does)
+  // - each one's only send to this attendee must count as its own initial, not merged into a
+  // false initial+resend pair just because their label snapshots are equal. Every row below sets
+  // template_id_snapshot explicitly (mirroring what claim.ts's deliveryCreateData actually writes
+  // at send time - these fixture rows go straight through Prisma, not through claim.ts).
+  const renamedTemplate = await client.mailTemplate.create({
+    data: {
+      scope_type: "event",
+      scope_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+      name: "welcome",
+      label: "Welcome",
+      subject_template: "Welcome",
+      body_template: "<mjml><mj-body></mj-body></mjml>",
+      template_format: "mjml",
+      compiled_html_template: "<html></html>",
+    },
+  });
+  const dupLabelTemplateA = await client.mailTemplate.create({
+    data: {
+      scope_type: "event",
+      scope_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+      name: "announcement-a",
+      label: "Announcement",
+      subject_template: "Announcement A",
+      body_template: "<mjml><mj-body></mj-body></mjml>",
+      template_format: "mjml",
+      compiled_html_template: "<html></html>",
+    },
+  });
+  const dupLabelTemplateB = await client.mailTemplate.create({
+    data: {
+      scope_type: "event",
+      scope_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+      name: "announcement-b",
+      label: "Announcement",
+      subject_template: "Announcement B",
+      body_template: "<mjml><mj-body></mj-body></mjml>",
+      template_format: "mjml",
+      compiled_html_template: "<html></html>",
+    },
+  });
+  // Bot review round 2 (same PR): the two templates below get DELETED right after their sends
+  // (SetNull's template_id, same as a real "admin deletes a used campaign template" - see
+  // multi-template.test.ts) to prove template_id_snapshot, not template_id itself, is what keeps
+  // this partition stable once that happens.
+  const renamedThenDeletedTemplate = await client.mailTemplate.create({
+    data: {
+      scope_type: "event",
+      scope_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+      name: "farewell",
+      label: "Farewell",
+      subject_template: "Farewell",
+      body_template: "<mjml><mj-body></mj-body></mjml>",
+      template_format: "mjml",
+      compiled_html_template: "<html></html>",
+    },
+  });
+  const dupLabelDeletedTemplateA = await client.mailTemplate.create({
+    data: {
+      scope_type: "event",
+      scope_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+      name: "closing-a",
+      label: "Closing",
+      subject_template: "Closing A",
+      body_template: "<mjml><mj-body></mj-body></mjml>",
+      template_format: "mjml",
+      compiled_html_template: "<html></html>",
+    },
+  });
+  const dupLabelDeletedTemplateB = await client.mailTemplate.create({
+    data: {
+      scope_type: "event",
+      scope_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+      name: "closing-b",
+      label: "Closing",
+      subject_template: "Closing B",
+      body_template: "<mjml><mj-body></mj-body></mjml>",
+      template_format: "mjml",
+      compiled_html_template: "<html></html>",
+    },
+  });
+  await client.attendee.createMany({
+    data: [
+      {
+        id: ATT_MAIL_TI_RENAMED,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        email: "mail-ti-renamed@example.com",
+        name: "Mail Ti Renamed",
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_MAIL_TI_DUPLICATE_LABEL,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        email: "mail-ti-duplicate-label@example.com",
+        name: "Mail Ti Duplicate Label",
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_MAIL_TI_RENAMED_THEN_DELETED,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        email: "mail-ti-renamed-then-deleted@example.com",
+        name: "Mail Ti Renamed Then Deleted",
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_MAIL_TI_DUPLICATE_LABEL_DELETED,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        email: "mail-ti-duplicate-label-deleted@example.com",
+        name: "Mail Ti Duplicate Label Deleted",
+        ...mkAttendeeToken(),
+      },
+    ],
+  });
+  await client.emailDelivery.createMany({
+    data: [
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        attendee_id: ATT_MAIL_TI_RENAMED,
+        purpose: "initial",
+        provider: "export_only",
+        status: "accepted",
+        template_id: renamedTemplate.id,
+        template_id_snapshot: renamedTemplate.id,
+        template_label_snapshot: "Welcome",
+        queued_at: new Date("2027-09-09T09:00:00.000Z"),
+        accepted_at: new Date("2027-09-09T09:05:00.000Z"),
+      },
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        attendee_id: ATT_MAIL_TI_RENAMED,
+        purpose: "resend",
+        provider: "export_only",
+        status: "accepted",
+        template_id: renamedTemplate.id,
+        template_id_snapshot: renamedTemplate.id,
+        template_label_snapshot: "Welcome (updated)",
+        queued_at: new Date("2027-09-10T09:00:00.000Z"),
+        accepted_at: new Date("2027-09-10T09:05:00.000Z"),
+      },
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        attendee_id: ATT_MAIL_TI_DUPLICATE_LABEL,
+        purpose: "initial",
+        provider: "export_only",
+        status: "accepted",
+        template_id: dupLabelTemplateA.id,
+        template_id_snapshot: dupLabelTemplateA.id,
+        template_label_snapshot: "Announcement",
+        queued_at: new Date("2027-09-09T10:00:00.000Z"),
+        accepted_at: new Date("2027-09-09T10:05:00.000Z"),
+      },
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        attendee_id: ATT_MAIL_TI_DUPLICATE_LABEL,
+        // Stored as "resend" (bulk-send-routes.ts's own rules mark any non-ticket template send
+        // as "resend" - see loadMailReportsAggregates's doc comment) even though it's genuinely
+        // the first-ever send of THIS template to this attendee.
+        purpose: "resend",
+        provider: "export_only",
+        status: "accepted",
+        template_id: dupLabelTemplateB.id,
+        template_id_snapshot: dupLabelTemplateB.id,
+        template_label_snapshot: "Announcement",
+        queued_at: new Date("2027-09-10T10:00:00.000Z"),
+        accepted_at: new Date("2027-09-10T10:05:00.000Z"),
+      },
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        attendee_id: ATT_MAIL_TI_RENAMED_THEN_DELETED,
+        purpose: "initial",
+        provider: "export_only",
+        status: "accepted",
+        template_id: renamedThenDeletedTemplate.id,
+        template_id_snapshot: renamedThenDeletedTemplate.id,
+        template_label_snapshot: "Farewell",
+        queued_at: new Date("2027-09-09T11:00:00.000Z"),
+        accepted_at: new Date("2027-09-09T11:05:00.000Z"),
+      },
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        attendee_id: ATT_MAIL_TI_RENAMED_THEN_DELETED,
+        purpose: "resend",
+        provider: "export_only",
+        status: "accepted",
+        template_id: renamedThenDeletedTemplate.id,
+        template_id_snapshot: renamedThenDeletedTemplate.id,
+        template_label_snapshot: "Farewell (updated)",
+        queued_at: new Date("2027-09-10T11:00:00.000Z"),
+        accepted_at: new Date("2027-09-10T11:05:00.000Z"),
+      },
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        attendee_id: ATT_MAIL_TI_DUPLICATE_LABEL_DELETED,
+        purpose: "initial",
+        provider: "export_only",
+        status: "accepted",
+        template_id: dupLabelDeletedTemplateA.id,
+        template_id_snapshot: dupLabelDeletedTemplateA.id,
+        template_label_snapshot: "Closing",
+        queued_at: new Date("2027-09-09T12:00:00.000Z"),
+        accepted_at: new Date("2027-09-09T12:05:00.000Z"),
+      },
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        attendee_id: ATT_MAIL_TI_DUPLICATE_LABEL_DELETED,
+        purpose: "resend",
+        provider: "export_only",
+        status: "accepted",
+        template_id: dupLabelDeletedTemplateB.id,
+        template_id_snapshot: dupLabelDeletedTemplateB.id,
+        template_label_snapshot: "Closing",
+        queued_at: new Date("2027-09-10T12:00:00.000Z"),
+        accepted_at: new Date("2027-09-10T12:05:00.000Z"),
+      },
+    ],
+  });
+  // Delete AFTER both sends complete - SetNull's template_id on all four rows above, but
+  // template_id_snapshot (not a foreign key) survives untouched.
+  await client.mailTemplate.delete({ where: { id: renamedThenDeletedTemplate.id } });
+  await client.mailTemplate.delete({ where: { id: dupLabelDeletedTemplateA.id } });
+  await client.mailTemplate.delete({ where: { id: dupLabelDeletedTemplateB.id } });
 
   // Regression fixture for the custom fields CSV export's own duplicate-label disambiguation
   // (CodeRabbit review) - two fields sharing the same label ("Size"), distinguishable only by
@@ -3506,7 +3764,15 @@ describe("GET /api/admin/events/:eventId/reports/mail", () => {
       send_failed: 2,
     });
 
-    expect(body.by_purpose).toEqual({ initial: 7, resend: 2 });
+    // by_purpose is ranked per (attendee, template), not read off the stored purpose column -
+    // ATT_MAIL_RECOVERED's "Reminder" send is stored as purpose:"resend" (bulk-send-routes.ts only
+    // ever marks a non-ticket template as "initial" through the no_delivery/attendee_ids filter
+    // paths), but it is genuinely the first time this attendee received that template, so it must
+    // count as initial here. Only ATT_MAIL_VIEWED_RECOVERED's pair (same attendee, same null
+    // template - the built-in ticket) is a real repeat: 1 initial + 1 resend. Every other row is
+    // the only row in its own (attendee, template) group, hence initial. 8 initial + 1 resend = 9,
+    // matching delivery.total_attempts above.
+    expect(body.by_purpose).toEqual({ initial: 8, resend: 1 });
 
     expect(body.by_template).toEqual([
       { template: null, total: 8, successful: 2, successful_pct: 25 },
@@ -3583,6 +3849,33 @@ describe("GET /api/admin/events/:eventId/reports/mail", () => {
       never_sent: 1,
       send_failed: 4,
     });
+  });
+
+  it("partitions by_purpose by stable template identity, not by the mutable label snapshot", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_MAIL_TEMPLATE_IDENTITY}/reports/mail`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventMailReportsResponse;
+
+    // ATT_MAIL_TI_RENAMED's two sends share one template_id_snapshot but carry two different
+    // label snapshots ("Welcome" then "Welcome (updated)") - partitioning by label alone would
+    // read these as two unrelated templates and miscount both as initial. Keyed on
+    // template_id_snapshot, this is correctly 1 initial + 1 resend.
+    // ATT_MAIL_TI_DUPLICATE_LABEL's two sends are two genuinely different templates (different
+    // template_id_snapshot) that merely share the label "Announcement" - partitioning by label
+    // alone would merge them into one initial+resend pair. Keyed on template_id_snapshot, both
+    // are correctly initial: each is that specific template's first-ever send to this attendee,
+    // regardless of the second one being stored as purpose:"resend" (bulk-send-routes.ts's own
+    // non-ticket-template rule).
+    // ATT_MAIL_TI_RENAMED_THEN_DELETED and ATT_MAIL_TI_DUPLICATE_LABEL_DELETED repeat both cases,
+    // but their templates are deleted right after sending (SetNull's template_id on all 4 rows) -
+    // proving template_id_snapshot, not template_id itself, is what the partition actually reads:
+    // 1 more initial + 1 more resend (the renamed-then-deleted pair), then 2 more initial (the
+    // duplicate-label-then-deleted pair).
+    // Total: (3 initial + 1 resend) + (1 initial + 1 resend) + (2 initial + 0 resend) = 6 initial,
+    // 2 resend, across all 8 rows in this event.
+    expect(body.by_purpose).toEqual({ initial: 6, resend: 2 });
   });
 });
 
