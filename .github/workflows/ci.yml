@@ -156,13 +156,19 @@ jobs:
             # client.ts (every admin API call, including the check-in scan/lookup/admit requests,
             # goes through its shared fetch/parseJson helpers), apps/web/src/app.ts (registers
             # every /api/checkin/* route and its middleware), and apps/admin/src/auth/** (session
-            # bootstrap, role routing, the operator device gate). A change confined to any of
-            # these can break the tested flow without touching any of the narrower paths above -
-            # caught by review on PR #1410, which had shipped without them.
+            # bootstrap, role routing, the operator device gate). Also the two runtime entry
+            # points themselves: apps/admin/src/main.tsx (the actual browser bootstrap - mounts
+            # <App> onto #root; a break here blanks the whole SPA before any route ever renders)
+            # and apps/web/src/index.ts (what apps/admin/playwright.config.ts's own `webServer`
+            # literally launches via `node --import tsx ... src/index.ts` - a break here means the
+            # server the test talks to never starts). A change confined to any of these can break
+            # the tested flow without touching any of the narrower paths above - caught by review
+            # on PR #1410, which had shipped without them.
             checkin:
               - "apps/admin/e2e/**"
               - "apps/admin/playwright.config.ts"
               - "apps/admin/src/App.tsx"
+              - "apps/admin/src/main.tsx"
               - "apps/admin/src/api/client.ts"
               - "apps/admin/src/auth/**"
               - "apps/admin/src/checkin/**"
@@ -172,6 +178,7 @@ jobs:
               - "apps/admin/src/pages/DeviceLabelStep.tsx"
               - "apps/admin/src/settings/CheckInBehaviourPanel.tsx"
               - "apps/web/src/app.ts"
+              - "apps/web/src/index.ts"
               - "apps/web/src/checkin-gate.ts"
               - "apps/web/src/checkin-stream-limit.ts"
               - "apps/web/src/auth/**"
