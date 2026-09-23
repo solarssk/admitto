@@ -143,10 +143,9 @@ test("admin pages", async ({ page, baseURL }, testInfo) => {
       surface.path({ event: seed.eventId, attendee: seed.attendeeId }),
     );
     await expect(page.getByRole("heading").first()).toBeVisible();
-    // Pages with a live (SSE) stream never go network-idle, so settle briefly rather than wait for it.
-    await page
-      .waitForLoadState("networkidle", { timeout: 4_000 })
-      .catch(() => undefined);
+    // Ready = every loading spinner (the shared Spinner renders `.at-spinner`) has gone. Waiting for
+    // network idle instead would never finish on pages that hold a live (SSE) stream open.
+    await expect(page.locator(".at-spinner")).toHaveCount(0);
     await scanAndReport(page, testInfo, surface.name, {
       blocking: surface.blocking,
     });
