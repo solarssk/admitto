@@ -69,6 +69,11 @@ const EVENT_MAIL_DELIVERY_TIE = "evt-reports-mail-delivery-tie";
 // EVENT_MAIL above has no zero-delivery attendee (its 4 not-reached attendees each have exactly
 // one failed/bounced/queued/cancelled row), so it can't tell the two reasons apart on its own.
 const EVENT_MAIL_REACH_SPLIT = "evt-reports-mail-reach-split";
+// Minimal, separate event - regression fixture for by_purpose's template-identity partition (bot
+// review, PR #1417): MailTemplate.label has no uniqueness constraint and is freely editable, so
+// partitioning by template_label_snapshot alone would split one template's history across a
+// rename and merge two different templates that happen to share a label.
+const EVENT_MAIL_TEMPLATE_IDENTITY = "evt-reports-mail-template-identity";
 
 const EMAIL_ADMIN = "reports-admin@example.com";
 const EMAIL_ADMIN_B = "reports-admin-b@example.com";
@@ -124,6 +129,8 @@ const ATT_MAIL_QUEUED = "att-reports-mail-queued";
 const ATT_MAIL_CANCELLED = "att-reports-mail-cancelled";
 const ATT_MAIL_BOUNCED_AFTER_ACCEPT = "att-reports-mail-bounced-after-accept";
 const ATT_MAIL_VIEWED_RECOVERED = "att-reports-mail-viewed-recovered";
+const ATT_MAIL_TI_RENAMED = "att-reports-mail-ti-renamed";
+const ATT_MAIL_TI_DUPLICATE_LABEL = "att-reports-mail-ti-duplicate-label";
 const ATT_MAIL_REACH_SPLIT_NEVER_SENT = "att-reports-mail-reach-split-never-sent";
 const ATT_MAIL_REACH_SPLIT_SEND_FAILED = "att-reports-mail-reach-split-send-failed";
 const ATT_MAIL_REACH_SPLIT_BOUNCED_THEN_REQUEUED = "att-reports-mail-reach-split-bounced-then-requeued";
@@ -194,6 +201,7 @@ async function seed(client: PrismaClient) {
     EVENT_MAIL_DELIVERY_CAP,
     EVENT_MAIL_DELIVERY_TIE,
     EVENT_MAIL_REACH_SPLIT,
+    EVENT_MAIL_TEMPLATE_IDENTITY,
   ];
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -358,6 +366,13 @@ async function seed(client: PrismaClient) {
         title: "Mail Reach Split Event",
         slug: "reports-mail-reach-split",
         date: new Date("2027-09-08T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+      {
+        id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        title: "Mail Template Identity Event",
+        slug: "reports-mail-template-identity",
+        date: new Date("2027-09-09T12:00:00.000Z"),
         organization_id: ORG_REP,
       },
     ],
@@ -1327,6 +1342,124 @@ async function seed(client: PrismaClient) {
         provider: "export_only",
         status: "cancelled",
         failed_at: new Date("2027-09-08T09:00:00.000Z"),
+      },
+    ],
+  });
+
+  // Regression fixture for by_purpose's template-identity partition (bot review, PR #1417).
+  // renamedTemplate is ONE MailTemplate row, sent twice under two different label snapshots (as
+  // if an admin edited its label between the two sends) - must still count as 1 initial + 1
+  // resend, keyed on its stable template_id, not split by the differing snapshot.
+  // dupLabelTemplateA/B are TWO separate MailTemplate rows sharing the identical label
+  // "Announcement" (label has no uniqueness constraint - only (scope_type, scope_id, name) does)
+  // - each one's only send to this attendee must count as its own initial, not merged into a
+  // false initial+resend pair just because their label snapshots are equal.
+  const renamedTemplate = await client.mailTemplate.create({
+    data: {
+      scope_type: "event",
+      scope_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+      name: "welcome",
+      label: "Welcome",
+      subject_template: "Welcome",
+      body_template: "<mjml><mj-body></mj-body></mjml>",
+      template_format: "mjml",
+      compiled_html_template: "<html></html>",
+    },
+  });
+  const dupLabelTemplateA = await client.mailTemplate.create({
+    data: {
+      scope_type: "event",
+      scope_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+      name: "announcement-a",
+      label: "Announcement",
+      subject_template: "Announcement A",
+      body_template: "<mjml><mj-body></mj-body></mjml>",
+      template_format: "mjml",
+      compiled_html_template: "<html></html>",
+    },
+  });
+  const dupLabelTemplateB = await client.mailTemplate.create({
+    data: {
+      scope_type: "event",
+      scope_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+      name: "announcement-b",
+      label: "Announcement",
+      subject_template: "Announcement B",
+      body_template: "<mjml><mj-body></mj-body></mjml>",
+      template_format: "mjml",
+      compiled_html_template: "<html></html>",
+    },
+  });
+  await client.attendee.createMany({
+    data: [
+      {
+        id: ATT_MAIL_TI_RENAMED,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        email: "mail-ti-renamed@example.com",
+        name: "Mail Ti Renamed",
+        ...mkAttendeeToken(),
+      },
+      {
+        id: ATT_MAIL_TI_DUPLICATE_LABEL,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        email: "mail-ti-duplicate-label@example.com",
+        name: "Mail Ti Duplicate Label",
+        ...mkAttendeeToken(),
+      },
+    ],
+  });
+  await client.emailDelivery.createMany({
+    data: [
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        attendee_id: ATT_MAIL_TI_RENAMED,
+        purpose: "initial",
+        provider: "export_only",
+        status: "accepted",
+        template_id: renamedTemplate.id,
+        template_label_snapshot: "Welcome",
+        queued_at: new Date("2027-09-09T09:00:00.000Z"),
+        accepted_at: new Date("2027-09-09T09:05:00.000Z"),
+      },
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        attendee_id: ATT_MAIL_TI_RENAMED,
+        purpose: "resend",
+        provider: "export_only",
+        status: "accepted",
+        template_id: renamedTemplate.id,
+        template_label_snapshot: "Welcome (updated)",
+        queued_at: new Date("2027-09-10T09:00:00.000Z"),
+        accepted_at: new Date("2027-09-10T09:05:00.000Z"),
+      },
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        attendee_id: ATT_MAIL_TI_DUPLICATE_LABEL,
+        purpose: "initial",
+        provider: "export_only",
+        status: "accepted",
+        template_id: dupLabelTemplateA.id,
+        template_label_snapshot: "Announcement",
+        queued_at: new Date("2027-09-09T10:00:00.000Z"),
+        accepted_at: new Date("2027-09-09T10:05:00.000Z"),
+      },
+      {
+        organization_id: ORG_REP,
+        event_id: EVENT_MAIL_TEMPLATE_IDENTITY,
+        attendee_id: ATT_MAIL_TI_DUPLICATE_LABEL,
+        // Stored as "resend" (bulk-send-routes.ts's own rules mark any non-ticket template send
+        // as "resend" - see loadMailReportsAggregates's doc comment) even though it's genuinely
+        // the first-ever send of THIS template to this attendee.
+        purpose: "resend",
+        provider: "export_only",
+        status: "accepted",
+        template_id: dupLabelTemplateB.id,
+        template_label_snapshot: "Announcement",
+        queued_at: new Date("2027-09-10T10:00:00.000Z"),
+        accepted_at: new Date("2027-09-10T10:05:00.000Z"),
       },
     ],
   });
@@ -3597,6 +3730,25 @@ describe("GET /api/admin/events/:eventId/reports/mail", () => {
       never_sent: 1,
       send_failed: 4,
     });
+  });
+
+  it("partitions by_purpose by stable template identity, not by the mutable label snapshot", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_MAIL_TEMPLATE_IDENTITY}/reports/mail`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventMailReportsResponse;
+
+    // ATT_MAIL_TI_RENAMED's two sends share one template_id but carry two different label
+    // snapshots ("Welcome" then "Welcome (updated)") - partitioning by label alone would read
+    // these as two unrelated templates and miscount both as initial. Keyed on template_id, this
+    // is correctly 1 initial + 1 resend.
+    // ATT_MAIL_TI_DUPLICATE_LABEL's two sends are two genuinely different templates (different
+    // template_id) that merely share the label "Announcement" - partitioning by label alone would
+    // merge them into one initial+resend pair. Keyed on template_id, both are correctly initial:
+    // each is that specific template's first-ever send to this attendee, regardless of the second
+    // one being stored as purpose:"resend" (bulk-send-routes.ts's own non-ticket-template rule).
+    expect(body.by_purpose).toEqual({ initial: 3, resend: 1 });
   });
 });
 

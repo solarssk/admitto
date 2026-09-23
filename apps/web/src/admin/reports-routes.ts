@@ -1566,10 +1566,18 @@ async function loadMailReportsAggregates(
     // Ranks every delivery attempt within its own (attendee, template) group by queued_at - the
     // one timestamp EmailDelivery always has, present even on a still-queued or failed row, so a
     // resend that never got past "failed" still counts as an attempt here (matching by_status's
-    // own every-row scope, not just successStatuses). PARTITION BY template_label_snapshot groups
-    // NULLs together (the built-in ticket template's own sends), same as by_template's groupBy
-    // above. This is genuinely the first-vs-repeat send for THAT content, unlike the stored
-    // purpose column (see loadMailReportsAggregates's own doc comment above).
+    // own every-row scope, not just successStatuses). Partitions by COALESCE(template_id,
+    // template_label_snapshot), NOT template_label_snapshot alone (bot review, PR #1417) -
+    // template_id is stable across a rename (MailTemplate.label has no uniqueness constraint and
+    // is freely editable), so this must key on it whenever it's present; template_label_snapshot
+    // is only a fallback for the two null-template_id cases (a genuine builtin ticket send, or a
+    // since-deleted custom template's send - onDelete: SetNull, see that column's own schema
+    // comment), the same tradeoff ticketReachedFilter/WALLET_RELEVANT_EMAIL_DELIVERIES_SELECT
+    // above already accept for a deleted template. Using template_label_snapshot as the sole key
+    // would otherwise split one template's history across a rename (undercounting resends) and
+    // merge two different templates that happen to share a label (overcounting them). This is
+    // genuinely the first-vs-repeat send for THAT template, unlike the stored purpose column (see
+    // loadMailReportsAggregates's own doc comment above).
     db.$queryRaw<Array<{ purpose: "initial" | "resend"; count: bigint }>>`
       SELECT
         CASE WHEN attempt_no = 1 THEN 'initial' ELSE 'resend' END AS purpose,
@@ -1577,7 +1585,7 @@ async function loadMailReportsAggregates(
       FROM (
         SELECT
           ROW_NUMBER() OVER (
-            PARTITION BY attendee_id, template_label_snapshot
+            PARTITION BY attendee_id, COALESCE(template_id, template_label_snapshot)
             ORDER BY queued_at
           ) AS attempt_no
         FROM "EmailDelivery"
