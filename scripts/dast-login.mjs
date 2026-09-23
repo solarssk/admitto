@@ -66,14 +66,14 @@ async function post(path, body) {
 function base32Decode(input) {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
   let bits = "";
-  for (const ch of input.replace(/=+$/, "").toUpperCase()) {
+  for (const ch of input.split("=")[0].toUpperCase()) {
     const idx = alphabet.indexOf(ch);
     if (idx < 0) throw new Error("invalid base32 secret");
     bits += idx.toString(2).padStart(5, "0");
   }
   const bytes = [];
   for (let i = 0; i + 8 <= bits.length; i += 8)
-    bytes.push(parseInt(bits.slice(i, i + 8), 2));
+    bytes.push(Number.parseInt(bits.slice(i, i + 8), 2));
   return Buffer.from(bytes);
 }
 
