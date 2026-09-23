@@ -2,7 +2,7 @@ import { appendFileSync, writeFileSync } from "node:fs";
 import AxeBuilder from "@axe-core/playwright";
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
 import { signInAsAdmin } from "./admin-login.js";
-import { readSeedData } from "./seed.js";
+import { readSeedData, seedCheckinE2eData } from "./seed.js";
 
 /**
  * Accessibility scan (axe-core) over the surfaces this suite can already reach with its one seeded
@@ -131,6 +131,10 @@ const ADMIN_SURFACES: {
 test("admin pages", async ({ page, baseURL }, testInfo) => {
   // Six pages, each waited for and scanned, plus the sign-in: more than the 30 s default.
   test.setTimeout(180_000);
+  // Re-seed first: it resets the admin's MFA (a retry after a failed attempt could not enrol TOTP
+  // again otherwise) and puts the attendee back to "not admitted", the state whose "Not yet" item
+  // labels this test scans.
+  await seedCheckinE2eData();
   const seed = await readSeedData();
   await signInAsAdmin(page, baseURL!, seed.adminEmail, seed.adminPassword);
 
