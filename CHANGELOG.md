@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The Attendees page's "Add attendee" button is now disabled with a tooltip showing the current count against the limit (e.g. "Event is at capacity (400/400)...") once an event reaches its capacity, so an administrator sees the block before opening the form instead of only after submitting it.
+
+### Fixed
+
+- Adding an attendee to an event that had already reached its capacity limit showed a misleading "This email is already registered for this event" notice instead of a capacity message, even for an email that had never been registered - both failures returned the same HTTP status and the form only checked that status, not which error the server actually reported.
+
 ## [0.7.2] - 2026-09-20
 
 ### Fixed
