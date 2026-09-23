@@ -20,7 +20,10 @@ if (!BASE_URL || !seedPath || !outPath) {
 
 const seed = JSON.parse(await readFile(seedPath, "utf8"));
 const origin = new URL(BASE_URL).origin;
-const streamUrl = `${BASE_URL}/api/checkin/events/${seed.eventId}/stream`;
+const eventId = String(seed.eventId);
+if (!/^[A-Za-z0-9_-]+$/.test(eventId))
+  throw new Error("unexpected event id in the seed file");
+const streamUrl = `${BASE_URL}/api/checkin/events/${encodeURIComponent(eventId)}/stream`;
 const stop = new AbortController();
 
 async function login({ email, password }) {
@@ -111,8 +114,15 @@ await new Promise((resolve) => process.once("SIGTERM", resolve));
 await new Promise((r) => setTimeout(r, 2000));
 stop.abort();
 await Promise.allSettled(running);
-await writeFile(
-  outPath,
-  JSON.stringify({ fourthStreamStatus: refused, streams }, null, 2),
-);
+// Rebuilt from plain numbers so nothing read off the wire is written to disk as-is.
+const report = {
+  fourthStreamStatus: Number(refused),
+  streams: streams.map((s) => ({
+    label: s.label,
+    status: Number(s.status),
+    checkin: Number(s.checkin),
+    ping: Number(s.ping),
+  })),
+};
+await writeFile(outPath, JSON.stringify(report, null, 2));
 console.log(`[sse] wrote ${outPath}`);
