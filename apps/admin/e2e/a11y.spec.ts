@@ -5,9 +5,9 @@ import { readSeedData } from "./seed.js";
 
 /**
  * Accessibility scan (axe-core) over the surfaces this suite can already reach with its one seeded
- * operator account. Report-only: violations are logged, saved as JSON under test-results/, and written to
- * the job summary, but never fail the run - a blocking gate is a follow-up once a clean baseline
- * exists. Only failing to scan at all (nothing evaluated) fails a test.
+ * operator account. Every violation is logged, saved as JSON under test-results/, and written to the
+ * job summary; serious and critical ones also fail the test (minor/moderate stay report-only until
+ * the baseline for them is triaged). A scan that evaluated nothing fails too.
  */
 
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
@@ -49,6 +49,11 @@ async function scanAndReport(
       `### a11y: ${surface}\n\n${blocking.length} serious/critical, ${results.violations.length} total\n\n${body}\n\n`,
     );
   }
+
+  expect(
+    blocking.map((v) => `${v.id}: ${v.help}`),
+    `serious/critical accessibility violations on ${surface}`,
+  ).toEqual([]);
 }
 
 test("login page", async ({ page }, testInfo) => {
