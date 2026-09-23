@@ -1,6 +1,6 @@
 name: Check-in load test
 
-# k6 against the check-in hot path (POST /api/checkin/admit): several operator accounts admitting
+# k6 against the check-in hot path (POST /api/checkin/admit and /scan, alternating): several operator accounts admitting
 # many different attendees in parallel, plus a contested set where several operators admit the same
 # attendee at once. Scheduled and manual, plus a run on PRs that touch this workflow or its scripts
 # (so a change to them is exercised before merge, like cflite_pr.yml). Never a required check for
@@ -17,7 +17,7 @@ name: Check-in load test
 # account must be refused (429, the per-operator cap).
 #
 # Runs the app the same way apps/admin/playwright.config.ts does (dev-mode server, ephemeral
-# Postgres and Redis service containers), so no compose stack is needed. 
+# Postgres and Redis service containers), so no compose stack is needed.
 
 on:
   pull_request:
