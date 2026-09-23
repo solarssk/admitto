@@ -101,6 +101,10 @@ export {
 } from './backfill-email-delivery-had-wallet-cta.js';
 
 export {
+  backfillEmailDeliveryTemplateIdSnapshot,
+} from './backfill-email-delivery-template-id-snapshot.js';
+
+export {
   isSerializationFailure,
 } from './errors.js';
 
