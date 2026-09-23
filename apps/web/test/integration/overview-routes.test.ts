@@ -48,6 +48,7 @@ const ATT_REVOKED_2 = "att-overview-revoked-checkin-2";
 const ATT_BOUNCE_RESOLVED_BY_RESEND = "att-overview-bounce-resolved-by-resend";
 const ATT_BOUNCE_DISMISSED = "att-overview-bounce-dismissed";
 const ATT_BOUNCE_REBOUNCED_AFTER_DISMISS = "att-overview-bounce-rebounced-after-dismiss";
+const ATT_REMINDER_ONLY = "att-overview-reminder-only";
 
 let prisma: PrismaClient;
 let app: ReturnType<typeof createApp>;
@@ -569,6 +570,12 @@ async function seed(client: PrismaClient) {
         name: "Bounce Rebounced After Dismiss",
         email_bounce_dismissed_at: new Date("2027-04-01T09:00:00.000Z"),
       },
+      {
+        id: ATT_REMINDER_ONLY,
+        event_id: EVENT_BOUNCE_RESOLUTION,
+        email: "reminder-only@example.com",
+        name: "Reminder Only",
+      },
     ],
   });
 
@@ -621,6 +628,20 @@ async function seed(client: PrismaClient) {
         status: "bounced",
         recipient_email: "bounce-rebounced-after-dismiss@example.com",
         created_at: new Date("2027-04-01T09:10:00.000Z"),
+      },
+      // Only ever received a non-ticket campaign (its template was later deleted, so template_id
+      // is null but the label snapshot survives) - must NOT count as having received a ticket.
+      {
+        id: "del-reminder-only-1",
+        organization_id: ORG_OV,
+        event_id: EVENT_BOUNCE_RESOLUTION,
+        attendee_id: ATT_REMINDER_ONLY,
+        purpose: "resend",
+        provider: "export_only",
+        status: "sent",
+        template_label_snapshot: "Location reminder",
+        recipient_email: "reminder-only@example.com",
+        created_at: new Date("2027-04-01T09:20:00.000Z"),
       },
     ],
   });
@@ -804,6 +825,17 @@ describe("GET /api/admin/events/:eventId/overview", () => {
     // Only ATT_BOUNCE_REBOUNCED_AFTER_DISMISS's latest delivery is a live, undismissed bounce -
     // the resolved-by-resend and dismissed-before-rebounce attendees are both excluded.
     expect(body.email_bounced).toBe(1);
+  });
+
+  it("attendees_with_ticket counts a successful ticket resend after a bounced initial, but not a reminder-only attendee", async () => {
+    const res = await app.request(`/api/admin/events/${EVENT_BOUNCE_RESOLUTION}/overview`, {
+      headers: { Cookie: adminCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as EventOverviewResponse;
+    // Only ATT_BOUNCE_RESOLVED_BY_RESEND (initial bounced, built-in ticket resend sent). The two
+    // still-bounced attendees never got a ticket, and ATT_REMINDER_ONLY only got a campaign.
+    expect(body.attendees_with_ticket).toBe(1);
   });
 
   it("returns capacity and attendee_count", async () => {

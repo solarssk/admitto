@@ -429,12 +429,20 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
         ],
       },
     }),
-    // Distinct *active* attendees with at least one successful initial ticket delivery.
+    // Distinct *active* attendees with at least one successful ticket delivery: the initial
+    // send, or a resend of the ticket itself (built-in default, or a template named "ticket"),
+    // so an attendee whose initial mail bounced but whose resend went through still counts. A
+    // reminder/campaign send never counts - same ticket-scope rule as reports-routes.ts's
+    // isTicketScopedDelivery (template_label_snapshot survives a deleted non-ticket template).
     db.emailDelivery.groupBy({
       by: ["attendee_id"],
       where: {
         event_id: eventId,
-        purpose: "initial",
+        OR: [
+          { purpose: "initial" },
+          { template_id: null, template_label_snapshot: null },
+          { template: { name: "ticket" } },
+        ],
         status: { in: ["accepted", "sent", "delivered"] },
         attendee: { status: { notIn: [...CAPACITY_EXCLUDED_STATUSES] } },
       },
