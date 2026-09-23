@@ -137,8 +137,8 @@ jobs:
       - name: Every contested attendee was admitted exactly once
         if: always()
         run: |
-          IDS=$(jq -r '.contestedIds | join(",")' "$RUNNER_TEMP/load-seed.json")
-          EXPECTED=$(jq '.contestedIds | length' "$RUNNER_TEMP/load-seed.json")
+          IDS=$(jq -r '[.contested[].id] | join(",")' "$RUNNER_TEMP/load-seed.json")
+          EXPECTED=$(jq '.contested | length' "$RUNNER_TEMP/load-seed.json")
           WON=$(psql "$DATABASE_URL" -Atc "select count(*) from (select attendee_id from \"CheckIn\" where status = 'VALID' and attendee_id = any(string_to_array('$IDS', ',')) group by attendee_id having count(*) = 1) t")
           echo "contested attendees admitted exactly once: $WON of $EXPECTED"
           [ "$WON" = "$EXPECTED" ]
