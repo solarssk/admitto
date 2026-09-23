@@ -2,9 +2,10 @@
 //
 // Two scenarios run at once against POST /api/checkin/admit, several operator accounts at once:
 //   - distinct: each attendee is admitted exactly once (many different attendees in parallel).
-//   - contested: each attendee is admitted by several operators at the same moment; exactly one
-//     may win. The authoritative "no double admit" check is a database query after the run
-//     (see the workflow); the k6 side counts outcomes so a mismatch is visible in the summary.
+//   - contested: every contender attempts each attendee in the same one-second slot; exactly one
+//     may win. The authoritative checks are database queries after the run (see the workflow: no
+//     attendee with two VALID rows, and exactly one VALID per contested attendee); the k6 side
+//     counts outcomes so a mismatch is visible in the summary.
 //
 // No latency thresholds: there is no baseline yet to justify any number. It records p95/p99,
 // error rate and throughput per run; only correctness (every response 200 with a known status,
@@ -25,6 +26,12 @@ const CONTENDERS = 3;
 const PAUSE_SECONDS = 0.8; // ~1.25 req/s per operator, under the 120/min per-operator rate limit
 
 const seed = new SharedArray("seed", () => [JSON.parse(open(SEED_FILE))])[0];
+const LOGIN_STAGGER_SECONDS = 0.5;
+// The contested scenario waits until every staggered login has finished, plus a margin, then gives
+// each attendee its own one-second slot that all contenders fire in together.
+const CONTEST_START_MS =
+  seed.operators.length * LOGIN_STAGGER_SECONDS * 1000 + 1000;
+const CONTEST_SLOT_MS = 1000;
 const validAdmits = new Counter("admit_valid");
 const alreadyAdmitted = new Counter("admit_already_checked_in");
 const unexpected = new Counter("admit_unexpected_status");
@@ -41,9 +48,10 @@ export const options = {
       exec: "admitDistinct",
     },
     contested: {
-      executor: "shared-iterations",
+      // Every contender attempts every contested attendee, in lockstep (see admitContested).
+      executor: "per-vu-iterations",
       vus: CONTENDERS,
-      iterations: seed.contestedIds.length * CONTENDERS,
+      iterations: seed.contestedIds.length,
       maxDuration: "3m",
       exec: "admitContested",
     },
@@ -54,6 +62,7 @@ export const options = {
     // Always true: declaring a threshold is how k6 materialises the per-endpoint sub-metric that
     // handleSummary reads p95/p99 from. Not a latency budget (there is no baseline to set one).
     "http_req_duration{name:admit}": ["max>=0"],
+    "http_reqs{name:admit}": ["count>=0"],
   },
 };
 
@@ -64,7 +73,7 @@ function ensureLoggedIn() {
   if (loggedIn) return;
   // Login is rate limited to 10 per minute per client IP, and every VU here shares one IP, so
   // stagger the first logins rather than have them all land in the same instant.
-  sleep(exec.vu.idInTest * 0.5);
+  sleep(exec.vu.idInTest * LOGIN_STAGGER_SECONDS);
   // One account per VU: a new login for an account ends that account's earlier sessions, so two
   // VUs sharing one would keep signing each other out.
   const operator = seed.operators[exec.vu.idInTest - 1];
@@ -85,7 +94,9 @@ function ensureLoggedIn() {
     );
 }
 
-function admit(attendeeId) {
+// `accepted` is the set of statuses that are correct for this caller: a fresh attendee must come back
+// VALID; a contested one may be VALID (the winner) or ALREADY_CHECKED_IN (everyone else).
+function admit(attendeeId, accepted) {
   const res = http.post(
     `${BASE_URL}/api/checkin/admit`,
     JSON.stringify({
@@ -115,8 +126,7 @@ function admit(attendeeId) {
   else if (status === "ALREADY_CHECKED_IN") alreadyAdmitted.add(1);
   else unexpected.add(1);
   check(res, {
-    "admit status is known": () =>
-      status === "VALID" || status === "ALREADY_CHECKED_IN",
+    "admit status is the expected one": () => accepted.includes(status),
   });
 }
 
@@ -127,15 +137,22 @@ export function admitDistinct() {
     sleep(PAUSE_SECONDS);
     return;
   }
-  admit(seed.distinctIds[i]);
+  admit(seed.distinctIds[i], ["VALID"]);
   sleep(PAUSE_SECONDS);
 }
 
 export function admitContested() {
   ensureLoggedIn();
-  // Consecutive iterations share an attendee, so CONTENDERS operators hit it at nearly the same time.
-  const i = Math.floor(exec.scenario.iterationInTest / CONTENDERS);
-  admit(seed.contestedIds[i]);
+  // Every contender takes every contested attendee (per-vu-iterations), and all of them wait for the
+  // same wall-clock slot, so the requests for one attendee genuinely overlap.
+  const i = exec.vu.iterationInScenario;
+  const wait =
+    exec.scenario.startTime +
+    CONTEST_START_MS +
+    i * CONTEST_SLOT_MS -
+    Date.now();
+  if (wait > 0) sleep(wait / 1000);
+  admit(seed.contestedIds[i], ["VALID", "ALREADY_CHECKED_IN"]);
 }
 
 function metric(data, name, key) {
@@ -147,8 +164,8 @@ const fmt = (v) => (v === null ? "n/a" : v.toFixed(1));
 
 export function handleSummary(data) {
   const rows = [
-    ["admit requests", metric(data, "http_reqs", "count")],
-    ["throughput (req/s)", fmt(metric(data, "http_reqs", "rate"))],
+    ["admit requests", metric(data, "http_reqs{name:admit}", "count")],
+    ["throughput (req/s)", fmt(metric(data, "http_reqs{name:admit}", "rate"))],
     [
       "http error rate",
       `${((metric(data, "http_req_failed", "rate") ?? 0) * 100).toFixed(2)}%`,

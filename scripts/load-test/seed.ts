@@ -49,9 +49,11 @@ const event = await prisma.event.create({
   },
 });
 
+// Per-run tag so the seed can run again against the same database (emails are unique).
+const runTag = Date.now();
 const operators: { email: string; password: string }[] = [];
 for (let i = 0; i < operatorCount; i++) {
-  const email = `load.operator.${i}@example.com`;
+  const email = `load.operator.${runTag}.${i}@example.com`;
   const password = randomBytes(18).toString("base64");
   const user = await createUser(prisma, {
     email,

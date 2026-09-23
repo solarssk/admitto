@@ -6,9 +6,10 @@ name: Check-in load test
 # (so a change to them is exercised before merge, like cflite_pr.yml). Never a required check for
 # anything else: it is slow and its numbers need a baseline before they can gate anything.
 #
-# Fails the run on correctness only: any non-200 or unknown response from the API, and, checked
-# straight in the database afterwards, any attendee with more than one VALID check-in row (a double
-# admit). Latency (p95/p99), error rate and throughput are recorded in the job summary, with the
+# Fails the run on correctness only: any non-200 or unexpected response from the API (a fresh
+# attendee must come back VALID), and, checked straight in the database afterwards, any attendee
+# with more than one VALID check-in row (a double admit) or any contested attendee that did not end
+# up with exactly one. Latency (p95/p99), error rate and throughput are recorded in the job summary, with the
 # full k6 output uploaded as an artifact, so a baseline can build up before any threshold is set.
 #
 # Runs the app the same way apps/admin/playwright.config.ts does (dev-mode server, ephemeral
@@ -113,6 +114,14 @@ jobs:
           DOUBLES=$(psql "$DATABASE_URL" -Atc "select count(*) from (select attendee_id from \"CheckIn\" where status = 'VALID' group by attendee_id having count(*) > 1) t")
           echo "attendees with more than one VALID check-in: $DOUBLES"
           [ "$DOUBLES" = "0" ]
+      - name: Every contested attendee was admitted exactly once
+        if: always()
+        run: |
+          IDS=$(jq -r '.contestedIds | join(",")' "$RUNNER_TEMP/load-seed.json")
+          EXPECTED=$(jq '.contestedIds | length' "$RUNNER_TEMP/load-seed.json")
+          WON=$(psql "$DATABASE_URL" -Atc "select count(*) from (select attendee_id from \"CheckIn\" where status = 'VALID' and attendee_id = any(string_to_array('$IDS', ',')) group by attendee_id having count(*) = 1) t")
+          echo "contested attendees admitted exactly once: $WON of $EXPECTED"
+          [ "$WON" = "$EXPECTED" ]
       - name: Job summary
         if: always()
         run: |
