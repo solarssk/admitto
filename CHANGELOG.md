@@ -13,8 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The event Overview's "Tickets sent" tile now counts attendees who have received their ticket, matching the setup checklist below it. Before, it counted every delivered email for the event (resends, reminders and other messages included), so it could show far more than the number of attendees, for example 1086 tickets sent for 411 attendees.
 - Adding an attendee to an event that had already reached its capacity limit showed a misleading "This email is already registered for this event" notice instead of a capacity message, even for an email that had never been registered - both failures returned the same HTTP status and the form only checked that status, not which error the server actually reported.
 - The Mail report's "Initial vs resend" chart now counts each attendee's first-ever send of a given template as "Initial", even for a location or wallet reminder template, and stays correct if that template is later renamed or deleted - before, only the built-in ticket email could ever be counted as "Initial", so every send of any other template showed up as a "Resend" on this chart regardless of whether that attendee had actually received it before.
+- On the check-in page, the "no results yet" message and the checked-in percentage in the stats card are now darker, so they are easier to read for people with low vision or in a bright or dim venue. Before, their contrast against the background was slightly below the accessibility minimum (4.3:1 and 2.7:1 instead of 4.5:1 and 3:1).
 
 ## [0.7.2] - 2026-09-20
 

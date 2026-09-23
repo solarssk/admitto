@@ -1765,7 +1765,9 @@ export function EventOverviewPage() {
           tone="info"
           icon={<i className="ti ti-mail-check" aria-hidden="true" />}
           label="Tickets sent"
-          value={kpiCountText(currentOverview?.email_sent ?? null, loading, showLoading)}
+          // Distinct attendees who got their ticket, not raw email_sent: that counts every
+          // delivered mail (resends, reminders, other templates), so it can exceed attendee_count.
+          value={kpiCountText(currentOverview?.attendees_with_ticket ?? null, loading, showLoading)}
         />
         {/* Replaces the former "Checked in" tile (#E1) — that duplicated the admission
          * count/percentage already shown prominently in the Check-in progress card directly
