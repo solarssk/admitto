@@ -35,7 +35,7 @@ test('email guard blocks a tracked match without logging the address', () => {
   const address = 'person@sample.invalid'
   const result = runGuard('email', { 'data.json': `{"email":"${address}"}` })
   assert.equal(result.status, 1)
-  assert.match(result.stdout, /Matches are hidden/)
+  assert.match(result.stderr, /Matches are hidden/)
   assert.doesNotMatch(result.stdout + result.stderr, /person@sample\.invalid/)
 })
 
@@ -51,7 +51,7 @@ test('phone guard blocks a tracked match without logging the number', () => {
   const number = '+99999999999'
   const result = runGuard('phone', { 'data.yaml': `phone: ${number}` })
   assert.equal(result.status, 1)
-  assert.match(result.stdout, /Matches are hidden/)
+  assert.match(result.stderr, /Matches are hidden/)
   assert.doesNotMatch(result.stdout + result.stderr, /\+99999999999/)
 })
 

@@ -10,8 +10,8 @@ case "${1:-}" in
     hits=$(git ls-files -z -- '*.csv' '*.tsv' '*.json' ':!package-lock.json' \
       | xargs -0 grep -hREo '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- \
       | grep -viE '@(example\.(com|org|net)|test\.(com|org|net))$' || true)
-    if [ -n "$hits" ]; then
-      echo '::error::Suspicious email addresses found in tracked data files. Matches are hidden; inspect locally.'
+    if [[ -n "$hits" ]]; then
+      echo '::error::Suspicious email addresses found in tracked data files. Matches are hidden; inspect locally.' >&2
       exit 1
     fi
     echo 'OK: no real email addresses in data files'
@@ -21,8 +21,8 @@ case "${1:-}" in
     # The boundary groups avoid matching a + inside a longer numeric identifier.
     hits=$(git ls-files -z -- '*.csv' '*.tsv' '*.json' '*.yaml' '*.yml' '*.sql' ':!package-lock.json' \
       | xargs -0 grep -hREo '(^|[^0-9])\+[1-9]([0-9]|[ .()-]{1,2}[0-9]){6,20}($|[^0-9])' -- || true)
-    if [ -n "$hits" ]; then
-      echo '::error::Suspicious phone numbers found in tracked data files. Matches are hidden; inspect locally.'
+    if [[ -n "$hits" ]]; then
+      echo '::error::Suspicious phone numbers found in tracked data files. Matches are hidden; inspect locally.' >&2
       exit 1
     fi
     echo 'OK: no phone-number-shaped strings in data files'
