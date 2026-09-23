@@ -37,6 +37,32 @@ async function login({ email, password }) {
 
 const streams = [];
 
+/** The `type` of one SSE frame's `data:` line, or null when it has none or is not JSON. */
+function frameType(frame) {
+  const data = frame.split("\n").find((line) => line.startsWith("data:"));
+  if (!data) return null;
+  try {
+    return JSON.parse(data.slice(5)).type;
+  } catch {
+    // A malformed frame counts as nothing rather than crashing the listener.
+    return null;
+  }
+}
+
+/** Counts every complete frame in `buffered` and returns what is left (an unfinished frame). */
+function consumeFrames(buffered, counts) {
+  let rest = buffered;
+  let end = rest.indexOf("\n\n");
+  while (end !== -1) {
+    const type = frameType(rest.slice(0, end));
+    if (type === "checkin") counts.checkin += 1;
+    else if (type === "ping") counts.ping += 1;
+    rest = rest.slice(end + 2);
+    end = rest.indexOf("\n\n");
+  }
+  return rest;
+}
+
 async function listen(label, cookie) {
   const counts = { label, status: 0, checkin: 0, ping: 0 };
   streams.push(counts);
@@ -50,44 +76,32 @@ async function listen(label, cookie) {
   let buffered = "";
   try {
     for await (const chunk of res.body) {
-      buffered += decoder.decode(chunk, { stream: true });
-      let end;
-      while ((end = buffered.indexOf("\n\n")) !== -1) {
-        const frame = buffered.slice(0, end);
-        buffered = buffered.slice(end + 2);
-        const data = frame.split("\n").find((l) => l.startsWith("data:"));
-        if (!data) continue;
-        try {
-          const type = JSON.parse(data.slice(5)).type;
-          if (type === "checkin") counts.checkin += 1;
-          else if (type === "ping") counts.ping += 1;
-        } catch {
-          // A malformed frame is counted as nothing rather than crashing the listener.
-        }
-      }
+      buffered = consumeFrames(
+        buffered + decoder.decode(chunk, { stream: true }),
+        counts,
+      );
     }
   } catch (err) {
     if (err.name !== "AbortError") throw err;
   }
 }
 
-const running = [];
-let refused = null;
+const sessions = [];
 for (const [i, account] of seed.listeners.entries()) {
-  const cookie = await login(account);
-  for (let n = 0; n < 3; n++)
-    running.push(listen(`listener${i}-stream${n}`, cookie));
-  if (i === 0) {
-    // Let the three streams register, then a fourth on the same account must be refused.
-    await new Promise((r) => setTimeout(r, 1000));
-    const extra = await fetch(streamUrl, {
-      headers: { Cookie: cookie, Accept: "text/event-stream" },
-      signal: stop.signal,
-    });
-    refused = extra.status;
-    await extra.body?.cancel();
-  }
+  sessions.push({ i, cookie: await login(account) });
 }
+const running = sessions.flatMap(({ i, cookie }) =>
+  [0, 1, 2].map((n) => listen(`listener${i}-stream${n}`, cookie)),
+);
+
+// Let the streams register, then a fourth on the first account must be refused.
+await new Promise((r) => setTimeout(r, 1000));
+const extra = await fetch(streamUrl, {
+  headers: { Cookie: sessions[0].cookie, Accept: "text/event-stream" },
+  signal: stop.signal,
+});
+const refused = extra.status;
+await extra.body?.cancel();
 console.log(
   `[sse] ${running.length} streams open, fourth-stream status ${refused}`,
 );

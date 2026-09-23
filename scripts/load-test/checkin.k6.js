@@ -169,6 +169,13 @@ function metric(data, name, key) {
 
 const fmt = (v) => (v === null ? "n/a" : v.toFixed(1));
 
+function latency(data, name) {
+  const key = "http_req_duration{name:" + name + "}";
+  return (
+    fmt(metric(data, key, "p(95)")) + " / " + fmt(metric(data, key, "p(99)"))
+  );
+}
+
 export function handleSummary(data) {
   const rows = [
     ["admit requests", metric(data, "http_reqs{name:admit}", "count")],
@@ -184,10 +191,8 @@ export function handleSummary(data) {
       "http error rate",
       `${((metric(data, "http_req_failed", "rate") ?? 0) * 100).toFixed(2)}%`,
     ],
-    ...["admit", "scan"].map((name) => [
-      `${name} p95 / p99 (ms)`,
-      `${fmt(metric(data, `http_req_duration{name:${name}}`, "p(95)"))} / ${fmt(metric(data, `http_req_duration{name:${name}}`, "p(99)"))}`,
-    ]),
+    ["admit p95 / p99 (ms)", latency(data, "admit")],
+    ["scan p95 / p99 (ms)", latency(data, "scan")],
     ["admitted (VALID)", metric(data, "admit_valid", "count") ?? 0],
     [
       "rejected as already checked in",
