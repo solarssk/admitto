@@ -12,9 +12,14 @@ name: DAST baseline scan
 #
 # What this covers: missing security headers, cookie flags, information disclosure, and other
 # passive-scan findings on the surface a request can reach before authenticating.
-# What this does NOT cover yet: anything behind /admin or /operator (an authenticated crawl is
-# future scope — ZAP's baseline scan has no session), and active/attack scanning (ZAP's full
-# scan, not baseline, which is unsuitable for a shared CI stack).
+# A third scan covers the signed-in superadmin surface: scripts/dast-login.mjs walks the forced TOTP
+# enrollment over HTTP for the seeded account and ZAP is handed the resulting session cookie
+# (ZAP_AUTH_HEADER), then crawls /admin with its AJAX spider so the SPA's own API calls are
+# exercised and passively scanned too.
+#
+# What this does NOT cover yet: /operator (needs an event-scoped operator account, which the compose
+# stack has no CLI to create), and active/attack scanning (ZAP's full scan, not baseline, which is
+# unsuitable for a shared CI stack).
 #
 # Report-only: fail_action is false and this does not gate merges. Full HTML/JSON/MD reports are
 # uploaded as workflow artifacts; a parsed risk/alert/count summary for each target is also
@@ -87,10 +92,13 @@ jobs:
       # reaches the first-run setup wizard, never the actual login page this workflow means to
       # scan. Same CLI this repo documents for break-glass recovery; a random password since
       # nothing ever needs to sign in as this account, only for it to exist.
-      - name: Seed a synthetic user so /login resolves
+      - name: Seed a synthetic superadmin so /login resolves
         working-directory: deploy
         run: |
-          openssl rand -base64 24 | docker compose run --rm -T app node packages/auth/dist/cli.js bootstrap-superadmin --email dast-scan@example.com
+          DAST_PASSWORD=$(openssl rand -base64 24)
+          echo "::add-mask::$DAST_PASSWORD"
+          echo "DAST_PASSWORD=$DAST_PASSWORD" >> "$GITHUB_ENV"
+          printf '%s\n' "$DAST_PASSWORD" | docker compose run --rm -T app node packages/auth/dist/cli.js bootstrap-superadmin --email dast-scan@example.com
 
       - name: ZAP baseline scan (/, spidered from the real login page)
         uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25  # v0.15.0
@@ -138,6 +146,54 @@ jobs:
         run: |
           {
             echo "### DAST baseline: /healthz"
+            echo
+            if [ -s report_json.json ] && [ "$(jq '.site[0].alerts | length' report_json.json)" -gt 0 ]; then
+              echo "| Risk | Alert | Count |"
+              echo "|---|---|---|"
+              jq -r '.site[0].alerts[] | "| " + .riskdesc + " | " + .name + " | " + (.count|tostring) + " |"' report_json.json
+            else
+              echo "No findings."
+            fi
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: "24.17.0"
+
+      # Signs in as the seeded superadmin (walking the forced TOTP enrollment) and exports the session
+      # cookie for the authenticated scan below. The account and its TOTP secret live only in this
+      # run's disposable stack.
+      - name: Sign in and capture a session cookie
+        env:
+          BASE_URL: http://127.0.0.1:8080
+          DAST_EMAIL: dast-scan@example.com
+        run: |
+          COOKIE=$(node scripts/dast-login.mjs)
+          echo "::add-mask::$COOKIE"
+          echo "DAST_COOKIE=$COOKIE" >> "$GITHUB_ENV"
+
+      # ZAP_AUTH_HEADER* are the env vars zaproxy/action-baseline forwards into its container: ZAP
+      # then adds this header to every request to that site. The logout exclusions matter: the AJAX
+      # spider clicks buttons, and one press of "Sign out" would revoke the session mid-scan.
+      - name: ZAP baseline scan (/admin, authenticated, AJAX spider)
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25  # v0.15.0
+        env:
+          ZAP_AUTH_HEADER: Cookie
+          ZAP_AUTH_HEADER_VALUE: ${{ env.DAST_COOKIE }}
+          ZAP_AUTH_HEADER_SITE: 127.0.0.1
+        with:
+          target: "http://127.0.0.1:8080/admin/"
+          artifact_name: "zap-baseline-report-admin"
+          cmd_options: '-j -m 3 -z "-config globalexcludeurl.url_list.url(0).regex=.*/logout.* -config globalexcludeurl.url_list.url(0).enabled=true"'
+          fail_action: false
+          allow_issue_writing: false
+
+      - name: Summarize /admin scan into job summary
+        if: always()
+        run: |
+          {
+            echo "### DAST baseline: /admin (authenticated as superadmin)"
             echo
             if [ -s report_json.json ] && [ "$(jq '.site[0].alerts | length' report_json.json)" -gt 0 ]; then
               echo "| Risk | Alert | Count |"

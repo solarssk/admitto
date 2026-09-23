@@ -1557,7 +1557,7 @@
   margin-left: auto;
   font-size: 22px;
   font-weight: 700;
-  color: var(--status-ok);
+  color: var(--status-ok-fg);
 }
 
 .ck-progress {
@@ -1746,7 +1746,7 @@
   align-items: center;
   justify-content: center;
   min-height: 200px;
-  color: var(--text-muted, var(--text-secondary));
+  color: var(--text-secondary);
   gap: 8px;
 }
 
