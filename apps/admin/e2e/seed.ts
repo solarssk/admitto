@@ -94,6 +94,9 @@ export async function seedCheckinE2eData(): Promise<SeedResult> {
 
   // Clear any check-in history from a previous run so Reports/recent-scans stay clean too.
   await prisma.checkIn.deleteMany({ where: { attendee_id: attendee.id } });
+  // Also drop the per-item state a previous run's admit left behind (the badge is issued on
+  // admit), so the attendee page always starts from the fresh "Not yet" state a new database has.
+  await prisma.attendeeItemState.deleteMany({ where: { attendee_id: attendee.id } });
 
   let operator = await findUserByEmail(prisma, E2E_OPERATOR_EMAIL);
   if (!operator) {
