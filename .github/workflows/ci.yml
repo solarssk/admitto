@@ -201,6 +201,10 @@ jobs:
               - "apps/web/src/index.ts"
               - "apps/web/src/auth-middleware.ts"
               - "apps/web/src/staff-spa.ts"
+              # The /login page itself (server-rendered, not part of the SPA), scanned by
+              # apps/admin/e2e/a11y.spec.ts and exercised by the login step of checkin.spec.ts.
+              - "apps/web/src/login-page.ts"
+              - "apps/web/src/shared-auth-styles.ts"
               - "apps/web/src/checkin-gate.ts"
               - "apps/web/src/checkin-stream-limit.ts"
               - "apps/web/src/auth/**"
