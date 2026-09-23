@@ -34,6 +34,12 @@ This file is informational. Prefer package-local license files in `node_modules`
 - License: MPL-2.0
 - Notes: CSS parser/transformer used unmodified as part of Vite's build pipeline (dev/build tooling, not shipped in the runtime server image). MPL-2.0 is also file-level copyleft - applies to modifications of lightningcss's own source, not to code that uses it as a library.
 
+## axe-core and @axe-core/playwright
+
+- Packages: `axe-core` and `@axe-core/playwright`
+- License: MPL-2.0
+- Notes: accessibility test engine and its Playwright adapter, used unmodified by the E2E accessibility scan (`apps/admin/e2e/a11y.spec.ts`). Development/test tooling only, not shipped in the runtime server image. MPL-2.0 is file-level copyleft - applies to modifications of these packages' own source, not to code that uses them as a library.
+
 ## ip-location-api
 
 - Package: `ip-location-api`
