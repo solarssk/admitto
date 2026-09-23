@@ -26,14 +26,16 @@ cleanup() {
 trap cleanup EXIT
 
 cp .env.example .env
-sed -i.bak 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=smoke-test-secret/' .env
-sed -i.bak 's|^DATABASE_URL=.*|DATABASE_URL=postgresql://admitto_app:smoke-test-secret@db:5432/admitto|' .env
+postgres_password="smoke-pg-$(openssl rand -hex 12)"
+redis_password="smoke-redis-$(openssl rand -hex 12)"
+sed -i.bak "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=${postgres_password}/" .env
+sed -i.bak "s|^DATABASE_URL=.*|DATABASE_URL=postgresql://admitto_app:${postgres_password}@db:5432/admitto|" .env
 encryption_key="$(openssl rand -base64 32)"
 node -e "if (Buffer.from(process.argv[1], 'base64').length !== 32) { process.exit(1); }" "$encryption_key"
 sed -i.bak "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${encryption_key}|" .env
 sed -i.bak 's|^BASE_URL=.*|BASE_URL=http://127.0.0.1:8080|' .env
-sed -i.bak 's/^REDIS_PASSWORD=.*/REDIS_PASSWORD=smoke-redis-secret/' .env
-sed -i.bak 's|^REDIS_URL=.*|REDIS_URL=redis://:smoke-redis-secret@redis:6379|' .env
+sed -i.bak "s/^REDIS_PASSWORD=.*/REDIS_PASSWORD=${redis_password}/" .env
+sed -i.bak "s|^REDIS_URL=.*|REDIS_URL=redis://:${redis_password}@redis:6379|" .env
 rm -f .env.bak
 node validate-env.mjs .env
 
