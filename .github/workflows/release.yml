@@ -1,8 +1,8 @@
 name: Release
 
-# After a `release: vX.Y.Z` commit on main bumps package.json, create the git tag and GitHub
-# Release (notes + required .title tagline), then close the milestone. publish-container.yml and
-# deploy-smoke.yml are NOT dispatched from here - their own `push: tags:` triggers fire on the tag
+# After a `release: vX.Y.Z` commit on main bumps package.json and that exact commit's CI passes,
+# create the git tag and GitHub Release (notes + required .title tagline), then close the milestone.
+# publish-container.yml and deploy-smoke.yml are NOT dispatched from here: their tag-push triggers fire
 # push below on their own, because that push is made with a GitHub App installation token, not
 # GITHUB_TOKEN (see the "Mint release automation token" step's own comment for why that matters).
 #
@@ -22,6 +22,7 @@ on:
 
 permissions:
   contents: read
+  actions: read # verify this release commit's CI result before creating the tag
   # `gh api -X PATCH .../milestones/${MID} -f state=closed` below - closing a milestone is gated
   # on the issues scope, no narrower alternative exists. Not exempted by Scorecard's
   # Token-Permissions check either, but "issues" isn't in that check's list of permissions it
@@ -36,6 +37,7 @@ concurrency:
 jobs:
   publish-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -89,6 +91,12 @@ jobs:
           grep -q "## \\[${VERSION}\\]" CHANGELOG.md
           python3 scripts/sync-release-docs.py --check
           echo "Release artifacts OK for v${VERSION}"
+
+      - name: Wait for this commit's full CI to pass
+        if: steps.bump.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/wait-for-release-ci.sh
 
       # Mints a short-lived installation token for the dedicated "admitto-release-automation"
       # GitHub App instead of using GITHUB_TOKEN for the contents:write (release/tag) operation
