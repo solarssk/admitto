@@ -156,8 +156,7 @@ export function admitContested() {
 }
 
 function metric(data, name, key) {
-  const m = data.metrics[name];
-  return m && m.values[key] !== undefined ? m.values[key] : null;
+  return data.metrics[name]?.values[key] ?? null;
 }
 
 const fmt = (v) => (v === null ? "n/a" : v.toFixed(1));
