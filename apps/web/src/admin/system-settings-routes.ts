@@ -10,6 +10,7 @@ import {
   getSessionIdleTimeoutAdminMs,
   getSessionIdleTimeoutOperatorMs,
   getTrustedDeviceDays,
+  getOperatorRememberMeDays,
   getMfaRequiredRoles,
   getInstanceUrl,
   getCspTrustedOrigins,
@@ -24,6 +25,8 @@ import {
   SETTING_SESSION_IDLE_TIMEOUT,
   SETTING_OPERATOR_SESSION_IDLE_TIMEOUT,
   SETTING_TRUSTED_DEVICE_DAYS,
+  SETTING_OPERATOR_REMEMBER_ME_DAYS,
+  MAX_OPERATOR_REMEMBER_ME_DAYS,
   SETTING_MFA_REQUIRED_ROLES,
   SETTING_INSTANCE_URL,
   SETTING_CSP_TRUSTED_ORIGINS,
@@ -59,6 +62,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     adminIdle,
     opIdle,
     trustedDays,
+    rememberMeDays,
     mfaRoles,
     instanceUrl,
     cspTrustedOrigins,
@@ -70,6 +74,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     adminIdleSrc,
     opIdleSrc,
     trustedDaysSrc,
+    rememberMeDaysSrc,
     mfaRolesSrc,
     instanceUrlSrc,
     cspTrustedOriginsSrc,
@@ -82,6 +87,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     getSessionIdleTimeoutAdminMs(db),
     getSessionIdleTimeoutOperatorMs(db),
     getTrustedDeviceDays(db),
+    getOperatorRememberMeDays(db),
     getMfaRequiredRoles(db),
     getInstanceUrl(db),
     getCspTrustedOrigins(db),
@@ -93,6 +99,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     getSettingSource(db, SETTING_SESSION_IDLE_TIMEOUT),
     getSettingSource(db, SETTING_OPERATOR_SESSION_IDLE_TIMEOUT),
     getSettingSource(db, SETTING_TRUSTED_DEVICE_DAYS),
+    getSettingSource(db, SETTING_OPERATOR_REMEMBER_ME_DAYS),
     getSettingSource(db, SETTING_MFA_REQUIRED_ROLES),
     getSettingSource(db, SETTING_INSTANCE_URL),
     getSettingSource(db, SETTING_CSP_TRUSTED_ORIGINS),
@@ -107,6 +114,7 @@ async function buildSystemSettingsDto(db: PrismaClient) {
     session_idle_timeout_ms: { value: adminIdle, source: adminIdleSrc },
     operator_session_idle_timeout_ms: { value: opIdle, source: opIdleSrc },
     trusted_device_days: { value: trustedDays, source: trustedDaysSrc },
+    operator_remember_me_days: { value: rememberMeDays, source: rememberMeDaysSrc },
     mfa_required_roles: { value: mfaRoles, source: mfaRolesSrc },
     instance_url: { value: instanceUrl, source: instanceUrlSrc },
     csp_trusted_origins: { value: cspTrustedOrigins, source: cspTrustedOriginsSrc },
@@ -176,6 +184,13 @@ const patchSchema = z
       .nullable()
       .optional(),
     trusted_device_days: z.number().int().min(0).max(90).nullable().optional(),
+    operator_remember_me_days: z
+      .number()
+      .int()
+      .min(0)
+      .max(MAX_OPERATOR_REMEMBER_ME_DAYS)
+      .nullable()
+      .optional(),
     mfa_required_roles: z
       .array(z.enum(["superadmin", "admin", "operator"]))
       .nullable()
@@ -194,6 +209,7 @@ const KEY_MAP = {
   session_idle_timeout_ms: SETTING_SESSION_IDLE_TIMEOUT,
   operator_session_idle_timeout_ms: SETTING_OPERATOR_SESSION_IDLE_TIMEOUT,
   trusted_device_days: SETTING_TRUSTED_DEVICE_DAYS,
+  operator_remember_me_days: SETTING_OPERATOR_REMEMBER_ME_DAYS,
   mfa_required_roles: SETTING_MFA_REQUIRED_ROLES,
   instance_url: SETTING_INSTANCE_URL,
   csp_trusted_origins: SETTING_CSP_TRUSTED_ORIGINS,

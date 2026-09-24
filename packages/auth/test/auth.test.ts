@@ -452,6 +452,20 @@ describe("session", () => {
       expect(Math.abs(row.expires_at.getTime() - Date.now() - 3 * DAY_MS)).toBeLessThan(60_000);
     });
 
+    it("falls back to the normal idle timeout once the option is switched off after sign-in", async () => {
+      const { rawToken, session } = await createSession(prisma, { userId: USER_OP_A, rememberMe: true });
+      await setRememberDays(0);
+      await prisma.session.update({
+        where: { id: session.id },
+        data: { last_seen_at: new Date(Date.now() - 2 * DAY_MS) },
+      });
+      expect(await validateSession(prisma, rawToken)).toBeNull();
+    });
+
+    it("does not promote a session that does not exist", async () => {
+      expect(await promoteSessionToFull(prisma, "no-such-session", USER_OP_A)).toBeNull();
+    });
+
     it("promotes a normal partial session without a persistent cookie", async () => {
       const { session } = await createSession(prisma, {
         userId: USER_OP_A,
