@@ -4,6 +4,7 @@ import type { Context, Next } from "hono";
 import { routePath } from "hono/route";
 import { logRateLimitExceeded, type RateLimitScope } from "@admitto/auth";
 import { getEncryptionKey } from "@admitto/crypto";
+import { CHECKIN_STREAM_LIMITS, type CheckinStreamLimits } from "../checkin-stream-config.js";
 import { resolveClientIp } from "./client-ip.js";
 import { MAX_REQUESTS, WINDOW_MS } from "./constants.js";
 import type { RateLimitStore } from "./types.js";
@@ -177,6 +178,29 @@ function checkinStreamActorKey(c: Context): string {
   const userId = c.get("operatorUserId") as string | undefined;
   if (userId) return `checkin:stream:user:${userId}`;
   return `checkin:stream:ip:${resolveClientIp(c)}`;
+}
+
+/** Stream request budget: the per-event key first, then the actor-wide ceiling. Limits come from
+ * ENV (`CHECKIN_STREAM_RATE_LIMIT_*`, see checkin-stream-config.ts), resolved once at app start. */
+export function checkinStreamPolicy(
+  limits: Pick<CheckinStreamLimits, "rateLimitPerEvent" | "rateLimitPerActor" | "rateLimitWindowMs">,
+): RatePolicy {
+  return {
+    checks: [
+      {
+        keyOf: (c) => checkinRateLimitKey(c, "stream"),
+        windowMs: limits.rateLimitWindowMs,
+        max: limits.rateLimitPerEvent,
+        logOnExceeded: { scope: "checkin_stream", keyHint: checkinRateLimitKeyHint },
+      },
+      {
+        keyOf: checkinStreamActorKey,
+        windowMs: limits.rateLimitWindowMs,
+        max: limits.rateLimitPerActor,
+        logOnExceeded: { scope: "checkin_stream", keyHint: checkinRateLimitKeyHint },
+      },
+    ],
+  };
 }
 
 function healthzRateLimitKey(ip: string, instanceId: string): string {
@@ -813,22 +837,7 @@ export const RATE_POLICIES = {
       },
     ],
   },
-  "checkin:stream": {
-    checks: [
-      {
-        keyOf: (c) => checkinRateLimitKey(c, "stream"),
-        windowMs: 60_000,
-        max: 12,
-        logOnExceeded: { scope: "checkin_stream", keyHint: checkinRateLimitKeyHint },
-      },
-      {
-        keyOf: checkinStreamActorKey,
-        windowMs: 60_000,
-        max: 48,
-        logOnExceeded: { scope: "checkin_stream", keyHint: checkinRateLimitKeyHint },
-      },
-    ],
-  },
+  "checkin:stream": checkinStreamPolicy(CHECKIN_STREAM_LIMITS),
 } as const satisfies Record<string, RatePolicy>;
 
 export type RatePolicyName = keyof typeof RATE_POLICIES;

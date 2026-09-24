@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import type { Context, Next } from "hono";
+import { DEFAULT_CHECKIN_STREAM_LIMITS } from "../src/checkin-stream-config.js";
 import { InMemoryRateLimitStore } from "../src/rate-limit/in-memory.js";
 import { rateLimit } from "../src/rate-limit/policies.js";
+
+const { rateLimitPerEvent: STREAM_PER_EVENT, rateLimitPerActor: STREAM_PER_ACTOR } =
+  DEFAULT_CHECKIN_STREAM_LIMITS;
 
 function sessionContext(userId: string) {
   return async (c: Context, next: Next): Promise<void> => {
@@ -102,7 +106,7 @@ describe("check-in authenticated rate limit", () => {
     const store = new InMemoryRateLimitStore();
     const app = makeStreamApp(store, bearerContext());
 
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < STREAM_PER_EVENT; i++) {
       expect((await app.request("/api/checkin/events/evt-a/stream")).status).toBe(200);
     }
     expect((await app.request("/api/checkin/events/evt-a/stream")).status).toBe(429);
@@ -114,7 +118,7 @@ describe("check-in authenticated rate limit", () => {
     const store = new InMemoryRateLimitStore();
     const app = makeStreamApp(store, anonymousIpContext());
 
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < STREAM_PER_EVENT; i++) {
       expect((await app.request("/api/checkin/events/evt-anon/stream")).status).toBe(200);
     }
     expect((await app.request("/api/checkin/events/evt-anon/stream")).status).toBe(429);
@@ -124,10 +128,12 @@ describe("check-in authenticated rate limit", () => {
     const store = new InMemoryRateLimitStore();
     const app = makeStreamApp(store, sessionContext("op-actor-rl"));
 
-    // 12/event * 4 events = 48, the actor-wide ceiling - well under any single event's own cap,
-    // so only the actor-wide check can be what blocks a 49th request on a brand-new 5th event.
-    for (let e = 0; e < 4; e++) {
-      for (let i = 0; i < 12; i++) {
+    // Fill the actor-wide ceiling with whole per-event budgets - each event stays under its own
+    // cap, so only the actor-wide check can be what blocks a request on a brand-new event.
+    const events = STREAM_PER_ACTOR / STREAM_PER_EVENT;
+    expect(Number.isInteger(events)).toBe(true);
+    for (let e = 0; e < events; e++) {
+      for (let i = 0; i < STREAM_PER_EVENT; i++) {
         expect((await app.request(`/api/checkin/events/evt-rl-${e}/stream`)).status).toBe(200);
       }
     }
