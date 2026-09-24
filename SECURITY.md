@@ -120,7 +120,7 @@ accepted.
 
 ### Supported versions
 
-Only the **latest minor release** is supported (currently `0.7.x`, latest <!-- admitto:latest-patch -->`0.7.2`<!-- /admitto:latest-patch -->). Deploy from
+Only the **latest minor release** is supported (currently `0.7.x`, latest <!-- admitto:latest-patch -->`0.7.3`<!-- /admitto:latest-patch -->). Deploy from
 semver tags (`v0.7.y`) published to `ghcr.io/solarssk/admitto` (mirrored to `docker.io/solarssk/admitto`). These CI-created tags are ordinary,
 unsigned GitHub tags by default; a manual, GPG/SSH-signed tag path exists for emergencies - see
 [VERSIONING.md](VERSIONING.md).

@@ -84,59 +84,60 @@ RUN echo "cache-bust for commit ${GIT_COMMIT}" \
 
 WORKDIR /app
 
-COPY LICENSE NOTICE THIRD-PARTY-NOTICES.md ./
-COPY package.json package-lock.json ./
-COPY packages/shared/package.json packages/shared/
-COPY packages/crypto/package.json packages/crypto/
-COPY packages/storage/package.json packages/storage/
-COPY packages/location/package.json packages/location/
-COPY packages/db/package.json packages/db/
-COPY packages/tickets/package.json packages/tickets/
-COPY packages/wallet/package.json packages/wallet/
-COPY packages/auth/package.json packages/auth/
-COPY packages/mailer/package.json packages/mailer/
-COPY packages/mailer-config/package.json packages/mailer-config/
-COPY packages/mail-templates/package.json packages/mail-templates/
-COPY packages/mail-delivery/package.json packages/mail-delivery/
-COPY packages/notifications/package.json packages/notifications/
-COPY packages/import/package.json packages/import/
-COPY packages/ui/package.json packages/ui/
-COPY apps/admin/package.json apps/admin/
-COPY apps/web/package.json apps/web/
-COPY apps/cli/package.json apps/cli/
+# Make the application root writable before dropping privileges; every copied path below is
+# owned at copy time, avoiding a second full copy of node_modules from a recursive chown layer.
+RUN chown node:node /app
 
-COPY --from=builder /app/node_modules ./node_modules
+COPY --chown=node:node LICENSE NOTICE THIRD-PARTY-NOTICES.md ./
+COPY --chown=node:node package.json package-lock.json ./
+COPY --chown=node:node packages/shared/package.json packages/shared/
+COPY --chown=node:node packages/crypto/package.json packages/crypto/
+COPY --chown=node:node packages/storage/package.json packages/storage/
+COPY --chown=node:node packages/location/package.json packages/location/
+COPY --chown=node:node packages/db/package.json packages/db/
+COPY --chown=node:node packages/tickets/package.json packages/tickets/
+COPY --chown=node:node packages/wallet/package.json packages/wallet/
+COPY --chown=node:node packages/auth/package.json packages/auth/
+COPY --chown=node:node packages/mailer/package.json packages/mailer/
+COPY --chown=node:node packages/mailer-config/package.json packages/mailer-config/
+COPY --chown=node:node packages/mail-templates/package.json packages/mail-templates/
+COPY --chown=node:node packages/mail-delivery/package.json packages/mail-delivery/
+COPY --chown=node:node packages/notifications/package.json packages/notifications/
+COPY --chown=node:node packages/import/package.json packages/import/
+COPY --chown=node:node packages/ui/package.json packages/ui/
+COPY --chown=node:node apps/admin/package.json apps/admin/
+COPY --chown=node:node apps/web/package.json apps/web/
+COPY --chown=node:node apps/cli/package.json apps/cli/
 
-COPY --from=builder /app/apps/web/dist ./apps/web/dist
-COPY --from=builder /app/apps/admin/dist ./apps/admin/dist
-COPY --from=builder /app/apps/cli/dist ./apps/cli/dist
-COPY --from=builder /app/packages/ui/dist ./packages/ui/dist
-COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
-COPY --from=builder /app/packages/crypto/dist ./packages/crypto/dist
-COPY --from=builder /app/packages/storage/dist ./packages/storage/dist
-COPY --from=builder /app/packages/location/dist ./packages/location/dist
-COPY --from=builder /app/packages/db/dist ./packages/db/dist
-COPY --from=builder /app/packages/db/prisma ./packages/db/prisma
-COPY --from=builder /app/packages/db/prisma.config.ts ./packages/db/prisma.config.ts
-COPY --from=builder /app/packages/tickets/dist ./packages/tickets/dist
-COPY --from=builder /app/packages/wallet/dist ./packages/wallet/dist
-COPY --from=builder /app/packages/auth/dist ./packages/auth/dist
-COPY --from=builder /app/packages/mailer/dist ./packages/mailer/dist
-COPY --from=builder /app/packages/mailer-config/dist ./packages/mailer-config/dist
-COPY --from=builder /app/packages/mail-templates/dist ./packages/mail-templates/dist
-COPY --from=builder /app/packages/mail-delivery/dist ./packages/mail-delivery/dist
-COPY --from=builder /app/packages/notifications/dist ./packages/notifications/dist
-COPY --from=builder /app/packages/import/dist ./packages/import/dist
-COPY --from=builder /app/data/geoip ./data/geoip
+COPY --chown=node:node --from=builder /app/node_modules ./node_modules
+
+COPY --chown=node:node --from=builder /app/apps/web/dist ./apps/web/dist
+COPY --chown=node:node --from=builder /app/apps/admin/dist ./apps/admin/dist
+COPY --chown=node:node --from=builder /app/apps/cli/dist ./apps/cli/dist
+COPY --chown=node:node --from=builder /app/packages/ui/dist ./packages/ui/dist
+COPY --chown=node:node --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --chown=node:node --from=builder /app/packages/crypto/dist ./packages/crypto/dist
+COPY --chown=node:node --from=builder /app/packages/storage/dist ./packages/storage/dist
+COPY --chown=node:node --from=builder /app/packages/location/dist ./packages/location/dist
+COPY --chown=node:node --from=builder /app/packages/db/dist ./packages/db/dist
+COPY --chown=node:node --from=builder /app/packages/db/prisma ./packages/db/prisma
+COPY --chown=node:node --from=builder /app/packages/db/prisma.config.ts ./packages/db/prisma.config.ts
+COPY --chown=node:node --from=builder /app/packages/tickets/dist ./packages/tickets/dist
+COPY --chown=node:node --from=builder /app/packages/wallet/dist ./packages/wallet/dist
+COPY --chown=node:node --from=builder /app/packages/auth/dist ./packages/auth/dist
+COPY --chown=node:node --from=builder /app/packages/mailer/dist ./packages/mailer/dist
+COPY --chown=node:node --from=builder /app/packages/mailer-config/dist ./packages/mailer-config/dist
+COPY --chown=node:node --from=builder /app/packages/mail-templates/dist ./packages/mail-templates/dist
+COPY --chown=node:node --from=builder /app/packages/mail-delivery/dist ./packages/mail-delivery/dist
+COPY --chown=node:node --from=builder /app/packages/notifications/dist ./packages/notifications/dist
+COPY --chown=node:node --from=builder /app/packages/import/dist ./packages/import/dist
+COPY --chown=node:node --from=builder /app/data/geoip ./data/geoip
 # Raw source, not dist - reused at container startup (not just image build time) by
 # docker-entrypoint.sh's "serve" branch, when MAXMIND_LICENSE_KEY is set. Only imports
 # ip-location-api (already in node_modules above), so it runs standalone without a build step.
-COPY --from=builder /app/apps/web/scripts/prefetch-geo-db.mjs ./apps/web/scripts/prefetch-geo-db.mjs
+COPY --chown=node:node --from=builder /app/apps/web/scripts/prefetch-geo-db.mjs ./apps/web/scripts/prefetch-geo-db.mjs
 
-COPY deploy/docker-entrypoint.sh ./deploy/docker-entrypoint.sh
-
-RUN chmod +x ./deploy/docker-entrypoint.sh \
-  && chown -R node:node /app
+COPY --chmod=755 deploy/docker-entrypoint.sh ./deploy/docker-entrypoint.sh
 
 # Non-root always — no compose service (app, migrate, or worker) runs as root (ADR 0043).
 USER node
