@@ -50,7 +50,7 @@ Active automated checks in this repository:
 | Docker build smoke | Production `Dockerfile` builds | Every merge to `main` | `.github/workflows/ci.yml` (`docker-build`) |
 | Trivy (report-only) | Container image scan (OS + libraries), SARIF to Security tab | Every merge to `main` | `.github/workflows/ci.yml` (`docker-build`) |
 | Trivy | Container image scan (OS + libraries) per platform (linux/amd64, linux/arm64, each on its own native runner - no QEMU); **scan-before-push** CRITICAL gate on each before either is pushed | Release tags + manual dispatch | `.github/workflows/publish-container.yml` |
-| CycloneDX SBOM | Container image bill of materials | Release tags | `.github/workflows/publish-container.yml` (artifact + release asset) |
+| CycloneDX SBOM | Container image bill of materials (Trivy), plus a BuildKit SBOM attestation attached to each published image | Release tags | `.github/workflows/publish-container.yml` (artifact + release asset; attestation in the registry) |
 | Codecov | Test coverage reporting; `codecov/project` and `codecov/patch` status checks + PR comment configured (`codecov.yml`), not yet in `main`'s required checks so still non-blocking today | Every PR | `.github/workflows/ci.yml` (`test-web` / `test-admin` / `test-rest`) |
 | SonarCloud | Code quality and maintainability (SAST-adjacent, e.g. hardcoded-secret patterns, injection-prone constructs), plus a new-code coverage condition fed by the same LCOV reports Codecov uses. Runs as CI-based analysis (`sonar-project.properties`, authenticated with a `SONAR_TOKEN` secret) - Automatic Analysis (the GitHub App) is deliberately off, since it cannot ingest coverage under any configuration (confirmed from SonarSource's own docs); see [docs/dev/sonarcloud-ci-coverage-migration.md](docs/dev/sonarcloud-ci-coverage-migration.md) for the sourced migration history. Fork PRs and Dependabot PRs don't receive the `SONAR_TOKEN` secret, so they skip this analysis (Automatic Analysis covered them pre-migration, without coverage); also skipped on a docs-only diff (`ci.yml`'s `changes` job classifies `SECURITY.md`, `docs/**`, and other doc paths as non-code, and this job needs `needs.changes.outputs.code == 'true'`) | Code-changing PRs (same-repo, non-Dependabot) + code-changing `main` pushes | `.github/workflows/ci.yml` (`sonarcloud`) |
 | OWASP ZAP baseline | DAST, passive scan of the unauthenticated surface plus `/admin` as a signed-in synthetic superadmin and `/operator` as a synthetic operator (no merge gate) | Manual dispatch + weekly | `.github/workflows/dast-baseline.yml` |
@@ -99,7 +99,9 @@ patched. **HIGH** with an available fix: remediate within **30 days** (tracked i
 on HIGH+fixable (`--ignore-unfixed`) is planned before **v1.0**.
 
 Build provenance attestations (SLSA, `actions/attest-build-provenance`) are published for images
-pushed to GHCR on release tags.
+pushed to GHCR on release tags. BuildKit also attaches a `mode=max` SLSA provenance and an SBOM
+attestation to every per-platform image, and the release build fails if the image's
+`org.opencontainers.image.revision` label is not the commit that was checked out.
 
 ### Secrets policy
 

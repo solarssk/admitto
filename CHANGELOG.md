@@ -14,11 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Published container images now carry a BuildKit SBOM attestation next to the existing provenance attestation, so tools such as Docker Scout can read the package list straight from the image. The CycloneDX SBOM on each GitHub Release is unchanged.
 - Check-in live updates are now more tolerant of reconnects. On phones, unstable Wi-Fi or mobile data, or behind a reverse proxy, the live stream can drop and reconnect many times a minute, and operators quickly saw "Live updates paused briefly (too many reconnects)". The default request limits are raised from 12 to 120 per minute for one operator and event, and from 48 to 240 per minute for one operator across all events. The limit on how many streams one operator can keep open at once is unchanged (3 per event, 12 in total).
 - The check-in live update limits can now be changed with environment variables, without a new release or image: `CHECKIN_STREAM_RATE_LIMIT_PER_EVENT`, `CHECKIN_STREAM_RATE_LIMIT_PER_ACTOR`, `CHECKIN_STREAM_RATE_LIMIT_WINDOW_MS`, `CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT` and `CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR`. Restart the container after changing them. A value that is not a positive whole number is ignored, the default is used, and a warning is logged at startup. See `deploy/ENV.md`.
 
 ### Fixed
 
+- The published image's `org.opencontainers.image.revision` label and the commit shown in the admin build info could name a later commit than the one the image was built from when a release was republished by hand, as happened for 0.7.3, which reported `8d64005` instead of the tagged `68e3f79`. The release build now stamps the commit it actually checked out and fails if the image label disagrees. Images published before 0.7.4 keep their original label.
 - The Reports admission log now lists the newest admission first instead of the oldest, and the CSV and printable PDF exports follow the same order. Before, an event with more than 500 admissions (100 in the PDF) showed only its earliest check-ins, so the most recent ones were missing from the table; it now shows the latest ones and says so in the truncation note.
 - On phones and tablets, tapping the scan field on the check-in page now opens the on-screen keyboard, so an operator can type a name or email when a QR code will not scan. Before, the field was set up for hardware scanners and told the device never to show a keyboard, which left touch-only devices with no way to type into it. Desktop computers and other devices without a touchscreen behave as before.
 
