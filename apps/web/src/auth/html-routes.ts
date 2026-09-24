@@ -13,6 +13,7 @@ import {
   getWebauthnEnabled,
   getPasskeyLoginEnabled,
   getPasskeyConditionalUiEnabled,
+  getOperatorRememberMeDays,
 } from "@admitto/auth";
 import { getCookie } from "hono/cookie";
 import { checkLoginEmailRateLimit } from "./login-rate-limit.js";
@@ -87,10 +88,11 @@ export async function handleGetLogin(c: Context, db: PrismaClient): Promise<Resp
   // UX layer on top of the same ceremony passkeyLoginEnabled already gates - never on without it.
   const passkeyConditionalUiEnabled =
     passkeyLoginEnabled && (await getPasskeyConditionalUiEnabled(db));
+  const rememberMeEnabled = (await getOperatorRememberMeDays(db)) > 0;
   const scriptNonce = createAuthPageScriptNonce();
   return htmlResponse(
     c,
-    renderLoginForm(scriptNonce, errorParam, next, sso, passkeyLoginEnabled, passkeyConditionalUiEnabled),
+    renderLoginForm(scriptNonce, errorParam, next, sso, passkeyLoginEnabled, passkeyConditionalUiEnabled, rememberMeEnabled),
     scriptNonce,
     200,
     trustedOrigins,
@@ -129,12 +131,13 @@ export async function handlePostLogin(
   const passkeyLoginEnabled = (await getWebauthnEnabled(db)) && (await getPasskeyLoginEnabled(db));
   const passkeyConditionalUiEnabled =
     passkeyLoginEnabled && (await getPasskeyConditionalUiEnabled(db));
+  const rememberMeEnabled = (await getOperatorRememberMeDays(db)) > 0;
 
   if (!email || !password) {
     const scriptNonce = createAuthPageScriptNonce();
     return htmlResponse(
       c,
-      renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso, passkeyLoginEnabled, passkeyConditionalUiEnabled),
+      renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso, passkeyLoginEnabled, passkeyConditionalUiEnabled, rememberMeEnabled),
       scriptNonce,
       401,
       trustedOrigins,
@@ -148,6 +151,7 @@ export async function handlePostLogin(
     userAgent: c.req.header("user-agent"),
     trustedDeviceToken: getCookie(c, TRUSTED_DEVICE_COOKIE_NAME),
     timezone: parseOptionalClientTimezone(form["timezone"]),
+    rememberMe: form["remember_me"] === "1",
   });
 
   if (!result.ok) {
@@ -157,14 +161,14 @@ export async function handlePostLogin(
     const scriptNonce = createAuthPageScriptNonce();
     return htmlResponse(
       c,
-      renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso, passkeyLoginEnabled, passkeyConditionalUiEnabled),
+      renderLoginForm(scriptNonce, LOGIN_ERROR, next, sso, passkeyLoginEnabled, passkeyConditionalUiEnabled, rememberMeEnabled),
       scriptNonce,
       401,
       trustedOrigins,
     );
   }
 
-  setSessionCookie(c, result.rawToken);
+  setSessionCookie(c, result.rawToken, result.cookieMaxAgeSeconds);
 
   if (result.next === LOGIN_NEXT.MFA_REQUIRED) {
     return c.redirect(mfaPathWithNext("/mfa/verify", next), 302);

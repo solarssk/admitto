@@ -256,6 +256,28 @@ describe("mfa-html-routes", () => {
     expect(res.headers.get("location")).toBe("/mfa/enroll/backup-codes?next=%2Foperator");
   });
 
+  it("makes the rotated session cookie persistent after MFA for a Keep me signed in session", async () => {
+    mockCompleteMfa.mockResolvedValue({
+      ok: true,
+      stage: SESSION_STAGE.FULL,
+      sessionRawToken: "rotated-token",
+      cookieMaxAgeSeconds: 259200,
+    } as never);
+    const { app } = makeApp({
+      userId: "u1",
+      sessionId: "s1",
+      stage: SESSION_STAGE.MFA_PENDING,
+    });
+    const res = await app.request("/mfa/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "code=123456",
+      redirect: "manual",
+    });
+    const sessionCookie = res.headers.getSetCookie().find((c) => c.startsWith("admitto_session="));
+    expect(sessionCookie).toContain("Max-Age=259200");
+  });
+
   it("redirects to change-password after MFA when required", async () => {
     mockCompleteMfa.mockResolvedValue({
       ok: true,
@@ -637,6 +659,24 @@ describe("mfa-html-routes", () => {
       redirect: "manual",
     });
     expect(res.headers.get("location")).toBe("/change-password");
+  });
+
+  it("makes the rotated session cookie persistent after backup-codes ack for a Keep me signed in session", async () => {
+    stashEnrollmentBackupCodes("s1", tenCodes());
+    mockPromoteFull.mockResolvedValue({ stage: SESSION_STAGE.FULL, rawToken: "rotated-token", cookieMaxAgeSeconds: 259200 });
+    const { app } = makeApp({
+      userId: "u1",
+      sessionId: "s1",
+      stage: SESSION_STAGE.BACKUP_CODES_REQUIRED,
+    });
+    const res = await app.request("/mfa/enroll/backup-codes", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "",
+      redirect: "manual",
+    });
+    const sessionCookie = res.headers.getSetCookie().find((c) => c.startsWith("admitto_session="));
+    expect(sessionCookie).toContain("Max-Age=259200");
   });
 
   it("redirects to landing after backup-codes ack", async () => {

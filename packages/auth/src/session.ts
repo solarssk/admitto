@@ -8,6 +8,7 @@ import {
   getSessionIdleTimeoutAdminMs,
   getSessionIdleTimeoutOperatorMs,
   getMfaRequiredRoles,
+  getOperatorRememberMeDays,
 } from "./settings/resolver.js";
 import {
   userRequiresMfa,
@@ -29,6 +30,8 @@ export interface CreateSessionInput {
   timezone?: string | null;
   /** Which IdP this login came from, for RP-initiated logout. Ignored for authMethod "local". */
   oidcProviderId?: string;
+  /** "Keep me signed in" was ticked. Only honored for operator-only users while `operator_remember_me_days` > 0. */
+  rememberMe?: boolean;
 }
 
 /** Active full session after cookie token validation. */
@@ -76,11 +79,45 @@ async function resolveFullTtlMs(
 async function resolveIdleTimeoutMs(
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string,
+  rememberMe: boolean,
 ): Promise<number> {
+  // A "Keep me signed in" session has no inactivity window shorter than its own lifetime: the
+  // tablet sits idle between shifts and the absolute TTL is what ends the session.
+  if (rememberMe) {
+    const rememberMs = await resolveRememberMs(prisma, userId);
+    if (rememberMs !== null) return rememberMs;
+  }
   const elevated = await hasElevatedRole(prisma, userId);
   return elevated
     ? getSessionIdleTimeoutAdminMs(prisma)
     : getSessionIdleTimeoutOperatorMs(prisma);
+}
+
+/**
+ * Lifetime of a "Keep me signed in" session in ms, or null when it does not apply: the user holds
+ * an admin/superadmin role (their limits stay fixed) or the option is switched off
+ * (`operator_remember_me_days` = 0).
+ */
+async function resolveRememberMs(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  userId: string,
+): Promise<number | null> {
+  if (await hasElevatedRole(prisma, userId)) return null;
+  const days = await getOperatorRememberMeDays(prisma);
+  return days > 0 ? days * 24 * 60 * 60 * 1000 : null;
+}
+
+/**
+ * `Max-Age` (seconds) for the session cookie of a `full` "Keep me signed in" session, so the
+ * cookie survives the browser or tablet app being closed; undefined for every other session,
+ * which keeps a browser-session cookie.
+ */
+export function persistentCookieMaxAgeSeconds(
+  session: { remember_me: boolean; stage: string; expires_at: Date },
+  now: Date = new Date(),
+): number | undefined {
+  if (!session.remember_me || session.stage !== SESSION_STAGE.FULL) return undefined;
+  return Math.max(0, Math.floor((session.expires_at.getTime() - now.getTime()) / 1000));
 }
 
 /**
@@ -131,10 +168,11 @@ export async function createSession(
       : await resolveInitialSessionStage(prisma, input.userId, input.stage);
   const now = new Date();
 
-  const ttlMs =
-    stage === SESSION_STAGE.FULL
-      ? await resolveFullTtlMs(prisma, input.userId)
-      : MFA_PENDING_SESSION_TTL_MS;
+  const rememberMs = input.rememberMe ? await resolveRememberMs(prisma, input.userId) : null;
+  let ttlMs = MFA_PENDING_SESSION_TTL_MS;
+  if (stage === SESSION_STAGE.FULL) {
+    ttlMs = rememberMs ?? (await resolveFullTtlMs(prisma, input.userId));
+  }
   const expires_at = new Date(now.getTime() + ttlMs);
 
   const session = await prisma.session.create({
@@ -148,6 +186,7 @@ export async function createSession(
       user_agent: input.userAgent ?? null,
       device_label: input.deviceLabel ? input.deviceLabel.slice(0, DEVICE_LABEL_MAX_LEN) : null,
       timezone: input.timezone ?? null,
+      remember_me: rememberMs !== null,
       last_seen_at: now,
       expires_at,
     },
@@ -177,7 +216,7 @@ async function lookupSessionByToken(
   // enrollment_required, ...) already carry a short absolute TTL
   // (MFA_PENDING_SESSION_TTL_MS) that serves the same purpose.
   if (session.stage === SESSION_STAGE.FULL) {
-    const idleTimeoutMs = await resolveIdleTimeoutMs(prisma, session.user_id);
+    const idleTimeoutMs = await resolveIdleTimeoutMs(prisma, session.user_id, session.remember_me);
     if (now.getTime() - session.last_seen_at.getTime() >= idleTimeoutMs) {
       // Revoke permanently so a later idle-timeout increase cannot resurrect a
       // session that already exceeded its inactivity window.
@@ -306,15 +345,24 @@ export async function promoteSessionToFull(
   prisma: PrismaClient | Prisma.TransactionClient,
   sessionId: string,
   userId: string,
-): Promise<{ stage: SessionStage; rawToken: string } | null> {
+): Promise<{ stage: SessionStage; rawToken: string; cookieMaxAgeSeconds?: number } | null> {
   const targetStage = await resolvePostMfaStage(prisma, userId);
   // TTL is resolved at promotion time (not cached from login) so SystemSettings changes apply immediately.
   const nonFullTtlMs =
     targetStage === SESSION_STAGE.BACKUP_CODES_REQUIRED
       ? BACKUP_CODES_STEP_TTL_MS
       : MFA_PENDING_SESSION_TTL_MS;
-  const ttlMs =
-    targetStage === SESSION_STAGE.FULL ? await resolveFullTtlMs(prisma, userId) : nonFullTtlMs;
+  let ttlMs = nonFullTtlMs;
+  let remembered = false;
+  if (targetStage === SESSION_STAGE.FULL) {
+    const row = await prisma.session.findUnique({
+      where: { id: sessionId },
+      select: { remember_me: true },
+    });
+    const rememberMs = row?.remember_me ? await resolveRememberMs(prisma, userId) : null;
+    remembered = rememberMs !== null;
+    ttlMs = rememberMs ?? (await resolveFullTtlMs(prisma, userId));
+  }
   const now = new Date();
   const rawToken = generateToken();
   const result = await prisma.session.updateMany({
@@ -343,7 +391,12 @@ export async function promoteSessionToFull(
       last_seen_at: now,
     },
   });
-  return result.count === 1 ? { stage: targetStage, rawToken } : null;
+  if (result.count !== 1) return null;
+  return {
+    stage: targetStage,
+    rawToken,
+    cookieMaxAgeSeconds: remembered ? Math.floor(ttlMs / 1000) : undefined,
+  };
 }
 
 /** Set or clear device label on the active session (operator check-in step). */

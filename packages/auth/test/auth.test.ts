@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +14,7 @@ import {
   revokeAllOperatorSessionsForEvent,
   validatePartialSession,
   promoteSessionToFull,
+  persistentCookieMaxAgeSeconds,
 } from "../src/session.js";
 import { SESSION_STAGE, SESSION_IDLE_TIMEOUT_OPERATOR_MS, AUTH_METHOD } from "../src/constants.js";
 import {
@@ -165,6 +166,24 @@ describe("login", () => {
     if (!result.ok) expect(result.reason).toBe("inactive");
   });
 
+  it("returns a persistent cookie lifetime only when an operator signs in with Keep me signed in", async () => {
+    const remembered = await login(prisma, {
+      email: "operator-a@example.com",
+      password: "test-password-123",
+      rememberMe: true,
+    });
+    const normal = await login(prisma, {
+      email: "operator-a@example.com",
+      password: "test-password-123",
+    });
+    expect(remembered.ok && normal.ok).toBe(true);
+    if (remembered.ok && normal.ok) {
+      expect(remembered.cookieMaxAgeSeconds).toBeGreaterThan(3 * 24 * 60 * 60 - 60);
+      expect(remembered.cookieMaxAgeSeconds).toBeLessThanOrEqual(3 * 24 * 60 * 60);
+      expect(normal.cookieMaxAgeSeconds).toBeUndefined();
+    }
+  });
+
   it("rejects a nonexistent email with invalid_credentials (enumeration-safe)", async () => {
     const result = await login(prisma, {
       email: "no-such-user@example.com",
@@ -313,6 +332,149 @@ describe("session", () => {
       },
     });
     expect(await validateSession(prisma, rawToken)).not.toBeNull();
+  });
+
+  it("persistentCookieMaxAgeSeconds only applies to full remember-me sessions", () => {
+    const now = new Date("2026-09-24T10:00:00Z");
+    const expires_at = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+    expect(persistentCookieMaxAgeSeconds({ remember_me: true, stage: SESSION_STAGE.FULL, expires_at }, now)).toBe(
+      3 * 24 * 60 * 60,
+    );
+    expect(
+      persistentCookieMaxAgeSeconds({ remember_me: true, stage: SESSION_STAGE.MFA_PENDING, expires_at }, now),
+    ).toBeUndefined();
+    expect(
+      persistentCookieMaxAgeSeconds({ remember_me: false, stage: SESSION_STAGE.FULL, expires_at }, now),
+    ).toBeUndefined();
+    expect(
+      persistentCookieMaxAgeSeconds({ remember_me: true, stage: SESSION_STAGE.FULL, expires_at: now }, now),
+    ).toBe(0);
+  });
+
+  describe("keep me signed in", () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    async function setRememberDays(days: number | null) {
+      if (days === null) {
+        await prisma.systemSettings.deleteMany({ where: { key: "operator_remember_me_days" } });
+        return;
+      }
+      await prisma.systemSettings.upsert({
+        where: { key: "operator_remember_me_days" },
+        create: { key: "operator_remember_me_days", value_json: String(days) },
+        update: { value_json: String(days) },
+      });
+    }
+
+    afterEach(async () => {
+      await setRememberDays(null);
+    });
+
+    it("gives an operator session the remember-me lifetime and marks the row", async () => {
+      const { session } = await createSession(prisma, { userId: USER_OP_A, rememberMe: true });
+      expect(session.remember_me).toBe(true);
+      expect(session.stage).toBe(SESSION_STAGE.FULL);
+      const lifetime = session.expires_at.getTime() - session.created_at.getTime();
+      expect(Math.abs(lifetime - 3 * DAY_MS)).toBeLessThan(60_000);
+    });
+
+    it("uses the configured number of days", async () => {
+      await setRememberDays(5);
+      const { session } = await createSession(prisma, { userId: USER_OP_A, rememberMe: true });
+      const lifetime = session.expires_at.getTime() - session.created_at.getTime();
+      expect(Math.abs(lifetime - 5 * DAY_MS)).toBeLessThan(60_000);
+    });
+
+    it("ignores the option when it is switched off (0 days)", async () => {
+      await setRememberDays(0);
+      const { session } = await createSession(prisma, { userId: USER_OP_A, rememberMe: true });
+      expect(session.remember_me).toBe(false);
+      expect(session.expires_at.getTime() - session.created_at.getTime()).toBeLessThan(DAY_MS);
+    });
+
+    it("does not extend a session that did not ask for it", async () => {
+      const { session } = await createSession(prisma, { userId: USER_OP_A });
+      expect(session.remember_me).toBe(false);
+      expect(session.expires_at.getTime() - session.created_at.getTime()).toBeLessThan(DAY_MS);
+    });
+
+    it("ignores the option for admin and superadmin accounts", async () => {
+      for (const userId of [USER_ADMIN_A, USER_SUPER]) {
+        const { session } = await createSession(prisma, {
+          userId,
+          stage: SESSION_STAGE.FULL,
+          authMethod: AUTH_METHOD.OIDC,
+          rememberMe: true,
+        });
+        expect(session.remember_me).toBe(false);
+        expect(session.expires_at.getTime() - session.created_at.getTime()).toBeLessThan(DAY_MS);
+      }
+    });
+
+    it("keeps a remembered session alive through inactivity that would end a normal one", async () => {
+      const remembered = await createSession(prisma, { userId: USER_OP_A, rememberMe: true });
+      const normal = await createSession(prisma, { userId: USER_OP_A });
+      const twoDaysAgo = new Date(Date.now() - 2 * DAY_MS);
+      await prisma.session.updateMany({
+        where: { id: { in: [remembered.session.id, normal.session.id] } },
+        data: { last_seen_at: twoDaysAgo },
+      });
+
+      expect(await validateSession(prisma, remembered.rawToken)).not.toBeNull();
+      expect(await validateSession(prisma, normal.rawToken)).toBeNull();
+    });
+
+    it("still ends a remembered session after its own remember window of inactivity", async () => {
+      const { rawToken, session } = await createSession(prisma, { userId: USER_OP_A, rememberMe: true });
+      await prisma.session.update({
+        where: { id: session.id },
+        data: { last_seen_at: new Date(Date.now() - 4 * DAY_MS) },
+      });
+      expect(await validateSession(prisma, rawToken)).toBeNull();
+    });
+
+    it("keeps the remember-me lifetime when a partial session is promoted to full", async () => {
+      const { session } = await createSession(prisma, {
+        userId: USER_OP_A,
+        stage: SESSION_STAGE.MFA_PENDING,
+        rememberMe: true,
+      });
+      expect(session.remember_me).toBe(true);
+      // Still on the short partial-stage TTL until promotion.
+      expect(session.expires_at.getTime() - session.created_at.getTime()).toBeLessThan(DAY_MS);
+
+      const promoted = await promoteSessionToFull(prisma, session.id, USER_OP_A);
+      expect(promoted?.stage).toBe(SESSION_STAGE.FULL);
+      expect(promoted?.cookieMaxAgeSeconds).toBe(3 * 24 * 60 * 60);
+
+      const row = await prisma.session.findUniqueOrThrow({ where: { id: session.id } });
+      expect(row.remember_me).toBe(true);
+      expect(Math.abs(row.expires_at.getTime() - Date.now() - 3 * DAY_MS)).toBeLessThan(60_000);
+    });
+
+    it("falls back to the normal idle timeout once the option is switched off after sign-in", async () => {
+      const { rawToken, session } = await createSession(prisma, { userId: USER_OP_A, rememberMe: true });
+      await setRememberDays(0);
+      await prisma.session.update({
+        where: { id: session.id },
+        data: { last_seen_at: new Date(Date.now() - 2 * DAY_MS) },
+      });
+      expect(await validateSession(prisma, rawToken)).toBeNull();
+    });
+
+    it("does not promote a session that does not exist", async () => {
+      expect(await promoteSessionToFull(prisma, "no-such-session", USER_OP_A)).toBeNull();
+    });
+
+    it("promotes a normal partial session without a persistent cookie", async () => {
+      const { session } = await createSession(prisma, {
+        userId: USER_OP_A,
+        stage: SESSION_STAGE.MFA_PENDING,
+      });
+      const promoted = await promoteSessionToFull(prisma, session.id, USER_OP_A);
+      expect(promoted?.stage).toBe(SESSION_STAGE.FULL);
+      expect(promoted?.cookieMaxAgeSeconds).toBeUndefined();
+    });
   });
 
   it("defaults MFA-required users to partial stage when stage omitted", async () => {

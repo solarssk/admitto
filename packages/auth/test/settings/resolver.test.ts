@@ -8,6 +8,7 @@ import {
   getSessionIdleTimeoutAdminMs,
   getSessionIdleTimeoutOperatorMs,
   getTrustedDeviceDays,
+  getOperatorRememberMeDays,
   getWebauthnEnabled,
   getPasskeyLoginEnabled,
   getPasskeyConditionalUiEnabled,
@@ -17,6 +18,7 @@ import {
 import {
   DEFAULT_MFA_REQUIRED_ROLES,
   DEFAULT_TRUSTED_DEVICE_DAYS,
+  DEFAULT_OPERATOR_REMEMBER_ME_DAYS,
   SESSION_TTL_ADMIN_MS,
   SESSION_TTL_OPERATOR_MS,
   SESSION_IDLE_TIMEOUT_ADMIN_MS,
@@ -102,6 +104,37 @@ describe("env lock parsing", () => {
     await expect(getSetting<number>(envOnlyMockPrisma, "trusted_device_days")).resolves.toBe(
       DEFAULT_TRUSTED_DEVICE_DAYS,
     );
+  });
+});
+
+describe("getOperatorRememberMeDays", () => {
+  afterEach(() => {
+    delete process.env.OPERATOR_REMEMBER_ME_DAYS;
+  });
+
+  it("defaults to 3 days", async () => {
+    await expect(getOperatorRememberMeDays(envOnlyMockPrisma)).resolves.toBe(DEFAULT_OPERATOR_REMEMBER_ME_DAYS);
+    expect(DEFAULT_OPERATOR_REMEMBER_ME_DAYS).toBe(3);
+  });
+
+  it("accepts 0 (off) and the 14 day maximum", async () => {
+    await expect(getOperatorRememberMeDays(settingsMockPrisma({ operator_remember_me_days: 0 }))).resolves.toBe(0);
+    await expect(getOperatorRememberMeDays(settingsMockPrisma({ operator_remember_me_days: 14 }))).resolves.toBe(14);
+  });
+
+  it.each([-1, 15, 90, 2.5, "3"])("falls back to the default for the invalid stored value %s", async (bad) => {
+    await expect(getOperatorRememberMeDays(settingsMockPrisma({ operator_remember_me_days: bad }))).resolves.toBe(
+      DEFAULT_OPERATOR_REMEMBER_ME_DAYS,
+    );
+  });
+
+  it("is locked by OPERATOR_REMEMBER_ME_DAYS and still range-checked", async () => {
+    process.env.OPERATOR_REMEMBER_ME_DAYS = "7";
+    expect(isSettingEnvLocked("operator_remember_me_days")).toBe(true);
+    await expect(getOperatorRememberMeDays(envOnlyMockPrisma)).resolves.toBe(7);
+
+    process.env.OPERATOR_REMEMBER_ME_DAYS = "365";
+    await expect(getOperatorRememberMeDays(envOnlyMockPrisma)).resolves.toBe(DEFAULT_OPERATOR_REMEMBER_ME_DAYS);
   });
 });
 

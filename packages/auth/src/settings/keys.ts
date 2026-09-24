@@ -4,6 +4,10 @@ export const SETTING_OPERATOR_SESSION_TTL = "operator_session_ttl";
 export const SETTING_TRUSTED_DEVICE_DAYS = "trusted_device_days";
 export const SETTING_MFA_REQUIRED_ROLES = "mfa_required_roles";
 
+/** Lifetime in days of an operator session started with "Keep me signed in" (0 = option off). Admin
+ *  and superadmin sessions ignore it and keep their own TTL and idle timeout. */
+export const SETTING_OPERATOR_REMEMBER_ME_DAYS = "operator_remember_me_days";
+
 /** Idle timeout for `full` sessions — separate from the absolute lifetime above (P0 security review). */
 export const SETTING_SESSION_IDLE_TIMEOUT = "session_idle_timeout";
 export const SETTING_OPERATOR_SESSION_IDLE_TIMEOUT = "operator_session_idle_timeout";
@@ -50,6 +54,7 @@ export const SYSTEM_SETTING_KEYS = [
   SETTING_SESSION_IDLE_TIMEOUT,
   SETTING_OPERATOR_SESSION_IDLE_TIMEOUT,
   SETTING_TRUSTED_DEVICE_DAYS,
+  SETTING_OPERATOR_REMEMBER_ME_DAYS,
   SETTING_MFA_REQUIRED_ROLES,
   SETTING_CF_ACCESS_ENABLED,
   SETTING_CF_ACCESS_TEAM_DOMAIN,

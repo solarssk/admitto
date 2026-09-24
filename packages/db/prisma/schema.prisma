@@ -954,6 +954,9 @@ model Session {
   timezone         String?
   created_at       DateTime          @default(now())
   last_seen_at     DateTime          @default(now())
+  // Started with "Keep me signed in" (operators only). Read again when a partial session is promoted
+  // to full, so the longer TTL and idle window survive the MFA / forced-password-change steps.
+  remember_me      Boolean           @default(false)
   expires_at       DateTime
   revoked_at       DateTime?
 

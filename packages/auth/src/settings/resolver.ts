@@ -1,4 +1,5 @@
 import type { PrismaClient, Prisma } from "@admitto/db";
+import { MAX_OPERATOR_REMEMBER_ME_DAYS } from "../constants.js";
 import { SETTING_DEFAULTS, SETTING_ENV_LOCKS } from "./defaults.js";
 
 function parseEnvValue(raw: string, fallback: unknown): unknown {
@@ -128,6 +129,20 @@ export async function getTrustedDeviceDays(
   return typeof v === "number" && v >= 0
     ? v
     : (SETTING_DEFAULTS.get("trusted_device_days") as number);
+}
+
+/**
+ * Lifetime in days of an operator session started with "Keep me signed in", from SystemSettings
+ * (`operator_remember_me_days`). 0 means the option is off. Out-of-range or non-integer values fall
+ * back to the default so a bad DB row or env value can never silently lengthen sessions.
+ */
+export async function getOperatorRememberMeDays(
+  prisma: PrismaClient | Prisma.TransactionClient,
+): Promise<number> {
+  const v = await getSetting<number>(prisma, "operator_remember_me_days");
+  return Number.isInteger(v) && v >= 0 && v <= MAX_OPERATOR_REMEMBER_ME_DAYS
+    ? v
+    : (SETTING_DEFAULTS.get("operator_remember_me_days") as number);
 }
 
 /** Whether passkey / security-key (WebAuthn) MFA is offered, from SystemSettings

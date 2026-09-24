@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Operators can now tick **Keep me signed in** on the sign-in page, so a check-in tablet stays signed in between shifts instead of asking for the password again after two hours of inactivity or twelve hours in total. A remembered session lasts 3 days by default (`operator_remember_me_days` in system settings or `OPERATOR_REMEMBER_ME_DAYS`, 0 to 14; 0 hides the checkbox), and the session cookie is kept when the browser or tablet app is closed. It applies to operator accounts only: administrators and superadministrators keep their 12 hour limit and 30 minute inactivity timeout even if they tick the box. Signing out still ends the session immediately, and a remembered session can be revoked from Active sessions like any other. It applies to password sign-in only; passkey and SSO sign-in are unchanged.
+
 ### Changed
 
 - Check-in live updates are now more tolerant of reconnects. On phones, unstable Wi-Fi or mobile data, or behind a reverse proxy, the live stream can drop and reconnect many times a minute, and operators quickly saw "Live updates paused briefly (too many reconnects)". The default request limits are raised from 12 to 120 per minute for one operator and event, and from 48 to 240 per minute for one operator across all events. The limit on how many streams one operator can keep open at once is unchanged (3 per event, 12 in total).

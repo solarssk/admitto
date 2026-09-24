@@ -4,6 +4,7 @@ import { findUserByEmail, findUserById, normalizeEmail } from "./user.js";
 import {
   createSession,
   promoteSessionToFull,
+  persistentCookieMaxAgeSeconds,
   type ValidatedPartialSession,
 } from "./session.js";
 import {
@@ -52,11 +53,21 @@ export interface LoginInput {
   trustedDeviceToken?: string;
   /** Browser IANA timezone when captured at sign-in. */
   timezone?: string | null;
+  /** "Keep me signed in" was ticked; only takes effect for operator-only users, see `createSession`. */
+  rememberMe?: boolean;
 }
 
 /** Discriminated result after password verification. */
 export type LoginResult =
-  | { ok: true; rawToken: string; sessionId: string; userId: string; next: LoginNext }
+  | {
+      ok: true;
+      rawToken: string;
+      sessionId: string;
+      userId: string;
+      next: LoginNext;
+      /** Set only for a `full` "Keep me signed in" session: make the session cookie persistent. */
+      cookieMaxAgeSeconds?: number;
+    }
   | { ok: false; reason: "invalid_credentials" | "inactive" };
 
 const INVALID: LoginResult = { ok: false, reason: "invalid_credentials" };
@@ -152,6 +163,7 @@ interface FinalizeLoginInput {
   userAgent?: string;
   deviceLabel?: string;
   timezone?: string | null;
+  rememberMe?: boolean;
 }
 
 /**
@@ -201,6 +213,7 @@ async function finalizeLoginSession(
     userAgent: input.userAgent,
     deviceLabel: input.deviceLabel,
     timezone: input.timezone,
+    rememberMe: input.rememberMe,
   });
 
   // Runs before logLoginSuccess persists this login's own SecurityAuditLog row - see
@@ -215,6 +228,7 @@ async function finalizeLoginSession(
     sessionId: session.id,
     userId: user.id,
     next,
+    cookieMaxAgeSeconds: persistentCookieMaxAgeSeconds(session),
   };
 }
 
@@ -305,6 +319,8 @@ export interface CompleteMfaResult {
   stage?: SessionStage;
   /** Rotated session token from the promotion - caller must set a fresh cookie from this. */
   sessionRawToken?: string;
+  /** Set only when the promoted session is a "Keep me signed in" one: persist the cookie this long. */
+  cookieMaxAgeSeconds?: number;
 }
 
 type CompleteMfaTxResult =
@@ -317,6 +333,7 @@ type CompleteMfaTxResult =
       trustedDeviceRawToken?: string;
       stage: SessionStage;
       sessionRawToken: string;
+      cookieMaxAgeSeconds?: number;
     };
 
 /**
@@ -370,11 +387,19 @@ async function completeMfaInTransaction(
         trustedDeviceRawToken: rawToken,
         stage: promoted.stage,
         sessionRawToken: promoted.rawToken,
+        cookieMaxAgeSeconds: promoted.cookieMaxAgeSeconds,
       };
     }
   }
 
-  return { ok: true, method, recoveryMethod, stage: promoted.stage, sessionRawToken: promoted.rawToken };
+  return {
+    ok: true,
+    method,
+    recoveryMethod,
+    stage: promoted.stage,
+    sessionRawToken: promoted.rawToken,
+    cookieMaxAgeSeconds: promoted.cookieMaxAgeSeconds,
+  };
 }
 
 /** Emit MFA audit events, and the repeated-failure alert side effect, after the DB transaction
@@ -464,6 +489,7 @@ export async function completeMfa(
     trustedDeviceRawToken: txResult.trustedDeviceRawToken,
     stage: txResult.stage,
     sessionRawToken: txResult.sessionRawToken,
+    cookieMaxAgeSeconds: txResult.cookieMaxAgeSeconds,
   };
 }
 
@@ -487,7 +513,13 @@ export interface CompleteMfaWithWebauthnInput {
 type CompleteMfaWithWebauthnTxResult =
   | { ok: false; reason: "invalid_webauthn" }
   | { ok: false; reason: "session_not_promoted" }
-  | { ok: true; trustedDeviceRawToken?: string; stage: SessionStage; sessionRawToken: string };
+  | {
+      ok: true;
+      trustedDeviceRawToken?: string;
+      stage: SessionStage;
+      sessionRawToken: string;
+      cookieMaxAgeSeconds?: number;
+    };
 
 /** Sibling of `SessionPromotionFailedAfterCodeVerifiedError` for the WebAuthn path - same
  * roll-back-the-verification-too rationale, just nothing to "burn" here (an assertion isn't a
@@ -516,11 +548,22 @@ async function completeMfaWithWebauthnInTransaction(
         userAgent: input.userAgent,
         label: input.deviceLabel,
       });
-      return { ok: true, trustedDeviceRawToken: rawToken, stage: promoted.stage, sessionRawToken: promoted.rawToken };
+      return {
+        ok: true,
+        trustedDeviceRawToken: rawToken,
+        stage: promoted.stage,
+        sessionRawToken: promoted.rawToken,
+        cookieMaxAgeSeconds: promoted.cookieMaxAgeSeconds,
+      };
     }
   }
 
-  return { ok: true, stage: promoted.stage, sessionRawToken: promoted.rawToken };
+  return {
+    ok: true,
+    stage: promoted.stage,
+    sessionRawToken: promoted.rawToken,
+    cookieMaxAgeSeconds: promoted.cookieMaxAgeSeconds,
+  };
 }
 
 /** Sibling of `emitMfaAudit` for the WebAuthn path. Unlike a wrong code, a rejected assertion
@@ -597,6 +640,7 @@ export async function completeMfaWithWebauthn(
     trustedDeviceRawToken: txResult.trustedDeviceRawToken,
     stage: txResult.stage,
     sessionRawToken: txResult.sessionRawToken,
+    cookieMaxAgeSeconds: txResult.cookieMaxAgeSeconds,
   };
 }
 

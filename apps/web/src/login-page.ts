@@ -298,6 +298,7 @@ export function renderLoginForm(
   ssoProviders: LoginSsoProvider[] = [],
   passkeyLoginEnabled = false,
   passkeyConditionalUiEnabled = false,
+  rememberMeEnabled = false,
 ): string {
   const ssoFailed = error === "oidc_failed";
   const loginError = !ssoFailed ? loginErrorMessage(error) : undefined;
@@ -312,6 +313,14 @@ export function renderLoginForm(
     ? renderNoticeHtml({ variant: "error", role: "alert", message: loginError })
     : "";
   const nextField = next ? `<input type="hidden" name="next" value="${esc(next)}">` : "";
+  // Operator-only "Keep me signed in": callers pass true only while operator_remember_me_days > 0.
+  // The hint sets the expectation up front because the server ignores the box for administrators.
+  const rememberMeBlock = rememberMeEnabled
+    ? `<label class="auth-check-label">
+        <input type="checkbox" name="remember_me" value="1"> Keep me signed in
+      </label>
+      <p class="auth-field-hint">For operator accounts on a shared event device. Administrators are still signed out after a period of inactivity.</p>`
+    : "";
   const altSignInBlock = renderAltSignInBlock(passkeyLoginEnabled, ssoProviders, next);
   const passkeyErrorBlock = passkeyLoginEnabled
     ? `<div class="auth-webauthn-error" id="passkey-login-error" hidden>${renderNoticeHtml({
@@ -339,6 +348,7 @@ export function renderLoginForm(
         <label class="auth-label" for="password">Password</label>
         <input class="auth-input" id="password" type="password" name="password" required autocomplete="current-password">
       </div>
+      ${rememberMeBlock}
       <button class="auth-btn-primary" type="submit">Sign in</button>
     </form>
     <p class="auth-footer">Admitto is an internal tool.<br>Access is managed by your IT administrator.</p>`;

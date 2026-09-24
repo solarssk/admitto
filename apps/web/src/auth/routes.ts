@@ -80,9 +80,16 @@ function sessionCookieOptions(c: Context): {
   };
 }
 
-/** Set httpOnly session cookie after successful login. */
-export function setSessionCookie(c: Context, rawToken: string): void {
-  setCookie(c, SESSION_COOKIE_NAME, rawToken, sessionCookieOptions(c));
+/**
+ * Set httpOnly session cookie after successful login. `maxAgeSeconds` is passed only for a
+ * "Keep me signed in" session so the cookie outlives the browser or tablet app being closed;
+ * every other session keeps a browser-session cookie.
+ */
+export function setSessionCookie(c: Context, rawToken: string, maxAgeSeconds?: number): void {
+  setCookie(c, SESSION_COOKIE_NAME, rawToken, {
+    ...sessionCookieOptions(c),
+    ...(maxAgeSeconds === undefined ? {} : { maxAge: maxAgeSeconds }),
+  });
 }
 
 /** Set httpOnly trusted-device cookie with TTL from system settings. */
@@ -126,7 +133,7 @@ export async function handleLogin(
     return c.json(AUTH_ERROR, 401);
   }
 
-  const { email, password } = body as Record<string, unknown>;
+  const { email, password, remember_me: rememberMe } = body as Record<string, unknown>;
   if (typeof email !== "string" || typeof password !== "string" || !email || !password) {
     return c.json(AUTH_ERROR, 401);
   }
@@ -140,6 +147,7 @@ export async function handleLogin(
     userAgent: c.req.header("user-agent"),
     trustedDeviceToken,
     timezone: resolveClientTimezone(c),
+    rememberMe: rememberMe === true,
   });
 
   if (!result.ok) {
@@ -149,7 +157,7 @@ export async function handleLogin(
     return c.json(AUTH_ERROR, 401);
   }
 
-  setSessionCookie(c, result.rawToken);
+  setSessionCookie(c, result.rawToken, result.cookieMaxAgeSeconds);
   if (result.next === LOGIN_NEXT.BACKUP_CODES_REQUIRED) {
     const backupCodes = await ensureEnrollmentBackupCodesStashed(
       db,
@@ -372,7 +380,7 @@ export async function handleMfaVerify(
   // Session token rotates on every promotion (see promoteSessionToFull) - the pre-MFA
   // cookie must stop working the instant a higher stage is reached. Always set on the
   // `ok: true` path - completeMfa() only omits it on the `ok: false` branch handled above.
-  setSessionCookie(c, result.sessionRawToken!);
+  setSessionCookie(c, result.sessionRawToken!, result.cookieMaxAgeSeconds);
 
   // User still owes backup-code acknowledgment, keep them in the constrained
   // stage instead of granting full access (IAM-002).
@@ -539,7 +547,7 @@ export async function handlePostMfaWebauthnVerify(
   // Session token rotates on every promotion (see promoteSessionToFull) - the pre-MFA
   // cookie must stop working the instant a higher stage is reached. Always set on the
   // `ok: true` path - completeMfaWithWebauthn() only omits it on the `ok: false` branch above.
-  setSessionCookie(c, result.sessionRawToken!);
+  setSessionCookie(c, result.sessionRawToken!, result.cookieMaxAgeSeconds);
 
   const next = await resolvePostMfaLandingPath(
     c,
@@ -908,7 +916,7 @@ export async function handleTotpBackupCodesComplete(c: Context, db: PrismaClient
   if (!promoted) {
     return c.json(AUTH_ERROR, 401);
   }
-  setSessionCookie(c, promoted.rawToken);
+  setSessionCookie(c, promoted.rawToken, promoted.cookieMaxAgeSeconds);
 
   clearEnrollmentBackupCodes(partial.sessionId);
   if (promoted.stage === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
