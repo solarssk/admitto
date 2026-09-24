@@ -42,7 +42,7 @@
       "boot": "required",
       "consumers": ["app", "worker"],
       "secret": false,
-      "ui": "none",
+      "ui": "Settings → General (preferred); env locks UI",
       "summary": "Public origin browsers use (https://tickets.example.com, no trailing slash). Required at boot in non-development; not configurable from Settings."
     },
     {
@@ -701,7 +701,7 @@
       "boot": "optional",
       "consumers": ["app"],
       "secret": false,
-      "ui": "none (defaults in auth)",
+      "ui": "Settings → Security (preferred); env locks UI",
       "summary": "Absolute operator session TTL override (ms)."
     },
     {
@@ -710,7 +710,7 @@
       "boot": "optional",
       "consumers": ["app"],
       "secret": false,
-      "ui": "none (defaults in auth)",
+      "ui": "Settings → Security (preferred); env locks UI",
       "summary": "Absolute admin/superadmin session TTL override (ms). Prefer ≤8h when OIDC group mapping grants elevated roles."
     },
     {
@@ -719,7 +719,7 @@
       "boot": "optional",
       "consumers": ["app"],
       "secret": false,
-      "ui": "none",
+      "ui": "Settings → Security (preferred); env locks UI",
       "summary": "Idle timeout for elevated sessions (ms). Must not exceed admin TTL."
     },
     {
@@ -728,7 +728,7 @@
       "boot": "optional",
       "consumers": ["app"],
       "secret": false,
-      "ui": "none",
+      "ui": "Settings → Security (preferred); env locks UI",
       "summary": "Idle timeout for operator sessions (ms)."
     },
     {
@@ -737,7 +737,7 @@
       "boot": "optional",
       "consumers": ["app"],
       "secret": false,
-      "ui": "none",
+      "ui": "Settings → Security (preferred); env locks UI",
       "summary": "MFA trusted-device cookie lifetime in days."
     },
     {
@@ -755,7 +755,7 @@
       "boot": "optional",
       "consumers": ["app"],
       "secret": false,
-      "ui": "none",
+      "ui": "Settings → Security (preferred); env locks UI",
       "summary": "Comma-separated roles that must enroll MFA (default admin,superadmin)."
     },
     {
@@ -764,7 +764,7 @@
       "boot": "optional",
       "consumers": ["app"],
       "secret": false,
-      "ui": "none",
+      "ui": "Settings → Security (preferred); env locks UI",
       "summary": "Whether passkey/security-key (WebAuthn) MFA is offered (default true)."
     },
     {
