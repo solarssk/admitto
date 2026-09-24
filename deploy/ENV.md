@@ -23,7 +23,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | Variable | Boot | Consumers | UI | Secret | Summary |
 |----------|------|-----------|----|--------|---------|
 | `NODE_ENV` | required | app, worker, migrate | none | no | Use production for real deploys. Changes security defaults (HTTPS BASE_URL, private-mail lab flag ignored, etc.). |
-| `BASE_URL` | required | app, worker | Settings → General (preferred); env locks UI | no | Public origin browsers use (https://tickets.example.com, no trailing slash). Required at boot in non-development; not configurable from Settings. |
+| `BASE_URL` | required | app, worker | Settings → General (Instance URL, read-only while set) | no | Public origin browsers use (https://tickets.example.com, no trailing slash). Required at boot in non-development, so the Instance URL field in Settings → General is read-only there. |
 | `ENCRYPTION_KEY` | required | app, worker, migrate | none | yes | AES-256-GCM master key (openssl rand -base64 32). Required to decrypt mail/OIDC secrets at rest. Losing it loses encrypted config. |
 | `DATABASE_URL` | required | app, worker, migrate | none | yes | Postgres URL. Password must match POSTGRES_PASSWORD when using compose db service. |
 | `REDIS_URL` | required | app, worker | none | yes | Redis URL including password. Compose builds this from REDIS_PASSWORD; keep them in sync. |

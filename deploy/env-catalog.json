@@ -42,8 +42,8 @@
       "boot": "required",
       "consumers": ["app", "worker"],
       "secret": false,
-      "ui": "Settings → General (preferred); env locks UI",
-      "summary": "Public origin browsers use (https://tickets.example.com, no trailing slash). Required at boot in non-development; not configurable from Settings."
+      "ui": "Settings → General (Instance URL, read-only while set)",
+      "summary": "Public origin browsers use (https://tickets.example.com, no trailing slash). Required at boot in non-development, so the Instance URL field in Settings → General is read-only there."
     },
     {
       "name": "ENCRYPTION_KEY",
