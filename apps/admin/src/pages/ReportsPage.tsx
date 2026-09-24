@@ -652,7 +652,7 @@ function AdmissionLog({
     >
       {truncated && (
         <p className="reports-log-truncated">
-          Showing the first {log.length} of {totalAdmitted} admissions. Export CSV for the full log
+          Showing the latest {log.length} of {totalAdmitted} admissions. Export CSV for the full log
           (up to 10,000 rows).
         </p>
       )}

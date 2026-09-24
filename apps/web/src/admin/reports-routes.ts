@@ -32,7 +32,7 @@ export const ADMISSION_LOG_LIMIT = 500;
 // Node to aggregate in JS (platform mix, time-to-tap buckets), set at the same ceiling the
 // CSV/XLSX importer already enforces on attendee count (xlsx-to-csv.ts's MAX_IMPORT_ROWS) - since
 // a WalletPass is 1:1 with an Attendee, no real event can exceed this many passes anyway. Unlike
-// ADMISSION_LOG_LIMIT above (a genuine display truncation - "here are the first N rows"), this
+// ADMISSION_LOG_LIMIT above (a genuine display truncation - "here are the latest N rows"), this
 // cap being hit makes the platform/ticket-type/time-to-tap numbers a same-truncated-set-derived
 // sample rather than an exact count - not silently, though: EventWalletReportsResponse carries a
 // `passes_truncated` flag (computed against an unbounded COUNT of the same rows) so the frontend
@@ -397,7 +397,7 @@ async function loadReportsAggregates(
       }),
       db.attendee.findMany({
         where: { event_id: eventId, admitted_at: { not: null } },
-        orderBy: { admitted_at: "asc" },
+        orderBy: [{ admitted_at: "desc" }, { id: "desc" }],
         take: logLimit,
         select: {
           id: true,
@@ -1957,7 +1957,7 @@ async function exportAdmissionsReportsCsv(
     db.attendee.count({ where: { event_id: eventId, admitted_at: { not: null } } }),
     db.attendee.findMany({
       where: { event_id: eventId, admitted_at: { not: null } },
-      orderBy: { admitted_at: "asc" },
+      orderBy: [{ admitted_at: "desc" }, { id: "desc" }],
       take: CSV_EXPORT_MAX,
       select: {
         id: true,
@@ -2050,7 +2050,7 @@ async function exportAdmissionsReportsPdf(
     <thead><tr><th>Type</th><th>Admitted</th><th>Total</th><th>Rate</th></tr></thead>
     <tbody>${typeRows || '<tr><td colspan="4">No attendees</td></tr>'}</tbody>
   </table>
-  <h2>Admission log${aggregates.admittedCount > PDF_LOG_MAX ? ` (first ${PDF_LOG_MAX} of ${aggregates.admittedCount})` : ""}</h2>
+  <h2>Admission log${aggregates.admittedCount > PDF_LOG_MAX ? ` (latest ${PDF_LOG_MAX} of ${aggregates.admittedCount})` : ""}</h2>
   <table>
     <thead><tr><th>Name</th><th>Email</th><th>Ticket type</th><th>Admitted at</th><th>Checked in by</th><th>Items</th></tr></thead>
     <tbody>${logRows || '<tr><td colspan="6">No admissions yet</td></tr>'}</tbody>

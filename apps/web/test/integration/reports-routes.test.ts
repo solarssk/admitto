@@ -1881,16 +1881,23 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     expect(body.admission_log).toHaveLength(5);
     expect(body.admission_log_truncated).toBe(false);
     expect(body.admission_log_total).toBe(5);
-    expect(body.admission_log[0]!.attendee_id).toBe(ATT_VIP_1);
-    expect(body.admission_log[0]!.device_id).toBe("scanner-01");
+    // Newest admission first: the evening admit leads and the morning admit (ATT_VIP_1) is last.
+    expect(body.admission_log.map((row) => row.attendee_id)).toEqual([
+      ATT_STD_3,
+      ATT_STD_2,
+      ATT_STD_1,
+      ATT_VIP_2,
+      ATT_VIP_1,
+    ]);
+    expect(body.admission_log[4]!.device_id).toBe("scanner-01");
     // ATT_VIP_1 was seeded with admitted_by: adminId (no display_name set) - resolves to the
     // email fallback, not the "(No operator)"/"Deleted user" cases.
-    expect(body.admission_log[0]!.operator_user_id).toBe(adminId);
-    expect(body.admission_log[0]!.operator_display_name).toBeNull();
-    expect(body.admission_log[0]!.operator_email).toBe(EMAIL_ADMIN);
-    expect(body.admission_log[1]!.device_id).toBe("desk-01");
+    expect(body.admission_log[4]!.operator_user_id).toBe(adminId);
+    expect(body.admission_log[4]!.operator_display_name).toBeNull();
+    expect(body.admission_log[4]!.operator_email).toBe(EMAIL_ADMIN);
+    expect(body.admission_log[3]!.device_id).toBe("desk-01");
     // ATT_VIP_2 has no admitted_by - the legacy/emergency-bearer-shaped "no operator" case.
-    expect(body.admission_log[1]!.operator_user_id).toBeNull();
+    expect(body.admission_log[3]!.operator_user_id).toBeNull();
     expect(body.by_ticket_type[0]).toMatchObject({ key: "Standard", color: "gray" });
     expect(body.by_ticket_type[1]).toMatchObject({ key: "VIP", color: "purple" });
   });
@@ -3149,12 +3156,15 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(lines[0]).toContain('"Admitted at (');
     expect(lines[0]).toContain('"Checked in by"');
     expect(lines).toHaveLength(6);
-    expect(lines[1]).toContain('"VIP One"');
+    // Newest admission first, matching the on-screen log: the evening admit leads, VIP One (the
+    // morning admit) is last.
+    expect(lines[1]).toContain('"Standard Three"');
+    expect(lines[5]).toContain('"VIP One"');
     // ATT_VIP_1 was seeded with admitted_by: adminId - "Checked in by" and "Device" stay separate
     // CSV columns (unlike the merged PDF/on-screen presentation).
-    expect(lines[1]).toContain(`"${EMAIL_ADMIN}"`);
-    expect(lines[1]).toContain('"scanner-01"');
-    expect(lines[1]).not.toMatch(/T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
+    expect(lines[5]).toContain(`"${EMAIL_ADMIN}"`);
+    expect(lines[5]).toContain('"scanner-01"');
+    expect(lines[5]).not.toMatch(/T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
   });
 
   it("returns CSV headers only when no admissions", async () => {

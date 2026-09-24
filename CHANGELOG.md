@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The Reports admission log now lists the newest admission first instead of the oldest, and the CSV and printable PDF exports follow the same order. Before, an event with more than 500 admissions (100 in the PDF) showed only its earliest check-ins, so the most recent ones were missing from the table; it now shows the latest ones and says so in the truncation note.
+
 ## [0.7.3] - 2026-09-23
 
 ### Added
