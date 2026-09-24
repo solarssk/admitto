@@ -1,7 +1,8 @@
 import { appendFileSync, writeFileSync } from "node:fs";
 import AxeBuilder from "@axe-core/playwright";
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
-import { readSeedData } from "./seed.js";
+import { signInAsAdmin } from "./admin-login.js";
+import { readSeedData, seedCheckinE2eData } from "./seed.js";
 
 /**
  * Accessibility scan (axe-core) over the surfaces this suite can already reach with its one seeded
@@ -16,8 +17,15 @@ async function scanAndReport(
   page: Page,
   testInfo: TestInfo,
   surface: string,
+  { blocking: failOnSerious = true }: { blocking?: boolean } = {},
 ): Promise<void> {
-  const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+  // iframes are excluded: the only ones are the srcdoc mail-template previews on the Communication
+  // page, whose content is the template's own HTML rather than the app's UI, and axe hangs
+  // indefinitely trying to scan them.
+  const results = await new AxeBuilder({ page })
+    .exclude("iframe")
+    .withTags(WCAG_TAGS)
+    .analyze();
 
   // Guards against a silently empty scan (e.g. the page hadn't rendered) counting as "no violations".
   expect(results.passes.length + results.violations.length).toBeGreaterThan(0);
@@ -50,10 +58,15 @@ async function scanAndReport(
     );
   }
 
-  expect(
-    blocking.map((v) => `${v.id}: ${v.help}`),
-    `serious/critical accessibility violations on ${surface}`,
-  ).toEqual([]);
+  if (failOnSerious) {
+    // Soft, so one page's failure does not stop the remaining pages in the same test from being scanned.
+    expect
+      .soft(
+        blocking.map((v) => `${v.id}: ${v.help}`),
+        `serious/critical accessibility violations on ${surface}`,
+      )
+      .toEqual([]);
+  }
 }
 
 test("login page", async ({ page }, testInfo) => {
@@ -78,4 +91,105 @@ test("operator check-in page", async ({ page }, testInfo) => {
   ).toBeVisible();
 
   await scanAndReport(page, testInfo, "operator-checkin");
+});
+
+// Admin-side pages, scanned as the seeded superadmin. `blocking: false` marks a page whose current
+// findings have not been fixed or triaged yet: it is still scanned and reported, but does not fail.
+type Ids = { event: string; attendee: string };
+
+// Each admin page, the API requests that carry its data (a page is only scanned after they have
+// completed, so the scan sees real content rather than placeholders), and whether findings fail
+// the test (all do today; `blocking: false` would mark a page with unfixed, untriaged findings).
+const ADMIN_SURFACES: {
+  name: string;
+  path: (ids: Ids) => string;
+  data: (ids: Ids) => string[];
+  blocking: boolean;
+}[] = [
+  {
+    name: "admin-events",
+    path: () => "/admin",
+    data: () => ["/api/admin/events"],
+    blocking: true,
+  },
+  {
+    name: "admin-overview",
+    path: (i) => `/admin/events/${i.event}/overview`,
+    data: (i) => [`/api/admin/events/${i.event}/overview`],
+    blocking: true,
+  },
+  {
+    name: "admin-attendees",
+    path: (i) => `/admin/events/${i.event}/attendees`,
+    data: (i) => [`/api/admin/events/${i.event}/attendees`],
+    blocking: true,
+  },
+  {
+    name: "admin-attendee-detail",
+    path: (i) => `/admin/events/${i.event}/attendees/${i.attendee}`,
+    data: (i) => [`/api/admin/events/${i.event}/attendees/${i.attendee}`],
+    blocking: true,
+  },
+  {
+    name: "admin-event-settings",
+    path: (i) => `/admin/events/${i.event}/settings`,
+    data: (i) => [`/api/admin/events/${i.event}/settings`],
+    blocking: true,
+  },
+  {
+    name: "admin-communication",
+    path: (i) => `/admin/events/${i.event}/communication`,
+    data: (i) => [
+      `/api/admin/events/${i.event}/templates`,
+      `/api/admin/events/${i.event}/deliveries`,
+    ],
+    blocking: true,
+  },
+];
+
+test("admin pages", async ({ page, baseURL }, testInfo) => {
+  // Six pages, each waited for and scanned, plus the sign-in: more than the 30 s default.
+  test.setTimeout(180_000);
+  // Re-seed first: it resets the admin's MFA (a retry after a failed attempt could not enrol TOTP
+  // again otherwise) and puts the attendee back to "not admitted", the state whose "Not yet" item
+  // labels this test scans.
+  await seedCheckinE2eData();
+  const seed = await readSeedData();
+  await signInAsAdmin(page, baseURL!, seed.adminEmail, seed.adminPassword);
+
+  for (const surface of ADMIN_SURFACES) {
+    const ids = { event: seed.eventId, attendee: seed.attendeeId };
+    // Listeners are attached before navigating so a fast response cannot be missed.
+    const loaded = surface
+      .data(ids)
+      .map((pathname) =>
+        page.waitForResponse(
+          (res) =>
+            new URL(res.url()).pathname === pathname &&
+            res.request().method() === "GET" &&
+            res.ok(),
+        ),
+      );
+    await page.goto(surface.path(ids));
+    await Promise.all(loaded);
+    await expect(page.getByRole("heading").first()).toBeVisible();
+    await expect(page.locator(".at-spinner")).toHaveCount(0);
+    // Two animation frames let React commit what the responses just delivered, then any finite
+    // animation (notices fade in) must be over: axe reads colours mid-fade otherwise, and reports
+    // contrast against a half-transparent text colour that is not what users end up seeing.
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      await Promise.all(
+        document
+          .getAnimations()
+          .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+          .map((a) => a.finished),
+      );
+    });
+    await scanAndReport(page, testInfo, surface.name, {
+      blocking: surface.blocking,
+    });
+  }
 });

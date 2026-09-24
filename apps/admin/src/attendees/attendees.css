@@ -1376,8 +1376,8 @@
   flex: none;
 }
 
-.attendee-items-row__state--ok { color: var(--status-ok); }
-.attendee-items-row__state--muted { color: var(--text-disabled); }
+.attendee-items-row__state--ok { color: var(--status-ok-fg); }
+.attendee-items-row__state--muted { color: var(--text-muted); }
 
 /* Attendee detail status strip - 5 chips (Pass/Attendance/Ticket delivery/Check-in/
    Wallet), matching the design mockup's .att-status-strip. */
