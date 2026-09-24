@@ -121,6 +121,8 @@ jobs:
       security-events: write # SARIF upload to the Security tab
     env:
       SCAN_IMAGE: ghcr.io/${{ github.repository }}:ci-scan-${{ matrix.suffix }}
+      # A digest ref resolves to a multi-platform index and Trivy defaults to linux/amd64, so the arm64 leg needs this.
+      TRIVY_PLATFORM: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
