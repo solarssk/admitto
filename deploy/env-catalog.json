@@ -746,7 +746,7 @@
       "boot": "optional",
       "consumers": ["app"],
       "secret": false,
-      "ui": "none",
+      "ui": "Settings → Security (preferred); env locks UI",
       "summary": "Lifetime in days (0 to 14, default 3) of an operator session started with Keep me signed in; 0 hides the option."
     },
     {
