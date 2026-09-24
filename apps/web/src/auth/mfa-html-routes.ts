@@ -253,7 +253,7 @@ export async function handlePostMfaVerify(
   // Session token rotates on every promotion (see promoteSessionToFull) - the pre-MFA
   // cookie must stop working the instant a higher stage is reached. Always set on the
   // `ok: true` path - completeMfa() only omits it on the `ok: false` branch handled above.
-  setSessionCookie(c, result.sessionRawToken!);
+  setSessionCookie(c, result.sessionRawToken!, result.cookieMaxAgeSeconds);
 
   const landing = await resolvePostMfaLandingPath(
     c,
@@ -581,7 +581,7 @@ export async function handlePostMfaEnrollBackupCodes(
       trustedOrigins,
     );
   }
-  setSessionCookie(c, promoted.rawToken);
+  setSessionCookie(c, promoted.rawToken, promoted.cookieMaxAgeSeconds);
   if (promoted.stage === SESSION_STAGE.CHANGE_PASSWORD_REQUIRED) {
     clearEnrollmentBackupCodes(partial.sessionId);
     return c.redirect("/change-password", 302);

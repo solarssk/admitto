@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Operators can now tick **Keep me signed in** on the sign-in page, so a check-in tablet stays signed in between shifts instead of asking for the password again after two hours of inactivity or twelve hours in total. A remembered session lasts 3 days by default (`operator_remember_me_days` in system settings or `OPERATOR_REMEMBER_ME_DAYS`, 0 to 14; 0 hides the checkbox), and the session cookie is kept when the browser or tablet app is closed. It applies to operator accounts only: administrators and superadministrators keep their 12 hour limit and 30 minute inactivity timeout even if they tick the box. Signing out still ends the session immediately, and a remembered session can be revoked from Active sessions like any other. It applies to password sign-in only; passkey and SSO sign-in are unchanged.
 - The Attendees page's "Add attendee" button is now disabled with a tooltip showing the current count against the limit (e.g. "Event is at capacity (400/400)...") once an event reaches its capacity, so an administrator sees the block before opening the form instead of only after submitting it.
 
 ### Changed

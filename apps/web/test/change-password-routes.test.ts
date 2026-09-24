@@ -201,6 +201,19 @@ describe("change-password-routes", () => {
     );
   });
 
+  it("makes the rotated session cookie persistent when the promoted session is a Keep me signed in one", async () => {
+    promote.mockResolvedValue({ stage: SESSION_STAGE.FULL, rawToken: "rotated-token", cookieMaxAgeSeconds: 259200 });
+    const app = makeApp(makeDb({}), { userId: "u1", sessionId: "s1" });
+    const res = await app.request("/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `password=${encodeURIComponent(strongPassword)}&password_confirm=${encodeURIComponent(strongPassword)}`,
+      redirect: "manual",
+    });
+    const sessionCookie = res.headers.getSetCookie().find((c) => c.startsWith("admitto_session="));
+    expect(sessionCookie).toContain("Max-Age=259200");
+  });
+
   it("redirects to backup-codes when promotion lands on backup_codes_required", async () => {
     promote.mockResolvedValue({ stage: SESSION_STAGE.BACKUP_CODES_REQUIRED, rawToken: "rotated-token" });
     const app = makeApp(makeDb({}), { userId: "u1", sessionId: "s1" });

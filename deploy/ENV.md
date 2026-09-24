@@ -146,6 +146,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `SESSION_IDLE_TIMEOUT_ADMIN_MS` | optional | app | none | no | Idle timeout for elevated sessions (ms). Must not exceed admin TTL. |
 | `SESSION_IDLE_TIMEOUT_OPERATOR_MS` | optional | app | none | no | Idle timeout for operator sessions (ms). |
 | `TRUSTED_DEVICE_DAYS` | optional | app | none | no | MFA trusted-device cookie lifetime in days. |
+| `OPERATOR_REMEMBER_ME_DAYS` | optional | app | none | no | Lifetime in days (0 to 14, default 3) of an operator session started with Keep me signed in; 0 hides the option. |
 | `MFA_REQUIRED_ROLES` | optional | app | none | no | Comma-separated roles that must enroll MFA (default admin,superadmin). |
 | `WEBAUTHN_ENABLED` | optional | app | none | no | Whether passkey/security-key (WebAuthn) MFA is offered (default true). |
 | `CSP_TRUSTED_ORIGINS` | optional | app | Settings → Security (preferred); env locks UI | no | JSON array of https:// origins trusted to run script/send data on the admin/operator SPA and sign-in pages. |
@@ -201,4 +202,4 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 3. Run `npm run docs:env` and commit `ENV.md`.
 4. `npm run docs:check` fails if this file is stale or a scanned key is missing from the catalog.
 
-_Last generated from 115 distinct keys seen in scan (tests excluded)._
+_Last generated from 116 distinct keys seen in scan (tests excluded)._

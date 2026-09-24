@@ -117,6 +117,7 @@ export async function handlePostChangePassword(c: Context, db: PrismaClient): Pr
     const orgId = await resolveInstanceOrganizationId(db);
     let promotedStage: SessionStage | null = null;
     let promotedRawToken: string | null = null;
+    let promotedCookieMaxAgeSeconds: number | undefined;
     let revokedCount = 0;
     await db.$transaction(async (tx) => {
       await tx.user.update({
@@ -130,12 +131,13 @@ export async function handlePostChangePassword(c: Context, db: PrismaClient): Pr
       if (!promoted) throw new Error("session_promotion_failed");
       promotedStage = promoted.stage;
       promotedRawToken = promoted.rawToken;
+      promotedCookieMaxAgeSeconds = promoted.cookieMaxAgeSeconds;
     });
     // Session token rotates on every promotion (see promoteSessionToFull) - the
     // pre-password-change cookie must stop working the instant the session advances.
     // Non-null: the transaction above throws (and this line is never reached) unless
     // `promoted` was set, which always assigns `promotedRawToken` in the same branch.
-    setSessionCookie(c, promotedRawToken!);
+    setSessionCookie(c, promotedRawToken!, promotedCookieMaxAgeSeconds);
 
     // Audit write runs after the transaction commits, not inside it: the password
     // change and session promotion have already succeeded at this point, and a

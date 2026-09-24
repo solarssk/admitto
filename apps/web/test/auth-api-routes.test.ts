@@ -266,6 +266,43 @@ describe("auth API routes (routes.ts)", () => {
       expect(res.status).toBe(401);
     });
 
+    it("forwards remember_me to login and persists the session cookie for a remembered session", async () => {
+      mockLogin.mockResolvedValue({
+        ok: true,
+        next: LOGIN_NEXT.COMPLETE,
+        rawToken: "tok",
+        sessionId: "s1",
+        userId: "u1",
+        cookieMaxAgeSeconds: 259200,
+      } as never);
+      const res = await app().request("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "ops@example.com", password: "good", remember_me: true }),
+      });
+      expect(mockLogin).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ rememberMe: true }));
+      const sessionCookie = res.headers.getSetCookie().find((c) => c.startsWith("admitto_session="));
+      expect(sessionCookie).toContain("Max-Age=259200");
+    });
+
+    it("treats a missing or non-boolean remember_me as false", async () => {
+      mockLogin.mockResolvedValue({
+        ok: true,
+        next: LOGIN_NEXT.COMPLETE,
+        rawToken: "tok",
+        sessionId: "s1",
+        userId: "u1",
+      } as never);
+      const res = await app().request("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "ops@example.com", password: "good", remember_me: "yes" }),
+      });
+      expect(mockLogin).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ rememberMe: false }));
+      const sessionCookie = res.headers.getSetCookie().find((c) => c.startsWith("admitto_session="));
+      expect(sessionCookie).not.toContain("Max-Age");
+    });
+
     it("returns backup codes when login lands on backup_codes_required", async () => {
       mockLogin.mockResolvedValue({
         ok: true,

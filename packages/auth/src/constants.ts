@@ -33,6 +33,12 @@ export const WEBAUTHN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 /** Default trusted-device validity (days). */
 export const DEFAULT_TRUSTED_DEVICE_DAYS = 30;
 
+/** Default lifetime (days) of an operator session started with "Keep me signed in". 0 disables the option. */
+export const DEFAULT_OPERATOR_REMEMBER_ME_DAYS = 3;
+
+/** Upper bound for `operator_remember_me_days`; a lost tablet stays signed in for at most this long. */
+export const MAX_OPERATOR_REMEMBER_ME_DAYS = 14;
+
 /** Backup recovery codes generated at TOTP enrollment. */
 export const BACKUP_RECOVERY_CODE_COUNT = 10;
 

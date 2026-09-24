@@ -60,7 +60,10 @@ vi.mock("../src/audit.js", () => ({
   notifyTotpCodeReused: mocks.notifyTotpCodeReused,
 }));
 
-vi.mock("../src/session.js", () => ({
+vi.mock("../src/session.js", async (importOriginal) => ({
+  // Pure helper, kept real so login() results carry the real cookie max-age logic.
+  persistentCookieMaxAgeSeconds: (await importOriginal<typeof import("../src/session.js")>())
+    .persistentCookieMaxAgeSeconds,
   createSession: mocks.createSession,
   promoteSessionToFull: mocks.promoteSessionToFull,
 }));

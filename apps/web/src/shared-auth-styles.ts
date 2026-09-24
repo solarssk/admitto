@@ -349,6 +349,12 @@ body {
   color: var(--at-gray-500);
   margin-top: 0.75rem;
 }
+/* Drops the browser's default checkbox margin so the box starts on the same left edge as the fields
+   and text above it, not a few pixels inside it. */
+.auth-check-label input[type="checkbox"] {
+  margin: 0;
+  flex-shrink: 0;
+}
 .auth-backup {
   background: var(--at-yellow-050);
   border: 1px solid #f59f00;

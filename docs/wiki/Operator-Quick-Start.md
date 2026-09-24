@@ -12,6 +12,8 @@ Prepare your device, scan an attendee ticket, and respond safely to the result s
 
 Sign in with your own account and open the assigned event. Confirm the event title and date with an Organisation Admin. Prepare the camera or scanner and scan one approved synthetic test ticket.
 
+On a check-in tablet that stays at the entrance, tick **Keep me signed in** on the sign-in page so the session survives breaks and closing the app. It keeps you signed in for a few days (3 by default; your instance administrator sets the length). Only tick it on a device that stays with the event team, and select **Sign out** when the event ends. If you do not see the checkbox, your instance administrator has turned it off.
+
 ## Steps
 
 1. Open **Check-in**.
@@ -42,6 +44,7 @@ A successful admission updates the attendee and event reports immediately when c
 
 ## Common problems
 
+- **You are asked to sign in again during the event:** without **Keep me signed in**, a session ends after two hours without activity or twelve hours in total. Sign in again and tick the box on a shared event device.
 - **The camera does not scan:** check permission and lighting, or use the configured scanner.
 - **The result is already checked in, revoked, or invalid:** pause and follow [Scanning Tickets and Results](Scanning-Tickets-and-Results).
 - **Manual lookup is not available:** it has not been enabled for this event; ask an Organisation Admin.
