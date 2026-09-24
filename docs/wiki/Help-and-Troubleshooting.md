@@ -1,6 +1,6 @@
 # Help and Troubleshooting
 
-**Audience:** All staff · **Required role:** Any staff role · **Feature status:** ✅ Available · **Last verified:** Admitto 0.5.1
+**Audience:** All staff · **Required role:** Any staff role · **Feature status:** ✅ Available · **Last verified:** Admitto 0.7.3
 
 Start with the page for the failed workflow:
 
@@ -19,7 +19,7 @@ Start with the page for the failed workflow:
 
 ## Report a product problem
 
-1. Record the Admitto version shown in the interface (sidebar footer).
+1. Record the Admitto version and build commit shown in the interface (sidebar footer, for example `v0.7.4 · 68e3f79`). The commit should match the commit of that release's tag on GitHub. Version 0.7.3 is the one exception: its footer shows `8d64005`, a later commit, because of a release pipeline error fixed in 0.7.4. The running code is still the 0.7.3 release.
 2. Optional: open **Organisation settings → Health check**, use **Copy for GitHub Issue**, and paste the snapshot into the bug form. Remove any remaining secrets or personal data before posting.
 3. Record the page, approximate time, expected result, and safe error text.
 4. Remove attendee data, addresses, ticket links, QR values, secrets, and provider responses.
