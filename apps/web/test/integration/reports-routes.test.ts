@@ -79,6 +79,7 @@ const EMAIL_ADMIN = "reports-admin@example.com";
 const EMAIL_ADMIN_B = "reports-admin-b@example.com";
 const EMAIL_ADMIN_WALLETS = "reports-admin-wallets@example.com";
 const EMAIL_ADMIN_MAIL = "reports-admin-mail@example.com";
+const EMAIL_ADMIN_PDFCAP = "reports-admin-pdfcap@example.com";
 const EMAIL_OP = "reports-op@example.com";
 const PASSWORD = "reports-test-pass-123";
 
@@ -145,6 +146,7 @@ let adminId: string;
 let adminBId: string;
 let adminWalletsId: string;
 let adminMailId: string;
+let adminPdfCapId: string;
 let opId: string;
 let adminCookie = "";
 let adminBCookie = "";
@@ -159,6 +161,8 @@ let adminWalletsCookie = "";
 // admin:export:user:<id>:route:/reports/export bucket as every other report type) - one dedicated
 // user is enough since the two blocks together stay well under the 10/hour cap.
 let adminMailCookie = "";
+// Dedicated to the capped-PDF export test (its own admin:export bucket, same reasoning as above).
+let adminPdfCapCookie = "";
 
 function mkAttendeeToken() {
   const token = generateToken();
@@ -220,13 +224,13 @@ async function seed(client: PrismaClient) {
     where: { OR: [{ scope_id: { in: [ORG_REP, ORG_REP_B, ...eventIds] } }] },
   });
   await client.session.deleteMany({
-    where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS, EMAIL_ADMIN_MAIL, EMAIL_OP] } } },
+    where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS, EMAIL_ADMIN_MAIL, EMAIL_ADMIN_PDFCAP, EMAIL_OP] } } },
   });
   await client.userMfaMethod.deleteMany({
-    where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS, EMAIL_ADMIN_MAIL] } } },
+    where: { user: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS, EMAIL_ADMIN_MAIL, EMAIL_ADMIN_PDFCAP] } } },
   });
   await client.user.deleteMany({
-    where: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS, EMAIL_ADMIN_MAIL, EMAIL_OP] } },
+    where: { email: { in: [EMAIL_ADMIN, EMAIL_ADMIN_B, EMAIL_ADMIN_WALLETS, EMAIL_ADMIN_MAIL, EMAIL_ADMIN_PDFCAP, EMAIL_OP] } },
   });
   await client.event.deleteMany({ where: { id: { in: eventIds } } });
   await client.organization.deleteMany({ where: { id: { in: [ORG_REP, ORG_REP_B] } } });
@@ -675,11 +679,13 @@ async function seed(client: PrismaClient) {
   const adminBUser = await client.user.create({ data: { email: EMAIL_ADMIN_B, password_hash } });
   const adminWalletsUser = await client.user.create({ data: { email: EMAIL_ADMIN_WALLETS, password_hash } });
   const adminMailUser = await client.user.create({ data: { email: EMAIL_ADMIN_MAIL, password_hash } });
+  const adminPdfCapUser = await client.user.create({ data: { email: EMAIL_ADMIN_PDFCAP, password_hash } });
   const opUser = await client.user.create({ data: { email: EMAIL_OP, password_hash } });
   adminId = adminUser.id;
   adminBId = adminBUser.id;
   adminWalletsId = adminWalletsUser.id;
   adminMailId = adminMailUser.id;
+  adminPdfCapId = adminPdfCapUser.id;
   opId = opUser.id;
 
   await client.roleAssignment.createMany({
@@ -688,11 +694,12 @@ async function seed(client: PrismaClient) {
       { user_id: adminBId, role: "admin", scope_type: "organization", scope_id: ORG_REP_B },
       { user_id: adminWalletsId, role: "admin", scope_type: "organization", scope_id: ORG_REP },
       { user_id: adminMailId, role: "admin", scope_type: "organization", scope_id: ORG_REP },
+      { user_id: adminPdfCapId, role: "admin", scope_type: "organization", scope_id: ORG_REP },
       { user_id: opId, role: "operator", scope_type: "event", scope_id: EVENT_REP },
     ],
   });
 
-  for (const userId of [adminId, adminBId, adminWalletsId, adminMailId]) {
+  for (const userId of [adminId, adminBId, adminWalletsId, adminMailId, adminPdfCapId]) {
     await client.userMfaMethod.create({
       data: {
         user_id: userId,
@@ -1751,11 +1758,13 @@ beforeAll(async () => {
   const adminBSession = await createSession(prisma, { userId: adminBId, stage: SESSION_STAGE.FULL });
   const adminWalletsSession = await createSession(prisma, { userId: adminWalletsId, stage: SESSION_STAGE.FULL });
   const adminMailSession = await createSession(prisma, { userId: adminMailId, stage: SESSION_STAGE.FULL });
+  const adminPdfCapSession = await createSession(prisma, { userId: adminPdfCapId, stage: SESSION_STAGE.FULL });
   const opSession = await createSession(prisma, { userId: opId, stage: SESSION_STAGE.FULL });
   adminCookie = `admitto_session=${adminSession.rawToken}`;
   adminBCookie = `admitto_session=${adminBSession.rawToken}`;
   adminWalletsCookie = `admitto_session=${adminWalletsSession.rawToken}`;
   adminMailCookie = `admitto_session=${adminMailSession.rawToken}`;
+  adminPdfCapCookie = `admitto_session=${adminPdfCapSession.rawToken}`;
   opCookie = `admitto_session=${opSession.rawToken}`;
 });
 
@@ -1881,16 +1890,23 @@ describe("GET /api/admin/events/:eventId/reports", () => {
     expect(body.admission_log).toHaveLength(5);
     expect(body.admission_log_truncated).toBe(false);
     expect(body.admission_log_total).toBe(5);
-    expect(body.admission_log[0]!.attendee_id).toBe(ATT_VIP_1);
-    expect(body.admission_log[0]!.device_id).toBe("scanner-01");
+    // Newest admission first: the evening admit leads and the morning admit (ATT_VIP_1) is last.
+    expect(body.admission_log.map((row) => row.attendee_id)).toEqual([
+      ATT_STD_3,
+      ATT_STD_2,
+      ATT_STD_1,
+      ATT_VIP_2,
+      ATT_VIP_1,
+    ]);
+    expect(body.admission_log[4]!.device_id).toBe("scanner-01");
     // ATT_VIP_1 was seeded with admitted_by: adminId (no display_name set) - resolves to the
     // email fallback, not the "(No operator)"/"Deleted user" cases.
-    expect(body.admission_log[0]!.operator_user_id).toBe(adminId);
-    expect(body.admission_log[0]!.operator_display_name).toBeNull();
-    expect(body.admission_log[0]!.operator_email).toBe(EMAIL_ADMIN);
-    expect(body.admission_log[1]!.device_id).toBe("desk-01");
+    expect(body.admission_log[4]!.operator_user_id).toBe(adminId);
+    expect(body.admission_log[4]!.operator_display_name).toBeNull();
+    expect(body.admission_log[4]!.operator_email).toBe(EMAIL_ADMIN);
+    expect(body.admission_log[3]!.device_id).toBe("desk-01");
     // ATT_VIP_2 has no admitted_by - the legacy/emergency-bearer-shaped "no operator" case.
-    expect(body.admission_log[1]!.operator_user_id).toBeNull();
+    expect(body.admission_log[3]!.operator_user_id).toBeNull();
     expect(body.by_ticket_type[0]).toMatchObject({ key: "Standard", color: "gray" });
     expect(body.by_ticket_type[1]).toMatchObject({ key: "VIP", color: "purple" });
   });
@@ -3149,12 +3165,15 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(lines[0]).toContain('"Admitted at (');
     expect(lines[0]).toContain('"Checked in by"');
     expect(lines).toHaveLength(6);
-    expect(lines[1]).toContain('"VIP One"');
+    // Newest admission first, matching the on-screen log: the evening admit leads, VIP One (the
+    // morning admit) is last.
+    expect(lines[1]).toContain('"Standard Three"');
+    expect(lines[5]).toContain('"VIP One"');
     // ATT_VIP_1 was seeded with admitted_by: adminId - "Checked in by" and "Device" stay separate
     // CSV columns (unlike the merged PDF/on-screen presentation).
-    expect(lines[1]).toContain(`"${EMAIL_ADMIN}"`);
-    expect(lines[1]).toContain('"scanner-01"');
-    expect(lines[1]).not.toMatch(/T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
+    expect(lines[5]).toContain(`"${EMAIL_ADMIN}"`);
+    expect(lines[5]).toContain('"scanner-01"');
+    expect(lines[5]).not.toMatch(/T\d{2}:\d{2}:\d{2}\.\d{3}Z/);
   });
 
   it("returns CSV headers only when no admissions", async () => {
@@ -3195,6 +3214,99 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("No admissions yet");
+  });
+
+  it("CSV export labels a capped admission log as the latest rows, not the first", async () => {
+    const EVENT_CSV_CAP = "evt-reports-csv-cap";
+    const cleanup = async () => {
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_CSV_CAP } });
+      await prisma.event.deleteMany({ where: { id: EVENT_CSV_CAP } });
+    };
+    await cleanup();
+    await prisma.event.create({
+      data: {
+        id: EVENT_CSV_CAP,
+        title: "CSV Cap Reports Event",
+        slug: "reports-event-csv-cap",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    try {
+      // One more admission than CSV_EXPORT_MAX (10,000), one minute apart: the single oldest
+      // admission is the one dropped. Attendees share one token pair to keep seeding cheap.
+      const base = new Date("2026-10-01T08:00:00.000Z").getTime();
+      const token = mkAttendeeToken();
+      await prisma.attendee.createMany({
+        data: Array.from({ length: 10_001 }, (_, i) => ({
+          id: `att-csv-cap-${i}`,
+          event_id: EVENT_CSV_CAP,
+          email: `csv-cap-${i}@example.com`,
+          name: i === 0 ? "Oldest Guest" : i === 10_000 ? "Newest Guest" : `Guest ${i}`,
+          admitted_at: new Date(base + i * 60_000),
+          token_hash: `${token.token_hash}-${i}`,
+          token_enc: token.token_enc,
+        })),
+      });
+      const res = await app.request(`/api/admin/events/${EVENT_CSV_CAP}/reports/export?format=csv`, {
+        headers: { Cookie: adminPdfCapCookie },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("X-Admission-Log-Truncated")).toBe("true");
+      const text = await res.text();
+      expect(text).toContain("Export truncated: latest 10000 of 10001 admissions.");
+      expect(text).not.toContain("Export truncated: first");
+      expect(text).toContain("Newest Guest");
+      expect(text).not.toContain("Oldest Guest");
+    } finally {
+      await cleanup();
+    }
+    // Seeds 10,001 rows and exports them, which exceeds vitest's default 5s on a shared CI runner.
+  }, 60_000);
+
+  it("PDF admission log keeps the latest 100 admissions and says so when the log is capped", async () => {
+    const EVENT_PDF_CAP = "evt-reports-pdf-cap";
+    const cleanup = async () => {
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_PDF_CAP } });
+      await prisma.event.deleteMany({ where: { id: EVENT_PDF_CAP } });
+    };
+    await cleanup();
+    await prisma.event.create({
+      data: {
+        id: EVENT_PDF_CAP,
+        title: "PDF Cap Reports Event",
+        slug: "reports-event-pdf-cap",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    try {
+      // 101 admissions one minute apart: one more than the PDF's 100-row cap, so the single
+      // oldest admission must be the one dropped.
+      const base = new Date("2026-10-01T08:00:00.000Z").getTime();
+      await prisma.attendee.createMany({
+        data: Array.from({ length: 101 }, (_, i) => ({
+          id: `att-pdf-cap-${i}`,
+          event_id: EVENT_PDF_CAP,
+          email: `pdf-cap-${i}@example.com`,
+          name: i === 0 ? "Oldest Guest" : i === 100 ? "Newest Guest" : `Guest ${i}`,
+          admitted_at: new Date(base + i * 60_000),
+          ...mkAttendeeToken(),
+        })),
+      });
+      // adminPdfCapCookie: its own admin:export bucket, so this test cannot trip the budget shared
+      // by the other export tests.
+      const res = await app.request(`/api/admin/events/${EVENT_PDF_CAP}/reports/export?format=pdf`, {
+        headers: { Cookie: adminPdfCapCookie },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain("(latest 100 of 101)");
+      expect(html).toContain("Newest Guest");
+      expect(html).not.toContain("Oldest Guest");
+    } finally {
+      await cleanup();
+    }
   });
 
   it("audit: reports_exported with format and count after CSV export", async () => {

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Reports admission log now lists the newest admission first instead of the oldest, and the CSV and printable PDF exports follow the same order. Before, an event with more than 500 admissions (100 in the PDF) showed only its earliest check-ins, so the most recent ones were missing from the table; it now shows the latest ones and says so in the truncation note.
 - On phones and tablets, tapping the scan field on the check-in page now opens the on-screen keyboard, so an operator can type a name or email when a QR code will not scan. Before, the field was set up for hardware scanners and told the device never to show a keyboard, which left touch-only devices with no way to type into it. Desktop computers and other devices without a touchscreen behave as before.
 
 ## [0.7.3] - 2026-09-23
