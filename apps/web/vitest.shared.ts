@@ -15,4 +15,11 @@ export const sharedTestEnv: Record<string, string> = {
   NODE_ENV: "test",
   BASE_URL: "https://tickets.example.com",
   CHECKIN_OPERATOR_TOKEN: "test-checkin-token-for-vitest-32chars!",
+  // Pinned to the shipped defaults so a variable exported in a developer shell or CI job cannot
+  // change the limits the rate-limit tests assert against (checkin-stream-config.ts).
+  CHECKIN_STREAM_RATE_LIMIT_PER_EVENT: "120",
+  CHECKIN_STREAM_RATE_LIMIT_PER_ACTOR: "240",
+  CHECKIN_STREAM_RATE_LIMIT_WINDOW_MS: "60000",
+  CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT: "3",
+  CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR: "12",
 };

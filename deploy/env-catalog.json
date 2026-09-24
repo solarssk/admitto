@@ -684,7 +684,7 @@
       "consumers": ["app"],
       "secret": false,
       "ui": "none",
-      "summary": "Check-in live-updates stream: max streams one operator can hold open at once for one event (for example Check-in, Overview and Reports tabs). Default 3. A different mechanism from the request rate limit: it counts open connections, not connect attempts. Positive integer; anything else falls back to the default with a boot warning."
+      "summary": "Check-in live-updates stream: max streams one operator can hold open at once for one event (for example Check-in, Overview and Reports tabs). Default 3. A different mechanism from the request rate limit: it counts open connections, not connect attempts. Counted per app replica (in process memory), so with several replicas the effective ceiling is this value times the number of replicas. Positive integer; anything else falls back to the default with a boot warning."
     },
     {
       "name": "CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR",
@@ -693,7 +693,7 @@
       "consumers": ["app"],
       "secret": false,
       "ui": "none",
-      "summary": "Check-in live-updates stream: max streams one operator can hold open at once across all events. Default 12. Positive integer; anything else falls back to the default with a boot warning."
+      "summary": "Check-in live-updates stream: max streams one operator can hold open at once across all events. Default 12. Counted per app replica (in process memory), so with several replicas the effective ceiling is this value times the number of replicas. Positive integer; anything else falls back to the default with a boot warning."
     },
     {
       "name": "SESSION_TTL_OPERATOR_MS",
