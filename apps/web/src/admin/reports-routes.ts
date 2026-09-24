@@ -1856,6 +1856,8 @@ async function finishCsvExport(
     totalCount: number;
     truncated: boolean;
     truncationNoun: string;
+    /** Which end of the list the capped query retained; defaults to "first". */
+    truncationRange?: "first" | "latest";
     filename: string;
     totalHeaderName: string;
     truncatedHeaderName: string;
@@ -1872,7 +1874,7 @@ async function finishCsvExport(
   const truncationNotice = opts.truncated
     ? [
         quoteCsvCell(
-          sanitizeCsvCell(`Export truncated: first ${CSV_EXPORT_MAX} of ${opts.totalCount} ${opts.truncationNoun}.`),
+          sanitizeCsvCell(`Export truncated: ${opts.truncationRange ?? "first"} ${CSV_EXPORT_MAX} of ${opts.totalCount} ${opts.truncationNoun}.`),
         ),
         ...new Array<string>(opts.columns.length - 1).fill(quoteCsvCell("")),
       ].join(",")
@@ -2003,6 +2005,7 @@ async function exportAdmissionsReportsCsv(
     totalCount: totalAdmitted,
     truncated,
     truncationNoun: "admissions",
+    truncationRange: "latest",
     filename: `admissions-${event.slug}-${dateStamp}.csv`,
     totalHeaderName: "X-Admission-Log-Total",
     truncatedHeaderName: "X-Admission-Log-Truncated",

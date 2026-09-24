@@ -3216,6 +3216,53 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     expect(html).toContain("No admissions yet");
   });
 
+  it("CSV export labels a capped admission log as the latest rows, not the first", async () => {
+    const EVENT_CSV_CAP = "evt-reports-csv-cap";
+    const cleanup = async () => {
+      await prisma.attendee.deleteMany({ where: { event_id: EVENT_CSV_CAP } });
+      await prisma.event.deleteMany({ where: { id: EVENT_CSV_CAP } });
+    };
+    await cleanup();
+    await prisma.event.create({
+      data: {
+        id: EVENT_CSV_CAP,
+        title: "CSV Cap Reports Event",
+        slug: "reports-event-csv-cap",
+        date: new Date("2026-10-01T12:00:00.000Z"),
+        organization_id: ORG_REP,
+      },
+    });
+    try {
+      // One more admission than CSV_EXPORT_MAX (10,000), one minute apart: the single oldest
+      // admission is the one dropped. Attendees share one token pair to keep seeding cheap.
+      const base = new Date("2026-10-01T08:00:00.000Z").getTime();
+      const token = mkAttendeeToken();
+      await prisma.attendee.createMany({
+        data: Array.from({ length: 10_001 }, (_, i) => ({
+          id: `att-csv-cap-${i}`,
+          event_id: EVENT_CSV_CAP,
+          email: `csv-cap-${i}@example.com`,
+          name: i === 0 ? "Oldest Guest" : i === 10_000 ? "Newest Guest" : `Guest ${i}`,
+          admitted_at: new Date(base + i * 60_000),
+          token_hash: `${token.token_hash}-${i}`,
+          token_enc: token.token_enc,
+        })),
+      });
+      const res = await app.request(`/api/admin/events/${EVENT_CSV_CAP}/reports/export?format=csv`, {
+        headers: { Cookie: adminPdfCapCookie },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("X-Admission-Log-Truncated")).toBe("true");
+      const text = await res.text();
+      expect(text).toContain("Export truncated: latest 10000 of 10001 admissions.");
+      expect(text).not.toContain("Export truncated: first");
+      expect(text).toContain("Newest Guest");
+      expect(text).not.toContain("Oldest Guest");
+    } finally {
+      await cleanup();
+    }
+  });
+
   it("PDF admission log keeps the latest 100 admissions and says so when the log is capped", async () => {
     const EVENT_PDF_CAP = "evt-reports-pdf-cap";
     const cleanup = async () => {
