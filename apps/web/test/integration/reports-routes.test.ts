@@ -3261,7 +3261,8 @@ describe("GET /api/admin/events/:eventId/reports/export", () => {
     } finally {
       await cleanup();
     }
-  });
+    // Seeds 10,001 rows and exports them, which exceeds vitest's default 5s on a shared CI runner.
+  }, 60_000);
 
   it("PDF admission log keeps the latest 100 admissions and says so when the log is capped", async () => {
     const EVENT_PDF_CAP = "evt-reports-pdf-cap";
