@@ -131,6 +131,11 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | `LOG_HTTP_REQUESTS` | optional | app | none | no | 1 (compose default) writes redacted JSON access lines to app stdout, including client IP for every request. No cookies, query strings, or raw ticket/QR tokens; ticket/QR paths carry a one-way ref hash instead. |
 | `ALLOW_CHECKIN_BEARER` | optional | app | none | no | Emergency: re-enable Bearer check-in auth. Default false; warns outside development. |
 | `CHECKIN_OPERATOR_TOKEN` | optional | app | none | yes | Shared operator token when ALLOW_CHECKIN_BEARER=true. |
+| `CHECKIN_STREAM_RATE_LIMIT_PER_EVENT` | optional | app | none | no | Check-in live-updates stream: max stream requests (connects and reconnects) per operator per event within the window. Default 120. Positive integer; anything else falls back to the default with a boot warning. Read at startup, so a change needs a container restart, not a rebuild. Separate from the concurrency limits below. |
+| `CHECKIN_STREAM_RATE_LIMIT_PER_ACTOR` | optional | app | none | no | Check-in live-updates stream: max stream requests per operator across all events within the window. Default 240. Should be at least CHECKIN_STREAM_RATE_LIMIT_PER_EVENT. Positive integer; anything else falls back to the default with a boot warning. |
+| `CHECKIN_STREAM_RATE_LIMIT_WINDOW_MS` | optional | app | none | no | Length of the window (ms) for both CHECKIN_STREAM_RATE_LIMIT_* limits. Default 60000 (one minute). Positive integer; anything else falls back to the default with a boot warning. |
+| `CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT` | optional | app | none | no | Check-in live-updates stream: max streams one operator can hold open at once for one event (for example Check-in, Overview and Reports tabs). Default 3. A different mechanism from the request rate limit: it counts open connections, not connect attempts. Positive integer; anything else falls back to the default with a boot warning. |
+| `CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR` | optional | app | none | no | Check-in live-updates stream: max streams one operator can hold open at once across all events. Default 12. Positive integer; anything else falls back to the default with a boot warning. |
 
 ## Sessions and MFA
 
@@ -196,4 +201,4 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 3. Run `npm run docs:env` and commit `ENV.md`.
 4. `npm run docs:check` fails if this file is stale or a scanned key is missing from the catalog.
 
-_Last generated from 110 distinct keys seen in scan (tests excluded)._
+_Last generated from 115 distinct keys seen in scan (tests excluded)._

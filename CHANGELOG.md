@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Check-in live updates are now more tolerant of reconnects. On phones, unstable Wi-Fi or mobile data, or behind a reverse proxy, the live stream can drop and reconnect many times a minute, and operators quickly saw "Live updates paused briefly (too many reconnects)". The default request limits are raised from 12 to 120 per minute for one operator and event, and from 48 to 240 per minute for one operator across all events. The limit on how many streams one operator can keep open at once is unchanged (3 per event, 12 in total).
+- The check-in live update limits can now be changed with environment variables, without a new release or image: `CHECKIN_STREAM_RATE_LIMIT_PER_EVENT`, `CHECKIN_STREAM_RATE_LIMIT_PER_ACTOR`, `CHECKIN_STREAM_RATE_LIMIT_WINDOW_MS`, `CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT` and `CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR`. Restart the container after changing them. A value that is not a positive whole number is ignored, the default is used, and a warning is logged at startup. See `deploy/ENV.md`.
+
 ### Fixed
 
 - On phones and tablets, tapping the scan field on the check-in page now opens the on-screen keyboard, so an operator can type a name or email when a QR code will not scan. Before, the field was set up for hardware scanners and told the device never to show a keyboard, which left touch-only devices with no way to type into it. Desktop computers and other devices without a touchscreen behave as before.

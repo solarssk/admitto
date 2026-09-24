@@ -54,7 +54,7 @@ const EXPECTED_POLICIES: Record<
   "admin:bulk-send-cancel": { windowMs: [60_000], max: [30], checks: 1 },
   "checkin:scan": { windowMs: [60_000], max: [120], checks: 1 },
   "checkin:history": { windowMs: [60_000], max: [180], checks: 1 },
-  "checkin:stream": { windowMs: [60_000, 60_000], max: [12, 48], checks: 2 },
+  "checkin:stream": { windowMs: [60_000, 60_000], max: [120, 240], checks: 2 },
 };
 
 /** Inline helpers — not passable to rateLimit(); limits only. */

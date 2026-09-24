@@ -1,16 +1,19 @@
 import type { Context, Next } from "hono";
+import { CHECKIN_STREAM_LIMITS, type CheckinStreamLimits } from "./checkin-stream-config.js";
 import { resolveClientIp } from "./rate-limit/client-ip.js";
 
-/** Max concurrent SSE streams per event, per operator (or bearer IP). */
-const MAX_CONCURRENT_CHECKIN_STREAMS_PER_EVENT = 3;
-/** Actor-wide ceiling on top of the per-event one above - without it, an actor could mint an
- * unbounded number of fresh per-event slot budgets simply by varying :eventId, since under
- * emergency Bearer auth the event-scope gate deliberately allows an unknown/made-up event id
- * through (assertEventNotArchived has nothing to check against). Generous enough for a handful
- * of events open at once (Check-in + Overview + Reports all watch the same event, so 3 events'
- * worth of tabs is already 9), while still bounding one actor's total stream count overall -
- * same as the plain per-actor cap this used before per-event scoping (bot review). */
-const MAX_CONCURRENT_CHECKIN_STREAMS_PER_ACTOR = 12;
+type StreamConcurrencyLimits = Pick<CheckinStreamLimits, "maxConcurrentPerEvent" | "maxConcurrentPerActor">;
+
+// Concurrency ceilings (max simultaneously open streams) come from ENV, resolved once at app start:
+// `CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT` (per operator or bearer IP, per event) and
+// `CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR` (see checkin-stream-config.ts). The actor-wide ceiling
+// sits on top of the per-event one: without it, an actor could mint an unbounded number of fresh
+// per-event slot budgets simply by varying :eventId, since under emergency Bearer auth the
+// event-scope gate deliberately allows an unknown/made-up event id through
+// (assertEventNotArchived has nothing to check against). The default of 12 is generous for a
+// handful of events open at once (Check-in + Overview + Reports all watch the same event, so 3
+// events' worth of tabs is already 9), while still bounding one actor's total stream count
+// overall - same as the plain per-actor cap this used before per-event scoping (bot review).
 
 const CHECKIN_STREAM_SLOT_KEY = "checkinStreamSlotKey";
 
@@ -54,14 +57,17 @@ function releaseSlot(counters: Map<string, number>, key: string): void {
 }
 
 /** Reserve a stream slot; returns 429 Response when at capacity (per-event or actor-wide). */
-export function tryAcquireCheckinStreamSlot(c: Context): Response | null {
+export function tryAcquireCheckinStreamSlot(
+  c: Context,
+  limits: StreamConcurrencyLimits = CHECKIN_STREAM_LIMITS,
+): Response | null {
   const eventKey = streamEventKey(c);
   const actorKey = streamActorKey(c);
 
-  if (!tryAcquireSlot(activeStreamsByEvent, eventKey, MAX_CONCURRENT_CHECKIN_STREAMS_PER_EVENT)) {
+  if (!tryAcquireSlot(activeStreamsByEvent, eventKey, limits.maxConcurrentPerEvent)) {
     return c.json({ error: "too_many_streams" }, 429);
   }
-  if (!tryAcquireSlot(activeStreamsByActor, actorKey, MAX_CONCURRENT_CHECKIN_STREAMS_PER_ACTOR)) {
+  if (!tryAcquireSlot(activeStreamsByActor, actorKey, limits.maxConcurrentPerActor)) {
     releaseSlot(activeStreamsByEvent, eventKey);
     return c.json({ error: "too_many_streams" }, 429);
   }
@@ -83,9 +89,11 @@ export function releaseCheckinStreamSlot(c: Context): void {
 }
 
 /** Limit parallel long-lived check-in SSE connections per operator. */
-export function createCheckinStreamConcurrencyLimit() {
+export function createCheckinStreamConcurrencyLimit(
+  limits: StreamConcurrencyLimits = CHECKIN_STREAM_LIMITS,
+) {
   return async (c: Context, next: Next): Promise<Response | void> => {
-    const blocked = tryAcquireCheckinStreamSlot(c);
+    const blocked = tryAcquireCheckinStreamSlot(c, limits);
     if (blocked) return blocked;
     await next();
   };

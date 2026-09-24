@@ -651,6 +651,51 @@
       "summary": "Shared operator token when ALLOW_CHECKIN_BEARER=true."
     },
     {
+      "name": "CHECKIN_STREAM_RATE_LIMIT_PER_EVENT",
+      "group": "ops",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Check-in live-updates stream: max stream requests (connects and reconnects) per operator per event within the window. Default 120. Positive integer; anything else falls back to the default with a boot warning. Read at startup, so a change needs a container restart, not a rebuild. Separate from the concurrency limits below."
+    },
+    {
+      "name": "CHECKIN_STREAM_RATE_LIMIT_PER_ACTOR",
+      "group": "ops",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Check-in live-updates stream: max stream requests per operator across all events within the window. Default 240. Should be at least CHECKIN_STREAM_RATE_LIMIT_PER_EVENT. Positive integer; anything else falls back to the default with a boot warning."
+    },
+    {
+      "name": "CHECKIN_STREAM_RATE_LIMIT_WINDOW_MS",
+      "group": "ops",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Length of the window (ms) for both CHECKIN_STREAM_RATE_LIMIT_* limits. Default 60000 (one minute). Positive integer; anything else falls back to the default with a boot warning."
+    },
+    {
+      "name": "CHECKIN_STREAM_MAX_CONCURRENT_PER_EVENT",
+      "group": "ops",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Check-in live-updates stream: max streams one operator can hold open at once for one event (for example Check-in, Overview and Reports tabs). Default 3. A different mechanism from the request rate limit: it counts open connections, not connect attempts. Positive integer; anything else falls back to the default with a boot warning."
+    },
+    {
+      "name": "CHECKIN_STREAM_MAX_CONCURRENT_PER_ACTOR",
+      "group": "ops",
+      "boot": "optional",
+      "consumers": ["app"],
+      "secret": false,
+      "ui": "none",
+      "summary": "Check-in live-updates stream: max streams one operator can hold open at once across all events. Default 12. Positive integer; anything else falls back to the default with a boot warning."
+    },
+    {
       "name": "SESSION_TTL_OPERATOR_MS",
       "group": "sessions",
       "boot": "optional",
