@@ -7300,7 +7300,7 @@ output.mail-field-hint {
   padding: 0 10px;
   border: none;
   border-radius: var(--radius);
-  background: var(--status-ok);
+  background: var(--status-ok-fg);
   color: #fff;
   font-size: var(--fs-sm);
   font-weight: 600;

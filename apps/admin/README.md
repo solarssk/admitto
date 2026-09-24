@@ -49,7 +49,10 @@ Browser-level tests in this repo, both under `apps/admin/e2e/`:
 
 - `checkin.spec.ts`: an operator logs in, looks up a seeded attendee by name, and admits them
   through the manual check-in path (not the camera/QR scanner).
-- `a11y.spec.ts`: an axe-core accessibility scan of the login page and the operator check-in page.
+- `a11y.spec.ts`: an axe-core accessibility scan of the login page, the operator check-in page and
+  the main admin pages (events list, overview, attendees, attendee detail, event settings,
+  communication), the latter as a seeded superadmin (`admin-login.ts` walks the forced TOTP
+  enrollment over the API). iframes (the mail-template previews) are excluded.
   Every violation is printed, written to the job summary, and saved as `test-results/*/axe-*.json`;
   serious and critical ones fail the test, minor and moderate stay report-only.
 

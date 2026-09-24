@@ -38,8 +38,8 @@
 .at-btn--danger { background: var(--status-error); color: var(--text-on-primary); }
 .at-btn--danger:hover:not(:disabled) { background: var(--status-error-hover); }
 
-.at-btn--success { background: var(--status-ok); color: var(--text-on-primary); }
-.at-btn--success:hover:not(:disabled) { background: var(--status-ok-hover); }
+.at-btn--success { background: var(--status-ok-fg); color: var(--text-on-primary); }
+.at-btn--success:hover:not(:disabled) { background: color-mix(in srgb, var(--status-ok-fg), #000 15%); }
 
 /* Caution tier, between primary and danger — reversible-but-impactful bulk actions (e.g. Revoke
    items/check-in). --status-warn-fg (not the raw, much brighter --status-warn) since there's no
@@ -388,7 +388,7 @@
 
 /* ---------------- Tabs ---------------- */
 .at-tabs { display: flex; gap: var(--space-1); border-bottom: var(--border-width) solid var(--border); }
-.at-tab { appearance: none; background: none; border: 0; cursor: pointer; font-family: var(--font-sans); font-size: var(--fs-body); font-weight: var(--fw-medium); color: var(--text-muted); padding: var(--space-3) var(--space-3); border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color var(--dur-fast), border-color var(--dur-fast); }
+.at-tab { appearance: none; background: none; border: 0; cursor: pointer; font-family: var(--font-sans); font-size: var(--fs-body); font-weight: var(--fw-medium); color: var(--text-secondary); padding: var(--space-3) var(--space-3); border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color var(--dur-fast), border-color var(--dur-fast); }
 .at-tab:hover { color: var(--text-primary); }
 .at-tab--active { color: var(--primary); border-bottom-color: var(--primary); }
 

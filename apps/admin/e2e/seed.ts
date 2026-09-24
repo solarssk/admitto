@@ -14,7 +14,7 @@ import { writeFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { prisma } from "@admitto/db";
-import { createUser, findUserByEmail } from "@admitto/auth";
+import { bootstrapSuperadmin, createUser, findUserByEmail, resetUserMfa } from "@admitto/auth";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -26,6 +26,9 @@ export const E2E_OPERATOR_EMAIL = "e2e.operator@example.com";
 // Local-only fixture password for a synthetic operator account in a disposable E2E database —
 // never a real credential, never used outside this seed script and its matching Playwright spec.
 export const E2E_OPERATOR_PASSWORD = "E2eCheckinSmoke!2026";
+export const E2E_ADMIN_EMAIL = "e2e.admin@example.com";
+// Same disposable-database-only fixture-password convention as the operator's above.
+export const E2E_ADMIN_PASSWORD = "E2eAdminSmoke!2026";
 
 export interface SeedResult {
   organizationId: string;
@@ -36,6 +39,8 @@ export interface SeedResult {
   attendeeEmail: string;
   operatorEmail: string;
   operatorPassword: string;
+  adminEmail: string;
+  adminPassword: string;
 }
 
 export async function seedCheckinE2eData(): Promise<SeedResult> {
@@ -89,6 +94,9 @@ export async function seedCheckinE2eData(): Promise<SeedResult> {
 
   // Clear any check-in history from a previous run so Reports/recent-scans stay clean too.
   await prisma.checkIn.deleteMany({ where: { attendee_id: attendee.id } });
+  // Also drop the per-item state a previous run's admit left behind (the badge is issued on
+  // admit), so the attendee page always starts from the fresh "Not yet" state a new database has.
+  await prisma.attendeeItemState.deleteMany({ where: { attendee_id: attendee.id } });
 
   let operator = await findUserByEmail(prisma, E2E_OPERATOR_EMAIL);
   if (!operator) {
@@ -124,6 +132,20 @@ export async function seedCheckinE2eData(): Promise<SeedResult> {
     });
   }
 
+  // Superadmin for the admin-side accessibility scan. Admin roles must enrol TOTP on first login,
+  // so any MFA left over from a previous run is reset here and the spec enrols it again; the
+  // bootstrap path leaves onboarding marked complete, so no setup wizard stands in the way.
+  const admin = await findUserByEmail(prisma, E2E_ADMIN_EMAIL);
+  if (admin) {
+    await resetUserMfa(prisma, admin.id);
+    await prisma.user.update({
+      where: { id: admin.id },
+      data: { is_active: true, must_change_password: false, failed_login_streak: 0, failed_mfa_streak: 0 },
+    });
+  } else {
+    await bootstrapSuperadmin(prisma, E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD);
+  }
+
   return {
     organizationId: org.id,
     eventId: event.id,
@@ -133,6 +155,8 @@ export async function seedCheckinE2eData(): Promise<SeedResult> {
     attendeeEmail: E2E_ATTENDEE_EMAIL,
     operatorEmail: E2E_OPERATOR_EMAIL,
     operatorPassword: E2E_OPERATOR_PASSWORD,
+    adminEmail: E2E_ADMIN_EMAIL,
+    adminPassword: E2E_ADMIN_PASSWORD,
   };
 }
 
