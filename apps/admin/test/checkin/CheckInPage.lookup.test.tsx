@@ -105,10 +105,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** jsdom has no matchMedia; only the primary-pointer query matters for the scan field. */
-function stubPrimaryPointer(coarse: boolean) {
+/** jsdom has no matchMedia; only the any-pointer query matters for the scan field. */
+function stubTouchPointer(coarse: boolean) {
   vi.stubGlobal("matchMedia", (query: string) => ({
-    matches: query === "(pointer: coarse)" ? coarse : false,
+    matches: query === "(any-pointer: coarse)" ? coarse : false,
     media: query,
     addEventListener: () => {},
     removeEventListener: () => {},
@@ -117,7 +117,7 @@ function stubPrimaryPointer(coarse: boolean) {
 
 describe("CheckInPage scan-bar lookup", () => {
   it("lets a touch device open the on-screen keyboard in the scan field", async () => {
-    stubPrimaryPointer(true);
+    stubTouchPointer(true);
     mockPageBootstrap();
 
     renderPage();
@@ -127,7 +127,7 @@ describe("CheckInPage scan-bar lookup", () => {
   });
 
   it("keeps the on-screen keyboard suppressed on a non-touch device", async () => {
-    stubPrimaryPointer(false);
+    stubTouchPointer(false);
     mockPageBootstrap();
 
     renderPage();

@@ -7,12 +7,19 @@ afterEach(() => {
 });
 
 describe("scanFieldInputMode", () => {
-  it("returns text when the primary pointer is coarse (phone, tablet)", () => {
-    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(pointer: coarse)" }));
+  it("returns text when a touch pointer is available (phone, tablet)", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(any-pointer: coarse)" }));
     expect(scanFieldInputMode()).toBe("text");
   });
 
-  it("returns none when the primary pointer is fine (mouse, hardware scanner desk)", () => {
+  it("returns text on a touch device whose primary pointer is fine (tablet used with a mouse or stylus)", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(any-pointer: coarse)" }));
+    // The primary pointer alone would say "fine"; only the any-pointer query reports the touchscreen.
+    expect(window.matchMedia("(pointer: coarse)").matches).toBe(false);
+    expect(scanFieldInputMode()).toBe("text");
+  });
+
+  it("returns none when no pointer is coarse (mouse only, hardware scanner desk)", () => {
     vi.stubGlobal("matchMedia", () => ({ matches: false }));
     expect(scanFieldInputMode()).toBe("none");
   });
