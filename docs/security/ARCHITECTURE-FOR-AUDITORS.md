@@ -196,7 +196,7 @@ Useful answers when enterprise checklists ask for features not in scope:
 | Artefact | Location |
 |----------|----------|
 | Release tags | Project releases - created by CI as ordinary, unsigned GitHub tags by default; a manual signed-tag path exists for emergencies, see [VERSIONING.md](../../VERSIONING.md) |
-| Container SBOM | `.github/workflows/publish-container.yml` - CycloneDX SBOM generated via `aquasecurity/trivy-action`, attached to release assets |
+| Container SBOM | `.github/workflows/publish-container.yml` - CycloneDX SBOM generated via `aquasecurity/trivy-action`, attached to release assets; BuildKit SBOM and SLSA provenance attestations are also attached to the published image |
 | Container vulnerability scan | `.github/workflows/publish-container.yml` - Trivy on built image |
 | Static analysis SARIF (CodeQL) | `.github/workflows/codeql.yml` - `security-extended` on every PR |
 | Static analysis SARIF (Semgrep) | `.github/workflows/semgrep.yml` - `--error` on every PR, every merge to `main`, and weekly; complements CodeQL's `security-extended` PR gate (see [SECURITY.md](../../SECURITY.md)) |
