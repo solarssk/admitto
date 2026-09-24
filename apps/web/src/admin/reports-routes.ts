@@ -1856,8 +1856,8 @@ async function finishCsvExport(
     totalCount: number;
     truncated: boolean;
     truncationNoun: string;
-    /** Which end of the list the capped query retained; defaults to "first". */
-    truncationRange?: "first" | "latest";
+    /** Which end of the list the capped query retained. */
+    truncationRange: "first" | "latest";
     filename: string;
     totalHeaderName: string;
     truncatedHeaderName: string;
@@ -1874,7 +1874,7 @@ async function finishCsvExport(
   const truncationNotice = opts.truncated
     ? [
         quoteCsvCell(
-          sanitizeCsvCell(`Export truncated: ${opts.truncationRange ?? "first"} ${CSV_EXPORT_MAX} of ${opts.totalCount} ${opts.truncationNoun}.`),
+          sanitizeCsvCell(`Export truncated: ${opts.truncationRange} ${CSV_EXPORT_MAX} of ${opts.totalCount} ${opts.truncationNoun}.`),
         ),
         ...new Array<string>(opts.columns.length - 1).fill(quoteCsvCell("")),
       ].join(",")
@@ -2353,6 +2353,7 @@ async function exportWalletReportsCsv(
     totalCount: totalAttendees,
     truncated,
     truncationNoun: "attendees",
+    truncationRange: "first",
     filename: `wallets-${event.slug}-${dateStamp}.csv`,
     totalHeaderName: "X-Wallets-Export-Total",
     truncatedHeaderName: "X-Wallets-Export-Truncated",
@@ -2710,6 +2711,7 @@ async function exportMailReportsCsv(
     totalCount: totalAttendees,
     truncated,
     truncationNoun: "attendees",
+    truncationRange: "first",
     filename: `mail-${event.slug}-${dateStamp}.csv`,
     totalHeaderName: "X-Mail-Export-Total",
     truncatedHeaderName: "X-Mail-Export-Truncated",
@@ -2940,6 +2942,7 @@ async function exportCustomFieldReportsCsv(
     totalCount: totalAttendees,
     truncated,
     truncationNoun: "attendees",
+    truncationRange: "first",
     filename: `custom-fields-${event.slug}-${dateStamp}.csv`,
     totalHeaderName: "X-Custom-Fields-Export-Total",
     truncatedHeaderName: "X-Custom-Fields-Export-Truncated",
