@@ -14,6 +14,7 @@ const baseSettings: SystemSettingsDto = {
   session_idle_timeout_ms: { value: 1_800_000, source: "default" },
   operator_session_idle_timeout_ms: { value: 7_200_000, source: "default" },
   trusted_device_days: { value: 30, source: "default" },
+  operator_remember_me_days: { value: 3, source: "default" },
   mfa_required_roles: { value: ["superadmin"], source: "default" },
   instance_url: { value: null, source: "default" },
   csp_trusted_origins: { value: [], source: "default" },
@@ -28,6 +29,7 @@ const baseDraft = {
   sessionIdleM: "30",
   opIdleM: "120",
   trustedDays: "30",
+  rememberMeDays: "3",
   mfaRoles: ["superadmin"],
   cspTrustedOriginsRaw: "",
   webauthnEnabled: true,
@@ -109,6 +111,37 @@ describe("buildSecurityPatchBody", () => {
       operator_session_ttl_ms: 24 * 3_600_000,
       operator_session_idle_timeout_ms: 60 * 60_000,
     });
+  });
+
+  it("includes operator_remember_me_days when it changes, including 0 to turn the option off", () => {
+    const changed = buildSecurityPatchBody(baseSettings, { ...baseDraft, rememberMeDays: "7" }, fieldLocked);
+    expect(changed.hasChanges).toBe(true);
+    expect(changed.body).toEqual({ operator_remember_me_days: 7 });
+
+    const off = buildSecurityPatchBody(baseSettings, { ...baseDraft, rememberMeDays: "0" }, fieldLocked);
+    expect(off.body).toEqual({ operator_remember_me_days: 0 });
+  });
+
+  it("clamps operator_remember_me_days to 0 to 14 and falls back when empty", () => {
+    expect(
+      buildSecurityPatchBody(baseSettings, { ...baseDraft, rememberMeDays: "99" }, fieldLocked).body,
+    ).toEqual({ operator_remember_me_days: 14 });
+    expect(
+      buildSecurityPatchBody(baseSettings, { ...baseDraft, rememberMeDays: "-4" }, fieldLocked).body,
+    ).toEqual({ operator_remember_me_days: 0 });
+    expect(
+      buildSecurityPatchBody(baseSettings, { ...baseDraft, rememberMeDays: "" }, fieldLocked).hasChanges,
+    ).toBe(false);
+  });
+
+  it("skips an env-locked operator_remember_me_days", () => {
+    const result = buildSecurityPatchBody(
+      { ...baseSettings, operator_remember_me_days: { value: 3, source: "env" } },
+      { ...baseDraft, rememberMeDays: "7" },
+      fieldLocked,
+    );
+    expect(result.hasChanges).toBe(false);
+    expect(result.body).toEqual({});
   });
 
   it("skips env-locked fields even when the draft differs", () => {
