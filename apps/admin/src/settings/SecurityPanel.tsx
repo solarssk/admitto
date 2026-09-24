@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MAX_OPERATOR_REMEMBER_ME_DAYS } from "@admitto/auth/constants";
 import { Button, Card, HintLabel, Input, Switch, Tooltip, useToast } from "@admitto/ui";
 import { fetchSecuritySettings, patchSecuritySettings } from "../api/client.js";
 import { roleLabel } from "../auth/role-labels.js";
@@ -71,6 +72,7 @@ function anySecurityEnvLocked(settings: SystemSettingsDto): boolean {
     settings.operator_session_ttl_ms.source,
     settings.operator_session_idle_timeout_ms.source,
     settings.trusted_device_days.source,
+    settings.operator_remember_me_days.source,
   ].some(fieldLocked);
 }
 
@@ -313,6 +315,18 @@ export function SecurityPanel() {
             source={settings.operator_session_idle_timeout_ms.source}
             warningMessage={overThreshold(opIdleM, OPERATOR_IDLE_WARNING_MINUTES, OPERATOR_IDLE_WARNING)}
             onChange={(opIdleM) => setDraft({ ...draft, opIdleM })}
+          />
+
+          <SecurityNumericRow
+            id="security-operator-remember-me-days"
+            label='Operator "Keep me signed in" duration (days)'
+            description={`How long an operator stays signed in after ticking "Keep me signed in" on the sign-in page. It replaces the operator maximum lifetime and inactivity timeout above for that session, and the cookie survives closing the browser. Administrators are not affected. Set 0 to hide the checkbox. Allowed range: 0–${MAX_OPERATOR_REMEMBER_ME_DAYS} days.`}
+            value={draft.rememberMeDays}
+            min={0}
+            max={MAX_OPERATOR_REMEMBER_ME_DAYS}
+            savedValue={settings.operator_remember_me_days.value}
+            source={settings.operator_remember_me_days.source}
+            onChange={(rememberMeDays) => setDraft({ ...draft, rememberMeDays })}
           />
 
           <SecurityNumericRow

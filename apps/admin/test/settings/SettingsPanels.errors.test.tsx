@@ -22,6 +22,7 @@ const emptySettings = {
   session_idle_timeout_ms: { value: 1_800_000, source: "default" as const },
   operator_session_idle_timeout_ms: { value: 7_200_000, source: "default" as const },
   trusted_device_days: { value: 30, source: "default" as const },
+  operator_remember_me_days: { value: 3, source: "default" as const },
   mfa_required_roles: { value: ["superadmin"], source: "default" as const },
   instance_url: { value: null as string | null, source: "default" as const },
   csp_trusted_origins: { value: [] as string[], source: "default" as const },
