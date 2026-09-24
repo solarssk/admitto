@@ -102,9 +102,40 @@ const annaHit = {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
+/** jsdom has no matchMedia; only the primary-pointer query matters for the scan field. */
+function stubPrimaryPointer(coarse: boolean) {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query === "(pointer: coarse)" ? coarse : false,
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }));
+}
+
 describe("CheckInPage scan-bar lookup", () => {
+  it("lets a touch device open the on-screen keyboard in the scan field", async () => {
+    stubPrimaryPointer(true);
+    mockPageBootstrap();
+
+    renderPage();
+    const input = await scanInput();
+
+    expect(input.getAttribute("inputmode")).toBe("text");
+  });
+
+  it("keeps the on-screen keyboard suppressed on a non-touch device", async () => {
+    stubPrimaryPointer(false);
+    mockPageBootstrap();
+
+    renderPage();
+    const input = await scanInput();
+
+    expect(input.getAttribute("inputmode")).toBe("none");
+  });
+
   it("Enter with multiple matches shows them as scan-bar suggestions", async () => {
     mockPageBootstrap();
     lookupCheckInAttendees.mockResolvedValue([
