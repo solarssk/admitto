@@ -64,7 +64,7 @@ import {
   seedAdmitDedupFromHistory,
 } from "../checkin/admitDedup.js";
 import { useEventStream, type StreamCheckinEvent, type StreamStatus } from "../hooks/useEventStream.js";
-import { checkinSearchFieldAttrs } from "../checkin/searchFieldAttrs.js";
+import { checkinSearchFieldAttrs, scanFieldInputMode } from "../checkin/searchFieldAttrs.js";
 import { ScanHistoryList } from "../checkin/ScanHistoryList.js";
 
 const PENDING_MS = 5000;
@@ -318,7 +318,7 @@ function CheckInScanBar({
             onChange={(e) => onBufferChange(e.target.value, e.timeStamp)}
             onPaste={onWedgePaste}
             onKeyDown={onKeyDown}
-            inputMode="none"
+            inputMode={scanFieldInputMode()}
             placeholder="Scan QR code or type name/email…"
             aria-label="QR scan or search"
             aria-describedby="ck-scan-hint"
