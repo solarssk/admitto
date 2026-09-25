@@ -15,7 +15,7 @@ import {
   type EventLocationInput,
 } from "@admitto/location";
 import { createWeatherServiceFromDb } from "../weather/weather-org-settings.js";
-import { summarizeMany } from "../weather/weather-service.js";
+import { summarizeEventsWeather } from "../weather/event-weather.js";
 import type { WeatherSummaryDto } from "../weather/types.js";
 import { plainMapAttribution } from "../maps/static-map.js";
 import { refreshMapsConfigCacheIfStale } from "../maps/maps-org-settings.js";
@@ -200,15 +200,7 @@ export async function attachWeatherToEventDtos(
   if (events.length === 0) return dtos;
   const weather = await createWeatherServiceFromDb(db);
   if (!weather.enabled) return dtos;
-  const summaries = await summarizeMany(
-    events.map((e) => ({
-      latitude: e.map_latitude,
-      longitude: e.map_longitude,
-      date: e.date,
-      timezone: e.timezone,
-    })),
-    weather,
-  );
+  const summaries = await summarizeEventsWeather(db, weather, events);
   return dtos.map((dto, i) => {
     const summary = summaries[i];
     if (summary == null) return dto;

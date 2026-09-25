@@ -7,6 +7,7 @@ import {
   attributionForProvider,
   forecastHorizonDays,
   type WeatherConfig,
+  type WeatherProviderId,
   resolveWeatherEnvConfig,
 } from "./config.js";
 import { MetNoClient } from "./met-no-client.js";
@@ -18,6 +19,7 @@ import {
   weatherConfigCacheScope,
   type WeatherCache,
 } from "./weather-cache.js";
+import { snapshotForEvent } from "./weather-snapshot.js";
 
 /** Max parallel provider fetches when attaching weather to an event list. */
 const WEATHER_LIST_CONCURRENCY = 6;
@@ -29,6 +31,8 @@ export interface EventWeatherInput {
   date: Date | string;
   /** IANA timezone for the event calendar day. */
   timezone: string;
+  /** Raw `Event.weather_snapshot`. Only read once the event day is over. */
+  snapshot?: unknown;
 }
 
 export interface WeatherServiceOptions {
@@ -114,8 +118,10 @@ export class WeatherService {
     return this.config;
   }
 
-  private attributionFields(): Pick<WeatherSummaryDto, "attribution" | "attribution_url"> {
-    const a = attributionForProvider(this.config.provider);
+  private attributionFields(
+    provider: WeatherProviderId = this.config.provider,
+  ): Pick<WeatherSummaryDto, "attribution" | "attribution_url"> {
+    const a = attributionForProvider(provider);
     return {
       attribution: a.attribution,
       attribution_url: a.attributionUrl,
@@ -138,6 +144,21 @@ export class WeatherService {
   }
 
   /**
+   * The event's calendar day and how many whole days it is from today, both in the event
+   * timezone (negative once it is over). Null for an unreadable date. One clock and one timezone
+   * rule for the summary and for saving a snapshot, so the two can never disagree.
+   */
+  eventDay(
+    date: Date | string,
+    timezone: string | null | undefined,
+  ): { ymd: string; timezone: string; offsetDays: number } | null {
+    const tz = timezone?.trim() || "UTC";
+    const ymd = eventDateYmd(date, tz);
+    if (!ymd) return null;
+    return { ymd, timezone: tz, offsetDays: daysBetweenYmd(localYmd(this.now(), tz), ymd) };
+  }
+
+  /**
    * Summary for one event. Returns `null` when weather should be omitted from the UI
    * (disabled or no coordinates).
    */
@@ -154,13 +175,11 @@ export class WeatherService {
       return null;
     }
 
-    const tz = input.timezone?.trim() || "UTC";
-    const eventYmd = eventDateYmd(input.date, tz);
-    if (!eventYmd) {
+    const eventDay = this.eventDay(input.date, input.timezone);
+    if (!eventDay) {
       return { status: "unavailable", ...this.attributionFields() };
     }
-    const todayYmd = localYmd(this.now(), tz);
-    const offsetDays = daysBetweenYmd(todayYmd, eventYmd);
+    const { ymd: eventYmd, timezone: tz, offsetDays } = eventDay;
     const horizon = forecastHorizonDays(this.config.provider);
 
     if (offsetDays > horizon - 1) {
@@ -175,8 +194,8 @@ export class WeatherService {
     // The event day is over. That is not a provider failure, so never "unavailable" (the admin
     // card would send someone to fix a provider that works). Neither provider can look back, so
     // there is nothing to fetch: MET Norway serves forecasts only and Open-Meteo's forecast window
-    // starts today. Yesterday used to reach the provider anyway and always came back empty.
-    if (offsetDays < 0) return { status: "past" };
+    // starts today. What is left to show is the last forecast saved while the day was ahead.
+    if (offsetDays < 0) return this.summarizeEnded(lat, lon, eventYmd, input.snapshot);
 
     if (this.config.provider === "metno" && !this.metNoReady()) {
       return { status: "unavailable", ...this.attributionFields() };
@@ -236,6 +255,25 @@ export class WeatherService {
       temp_min_c: Math.round(day.temp_min_c),
       weather_code: day.weather_code,
       ...this.attributionFields(),
+    };
+  }
+
+  /** An ended day: the last saved forecast when it still fits this event, else just the status. */
+  private summarizeEnded(
+    lat: number,
+    lon: number,
+    eventYmd: string,
+    stored: unknown,
+  ): WeatherSummaryDto {
+    const snapshot = snapshotForEvent(stored, { latitude: lat, longitude: lon, eventYmd });
+    if (!snapshot) return { status: "past" };
+    return {
+      status: "past",
+      temp_c: snapshot.temp_c,
+      temp_min_c: snapshot.temp_min_c,
+      weather_code: snapshot.weather_code,
+      // The provider that gave it, not whichever one is configured now.
+      ...this.attributionFields(snapshot.provider),
     };
   }
 

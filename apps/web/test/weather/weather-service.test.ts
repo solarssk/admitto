@@ -855,6 +855,75 @@ describe("WeatherService.summarize for ended event days", () => {
     expect(await nextDay.service.summarize({ ...pin, date: eventDate })).toEqual({ status: "past" });
     expect(nextDay.calls).toEqual([]);
   });
+
+  const savedForecast = {
+    v: 1,
+    date: "2026-08-04",
+    lat: 52.23,
+    lon: 21.01,
+    provider: "metno",
+    temp_c: 20,
+    temp_min_c: 11,
+    weather_code: 61,
+    captured_at: "2026-08-03T10:00:00.000Z",
+  };
+
+  it("shows the last saved forecast for an ended day, credited to the provider that gave it, without calling any", async () => {
+    // The org has since switched to Open-Meteo, but the saved forecast came from MET Norway.
+    const { service, calls } = serviceFor("openmeteo");
+    expect(await service.summarize({ ...pin, date: yesterday, snapshot: savedForecast })).toEqual({
+      status: "past",
+      temp_c: 20,
+      temp_min_c: 11,
+      weather_code: 61,
+      attribution: "Weather data by MET Norway",
+      attribution_url: "https://www.met.no/en",
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("ignores a saved forecast that no longer fits the event or cannot be read", async () => {
+    const { service } = serviceFor("metno");
+    const ignored: unknown[] = [
+      { ...savedForecast, date: "2026-08-03" }, // the event moved to another day
+      { ...savedForecast, lat: 48.86 }, // the pin moved
+      { ...savedForecast, temp_c: "20" }, // unreadable
+      "garbage",
+      null,
+    ];
+    for (const snapshot of ignored) {
+      expect(await service.summarize({ ...pin, date: yesterday, snapshot })).toEqual({ status: "past" });
+    }
+  });
+
+  it("does not use a saved forecast for a day that is not over yet", async () => {
+    // Today's summary comes from the provider (asked, and failing here), never from the snapshot.
+    const { service, calls } = serviceFor("openmeteo", { at: new Date("2026-08-04T08:00:00.000Z") });
+    expect(await service.summarize({ ...pin, date: yesterday, snapshot: savedForecast })).toMatchObject({
+      status: "unavailable",
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  describe("eventDay", () => {
+    const { service } = serviceFor("openmeteo");
+
+    it("gives the event's calendar day and the whole days from today, in the event timezone", () => {
+      expect(service.eventDay("2026-08-06T12:00:00.000Z", "Europe/Warsaw")).toEqual({
+        ymd: "2026-08-06",
+        timezone: "Europe/Warsaw",
+        offsetDays: 1,
+      });
+      expect(service.eventDay(yesterday, "Europe/Warsaw")?.offsetDays).toBe(-1);
+      expect(service.eventDay(now, "Europe/Warsaw")?.offsetDays).toBe(0);
+    });
+
+    it("falls back to UTC for a blank timezone and returns null for an unreadable date", () => {
+      expect(service.eventDay("2026-08-06T12:00:00.000Z", "  ")).toMatchObject({ timezone: "UTC", offsetDays: 1 });
+      expect(service.eventDay("2026-08-06T12:00:00.000Z", undefined)?.timezone).toBe("UTC");
+      expect(service.eventDay("not-a-date", "UTC")).toBeNull();
+    });
+  });
 });
 
 describe("helpers", () => {
