@@ -39,14 +39,19 @@ function formatDayCount(n: number): string {
   return `${n} day${n === 1 ? "" : "s"}`;
 }
 
-function weatherChipOk(w: NonNullable<EventDto["weather"]>, unit: TempUnit): WeatherChip {
+/** The weather chip for a temperature. `ended` = the event day is over, so it is the last forecast saved for it, not a live one. */
+function weatherChipOk(
+  w: NonNullable<EventDto["weather"]>,
+  unit: TempUnit,
+  ended = false,
+): WeatherChip {
   const condition = weatherConditionLabel(w.weather_code);
   const range = formatTempRangeForUnit(w.temp_min_c, w.temp_c!, unit);
   const credit = w.attribution?.trim() || "Weather data";
   const primary = formatTempForUnit(w.temp_c!, unit);
   return {
-    label: `Forecast ${primary}`,
-    tooltip: `${condition}, ${range}.\n${credit}.`,
+    label: ended ? `Last forecast ${primary}` : `Forecast ${primary}`,
+    tooltip: `${ended ? "Last forecast before the event: " : ""}${condition}, ${range}.\n${credit}.`,
     icon: weatherIconClass(w.weather_code),
     text: primary,
   };
@@ -84,6 +89,9 @@ function weatherChip(event: EventDto | CheckInEventDto, unit: TempUnit): Weather
   }
   if (w.status === "ok" && w.temp_c != null) return weatherChipOk(w, unit);
   if (w.status === "too_far") return weatherChipTooFar(w);
+  // The event day is over. Not an error (the provider itself is fine): show the last forecast
+  // saved for it, or nothing when none was ever seen.
+  if (w.status === "past") return w.temp_c == null ? null : weatherChipOk(w, unit, true);
   if (w.status === "unavailable") {
     return {
       label: "Weather unavailable",

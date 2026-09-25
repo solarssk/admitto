@@ -409,6 +409,49 @@ describe("EventCard", () => {
     expect(screen.getByText("-°")).toBeTruthy();
   });
 
+  it("shows the last saved forecast of an ended event, labelled as such and not as a live forecast", () => {
+    renderCard(
+      { operatorTimeZone: "Europe/Warsaw" },
+      {
+        ...baseEvent,
+        weather: {
+          status: "past",
+          temp_c: 20,
+          temp_min_c: 11,
+          weather_code: 61,
+          attribution: "Weather data by MET Norway",
+        },
+      },
+    );
+    const chip = screen.getByLabelText("Last forecast 20°C");
+    expect(screen.getByText("20°C")).toBeTruthy();
+    expect(getTooltipText(chip)).toMatch(/^Last forecast before the event: .+, 11° to 20°C\./);
+    expect(getTooltipText(chip)).toMatch(/Weather data by MET Norway\./);
+    expect(screen.queryByLabelText(/^Forecast /)).toBeNull();
+    expect(screen.queryByLabelText("Weather unavailable")).toBeNull();
+  });
+
+  it("shows the saved forecast of an ended event in °F for an American operator zone", () => {
+    renderCard(
+      { operatorTimeZone: "America/New_York" },
+      {
+        ...baseEvent,
+        weather: { status: "past", temp_c: 20, temp_min_c: 11, weather_code: 3, attribution: "Weather data by MET Norway" },
+      },
+    );
+    const chip = screen.getByLabelText("Last forecast 68°F");
+    expect(getTooltipText(chip)).toMatch(/52° to 68°F/);
+  });
+
+  it("hides the weather chip for an ended event day instead of showing a provider error", () => {
+    // baseEvent has a pin, so a missing chip must not be replaced by the "No weather" fallback either.
+    renderCard({}, { ...baseEvent, weather: { status: "past" } });
+    expect(document.querySelector(".event-card__weather")).toBeNull();
+    expect(screen.queryByLabelText("Weather unavailable")).toBeNull();
+    expect(screen.queryByLabelText("No weather")).toBeNull();
+    expect(screen.queryByText("-°")).toBeNull();
+  });
+
   it("shows a single °C when ok forecast omits temp_min_c", () => {
     renderCard(
       { operatorTimeZone: "Europe/Warsaw" },

@@ -1052,6 +1052,13 @@ describe("renderTicket weather", () => {
     expect(html).not.toContain("id=\"weather-heading\"");
   });
 
+  it("omits the block once the event day has ended", () => {
+    const html = renderTicket(base, "data:image/png;base64,xx", null, {
+      weather: { status: "past" },
+    });
+    expect(html).not.toContain("id=\"weather-heading\"");
+  });
+
   it("uses singular day wording for horizon_days=1", () => {
     const html = renderTicket(base, "data:image/png;base64,xx", null, {
       weather: {

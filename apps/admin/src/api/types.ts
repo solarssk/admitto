@@ -79,9 +79,11 @@ export interface EventDto {
    * Event-day forecast when weather is enabled and the event has a pin.
    * Provider may be MET Norway or Open-Meteo (see attribution fields).
    * Omitted when weather is disabled or there are no coordinates.
+   * `past` means the event day is over, never an error. It carries the last forecast saved for
+   * the event (temperatures, code, attribution) when there is one, otherwise only the status.
    */
   weather?: {
-    status: "ok" | "too_far" | "unavailable";
+    status: "ok" | "too_far" | "unavailable" | "past";
     temp_c?: number;
     temp_min_c?: number;
     weather_code?: number;
