@@ -196,6 +196,56 @@ describe("MapPicker", () => {
     panTo.mockRestore();
   });
 
+  describe("first pin on an event without coordinates", () => {
+    function renderEmptyThenPick(viewZoom: number) {
+      const setView = vi.spyOn(L.Map.prototype, "setView");
+      const originalMap = L.map;
+      let map: L.Map | undefined;
+      const mapSpy = vi.spyOn(L, "map").mockImplementation((...args) => {
+        map = originalMap(...args);
+        return map;
+      });
+      const props = { zoom: 15, tileConfig: TILE_CONFIG, onPick: () => {} };
+      const view = render(<MapPicker latitude={null} longitude={null} {...props} />);
+      map!.setZoom(viewZoom, { animate: false });
+      map!.fire("dblclick", { latlng: L.latLng(40.72, -74.0) });
+      setView.mockClear();
+      view.rerender(<MapPicker latitude={40.72} longitude={-74.0} {...props} />);
+      return {
+        map: map!,
+        setView,
+        props,
+        view,
+        restore: () => {
+          mapSpy.mockRestore();
+          setView.mockRestore();
+        },
+      };
+    }
+
+    it("keeps a zoom the admin already zoomed into", () => {
+      const { map, setView, restore } = renderEmptyThenPick(18);
+      expect(setView).toHaveBeenCalledWith([40.72, -74.0], 18);
+      expect(map.getZoom()).toBe(18);
+      restore();
+    });
+
+    it("leaves the world-level fallback view for the saved zoom", () => {
+      const { setView, restore } = renderEmptyThenPick(2);
+      expect(setView).toHaveBeenCalledWith([40.72, -74.0], 15);
+      restore();
+    });
+
+    it("does not leak the pick into a later search result", () => {
+      const { map, setView, props, view, restore } = renderEmptyThenPick(18);
+      setView.mockClear();
+      view.rerender(<MapPicker latitude={51.5074} longitude={-0.1278} {...props} />);
+      expect(setView).toHaveBeenCalledWith([51.5074, -0.1278], 15);
+      expect(map.getZoom()).toBe(15);
+      restore();
+    });
+  });
+
   it("does not pan back to the pin when only zoom changes", () => {
     const panTo = vi.spyOn(L.Map.prototype, "panTo");
     const setView = vi.spyOn(L.Map.prototype, "setView");

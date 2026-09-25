@@ -141,7 +141,10 @@ export function MapPicker({
       });
       marker.addTo(map);
       markerRef.current = marker;
-      map.setView(latLng, zoom);
+      // First pin: never zoom out from a view the admin already zoomed into, but do leave the
+      // world-level fallback view for the saved zoom.
+      map.setView(latLng, pickedHereRef.current ? Math.max(map.getZoom(), zoom) : zoom);
+      pickedHereRef.current = false;
     }
   }, [latitude, longitude, zoom]);
 
