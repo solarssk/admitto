@@ -84,6 +84,8 @@ function weatherChip(event: EventDto | CheckInEventDto, unit: TempUnit): Weather
   }
   if (w.status === "ok" && w.temp_c != null) return weatherChipOk(w, unit);
   if (w.status === "too_far") return weatherChipTooFar(w);
+  // The event day is over: nothing to show, and not an error (the provider itself is fine).
+  if (w.status === "past") return null;
   if (w.status === "unavailable") {
     return {
       label: "Weather unavailable",

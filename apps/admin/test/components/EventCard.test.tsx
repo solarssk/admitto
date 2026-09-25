@@ -409,6 +409,15 @@ describe("EventCard", () => {
     expect(screen.getByText("-°")).toBeTruthy();
   });
 
+  it("hides the weather chip for an ended event day instead of showing a provider error", () => {
+    // baseEvent has a pin, so a missing chip must not be replaced by the "No weather" fallback either.
+    renderCard({}, { ...baseEvent, weather: { status: "past" } });
+    expect(document.querySelector(".event-card__weather")).toBeNull();
+    expect(screen.queryByLabelText("Weather unavailable")).toBeNull();
+    expect(screen.queryByLabelText("No weather")).toBeNull();
+    expect(screen.queryByText("-°")).toBeNull();
+  });
+
   it("shows a single °C when ok forecast omits temp_min_c", () => {
     renderCard(
       { operatorTimeZone: "Europe/Warsaw" },

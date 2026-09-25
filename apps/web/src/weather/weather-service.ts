@@ -172,11 +172,11 @@ export class WeatherService {
       };
     }
 
-    // Past event days: still try archive via forecast API with past_days if needed;
-    // for v1, treat more than a day in the past as unavailable (list/ticket rarely need it).
-    if (offsetDays < -1) {
-      return { status: "unavailable", ...this.attributionFields() };
-    }
+    // The event day is over. That is not a provider failure, so never "unavailable" (the admin
+    // card would send someone to fix a provider that works). Neither provider can look back, so
+    // there is nothing to fetch: MET Norway serves forecasts only and Open-Meteo's forecast window
+    // starts today. Yesterday used to reach the provider anyway and always came back empty.
+    if (offsetDays < 0) return { status: "past" };
 
     if (this.config.provider === "metno" && !this.metNoReady()) {
       return { status: "unavailable", ...this.attributionFields() };
