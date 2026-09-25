@@ -1,7 +1,11 @@
 import type { PrismaClient } from "@admitto/db";
 import { EMAIL_ASSET_VERSION } from "@admitto/mail-templates";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { EMAIL_SEND_CONCURRENCY, EmailChannel } from "../../src/channels/email.js";
+import {
+  buildNotificationEmailDetails,
+  EMAIL_SEND_CONCURRENCY,
+  EmailChannel,
+} from "../../src/channels/email.js";
 import { SEVERITY_COLOR, SEVERITY_LABEL } from "../../src/channels/emailTemplate.js";
 import type { DispatchedNotification } from "../../src/types.js";
 import { createStubDb } from "../stubDb.js";
@@ -36,6 +40,53 @@ describe("EmailChannel", () => {
     send.mockReset().mockResolvedValue({ status: "sent", provider: "smtp" });
   });
 
+  it("uses designed labels for every notification type with email details", () => {
+    const withMetadata = (type: string, metadata: Record<string, unknown>) =>
+      buildNotificationEmailDetails({ ...EVENT, type, metadata }, "Lindt & Sprüngli");
+
+    expect(withMetadata("auth.login.repeated_failures", { streak: 5 })).toEqual([
+      "Failed sign-in attempts: 5",
+    ]);
+    expect(withMetadata("auth.mfa.break_glass", { action: "reset_mfa" })).toEqual([
+      "Action: Two-factor authentication reset",
+    ]);
+    expect(
+      withMetadata("auth.settings.changed", {
+        resource: "oidc_provider",
+        action: "disable",
+        target_label: "Corporate SSO",
+        target_id: "provider-opaque-id",
+      }),
+    ).toEqual([
+      "Changed: Single sign-on provider",
+      "Action: Disabled",
+      "Provider: Corporate SSO",
+    ]);
+    expect(
+      withMetadata("account.login.new_location", {
+        country: "Poland",
+        city: "Warsaw",
+        device: "Chrome / macOS",
+        ip: "203.0.113.7",
+        time: "2026-09-25 12:00:00 UTC",
+      }),
+    ).toEqual([
+      "Location: Warsaw, Poland",
+      "Device: Chrome / macOS",
+      "IP address: 203.0.113.7",
+      "Time: 2026-09-25 12:00:00 UTC",
+    ]);
+  });
+
+  it("does not expose arbitrary metadata from an unrecognised notification type", () => {
+    const details = buildNotificationEmailDetails(
+      { ...EVENT, type: "future.notification", metadata: { target_user_id: "opaque-id" } },
+      "Puma",
+    );
+
+    expect(details).toEqual([]);
+  });
+
   it("is a no-op success when there are no resolved recipients and no extra recipients", async () => {
     const db = createStubDb();
     db.user.findMany.mockResolvedValue([]);
@@ -67,8 +118,43 @@ describe("EmailChannel", () => {
     expect(messages[0].subject).toBe(`[Admitto] ${EVENT.title}`);
     expect(messages[0].html).toContain(EVENT.title);
     expect(messages[0].html).toContain(EVENT.body);
-    expect(messages[0].html).toContain("country: Poland");
+    expect(messages[0].html).toContain("Location: Poland");
     expect(closeMailer).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders role-grant details as readable role and scope, never opaque account or scope IDs", async () => {
+    const db = createStubDb();
+    db.user.findMany.mockResolvedValue([{ email: "a@example.com" }]);
+    db.organization.findUnique.mockResolvedValue({ name: "Decathlon", logo_url: null });
+    const channel = new EmailChannel(db as unknown as PrismaClient);
+
+    await channel.send(
+      {
+        ...EVENT,
+        type: "auth.role.elevated",
+        title: "Admin role granted",
+        body: "Alex Admin granted Jordan User the administrator role.",
+        metadata: {
+          actor_user_id: "cuzf65b3c9h6za97zm1zamqx0",
+          target_user_id: "cp1itnzv3jvrmg0ne42v4dtqi",
+          role: "admin",
+          scope_type: "organization",
+          scope_id: "org_default",
+        },
+      },
+      ["u-1"],
+    );
+
+    const html = send.mock.calls[0]![0].html;
+    expect(html).toContain("Alex Admin granted Jordan User the administrator role.");
+    expect(html).toContain("Role: Administrator");
+    expect(html).toContain("Scope: Decathlon");
+    expect(html).not.toContain("actor_user_id");
+    expect(html).not.toContain("target_user_id");
+    expect(html).not.toContain("scope_id");
+    expect(html).not.toContain("cuzf65b3c9h6za97zm1zamqx0");
+    expect(html).not.toContain("cp1itnzv3jvrmg0ne42v4dtqi");
+    expect(html).not.toContain("org_default");
   });
 
   it("includes NotificationSettings.extra_email_recipients (object shape: {email, description}) only when includeExtraRecipients is set", async () => {

@@ -11,8 +11,8 @@ export interface NotificationEmailContentParams {
   severity: NotificationSeverity;
   title: string;
   body: string;
-  /** "" when there is no metadata - the Details box is omitted entirely in that case. */
-  metadataLine: string;
+  /** Empty when there is no reader-facing context - the Details box is omitted entirely then. */
+  metadataLines: string[];
   ctaUrl: string;
   ctaLabel: string;
   /** Absolute URL of this severity's badge PNG (`/assets/notification-badge-{severity}.png`) -
@@ -35,18 +35,17 @@ export function buildNotificationEmailBodyHtml(params: NotificationEmailContentP
       labelText: SEVERITY_LABEL[params.severity],
     }) +
     `<div style="margin-top:18px;font-size:22px;font-weight:700;line-height:28px;color:#111827;text-align:center;">${escapeHtmlText(params.title)}</div>` +
-    `<div style="margin-top:10px;font-size:15px;line-height:24px;color:#4b5563;text-align:center;max-width:440px;margin-left:auto;margin-right:auto;">${escapeHtmlText(params.body)}</div>` +
+    `<div style="margin-top:10px;font-size:15px;line-height:24px;color:#4b5563;text-align:center;max-width:440px;margin-left:auto;margin-right:auto;overflow-wrap:anywhere;word-break:break-word;">${escapeHtmlText(params.body)}</div>` +
     `</td></tr>`;
 
-  const detailsHtml = params.metadataLine
+  const detailsHtml = params.metadataLines.length > 0
     ? `<tr><td style="padding:0 28px 20px 28px;font-family:Arial,Helvetica,sans-serif;">` +
       buildEmailBoxedSectionHtml({
         label: "Details",
-        innerHtml: params.metadataLine
-          .split(" · ")
+        innerHtml: params.metadataLines
           .map(
             (line) =>
-              `<div style="font-size:12px;line-height:20px;color:#111827;">${escapeHtmlText(line)}</div>`,
+              `<div style="font-size:12px;line-height:20px;color:#111827;overflow-wrap:anywhere;word-break:break-word;">${escapeHtmlText(line)}</div>`,
           )
           .join(""),
       }) +
