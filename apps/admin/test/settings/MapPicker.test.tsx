@@ -164,6 +164,88 @@ describe("MapPicker", () => {
     panTo.mockRestore();
   });
 
+  it("keeps the admin's zoom when the pin was just placed on this map", () => {
+    const setView = vi.spyOn(L.Map.prototype, "setView");
+    const panTo = vi.spyOn(L.Map.prototype, "panTo");
+    const originalMap = L.map;
+    let map: L.Map | undefined;
+    const mapSpy = vi.spyOn(L, "map").mockImplementation((...args) => {
+      map = originalMap(...args);
+      return map;
+    });
+    const { rerender } = render(
+      <MapPicker latitude={40.7128} longitude={-74.006} zoom={15} tileConfig={TILE_CONFIG} onPick={() => {}} />,
+    );
+    map!.setZoom(18);
+    setView.mockClear();
+    panTo.mockClear();
+
+    // Double-click on the map, then the parent commits the new coords with the default zoom.
+    map!.fire("dblclick", { latlng: L.latLng(40.72, -74.0) });
+    rerender(
+      <MapPicker latitude={40.72} longitude={-74.0} zoom={15} tileConfig={TILE_CONFIG} onPick={() => {}} />,
+    );
+
+    // panTo() calls setView() internally with the current zoom; what must not happen is a
+    // setView back to the saved (default) zoom.
+    expect(setView).not.toHaveBeenCalledWith(expect.anything(), 15);
+    expect(panTo).toHaveBeenCalledWith([40.72, -74.0]);
+    expect(map!.getZoom()).toBe(18);
+    mapSpy.mockRestore();
+    setView.mockRestore();
+    panTo.mockRestore();
+  });
+
+  describe("first pin on an event without coordinates", () => {
+    function renderEmptyThenPick(viewZoom: number) {
+      const setView = vi.spyOn(L.Map.prototype, "setView");
+      const originalMap = L.map;
+      let map: L.Map | undefined;
+      const mapSpy = vi.spyOn(L, "map").mockImplementation((...args) => {
+        map = originalMap(...args);
+        return map;
+      });
+      const props = { zoom: 15, tileConfig: TILE_CONFIG, onPick: () => {} };
+      const view = render(<MapPicker latitude={null} longitude={null} {...props} />);
+      map!.setZoom(viewZoom, { animate: false });
+      map!.fire("dblclick", { latlng: L.latLng(40.72, -74.0) });
+      setView.mockClear();
+      view.rerender(<MapPicker latitude={40.72} longitude={-74.0} {...props} />);
+      return {
+        map: map!,
+        setView,
+        props,
+        view,
+        restore: () => {
+          mapSpy.mockRestore();
+          setView.mockRestore();
+        },
+      };
+    }
+
+    it("keeps a zoom the admin already zoomed into", () => {
+      const { map, setView, restore } = renderEmptyThenPick(18);
+      expect(setView).toHaveBeenCalledWith([40.72, -74.0], 18);
+      expect(map.getZoom()).toBe(18);
+      restore();
+    });
+
+    it("leaves the world-level fallback view for the saved zoom", () => {
+      const { setView, restore } = renderEmptyThenPick(2);
+      expect(setView).toHaveBeenCalledWith([40.72, -74.0], 15);
+      restore();
+    });
+
+    it("does not leak the pick into a later search result", () => {
+      const { map, setView, props, view, restore } = renderEmptyThenPick(18);
+      setView.mockClear();
+      view.rerender(<MapPicker latitude={51.5074} longitude={-0.1278} {...props} />);
+      expect(setView).toHaveBeenCalledWith([51.5074, -0.1278], 15);
+      expect(map.getZoom()).toBe(15);
+      restore();
+    });
+  });
+
   it("does not pan back to the pin when only zoom changes", () => {
     const panTo = vi.spyOn(L.Map.prototype, "panTo");
     const setView = vi.spyOn(L.Map.prototype, "setView");
@@ -252,8 +334,8 @@ describe("MapPicker", () => {
     tileLayerSpy.mockRestore();
   });
 
-  it("reports zoom changes via onZoomChange", () => {
-    const onZoomChange = vi.fn();
+  it("does not report view-only zoom or pan (only picks reach the parent)", () => {
+    const onPick = vi.fn();
     const originalMap = L.map;
     let map: L.Map | undefined;
     const mapSpy = vi.spyOn(L, "map").mockImplementation((...args) => {
@@ -262,19 +344,12 @@ describe("MapPicker", () => {
     });
 
     render(
-      <MapPicker
-        latitude={51.5074}
-        longitude={-0.1278}
-        zoom={15}
-        tileConfig={TILE_CONFIG}
-        onPick={() => {}}
-        onZoomChange={onZoomChange}
-      />,
+      <MapPicker latitude={51.5074} longitude={-0.1278} zoom={15} tileConfig={TILE_CONFIG} onPick={onPick} />,
     );
 
-    expect(map).toBeDefined();
     map!.setZoom(12);
-    expect(onZoomChange).toHaveBeenCalledWith(12);
+    map!.panTo([48.85, 2.35], { animate: false });
+    expect(onPick).not.toHaveBeenCalled();
     mapSpy.mockRestore();
   });
 });
