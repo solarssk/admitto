@@ -1469,6 +1469,7 @@ export interface SystemSettingsDto {
   session_idle_timeout_ms: SecuritySettingField<number>;
   operator_session_idle_timeout_ms: SecuritySettingField<number>;
   trusted_device_days: SecuritySettingField<number>;
+  operator_remember_me_days: SecuritySettingField<number>;
   mfa_required_roles: SecuritySettingField<string[]>;
   instance_url: SecuritySettingField<string | null>;
   csp_trusted_origins: SecuritySettingField<string[]>;
@@ -1483,6 +1484,7 @@ export interface PatchSystemSettingsBody {
   session_idle_timeout_ms?: number | null;
   operator_session_idle_timeout_ms?: number | null;
   trusted_device_days?: number | null;
+  operator_remember_me_days?: number | null;
   mfa_required_roles?: string[] | null;
   instance_url?: string | null;
   csp_trusted_origins?: string[] | null;

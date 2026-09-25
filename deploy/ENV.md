@@ -23,7 +23,7 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 | Variable | Boot | Consumers | UI | Secret | Summary |
 |----------|------|-----------|----|--------|---------|
 | `NODE_ENV` | required | app, worker, migrate | none | no | Use production for real deploys. Changes security defaults (HTTPS BASE_URL, private-mail lab flag ignored, etc.). |
-| `BASE_URL` | required | app, worker | none | no | Public origin browsers use (https://tickets.example.com, no trailing slash). Required at boot in non-development; not configurable from Settings. |
+| `BASE_URL` | required | app, worker | Settings → General (Instance URL, read-only while set) | no | Public origin browsers use (https://tickets.example.com, no trailing slash). Required at boot in non-development, so the Instance URL field in Settings → General is read-only there. |
 | `ENCRYPTION_KEY` | required | app, worker, migrate | none | yes | AES-256-GCM master key (openssl rand -base64 32). Required to decrypt mail/OIDC secrets at rest. Losing it loses encrypted config. |
 | `DATABASE_URL` | required | app, worker, migrate | none | yes | Postgres URL. Password must match POSTGRES_PASSWORD when using compose db service. |
 | `REDIS_URL` | required | app, worker | none | yes | Redis URL including password. Compose builds this from REDIS_PASSWORD; keep them in sync. |
@@ -141,14 +141,14 @@ This page is the operator-facing dictionary for deploy env vars. Copy values fro
 
 | Variable | Boot | Consumers | UI | Secret | Summary |
 |----------|------|-----------|----|--------|---------|
-| `SESSION_TTL_OPERATOR_MS` | optional | app | none (defaults in auth) | no | Absolute operator session TTL override (ms). |
-| `SESSION_TTL_ADMIN_MS` | optional | app | none (defaults in auth) | no | Absolute admin/superadmin session TTL override (ms). Prefer ≤8h when OIDC group mapping grants elevated roles. |
-| `SESSION_IDLE_TIMEOUT_ADMIN_MS` | optional | app | none | no | Idle timeout for elevated sessions (ms). Must not exceed admin TTL. |
-| `SESSION_IDLE_TIMEOUT_OPERATOR_MS` | optional | app | none | no | Idle timeout for operator sessions (ms). |
-| `TRUSTED_DEVICE_DAYS` | optional | app | none | no | MFA trusted-device cookie lifetime in days. |
-| `OPERATOR_REMEMBER_ME_DAYS` | optional | app | none | no | Lifetime in days (0 to 14, default 3) of an operator session started with Keep me signed in; 0 hides the option. |
-| `MFA_REQUIRED_ROLES` | optional | app | none | no | Comma-separated roles that must enroll MFA (default admin,superadmin). |
-| `WEBAUTHN_ENABLED` | optional | app | none | no | Whether passkey/security-key (WebAuthn) MFA is offered (default true). |
+| `SESSION_TTL_OPERATOR_MS` | optional | app | Settings → Security (preferred); env locks UI | no | Absolute operator session TTL override (ms). |
+| `SESSION_TTL_ADMIN_MS` | optional | app | Settings → Security (preferred); env locks UI | no | Absolute admin/superadmin session TTL override (ms). Prefer ≤8h when OIDC group mapping grants elevated roles. |
+| `SESSION_IDLE_TIMEOUT_ADMIN_MS` | optional | app | Settings → Security (preferred); env locks UI | no | Idle timeout for elevated sessions (ms). Must not exceed admin TTL. |
+| `SESSION_IDLE_TIMEOUT_OPERATOR_MS` | optional | app | Settings → Security (preferred); env locks UI | no | Idle timeout for operator sessions (ms). |
+| `TRUSTED_DEVICE_DAYS` | optional | app | Settings → Security (preferred); env locks UI | no | MFA trusted-device cookie lifetime in days. |
+| `OPERATOR_REMEMBER_ME_DAYS` | optional | app | Settings → Security (preferred); env locks UI | no | Lifetime in days (0 to 14, default 3) of an operator session started with Keep me signed in; 0 hides the option. |
+| `MFA_REQUIRED_ROLES` | optional | app | Settings → Security (preferred); env locks UI | no | Comma-separated roles that must enroll MFA (default admin,superadmin). |
+| `WEBAUTHN_ENABLED` | optional | app | Settings → Security (preferred); env locks UI | no | Whether passkey/security-key (WebAuthn) MFA is offered (default true). |
 | `CSP_TRUSTED_ORIGINS` | optional | app | Settings → Security (preferred); env locks UI | no | JSON array of https:// origins trusted to run script/send data on the admin/operator SPA and sign-in pages. |
 
 ## Identity (env lock / seed)
