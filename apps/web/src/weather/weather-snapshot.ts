@@ -26,6 +26,7 @@ export type WeatherSnapshot = {
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
+/** A coordinate the way the forecast cache key rounds it: 2 decimals, about a kilometre. */
 function roundPin(n: number): number {
   return Number(n.toFixed(2));
 }
@@ -56,7 +57,7 @@ export function snapshotForEvent(
   at: { latitude: number; longitude: number; eventYmd: string },
 ): WeatherSnapshot | null {
   const snapshot = parseWeatherSnapshot(raw);
-  if (!snapshot || snapshot.date !== at.eventYmd) return null;
+  if (snapshot?.date !== at.eventYmd) return null;
   if (snapshot.lat !== roundPin(at.latitude) || snapshot.lon !== roundPin(at.longitude)) return null;
   return snapshot;
 }
@@ -64,8 +65,8 @@ export function snapshotForEvent(
 export interface SnapshotDecisionInput {
   /** The stored snapshot that still fits this event (see {@link snapshotForEvent}), or null. */
   current: WeatherSnapshot | null;
-  /** What the provider or cache just returned for the event. */
-  summary: WeatherSummaryDto | null;
+  /** What the provider or cache just returned for the event (nothing at all is fine too). */
+  summary: WeatherSummaryDto | null | undefined;
   provider: WeatherProviderId;
   latitude: number;
   longitude: number;

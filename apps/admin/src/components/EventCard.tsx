@@ -39,7 +39,7 @@ function formatDayCount(n: number): string {
   return `${n} day${n === 1 ? "" : "s"}`;
 }
 
-// `ended` = the event day is over, so this is the last forecast saved for it, not a live one.
+/** The weather chip for a temperature. `ended` = the event day is over, so it is the last forecast saved for it, not a live one. */
 function weatherChipOk(
   w: NonNullable<EventDto["weather"]>,
   unit: TempUnit,

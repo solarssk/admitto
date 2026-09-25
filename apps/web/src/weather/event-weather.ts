@@ -4,7 +4,7 @@
  * event can no longer be asked for its weather, only shown what was saved.
  */
 
-import type { PrismaClient } from "@admitto/db";
+import { Prisma, type PrismaClient } from "@admitto/db";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import type { WeatherSummaryDto } from "./types.js";
 import { summarizeMany, type WeatherService } from "./weather-service.js";
@@ -19,8 +19,15 @@ export interface WeatherEventRow {
   map_longitude?: number | null;
 }
 
-/** Stored `Event.weather_snapshot` values by event id. A read failure only costs the ended-event chip. */
-async function loadStoredSnapshots(db: PrismaClient, ids: string[]): Promise<Map<string, unknown>> {
+/**
+ * Stored `Event.weather_snapshot` values by event id, or null when they could not be read. That
+ * costs the ended-event chip, and it means nothing may be saved: without what is stored there is
+ * no telling whether a new reading is allowed to replace it.
+ */
+async function loadStoredSnapshots(
+  db: PrismaClient,
+  ids: string[],
+): Promise<Map<string, Prisma.JsonValue> | null> {
   if (ids.length === 0) return new Map();
   try {
     const rows = await db.event.findMany({
@@ -30,17 +37,23 @@ async function loadStoredSnapshots(db: PrismaClient, ids: string[]): Promise<Map
     return new Map(rows.map((row) => [row.id, row.weather_snapshot]));
   } catch {
     emitSystemLog("db", "warn", "weather_snapshot_load_failed", { events: ids.length });
-    return new Map();
+    return null;
   }
 }
 
-/** Save the forecasts that just became the newest look at their event day. Never throws. */
+/**
+ * Save the forecasts that just became the newest look at their event day. Each write only lands
+ * while the stored value is still the one the decision was made from: a provider call sits between
+ * the read and the write, and a request that saved in the meantime (a full-day forecast just
+ * before midnight, say) must not be overwritten by this older or partial reading. A write that
+ * lost that race is dropped, not an error. Never throws.
+ */
 async function saveNewSnapshots(
   db: PrismaClient,
   service: WeatherService,
   events: WeatherEventRow[],
   summaries: Array<WeatherSummaryDto | null>,
-  stored: Map<string, unknown>,
+  stored: Map<string, Prisma.JsonValue>,
 ): Promise<void> {
   const provider = service.configSnapshot.provider;
   const now = new Date();
@@ -51,7 +64,7 @@ async function saveNewSnapshots(
     if (latitude == null || longitude == null || !day) return;
     const next = nextWeatherSnapshot({
       current: snapshotForEvent(stored.get(event.id), { latitude, longitude, eventYmd: day.ymd }),
-      summary: summaries[i] ?? null,
+      summary: summaries[i],
       provider,
       latitude,
       longitude,
@@ -60,7 +73,12 @@ async function saveNewSnapshots(
       now,
     });
     if (next) {
-      writes.push(db.event.update({ where: { id: event.id }, data: { weather_snapshot: next } }));
+      writes.push(
+        db.event.updateMany({
+          where: { id: event.id, weather_snapshot: { equals: stored.get(event.id) ?? Prisma.DbNull } },
+          data: { weather_snapshot: next },
+        }),
+      );
     }
   });
   const failed = (await Promise.allSettled(writes)).filter((r) => r.status === "rejected").length;
@@ -84,10 +102,10 @@ export async function summarizeEventsWeather(
       longitude: e.map_longitude,
       date: e.date,
       timezone: e.timezone,
-      snapshot: stored.get(e.id),
+      snapshot: stored?.get(e.id),
     })),
     service,
   );
-  await saveNewSnapshots(db, service, events, summaries, stored);
+  if (stored) await saveNewSnapshots(db, service, events, summaries, stored);
   return summaries;
 }
