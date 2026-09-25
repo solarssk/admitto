@@ -164,6 +164,38 @@ describe("MapPicker", () => {
     panTo.mockRestore();
   });
 
+  it("keeps the admin's zoom when the pin was just placed on this map", () => {
+    const setView = vi.spyOn(L.Map.prototype, "setView");
+    const panTo = vi.spyOn(L.Map.prototype, "panTo");
+    const originalMap = L.map;
+    let map: L.Map | undefined;
+    const mapSpy = vi.spyOn(L, "map").mockImplementation((...args) => {
+      map = originalMap(...args);
+      return map;
+    });
+    const { rerender } = render(
+      <MapPicker latitude={40.7128} longitude={-74.006} zoom={15} tileConfig={TILE_CONFIG} onPick={() => {}} />,
+    );
+    map!.setZoom(18);
+    setView.mockClear();
+    panTo.mockClear();
+
+    // Double-click on the map, then the parent commits the new coords with the default zoom.
+    map!.fire("dblclick", { latlng: L.latLng(40.72, -74.0) });
+    rerender(
+      <MapPicker latitude={40.72} longitude={-74.0} zoom={15} tileConfig={TILE_CONFIG} onPick={() => {}} />,
+    );
+
+    // panTo() calls setView() internally with the current zoom; what must not happen is a
+    // setView back to the saved (default) zoom.
+    expect(setView).not.toHaveBeenCalledWith(expect.anything(), 15);
+    expect(panTo).toHaveBeenCalledWith([40.72, -74.0]);
+    expect(map!.getZoom()).toBe(18);
+    mapSpy.mockRestore();
+    setView.mockRestore();
+    panTo.mockRestore();
+  });
+
   it("does not pan back to the pin when only zoom changes", () => {
     const panTo = vi.spyOn(L.Map.prototype, "panTo");
     const setView = vi.spyOn(L.Map.prototype, "setView");

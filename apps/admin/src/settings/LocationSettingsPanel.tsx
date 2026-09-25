@@ -358,10 +358,13 @@ export function LocationSettingsPanel({
     setLookupResetKey((key) => key + 1);
     // Clear Maps overrides immediately so Copy / Notice cannot keep the previous place's links
     // while reverse geocode is still in flight.
+    // Ticket/email maps always start from the default zoom for a newly placed pin, even when
+    // reverse geocoding finds nothing or fails below.
     setDraft((prev) => ({
       ...prev,
       latitude,
       longitude,
+      map_zoom: LOCATION_LIMITS.DEFAULT_ZOOM,
       google_maps_url_override: "",
       apple_maps_url_override: "",
     }));
@@ -395,7 +398,6 @@ export function LocationSettingsPanel({
         venue_name: prev.venue_name.trim()
           ? prev.venue_name
           : (result.name ?? result.formatted_address),
-        map_zoom: prev.map_zoom || LOCATION_LIMITS.DEFAULT_ZOOM,
         address_components: componentsFromResult(result),
         google_maps_url_override: "",
         apple_maps_url_override: "",

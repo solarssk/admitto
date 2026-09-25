@@ -842,6 +842,35 @@ describe("LocationSettingsPanel — clearing and map availability", () => {
     expect(screen.queryByText("From OpenStreetMap")).toBeFalsy();
   });
 
+  it.each([
+    ["finds an address", () => mockReverse.mockResolvedValue({
+      result: {
+        provider: "nominatim",
+        name: "Pier",
+        formatted_address: "Pier 1, New York",
+        latitude: 40.7128,
+        longitude: -74.006,
+        components: { object_name: "Pier", street: "Pier 1", postcode: null, city: "New York", region: null, country: null },
+      },
+      contact_configured: true,
+    })],
+    ["finds no address", () => mockReverse.mockResolvedValue({ result: null, contact_configured: true })],
+    ["fails", () => mockReverse.mockRejectedValue(new Error("offline"))],
+  ])("resets a non-default saved map zoom to the default when the pin is moved and reverse geocoding %s", async (_label, arrange) => {
+    arrange();
+    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
+    mockSaveLocation.mockResolvedValue({ ...SAVED_LOCATION, latitude: 40.7128, longitude: -74.006, map_zoom: 15 });
+    renderPanel();
+
+    fireEvent.click(await screen.findByTestId("map-picker"));
+    await screen.findByText("40.71280, -74.00600");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", expect.objectContaining({ map_zoom: 15 })),
+    );
+  });
+
   it("fills an empty venue name from reverse geocoding after a manual pin pick", async () => {
     mockFetchLocation.mockResolvedValue(EMPTY_LOCATION);
     mockReverse.mockResolvedValue({

@@ -57,6 +57,8 @@ export function MapPicker({
   const disabledRef = useRef(disabled);
   /** Last lat/lng we synced onto the marker — used so zoom-only prop updates do not panTo. */
   const syncedCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
+  /** Set when the pin was just placed/moved from this map, so the sync effect keeps the admin's zoom. */
+  const pickedHereRef = useRef(false);
   onPickRef.current = onPick;
   disabledRef.current = disabled;
 
@@ -82,6 +84,7 @@ export function MapPicker({
     }).addTo(map);
     map.on("dblclick", (e: L.LeafletMouseEvent) => {
       if (disabledRef.current) return;
+      pickedHereRef.current = true;
       onPickRef.current(e.latlng.lat, e.latlng.lng);
     });
     mapRef.current = map;
@@ -122,13 +125,18 @@ export function MapPicker({
     if (markerRef.current) {
       markerRef.current.setLatLng(latLng);
       if (coordsChanged) {
-        if (map.getZoom() !== zoom) map.setView(latLng, zoom);
+        // A pin placed or dragged on this map keeps the admin's current zoom (the saved zoom
+        // resets to the default independently); search results still snap to the saved zoom.
+        const keepView = pickedHereRef.current;
+        if (!keepView && map.getZoom() !== zoom) map.setView(latLng, zoom);
         else map.panTo(latLng);
       }
+      pickedHereRef.current = false;
     } else {
       const marker = L.marker(latLng, { icon: MARKER_ICON, draggable: !disabledRef.current });
       marker.on("dragend", () => {
         const pos = marker.getLatLng();
+        pickedHereRef.current = true;
         onPickRef.current(pos.lat, pos.lng);
       });
       marker.addTo(map);
