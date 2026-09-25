@@ -34,7 +34,7 @@ export async function lookupAttendees(
 
   // Match on name and email only — never company/department (neither the
   // columns nor the custom_data JSON copies). Company-substring matching made
-  // "Hitachi" surface both "Hitachi" and "Hitachi Energy", which read as a
+  // a short company-name query can return more than one organization, which reads as a
   // bug rather than a feature (PO review). Company/department are still shown
   // on each result below, just not used to find one.
   const rows = await prisma.attendee.findMany({

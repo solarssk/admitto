@@ -163,7 +163,7 @@ describe("LogoUploadZone", () => {
     }
     renderWithToast(<Harness />);
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(["full-original"], "hitachi.png", { type: "image/png" });
+    const file = new File(["full-original"], "adidas.png", { type: "image/png" });
     fireEvent.change(input, { target: { files: [file] } });
     await waitFor(() => {
       expect(screen.getByRole("dialog", { name: "Adjust image" })).toBeTruthy();
