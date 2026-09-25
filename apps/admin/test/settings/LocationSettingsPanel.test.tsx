@@ -40,11 +40,9 @@ vi.mock("../../src/settings/MapPicker.js", () => ({
   MapPicker: ({
     disabled,
     onPick,
-    onZoomChange,
   }: {
     disabled?: boolean;
     onPick: (latitude: number, longitude: number) => void;
-    onZoomChange?: (zoom: number) => void;
   }) => (
     <div>
       <button
@@ -54,9 +52,6 @@ vi.mock("../../src/settings/MapPicker.js", () => ({
         onClick={() => onPick(40.7128, -74.006)}
       >
         Pick New York
-      </button>
-      <button type="button" data-testid="map-zoom" onClick={() => onZoomChange?.(12)}>
-        Zoom out
       </button>
     </div>
   ),
@@ -649,31 +644,6 @@ describe("LocationSettingsPanel — venue search", () => {
     await act(async () => {
       await slowReverse.promise;
     });
-  });
-
-  it("persists map zoom changes from the map control", async () => {
-    mockFetchLocation.mockResolvedValue(SAVED_LOCATION);
-    mockSaveLocation.mockResolvedValue({ ...SAVED_LOCATION, map_zoom: 12 });
-    renderPanel();
-
-    await screen.findByDisplayValue("Springfield Hall");
-    fireEvent.click(screen.getByTestId("map-zoom"));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    await waitFor(() =>
-      expect(mockSaveLocation).toHaveBeenCalledWith("evt-1", expect.objectContaining({ map_zoom: 12 })),
-    );
-  });
-
-  it("does not create a new draft when the map reports the current zoom again", async () => {
-    mockFetchLocation.mockResolvedValue({ ...SAVED_LOCATION, map_zoom: 12 });
-    renderPanel();
-
-    await screen.findByDisplayValue("Springfield Hall");
-    fireEvent.click(screen.getByTestId("map-zoom"));
-    fireEvent.click(screen.getByTestId("map-zoom"));
-
-    expect(screen.getByTestId("map-zoom")).toBeTruthy();
   });
 
   it("does not let a slow reverse lookup overwrite a later selected venue", async () => {

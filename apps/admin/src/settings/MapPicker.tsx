@@ -31,8 +31,6 @@ export interface MapPickerProps {
   disabled?: boolean;
   /** Called when the admin double-clicks the map or finishes dragging the pin. */
   onPick: (latitude: number, longitude: number) => void;
-  /** Called when the operator changes Leaflet zoom (controls or pinch) so draft.map_zoom persists. */
-  onZoomChange?: (zoom: number) => void;
 }
 
 /**
@@ -40,7 +38,9 @@ export interface MapPickerProps {
  *
  * Pan and zoom freely without moving the pin. Place or relocate with a **double-click**;
  * fine-tune an existing pin by dragging it. Single-click is intentionally ignored so
- * exploring the basemap does not overwrite the saved venue.
+ * exploring the basemap does not overwrite the saved venue. Panning and zooming is view-only:
+ * it never feeds back into the saved zoom, which drives the static map images (tickets, mails,
+ * event cards) that are always centred on the pin.
  */
 export function MapPicker({
   latitude,
@@ -49,18 +49,15 @@ export function MapPicker({
   tileConfig,
   disabled = false,
   onPick,
-  onZoomChange,
 }: Readonly<MapPickerProps>) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
   const onPickRef = useRef(onPick);
-  const onZoomChangeRef = useRef(onZoomChange);
   const disabledRef = useRef(disabled);
-  /** Last lat/lng we synced onto the marker — used so zoom-only draft updates do not panTo. */
+  /** Last lat/lng we synced onto the marker — used so zoom-only prop updates do not panTo. */
   const syncedCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
   onPickRef.current = onPick;
-  onZoomChangeRef.current = onZoomChange;
   disabledRef.current = disabled;
 
   // Mount the map once. Initial center/tile config intentionally isn't re-applied on prop
@@ -87,9 +84,6 @@ export function MapPicker({
       if (disabledRef.current) return;
       onPickRef.current(e.latlng.lat, e.latlng.lng);
     });
-    map.on("zoomend", () => {
-      onZoomChangeRef.current?.(map.getZoom());
-    });
     mapRef.current = map;
 
     // A map created while its tab panel is hidden (display: none) measures 0x0; fix its size
@@ -109,7 +103,7 @@ export function MapPicker({
 
   // Sync the pin with the current coordinates. A brand-new pin snaps the view to it (zoomed
   // in). When coordinates change from search/dblclick/drag, pan (or setView if zoom also
-  // changed). Zoom-only updates from the draft must not yank the viewport back to the pin.
+  // changed). Zoom-only prop updates must not yank the viewport back to the pin.
   useEffect(() => {
     const map = mapRef.current!;
 

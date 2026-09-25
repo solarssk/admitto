@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Zooming or panning the map on the event's Location tab no longer changes the map shown in tickets, emails, and event cards. Before, every zoom step there was saved as the event's map zoom, so exploring the surroundings (or zooming in to place the pin precisely) silently changed those images and marked the tab as having unsaved changes. Those maps are now always centred on the pin at the default zoom, and a new pin placement or venue search resets to that default.
 - The Reports admission log now lists the newest admission first instead of the oldest, and the CSV and printable PDF exports follow the same order. Before, an event with more than 500 admissions (100 in the PDF) showed only its earliest check-ins, so the most recent ones were missing from the table; it now shows the latest ones and says so in the truncation note.
 - On phones and tablets, tapping the scan field on the check-in page now opens the on-screen keyboard, so an operator can type a name or email when a QR code will not scan. Before, the field was set up for hardware scanners and told the device never to show a keyboard, which left touch-only devices with no way to type into it. Desktop computers and other devices without a touchscreen behave as before.
 

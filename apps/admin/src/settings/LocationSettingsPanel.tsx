@@ -600,12 +600,9 @@ export function LocationSettingsPanel({
                 onPick={(lat, lng) => {
                   void handleMapPick(lat, lng);
                 }}
-                onZoomChange={(nextZoom) => {
-                  setDraft((prev) => (prev.map_zoom === nextZoom ? prev : { ...prev, map_zoom: nextZoom }));
-                }}
               />
               <p className="field-hint">
-                Double-click to place or move the pin. Drag to adjust. Remove pin clears coordinates
+                Double-click to place or move the pin. Drag to adjust. Panning and zooming only changes your view, not the map shown in tickets and emails. Remove pin clears coordinates
                 and address fields; the venue name stays.
               </p>
             </div>
