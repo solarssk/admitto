@@ -153,14 +153,17 @@ function numberMetadata(metadata: Record<string, unknown>, key: string): number 
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function textLine(prefix: string, value: string | undefined): string | undefined {
+  return value === undefined ? undefined : `${prefix}: ${value}`;
+}
+
 /** "Prefix: Label" when `key` has a designed label, otherwise nothing (never the raw key). */
 function labelLine(
   prefix: string,
   labels: ReadonlyMap<string, string>,
   key: string | undefined,
 ): string | undefined {
-  const label = key === undefined ? undefined : labels.get(key);
-  return label === undefined ? undefined : `${prefix}: ${label}`;
+  return textLine(prefix, key === undefined ? undefined : labels.get(key));
 }
 
 function roleScopeLine(
@@ -172,8 +175,46 @@ function roleScopeLine(
   return `Scope: ${organizationName || "This organisation"}`;
 }
 
+function locationLabel(country: string | undefined, city: string | undefined): string | undefined {
+  if (country === undefined) return undefined;
+  return city === undefined ? country : `${city}, ${country}`;
+}
+
 function definedLines(lines: Array<string | undefined>): string[] {
   return lines.filter((line): line is string => line !== undefined);
+}
+
+function failedSignInDetails(metadata: Record<string, unknown>): string[] {
+  const streak = numberMetadata(metadata, "streak");
+  return streak === undefined ? [] : [`Failed sign-in attempts: ${streak}`];
+}
+
+function settingsChangedDetails(metadata: Record<string, unknown>): string[] {
+  return definedLines([
+    labelLine("Changed", AUTH_SETTINGS_RESOURCE_LABEL, stringMetadata(metadata, "resource")),
+    labelLine("Action", AUTH_SETTINGS_ACTION_LABEL, stringMetadata(metadata, "action")),
+    textLine("Provider", stringMetadata(metadata, "target_label")),
+  ]);
+}
+
+function roleElevatedDetails(
+  metadata: Record<string, unknown>,
+  organizationName: string | null | undefined,
+): string[] {
+  return definedLines([
+    labelLine("Role", ROLE_LABEL, stringMetadata(metadata, "role")),
+    roleScopeLine(stringMetadata(metadata, "scope_type"), organizationName),
+  ]);
+}
+
+function signInLocationDetails(metadata: Record<string, unknown>): string[] {
+  const location = locationLabel(stringMetadata(metadata, "country"), stringMetadata(metadata, "city"));
+  return definedLines([
+    textLine("Location", location),
+    textLine("Device", stringMetadata(metadata, "device")),
+    textLine("IP address", stringMetadata(metadata, "ip")),
+    textLine("Time", stringMetadata(metadata, "time")),
+  ]);
 }
 
 /**
@@ -190,40 +231,17 @@ export function buildNotificationEmailDetails(
   const metadata = event.metadata ?? {};
 
   switch (event.type) {
-    case "auth.login.repeated_failures": {
-      const streak = numberMetadata(metadata, "streak");
-      return streak === undefined ? [] : [`Failed sign-in attempts: ${streak}`];
-    }
+    case "auth.login.repeated_failures":
+      return failedSignInDetails(metadata);
     case "auth.mfa.break_glass":
       return definedLines([labelLine("Action", BREAK_GLASS_ACTION_LABEL, stringMetadata(metadata, "action"))]);
-    case "auth.settings.changed": {
-      const targetLabel = stringMetadata(metadata, "target_label");
-      return definedLines([
-        labelLine("Changed", AUTH_SETTINGS_RESOURCE_LABEL, stringMetadata(metadata, "resource")),
-        labelLine("Action", AUTH_SETTINGS_ACTION_LABEL, stringMetadata(metadata, "action")),
-        targetLabel ? `Provider: ${targetLabel}` : undefined,
-      ]);
-    }
+    case "auth.settings.changed":
+      return settingsChangedDetails(metadata);
     case "auth.role.elevated":
-      return definedLines([
-        labelLine("Role", ROLE_LABEL, stringMetadata(metadata, "role")),
-        roleScopeLine(stringMetadata(metadata, "scope_type"), organizationName),
-      ]);
+      return roleElevatedDetails(metadata, organizationName);
     case "auth.login.new_country":
-    case "account.login.new_location": {
-      const country = stringMetadata(metadata, "country");
-      const city = stringMetadata(metadata, "city");
-      const location = country ? (city ? `${city}, ${country}` : country) : undefined;
-      const device = stringMetadata(metadata, "device");
-      const ip = stringMetadata(metadata, "ip");
-      const time = stringMetadata(metadata, "time");
-      return definedLines([
-        location ? `Location: ${location}` : undefined,
-        device ? `Device: ${device}` : undefined,
-        ip ? `IP address: ${ip}` : undefined,
-        time ? `Time: ${time}` : undefined,
-      ]);
-    }
+    case "account.login.new_location":
+      return signInLocationDetails(metadata);
     default:
       return [];
   }
