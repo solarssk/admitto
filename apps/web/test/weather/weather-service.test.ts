@@ -443,7 +443,7 @@ describe("WeatherService.summarize", () => {
     ]);
   });
 
-  it("returns unavailable for invalid event dates and far-past days", async () => {
+  it("returns unavailable for an invalid event date", async () => {
     const now = new Date("2026-08-05T12:00:00.000Z");
     const service = new WeatherService({
       config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" }),
@@ -455,9 +455,6 @@ describe("WeatherService.summarize", () => {
     });
     expect(
       (await service.summarize({ ...pin, date: "not-a-date" }))?.status,
-    ).toBe("unavailable");
-    expect(
-      (await service.summarize({ ...pin, date: "2026-08-01T12:00:00.000Z" }))?.status,
     ).toBe("unavailable");
   });
 
@@ -771,6 +768,161 @@ describe("WeatherService.summarize", () => {
         }
       ).metNoClient(),
     ).toThrow(/unavailable/);
+  });
+});
+
+describe("WeatherService.summarize for ended event days", () => {
+  const pin = { latitude: 52.23, longitude: 21.01, timezone: "Europe/Warsaw" };
+  const now = new Date("2026-08-05T12:00:00.000Z");
+  const yesterday = "2026-08-04T12:00:00.000Z";
+
+  /** Service whose provider fails the test if it is called; `calls` lists every attempt. */
+  function serviceFor(
+    provider: "metno" | "openmeteo",
+    options: { contact?: boolean; at?: Date; cache?: InMemoryWeatherCache } = {},
+  ) {
+    const calls: string[] = [];
+    const contact = options.contact ?? true;
+    const service = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: provider }),
+      cache: options.cache ?? new InMemoryWeatherCache(),
+      now: () => options.at ?? now,
+      userAgent: contact ? "Admitto/test (+https://example.com; ops@example.com)" : null,
+      contactConfigured: contact,
+      fetchFn: async (input: string | URL | Request) => {
+        calls.push(String(input));
+        throw new Error("the provider must not be called for an ended day");
+      },
+    });
+    return { service, calls };
+  }
+
+  it("reports an ended day as `past`, never `unavailable`, for either provider, without calling it", async () => {
+    resetSystemLogBufferForTest();
+    // Yesterday used to reach the provider and always come back empty (both providers only serve
+    // today onwards), and older days were short-circuited to the same false "unavailable".
+    for (const provider of ["metno", "openmeteo"] as const) {
+      for (const contact of [true, false]) {
+        const { service, calls } = serviceFor(provider, { contact });
+        for (const date of [yesterday, "2026-07-09T12:00:00.000Z", "2025-01-01T12:00:00.000Z"]) {
+          expect(await service.summarize({ ...pin, date })).toEqual({ status: "past" });
+        }
+        expect(calls).toEqual([]);
+      }
+    }
+    // No provider call means no false `weather_fetch_failed` warning either.
+    expect(querySystemLogs({ source: "external" })).toEqual([]);
+  });
+
+  it("does not serve a forecast that was cached before the day ended", async () => {
+    const config = resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" });
+    const cache = new InMemoryWeatherCache();
+    await cache.set(
+      weatherCacheKey(pin.latitude, pin.longitude, "2026-08-04", weatherConfigCacheScope(config)),
+      { date: "2026-08-04", weather_code: 95, temp_max_c: 41, temp_min_c: 30 },
+      60_000,
+    );
+    const { service } = serviceFor("openmeteo", { cache });
+    expect(await service.summarize({ ...pin, date: yesterday })).toEqual({ status: "past" });
+  });
+
+  it("flips to `past` at local midnight in the event's timezone, not at UTC midnight", async () => {
+    // Event day is 4 Aug in Warsaw (UTC+2): 21:30Z is 23:30 local, 22:30Z is 00:30 on 5 Aug.
+    const eventDate = "2026-08-04T12:00:00.000Z";
+    const stillTheDay = new WeatherService({
+      config: resolveWeatherEnvConfig({ WEATHER_PROVIDER: "openmeteo" }),
+      cache: new InMemoryWeatherCache(),
+      now: () => new Date("2026-08-04T21:30:00.000Z"),
+      fetchFn: async () =>
+        new Response(
+          JSON.stringify({
+            daily: {
+              time: ["2026-08-04"],
+              weather_code: [61],
+              temperature_2m_max: [19.6],
+              temperature_2m_min: [11.2],
+            },
+          }),
+          { status: 200 },
+        ),
+    });
+    expect(await stillTheDay.summarize({ ...pin, date: eventDate })).toMatchObject({
+      status: "ok",
+      temp_c: 20,
+    });
+
+    const nextDay = serviceFor("openmeteo", { at: new Date("2026-08-04T22:30:00.000Z") });
+    expect(await nextDay.service.summarize({ ...pin, date: eventDate })).toEqual({ status: "past" });
+    expect(nextDay.calls).toEqual([]);
+  });
+
+  const savedForecast = {
+    v: 1,
+    date: "2026-08-04",
+    lat: 52.23,
+    lon: 21.01,
+    provider: "metno",
+    temp_c: 20,
+    temp_min_c: 11,
+    weather_code: 61,
+    captured_at: "2026-08-03T10:00:00.000Z",
+  };
+
+  it("shows the last saved forecast for an ended day, credited to the provider that gave it, without calling any", async () => {
+    // The org has since switched to Open-Meteo, but the saved forecast came from MET Norway.
+    const { service, calls } = serviceFor("openmeteo");
+    expect(await service.summarize({ ...pin, date: yesterday, snapshot: savedForecast })).toEqual({
+      status: "past",
+      temp_c: 20,
+      temp_min_c: 11,
+      weather_code: 61,
+      attribution: "Weather data by MET Norway",
+      attribution_url: "https://www.met.no/en",
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("ignores a saved forecast that no longer fits the event or cannot be read", async () => {
+    const { service } = serviceFor("metno");
+    const ignored: unknown[] = [
+      { ...savedForecast, date: "2026-08-03" }, // the event moved to another day
+      { ...savedForecast, lat: 48.86 }, // the pin moved
+      { ...savedForecast, temp_c: "20" }, // unreadable
+      "garbage",
+      null,
+    ];
+    for (const snapshot of ignored) {
+      expect(await service.summarize({ ...pin, date: yesterday, snapshot })).toEqual({ status: "past" });
+    }
+  });
+
+  it("does not use a saved forecast for a day that is not over yet", async () => {
+    // Today's summary comes from the provider (asked, and failing here), never from the snapshot.
+    const { service, calls } = serviceFor("openmeteo", { at: new Date("2026-08-04T08:00:00.000Z") });
+    expect(await service.summarize({ ...pin, date: yesterday, snapshot: savedForecast })).toMatchObject({
+      status: "unavailable",
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  describe("eventDay", () => {
+    const { service } = serviceFor("openmeteo");
+
+    it("gives the event's calendar day and the whole days from today, in the event timezone", () => {
+      expect(service.eventDay("2026-08-06T12:00:00.000Z", "Europe/Warsaw")).toEqual({
+        ymd: "2026-08-06",
+        timezone: "Europe/Warsaw",
+        offsetDays: 1,
+      });
+      expect(service.eventDay(yesterday, "Europe/Warsaw")?.offsetDays).toBe(-1);
+      expect(service.eventDay(now, "Europe/Warsaw")?.offsetDays).toBe(0);
+    });
+
+    it("falls back to UTC for a blank timezone and returns null for an unreadable date", () => {
+      expect(service.eventDay("2026-08-06T12:00:00.000Z", "  ")).toMatchObject({ timezone: "UTC", offsetDays: 1 });
+      expect(service.eventDay("2026-08-06T12:00:00.000Z", undefined)?.timezone).toBe("UTC");
+      expect(service.eventDay("not-a-date", "UTC")).toBeNull();
+    });
   });
 });
 

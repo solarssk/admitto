@@ -89,6 +89,11 @@ model Event {
   archived_by_timezone         String?
   // Event-day ops (ADR 0010): require_confirm_on_scan, badge_at_entry, etc.
   ops_config                   Json?
+  // Last forecast Admitto saw for the event day while it was still ahead (WeatherSnapshot, see
+  // apps/web/src/weather/weather-snapshot.ts). Weather providers cannot look back, so this is what
+  // the event card keeps showing once the day is over. It carries its own day and pin, so an event
+  // that was moved never shows a stale one. Null until a forecast has been seen.
+  weather_snapshot             Json?
   // Single operational sticky note shown on the overview page to all staff.
   pinned_note                  String?                    @db.Text
   attendees                    Attendee[]

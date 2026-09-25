@@ -2,7 +2,16 @@
  * Public weather summary shapes attached to event list DTOs and ticket SSR (ADR 0040).
  */
 
-export type WeatherSummaryStatus = "ok" | "too_far" | "unavailable";
+/**
+ * - `ok`: forecast for the event day (today or ahead, inside the provider horizon).
+ * - `too_far`: the event day is still beyond the provider horizon.
+ * - `unavailable`: the provider failed or is not configured for a day that should have a forecast.
+ * - `past`: the event day is over. Not an error. MET Norway serves forecasts only and Open-Meteo's
+ *   forecast window starts today, so neither can say what an ended day was like. It carries the
+ *   last forecast saved for the event while its day was ahead (temperatures, code, attribution),
+ *   or nothing but the status when none was ever seen.
+ */
+export type WeatherSummaryStatus = "ok" | "too_far" | "unavailable" | "past";
 
 export interface DayForecast {
   date: string;
@@ -14,7 +23,7 @@ export interface DayForecast {
 /** Serialised onto EventDto / ticket HTML. */
 export interface WeatherSummaryDto {
   status: WeatherSummaryStatus;
-  /** Daytime high (°C) when status is ok. */
+  /** Daytime high (°C) when status is ok, or past with a saved forecast. */
   temp_c?: number;
   temp_min_c?: number;
   weather_code?: number;
