@@ -411,7 +411,8 @@ export class PassCreatorClient implements WalletPassProvider {
    * on-demand request path (apps/web/src/admin/attendees-api-routes.ts).
    *
    * PassCreator's v3 API has no get-by-id, so this searches by `ref.userProvidedId` (required -
-   * passing a ref without one is a caller bug, not a "not found"). The row's `voided` and
+   * passing a ref without one is a caller bug, not a "not found"), then requires the row it finds
+   * to be the referenced pass (`identifier` equals `ref.providerPassId`), else null. The row's `voided` and
    * `expirationDate` are surfaced as observations only: `voided` is true for an explicit void and
    * for an expired pass alike, and `expirationDate` is "Y-m-d H:i" in the timezone of the
    * PassCreator company settings, so it is returned raw and only becomes `expiresAt` when the
@@ -425,6 +426,14 @@ export class PassCreatorClient implements WalletPassProvider {
     }
     const row = await this.searchByUserProvidedId(ref.userProvidedId);
     if (!row) return null;
+    // userProvidedId is only an idempotency key: once a pass has been deleted and issued again
+    // under the same key (a reset), the search finds the NEW pass. That is not the pass this ref
+    // points at, and its counts must not be written onto the old one's row. A static log message
+    // only - never an id, which could link the entry back to one attendee's pass (see logOutcome).
+    if (row.identifier !== ref.providerPassId) {
+      emitSystemLog("wallet", "warn", "passcreator_snapshot_identity_mismatch", {});
+      return null;
+    }
     const expirationRaw =
       typeof row.expirationDate === "string" && row.expirationDate.trim() !== "" ? row.expirationDate : null;
     return {

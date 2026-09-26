@@ -784,6 +784,33 @@ describe("PassCreatorClient.getPassSnapshot", () => {
     expect(result?.registrations?.googleActive).toBe(1);
   });
 
+  it("returns null instead of another pass's data when the userProvidedId now belongs to a different pass (deleted and issued again, so the old ref is stale)", async () => {
+    resetSystemLogBufferForTest();
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, {
+        success: true,
+        data: [
+          {
+            identifier: "pass-reissued",
+            userProvidedId: "admitto:event1:attendee1",
+            noOfActiveRegistrationsAppleWallet: 3,
+            firstDownloadedAt: "2026-09-20 10:00:00",
+          },
+        ],
+      }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    const result = await client.getPassSnapshot({ providerPassId: "pass-original", userProvidedId: "admitto:event1:attendee1" });
+
+    expect(result).toBeNull();
+    // A static warning only - no id that could link the entry back to one attendee's pass.
+    expect(querySystemLogs({ source: "wallet" })).toEqual([
+      expect.objectContaining({ level: "warn", message: "passcreator_snapshot_identity_mismatch" }),
+    ]);
+    resetSystemLogBufferForTest();
+  });
+
   describe("validity", () => {
     it("reports the row's voided flag as-is, true or false", async () => {
       expect((await clientReturning({ voided: true }).getPassSnapshot(REF))?.validity.voided).toBe(true);

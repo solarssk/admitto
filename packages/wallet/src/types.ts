@@ -91,7 +91,11 @@ export interface WalletPassResult {
 /** Provider-neutral reference to one already-created pass. Each adapter picks the lookup its own
  * API supports: PassCreator has to search by `userProvidedId` (query language), a native Google
  * Wallet provider would GET by its resource id, a native Apple provider would use its own pass
- * identity. The core never assumes "lookup = search by userProvidedId". */
+ * identity. The core never assumes "lookup = search by userProvidedId".
+ *
+ * An adapter that finds the pass by a key other than `providerPassId` (PassCreator's
+ * `userProvidedId` is only an idempotency key, reused when a pass is deleted and issued again) must
+ * check that what it found IS the referenced pass, and treat a different pass as "not found". */
 export interface WalletProviderPassRef {
   providerPassId: string;
   userProvidedId?: string;

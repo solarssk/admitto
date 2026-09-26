@@ -60,7 +60,13 @@ function chunk<T>(items: T[], size: number): T[][] {
  * decision below fixes this uniformly: both "no match" and "provider error" already resolve
  * `snapshot` to null, so both take the same preserve-everything-but-attempted_at path without
  * needing a third branch. Still rejects after a provider failure so the caller's Promise.allSettled
- * counts it as `failed`, including when a provider rejects with a non-Error value. */
+ * counts it as `failed`, including when a provider rejects with a non-Error value.
+ *
+ * The write is conditioned on the exact pass identity the snapshot was read for (attendee_id +
+ * provider_pass_id + user_provided_id), like refreshOneWalletPassStatus's: a pass deleted and issued
+ * again for the same attendee while the provider call was in flight would otherwise get the OLD
+ * pass's counts written onto its new row. updateMany, so a row that no longer matches is skipped
+ * quietly (its own next tick picks the new pass up) instead of throwing. */
 async function syncOne(db: PrismaClient, provider: WalletPassProvider, row: CandidateRow): Promise<void> {
   let snapshot: Awaited<ReturnType<WalletPassProvider["getPassSnapshot"]>> | null = null;
   let failure: unknown;
@@ -76,8 +82,12 @@ async function syncOne(db: PrismaClient, provider: WalletPassProvider, row: Cand
       failure = error_;
     }
   }
-  await db.walletPass.update({
-    where: { attendee_id: row.attendee_id },
+  await db.walletPass.updateMany({
+    where: {
+      attendee_id: row.attendee_id,
+      provider_pass_id: row.provider_pass_id,
+      user_provided_id: row.user_provided_id,
+    },
     data: snapshot
       ? {
           ...snapshotToWalletPassFields(snapshot),

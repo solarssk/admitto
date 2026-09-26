@@ -88,6 +88,7 @@ describe("backfillEvent", () => {
           attendee_id: ATT_CONFIRMED,
           provider: "passcreator",
           user_provided_id: `admitto:${EVENT_ID}:${ATT_CONFIRMED}`,
+          provider_pass_id: `pc-${ATT_CONFIRMED}`,
           status: "active",
           apple_active_registrations: 1,
         },
@@ -95,6 +96,7 @@ describe("backfillEvent", () => {
           attendee_id: ATT_NOT_CONFIRMED,
           provider: "passcreator",
           user_provided_id: `admitto:${EVENT_ID}:${ATT_NOT_CONFIRMED}`,
+          provider_pass_id: `pc-${ATT_NOT_CONFIRMED}`,
           status: "active",
           apple_active_registrations: 0,
           google_active_registrations: 0,
@@ -108,9 +110,10 @@ describe("backfillEvent", () => {
     await backfillEvent(prisma, makeEvent(), false);
 
     expect(subscribeSpy).toHaveBeenCalled();
-    expect(statusSpy).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ userProvidedId: `admitto:${EVENT_ID}:${ATT_CONFIRMED}` }),
-    );
+    expect(statusSpy).toHaveBeenCalledExactlyOnceWith({
+      providerPassId: `pc-${ATT_CONFIRMED}`,
+      userProvidedId: `admitto:${EVENT_ID}:${ATT_CONFIRMED}`,
+    });
     const confirmedRow = await prisma.walletPass.findUnique({ where: { attendee_id: ATT_CONFIRMED } });
     expect(confirmedRow?.first_confirmed_at).toEqual(new Date("2026-08-01T10:00:00.000Z"));
     const notConfirmedRow = await prisma.walletPass.findUnique({ where: { attendee_id: ATT_NOT_CONFIRMED } });
@@ -125,6 +128,7 @@ describe("backfillEvent", () => {
         attendee_id: ATT_ALREADY_SET,
         provider: "passcreator",
         user_provided_id: `admitto:${EVENT_ID}:${ATT_ALREADY_SET}`,
+        provider_pass_id: `pc-${ATT_ALREADY_SET}`,
         status: "active",
         apple_active_registrations: 1,
         first_confirmed_at: already,
@@ -141,12 +145,34 @@ describe("backfillEvent", () => {
     expect(row?.first_confirmed_at).toEqual(already);
   });
 
+  it("skips a pass with no provider_pass_id - the snapshot can't confirm it found that pass, so it never queries PassCreator for it", async () => {
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: ATT_CONFIRMED,
+        provider: "passcreator",
+        user_provided_id: `admitto:${EVENT_ID}:${ATT_CONFIRMED}`,
+        status: "active",
+        apple_active_registrations: 1,
+      },
+    });
+    vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
+    vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
+    const statusSpy = vi.spyOn(PassCreatorClient.prototype, "getPassSnapshot");
+
+    await backfillEvent(prisma, makeEvent(), false);
+
+    expect(statusSpy).not.toHaveBeenCalled();
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATT_CONFIRMED } });
+    expect(row?.first_confirmed_at).toBeNull();
+  });
+
   it("does not write anything in dry-run mode, but still reports what it would fill", async () => {
     await prisma.walletPass.create({
       data: {
         attendee_id: ATT_CONFIRMED,
         provider: "passcreator",
         user_provided_id: `admitto:${EVENT_ID}:${ATT_CONFIRMED}`,
+        provider_pass_id: `pc-${ATT_CONFIRMED}`,
         status: "active",
         apple_active_registrations: 1,
       },
@@ -167,6 +193,7 @@ describe("backfillEvent", () => {
         attendee_id: ATT_CONFIRMED,
         provider: "passcreator",
         user_provided_id: `admitto:${EVENT_ID}:${ATT_CONFIRMED}`,
+        provider_pass_id: `pc-${ATT_CONFIRMED}`,
         status: "active",
         apple_active_registrations: 1,
       },
@@ -187,6 +214,7 @@ describe("backfillEvent", () => {
           attendee_id: ATT_CONFIRMED,
           provider: "passcreator",
           user_provided_id: `admitto:${EVENT_ID}:${ATT_CONFIRMED}`,
+          provider_pass_id: `pc-${ATT_CONFIRMED}`,
           status: "active",
           apple_active_registrations: 1,
         },
@@ -194,6 +222,7 @@ describe("backfillEvent", () => {
           attendee_id: ATT_ALREADY_SET,
           provider: "passcreator",
           user_provided_id: `admitto:${EVENT_ID}:${ATT_ALREADY_SET}`,
+          provider_pass_id: `pc-${ATT_ALREADY_SET}`,
           status: "active",
           google_active_registrations: 1,
         },
@@ -219,6 +248,7 @@ describe("backfillEvent", () => {
         attendee_id: ATT_CONFIRMED,
         provider: "passcreator",
         user_provided_id: `admitto:${EVENT_ID}:${ATT_CONFIRMED}`,
+        provider_pass_id: `pc-${ATT_CONFIRMED}`,
         status: "active",
         apple_active_registrations: 1,
       },
@@ -240,6 +270,7 @@ describe("backfillEvent", () => {
         attendee_id: ATT_CONFIRMED,
         provider: "passcreator",
         user_provided_id: `admitto:${EVENT_ID}:${ATT_CONFIRMED}`,
+        provider_pass_id: `pc-${ATT_CONFIRMED}`,
         status: "active",
         apple_active_registrations: 1,
       },

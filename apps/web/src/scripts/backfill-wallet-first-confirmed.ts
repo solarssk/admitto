@@ -84,6 +84,9 @@ export async function backfillEvent(
     where: {
       attendee: { event_id: event.id },
       first_confirmed_at: null,
+      // Both ids: getPassSnapshot has to confirm the pass it finds by userProvidedId IS this row's
+      // pass (a reset re-issues under the same key), and every pass Admitto ever created has both.
+      provider_pass_id: { not: null },
       user_provided_id: { not: null },
       OR: [{ apple_active_registrations: { gt: 0 } }, { google_active_registrations: { gt: 0 } }],
     },
@@ -109,13 +112,11 @@ export async function backfillEvent(
   let skipped = 0;
   for (const pass of candidates) {
     try {
-      // user_provided_id is filtered non-null in the query above, but Prisma's own generated type
-      // for a `not: null` filter doesn't narrow the selected column - non-null asserted here since
-      // the query guarantees it, not because the type system already knows.
-      // PassCreator's adapter looks the pass up by userProvidedId alone; providerPassId is only
-      // part of the ref for providers that read by their own resource id.
+      // Both ids are filtered non-null in the query above, but Prisma's own generated type for a
+      // `not: null` filter doesn't narrow the selected column - non-null asserted here since the
+      // query guarantees it, not because the type system already knows.
       const snapshot = await client.getPassSnapshot({
-        providerPassId: pass.provider_pass_id ?? "",
+        providerPassId: pass.provider_pass_id as string,
         userProvidedId: pass.user_provided_id as string,
       });
       const firstConfirmedAt = snapshot?.firstDownloadedAt ? parseFirstDownloadedAtUtc(snapshot.firstDownloadedAt) : null;
