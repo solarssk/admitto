@@ -1025,7 +1025,7 @@ export function createApp(options: CreateAppOptions = {}) {
       try {
         const row = await db.walletPass.update({
           where: { attendee_id: attendee.id },
-          data: { status: "active", voided_at: null, last_error_code: null },
+          data: { status: "active", voided_at: null, provider_commanded_at: new Date(), last_error_code: null },
         });
         return { apple_url: row.apple_url, android_url: row.android_url };
       } catch (err) {
@@ -1605,7 +1605,8 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminWalletActionBulkRateLimit,
-    guardArchivedEvent((c) => handleTriggerEventWideWalletRefreshStatus(c, db)),
+    // No guardArchivedEvent, same reasoning as bulk-wallet-refresh-status above.
+    (c) => handleTriggerEventWideWalletRefreshStatus(c, db),
   );
   app.get(
     "/api/admin/events/:eventId/wallet-refresh-status/jobs/:jobId",
@@ -1756,7 +1757,10 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     bulkAttendeeIdsBodyLimit,
     adminWalletActionBulkRateLimit,
-    guardArchivedEvent((c) => handleBulkRefreshAttendeeWalletStatus(c, db)),
+    // No guardArchivedEvent: reading what the provider says about existing passes changes nothing
+    // and is exactly what an operator does after an event has ended (the handler still checks
+    // event manage access itself).
+    (c) => handleBulkRefreshAttendeeWalletStatus(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-ticket-type",
@@ -1833,7 +1837,8 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminWalletActionRateLimit,
-    guardArchivedEvent((c) => handleRefreshAttendeeWalletStatus(c, db)),
+    // No guardArchivedEvent, same reasoning as bulk-wallet-refresh-status above.
+    (c) => handleRefreshAttendeeWalletStatus(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/wallet/delete",

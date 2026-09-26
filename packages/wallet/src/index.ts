@@ -46,6 +46,16 @@ export {
   type WalletRegistrationSyncResult,
 } from "./registration-sync.js";
 export {
+  reconcileWalletPassLifecycle,
+  type ReconcileWalletPassLifecycleInput,
+  type WalletPassLifecycleState,
+} from "./reconcile-lifecycle.js";
+export {
+  applyProviderSnapshotToWalletPass,
+  type ApplyProviderSnapshotOptions,
+  type WalletPassSnapshotTarget,
+} from "./apply-provider-snapshot.js";
+export {
   refreshOneWalletPassStatus,
   WalletStatusCheckInconclusiveError,
   type WalletStatusRefreshOutcome,
@@ -53,6 +63,7 @@ export {
 export {
   applyFirstConfirmedAt,
   applyWebhookUpdate,
+  findWebhookPassTarget,
   parseAdmittoUserProvidedId,
   parseFirstDownloadedAtUtc,
   parseWebhookData,

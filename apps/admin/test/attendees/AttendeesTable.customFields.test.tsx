@@ -103,6 +103,7 @@ function baseProps(overrides: Record<string, any> = {}) {
     eventTimezone: "UTC",
     event: { archived_at: null as string | null },
     walletPlatforms: { apple: true, google: true, samsung: false, any: true },
+    walletConfigured: true,
     ...overrides,
   };
 }

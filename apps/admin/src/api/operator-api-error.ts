@@ -221,6 +221,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   validation_error: "Check the form and try again.",
   wallet_not_configured: "Wallet isn't configured for this event.",
   wallet_pass_changed: "This wallet pass changed while updating. Reload and try again.",
+  wallet_pass_inactive: "This wallet pass is no longer active, so there is nothing to refresh.",
   wallet_pass_not_refreshable:
     "This wallet pass was never registered with the provider, so its status can't be refreshed.",
   wallet_provider_duplicate: "The wallet provider already has a matching pass. Refresh and try again.",

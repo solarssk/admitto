@@ -19,10 +19,10 @@ import type { PrismaClient } from "@admitto/db";
  * pass_voided's own payload shape is CONFIRMED, and it's not what was assumed here before
  * 2026-08-19 (developer.passcreator.com/en/webhooks/pass-hooks): there is no top-level `voided`
  * field at all, and no field anywhere in any event's payload names which event fired - PassCreator
- * relies entirely on which subscribed target URL received the delivery for that. `voided` on
- * `PassCreatorWebhookData` below is therefore never set from the wire; it's set by the caller
- * (apps/web/src/wallet-webhook.ts's `isVoidedRoute`) once it already knows, from the URL alone,
- * that this delivery is a pass_voided one. Still genuinely unconfirmed: whether
+ * relies entirely on which subscribed target URL received the delivery for that. The caller
+ * (apps/web/src/wallet-webhook.ts's `isVoidedRoute`) knows from the URL alone that a delivery is a
+ * pass_voided one, and treats it as a signal to re-read the pass, never as the new state itself.
+ * Still genuinely unconfirmed: whether
  * first_pushnotification_registered's payload includes `firstDownloadedAt` - only
  * pushnotification_unregistered has been observed live so far.
  */
@@ -47,7 +47,6 @@ export interface PassCreatorWebhookEnvelope {
 export interface PassCreatorWebhookData {
   identifier?: string;
   userProvidedId?: string;
-  voided?: boolean;
   operatingSystem?: string;
   noOfActivePasses?: number;
   noOfInactivePasses?: number;
@@ -104,7 +103,6 @@ export function parseWebhookData(signedData: string): PassCreatorWebhookData | n
   const data: PassCreatorWebhookData = {};
   if (typeof r["identifier"] === "string") data.identifier = r["identifier"];
   if (typeof r["userProvidedId"] === "string") data.userProvidedId = r["userProvidedId"];
-  if (typeof r["voided"] === "boolean") data.voided = r["voided"];
   if (typeof r["operatingSystem"] === "string") data.operatingSystem = r["operatingSystem"];
   if (typeof r["noOfActivePasses"] === "number") data.noOfActivePasses = r["noOfActivePasses"];
   if (typeof r["noOfInactivePasses"] === "number") data.noOfInactivePasses = r["noOfInactivePasses"];
@@ -163,6 +161,27 @@ function webhookMatchFilter(data: PassCreatorWebhookData): Prisma.WalletPassWher
   return null;
 }
 
+/**
+ * The pass of `eventId` that a delivery names, as the reference a re-read of it needs - null when
+ * nothing matches or the row has no provider identity to read by yet. Scoped to the event because
+ * the payload's own `identifier` alone (no userProvidedId) says nothing about which Admitto event
+ * it belongs to, and the caller is about to spend that event's provider credentials on it.
+ */
+export async function findWebhookPassTarget(
+  db: PrismaClient,
+  eventId: string,
+  data: PassCreatorWebhookData,
+): Promise<{ attendeeId: string; providerPassId: string; userProvidedId: string } | null> {
+  const where = webhookMatchFilter(data);
+  if (!where) return null;
+  const row = await db.walletPass.findFirst({
+    where: { ...where, attendee: { event_id: eventId } },
+    select: { attendee_id: true, provider_pass_id: true, user_provided_id: true },
+  });
+  if (!row?.provider_pass_id || !row.user_provided_id) return null;
+  return { attendeeId: row.attendee_id, providerPassId: row.provider_pass_id, userProvidedId: row.user_provided_id };
+}
+
 // operatingSystem names which platform's counts this delivery carries. Confirmed live 2026-08-13
 // on two separate deliveries: "iOS" (Apple) and "AndroidGooglePay" (Google) - PassCreator's own
 // enum label, not the device's literal OS name (hence not just "Android"). "iPadOS"/"macOS" are
@@ -206,13 +225,6 @@ export async function applyWebhookUpdate(
   applyRegistrationCounts(updateData, data);
   if (data.firstDownloadedAt !== undefined) {
     updateData.first_downloaded_at = data.firstDownloadedAt;
-  }
-  if (data.voided === true) {
-    updateData.status = "voided";
-    updateData.voided_at = new Date();
-  } else if (data.voided === false) {
-    updateData.status = "active";
-    updateData.voided_at = null;
   }
 
   try {

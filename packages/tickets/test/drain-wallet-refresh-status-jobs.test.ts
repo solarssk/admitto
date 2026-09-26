@@ -6,11 +6,12 @@ vi.mock("../src/claim-admin-job.js", () => ({
 }));
 vi.mock("@admitto/wallet", () => ({
   resolveWalletProvider: vi.fn(),
+  resolveConfiguredWalletProvider: vi.fn(),
   refreshOneWalletPassStatus: vi.fn(),
 }));
 
 import { claimNextAdminJob } from "../src/claim-admin-job.js";
-import { resolveWalletProvider, refreshOneWalletPassStatus } from "@admitto/wallet";
+import { resolveConfiguredWalletProvider, resolveWalletProvider, refreshOneWalletPassStatus } from "@admitto/wallet";
 import {
   drainWalletRefreshStatusJobs,
   parseWalletRefreshStatusJobStaleRunningMs,
@@ -60,6 +61,7 @@ describe("drainWalletRefreshStatusJobs", () => {
     vi.mocked(claimNextAdminJob).mockReset();
     vi.mocked(refreshOneWalletPassStatus).mockReset().mockResolvedValue("refreshed" as never);
     vi.mocked(resolveWalletProvider).mockReset().mockReturnValue(fakeProvider as never);
+    vi.mocked(resolveConfiguredWalletProvider).mockReset().mockReturnValue(fakeProvider as never);
     resetSystemLogBufferForTest();
 
     db = {
@@ -93,8 +95,10 @@ describe("drainWalletRefreshStatusJobs", () => {
     expect(result).toEqual({ claimed: 1, succeeded: 1, failed: 0, reclaimed: 0 });
     expect(db.walletPass.findMany).toHaveBeenCalledWith({
       where: {
-        status: { in: ["active", "voided"] },
+        // Only an active pass is read: voided/expired are Admitto's own recorded state.
+        status: "active",
         provider_pass_id: { not: null },
+        provider_removed_at: null,
         user_provided_id: { not: null },
         attendee: { event_id: "evt-1" },
       },
@@ -214,7 +218,7 @@ describe("drainWalletRefreshStatusJobs", () => {
 
   it("fails the job with a not-configured message when the event has no resolvable wallet provider", async () => {
     vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
-    vi.mocked(resolveWalletProvider).mockReturnValueOnce(null as never);
+    vi.mocked(resolveConfiguredWalletProvider).mockReturnValueOnce(null as never);
 
     await drainWalletRefreshStatusJobs(db as never);
 
@@ -222,6 +226,37 @@ describe("drainWalletRefreshStatusJobs", () => {
       (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "failed",
     );
     expect(finalCall![0].data.error).toBe(WALLET_REFRESH_STATUS_JOB_NOT_CONFIGURED_ERROR);
+  });
+
+  it("resolves the provider from the event's credentials alone, so a status read still works with the wallet switched off (or the event archived)", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
+    db.event.findUnique.mockResolvedValue({
+      wallet_enabled: false,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key_enc: "enc",
+      wallet_field_mapping: null,
+    });
+
+    const result = await drainWalletRefreshStatusJobs(db as never);
+
+    expect(result).toEqual({ claimed: 1, succeeded: 1, failed: 0, reclaimed: 0 });
+    expect(resolveConfiguredWalletProvider).toHaveBeenCalledTimes(1);
+    expect(resolveWalletProvider).not.toHaveBeenCalled();
+    expect(refreshOneWalletPassStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("counts a pass that turned inactive since the job listed it as skipped, not refreshed or errored", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
+    vi.mocked(refreshOneWalletPassStatus)
+      .mockResolvedValueOnce("refreshed" as never)
+      .mockResolvedValueOnce("inactive" as never);
+
+    await drainWalletRefreshStatusJobs(db as never);
+
+    const finalCall = db.adminJob.update.mock.calls.find(
+      (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "succeeded",
+    );
+    expect(finalCall![0].data.result_json).toMatchObject({ refreshed: 1, skipped: 1, errored: 0 });
   });
 
   it("maps an unexpected exception (e.g. a database error) to the generic error message and logs the real one server-side", async () => {
