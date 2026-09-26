@@ -74,13 +74,20 @@ works; Admitto never signs or hosts pass files itself.
     reach any one attendee). Attendee Detail's wallet **Refresh status** action pulls that one
     attendee's current status immediately instead of waiting for the periodic poll, useful when
     PassCreator's own dashboard already shows a pass as added but Admitto hasn't caught up yet.
+    Only an active pass is checked: a voided pass keeps the last status it had, and the periodic
+    poll skips archived events (a manual **Refresh status** still works there).
+  - **A pass voided at PassCreator:** if PassCreator voids or expires a pass on its own, Admitto
+    notices on the next check (or when PassCreator's void notification arrives) and marks the pass
+    **Voided** here too. Until a PassCreator time zone setting exists, an expired pass shows as
+    voided rather than expired. Right after you void or restore a pass in Admitto, PassCreator's
+    answer is ignored for about ten minutes, so an out-of-date reply can't undo your action.
   - **Platform visibility:** both surfaces only show the platform(s) Event Settings → Wallet
     actually offers for that event. Turning the whole feature off hides the Wallet column and the
     Attendee Detail Wallet card entirely; turning off just Apple or just Google Wallet drops that
     platform's icon/row everywhere, without affecting the other one.
 - **Wallet lifecycle actions.**
-  - **Actions available:** void, push updates, refresh status, and permanently delete a wallet
-    pass at the provider, plus restore. Revoking an attendee's ticket also voids their wallet pass
+  - **Actions available:** void, push updates, refresh status (active passes only), and
+    permanently delete a wallet pass at the provider, plus restore. Revoking an attendee's ticket also voids their wallet pass
     automatically; restoring the ticket restores the pass the same way.
   - **Single vs bulk scope:** void, push updates, refresh status, and delete are available both
     from Attendee Detail (single attendee) and the Attendees list (bulk, for a selection). Restore

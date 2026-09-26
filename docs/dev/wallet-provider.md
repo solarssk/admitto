@@ -53,6 +53,30 @@ and a naive expiration timestamp is never given a guessed timezone by the adapte
   PassCreator: Google Wallet's Event Ticket API has no delete method for objects and an issuer
   cannot remove a pass from a user's Apple Wallet, so `remoteDelete` is a capability, not a given.
   The static table is `@admitto/wallet/capabilities` (safe to import from `apps/admin`).
+- **An observation only ever moves an `active` pass forward.** `reconcileWalletPassLifecycle`
+  (`packages/wallet/src/reconcile-lifecycle.ts`) is the one place that decides. From `active` (and
+  not removed at the provider) a read that says `voided: true` becomes `voided`, or `expired` when
+  the provider's own expiration is known and already past. Nothing an observation says moves a
+  `voided`/`expired` pass anywhere, and a `voided: false` or missing flag changes nothing: going
+  back to `active` is the explicit Restore action. A naive expiration ("Y-m-d H:i", PassCreator's
+  wire format) is only read in an explicitly configured provider time zone, never guessed, so
+  without one `voided: true` always means `voided`.
+- **A read right after Admitto's own command is ignored.** Void and Restore stamp
+  `WalletPass.provider_commanded_at`; a read taken within the provider's
+  `consistencyPolicy.observationStalenessWindowMs` of it (PassCreator: 10 minutes, its search index
+  lags) may still show the state from before the command, so it cannot change the pass. This guards
+  against stale reads, not against webhook ordering.
+- **One write, conditioned on what was read.** `applyProviderSnapshotToWalletPass` writes the
+  registration counts and any transition together, `WHERE` the identity and lifecycle state are
+  still what they were before the provider call, so a Void, Restore or delete-and-reissue in
+  between makes it a quiet no-op. A pass that turns voided/expired keeps the counts of that read;
+  nothing polls it afterwards. The periodic sync and Refresh status only read `active` passes
+  (sync also skips archived events); Refresh status is read-only, so it ignores the wallet master
+  switch and the archived guard.
+- **A webhook is a signal, not a state.** `pass_voided` re-reads the pass through the same
+  reconciliation. 200 means dealt with (including "not ours" and "already inactive"); 503 means the
+  re-read could not be completed (provider error, or a no-match that survived the retry), so
+  PassCreator redelivers. Registration webhooks only ever update counts.
 - **"Reset" is a domain concept, not HTTP DELETE.** With `remoteDelete` it removes the remote pass.
   Without it, a reset must retire the old remote object (void/expire) and issue the next pass under
   a *new* provider identity (a generation counter mixed into it), because today's stable

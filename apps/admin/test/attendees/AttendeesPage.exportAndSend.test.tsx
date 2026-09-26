@@ -450,6 +450,29 @@ describe("AttendeesPage export and header Send tickets", () => {
     expect(getTooltipText(pushUpdatesItem)).toBe(ARCHIVED_ACTION_TOOLTIP);
   });
 
+  it("keeps the header 'Refresh status' item enabled for an archived, wallet-configured event, unlike 'Push updates': it only reads", async () => {
+    useOutletContextMock.mockReturnValue({
+      event: {
+        ...defaultOutletContext.event,
+        archived_at: "2026-01-01T00:00:00.000Z",
+        wallet_enabled: true,
+        wallet_apple_enabled: true,
+        wallet_google_enabled: true,
+        wallet_configured: true,
+      },
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "More actions" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+
+    const refreshItem = screen.getByRole("menuitem", { name: /^Refresh status/ }) as HTMLButtonElement;
+    expect(refreshItem.disabled).toBe(false);
+    expect(getTooltipText(refreshItem)).toBeNull();
+    expect((screen.getByRole("menuitem", { name: /^Push updates/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("hides the header 'Refresh status' wallet item when the event has no wallet platform configured", async () => {
     renderPage();
     await waitFor(() => {

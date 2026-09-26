@@ -422,6 +422,30 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(screen.queryByRole("dialog")).toBeNull();
     });
 
+    it.each(["voided", "expired"] as const)(
+      "is not offered for a %s pass: that state is Admitto's own record and is never read again",
+      async (status) => {
+        mockLoad(baseDetail({ wallet_pass: walletPass({ status }) }));
+        renderPage();
+        await screen.findByRole("heading", { name: "Anna" });
+
+        openMoreActionsMenu();
+        expect(screen.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
+      },
+    );
+
+    it("stays available on an archived event, where the other wallet actions are disabled: it only reads", async () => {
+      mockArchivedAt = "2026-01-01T00:00:00.000Z";
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      const refresh = screen.getByRole("menuitem", { name: /Refresh status/ }) as HTMLButtonElement;
+      expect(refresh.disabled).toBe(false);
+      expect((screen.getByRole("menuitem", { name: /Push updates/ }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
     it("toasts an error (not an inline dialog message, since this action has no dialog) when refreshWalletPassStatus fails", async () => {
       mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
       const { ApiError } = await import("../../src/api/client.js");

@@ -549,17 +549,24 @@ function WalletActionMenuItems({
           </button>
         )}
       </ArchivedGuard>
-      <ArchivedGuard event={event} reasonId="refresh-wallet-status-reason-menu" disabled={walletBusy}>
-        {(guard) => (
-          <button type="button" role="menuitem" className="more-actions-menu__item" {...guard} onClick={onRefreshStatus}>
-            <i className="ti ti-cloud-download" aria-hidden="true" />
-            <span className="more-actions-menu__item-text">
-              <span>Refresh status</span>
-              <span className="more-actions-menu__item-hint">Pull the latest device-registration status from the provider</span>
-            </span>
-          </button>
-        )}
-      </ArchivedGuard>
+      {/* Only for an active pass: a voided or expired one is Admitto's own recorded state and is
+        * never read again. Deliberately not ArchivedGuard'd - it changes nothing at the provider,
+        * and checking what the provider says is what an operator does after an event has ended. */}
+      {walletPass.status === "active" && (
+        <button
+          type="button"
+          role="menuitem"
+          className="more-actions-menu__item"
+          disabled={walletBusy}
+          onClick={onRefreshStatus}
+        >
+          <i className="ti ti-cloud-download" aria-hidden="true" />
+          <span className="more-actions-menu__item-text">
+            <span>Refresh status</span>
+            <span className="more-actions-menu__item-hint">Pull the latest status from the provider</span>
+          </span>
+        </button>
+      )}
       <ArchivedGuard event={event} reasonId="delete-wallet-pass-reason-menu" disabled={walletBusy}>
         {(guard) => (
           <button

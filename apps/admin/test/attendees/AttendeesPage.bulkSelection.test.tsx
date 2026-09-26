@@ -8,6 +8,8 @@ import { getTooltipText, mockMatchMedia } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
 
+// Read lazily by the mocked useOutletContext below, so a test can archive the event.
+let mockArchivedAt: string | null = null;
 const fetchEventAttendees = vi.fn();
 const fetchEventMailSettings = vi.fn();
 const sendEventBulk = vi.fn();
@@ -148,7 +150,7 @@ vi.mock("react-router", async (importOriginal) => {
         date: "2026-07-01",
         location: null,
         attendee_count: 3,
-        archived_at: null,
+        archived_at: mockArchivedAt,
         wallet_enabled: true,
         wallet_apple_enabled: true,
         wallet_google_enabled: true,
@@ -201,6 +203,7 @@ function clickMenuItemAndArmDialog(menuItemName: RegExp, dialogName?: string) {
 }
 
 beforeEach(() => {
+  mockArchivedAt = null;
   mockMatchMedia(true);
   fetchEventMailSettings.mockResolvedValue(mailSettings("smtp"));
   fetchTicketTypes.mockResolvedValue([]);
@@ -1121,6 +1124,23 @@ describe("AttendeesPage bulk wallet actions (#879)", () => {
     const refreshItem = bulkBar().getByRole("menuitem", { name: /^Refresh status/ }) as HTMLButtonElement;
     expect(refreshItem.disabled).toBe(true);
     expect(getTooltipText(refreshItem)).toBe("None of the selected attendees have added a wallet pass.");
+  });
+
+  it("keeps the bulk 'Refresh status' item enabled on an archived event while Void, Push updates and Delete are disabled: it only reads", async () => {
+    mockArchivedAt = "2026-01-01T00:00:00.000Z";
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+
+    const refreshItem = bulkBar().getByRole("menuitem", { name: /^Refresh status/ }) as HTMLButtonElement;
+    expect(refreshItem.disabled).toBe(false);
+    for (const name of [/^Void wallet pass/, /^Push updates/, /^Delete wallet pass/]) {
+      expect((bulkBar().getByRole("menuitem", { name }) as HTMLButtonElement).disabled).toBe(true);
+    }
   });
 
   it("Cancel closes the bulk-wallet-void dialog without calling bulkVoidWalletPass", async () => {

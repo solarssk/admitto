@@ -844,9 +844,8 @@ function HeaderMoreMenu({
               <MoreActionsMenuItem
                 icon="cloud-download"
                 label={eventWideRefreshStatusBusy ? "Refreshing status…" : "Refresh status"}
-                hint="Pull the latest device status for every wallet pass"
-                disabled={archived || eventWideRefreshStatusBusy}
-                tooltip={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
+                hint="Pull the latest status for every active wallet pass"
+                disabled={eventWideRefreshStatusBusy}
                 onClick={() => {
                   setOpen(false);
                   onTriggerEventWideRefreshStatus();

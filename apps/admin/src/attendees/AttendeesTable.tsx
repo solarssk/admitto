@@ -760,9 +760,10 @@ function BulkMoreActionsMenu({
               <MoreActionsMenuItem
                 icon="cloud-download"
                 label={bulkRefreshWalletStatusBusy ? "Refreshing status…" : "Refresh status"}
-                hint={`Pull the latest device-registration status for ${attendeeCount(walletPassCount)}`}
-                disabled={archived || bulkRefreshWalletStatusBusy || !canBulkWallet}
-                tooltip={bulkWalletTooltip(archived, canBulkWallet)}
+                hint={`Pull the latest status for ${attendeeCount(walletPassCount)}`}
+                disabled={bulkRefreshWalletStatusBusy || !canBulkWallet}
+                // Read-only, so still available on an archived event (see the server route).
+                tooltip={bulkWalletTooltip(false, canBulkWallet)}
                 onClick={() => {
                   setOpen(false);
                   onBulkRefreshWalletStatus();
