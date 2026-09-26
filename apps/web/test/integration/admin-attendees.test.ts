@@ -30,6 +30,7 @@ import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { sessionCookieFor } from "../helpers/session-cookie.js";
 import { seedOrgAndEvent, createAdminAndOp } from "../helpers/seed-org-and-event.js";
+import { walletSnapshot } from "../helpers/wallet-snapshot.js";
 import { enrollConfirmedTotp } from "../helpers/enroll-confirmed-totp.js";
 
 const adminDistRoot = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/admin-dist");
@@ -1279,7 +1280,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
   let restoreSpy: ReturnType<typeof vi.spyOn>;
   let updateSpy: ReturnType<typeof vi.spyOn>;
   let deleteSpy: ReturnType<typeof vi.spyOn>;
-  let getRegistrationStatusSpy: ReturnType<typeof vi.spyOn>;
+  let getPassSnapshotSpy: ReturnType<typeof vi.spyOn>;
 
   beforeAll(async () => {
     await prisma.event.create({
@@ -1325,8 +1326,8 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       appleUrl: "https://pc.test/apple/default",
       androidUrl: "https://pc.test/android/default",
     });
-    getRegistrationStatusSpy = vi
-      .spyOn(PassCreatorClient.prototype, "getRegistrationStatus")
+    getPassSnapshotSpy = vi
+      .spyOn(PassCreatorClient.prototype, "getPassSnapshot")
       .mockClear()
       .mockResolvedValue(null);
   });
@@ -1776,13 +1777,9 @@ describe("attendee wallet actions — void/restore/reissue", () => {
           withPass: true,
           userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
         });
-        getRegistrationStatusSpy.mockResolvedValueOnce({
-          appleActiveRegistrations: 1,
-          appleInactiveRegistrations: 0,
-          googleActiveRegistrations: 0,
-          googleInactiveRegistrations: 0,
-          firstDownloadedAt: "2026-08-25 09:00",
-        });
+        getPassSnapshotSpy.mockResolvedValueOnce(
+          walletSnapshot({ appleActive: 1 }, { firstDownloadedAt: "2026-08-25 09:00" }),
+        );
 
         const res = await app.request(
           `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
@@ -1790,7 +1787,9 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         );
 
         expect(res.status).toBe(200);
-        expect(getRegistrationStatusSpy).toHaveBeenCalledWith(`admitto:${WALLET_ACTION_EVENT}:${attendeeId}`);
+        expect(getPassSnapshotSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}` }),
+        );
         const body = (await res.json()) as { apple_active_registrations: number | null };
         expect(body.apple_active_registrations).toBe(1);
         const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
@@ -1817,13 +1816,9 @@ describe("attendee wallet actions — void/restore/reissue", () => {
           withPass: true,
           userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
         });
-        getRegistrationStatusSpy.mockResolvedValueOnce(null).mockResolvedValueOnce({
-          appleActiveRegistrations: 1,
-          appleInactiveRegistrations: 0,
-          googleActiveRegistrations: 0,
-          googleInactiveRegistrations: 0,
-          firstDownloadedAt: "2026-08-25 09:00",
-        });
+        getPassSnapshotSpy
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(walletSnapshot({ appleActive: 1 }, { firstDownloadedAt: "2026-08-25 09:00" }));
 
         const res = await app.request(
           `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
@@ -1831,7 +1826,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         );
 
         expect(res.status).toBe(200);
-        expect(getRegistrationStatusSpy).toHaveBeenCalledTimes(2);
+        expect(getPassSnapshotSpy).toHaveBeenCalledTimes(2);
         const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
         expect(row?.apple_active_registrations).toBe(1);
       } finally {
@@ -1851,7 +1846,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
           where: { attendee_id: attendeeId },
           data: { apple_active_registrations: 3 },
         });
-        getRegistrationStatusSpy.mockResolvedValue(null);
+        getPassSnapshotSpy.mockResolvedValue(null);
 
         const res = await app.request(
           `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
@@ -1860,7 +1855,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
 
         expect(res.status).toBe(502);
         expect(await res.json()).toEqual({ error: "wallet_status_check_inconclusive" });
-        expect(getRegistrationStatusSpy).toHaveBeenCalledTimes(2);
+        expect(getPassSnapshotSpy).toHaveBeenCalledTimes(2);
         // The transient miss must not silently wipe a previously-known, real registration count.
         const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
         expect(row?.apple_active_registrations).toBe(3);
@@ -1877,7 +1872,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
           withPass: true,
           userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
         });
-        getRegistrationStatusSpy.mockImplementationOnce(async () => {
+        getPassSnapshotSpy.mockImplementationOnce(async () => {
           // Simulates a concurrent delete+re-add landing between loadWalletActionContext's read
           // and this handler's own write - the row now belongs to a different provider pass.
           await prisma.walletPass.update({
@@ -1923,7 +1918,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
 
         expect(res.status).toBe(409);
         expect(await res.json()).toEqual({ error: "wallet_pass_not_refreshable" });
-        expect(getRegistrationStatusSpy).not.toHaveBeenCalled();
+        expect(getPassSnapshotSpy).not.toHaveBeenCalled();
       } finally {
         await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
         await prisma.attendee.delete({ where: { id: attendeeId } });
@@ -1941,7 +1936,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         );
 
         expect(res.status).toBe(404);
-        expect(getRegistrationStatusSpy).not.toHaveBeenCalled();
+        expect(getPassSnapshotSpy).not.toHaveBeenCalled();
       } finally {
         await prisma.attendee.delete({ where: { id: attendeeId } });
       }
@@ -1958,7 +1953,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
           where: { attendee_id: attendeeId },
           data: { apple_active_registrations: 2 },
         });
-        getRegistrationStatusSpy.mockRejectedValueOnce(new WalletProviderError("wallet_provider_unauthorized", "bad key"));
+        getPassSnapshotSpy.mockRejectedValueOnce(new WalletProviderError("wallet_provider_unauthorized", "bad key"));
 
         const res = await app.request(
           `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
@@ -1987,7 +1982,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
 
       expect(res.status).toBe(400);
       expect(await res.json()).toEqual({ error: "eventId required" });
-      expect(getRegistrationStatusSpy).not.toHaveBeenCalled();
+      expect(getPassSnapshotSpy).not.toHaveBeenCalled();
     });
   });
 
@@ -2293,13 +2288,9 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         });
         // Has a pass, but never registered a device - nothing this endpoint can look up.
         await seedActionAttendee(noUpidId, WALLET_ACTION_EVENT, { withPass: true });
-        getRegistrationStatusSpy.mockResolvedValueOnce({
-          appleActiveRegistrations: 2,
-          appleInactiveRegistrations: 0,
-          googleActiveRegistrations: 0,
-          googleInactiveRegistrations: 0,
-          firstDownloadedAt: "2026-08-25 09:00",
-        });
+        getPassSnapshotSpy.mockResolvedValueOnce(
+          walletSnapshot({ appleActive: 2 }, { firstDownloadedAt: "2026-08-25 09:00" }),
+        );
 
         const res = await app.request(
           `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-refresh-status`,
@@ -2313,8 +2304,10 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         expect(res.status).toBe(200);
         const body = (await res.json()) as { refreshed: number; skipped: number; errored: number };
         expect(body).toEqual({ refreshed: 1, skipped: 1, errored: 0 });
-        expect(getRegistrationStatusSpy).toHaveBeenCalledTimes(1);
-        expect(getRegistrationStatusSpy).toHaveBeenCalledWith(`admitto:${WALLET_ACTION_EVENT}:${knownId}`);
+        expect(getPassSnapshotSpy).toHaveBeenCalledTimes(1);
+        expect(getPassSnapshotSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${knownId}` }),
+        );
         const row = await prisma.walletPass.findUnique({ where: { attendee_id: knownId } });
         expect(row?.apple_active_registrations).toBe(2);
         // Read-only at the provider - same convention as the single-attendee route, no action log.
@@ -2332,7 +2325,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
           withPass: true,
           userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
         });
-        getRegistrationStatusSpy.mockImplementationOnce(async () => {
+        getPassSnapshotSpy.mockImplementationOnce(async () => {
           // Simulates a concurrent delete+re-add landing between loadBulkWalletTargets's read and
           // refreshOneWalletPassStatus's own write - the row now belongs to a different pass.
           await prisma.walletPass.update({
@@ -2378,7 +2371,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
           withPass: true,
           userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
         });
-        getRegistrationStatusSpy.mockResolvedValue(null);
+        getPassSnapshotSpy.mockResolvedValue(null);
 
         const res = await app.request(
           `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-refresh-status`,
@@ -2392,7 +2385,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         expect(res.status).toBe(200);
         const body = (await res.json()) as { refreshed: number; skipped: number; errored: number };
         expect(body).toEqual({ refreshed: 0, skipped: 0, errored: 1 });
-        expect(getRegistrationStatusSpy).toHaveBeenCalledTimes(2);
+        expect(getPassSnapshotSpy).toHaveBeenCalledTimes(2);
       } finally {
         await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
         await prisma.attendee.delete({ where: { id: attendeeId } });
@@ -2419,7 +2412,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
           expect(res.status).toBe(403);
           const body = (await res.json()) as { code: string };
           expect(body.code).toBe("event_archived");
-          expect(getRegistrationStatusSpy).not.toHaveBeenCalled();
+          expect(getPassSnapshotSpy).not.toHaveBeenCalled();
         } finally {
           await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { archived_at: null } });
         }
@@ -2752,7 +2745,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
 
       // Same event, same admin, but the on-demand refresh-status route - proves the budget is
       // shared with its void/restore/reissue/delete siblings rather than reset per route (own
-      // re-audit: this route also calls the provider once per request, getRegistrationStatus,
+      // re-audit: this route also calls the provider once per request, getPassSnapshot,
       // but was missing this rate limit entirely when first added in a later PR - fixed here).
       const refreshAlsoLimited = await app.request(
         `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/att-wallet-action-rl-nonexistent/wallet/refresh-status`,

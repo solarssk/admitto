@@ -19,6 +19,7 @@ import type { WalletPassApiFields } from "@admitto/db/wallet-pass-fields";
 import { decryptFromString } from "@admitto/crypto";
 import {
   WalletProviderError,
+  resolveConfiguredWalletProvider,
   resolveWalletProvider,
   refreshOneWalletPassStatus,
   WalletStatusCheckInconclusiveError,
@@ -2029,7 +2030,8 @@ async function writeAttendeeLifecycleAuditLog(
  * that flag only governs whether new passes get issued, and erasure must still delete whatever
  * already exists at the provider even after issuance has since been turned off (CodeRabbit
  * review - the local WalletPass row's provider_pass_id, the only way to ever reach it again, is
- * gone the moment the caller's own transaction below removes the row). */
+ * gone the moment the caller's own transaction below removes the row). Hence
+ * resolveConfiguredWalletProvider, which resolves from the event's credentials alone. */
 async function deleteWalletPassesBestEffort(
   db: PrismaClient,
   eventId: string,
@@ -2055,15 +2057,14 @@ async function deleteWalletPassesBestEffort(
   ]);
   if (!event || passes.length === 0) return;
 
-  // walletEnabled: true regardless of the event's own current toggle - that flag governs whether
-  // NEW passes get issued, not whether erasure may clean up passes that already exist at the
-  // provider. An event with wallet issuance since turned off (but still holding a valid API
-  // key/template) must still delete the provider's copy here, or these WalletPass rows'
-  // provider_pass_id - the only way to ever delete them at PassCreator - is gone the moment the
-  // caller's own transaction below removes the local row, permanently orphaning attendee PII
-  // there (CodeRabbit review, GDPR).
-  const provider = resolveWalletProvider({
-    walletEnabled: true,
+  // Ignores the event's own current wallet_enabled toggle - that flag governs whether NEW passes
+  // get issued, not whether erasure may clean up passes that already exist at the provider. An
+  // event with wallet issuance since turned off (but still holding a valid API key/template) must
+  // still delete the provider's copy here, or these WalletPass rows' provider_pass_id - the only
+  // way to ever delete them at PassCreator - is gone the moment the caller's own transaction
+  // below removes the local row, permanently orphaning attendee PII there (CodeRabbit review,
+  // GDPR).
+  const provider = resolveConfiguredWalletProvider({
     walletTemplateId: event.wallet_template_id,
     walletApiKeyEnc: event.wallet_api_key_enc,
     walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),

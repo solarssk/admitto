@@ -6,7 +6,7 @@ import { encryptTotpSecret, generateTotpSecret } from "@admitto/auth/testing";
 import { encryptToString } from "@admitto/crypto";
 import { generateToken, hashToken } from "@admitto/tickets";
 import type { WalletPassInput, WalletPassProvider } from "@admitto/wallet";
-import { WalletProviderError } from "@admitto/wallet";
+import { PASSCREATOR_CAPABILITIES, PASSCREATOR_CONSISTENCY_POLICY, WalletProviderError } from "@admitto/wallet";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
@@ -38,6 +38,8 @@ function stubProvider(): WalletPassProvider & {
 } {
   return {
     provider: "stub",
+    capabilities: PASSCREATOR_CAPABILITIES,
+    consistencyPolicy: PASSCREATOR_CONSISTENCY_POLICY,
     createPass: vi.fn(async (input: WalletPassInput) => ({
       providerPassId: `pc-${input.userProvidedId}`,
       downloadUrl: "https://pc.test/p/x",
@@ -50,7 +52,7 @@ function stubProvider(): WalletPassProvider & {
     restorePass: vi.fn(),
     deletePass: vi.fn(),
     findByUserProvidedId: vi.fn(async () => null),
-    getRegistrationStatus: vi.fn(async () => null),
+    getPassSnapshot: vi.fn(async () => null),
   };
 }
 

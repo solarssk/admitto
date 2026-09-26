@@ -1,8 +1,15 @@
 import { NO_COMPRESSION_HEADERS } from "@admitto/shared";
 import { emitSystemLog } from "@admitto/shared/system-log";
 import { WalletProviderError } from "./types.js";
-import type { WalletPassInput, WalletPassRegistrationStatus, WalletPassResult } from "./types.js";
+import type {
+  WalletPassInput,
+  WalletPassResult,
+  WalletProviderPassRef,
+  WalletProviderSnapshot,
+} from "./types.js";
 import type { WalletPassProvider } from "./provider.js";
+import { PASSCREATOR_CAPABILITIES, PASSCREATOR_CONSISTENCY_POLICY } from "./capabilities.js";
+import { parseOffsetInstant } from "./offset-instant.js";
 import { PASSCREATOR_DEFAULT_BASE_URL, type PassCreatorConfig } from "./passcreator-config.js";
 import { toPassCreatorData } from "./passcreator-mapper.js";
 import { reservePassCreatorSlotDistributed } from "./passcreator-pace-gate.js";
@@ -112,10 +119,16 @@ type PassCreatorSearchRow = {
   noOfInactiveRegistrationsAppleWallet?: number;
   noOfActiveRegistrationsGoogleWallet?: number;
   noOfInactiveRegistrationsGoogleWallet?: number;
-  // Undocumented but confirmed live 2026-09-02 (see WalletPassRegistrationStatus's own doc comment).
+  // Undocumented but confirmed live 2026-09-02 (see WalletProviderRegistrations' own doc comment).
   noOfActiveRegistrationsSamsungWallet?: number;
   noOfInactiveRegistrationsSamsungWallet?: number;
   firstDownloadedAt?: string | null;
+  // Documented on GET /api/v3/pass (developer.passcreator.com/en/api/v3/pass): `voided` is true for
+  // an explicit void AND for an expired pass ("A pass can also be voided because it is expired"),
+  // `expirationDate` is sent as "Y-m-d H:i" with no offset. Neither has been read from a live
+  // response yet - kept as the raw wire values (see getPassSnapshot).
+  voided?: boolean;
+  expirationDate?: string | null;
 };
 
 function sleep(ms: number): Promise<void> {
@@ -167,6 +180,8 @@ function toResult(data: PassCreatorPassData): WalletPassResult {
  */
 export class PassCreatorClient implements WalletPassProvider {
   readonly provider = "passcreator";
+  readonly capabilities = PASSCREATOR_CAPABILITIES;
+  readonly consistencyPolicy = PASSCREATOR_CONSISTENCY_POLICY;
 
   private readonly apiKey: string;
   private readonly templateId: string;
@@ -229,12 +244,12 @@ export class PassCreatorClient implements WalletPassProvider {
     });
   }
 
-  async voidPass(passUid: string): Promise<void> {
-    await this.setVoided(passUid, true);
+  async voidPass(providerPassId: string): Promise<void> {
+    await this.setVoided(providerPassId, true);
   }
 
-  async restorePass(passUid: string): Promise<void> {
-    await this.setVoided(passUid, false);
+  async restorePass(providerPassId: string): Promise<void> {
+    await this.setVoided(providerPassId, false);
   }
 
   /** Idempotent (ADR 0041 §3): a pass already gone (404) counts as deleted, not an error. */
@@ -393,22 +408,54 @@ export class PassCreatorClient implements WalletPassProvider {
   }
 
   /** Polled by the wallet-sync worker job (apps/cli) and by the admin "Refresh status" action's
-   * on-demand request path (apps/web/src/admin/attendees-api-routes.ts). */
-  async getRegistrationStatus(userProvidedId: string): Promise<WalletPassRegistrationStatus | null> {
-    const row = await this.searchByUserProvidedId(userProvidedId);
+   * on-demand request path (apps/web/src/admin/attendees-api-routes.ts).
+   *
+   * PassCreator's v3 API has no get-by-id, so this searches by `ref.userProvidedId` (required -
+   * passing a ref without one is a caller bug, not a "not found"), then requires the row it finds
+   * to be the referenced pass (`identifier` equals `ref.providerPassId`), else null. The row's `voided` and
+   * `expirationDate` are surfaced as observations only: `voided` is true for an explicit void and
+   * for an expired pass alike, and `expirationDate` is "Y-m-d H:i" in the timezone of the
+   * PassCreator company settings, so it is returned raw and only becomes `expiresAt` when the
+   * string carries its own offset - never guessed as UTC (see WalletProviderValidity). */
+  async getPassSnapshot(ref: WalletProviderPassRef): Promise<WalletProviderSnapshot | null> {
+    if (!ref.userProvidedId) {
+      throw new WalletProviderError(
+        "wallet_provider_rejected",
+        "PassCreator snapshot lookup needs the pass's userProvidedId",
+      );
+    }
+    const row = await this.searchByUserProvidedId(ref.userProvidedId);
     if (!row) return null;
+    // userProvidedId is only an idempotency key: once a pass has been deleted and issued again
+    // under the same key (a reset), the search finds the NEW pass. That is not the pass this ref
+    // points at, and its counts must not be written onto the old one's row. A static log message
+    // only - never an id, which could link the entry back to one attendee's pass (see logOutcome).
+    if (row.identifier !== ref.providerPassId) {
+      emitSystemLog("wallet", "warn", "passcreator_snapshot_identity_mismatch", {});
+      return null;
+    }
+    const expirationRaw =
+      typeof row.expirationDate === "string" && row.expirationDate.trim() !== "" ? row.expirationDate : null;
     return {
-      appleActiveRegistrations: row.noOfActiveRegistrationsAppleWallet ?? 0,
-      appleInactiveRegistrations: row.noOfInactiveRegistrationsAppleWallet ?? 0,
-      googleActiveRegistrations: row.noOfActiveRegistrationsGoogleWallet ?? 0,
-      googleInactiveRegistrations: row.noOfInactiveRegistrationsGoogleWallet ?? 0,
-      samsungActiveRegistrations: row.noOfActiveRegistrationsSamsungWallet ?? 0,
-      samsungInactiveRegistrations: row.noOfInactiveRegistrationsSamsungWallet ?? 0,
+      observedAt: new Date(),
+      validity: {
+        voided: typeof row.voided === "boolean" ? row.voided : null,
+        expirationRaw,
+        expiresAt: expirationRaw ? parseOffsetInstant(expirationRaw) : null,
+      },
+      registrations: {
+        appleActive: row.noOfActiveRegistrationsAppleWallet ?? 0,
+        appleInactive: row.noOfInactiveRegistrationsAppleWallet ?? 0,
+        googleActive: row.noOfActiveRegistrationsGoogleWallet ?? 0,
+        googleInactive: row.noOfInactiveRegistrationsGoogleWallet ?? 0,
+        samsungActive: row.noOfActiveRegistrationsSamsungWallet ?? 0,
+        samsungInactive: row.noOfInactiveRegistrationsSamsungWallet ?? 0,
+      },
       firstDownloadedAt: row.firstDownloadedAt ?? null,
     };
   }
 
-  /** Shared by findByUserProvidedId and getRegistrationStatus - same search endpoint, different
+  /** Shared by findByUserProvidedId and getPassSnapshot - same search endpoint, different
    * fields of the same row.
    *
    * Uses the documented Query Language (developer.passcreator.com/en/api/v3/query-language) via
@@ -443,9 +490,11 @@ export class PassCreatorClient implements WalletPassProvider {
     return row;
   }
 
-  /** Void/restore uses a separate, non-v3 endpoint (ADR 0041 §3) and returns 204, no body. */
-  private async setVoided(passUid: string, voided: boolean): Promise<void> {
-    const path = `/api/pass/${encodeURIComponent(passUid)}`;
+  /** Void/restore uses a separate, non-v3 endpoint (ADR 0041 §3) and returns 204, no body. The
+   * endpoint's own `{pass-uid}` accepts the PassCreator identifier too, which is what callers pass
+   * (WalletPass.provider_pass_id). */
+  private async setVoided(providerPassId: string, voided: boolean): Promise<void> {
+    const path = `/api/pass/${encodeURIComponent(providerPassId)}`;
     const route = "/api/pass/{id}";
     const res = await this.requestRaw("PUT", path, { voided }, route);
     this.logOutcome("PUT", route, res.ok, res.status);

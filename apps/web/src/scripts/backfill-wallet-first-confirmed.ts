@@ -84,10 +84,13 @@ export async function backfillEvent(
     where: {
       attendee: { event_id: event.id },
       first_confirmed_at: null,
+      // Both ids: getPassSnapshot has to confirm the pass it finds by userProvidedId IS this row's
+      // pass (a reset re-issues under the same key), and every pass Admitto ever created has both.
+      provider_pass_id: { not: null },
       user_provided_id: { not: null },
       OR: [{ apple_active_registrations: { gt: 0 } }, { google_active_registrations: { gt: 0 } }],
     },
-    select: { id: true, user_provided_id: true },
+    select: { id: true, provider_pass_id: true, user_provided_id: true },
   });
   console.log(`[${event.title}] ${candidates.length} confirmed pass(es) missing first_confirmed_at`);
   if (candidates.length === 0) return;
@@ -109,11 +112,14 @@ export async function backfillEvent(
   let skipped = 0;
   for (const pass of candidates) {
     try {
-      // user_provided_id is filtered non-null in the query above, but Prisma's own generated type
-      // for a `not: null` filter doesn't narrow the selected column - non-null asserted here since
-      // the query guarantees it, not because the type system already knows.
-      const status = await client.getRegistrationStatus(pass.user_provided_id as string);
-      const firstConfirmedAt = status?.firstDownloadedAt ? parseFirstDownloadedAtUtc(status.firstDownloadedAt) : null;
+      // Both ids are filtered non-null in the query above, but Prisma's own generated type for a
+      // `not: null` filter doesn't narrow the selected column - non-null asserted here since the
+      // query guarantees it, not because the type system already knows.
+      const snapshot = await client.getPassSnapshot({
+        providerPassId: pass.provider_pass_id as string,
+        userProvidedId: pass.user_provided_id as string,
+      });
+      const firstConfirmedAt = snapshot?.firstDownloadedAt ? parseFirstDownloadedAtUtc(snapshot.firstDownloadedAt) : null;
       if (!firstConfirmedAt) {
         skipped++;
         continue;

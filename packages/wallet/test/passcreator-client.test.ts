@@ -663,7 +663,20 @@ describe("PassCreatorClient.findByUserProvidedId", () => {
   });
 });
 
-describe("PassCreatorClient.getRegistrationStatus", () => {
+describe("PassCreatorClient.getPassSnapshot", () => {
+  const REF = { providerPassId: "pass-1", userProvidedId: "admitto:event1:attendee1" };
+
+  /** A client whose search returns one matching row, merged with `row`'s own fields. */
+  function clientReturning(row: Record<string, unknown> = {}) {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, {
+        success: true,
+        data: [{ identifier: "pass-1", userProvidedId: "admitto:event1:attendee1", ...row }],
+      }),
+    );
+    return new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+  }
+
   it("maps the search row's registration counts and firstDownloadedAt", async () => {
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       expect(url).toBe(
@@ -688,14 +701,18 @@ describe("PassCreatorClient.getRegistrationStatus", () => {
       });
     });
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
-    const result = await client.getRegistrationStatus("admitto:event1:attendee1");
+    const result = await client.getPassSnapshot(REF);
     expect(result).toEqual({
-      appleActiveRegistrations: 1,
-      appleInactiveRegistrations: 0,
-      googleActiveRegistrations: 0,
-      googleInactiveRegistrations: 1,
-      samsungActiveRegistrations: 2,
-      samsungInactiveRegistrations: 0,
+      observedAt: expect.any(Date),
+      validity: { voided: null, expirationRaw: null, expiresAt: null },
+      registrations: {
+        appleActive: 1,
+        appleInactive: 0,
+        googleActive: 0,
+        googleInactive: 1,
+        samsungActive: 2,
+        samsungInactive: 0,
+      },
       firstDownloadedAt: "2026-08-01 10:00:00",
     });
   });
@@ -703,28 +720,32 @@ describe("PassCreatorClient.getRegistrationStatus", () => {
   it("returns null when no pass matches", async () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, { success: true, data: [] }));
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
-    const result = await client.getRegistrationStatus("admitto:event1:nobody");
+    const result = await client.getPassSnapshot({ providerPassId: "pass-x", userProvidedId: "admitto:event1:nobody" });
     expect(result).toBeNull();
   });
 
-  it("defaults missing count fields to 0 and firstDownloadedAt to null", async () => {
-    const fetchMock = vi.fn(async () =>
-      jsonResponse(200, {
-        success: true,
-        data: [{ identifier: "pass-1", userProvidedId: "admitto:event1:attendee1" }],
-      }),
-    );
+  it("throws instead of searching when the ref has no userProvidedId - a caller bug, not a 'not found'", async () => {
+    const fetchMock = vi.fn();
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
-    const result = await client.getRegistrationStatus("admitto:event1:attendee1");
-    expect(result).toEqual({
-      appleActiveRegistrations: 0,
-      appleInactiveRegistrations: 0,
-      googleActiveRegistrations: 0,
-      googleInactiveRegistrations: 0,
-      samsungActiveRegistrations: 0,
-      samsungInactiveRegistrations: 0,
-      firstDownloadedAt: null,
+
+    await expect(client.getPassSnapshot({ providerPassId: "pass-1" })).rejects.toMatchObject({
+      name: "WalletProviderError",
+      code: "wallet_provider_rejected",
     });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("defaults missing count fields to 0 and firstDownloadedAt to null", async () => {
+    const result = await clientReturning().getPassSnapshot(REF);
+    expect(result?.registrations).toEqual({
+      appleActive: 0,
+      appleInactive: 0,
+      googleActive: 0,
+      googleInactive: 0,
+      samsungActive: 0,
+      samsungInactive: 0,
+    });
+    expect(result?.firstDownloadedAt).toBeNull();
   });
 
   it("returns null and logs when no row in the (unfiltered) response matches the query (PassCreator search doesn't actually filter by userProvidedId, live 2026-08-13)", async () => {
@@ -742,7 +763,7 @@ describe("PassCreatorClient.getRegistrationStatus", () => {
       }),
     );
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
-    const result = await client.getRegistrationStatus("admitto:event1:attendee1");
+    const result = await client.getPassSnapshot(REF);
     expect(result).toBeNull();
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("no row matching"));
     consoleErrorSpy.mockRestore();
@@ -759,8 +780,81 @@ describe("PassCreatorClient.getRegistrationStatus", () => {
       }),
     );
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
-    const result = await client.getRegistrationStatus("admitto:event1:attendee1");
-    expect(result?.googleActiveRegistrations).toBe(1);
+    const result = await client.getPassSnapshot(REF);
+    expect(result?.registrations?.googleActive).toBe(1);
+  });
+
+  it("returns null instead of another pass's data when the userProvidedId now belongs to a different pass (deleted and issued again, so the old ref is stale)", async () => {
+    resetSystemLogBufferForTest();
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, {
+        success: true,
+        data: [
+          {
+            identifier: "pass-reissued",
+            userProvidedId: "admitto:event1:attendee1",
+            noOfActiveRegistrationsAppleWallet: 3,
+            firstDownloadedAt: "2026-09-20 10:00:00",
+          },
+        ],
+      }),
+    );
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    const result = await client.getPassSnapshot({ providerPassId: "pass-original", userProvidedId: "admitto:event1:attendee1" });
+
+    expect(result).toBeNull();
+    // A static warning only - no id that could link the entry back to one attendee's pass.
+    expect(querySystemLogs({ source: "wallet" })).toEqual([
+      expect.objectContaining({ level: "warn", message: "passcreator_snapshot_identity_mismatch" }),
+    ]);
+    resetSystemLogBufferForTest();
+  });
+
+  describe("validity", () => {
+    it("reports the row's voided flag as-is, true or false", async () => {
+      expect((await clientReturning({ voided: true }).getPassSnapshot(REF))?.validity.voided).toBe(true);
+      expect((await clientReturning({ voided: false }).getPassSnapshot(REF))?.validity.voided).toBe(false);
+    });
+
+    it("reports voided as null, not false, when the row doesn't carry the flag (or carries a non-boolean)", async () => {
+      expect((await clientReturning().getPassSnapshot(REF))?.validity.voided).toBeNull();
+      expect((await clientReturning({ voided: "true" }).getPassSnapshot(REF))?.validity.voided).toBeNull();
+    });
+
+    it("keeps a naive 'Y-m-d H:i' expirationDate raw and never guesses a timezone for it", async () => {
+      const result = await clientReturning({ voided: true, expirationDate: "2026-09-25 23:59" }).getPassSnapshot(REF);
+      expect(result?.validity).toEqual({ voided: true, expirationRaw: "2026-09-25 23:59", expiresAt: null });
+    });
+
+    it("turns an expirationDate that carries its own offset into the exact instant", async () => {
+      const withOffset = await clientReturning({ expirationDate: "2026-09-25T23:59:00+02:00" }).getPassSnapshot(REF);
+      expect(withOffset?.validity.expiresAt).toEqual(new Date("2026-09-25T21:59:00.000Z"));
+      expect(withOffset?.validity.expirationRaw).toBe("2026-09-25T23:59:00+02:00");
+
+      const utc = await clientReturning({ expirationDate: "2026-09-25T23:59:00Z" }).getPassSnapshot(REF);
+      expect(utc?.validity.expiresAt).toEqual(new Date("2026-09-25T23:59:00.000Z"));
+    });
+
+    it("reads an empty, blank or non-string expirationDate as no expiration", async () => {
+      for (const expirationDate of ["", "   ", null, 20260925]) {
+        const result = await clientReturning({ expirationDate }).getPassSnapshot(REF);
+        expect(result?.validity.expirationRaw).toBeNull();
+        expect(result?.validity.expiresAt).toBeNull();
+      }
+    });
+  });
+
+  it("declares what PassCreator can do and how stale its reads may be", () => {
+    const client = new PassCreatorClient(CONFIG, vi.fn() as unknown as typeof fetch);
+    expect(client.capabilities).toEqual({
+      lifecycleObservation: true,
+      expiration: true,
+      voidRestore: true,
+      registrationSnapshot: true,
+      remoteDelete: true,
+    });
+    expect(client.consistencyPolicy.observationStalenessWindowMs).toBeGreaterThan(0);
   });
 });
 

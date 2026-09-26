@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@admitto/db";
 import type { WalletPassProvider } from "./provider.js";
-import { registrationStatusToWalletPassFields } from "./registration-status-to-wallet-pass-fields.js";
+import { snapshotToWalletPassFields } from "./snapshot-to-wallet-pass-fields.js";
 
 /** Thrown when the provider still has no matching record for a pass after the one retry below -
  * genuinely gone at the provider (deleted out of band) or longer-than-usual search-index lag.
@@ -40,12 +40,13 @@ export async function refreshOneWalletPassStatus(
   target: { attendeeId: string; providerPassId: string; userProvidedId: string },
   provider: WalletPassProvider,
 ): Promise<WalletStatusRefreshOutcome> {
-  let status = await provider.getRegistrationStatus(target.userProvidedId);
-  if (!status) {
+  const ref = { providerPassId: target.providerPassId, userProvidedId: target.userProvidedId };
+  let snapshot = await provider.getPassSnapshot(ref);
+  if (!snapshot) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    status = await provider.getRegistrationStatus(target.userProvidedId).catch(() => null);
+    snapshot = await provider.getPassSnapshot(ref).catch(() => null);
   }
-  if (!status) throw new WalletStatusCheckInconclusiveError();
+  if (!snapshot) throw new WalletStatusCheckInconclusiveError();
 
   const { count } = await db.walletPass.updateMany({
     where: {
@@ -54,7 +55,7 @@ export async function refreshOneWalletPassStatus(
       user_provided_id: target.userProvidedId,
     },
     data: {
-      ...registrationStatusToWalletPassFields(status),
+      ...snapshotToWalletPassFields(snapshot),
       registration_checked_at: new Date(),
       // Matches syncOne's own success write (registration-sync.ts) - the periodic worker selects
       // its next stale-row batch by this field, not registration_checked_at, so leaving it

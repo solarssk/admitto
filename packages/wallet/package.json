@@ -21,6 +21,10 @@
     "./passcreator-mapper": {
       "types": "./dist/passcreator-mapper.d.ts",
       "default": "./dist/passcreator-mapper.js"
+    },
+    "./capabilities": {
+      "types": "./dist/capabilities.d.ts",
+      "default": "./dist/capabilities.js"
     }
   },
   "scripts": {

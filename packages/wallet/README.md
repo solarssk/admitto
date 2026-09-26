@@ -42,17 +42,34 @@ import type {
   WalletPassProvider,
   WalletPassInput,
   WalletPassResult,
-  WalletPassRegistrationStatus,
+  WalletProviderSnapshot,
+  WalletProviderPassRef,
+  WalletProviderCapabilities,
   WalletProviderErrorCode,
   PassCreatorConfig,
 } from "@admitto/wallet";
-import { WalletProviderError, PassCreatorClient, resolveWalletProvider } from "@admitto/wallet";
+import {
+  WalletProviderError,
+  PassCreatorClient,
+  resolveWalletProvider,
+  resolveConfiguredWalletProvider,
+  canIssueWalletPass,
+} from "@admitto/wallet";
 ```
 
 `WalletPassProvider` operations: `createPass`, `updatePass`, `voidPass`, `restorePass`,
-`deletePass`, `findByUserProvidedId`, `getRegistrationStatus`. `WalletProviderError` carries a
-stable `code` (`wallet_provider_unauthorized` / `_rate_limited` / `_duplicate` / `_not_found` /
-`_timeout` / `_rejected`) - callers branch on `code`, never on `.message`.
+`deletePass`, `findByUserProvidedId`, `getPassSnapshot`, plus the declarative `capabilities` and
+`consistencyPolicy`. `WalletProviderError` carries a stable `code` (`wallet_provider_unauthorized` /
+`_rate_limited` / `_duplicate` / `_not_found` / `_timeout` / `_rejected`) - callers branch on
+`code`, never on `.message`.
+
+`resolveWalletProvider` is the provider for anything that presumes the wallet feature is on
+(master switch AND a configured template + key). `resolveConfiguredWalletProvider` resolves from the
+credentials alone, for actions on passes that already exist and must outlive the switch (GDPR
+erasure); `canIssueWalletPass` is the cheap predicate behind the first. The admin SPA reads static
+provider facts from the `@admitto/wallet/capabilities` subpath, never the package root. See
+[docs/dev/wallet-provider.md](../../docs/dev/wallet-provider.md) for who owns the lifecycle and how
+`getPassSnapshot`'s `null` must (not) be read.
 
 ## PassCreator API surface actually used
 
@@ -168,7 +185,7 @@ implementation.
 
 `apps/web/src/wallet-webhook.ts` receives `first_pushnotification_registered`,
 `pushnotification_registered`, `pushnotification_unregistered`, and `pass_voided`, verified via the
-EC public key above. `apps/cli`'s `registration-sync` job polls `getRegistrationStatus()` as a
+EC public key above. `apps/cli`'s `registration-sync` job polls `getPassSnapshot()` as a
 fallback for events the webhook may have missed. `wallet_push` (`AdminJob`) is the background job
 that re-syncs already-issued passes when a wallet-relevant event field changes (title, date, hours,
 timezone, event type, or the Apple Wallet toggle), see `walletRelevantEventFieldsChanged` in

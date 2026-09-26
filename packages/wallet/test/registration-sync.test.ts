@@ -6,22 +6,25 @@ vi.mock("../src/resolve-provider.js", () => ({
 }));
 
 import { runWalletRegistrationSync, WALLET_SYNC_BATCH_LIMIT } from "../src/registration-sync.js";
+import { walletSnapshot } from "./snapshot-fixture.js";
 
 function makeDb(rows: unknown[]) {
   return {
     walletPass: {
       findMany: vi.fn(async () => rows),
-      update: vi.fn(async () => ({})),
-      updateMany: vi.fn(async () => ({ count: 0 })),
+      updateMany: vi.fn(async () => ({ count: 1 })),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }
 
 function row(overrides: Record<string, unknown> = {}) {
+  // Each attendee gets its own provider id, like real rows (a second row must not share one).
+  const attendeeId = typeof overrides["attendee_id"] === "string" ? overrides["attendee_id"] : "att-1";
   return {
-    attendee_id: "att-1",
-    user_provided_id: "admitto:evt-1:att-1",
+    attendee_id: attendeeId,
+    provider_pass_id: `pc-${attendeeId}`,
+    user_provided_id: `admitto:evt-1:${attendeeId}`,
     attendee: {
       event: {
         id: "evt-1",
@@ -34,15 +37,10 @@ function row(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const STATUS = {
-  appleActiveRegistrations: 1,
-  appleInactiveRegistrations: 0,
-  googleActiveRegistrations: 0,
-  googleInactiveRegistrations: 0,
-  samsungActiveRegistrations: 3,
-  samsungInactiveRegistrations: 1,
-  firstDownloadedAt: "2026-08-01 10:00:00",
-};
+const SNAPSHOT = walletSnapshot(
+  { appleActive: 1, samsungActive: 3, samsungInactive: 1 },
+  { firstDownloadedAt: "2026-08-01 10:00:00" },
+);
 
 describe("runWalletRegistrationSync", () => {
   beforeEach(() => {
@@ -53,22 +51,24 @@ describe("runWalletRegistrationSync", () => {
     const db = makeDb([]);
     const result = await runWalletRegistrationSync(db);
     expect(result).toEqual({ checked: 0, updated: 0, skippedNoProvider: 0, failed: 0 });
-    expect(db.walletPass.update).not.toHaveBeenCalled();
+    expect(db.walletPass.updateMany).not.toHaveBeenCalled();
   });
 
   it("resolves one provider per event and updates each pass with the fetched status", async () => {
     const rows = [row(), row({ attendee_id: "att-2", user_provided_id: "admitto:evt-1:att-2" })];
     const db = makeDb(rows);
-    const getRegistrationStatus = vi.fn(async () => STATUS);
-    mockResolveWalletProvider.mockReturnValue({ getRegistrationStatus });
+    const getPassSnapshot = vi.fn(async () => SNAPSHOT);
+    mockResolveWalletProvider.mockReturnValue({ getPassSnapshot });
 
     const result = await runWalletRegistrationSync(db);
 
     expect(mockResolveWalletProvider).toHaveBeenCalledTimes(1);
-    expect(getRegistrationStatus).toHaveBeenCalledTimes(2);
-    expect(db.walletPass.update).toHaveBeenCalledTimes(2);
-    expect(db.walletPass.update.mock.calls[0][0]).toMatchObject({
-      where: { attendee_id: "att-1" },
+    expect(getPassSnapshot).toHaveBeenCalledTimes(2);
+    expect(getPassSnapshot).toHaveBeenCalledWith({ providerPassId: "pc-att-1", userProvidedId: "admitto:evt-1:att-1" });
+    expect(db.walletPass.updateMany).toHaveBeenCalledTimes(2);
+    expect(db.walletPass.updateMany.mock.calls[0][0]).toMatchObject({
+      // The exact pass identity the snapshot was read for, not just the attendee.
+      where: { attendee_id: "att-1", provider_pass_id: "pc-att-1", user_provided_id: "admitto:evt-1:att-1" },
       data: {
         apple_active_registrations: 1,
         google_active_registrations: 0,
@@ -86,7 +86,7 @@ describe("runWalletRegistrationSync", () => {
 
     const result = await runWalletRegistrationSync(db);
 
-    expect(db.walletPass.update).not.toHaveBeenCalled();
+    expect(db.walletPass.updateMany).toHaveBeenCalledTimes(1);
     expect(db.walletPass.updateMany).toHaveBeenCalledWith({
       where: { attendee_id: { in: ["att-1", "att-2"] } },
       data: { registration_sync_attempted_at: expect.any(Date) },
@@ -94,14 +94,14 @@ describe("runWalletRegistrationSync", () => {
     expect(result).toEqual({ checked: 0, updated: 0, skippedNoProvider: 2, failed: 0 });
   });
 
-  it("counts a getRegistrationStatus failure as failed without throwing or blocking its siblings", async () => {
+  it("counts a getPassSnapshot failure as failed without throwing or blocking its siblings", async () => {
     const rows = [row(), row({ attendee_id: "att-2", user_provided_id: "admitto:evt-1:att-2" })];
     const db = makeDb(rows);
-    const getRegistrationStatus = vi
+    const getPassSnapshot = vi
       .fn()
       .mockRejectedValueOnce(new Error("network down"))
-      .mockResolvedValueOnce(STATUS);
-    mockResolveWalletProvider.mockReturnValue({ getRegistrationStatus });
+      .mockResolvedValueOnce(SNAPSHOT);
+    mockResolveWalletProvider.mockReturnValue({ getPassSnapshot });
 
     const result = await runWalletRegistrationSync(db);
 
@@ -111,11 +111,11 @@ describe("runWalletRegistrationSync", () => {
   it("counts a non-Error provider rejection as failed without blocking its siblings", async () => {
     const rows = [row(), row({ attendee_id: "att-2", user_provided_id: "admitto:evt-1:att-2" })];
     const db = makeDb(rows);
-    const getRegistrationStatus = vi
+    const getPassSnapshot = vi
       .fn()
       .mockRejectedValueOnce(Object.create(null))
-      .mockResolvedValueOnce(STATUS);
-    mockResolveWalletProvider.mockReturnValue({ getRegistrationStatus });
+      .mockResolvedValueOnce(SNAPSHOT);
+    mockResolveWalletProvider.mockReturnValue({ getPassSnapshot });
 
     const result = await runWalletRegistrationSync(db);
 
@@ -124,13 +124,13 @@ describe("runWalletRegistrationSync", () => {
 
   it("bumps registration_sync_attempted_at (only) on a failed row, leaving registration_checked_at untouched so the UI's last-known-good time doesn't drift on a failing retry", async () => {
     const db = makeDb([row()]);
-    const getRegistrationStatus = vi.fn().mockRejectedValueOnce(new Error("network down"));
-    mockResolveWalletProvider.mockReturnValue({ getRegistrationStatus });
+    const getPassSnapshot = vi.fn().mockRejectedValueOnce(new Error("network down"));
+    mockResolveWalletProvider.mockReturnValue({ getPassSnapshot });
 
     await runWalletRegistrationSync(db);
 
-    expect(db.walletPass.update).toHaveBeenCalledWith({
-      where: { attendee_id: "att-1" },
+    expect(db.walletPass.updateMany).toHaveBeenCalledWith({
+      where: { attendee_id: "att-1", provider_pass_id: "pc-att-1", user_provided_id: "admitto:evt-1:att-1" },
       data: { registration_sync_attempted_at: expect.any(Date) },
     });
   });
@@ -152,8 +152,8 @@ describe("runWalletRegistrationSync", () => {
       }),
     ];
     const db = makeDb(rows);
-    const getRegistrationStatus = vi.fn(async () => null);
-    mockResolveWalletProvider.mockReturnValue({ getRegistrationStatus });
+    const getPassSnapshot = vi.fn(async () => null);
+    mockResolveWalletProvider.mockReturnValue({ getPassSnapshot });
 
     await runWalletRegistrationSync(db);
 
@@ -173,15 +173,28 @@ describe("runWalletRegistrationSync", () => {
     // registration_sync_attempted_at, so a real DB row's own existing counts are left completely
     // untouched (Prisma's partial update only writes the keys present here).
     const db = makeDb([row()]);
-    const getRegistrationStatus = vi.fn(async () => null);
-    mockResolveWalletProvider.mockReturnValue({ getRegistrationStatus });
+    const getPassSnapshot = vi.fn(async () => null);
+    mockResolveWalletProvider.mockReturnValue({ getPassSnapshot });
 
     await runWalletRegistrationSync(db);
 
-    expect(db.walletPass.update).toHaveBeenCalledWith({
-      where: { attendee_id: "att-1" },
+    expect(db.walletPass.updateMany).toHaveBeenCalledWith({
+      where: { attendee_id: "att-1", provider_pass_id: "pc-att-1", user_provided_id: "admitto:evt-1:att-1" },
       data: { registration_sync_attempted_at: expect.any(Date) },
     });
+  });
+
+  it("skips a row quietly, without failing, when its pass was replaced while the provider call was in flight - the write matches on the pass identity, so the new pass's row is left alone", async () => {
+    const db = makeDb([row()]);
+    // The row now holds a different provider_pass_id, so the conditioned write matches nothing.
+    db.walletPass.updateMany.mockResolvedValue({ count: 0 });
+    const getPassSnapshot = vi.fn(async () => SNAPSHOT);
+    mockResolveWalletProvider.mockReturnValue({ getPassSnapshot });
+
+    const result = await runWalletRegistrationSync(db);
+
+    expect(result).toMatchObject({ checked: 1, failed: 0 });
+    expect(db.walletPass.updateMany.mock.calls[0][0].where).toMatchObject({ provider_pass_id: "pc-att-1" });
   });
 
   it("queries only active/voided passes with a known provider_pass_id, capped at WALLET_SYNC_BATCH_LIMIT, staleness keyed off registration_sync_attempted_at", async () => {
@@ -191,6 +204,10 @@ describe("runWalletRegistrationSync", () => {
     const args = db.walletPass.findMany.mock.calls[0][0];
     expect(args.where.status).toEqual({ in: ["active", "voided"] });
     expect(args.where.provider_pass_id).toEqual({ not: null });
+    // Also part of WalletPass_registration_sync_pending_idx's predicate - the query has to imply it
+    // for Postgres to use the partial index at all.
+    expect(args.where.provider_removed_at).toBeNull();
+    expect(args.select.provider_pass_id).toBe(true);
     expect(args.where.OR).toEqual([
       { registration_sync_attempted_at: null },
       { registration_sync_attempted_at: { lt: expect.any(Date) } },
