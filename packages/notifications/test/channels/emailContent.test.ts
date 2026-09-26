@@ -7,7 +7,7 @@ function baseParams(overrides: Partial<Parameters<typeof buildNotificationEmailB
     severity: "warn" as const,
     title: "Something happened",
     body: "A description of what happened.",
-    metadataLine: "",
+    metadataLines: [],
     ctaUrl: "https://tickets.example.com/account",
     ctaLabel: "Manage notifications",
     badgeImageUrl: "https://tickets.example.com/assets/notification-badge-warn.png",
@@ -25,18 +25,30 @@ describe("buildNotificationEmailBodyHtml", () => {
     expect(html).toContain("A &amp; B");
   });
 
-  it("omits the Details box entirely when metadataLine is empty", () => {
-    const html = buildNotificationEmailBodyHtml(baseParams({ metadataLine: "" }));
+  it("omits the Details box entirely when metadataLines is empty", () => {
+    const html = buildNotificationEmailBodyHtml(baseParams({ metadataLines: [] }));
     expect(html).not.toContain("Details");
   });
 
   it("shows the Details box with each metadata entry on its own line", () => {
     const html = buildNotificationEmailBodyHtml(
-      baseParams({ metadataLine: "ip: 203.0.113.7 · country: Poland" }),
+      baseParams({ metadataLines: ["IP address: 203.0.113.7", "Location: Poland"] }),
     );
     expect(html).toContain("Details");
-    expect(html).toContain("<div style=\"font-size:12px;line-height:20px;color:#111827;\">ip: 203.0.113.7</div>");
-    expect(html).toContain("<div style=\"font-size:12px;line-height:20px;color:#111827;\">country: Poland</div>");
+    expect(html).toContain(
+      "<div style=\"font-size:12px;line-height:20px;color:#111827;overflow-wrap:anywhere;word-break:break-word;\">IP address: 203.0.113.7</div>",
+    );
+    expect(html).toContain(
+      "<div style=\"font-size:12px;line-height:20px;color:#111827;overflow-wrap:anywhere;word-break:break-word;\">Location: Poland</div>",
+    );
+  });
+
+  it("allows long unbroken text in the message and details to wrap instead of overflowing", () => {
+    const html = buildNotificationEmailBodyHtml(
+      baseParams({ body: "x".repeat(240), metadataLines: ["y".repeat(240)] }),
+    );
+
+    expect(html).toContain("overflow-wrap:anywhere;word-break:break-word;");
   });
 
   it("renders the CTA link, attribute-escaped, with the given label", () => {

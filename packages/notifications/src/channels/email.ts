@@ -110,14 +110,141 @@ export interface EmailChannelOptions {
   exportSink?: ExportSink;
 }
 
-/** One composed, server-side line of text - never a table (prompt 86 "CZYTAJ NAJPIERW": every
- * placeholder is HTML-escaped text, not markup, so metadata can never smuggle HTML). */
-function buildMetadataLine(metadata: Record<string, unknown> | undefined): string {
-  if (!metadata) return "";
-  return Object.entries(metadata)
-    .filter(([, value]) => value !== undefined && value !== null && value !== "")
-    .map(([key, value]) => `${key}: ${String(value)}`)
-    .join(" · ");
+/** Own-property lookups only: indexing a plain object would also answer for inherited names such
+ * as "constructor", and is what security/detect-object-injection flags. */
+function labelMap(labels: Record<string, string>): ReadonlyMap<string, string> {
+  return new Map(Object.entries(labels));
+}
+
+const ROLE_LABEL = labelMap({
+  admin: "Administrator",
+  superadmin: "Superadmin",
+});
+
+const AUTH_SETTINGS_RESOURCE_LABEL = labelMap({
+  oidc_provider: "Single sign-on provider",
+  cf_access: "Cloudflare Access",
+});
+
+const AUTH_SETTINGS_ACTION_LABEL = labelMap({
+  create: "Created",
+  update: "Updated",
+  enable: "Enabled",
+  disable: "Disabled",
+  discover: "Configuration refreshed",
+});
+
+const BREAK_GLASS_ACTION_LABEL = labelMap({
+  reset_mfa: "Two-factor authentication reset",
+  generate_emergency_recovery: "Emergency recovery code generated",
+});
+
+function metadataValue(metadata: Record<string, unknown>, key: string): unknown {
+  return Object.getOwnPropertyDescriptor(metadata, key)?.value;
+}
+
+function stringMetadata(metadata: Record<string, unknown>, key: string): string | undefined {
+  const value = metadataValue(metadata, key);
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+function numberMetadata(metadata: Record<string, unknown>, key: string): number | undefined {
+  const value = metadataValue(metadata, key);
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function textLine(prefix: string, value: string | undefined): string | undefined {
+  return value === undefined ? undefined : `${prefix}: ${value}`;
+}
+
+/** "Prefix: Label" when `key` has a designed label, otherwise nothing (never the raw key). */
+function labelLine(
+  prefix: string,
+  labels: ReadonlyMap<string, string>,
+  key: string | undefined,
+): string | undefined {
+  return textLine(prefix, key === undefined ? undefined : labels.get(key));
+}
+
+function roleScopeLine(
+  scopeType: string | undefined,
+  organizationName: string | null | undefined,
+): string | undefined {
+  if (scopeType === "instance") return "Scope: Entire Admitto instance";
+  if (scopeType !== "organization") return undefined;
+  return `Scope: ${organizationName || "This organisation"}`;
+}
+
+function locationLabel(country: string | undefined, city: string | undefined): string | undefined {
+  if (country === undefined) return undefined;
+  return city === undefined ? country : `${city}, ${country}`;
+}
+
+function definedLines(lines: Array<string | undefined>): string[] {
+  return lines.filter((line): line is string => line !== undefined);
+}
+
+function failedSignInDetails(metadata: Record<string, unknown>): string[] {
+  const streak = numberMetadata(metadata, "streak");
+  return streak === undefined ? [] : [`Failed sign-in attempts: ${streak}`];
+}
+
+function settingsChangedDetails(metadata: Record<string, unknown>): string[] {
+  return definedLines([
+    labelLine("Changed", AUTH_SETTINGS_RESOURCE_LABEL, stringMetadata(metadata, "resource")),
+    labelLine("Action", AUTH_SETTINGS_ACTION_LABEL, stringMetadata(metadata, "action")),
+    textLine("Provider", stringMetadata(metadata, "target_label")),
+  ]);
+}
+
+function roleElevatedDetails(
+  metadata: Record<string, unknown>,
+  organizationName: string | null | undefined,
+): string[] {
+  return definedLines([
+    labelLine("Role", ROLE_LABEL, stringMetadata(metadata, "role")),
+    roleScopeLine(stringMetadata(metadata, "scope_type"), organizationName),
+  ]);
+}
+
+function signInLocationDetails(metadata: Record<string, unknown>): string[] {
+  const location = locationLabel(stringMetadata(metadata, "country"), stringMetadata(metadata, "city"));
+  return definedLines([
+    textLine("Location", location),
+    textLine("Device", stringMetadata(metadata, "device")),
+    textLine("IP address", stringMetadata(metadata, "ip")),
+    textLine("Time", stringMetadata(metadata, "time")),
+  ]);
+}
+
+/**
+ * The notification body is the account of what happened; this box adds only useful, human-facing
+ * context. In particular, never dump the event metadata here: fields such as actor_user_id,
+ * target_user_id and scope_id are durable audit references, not something an email recipient can
+ * identify or act on. Unknown types deliberately get no details until their own reader-facing
+ * labels have been designed.
+ */
+export function buildNotificationEmailDetails(
+  event: DispatchedNotification,
+  organizationName: string | null | undefined,
+): string[] {
+  const metadata = event.metadata ?? {};
+
+  switch (event.type) {
+    case "auth.login.repeated_failures":
+      return failedSignInDetails(metadata);
+    case "auth.mfa.break_glass":
+      return definedLines([labelLine("Action", BREAK_GLASS_ACTION_LABEL, stringMetadata(metadata, "action"))]);
+    case "auth.settings.changed":
+      return settingsChangedDetails(metadata);
+    case "auth.role.elevated":
+      return roleElevatedDetails(metadata, organizationName);
+    case "auth.login.new_country":
+    case "account.login.new_location":
+      return signInLocationDetails(metadata);
+    default:
+      return [];
+  }
 }
 
 /** extra_email_recipients entries are {email, description, added_at, added_by_*} objects
@@ -265,7 +392,7 @@ export class EmailChannel implements NotificationChannel {
         severity: event.severity,
         title: event.title,
         body: event.body,
-        metadataLine: buildMetadataLine(event.metadata),
+        metadataLines: buildNotificationEmailDetails(event, org?.name),
         ctaUrl: `${baseUrl}${NOTIFICATION_CTA_PATH}`,
         ctaLabel,
         badgeImageUrl: `${baseUrl}/assets/notification-badge-${event.severity}.png?v=${EMAIL_ASSET_VERSION}`,
