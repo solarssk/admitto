@@ -2127,13 +2127,13 @@ async function syncWalletPassOnStatusChangeBestEffort(
       await provider.voidPass(walletPass.provider_pass_id);
       await db.walletPass.update({
         where: { attendee_id: attendeeId },
-        data: { status: "voided", voided_at: new Date(), last_error_code: null },
+        data: { status: "voided", voided_at: new Date(), provider_commanded_at: new Date(), last_error_code: null },
       });
     } else {
       await provider.restorePass(walletPass.provider_pass_id);
       await db.walletPass.update({
         where: { attendee_id: attendeeId },
-        data: { status: "active", voided_at: null, last_error_code: null },
+        data: { status: "active", voided_at: null, provider_commanded_at: new Date(), last_error_code: null },
       });
     }
   } catch (err) {
@@ -3385,7 +3385,7 @@ async function voidOneWalletPass(
   await db.$transaction(async (tx) => {
     await tx.walletPass.update({
       where: { attendee_id: target.attendeeId },
-      data: { status: "voided", voided_at: new Date(), last_error_code: null },
+      data: { status: "voided", voided_at: new Date(), provider_commanded_at: new Date(), last_error_code: null },
     });
     await writeActionLog(tx, {
       event_id: eventId,
@@ -3401,9 +3401,9 @@ async function voidOneWalletPass(
 /** Pulls one selected attendee's current device-registration status from the provider, via the
  * same shared refreshOneWalletPassStatus (packages/wallet/src/refresh-wallet-pass-status.ts) the
  * single-attendee "Refresh status" route uses. Attendees with no resolvable userProvidedId (never
- * registered a device) count as skipped, same convention as void/reissue/delete above; a CAS
- * "conflict" (pass changed mid-loop) also folds into skipped rather than errored - nothing to
- * report to the operator beyond "already handled elsewhere". Read-only at the provider - no
+ * registered a device) count as skipped, same convention as void/reissue/delete above; so does a
+ * pass that is not active (voided/expired/removed: nothing left to read) and a CAS "conflict"
+ * (pass changed mid-loop) - nothing to report to the operator beyond "already handled". Read-only at the provider - no
  * writeActionLog entry, matching the single-attendee route's own behavior. */
 async function refreshOneWalletStatusForBulk(
   db: PrismaClient,
@@ -3418,7 +3418,7 @@ async function refreshOneWalletStatusForBulk(
     { attendeeId: target.attendeeId, providerPassId: target.providerPassId, userProvidedId: target.userProvidedId },
     provider,
   );
-  return outcome === "conflict" ? "skipped" : "refreshed";
+  return outcome === "refreshed" ? "refreshed" : "skipped";
 }
 
 /** Caps concurrent in-flight bulk-wallet requests to 1 per user+event. admin:wallet-action-bulk
@@ -3464,6 +3464,7 @@ async function runBulkWalletAction<K extends string>(
     provider: WalletPassProvider,
     audit: OpsAuditContext,
   ) => Promise<K | "skipped">,
+  providerOptions: { ignoreWalletEnabled?: boolean } = {},
 ): Promise<Response> {
   const eventIdOrRes = requireEventId(c);
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
@@ -3489,7 +3490,7 @@ async function runBulkWalletAction<K extends string>(
     return c.json({ error: "bulk_wallet_action_in_progress" }, 429);
   }
   try {
-    const provider = await resolveEventWalletProvider(db, eventId);
+    const provider = await resolveEventWalletProvider(db, eventId, providerOptions);
     if (!provider) return c.json({ error: "wallet_not_configured" }, 409);
 
     const targets = await loadBulkWalletTargets(db, eventId, parsed.data.attendeeIds);
@@ -3547,7 +3548,9 @@ export async function handleBulkReissueAttendeeWalletPass(c: Context, db: Prisma
  * sibling bulk endpoints; attendees with no WalletPass row, or no known userProvidedId (never
  * registered a device), count as skipped. */
 export async function handleBulkRefreshAttendeeWalletStatus(c: Context, db: PrismaClient): Promise<Response> {
-  return runBulkWalletAction(c, db, "refreshed", "wallet_refresh_status", refreshOneWalletStatusForBulk);
+  return runBulkWalletAction(c, db, "refreshed", "wallet_refresh_status", refreshOneWalletStatusForBulk, {
+    ignoreWalletEnabled: true,
+  });
 }
 
 /** Permanently removes one attendee's wallet pass at the provider and deletes the WalletPass row,
@@ -4020,14 +4023,19 @@ function walletProviderErrorResponse(c: Context, err: unknown, logContext: strin
   return c.json({ error: code }, 502);
 }
 
-/** Shared preamble for the three wallet lifecycle actions below (void/restore/reissue): validates
- * params/access, loads the attendee's existing WalletPass id and the event's configured provider.
- * Every action requires an already-issued pass (created by the on-demand "Add to Wallet" flow) -
- * there is nothing to void/restore/reissue otherwise. */
+/** Shared preamble for the wallet lifecycle actions below (void/restore/reissue/refresh/delete):
+ * validates params/access, loads the attendee's existing WalletPass id and the event's configured
+ * provider. Every action requires an already-issued pass (created by the on-demand "Add to
+ * Wallet" flow) - there is nothing to void/restore/reissue otherwise.
+ *
+ * `ignoreWalletEnabled` resolves the provider from the event's credentials alone, without the
+ * wallet master switch - for read-only actions (Refresh status) that must keep working once the
+ * feature is switched off. */
 async function loadWalletActionContext(
   c: Context,
   db: PrismaClient,
   eventId: string,
+  options: { ignoreWalletEnabled?: boolean } = {},
 ): Promise<
   | Response
   | {
@@ -4073,12 +4081,14 @@ async function loadWalletActionContext(
   if (!event) return c.json({ error: "forbidden" }, 403);
   if (!attendee.wallet_pass?.provider_pass_id) return c.json({ error: "no_wallet_pass" }, 404);
 
-  const provider = resolveWalletProvider({
-    walletEnabled: event.wallet_enabled,
+  const providerConfig = {
     walletTemplateId: event.wallet_template_id,
     walletApiKeyEnc: event.wallet_api_key_enc,
     walletFieldMapping: parseWalletFieldMapping(event.wallet_field_mapping),
-  });
+  };
+  const provider = options.ignoreWalletEnabled
+    ? resolveConfiguredWalletProvider(providerConfig)
+    : resolveWalletProvider({ ...providerConfig, walletEnabled: event.wallet_enabled });
   if (!provider) return c.json({ error: "wallet_not_configured" }, 409);
 
   return {
@@ -4111,7 +4121,7 @@ export async function handleVoidAttendeeWalletPass(c: Context, db: PrismaClient)
   const updated = await db.$transaction(async (tx) => {
     const row = await tx.walletPass.update({
       where: { attendee_id: ctx.attendeeId },
-      data: { status: "voided", voided_at: new Date(), last_error_code: null },
+      data: { status: "voided", voided_at: new Date(), provider_commanded_at: new Date(), last_error_code: null },
     });
     await writeActionLog(tx, {
       event_id: eventId,
@@ -4143,7 +4153,7 @@ export async function handleRestoreAttendeeWalletPass(c: Context, db: PrismaClie
   const updated = await db.$transaction(async (tx) => {
     const row = await tx.walletPass.update({
       where: { attendee_id: ctx.attendeeId },
-      data: { status: "active", voided_at: null, last_error_code: null },
+      data: { status: "active", voided_at: null, provider_commanded_at: new Date(), last_error_code: null },
     });
     await writeActionLog(tx, {
       event_id: eventId,
@@ -4253,7 +4263,7 @@ export async function handleRefreshAttendeeWalletStatus(c: Context, db: PrismaCl
   if (eventIdOrRes instanceof Response) return eventIdOrRes;
   const eventId = eventIdOrRes;
 
-  const ctx = await loadWalletActionContext(c, db, eventId);
+  const ctx = await loadWalletActionContext(c, db, eventId, { ignoreWalletEnabled: true });
   if (ctx instanceof Response) return ctx;
   if (!ctx.userProvidedId) return c.json({ error: "wallet_pass_not_refreshable" }, 409);
 
@@ -4274,6 +4284,7 @@ export async function handleRefreshAttendeeWalletStatus(c: Context, db: PrismaCl
     }
     return walletProviderErrorResponse(c, err, "handleRefreshAttendeeWalletStatus");
   }
+  if (outcome === "inactive") return c.json({ error: "wallet_pass_inactive" }, 409);
   if (outcome === "conflict") return c.json({ error: "wallet_pass_changed" }, 409);
 
   const updated = await db.walletPass.findUniqueOrThrow({ where: { attendee_id: ctx.attendeeId } });

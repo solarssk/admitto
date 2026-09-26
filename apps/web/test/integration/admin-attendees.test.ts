@@ -1338,6 +1338,8 @@ describe("attendee wallet actions — void/restore/reissue", () => {
     opts: {
       withPass?: boolean;
       userProvidedId?: string;
+      passStatus?: string;
+      providerCommandedAt?: Date;
       firstConfirmedAt?: Date;
       userAgent?: string;
       userAgentCapturedAt?: Date;
@@ -1359,7 +1361,8 @@ describe("attendee wallet actions — void/restore/reissue", () => {
           attendee_id: id,
           provider: "passcreator",
           provider_pass_id: `pc-${id}`,
-          status: "active",
+          status: opts.passStatus ?? "active",
+          provider_commanded_at: opts.providerCommandedAt,
           apple_url: "https://pc.test/apple/old",
           android_url: "https://pc.test/android/old",
           user_provided_id: opts.userProvidedId,
@@ -1388,6 +1391,9 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(body.voided_at).not.toBeNull();
       const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
       expect(row?.status).toBe("voided");
+      // Marks the command, so a stale read of the provider right after it can't be mistaken for a
+      // change the provider made on its own.
+      expect(row?.provider_commanded_at).not.toBeNull();
 
       const audit = await prisma.attendeeActionLog.findFirst({
         where: { event_id: WALLET_ACTION_EVENT, attendee_id: attendeeId, action_type: "wallet_pass_voided" },
@@ -1527,6 +1533,10 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       const body = (await res.json()) as { status: string; voided_at: string | null };
       expect(body.status).toBe("active");
       expect(body.voided_at).toBeNull();
+      const restored = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+      // The provider may keep serving "voided" for a while after a Restore (its search index lags);
+      // this marker is what lets the next reconciliation ignore that stale read.
+      expect(restored?.provider_commanded_at).not.toBeNull();
 
       const audit = await prisma.attendeeActionLog.findFirst({
         where: { event_id: WALLET_ACTION_EVENT, attendee_id: attendeeId, action_type: "wallet_pass_restored" },
@@ -1879,13 +1889,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
             where: { attendee_id: attendeeId },
             data: { provider_pass_id: "pc-replaced-mid-flight", user_provided_id: "admitto:replaced" },
           });
-          return {
-            appleActiveRegistrations: 1,
-            appleInactiveRegistrations: 0,
-            googleActiveRegistrations: 0,
-            googleInactiveRegistrations: 0,
-            firstDownloadedAt: null,
-          };
+          return walletSnapshot({ appleActive: 1 });
         });
 
         const res = await app.request(
@@ -1964,6 +1968,145 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         expect(await res.json()).toEqual({ error: "wallet_provider_unauthorized" });
         const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
         expect(row?.apple_active_registrations).toBe(2);
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it.each(["voided", "expired"])(
+      "returns 409 wallet_pass_inactive for a %s pass without calling the provider: it is Admitto's own recorded state and is never read again",
+      async (passStatus) => {
+        const attendeeId = `att-wallet-action-refresh-${passStatus}`;
+        try {
+          await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+            withPass: true,
+            passStatus,
+            userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+          });
+
+          const res = await app.request(
+            `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+            { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+          );
+
+          expect(res.status).toBe(409);
+          expect(await res.json()).toEqual({ error: "wallet_pass_inactive" });
+          expect(getPassSnapshotSpy).not.toHaveBeenCalled();
+        } finally {
+          await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+          await prisma.attendee.delete({ where: { id: attendeeId } });
+        }
+      },
+    );
+
+    it("records a void the provider now reports, freezing the counts of that same read", async () => {
+      const attendeeId = "att-wallet-action-refresh-observed-void";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        getPassSnapshotSpy.mockResolvedValueOnce(
+          walletSnapshot({ appleActive: 1 }, { validity: { voided: true, expirationRaw: null, expiresAt: null } }),
+        );
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(200);
+        expect(((await res.json()) as { status: string }).status).toBe("voided");
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.status).toBe("voided");
+        expect(row?.voided_at).not.toBeNull();
+        expect(row?.apple_active_registrations).toBe(1);
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("does not undo a Restore made moments ago with a stale 'voided' read from the provider", async () => {
+      const attendeeId = "att-wallet-action-refresh-stale-void";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          providerCommandedAt: new Date(Date.now() - 60_000),
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        getPassSnapshotSpy.mockResolvedValueOnce(
+          walletSnapshot(
+            { appleActive: 1 },
+            { observedAt: new Date(), validity: { voided: true, expirationRaw: null, expiresAt: null } },
+          ),
+        );
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(200);
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.status).toBe("active");
+        expect(row?.apple_active_registrations).toBe(1);
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("still works on an archived event with the wallet master switch off: a status read changes nothing at the provider", async () => {
+      const attendeeId = "att-wallet-action-refresh-archived-off";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        getPassSnapshotSpy.mockResolvedValueOnce(walletSnapshot({ appleActive: 1 }));
+        await prisma.event.update({
+          where: { id: WALLET_ACTION_EVENT },
+          data: { archived_at: new Date(), wallet_enabled: false },
+        });
+        try {
+          const res = await app.request(
+            `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+            { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+          );
+          expect(res.status).toBe(200);
+          const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+          expect(row?.apple_active_registrations).toBe(1);
+        } finally {
+          await prisma.event.update({
+            where: { id: WALLET_ACTION_EVENT },
+            data: { archived_at: null, wallet_enabled: true },
+          });
+        }
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("still refuses Void on an archived event: only the read-only Refresh is exempt from the archive guard", async () => {
+      const attendeeId = "att-wallet-action-void-archived-still";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { archived_at: new Date() } });
+        try {
+          const res = await app.request(
+            `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/void`,
+            { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+          );
+          expect(res.status).toBe(403);
+        } finally {
+          await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { archived_at: null } });
+        }
       } finally {
         await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
         await prisma.attendee.delete({ where: { id: attendeeId } });
@@ -2067,6 +2210,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(voidSpy).toHaveBeenCalledWith(`pc-${activeId}`);
       const activeRow = await prisma.walletPass.findUnique({ where: { attendee_id: activeId } });
       expect(activeRow?.status).toBe("voided");
+      expect(activeRow?.provider_commanded_at).not.toBeNull();
     });
 
     it("returns 409 without calling the provider when the event's wallet isn't configured", async () => {
@@ -2332,13 +2476,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
             where: { attendee_id: attendeeId },
             data: { provider_pass_id: "pc-bulk-replaced-mid-flight", user_provided_id: "admitto:bulk-replaced" },
           });
-          return {
-            appleActiveRegistrations: 1,
-            appleInactiveRegistrations: 0,
-            googleActiveRegistrations: 0,
-            googleInactiveRegistrations: 0,
-            firstDownloadedAt: null,
-          };
+          return walletSnapshot({ appleActive: 1 });
         });
 
         const res = await app.request(
@@ -2392,13 +2530,14 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       }
     });
 
-    it("returns 403 when the event is archived", async () => {
+    it("still refreshes on an archived event: reading what the provider says changes nothing there, and is what an operator does after the event", async () => {
       const attendeeId = "att-bulk-wallet-refresh-archived";
       try {
         await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
           withPass: true,
           userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
         });
+        getPassSnapshotSpy.mockResolvedValueOnce(walletSnapshot({ appleActive: 1 }));
         await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { archived_at: new Date() } });
         try {
           const res = await app.request(
@@ -2409,16 +2548,54 @@ describe("attendee wallet actions — void/restore/reissue", () => {
               body: JSON.stringify({ attendeeIds: [attendeeId] }),
             },
           );
-          expect(res.status).toBe(403);
-          const body = (await res.json()) as { code: string };
-          expect(body.code).toBe("event_archived");
-          expect(getPassSnapshotSpy).not.toHaveBeenCalled();
+          expect(res.status).toBe(200);
+          expect(await res.json()).toEqual({ refreshed: 1, skipped: 0, errored: 0 });
         } finally {
           await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { archived_at: null } });
         }
       } finally {
         await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
         await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("still refreshes with the wallet master switch off, but never a voided or expired pass: those count as skipped without a provider call", async () => {
+      const activeId = "att-bulk-wallet-refresh-off-active";
+      const voidedId = "att-bulk-wallet-refresh-off-voided";
+      const expiredId = "att-bulk-wallet-refresh-off-expired";
+      try {
+        for (const [id, passStatus] of [
+          [activeId, "active"],
+          [voidedId, "voided"],
+          [expiredId, "expired"],
+        ] as const) {
+          await seedActionAttendee(id, WALLET_ACTION_EVENT, {
+            withPass: true,
+            passStatus,
+            userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${id}`,
+          });
+        }
+        getPassSnapshotSpy.mockResolvedValueOnce(walletSnapshot({ appleActive: 1 }));
+        await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { wallet_enabled: false } });
+        try {
+          const res = await app.request(
+            `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-refresh-status`,
+            {
+              method: "POST",
+              headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+              body: JSON.stringify({ attendeeIds: [activeId, voidedId, expiredId] }),
+            },
+          );
+          expect(res.status).toBe(200);
+          expect(await res.json()).toEqual({ refreshed: 1, skipped: 2, errored: 0 });
+          expect(getPassSnapshotSpy).toHaveBeenCalledTimes(1);
+        } finally {
+          await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { wallet_enabled: true } });
+        }
+      } finally {
+        const ids = [activeId, voidedId, expiredId];
+        await prisma.walletPass.deleteMany({ where: { attendee_id: { in: ids } } });
+        await prisma.attendee.deleteMany({ where: { id: { in: ids } } });
       }
     });
   });
@@ -2475,15 +2652,21 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(jobs).toHaveLength(0);
     });
 
-    it("returns 403 when the event is archived", async () => {
-      await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { archived_at: new Date() } });
+    it("still enqueues on an archived event and with the wallet master switch off: a status read changes nothing at the provider", async () => {
+      await prisma.event.update({
+        where: { id: WALLET_ACTION_EVENT },
+        data: { archived_at: new Date(), wallet_enabled: false },
+      });
       try {
         const res = await postManualRefreshStatus(WALLET_ACTION_EVENT);
-        expect(res.status).toBe(403);
-        const body = (await res.json()) as { code: string };
-        expect(body.code).toBe("event_archived");
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { jobId: string };
+        expect(body.jobId).toBeTruthy();
       } finally {
-        await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { archived_at: null } });
+        await prisma.event.update({
+          where: { id: WALLET_ACTION_EVENT },
+          data: { archived_at: null, wallet_enabled: true },
+        });
       }
     });
 
@@ -3220,6 +3403,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(voidSpy).toHaveBeenCalledWith(`pc-${attendeeId}`);
       const pass = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
       expect(pass?.status).toBe("voided");
+      expect(pass?.provider_commanded_at).not.toBeNull();
       // The cascade runs after `updated` was already selected inside the PATCH's own transaction -
       // the response body itself must reflect the post-cascade state, not that stale pre-cascade
       // snapshot (CodeRabbit review: the detail page installs this response directly via
@@ -3248,6 +3432,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       expect(restoreSpy).toHaveBeenCalledWith(`pc-${attendeeId}`);
       const pass = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
       expect(pass?.status).toBe("active");
+      expect(pass?.provider_commanded_at).not.toBeNull();
       const body = (await res.json()) as { wallet_pass: { status: string } | null };
       expect(body.wallet_pass?.status).toBe("active");
     });

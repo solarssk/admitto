@@ -450,6 +450,9 @@ describe("On-demand wallet routes", () => {
     const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
     expect(saved?.status).toBe("active");
     expect(saved?.voided_at).toBeNull();
+    // A Restore is a validity command like any other: the next reconciliation must not read the
+    // provider's not-yet-updated "voided" as a fresh void.
+    expect(saved?.provider_commanded_at).not.toBeNull();
   });
 
   it("redirects back with walletError=1 and records status=failed on provider error", async () => {

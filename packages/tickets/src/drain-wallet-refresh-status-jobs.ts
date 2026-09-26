@@ -65,19 +65,19 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
-/** Every wallet pass under the event with a known device-registration id - includes a voided
- * pass (unlike wallet_push's event-wide target query, which excludes them): voiding only flips
- * PassCreator's own `voided` flag, it doesn't unregister the device, so a voided pass can still
- * be genuinely registered - same reasoning packages/wallet/src/registration-sync.ts's own
- * periodic sync already applies. */
+/** Every ACTIVE wallet pass under the event with a known device-registration id - the only ones
+ * worth reading: a voided or expired pass is Admitto's own recorded state, no longer polled, and
+ * its last registration counts stay as they were (same rule as the periodic sync in
+ * packages/wallet/src/registration-sync.ts). */
 async function loadEventWideRefreshTargets(
   db: PrismaClient,
   eventId: string,
 ): Promise<{ attendeeId: string; providerPassId: string; userProvidedId: string }[]> {
   const rows = await db.walletPass.findMany({
     where: {
-      status: { in: ["active", "voided"] },
+      status: "active",
       provider_pass_id: { not: null },
+      provider_removed_at: null,
       user_provided_id: { not: null },
       attendee: { event_id: eventId },
     },
@@ -177,7 +177,9 @@ async function runOneWalletRefreshStatusJob(
     if (!request) throw new Error("wallet_refresh_status_job_bad_request");
     const eventId = request.eventId;
 
-    const provider = await resolveEventWalletProvider(db, eventId);
+    // A status read changes nothing at the provider, so it does not need the wallet master switch
+    // (an ended, switched-off or archived event is exactly when an operator wants to check it).
+    const provider = await resolveEventWalletProvider(db, eventId, { ignoreWalletEnabled: true });
     if (!provider) throw new Error("wallet_not_configured");
 
     const targets = await loadEventWideRefreshTargets(db, eventId);
