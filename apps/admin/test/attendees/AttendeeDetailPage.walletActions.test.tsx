@@ -248,6 +248,18 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
     });
 
+    it("does not offer Refresh status when the platforms are on but the event has no credentials configured: every click would 409", async () => {
+      mockWalletConfigured = false;
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      expect(screen.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
+      // The other wallet actions are unaffected by the credentials gate.
+      expect(screen.getByRole("menuitem", { name: /Void wallet pass/ })).toBeTruthy();
+    });
+
     it("shows nothing for a voided pass once the Wallet feature is disabled, even with credentials: there is nothing left to read", async () => {
       mockWalletEnabled = false;
       mockLoad(baseDetail({ wallet_pass: walletPass({ status: "voided" }) }));

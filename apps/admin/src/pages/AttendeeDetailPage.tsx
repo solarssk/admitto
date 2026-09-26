@@ -193,7 +193,10 @@ function MoreActionsMenu({
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
   });
-  const refreshOnlyAvailable = walletConfigured && walletPass?.status === "active";
+  // Refresh status reads from the provider, so it needs the event's credentials and a pass that is
+  // still active - and nothing else (not the Wallet switch). Without credentials every click would
+  // 409 wallet_not_configured (bot review).
+  const refreshAvailable = walletConfigured && walletPass?.status === "active";
 
   return (
     <div className="more-actions-menu" ref={rootRef}>
@@ -313,12 +316,13 @@ function MoreActionsMenu({
               this menu even though the Wallet card itself is now hidden (bot review). Refresh
               status only reads from the provider, so an active pass keeps it whenever the event's
               credentials are configured, switch or not (bot review). */}
-          {(walletPlatforms.any ? hasWalletLifecycleActions(walletPass) : refreshOnlyAvailable) && (
+          {(walletPlatforms.any ? hasWalletLifecycleActions(walletPass) : refreshAvailable) && (
             <>
               <hr className="more-actions-menu__divider" />
               <WalletActionMenuItems
                 event={event}
                 platformActions={walletPlatforms.any}
+                refreshAvailable={refreshAvailable}
                 walletPass={walletPass}
                 walletBusy={walletBusy}
                 onVoid={() => {
@@ -488,6 +492,7 @@ function RevokeActionMenuItems({
 function WalletActionMenuItems({
   event,
   platformActions,
+  refreshAvailable,
   walletPass,
   walletBusy,
   onVoid,
@@ -500,6 +505,8 @@ function WalletActionMenuItems({
   /** False when the event no longer offers any wallet platform: only the read-only Refresh
    * status is left, for an active pass. */
   platformActions: boolean;
+  /** Refresh status is offered: the event has credentials configured and the pass is active. */
+  refreshAvailable: boolean;
   walletPass: WalletPassActionDto | null;
   walletBusy: boolean;
   onVoid: () => void;
@@ -564,10 +571,11 @@ function WalletActionMenuItems({
           </ArchivedGuard>
         </>
       )}
-      {/* Only for an active pass: a voided or expired one is Admitto's own recorded state and is
-        * never read again. Deliberately not ArchivedGuard'd - it changes nothing at the provider,
-        * and checking what the provider says is what an operator does after an event has ended. */}
-      {walletPass.status === "active" && (
+      {/* Only for an active pass of an event with credentials configured: a voided or expired one
+        * is Admitto's own recorded state and is never read again. Deliberately not ArchivedGuard'd -
+        * it changes nothing at the provider, and checking what the provider says is what an
+        * operator does after an event has ended. */}
+      {refreshAvailable && (
         <button
           type="button"
           role="menuitem"
