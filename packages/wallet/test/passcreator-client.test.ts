@@ -721,6 +721,26 @@ describe("PassCreatorClient.getPassSnapshot", () => {
     });
   });
 
+  it("stamps observedAt when the read was requested, not when the slow answer came back", async () => {
+    let fetchedAt = 0;
+    const fetchMock = vi.fn(async () => {
+      fetchedAt = Date.now();
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return jsonResponse(200, {
+        success: true,
+        data: [{ identifier: "pass-1", userProvidedId: "admitto:event1:attendee1" }],
+      });
+    });
+    const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);
+
+    const result = await client.getPassSnapshot(REF);
+
+    // Ordering overlapping reads by request time keeps a slow, old answer from outranking a read
+    // that started later and finished first.
+    expect(result!.observedAt.getTime()).toBeLessThanOrEqual(fetchedAt);
+    expect(Date.now() - result!.observedAt.getTime()).toBeGreaterThanOrEqual(40);
+  });
+
   it("returns null when no pass matches", async () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, { success: true, data: [] }));
     const client = new PassCreatorClient(CONFIG, fetchMock as unknown as typeof fetch);

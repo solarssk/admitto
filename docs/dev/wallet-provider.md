@@ -69,14 +69,19 @@ and a naive expiration timestamp is never given a guessed timezone by the adapte
 - **One write, conditioned on what was read.** `applyProviderSnapshotToWalletPass` writes the
   registration counts and any transition together, `WHERE` the identity and lifecycle state are
   still what they were before the provider call, so a Void, Restore or delete-and-reissue in
-  between makes it a quiet no-op. A pass that turns voided/expired keeps the counts of that read;
+  between makes it a quiet no-op. It is also ordered: `registration_checked_at` is the moment the
+  snapshot was *observed*, and the write only lands while the stored value is not newer, so an older
+  read can never overwrite a newer one (a stale "voided" would otherwise stick, since nothing polls
+  a voided pass to correct it). A pass that turns voided/expired keeps the counts of that read;
   nothing polls it afterwards. The periodic sync and Refresh status only read `active` passes
   (sync also skips archived events); Refresh status is read-only, so it ignores the wallet master
   switch and the archived guard.
 - **A webhook is a signal, not a state.** `pass_voided` re-reads the pass through the same
   reconciliation. 200 means dealt with (including "not ours" and "already inactive"); 503 means the
   re-read could not be completed (provider error, or a no-match that survived the retry), so
-  PassCreator redelivers. Registration webhooks only ever update counts.
+  PassCreator redelivers. Registration webhooks only ever update counts. The receiver resolves the
+  provider from the event's credentials alone, not the wallet master switch: switching Wallet off
+  does not unsubscribe the hooks, so deliveries for existing passes keep arriving.
 - **"Reset" is a domain concept, not HTTP DELETE.** With `remoteDelete` it removes the remote pass.
   Without it, a reset must retire the old remote object (void/expire) and issue the next pass under
   a *new* provider identity (a generation counter mixed into it), because today's stable

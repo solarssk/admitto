@@ -28,10 +28,17 @@ export type ApplyProviderSnapshotOptions = {
  * this same write therefore freezes the newest registration counts it will ever have: nothing polls
  * an inactive pass afterwards, so those are its last known values.
  *
- * Returns "conflict" (writes nothing) when the row no longer matches `target`, and never throws for
- * it - a caller looping over many passes treats it like "already handled elsewhere". Stamps
- * registration_checked_at and registration_sync_attempted_at like the callers' own success writes
- * did before this existed.
+ * Reads are ordered: registration_checked_at is stamped with the moment the snapshot was OBSERVED
+ * (not when it was written), and the write only lands while that is not newer than the snapshot's
+ * own observation. Two overlapping reads of one pass (the worker's tick, a manual Refresh, a
+ * webhook) can therefore never let the older observation overwrite the newer one, whichever
+ * finishes last - which matters most for a stale "voided" read, since nothing polls a voided pass
+ * again to correct it.
+ *
+ * Returns "conflict" (writes nothing) when the row no longer matches `target` or a newer
+ * observation is already stored, and never throws for it - a caller looping over many passes
+ * treats it like "already handled elsewhere". Stamps registration_sync_attempted_at like the
+ * callers' own success writes did before this existed.
  */
 export async function applyProviderSnapshotToWalletPass(
   db: PrismaClient,
@@ -56,10 +63,11 @@ export async function applyProviderSnapshotToWalletPass(
       status: target.status,
       provider_commanded_at: target.provider_commanded_at,
       provider_removed_at: target.provider_removed_at,
+      OR: [{ registration_checked_at: null }, { registration_checked_at: { lte: snapshot.observedAt } }],
     },
     data: {
       ...snapshotToWalletPassFields(snapshot),
-      registration_checked_at: now,
+      registration_checked_at: snapshot.observedAt,
       registration_sync_attempted_at: now,
       ...(transition ? { status: transition } : {}),
       ...(transition === "voided" ? { voided_at: now } : {}),
