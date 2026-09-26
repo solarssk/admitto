@@ -117,7 +117,11 @@ describe("PassCreatorClient.createPass", () => {
       code: "wallet_provider_rate_limited",
     });
     expect(fetchMock).toHaveBeenCalledTimes(4); // 1 initial + 3 retries
-  });
+    // Real timers: the three backoff sleeps alone are 500 + 1000 + 2000 ms (~3.5 s), so vitest's
+    // default 5 s timeout left only ~1.5 s of headroom, which a loaded CI runner running with
+    // coverage instrumentation exceeded (timed out on main right after this package joined the
+    // coverage run).
+  }, 15_000);
 
   it("maps a non-JSON error body (e.g. an upstream HTML 502 page) by HTTP status", async () => {
     const fetchMock = vi.fn(
