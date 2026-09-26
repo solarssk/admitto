@@ -4,6 +4,7 @@ import { Prisma } from "@admitto/db";
 import {
   applyFirstConfirmedAt,
   applyWebhookUpdate,
+  findWebhookPassTarget,
   parseAdmittoUserProvidedId,
   parseFirstDownloadedAtUtc,
   parseWebhookData,
@@ -111,10 +112,11 @@ describe("parseWebhookData", () => {
         somethingUnrecognized: "ignored",
       }),
     );
+    // `voided` is not read from a delivery at all: a webhook is only a signal to re-read the pass,
+    // never the source of its validity.
     expect(data).toEqual({
       identifier: "pass-1",
       userProvidedId: "admitto:evt-1:att-1",
-      voided: false,
       operatingSystem: "iOS",
       noOfActivePasses: 1,
       noOfInactivePasses: 0,
@@ -309,7 +311,7 @@ describe("applyWebhookUpdate", () => {
 
   it("returns matched: false without calling update when neither identifier is present", async () => {
     const db = makeDb();
-    const result = await applyWebhookUpdate(db as never, { voided: true });
+    const result = await applyWebhookUpdate(db as never, { operatingSystem: "iOS", noOfActivePasses: 1 });
     expect(result).toEqual({ matched: false });
     expect(db.walletPass.update).not.toHaveBeenCalled();
   });
@@ -329,24 +331,23 @@ describe("applyWebhookUpdate", () => {
     );
   });
 
-  it("sets status: voided and voided_at when voided: true", async () => {
+  it("writes first_downloaded_at as delivered, including an explicit null", async () => {
     const db = makeDb();
-    db.walletPass.update.mockResolvedValueOnce({});
-    await applyWebhookUpdate(db as never, { identifier: "pc-1", voided: true });
-    expect(db.walletPass.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ status: "voided", voided_at: expect.any(Date) }),
-      }),
-    );
+    db.walletPass.update.mockResolvedValue({});
+    await applyWebhookUpdate(db as never, { identifier: "pc-1", firstDownloadedAt: "2026-08-13 10:00:00" });
+    await applyWebhookUpdate(db as never, { identifier: "pc-1", firstDownloadedAt: null });
+    expect(db.walletPass.update.mock.calls[0]?.[0].data.first_downloaded_at).toBe("2026-08-13 10:00:00");
+    expect(db.walletPass.update.mock.calls[1]?.[0].data.first_downloaded_at).toBeNull();
   });
 
-  it("sets status: active and clears voided_at when voided: false", async () => {
+  it("never writes status or voided_at, even for a payload that carries a voided flag - a delivery is a signal, Admitto owns the pass's validity", async () => {
     const db = makeDb();
     db.walletPass.update.mockResolvedValueOnce({});
-    await applyWebhookUpdate(db as never, { identifier: "pc-1", voided: false });
-    expect(db.walletPass.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "active", voided_at: null }) }),
-    );
+    const data = parseWebhookData(JSON.stringify({ identifier: "pc-1", voided: true, operatingSystem: "iOS" }));
+    await applyWebhookUpdate(db as never, data!);
+    const written = db.walletPass.update.mock.calls[0]?.[0].data;
+    expect(written).not.toHaveProperty("status");
+    expect(written).not.toHaveProperty("voided_at");
   });
 
   it("processing the same delivery twice is idempotent - same final field values either way", async () => {
@@ -359,6 +360,56 @@ describe("applyWebhookUpdate", () => {
     const [firstCall, secondCall] = db.walletPass.update.mock.calls;
     expect(firstCall?.[0].data.apple_active_registrations).toBe(2);
     expect(secondCall?.[0].data.apple_active_registrations).toBe(2);
+  });
+});
+
+describe("findWebhookPassTarget", () => {
+  function makeDb(row: unknown) {
+    return { walletPass: { findFirst: vi.fn().mockResolvedValue(row) } };
+  }
+  const found = { attendee_id: "att-1", provider_pass_id: "pc-1", user_provided_id: "admitto:evt-1:att-1" };
+  const expected = { attendeeId: "att-1", providerPassId: "pc-1", userProvidedId: "admitto:evt-1:att-1" };
+
+  it("matches by user_provided_id, scoped to the event, and returns the reference a re-read needs", async () => {
+    const db = makeDb(found);
+    const result = await findWebhookPassTarget(db as never, "evt-1", { userProvidedId: "admitto:evt-1:att-1" });
+    expect(result).toEqual(expected);
+    expect(db.walletPass.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          provider: "passcreator",
+          user_provided_id: "admitto:evt-1:att-1",
+          attendee: { event_id: "evt-1" },
+        },
+      }),
+    );
+  });
+
+  it("falls back to the identifier (provider_pass_id) when userProvidedId is absent - still scoped to the event", async () => {
+    const db = makeDb(found);
+    await findWebhookPassTarget(db as never, "evt-1", { identifier: "pc-1" });
+    expect(db.walletPass.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { provider: "passcreator", provider_pass_id: "pc-1", attendee: { event_id: "evt-1" } },
+      }),
+    );
+  });
+
+  it("returns null without querying when the delivery names no pass", async () => {
+    const db = makeDb(found);
+    expect(await findWebhookPassTarget(db as never, "evt-1", { operatingSystem: "iOS" })).toBeNull();
+    expect(db.walletPass.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("returns null when nothing matches", async () => {
+    expect(await findWebhookPassTarget(makeDb(null) as never, "evt-1", { identifier: "pc-x" })).toBeNull();
+  });
+
+  it("returns null for a pass that has no provider identity to read by yet", async () => {
+    const db = makeDb({ ...found, provider_pass_id: null });
+    expect(await findWebhookPassTarget(db as never, "evt-1", { identifier: "pc-1" })).toBeNull();
+    const db2 = makeDb({ ...found, user_provided_id: null });
+    expect(await findWebhookPassTarget(db2 as never, "evt-1", { identifier: "pc-1" })).toBeNull();
   });
 });
 

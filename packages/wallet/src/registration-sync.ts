@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@admitto/db";
+import { applyProviderSnapshotToWalletPass } from "./apply-provider-snapshot.js";
 import { resolveWalletProvider } from "./resolve-provider.js";
 import type { WalletPassProvider } from "./provider.js";
-import { snapshotToWalletPassFields } from "./snapshot-to-wallet-pass-fields.js";
 
 /** Cap on how many passes one sync call refreshes - keeps a single tick bounded regardless of
  * how many are stale at once (the rest just wait for the next tick). */
@@ -24,6 +24,9 @@ type CandidateRow = {
   attendee_id: string;
   provider_pass_id: string | null;
   user_provided_id: string | null;
+  status: string;
+  provider_commanded_at: Date | null;
+  provider_removed_at: Date | null;
   attendee: {
     event: {
       id: string;
@@ -62,12 +65,19 @@ function chunk<T>(items: T[], size: number): T[][] {
  * needing a third branch. Still rejects after a provider failure so the caller's Promise.allSettled
  * counts it as `failed`, including when a provider rejects with a non-Error value.
  *
- * The write is conditioned on the exact pass identity the snapshot was read for (attendee_id +
- * provider_pass_id + user_provided_id), like refreshOneWalletPassStatus's: a pass deleted and issued
- * again for the same attendee while the provider call was in flight would otherwise get the OLD
- * pass's counts written onto its new row. updateMany, so a row that no longer matches is skipped
- * quietly (its own next tick picks the new pass up) instead of throwing. */
-async function syncOne(db: PrismaClient, provider: WalletPassProvider, row: CandidateRow): Promise<void> {
+ * A *found* snapshot goes through applyProviderSnapshotToWalletPass: the registration counts as
+ * before, plus the one lifecycle transition an observation may cause (an active pass the provider
+ * reports voided or expired). That write is conditioned on the row exactly as this tick read it
+ * (identity and lifecycle state), so a pass deleted and issued again, or voided/restored, while the
+ * provider call was in flight is skipped quietly - its own next tick picks it up - instead of
+ * getting the OLD read written onto it. The not-found/failure write below stays conditioned on
+ * identity only: it changes nothing but the scheduling marker. */
+async function syncOne(
+  db: PrismaClient,
+  provider: WalletPassProvider,
+  row: CandidateRow,
+  providerTimeZone: string | null,
+): Promise<void> {
   let snapshot: Awaited<ReturnType<WalletPassProvider["getPassSnapshot"]>> | null = null;
   let failure: unknown;
   let registrationStatusFailed = false;
@@ -82,20 +92,30 @@ async function syncOne(db: PrismaClient, provider: WalletPassProvider, row: Cand
       failure = error_;
     }
   }
-  await db.walletPass.updateMany({
-    where: {
-      attendee_id: row.attendee_id,
-      provider_pass_id: row.provider_pass_id,
-      user_provided_id: row.user_provided_id,
-    },
-    data: snapshot
-      ? {
-          ...snapshotToWalletPassFields(snapshot),
-          registration_checked_at: new Date(),
-          registration_sync_attempted_at: new Date(),
-        }
-      : { registration_sync_attempted_at: new Date() },
-  });
+  if (snapshot && row.user_provided_id && row.provider_pass_id) {
+    await applyProviderSnapshotToWalletPass(
+      db,
+      {
+        attendeeId: row.attendee_id,
+        providerPassId: row.provider_pass_id,
+        userProvidedId: row.user_provided_id,
+        status: row.status,
+        provider_commanded_at: row.provider_commanded_at,
+        provider_removed_at: row.provider_removed_at,
+      },
+      snapshot,
+      { policy: provider.consistencyPolicy, providerTimeZone },
+    );
+  } else {
+    await db.walletPass.updateMany({
+      where: {
+        attendee_id: row.attendee_id,
+        provider_pass_id: row.provider_pass_id,
+        user_provided_id: row.user_provided_id,
+      },
+      data: { registration_sync_attempted_at: new Date() },
+    });
+  }
   if (registrationStatusFailed) {
     throw failure instanceof Error ? failure : new Error("Wallet registration status lookup failed");
   }
@@ -130,8 +150,13 @@ async function syncEventBucket(
     return;
   }
 
+  // The event's own PassCreator time zone setting does not exist yet, so a provider expiration
+  // written as naive wall-clock digits is never interpreted here: a voided-or-expired report reads
+  // as `voided` (see reconcileWalletPassLifecycle).
+  const providerTimeZone = null;
+
   for (const batch of chunk(rows, SYNC_CONCURRENCY)) {
-    const settled = await Promise.allSettled(batch.map((row) => syncOne(db, provider, row)));
+    const settled = await Promise.allSettled(batch.map((row) => syncOne(db, provider, row, providerTimeZone)));
     for (const outcome of settled) {
       result.checked += 1;
       if (outcome.status === "fulfilled") result.updated += 1;
@@ -143,11 +168,11 @@ async function syncEventBucket(
 /**
  * Periodic best-effort refresh of each wallet pass's device-registration status straight from
  * PassCreator (GET /api/v3/pass?userProvidedId=...) - never called on a request path, only from
- * the `wallet_sync` worker job (apps/cli). Picks up passes that are active or voided (voiding
- * only flips PassCreator's own `voided` flag - it doesn't unregister the device, so a voided pass
- * can still be genuinely registered) whose `registration_sync_attempted_at` is missing or older
- * than WALLET_SYNC_STALE_MS, oldest-first, capped at WALLET_SYNC_BATCH_LIMIT per call so one tick
- * can't run unbounded - the rest simply wait for the next tick. Groups candidates by event so
+ * the `wallet_sync` worker job (apps/cli). Picks up active passes of events that are not archived
+ * whose `registration_sync_attempted_at` is missing or older than WALLET_SYNC_STALE_MS,
+ * oldest-first, capped at WALLET_SYNC_BATCH_LIMIT per call so one tick can't run unbounded - the
+ * rest simply wait for the next tick. The same read is how Admitto notices that the provider has
+ * voided or expired a pass on its own (see applyProviderSnapshotToWalletPass). Groups candidates by event so
  * each event's provider (and its one API-key decrypt) is resolved once, not once per pass. A
  * getPassSnapshot failure for one pass (provider outage, revoked key, ...) is caught and
  * counted as `failed` rather than aborting the whole batch - its registration counts are left
@@ -165,13 +190,19 @@ export async function runWalletRegistrationSync(
   const staleBefore = new Date(nowMs - WALLET_SYNC_STALE_MS);
   const candidates: CandidateRow[] = await db.walletPass.findMany({
     where: {
-      status: { in: ["active", "voided"] },
+      // Only an active pass is polled: voided and expired are Admitto's own recorded states and
+      // nothing the provider reports can change them, so re-reading one is wasted API budget (and
+      // its last registration counts stay frozen at the read that ended its active life).
+      status: "active",
       provider_pass_id: { not: null },
       user_provided_id: { not: null },
       // Not just a filter: WalletPass_registration_sync_pending_idx is a partial index whose
       // predicate includes `provider_removed_at IS NULL`, and Postgres only uses a partial index
       // for a query whose own WHERE implies that predicate.
       provider_removed_at: null,
+      // An archived event is finished business: the background poll leaves it alone (a manual
+      // Refresh status still works there).
+      attendee: { event: { archived_at: null } },
       OR: [
         { registration_sync_attempted_at: null },
         { registration_sync_attempted_at: { lt: staleBefore } },
@@ -181,6 +212,9 @@ export async function runWalletRegistrationSync(
       attendee_id: true,
       provider_pass_id: true,
       user_provided_id: true,
+      status: true,
+      provider_commanded_at: true,
+      provider_removed_at: true,
       attendee: {
         select: {
           event: {

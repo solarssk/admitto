@@ -8,16 +8,30 @@ import { walletSnapshot } from "./snapshot-fixture.js";
 const target = { attendeeId: "att-1", providerPassId: "pc-1", userProvidedId: "admitto:evt-1:att-1" };
 
 const SNAPSHOT = walletSnapshot({ appleActive: 1, googleActive: 2 }, { firstDownloadedAt: "2026-08-25 09:00" });
+const VOIDED_SNAPSHOT = walletSnapshot(
+  { appleActive: 1 },
+  { validity: { voided: true, expirationRaw: null, expiresAt: null } },
+);
 
-function makeDb(count = 1) {
+const ACTIVE_ROW = { status: "active", provider_commanded_at: null, provider_removed_at: null };
+
+/** `row` is what the pre-call read finds (null = no such row); `count` is what the conditional
+ * write then matches. */
+function makeDb(count = 1, row: Record<string, unknown> | null = ACTIVE_ROW) {
   return {
-    walletPass: { updateMany: vi.fn().mockResolvedValue({ count }) },
+    walletPass: {
+      findFirst: vi.fn().mockResolvedValue(row),
+      updateMany: vi.fn().mockResolvedValue({ count }),
+    },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }
 
 describe("refreshOneWalletPassStatus", () => {
-  const provider = { getPassSnapshot: vi.fn() };
+  const provider = {
+    getPassSnapshot: vi.fn(),
+    consistencyPolicy: { observationStalenessWindowMs: 10 * 60 * 1000 },
+  };
 
   beforeEach(() => {
     provider.getPassSnapshot.mockReset();
@@ -40,6 +54,11 @@ describe("refreshOneWalletPassStatus", () => {
         attendee_id: target.attendeeId,
         provider_pass_id: target.providerPassId,
         user_provided_id: target.userProvidedId,
+        // The lifecycle state as read before the provider call: a Void, a Restore or a delete during
+        // the call makes this write match nothing.
+        status: "active",
+        provider_commanded_at: null,
+        provider_removed_at: null,
       },
       data: {
         apple_active_registrations: SNAPSHOT.registrations!.appleActive,
@@ -97,5 +116,66 @@ describe("refreshOneWalletPassStatus", () => {
     const result = await refreshOneWalletPassStatus(db, target, provider as never);
 
     expect(result).toBe("conflict");
+  });
+
+  it("returns conflict without a provider call when the pass is no longer there to be read", async () => {
+    const db = makeDb(1, null);
+
+    const result = await refreshOneWalletPassStatus(db, target, provider as never);
+
+    expect(result).toBe("conflict");
+    expect(provider.getPassSnapshot).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["voided", { status: "voided", provider_commanded_at: null, provider_removed_at: null }],
+    ["expired", { status: "expired", provider_commanded_at: null, provider_removed_at: null }],
+    ["pending", { status: "pending", provider_commanded_at: null, provider_removed_at: null }],
+    ["removed at the provider", { status: "voided", provider_commanded_at: null, provider_removed_at: new Date() }],
+  ])("returns inactive for a %s pass without calling the provider or writing", async (_label, row) => {
+    const db = makeDb(1, row);
+
+    const result = await refreshOneWalletPassStatus(db, target, provider as never);
+
+    expect(result).toBe("inactive");
+    expect(provider.getPassSnapshot).not.toHaveBeenCalled();
+    expect(db.walletPass.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("records the transition when the provider reports the active pass voided", async () => {
+    const db = makeDb();
+    provider.getPassSnapshot.mockResolvedValueOnce(VOIDED_SNAPSHOT);
+
+    const result = await refreshOneWalletPassStatus(db, target, provider as never);
+
+    expect(result).toBe("refreshed");
+    expect(db.walletPass.updateMany.mock.calls[0][0].data).toMatchObject({
+      status: "voided",
+      voided_at: expect.any(Date),
+      apple_active_registrations: 1,
+    });
+  });
+
+  it("reads a voided report as expired when the caller supplies the provider time zone and the provider's expiration is past", async () => {
+    const db = makeDb();
+    provider.getPassSnapshot.mockResolvedValueOnce(
+      walletSnapshot({}, { validity: { voided: true, expirationRaw: "2026-09-01 11:00", expiresAt: null } }),
+    );
+
+    await refreshOneWalletPassStatus(db, target, provider as never, { providerTimeZone: "Europe/Warsaw" });
+
+    // 11:00 in Warsaw (UTC+2) is 09:00Z, before the snapshot's own 10:00Z read.
+    expect(db.walletPass.updateMany.mock.calls[0][0].data.status).toBe("expired");
+  });
+
+  it("leaves a naive provider expiration uninterpreted when no time zone is supplied: voided, not a guessed expired", async () => {
+    const db = makeDb();
+    provider.getPassSnapshot.mockResolvedValueOnce(
+      walletSnapshot({}, { validity: { voided: true, expirationRaw: "2026-09-01 11:00", expiresAt: null } }),
+    );
+
+    await refreshOneWalletPassStatus(db, target, provider as never);
+
+    expect(db.walletPass.updateMany.mock.calls[0][0].data.status).toBe("voided");
   });
 });
