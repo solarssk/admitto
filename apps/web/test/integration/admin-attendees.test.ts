@@ -1910,6 +1910,46 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       }
     });
 
+    it("does not let an older 'voided' observation overwrite a newer one that landed while the provider call was in flight", async () => {
+      const attendeeId = "att-wallet-action-refresh-out-of-order";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        getPassSnapshotSpy.mockImplementationOnce(async () => {
+          // A newer read of the same pass (say the worker's tick) is stored while this slower one
+          // is still in flight.
+          await prisma.walletPass.update({
+            where: { attendee_id: attendeeId },
+            data: { registration_checked_at: new Date(), apple_active_registrations: 5 },
+          });
+          return walletSnapshot(
+            { appleActive: 1 },
+            {
+              observedAt: new Date(Date.now() - 10_000),
+              validity: { voided: true, expirationRaw: null, expiresAt: null },
+            },
+          );
+        });
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/refresh-status`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: "wallet_pass_changed" });
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        // The stale "voided" must not stick: nothing polls a voided pass again to correct it.
+        expect(row?.status).toBe("active");
+        expect(row?.apple_active_registrations).toBe(5);
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
     it("returns 409 without calling the provider when the pass has no user_provided_id to look up", async () => {
       const attendeeId = "att-wallet-action-refresh-no-upid";
       try {

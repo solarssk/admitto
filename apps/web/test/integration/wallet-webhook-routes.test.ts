@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateKeyPairSync, createSign } from "node:crypto";
+import { encryptToString } from "@admitto/crypto";
 import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import type { WalletPassInput, WalletPassProvider } from "@admitto/wallet";
@@ -18,6 +19,11 @@ const CACHE_TEST_EVENT_ID = "evt-wallet-webhook-cache";
 // file - publicKeyCache is module-scoped and never cleared between tests, so reusing an id
 // another test has already delivered to would silently skip the fetch this test needs to fail.
 const KEY_FETCH_FAILURE_EVENT_ID = "evt-wallet-webhook-key-failure";
+// Credentials configured, Wallet master switch OFF - resolved through the real provider path, not
+// an injected stub (own id for the same publicKeyCache reason as above).
+const SWITCH_OFF_EVENT_ID = "evt-wallet-webhook-switch-off";
+const SWITCH_OFF_ATTENDEE_ID = "attendee-wallet-webhook-switch-off";
+const SWITCH_OFF_USER_PROVIDED_ID = `admitto:${SWITCH_OFF_EVENT_ID}:${SWITCH_OFF_ATTENDEE_ID}`;
 const ATTENDEE_ID = "attendee-wallet-webhook";
 const USER_PROVIDED_ID = `admitto:${EVENT_ID}:${ATTENDEE_ID}`;
 
@@ -55,8 +61,15 @@ function stubProvider(publicKey: string): WalletPassProvider & {
 }
 
 async function seedFixture(client: PrismaClient): Promise<void> {
-  const eventIds = [EVENT_ID, OTHER_EVENT_ID, UNCONFIGURED_EVENT_ID, CACHE_TEST_EVENT_ID, KEY_FETCH_FAILURE_EVENT_ID];
-  await client.walletPass.deleteMany({ where: { attendee_id: ATTENDEE_ID } });
+  const eventIds = [
+    EVENT_ID,
+    OTHER_EVENT_ID,
+    UNCONFIGURED_EVENT_ID,
+    CACHE_TEST_EVENT_ID,
+    KEY_FETCH_FAILURE_EVENT_ID,
+    SWITCH_OFF_EVENT_ID,
+  ];
+  await client.walletPass.deleteMany({ where: { attendee: { event_id: { in: eventIds } } } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.event.deleteMany({ where: { id: { in: eventIds } } });
   await client.organization.deleteMany({ where: { id: ORG_ID } });
@@ -112,6 +125,36 @@ async function seedFixture(client: PrismaClient): Promise<void> {
       wallet_template_id: "tmpl-key-failure-gala",
     },
   });
+  await client.event.create({
+    data: {
+      id: SWITCH_OFF_EVENT_ID,
+      title: "Switch Off Gala",
+      slug: "switch-off-gala",
+      date: new Date("2026-09-01"),
+      organization_id: ORG_ID,
+      wallet_enabled: false,
+      wallet_template_id: "tmpl-switch-off-gala",
+      wallet_api_key_enc: encryptToString("test-api-key"),
+    },
+  });
+  await client.attendee.create({
+    data: {
+      id: SWITCH_OFF_ATTENDEE_ID,
+      event_id: SWITCH_OFF_EVENT_ID,
+      email: "switch-off@example.com",
+      name: "Switch Off Guest",
+      status: "registered",
+    },
+  });
+  await client.walletPass.create({
+    data: {
+      attendee_id: SWITCH_OFF_ATTENDEE_ID,
+      provider: "passcreator",
+      provider_pass_id: "pc-switch-off-1",
+      user_provided_id: SWITCH_OFF_USER_PROVIDED_ID,
+      status: "active",
+    },
+  });
   await client.attendee.create({
     data: {
       id: ATTENDEE_ID,
@@ -165,8 +208,15 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  const eventIds = [EVENT_ID, OTHER_EVENT_ID, UNCONFIGURED_EVENT_ID, CACHE_TEST_EVENT_ID, KEY_FETCH_FAILURE_EVENT_ID];
-  await prisma.walletPass.deleteMany({ where: { attendee_id: ATTENDEE_ID } });
+  const eventIds = [
+    EVENT_ID,
+    OTHER_EVENT_ID,
+    UNCONFIGURED_EVENT_ID,
+    CACHE_TEST_EVENT_ID,
+    KEY_FETCH_FAILURE_EVENT_ID,
+    SWITCH_OFF_EVENT_ID,
+  ];
+  await prisma.walletPass.deleteMany({ where: { attendee: { event_id: { in: eventIds } } } });
   await prisma.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
   await prisma.event.deleteMany({ where: { id: { in: eventIds } } });
   await prisma.organization.deleteMany({ where: { id: ORG_ID } });
@@ -400,6 +450,72 @@ describe("POST /api/wallet/webhook/passcreator/:eventId", () => {
     });
 
     expect(res.status).toBe(502);
+  });
+});
+
+describe("webhooks for an event whose Wallet master switch is off but whose credentials are configured", () => {
+  // Switching Wallet off stops new passes; it does not unsubscribe the PassCreator hooks, so the
+  // deliveries for passes that already exist keep arriving. No injected provider here: this goes
+  // through the real resolution from the event's stored credentials, with PassCreator's HTTP API
+  // stubbed at the global fetch.
+  function stubPassCreatorApi(searchStatus = 500) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        if (String(input).includes("/api/hook/publickey")) {
+          return new Response(JSON.stringify({ publicKey: keyPair.publicKey }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ success: false, errors: ["stubbed"] }), {
+          status: searchStatus,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("still applies a registration delivery", async () => {
+    stubPassCreatorApi();
+    const app = makeApp(undefined);
+    const body = signedRequest({
+      identifier: "pc-switch-off-1",
+      userProvidedId: SWITCH_OFF_USER_PROVIDED_ID,
+      operatingSystem: "iOS",
+      noOfActivePasses: 1,
+    });
+
+    const res = await app.request(`/api/wallet/webhook/passcreator/${SWITCH_OFF_EVENT_ID}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    expect(res.status).toBe(200);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: SWITCH_OFF_ATTENDEE_ID } });
+    expect(row?.apple_active_registrations).toBe(1);
+  });
+
+  it("still reaches the pass_voided reconciliation instead of dropping the delivery with a 404", async () => {
+    stubPassCreatorApi(500);
+    const app = makeApp(undefined);
+    const body = signedRequest({ identifier: "pc-switch-off-1", userProvidedId: SWITCH_OFF_USER_PROVIDED_ID });
+
+    const res = await app.request(`/api/wallet/webhook/passcreator/${SWITCH_OFF_EVENT_ID}/voided`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    // 503, not 404: the provider was resolved from the stored credentials and the re-read of the
+    // pass was attempted (and failed against the stubbed API), so PassCreator redelivers.
+    expect(res.status).toBe(503);
+    expect(querySystemLogs({ search: "wallet_webhook_reconcile_failed" })).toHaveLength(1);
   });
 });
 

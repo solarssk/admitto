@@ -9,7 +9,7 @@ import {
   parseWebhookData,
   parseWebhookEnvelope,
   refreshOneWalletPassStatus,
-  resolveWalletProvider,
+  resolveConfiguredWalletProvider,
   verifyWebhookSignature,
   WalletStatusCheckInconclusiveError,
   type PassCreatorWebhookData,
@@ -115,12 +115,15 @@ async function resolveEventWebhookProvider(
 ): Promise<(WalletPassProvider & WebhookCapableProvider) | null> {
   const event = await db.event.findUnique({
     where: { id: eventId },
-    select: { wallet_enabled: true, wallet_template_id: true, wallet_api_key_enc: true },
+    select: { wallet_template_id: true, wallet_api_key_enc: true },
   });
   if (!event) return null;
-  const provider = resolveWalletProvider(
+  // The event's credentials alone, not the wallet master switch: switching Wallet off stops new
+  // passes being issued but does not unsubscribe the PassCreator hooks, so deliveries for the
+  // passes that already exist keep arriving and still need their signature key and a provider to
+  // re-read the pass with (a void reported while the switch was off must not be dropped).
+  const provider = resolveConfiguredWalletProvider(
     {
-      walletEnabled: event.wallet_enabled,
       walletTemplateId: event.wallet_template_id,
       walletApiKeyEnc: event.wallet_api_key_enc,
       walletFieldMapping: null,
