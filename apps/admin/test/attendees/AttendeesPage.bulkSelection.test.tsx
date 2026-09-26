@@ -10,6 +10,7 @@ import { reportApiError } from "../../src/connection/ConnectionStateProvider.js"
 
 // Read lazily by the mocked useOutletContext below, so a test can archive the event.
 let mockArchivedAt: string | null = null;
+let mockWalletEnabled = true;
 const fetchEventAttendees = vi.fn();
 const fetchEventMailSettings = vi.fn();
 const sendEventBulk = vi.fn();
@@ -151,7 +152,7 @@ vi.mock("react-router", async (importOriginal) => {
         location: null,
         attendee_count: 3,
         archived_at: mockArchivedAt,
-        wallet_enabled: true,
+        wallet_enabled: mockWalletEnabled,
         wallet_apple_enabled: true,
         wallet_google_enabled: true,
         wallet_configured: true,
@@ -204,6 +205,7 @@ function clickMenuItemAndArmDialog(menuItemName: RegExp, dialogName?: string) {
 
 beforeEach(() => {
   mockArchivedAt = null;
+  mockWalletEnabled = true;
   mockMatchMedia(true);
   fetchEventMailSettings.mockResolvedValue(mailSettings("smtp"));
   fetchTicketTypes.mockResolvedValue([]);
@@ -1140,6 +1142,22 @@ describe("AttendeesPage bulk wallet actions (#879)", () => {
     expect(refreshItem.disabled).toBe(false);
     for (const name of [/^Void wallet pass/, /^Push updates/, /^Delete wallet pass/]) {
       expect((bulkBar().getByRole("menuitem", { name }) as HTMLButtonElement).disabled).toBe(true);
+    }
+  });
+
+  it("keeps only the read-only bulk 'Refresh status' with the Wallet switch off: Void, Push updates and Delete are not offered", async () => {
+    mockWalletEnabled = false;
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+    fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
+
+    expect((bulkBar().getByRole("menuitem", { name: /^Refresh status/ }) as HTMLButtonElement).disabled).toBe(false);
+    for (const name of [/^Void wallet pass/, /^Push updates/, /^Delete wallet pass/]) {
+      expect(bulkBar().queryByRole("menuitem", { name })).toBeNull();
     }
   });
 

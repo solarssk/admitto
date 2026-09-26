@@ -30,6 +30,7 @@ let mockWalletEnabled = true;
 let mockWalletAppleEnabled = true;
 let mockWalletGoogleEnabled = true;
 let mockWalletSamsungEnabled = true;
+let mockWalletConfigured = true;
 
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
@@ -55,6 +56,9 @@ vi.mock("react-router", async (importOriginal) => {
         },
         get wallet_samsung_enabled() {
           return mockWalletSamsungEnabled;
+        },
+        get wallet_configured() {
+          return mockWalletConfigured;
         },
         get archived_at() {
           return mockArchivedAt;
@@ -175,6 +179,7 @@ afterEach(() => {
   mockWalletAppleEnabled = true;
   mockWalletGoogleEnabled = true;
   mockWalletSamsungEnabled = true;
+  mockWalletConfigured = true;
   vi.unstubAllGlobals();
 });
 
@@ -216,7 +221,7 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
     });
 
-    it("hides every wallet lifecycle action, even for an active pass, once the event's Wallet feature is disabled", async () => {
+    it("keeps only the read-only Refresh status, for an active pass, once the event's Wallet feature is disabled", async () => {
       mockWalletEnabled = false;
       mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
       renderPage();
@@ -226,8 +231,32 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
       expect(screen.queryByRole("menuitem", { name: /Restore wallet pass/ })).toBeNull();
       expect(screen.queryByRole("menuitem", { name: /Push updates/ })).toBeNull();
-      expect(screen.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
       expect(screen.queryByRole("menuitem", { name: /Delete wallet pass/ })).toBeNull();
+      // Reading changes nothing at the provider, so the switch does not hide it.
+      expect(screen.getByRole("menuitem", { name: /Refresh status/ })).toBeTruthy();
+    });
+
+    it("shows no wallet action at all with the Wallet feature disabled and no credentials configured", async () => {
+      mockWalletEnabled = false;
+      mockWalletConfigured = false;
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      expect(screen.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
+    });
+
+    it("shows nothing for a voided pass once the Wallet feature is disabled, even with credentials: there is nothing left to read", async () => {
+      mockWalletEnabled = false;
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "voided" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      expect(screen.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Restore wallet pass/ })).toBeNull();
     });
   });
 

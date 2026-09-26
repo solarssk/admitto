@@ -271,6 +271,9 @@ export interface AttendeesTableProps {
   eventTimezone: string;
   event: ArchivedGuardEvent;
   walletPlatforms: EnabledWalletPlatforms;
+  /** The event has a template and a working API key (EventDto.wallet_configured), whatever the
+   * Wallet master switch says - all the read-only Refresh status action needs. */
+  walletConfigured: boolean;
 }
 
 interface AttendeeCardProps {
@@ -481,6 +484,9 @@ interface BulkItemPassWalletActions {
   canBulkWallet: boolean;
   walletPassCount: number;
   walletPlatforms: EnabledWalletPlatforms;
+  /** The event has a template and a working API key (EventDto.wallet_configured), whatever the
+   * Wallet master switch says - all the read-only Refresh status action needs. */
+  walletConfigured: boolean;
 }
 
 function BulkMoreActionsMenu({
@@ -526,6 +532,7 @@ function BulkMoreActionsMenu({
   canBulkWallet,
   walletPassCount,
   walletPlatforms,
+  walletConfigured,
   onDelete,
 }: Readonly<{
   selectedCount: number;
@@ -726,64 +733,76 @@ function BulkMoreActionsMenu({
            * feature off, and the master switch off would make these requests fail server-side
            * with wallet_not_configured anyway; both platforms off would let them mutate passes
            * this page has deliberately hidden everywhere else (CodeRabbit review), same
-           * walletPlatforms.any gate as the attendee-detail page's own wallet action menu. */}
-          {walletPlatforms.any && (
+           * walletPlatforms.any gate as the attendee-detail page's own wallet action menu. Refresh
+           * status is the exception: it only reads from the provider, so it needs just the event's
+           * credentials and stays available with the Wallet switch off (bot review). */}
+          {(walletPlatforms.any || walletConfigured) && (
             <>
               <hr className="more-actions-menu__divider" />
-              {/* Disabled once nothing in the selection has a WalletPass row at all - a mixed
-               * selection stays enabled, same "nothing to do" gate as the actions above. The exact
-               * count can still include an already-voided pass (skipped server-side and reported in
-               * the result toast) - the row list doesn't carry that finer status. */}
-              <MoreActionsMenuItem
-                icon="wallet-off"
-                variant="warning"
-                label={bulkVoidWalletBusy ? "Voiding wallet passes…" : "Void wallet pass"}
-                hint={`Show as invalid in their wallet for ${attendeeCount(walletPassCount)}`}
-                disabled={archived || bulkVoidWalletBusy || !canBulkWallet}
-                tooltip={bulkWalletTooltip(archived, canBulkWallet)}
-                onClick={() => {
-                  setOpen(false);
-                  onBulkVoidWallet();
-                }}
-              />
-              <MoreActionsMenuItem
-                icon="refresh-dot"
-                label={bulkReissueWalletBusy ? "Pushing updates…" : "Push updates"}
-                hint={`Push the latest details for ${attendeeCount(walletPassCount)}`}
-                disabled={archived || bulkReissueWalletBusy || !canBulkWallet}
-                tooltip={bulkWalletTooltip(archived, canBulkWallet)}
-                onClick={() => {
-                  setOpen(false);
-                  onBulkReissueWallet();
-                }}
-              />
-              <MoreActionsMenuItem
-                icon="cloud-download"
-                label={bulkRefreshWalletStatusBusy ? "Refreshing status…" : "Refresh status"}
-                hint={`Pull the latest status for ${attendeeCount(walletPassCount)}`}
-                disabled={bulkRefreshWalletStatusBusy || !canBulkWallet}
-                // Read-only, so still available on an archived event (see the server route).
-                tooltip={bulkWalletTooltip(false, canBulkWallet)}
-                onClick={() => {
-                  setOpen(false);
-                  onBulkRefreshWalletStatus();
-                }}
-              />
-              {/* Irreversible - removes the pass at the provider entirely, distinct from Void above
-               * (which just marks it invalid while leaving it installed). Same "nothing to do" gate
-               * as Void/Reissue. */}
-              <MoreActionsMenuItem
-                icon="trash"
-                variant="danger"
-                label={bulkDeleteWalletBusy ? "Deleting wallet passes…" : "Delete wallet pass"}
-                hint={`Permanently deletes the pass record for ${attendeeCount(walletPassCount)}`}
-                disabled={archived || bulkDeleteWalletBusy || !canBulkWallet}
-                tooltip={bulkWalletTooltip(archived, canBulkWallet)}
-                onClick={() => {
-                  setOpen(false);
-                  onBulkDeleteWallet();
-                }}
-              />
+              {walletPlatforms.any && (
+                <>
+                  {/* Disabled once nothing in the selection has a WalletPass row at all - a mixed
+                   * selection stays enabled, same "nothing to do" gate as the actions above. The exact
+                   * count can still include an already-voided pass (skipped server-side and reported in
+                   * the result toast) - the row list doesn't carry that finer status. */}
+                  <MoreActionsMenuItem
+                    icon="wallet-off"
+                    variant="warning"
+                    label={bulkVoidWalletBusy ? "Voiding wallet passes…" : "Void wallet pass"}
+                    hint={`Show as invalid in their wallet for ${attendeeCount(walletPassCount)}`}
+                    disabled={archived || bulkVoidWalletBusy || !canBulkWallet}
+                    tooltip={bulkWalletTooltip(archived, canBulkWallet)}
+                    onClick={() => {
+                      setOpen(false);
+                      onBulkVoidWallet();
+                    }}
+                  />
+                  <MoreActionsMenuItem
+                    icon="refresh-dot"
+                    label={bulkReissueWalletBusy ? "Pushing updates…" : "Push updates"}
+                    hint={`Push the latest details for ${attendeeCount(walletPassCount)}`}
+                    disabled={archived || bulkReissueWalletBusy || !canBulkWallet}
+                    tooltip={bulkWalletTooltip(archived, canBulkWallet)}
+                    onClick={() => {
+                      setOpen(false);
+                      onBulkReissueWallet();
+                    }}
+                  />
+                </>
+              )}
+              {walletConfigured && (
+                  <MoreActionsMenuItem
+                    icon="cloud-download"
+                    label={bulkRefreshWalletStatusBusy ? "Refreshing status…" : "Refresh status"}
+                    hint={`Pull the latest status for ${attendeeCount(walletPassCount)}`}
+                    disabled={bulkRefreshWalletStatusBusy || !canBulkWallet}
+                    // Read-only, so still available on an archived event (see the server route).
+                    tooltip={bulkWalletTooltip(false, canBulkWallet)}
+                    onClick={() => {
+                      setOpen(false);
+                      onBulkRefreshWalletStatus();
+                    }}
+                  />
+              )}
+              {walletPlatforms.any && (
+                <>
+                  {/* Irreversible - removes the pass at the provider entirely, distinct from Void above
+                   * (which just marks it invalid while leaving it installed). Same "nothing to do" gate
+                   * as Void/Reissue. */}
+                  <MoreActionsMenuItem
+                    icon="trash"
+                    variant="danger"
+                    label={bulkDeleteWalletBusy ? "Deleting wallet passes…" : "Delete wallet pass"}
+                    hint={`Permanently deletes the pass record for ${attendeeCount(walletPassCount)}`}
+                    disabled={archived || bulkDeleteWalletBusy || !canBulkWallet}
+                    tooltip={bulkWalletTooltip(archived, canBulkWallet)}
+                    onClick={() => {
+                      setOpen(false);
+                      onBulkDeleteWallet();
+                    }}
+                  />
+                </>
+              )}
             </>
           )}
           <hr className="more-actions-menu__divider" />
@@ -877,6 +896,7 @@ function BulkBar({
   canBulkWallet,
   walletPassCount,
   walletPlatforms,
+  walletConfigured,
   onBulkDelete,
 }: Readonly<{
   selectedIds: ReadonlySet<string>;
@@ -1016,6 +1036,7 @@ function BulkBar({
           canBulkWallet={canBulkWallet}
           walletPassCount={walletPassCount}
           walletPlatforms={walletPlatforms}
+          walletConfigured={walletConfigured}
           onDelete={onBulkDelete}
         />
       </div>
@@ -1561,6 +1582,7 @@ export function AttendeesTable({
   eventTimezone,
   event,
   walletPlatforms,
+  walletConfigured,
 }: Readonly<AttendeesTableProps>) {
   // Wider than the shared 768px breakpoint (used elsewhere in this file for button-label
   // fit, unaffected): the table itself needs ~950-975px min-width for its 7 columns, which
@@ -1676,6 +1698,7 @@ export function AttendeesTable({
           canBulkWallet={canBulkWallet}
           walletPassCount={walletPassCount}
           walletPlatforms={walletPlatforms}
+          walletConfigured={walletConfigured}
           onBulkDelete={onBulkDelete}
         />
       ) : (

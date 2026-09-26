@@ -473,6 +473,45 @@ describe("AttendeesPage export and header Send tickets", () => {
     expect((screen.getByRole("menuitem", { name: /^Push updates/ }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it("offers the header 'Refresh status', but not 'Push updates', with the Wallet switch off once the event's credentials are configured: it only reads", async () => {
+    useOutletContextMock.mockReturnValue({
+      event: {
+        ...defaultOutletContext.event,
+        wallet_enabled: false,
+        wallet_apple_enabled: true,
+        wallet_google_enabled: true,
+        wallet_configured: true,
+      },
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "More actions" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+
+    expect((screen.getByRole("menuitem", { name: /^Refresh status/ }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByRole("menuitem", { name: /^Push updates/ })).toBeNull();
+  });
+
+  it("hides the header 'Refresh status' when the event has no credentials configured, whatever the Wallet switch says", async () => {
+    useOutletContextMock.mockReturnValue({
+      event: {
+        ...defaultOutletContext.event,
+        wallet_enabled: true,
+        wallet_apple_enabled: true,
+        wallet_google_enabled: true,
+        wallet_configured: false,
+      },
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "More actions" })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+
+    expect(screen.queryByRole("menuitem", { name: /^Refresh status/ })).toBeNull();
+  });
+
   it("hides the header 'Refresh status' wallet item when the event has no wallet platform configured", async () => {
     renderPage();
     await waitFor(() => {

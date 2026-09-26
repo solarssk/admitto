@@ -87,6 +87,7 @@ const tableProps: AttendeesTableProps = {
   eventTimezone: "UTC",
   event: { archived_at: null as string | null },
   walletPlatforms: { apple: true, google: true, samsung: false, any: true },
+  walletConfigured: true,
 };
 
 function openMoreActionsMenu() {
@@ -136,6 +137,25 @@ describe("AttendeesTable wallet bulk actions gated by the event's platform toggl
     expect(menu.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
     expect(menu.queryByRole("menuitem", { name: /Push updates/ })).toBeNull();
     expect(menu.queryByRole("menuitem", { name: /Delete wallet pass/ })).toBeNull();
+  });
+
+  it("keeps the read-only Refresh status with the Wallet feature disabled while the event's credentials are configured", () => {
+    render(<AttendeesTable {...tableProps} items={[walletRow]} walletPlatforms={{ apple: false, google: false, any: false }} />);
+    const menu = openMoreActionsMenu();
+    expect(menu.getByRole("menuitem", { name: /^Refresh status/ })).toBeTruthy();
+  });
+
+  it("offers no wallet group at all with the Wallet feature disabled and no credentials configured", () => {
+    render(
+      <AttendeesTable
+        {...tableProps}
+        items={[walletRow]}
+        walletPlatforms={{ apple: false, google: false, any: false }}
+        walletConfigured={false}
+      />,
+    );
+    const menu = openMoreActionsMenu();
+    expect(menu.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
   });
 
   it("shows the wallet bulk actions once at least one platform is enabled", () => {
