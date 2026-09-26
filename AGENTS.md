@@ -275,7 +275,7 @@ a shared modal/component CSS file should show up importing it directly.
 |---|---|---|
 | `@admitto/mail-templates` | Barrel pulls in mjml/fs. Caused `fileURLToPath is not a function` on Event Settings. | `@admitto/mail-templates/placeholders` |
 | `@admitto/tickets` | Barrel pulls in Prisma, `node:crypto`, pdfkit, and, via `htmlnano`→`cosmiconfig`'s optional TS-config loader, the entire `typescript` compiler. | `@admitto/tickets/custom-data-reserved`, `@admitto/tickets/event-item-usability` |
-| `@admitto/wallet` | Barrel pulls in `node:crypto`, Prisma, and `pg` transitively via `registration-sync.ts`/`passcreator-webhook.ts`; pulled `node:crypto`, `node:url`, `@prisma/client/runtime`, `pg`, and `pgpass` into the Event Settings chunk via the `WALLET_MAPPING_PLACEHOLDERS` import. | `@admitto/wallet/passcreator-mapper` |
+| `@admitto/wallet` | Barrel pulls in `node:crypto`, Prisma, and `pg` transitively via `registration-sync.ts`/`passcreator-webhook.ts`; pulled `node:crypto`, `node:url`, `@prisma/client/runtime`, `pg`, and `pgpass` into the Event Settings chunk via the `WALLET_MAPPING_PLACEHOLDERS` import. | `@admitto/wallet/passcreator-mapper`, `@admitto/wallet/capabilities` (static provider facts, type-only imports) |
 
 Same idea as avoiding `@admitto/auth`'s root entry for password helpers (`./constants`, `./password-strength`). Type-only re-exports from the root remain OK when they stay `import type` / `export type`.
 

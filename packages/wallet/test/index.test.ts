@@ -28,5 +28,15 @@ describe("@admitto/wallet", () => {
 
     const notFound = await provider.findByUserProvidedId("admitto:event1:missing");
     expect(notFound).toBeNull();
+
+    const snapshot = await provider.getPassSnapshot({
+      providerPassId: created.providerPassId,
+      userProvidedId: "admitto:event1:attendee1",
+    });
+    expect(snapshot?.validity.voided).toBe(false);
+    expect(snapshot?.registrations?.appleActive).toBe(0);
+    expect(
+      await provider.getPassSnapshot({ providerPassId: "stub-missing", userProvidedId: "admitto:event1:missing" }),
+    ).toBeNull();
   });
 });

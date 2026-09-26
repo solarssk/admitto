@@ -1,14 +1,14 @@
 import type { PrismaClient } from "@admitto/db";
 import { resolveWalletProvider } from "./resolve-provider.js";
 import type { WalletPassProvider } from "./provider.js";
-import { registrationStatusToWalletPassFields } from "./registration-status-to-wallet-pass-fields.js";
+import { snapshotToWalletPassFields } from "./snapshot-to-wallet-pass-fields.js";
 
 /** Cap on how many passes one sync call refreshes - keeps a single tick bounded regardless of
  * how many are stale at once (the rest just wait for the next tick). */
 export const WALLET_SYNC_BATCH_LIMIT = 25;
 /** How long a pass's registration status is trusted before it's due for a refresh. */
 export const WALLET_SYNC_STALE_MS = 30 * 60 * 1000;
-/** Concurrent getRegistrationStatus calls within one event's batch - PassCreator's own rate limit
+/** Concurrent getPassSnapshot calls within one event's batch - PassCreator's own rate limit
  * is 600 req/min (ADR 0041 §3); this stays well under it without needing its own backoff logic
  * (PassCreatorClient.requestRaw already retries 429s per call). */
 const SYNC_CONCURRENCY = 3;
@@ -22,6 +22,7 @@ export type WalletRegistrationSyncResult = {
 
 type CandidateRow = {
   attendee_id: string;
+  provider_pass_id: string | null;
   user_provided_id: string | null;
   attendee: {
     event: {
@@ -51,22 +52,25 @@ function chunk<T>(items: T[], size: number): T[][] {
  * passcreator-client.ts) is a *search*, not a get-by-ID: a pass that has genuinely vanished at the
  * provider (deleted directly there, bypassing Admitto, or pruned by the provider's own data-
  * retention rules while the rest of the account is still fully reachable) makes that search
- * return a normal, non-error empty result - getRegistrationStatus resolves to `null`, exactly the
+ * return a normal, non-error empty result - getPassSnapshot resolves to `null`, exactly the
  * same shape as "not yet installed anywhere". Writing that as all-null registration counts would
  * silently overwrite the historical fact that this pass really was confirmed installed at some
  * point (2026-09-03 incident/investigation) - registration_checked_at would even advance,
- * making the row look freshly, successfully synced. Checking `status` (not `err`) for the write
+ * making the row look freshly, successfully synced. Checking `snapshot` (not `err`) for the write
  * decision below fixes this uniformly: both "no match" and "provider error" already resolve
- * `status` to null, so both take the same preserve-everything-but-attempted_at path without
+ * `snapshot` to null, so both take the same preserve-everything-but-attempted_at path without
  * needing a third branch. Still rejects after a provider failure so the caller's Promise.allSettled
  * counts it as `failed`, including when a provider rejects with a non-Error value. */
 async function syncOne(db: PrismaClient, provider: WalletPassProvider, row: CandidateRow): Promise<void> {
-  let status: Awaited<ReturnType<WalletPassProvider["getRegistrationStatus"]>> | null = null;
+  let snapshot: Awaited<ReturnType<WalletPassProvider["getPassSnapshot"]>> | null = null;
   let failure: unknown;
   let registrationStatusFailed = false;
-  if (row.user_provided_id) {
+  if (row.user_provided_id && row.provider_pass_id) {
     try {
-      status = await provider.getRegistrationStatus(row.user_provided_id);
+      snapshot = await provider.getPassSnapshot({
+        providerPassId: row.provider_pass_id,
+        userProvidedId: row.user_provided_id,
+      });
     } catch (error_) {
       registrationStatusFailed = true;
       failure = error_;
@@ -74,9 +78,9 @@ async function syncOne(db: PrismaClient, provider: WalletPassProvider, row: Cand
   }
   await db.walletPass.update({
     where: { attendee_id: row.attendee_id },
-    data: status
+    data: snapshot
       ? {
-          ...registrationStatusToWalletPassFields(status),
+          ...snapshotToWalletPassFields(snapshot),
           registration_checked_at: new Date(),
           registration_sync_attempted_at: new Date(),
         }
@@ -135,7 +139,7 @@ async function syncEventBucket(
  * than WALLET_SYNC_STALE_MS, oldest-first, capped at WALLET_SYNC_BATCH_LIMIT per call so one tick
  * can't run unbounded - the rest simply wait for the next tick. Groups candidates by event so
  * each event's provider (and its one API-key decrypt) is resolved once, not once per pass. A
- * getRegistrationStatus failure for one pass (provider outage, revoked key, ...) is caught and
+ * getPassSnapshot failure for one pass (provider outage, revoked key, ...) is caught and
  * counted as `failed` rather than aborting the whole batch - its registration counts are left
  * alone, but registration_sync_attempted_at is still bumped so it backs off for
  * WALLET_SYNC_STALE_MS instead of permanently monopolizing every future batch's oldest-first
@@ -154,6 +158,10 @@ export async function runWalletRegistrationSync(
       status: { in: ["active", "voided"] },
       provider_pass_id: { not: null },
       user_provided_id: { not: null },
+      // Not just a filter: WalletPass_registration_sync_pending_idx is a partial index whose
+      // predicate includes `provider_removed_at IS NULL`, and Postgres only uses a partial index
+      // for a query whose own WHERE implies that predicate.
+      provider_removed_at: null,
       OR: [
         { registration_sync_attempted_at: null },
         { registration_sync_attempted_at: { lt: staleBefore } },
@@ -161,6 +169,7 @@ export async function runWalletRegistrationSync(
     },
     select: {
       attendee_id: true,
+      provider_pass_id: true,
       user_provided_id: true,
       attendee: {
         select: {

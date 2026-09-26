@@ -1,9 +1,10 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
-import { PassCreatorClient } from "@admitto/wallet";
+import { PassCreatorClient, type WalletProviderPassRef } from "@admitto/wallet";
 import { encryptToString } from "@admitto/crypto";
 import { arg, backfillEvent, hasFlag } from "../../src/scripts/backfill-wallet-first-confirmed.js";
+import { walletSnapshot } from "../helpers/wallet-snapshot.js";
 
 const ORG_ID = "org-backfill-first-confirmed";
 const EVENT_ID = "evt-backfill-first-confirmed";
@@ -102,20 +103,14 @@ describe("backfillEvent", () => {
     });
     const listSpy = vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
     const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
-    const statusSpy = vi.spyOn(PassCreatorClient.prototype, "getRegistrationStatus").mockResolvedValue({
-      appleActiveRegistrations: 1,
-      appleInactiveRegistrations: 0,
-      googleActiveRegistrations: 0,
-      googleInactiveRegistrations: 0,
-      samsungActiveRegistrations: 0,
-      samsungInactiveRegistrations: 0,
-      firstDownloadedAt: "2026-08-01 10:00:00",
-    });
+    const statusSpy = vi.spyOn(PassCreatorClient.prototype, "getPassSnapshot").mockResolvedValue(walletSnapshot({ appleActive: 1 }, { firstDownloadedAt: "2026-08-01 10:00:00" }));
 
     await backfillEvent(prisma, makeEvent(), false);
 
     expect(subscribeSpy).toHaveBeenCalled();
-    expect(statusSpy).toHaveBeenCalledExactlyOnceWith(`admitto:${EVENT_ID}:${ATT_CONFIRMED}`);
+    expect(statusSpy).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ userProvidedId: `admitto:${EVENT_ID}:${ATT_CONFIRMED}` }),
+    );
     const confirmedRow = await prisma.walletPass.findUnique({ where: { attendee_id: ATT_CONFIRMED } });
     expect(confirmedRow?.first_confirmed_at).toEqual(new Date("2026-08-01T10:00:00.000Z"));
     const notConfirmedRow = await prisma.walletPass.findUnique({ where: { attendee_id: ATT_NOT_CONFIRMED } });
@@ -137,7 +132,7 @@ describe("backfillEvent", () => {
     });
     vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
     vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
-    const statusSpy = vi.spyOn(PassCreatorClient.prototype, "getRegistrationStatus");
+    const statusSpy = vi.spyOn(PassCreatorClient.prototype, "getPassSnapshot");
 
     await backfillEvent(prisma, makeEvent(), false);
 
@@ -157,15 +152,7 @@ describe("backfillEvent", () => {
       },
     });
     const subscribeSpy = vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
-    vi.spyOn(PassCreatorClient.prototype, "getRegistrationStatus").mockResolvedValue({
-      appleActiveRegistrations: 1,
-      appleInactiveRegistrations: 0,
-      googleActiveRegistrations: 0,
-      googleInactiveRegistrations: 0,
-      samsungActiveRegistrations: 0,
-      samsungInactiveRegistrations: 0,
-      firstDownloadedAt: "2026-08-01 10:00:00",
-    });
+    vi.spyOn(PassCreatorClient.prototype, "getPassSnapshot").mockResolvedValue(walletSnapshot({ appleActive: 1 }, { firstDownloadedAt: "2026-08-01 10:00:00" }));
 
     await backfillEvent(prisma, makeEvent(), true);
 
@@ -186,15 +173,7 @@ describe("backfillEvent", () => {
     });
     vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
     vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
-    vi.spyOn(PassCreatorClient.prototype, "getRegistrationStatus").mockResolvedValue({
-      appleActiveRegistrations: 1,
-      appleInactiveRegistrations: 0,
-      googleActiveRegistrations: 0,
-      googleInactiveRegistrations: 0,
-      samsungActiveRegistrations: 0,
-      samsungInactiveRegistrations: 0,
-      firstDownloadedAt: null,
-    });
+    vi.spyOn(PassCreatorClient.prototype, "getPassSnapshot").mockResolvedValue(walletSnapshot({ appleActive: 1 }, { firstDownloadedAt: null }));
 
     await expect(backfillEvent(prisma, makeEvent(), false)).resolves.toBeUndefined();
     const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATT_CONFIRMED } });
@@ -222,17 +201,9 @@ describe("backfillEvent", () => {
     });
     vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
     vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
-    vi.spyOn(PassCreatorClient.prototype, "getRegistrationStatus").mockImplementation(async (userProvidedId: string) => {
-      if (userProvidedId.includes(ATT_CONFIRMED)) throw new Error("PassCreator down");
-      return {
-        appleActiveRegistrations: 0,
-        appleInactiveRegistrations: 0,
-        googleActiveRegistrations: 1,
-        googleInactiveRegistrations: 0,
-        samsungActiveRegistrations: 0,
-        samsungInactiveRegistrations: 0,
-        firstDownloadedAt: "2026-08-05 09:00:00",
-      };
+    vi.spyOn(PassCreatorClient.prototype, "getPassSnapshot").mockImplementation(async (ref: WalletProviderPassRef) => {
+      if (ref.userProvidedId?.includes(ATT_CONFIRMED)) throw new Error("PassCreator down");
+      return walletSnapshot({ googleActive: 1 }, { firstDownloadedAt: "2026-08-05 09:00:00" });
     });
 
     await expect(backfillEvent(prisma, makeEvent(), false)).resolves.toBeUndefined();
@@ -254,7 +225,7 @@ describe("backfillEvent", () => {
     });
     vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockResolvedValue([]);
     vi.spyOn(PassCreatorClient.prototype, "subscribeWebhook").mockResolvedValue(undefined);
-    const statusSpy = vi.spyOn(PassCreatorClient.prototype, "getRegistrationStatus");
+    const statusSpy = vi.spyOn(PassCreatorClient.prototype, "getPassSnapshot");
 
     await expect(backfillEvent(prisma, makeEvent({ wallet_api_key_enc: "not-valid-ciphertext" }), false)).resolves.toBeUndefined();
 
@@ -274,15 +245,7 @@ describe("backfillEvent", () => {
       },
     });
     vi.spyOn(PassCreatorClient.prototype, "listWebhooks").mockRejectedValue(new Error("PassCreator down"));
-    vi.spyOn(PassCreatorClient.prototype, "getRegistrationStatus").mockResolvedValue({
-      appleActiveRegistrations: 1,
-      appleInactiveRegistrations: 0,
-      googleActiveRegistrations: 0,
-      googleInactiveRegistrations: 0,
-      samsungActiveRegistrations: 0,
-      samsungInactiveRegistrations: 0,
-      firstDownloadedAt: "2026-08-01 10:00:00",
-    });
+    vi.spyOn(PassCreatorClient.prototype, "getPassSnapshot").mockResolvedValue(walletSnapshot({ appleActive: 1 }, { firstDownloadedAt: "2026-08-01 10:00:00" }));
 
     await expect(backfillEvent(prisma, makeEvent(), false)).resolves.toBeUndefined();
     const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATT_CONFIRMED } });

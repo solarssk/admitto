@@ -87,7 +87,7 @@ export async function backfillEvent(
       user_provided_id: { not: null },
       OR: [{ apple_active_registrations: { gt: 0 } }, { google_active_registrations: { gt: 0 } }],
     },
-    select: { id: true, user_provided_id: true },
+    select: { id: true, provider_pass_id: true, user_provided_id: true },
   });
   console.log(`[${event.title}] ${candidates.length} confirmed pass(es) missing first_confirmed_at`);
   if (candidates.length === 0) return;
@@ -112,8 +112,13 @@ export async function backfillEvent(
       // user_provided_id is filtered non-null in the query above, but Prisma's own generated type
       // for a `not: null` filter doesn't narrow the selected column - non-null asserted here since
       // the query guarantees it, not because the type system already knows.
-      const status = await client.getRegistrationStatus(pass.user_provided_id as string);
-      const firstConfirmedAt = status?.firstDownloadedAt ? parseFirstDownloadedAtUtc(status.firstDownloadedAt) : null;
+      // PassCreator's adapter looks the pass up by userProvidedId alone; providerPassId is only
+      // part of the ref for providers that read by their own resource id.
+      const snapshot = await client.getPassSnapshot({
+        providerPassId: pass.provider_pass_id ?? "",
+        userProvidedId: pass.user_provided_id as string,
+      });
+      const firstConfirmedAt = snapshot?.firstDownloadedAt ? parseFirstDownloadedAtUtc(snapshot.firstDownloadedAt) : null;
       if (!firstConfirmedAt) {
         skipped++;
         continue;

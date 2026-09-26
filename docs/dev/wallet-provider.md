@@ -20,20 +20,44 @@ for the full architecture and the exact fields PassCreator receives today.
 ```ts
 interface WalletPassProvider {
   readonly provider: string;
+  readonly capabilities: WalletProviderCapabilities;              // what this provider can do at all
+  readonly consistencyPolicy: WalletProviderConsistencyPolicy;    // how stale its reads may be after our commands
 
   createPass(input: WalletPassInput): Promise<WalletPassResult>;
   updatePass(providerPassId: string, input: WalletPassInput): Promise<WalletPassResult>;
   sendPushMessage(providerPassIds: string[], text: string): Promise<void>;
-  voidPass(passUid: string): Promise<void>;
-  restorePass(passUid: string): Promise<void>;
+  voidPass(providerPassId: string): Promise<void>;
+  restorePass(providerPassId: string): Promise<void>;
   deletePass(providerPassId: string): Promise<void>;              // idempotent: already-gone = success
   findByUserProvidedId(userProvidedId: string): Promise<WalletPassResult | null>;
-  getRegistrationStatus(userProvidedId: string): Promise<WalletPassRegistrationStatus | null>;
+  getPassSnapshot(ref: WalletProviderPassRef): Promise<WalletProviderSnapshot | null>;
 }
 ```
 
-Full type shapes (`WalletPassInput`, `WalletPassResult`, `WalletProviderError`) live in
-`packages/wallet/src/types.ts` - read them alongside this doc, not instead of it.
+Full type shapes (`WalletPassInput`, `WalletPassResult`, `WalletProviderSnapshot`,
+`WalletProviderError`) live in `packages/wallet/src/types.ts` - read them alongside this doc, not
+instead of it.
+
+## Who owns what
+
+Admitto owns a pass's lifecycle (`WalletPass.status`); a provider only *observes* it and *executes*
+Admitto's commands. `getPassSnapshot` returns what the provider currently says about a pass
+(`validity`, `registrations`, `firstDownloadedAt`) and the domain layer decides what that means -
+`validity.voided` alone can't tell an explicit void from an expiry (PassCreator sets it for both),
+and a naive expiration timestamp is never given a guessed timezone by the adapter.
+
+- **`null` from `getPassSnapshot` is not proof the remote pass is gone.** It only means the
+  provider's read side has no such pass right now (PassCreator's is a search whose index can lag).
+  Only a successful `deletePass` (2xx, or 404 for an already-gone pass) confirms removal.
+- **`capabilities` gate actions.** Callers check them instead of assuming every provider is
+  PassCreator: Google Wallet's Event Ticket API has no delete method for objects and an issuer
+  cannot remove a pass from a user's Apple Wallet, so `remoteDelete` is a capability, not a given.
+  The static table is `@admitto/wallet/capabilities` (safe to import from `apps/admin`).
+- **"Reset" is a domain concept, not HTTP DELETE.** With `remoteDelete` it removes the remote pass.
+  Without it, a reset must retire the old remote object (void/expire) and issue the next pass under
+  a *new* provider identity (a generation counter mixed into it), because today's stable
+  `userProvidedId` idempotency key would keep pointing at the retired object. Nothing implements
+  that yet - no provider needs it.
 
 ## What Admitto expects from an implementation
 

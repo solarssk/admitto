@@ -88,25 +88,94 @@ export interface WalletPassResult {
   samsungUrl?: string;
 }
 
-/** Device-registration status as the provider itself reports it - not derived locally, and only
+/** Provider-neutral reference to one already-created pass. Each adapter picks the lookup its own
+ * API supports: PassCreator has to search by `userProvidedId` (query language), a native Google
+ * Wallet provider would GET by its resource id, a native Apple provider would use its own pass
+ * identity. The core never assumes "lookup = search by userProvidedId". */
+export interface WalletProviderPassRef {
+  providerPassId: string;
+  userProvidedId?: string;
+}
+
+/** Device-registration counts as the provider itself reports them - not derived locally, and only
  * meaningful some time after createPass/updatePass (the attendee has to have actually opened the
  * install link on their device first). */
-export interface WalletPassRegistrationStatus {
-  appleActiveRegistrations: number;
-  appleInactiveRegistrations: number;
-  googleActiveRegistrations: number;
-  googleInactiveRegistrations: number;
+export interface WalletProviderRegistrations {
+  appleActive: number;
+  appleInactive: number;
+  googleActive: number;
+  googleInactive: number;
   /** Confirmed live 2026-09-02 (GET /api/v3/pass?query=... on a Samsung-enabled template):
    * noOfActiveRegistrationsSamsungWallet / noOfInactiveRegistrationsSamsungWallet are real,
    * already-populated fields (0 pre-launch), unlike samsungUrl above. */
-  samsungActiveRegistrations: number;
-  samsungInactiveRegistrations: number;
+  samsungActive: number;
+  samsungInactive: number;
+}
+
+/** What the provider says about the pass's validity - an *observation*, never Admitto's own
+ * lifecycle state: Admitto owns `WalletPass.status`, and interprets this (see
+ * WalletProviderSnapshot). Nothing here is persisted as such. */
+export interface WalletProviderValidity {
+  /** The provider's own voided flag. null = the provider did not report one (leave Admitto's own
+   * state alone rather than reading a missing field as "not voided"). PassCreator sets it for an
+   * explicit void AND for an expired pass, and does not say which. */
+  voided: boolean | null;
+  /** The provider's expiration value exactly as sent on the wire, uninterpreted. PassCreator's is
+   * "Y-m-d H:i" with no offset, in the timezone of the PassCreator company settings (its API v1
+   * "Read a Pass" docs: "Dates are converted to the timezone that is set in your company
+   * settings") - a per-account setting, not a protocol constant. */
+  expirationRaw: string | null;
+  /** `expirationRaw` as an instant, but ONLY when the wire value carries its own offset (or "Z"),
+   * i.e. is unambiguous by itself. A naive "Y-m-d H:i" is never given a guessed timezone here -
+   * interpreting it needs the account's configured timezone, which is a domain decision, not the
+   * adapter's. */
+  expiresAt: Date | null;
+}
+
+/** One read of a pass from the provider: what it says about validity, registrations, and first
+ * download, taken together so a single lookup can feed every consumer. Returned by
+ * WalletPassProvider.getPassSnapshot. */
+export interface WalletProviderSnapshot {
+  observedAt: Date;
+  validity: WalletProviderValidity;
+  /** null = the provider cannot report registrations (capabilities.registrationSnapshot false). */
+  registrations: WalletProviderRegistrations | null;
   /** When the pass file was first downloaded - provider-reported, "YYYY-MM-DD HH:MM:SS" with no
    * offset in the wire payload. Not documented as UTC by PassCreator, but confirmed UTC by
    * cross-checking a live pass's raw value against PassCreator's own dashboard (PO review,
    * 2026-08-13) - parse with parseFirstDownloadedAtUtc (passcreator-webhook.ts), don't treat as an
-   * opaque unparseable string. */
+   * opaque unparseable string. Kept as the provider's raw string, same as the DB column. */
   firstDownloadedAt: string | null;
+}
+
+/** What a provider can do at all - a fact about the provider, not about one pass. Callers gate
+ * actions on this instead of assuming every provider matches PassCreator (Google Wallet's Event
+ * Ticket API has no delete method for objects, and an issuer cannot remove a pass from a user's
+ * Apple Wallet either). */
+export interface WalletProviderCapabilities {
+  /** Can report whether a pass is voided/expired (WalletProviderSnapshot.validity). */
+  lifecycleObservation: boolean;
+  /** Supports a per-pass expiration date. */
+  expiration: boolean;
+  /** Supports voiding and restoring a pass. */
+  voidRestore: boolean;
+  /** Can report device-registration counts (WalletProviderSnapshot.registrations). */
+  registrationSnapshot: boolean;
+  /** Can physically delete the remote resource. When false, "reset" means retiring the old remote
+   * object (void/expire it) and issuing the next pass under a NEW provider identity (a generation
+   * counter mixed into the identity), because today's stable `userProvidedId` idempotency key
+   * would otherwise keep pointing at the retired object. Not implemented for any provider yet. */
+  remoteDelete: boolean;
+}
+
+/** How consistent the provider's read side is after Admitto's own commands - a property of the
+ * provider's consistency, not a capability. */
+export interface WalletProviderConsistencyPolicy {
+  /** How long after Admitto sent a validity-affecting command (void, restore) a read of the same
+   * pass may still return the state from before it. PassCreator's search index lags behind (its
+   * own search results can trail a status-affecting event); a provider with strongly consistent
+   * reads uses 0. */
+  observationStalenessWindowMs: number;
 }
 
 export type WalletProviderErrorCode =

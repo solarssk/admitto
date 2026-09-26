@@ -1,6 +1,8 @@
 import type { WalletPassInput, WalletPassProvider, WalletPassResult } from "../src/index.js";
+import { walletSnapshot } from "./snapshot-fixture.js";
 
-/** In-memory stub for compiling/testing the WalletPassProvider contract. Not a real provider. */
+/** In-memory stub for compiling/testing the WalletPassProvider contract. Not a real provider:
+ * reads reflect writes immediately (no staleness window) and it can do everything. */
 export function createStubWalletProvider(): WalletPassProvider {
   const passes = new Map<string, WalletPassResult>();
 
@@ -14,6 +16,14 @@ export function createStubWalletProvider(): WalletPassProvider {
 
   return {
     provider: "stub",
+    capabilities: {
+      lifecycleObservation: true,
+      expiration: true,
+      voidRestore: true,
+      registrationSnapshot: true,
+      remoteDelete: true,
+    },
+    consistencyPolicy: { observationStalenessWindowMs: 0 },
     async createPass(input) {
       const result = toResult(`stub-${input.userProvidedId}`, input);
       passes.set(input.userProvidedId, result);
@@ -35,15 +45,9 @@ export function createStubWalletProvider(): WalletPassProvider {
     async findByUserProvidedId(userProvidedId) {
       return passes.get(userProvidedId) ?? null;
     },
-    async getRegistrationStatus(userProvidedId) {
-      if (!passes.has(userProvidedId)) return null;
-      return {
-        appleActiveRegistrations: 0,
-        appleInactiveRegistrations: 0,
-        googleActiveRegistrations: 0,
-        googleInactiveRegistrations: 0,
-        firstDownloadedAt: null,
-      };
+    async getPassSnapshot(ref) {
+      if (!ref.userProvidedId || !passes.has(ref.userProvidedId)) return null;
+      return walletSnapshot();
     },
   };
 }

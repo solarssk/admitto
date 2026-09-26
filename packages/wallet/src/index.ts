@@ -1,7 +1,13 @@
 export type {
   WalletPassInput,
   WalletPassResult,
+  WalletProviderCapabilities,
+  WalletProviderConsistencyPolicy,
   WalletProviderErrorCode,
+  WalletProviderPassRef,
+  WalletProviderRegistrations,
+  WalletProviderSnapshot,
+  WalletProviderValidity,
 } from "./types.js";
 export { WalletProviderError } from "./types.js";
 export type { WalletPassProvider } from "./provider.js";
@@ -22,9 +28,17 @@ export {
   isVenueOrAddressFieldRelevant,
   type MapLabelState,
 } from "./passcreator-mapper.js";
-export { resolveWalletProvider } from "./resolve-provider.js";
+export {
+  canIssueWalletPass,
+  resolveConfiguredWalletProvider,
+  resolveWalletProvider,
+} from "./resolve-provider.js";
 export { walletTemplateLockKey, acquireWalletTemplateLock } from "./template-lock.js";
-export type { WalletPassRegistrationStatus } from "./types.js";
+export {
+  PASSCREATOR_CAPABILITIES,
+  PASSCREATOR_CONSISTENCY_POLICY,
+  walletProviderCapabilities,
+} from "./capabilities.js";
 export {
   runWalletRegistrationSync,
   WALLET_SYNC_BATCH_LIMIT,
