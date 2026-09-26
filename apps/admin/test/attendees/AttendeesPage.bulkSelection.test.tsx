@@ -3175,7 +3175,7 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Refresh status/ }));
 
-    const dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every attendee with a pass?" });
+    const dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every active wallet pass?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Refresh status" }));
 
     await waitFor(() => {
@@ -3185,7 +3185,7 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
       expect(addToast).toHaveBeenCalledWith("Refresh queued - you'll see a summary once it finishes.", "info");
     });
     await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "Refresh the wallet status for every attendee with a pass?" })).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "Refresh the wallet status for every active wallet pass?" })).toBeNull();
     });
     await waitFor(() => {
       expect(pollWalletRefreshStatusCompletion).toHaveBeenCalledWith(
@@ -3206,7 +3206,7 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Refresh status/ }));
 
-    const dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every attendee with a pass?" });
+    const dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every active wallet pass?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Refresh status" }));
 
     await waitFor(() => {
@@ -3223,11 +3223,11 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Refresh status/ }));
 
-    const dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every attendee with a pass?" });
+    const dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every active wallet pass?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     expect(
-      screen.queryByRole("dialog", { name: "Refresh the wallet status for every attendee with a pass?" }),
+      screen.queryByRole("dialog", { name: "Refresh the wallet status for every active wallet pass?" }),
     ).toBeNull();
     expect(triggerEventWideWalletRefreshStatus).not.toHaveBeenCalled();
   });
@@ -3245,7 +3245,7 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
     await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Refresh status/ }));
-    const dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every attendee with a pass?" });
+    const dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every active wallet pass?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Refresh status" }));
 
     await waitFor(() => expect(triggerEventWideWalletRefreshStatus).toHaveBeenCalled());
@@ -3259,7 +3259,7 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
     // guard must be the thing keeping the dialog open here, not a disabled backdrop.
     fireEvent.click(document.querySelector(".at-modal-backdrop")!);
     expect(
-      screen.getByRole("dialog", { name: "Refresh the wallet status for every attendee with a pass?" }),
+      screen.getByRole("dialog", { name: "Refresh the wallet status for every active wallet pass?" }),
     ).toBeTruthy();
 
     await act(async () => {
@@ -3276,7 +3276,7 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
     await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Refresh status/ }));
-    const dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every attendee with a pass?" });
+    const dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every active wallet pass?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Refresh status" }));
 
     await waitFor(() => expect(pollWalletRefreshStatusCompletion).toHaveBeenCalled());
@@ -3299,7 +3299,7 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
     await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Refresh status/ }));
-    const dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every attendee with a pass?" });
+    const dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every active wallet pass?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Refresh status" }));
 
     await waitFor(() => {
@@ -3325,7 +3325,7 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
     await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Refresh status/ }));
-    const dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every attendee with a pass?" });
+    const dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every active wallet pass?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Refresh status" }));
 
     await waitFor(() => expect(triggerEventWideWalletRefreshStatus).toHaveBeenCalledWith("evt-1"));
@@ -3344,7 +3344,7 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
     expect(pollWalletRefreshStatusCompletion).not.toHaveBeenCalled();
     // The stale-event dialog never got its close/success side effects, so it's still showing.
     expect(
-      screen.getByRole("dialog", { name: "Refresh the wallet status for every attendee with a pass?" }),
+      screen.getByRole("dialog", { name: "Refresh the wallet status for every active wallet pass?" }),
     ).toBeTruthy();
   });
 
@@ -3366,7 +3366,7 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
     await screen.findByText("Jane Doe");
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /^Refresh status/ }));
-    const dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every attendee with a pass?" });
+    const dialog = screen.getByRole("dialog", { name: "Refresh the wallet status for every active wallet pass?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Refresh status" }));
 
     await waitFor(() => expect(triggerEventWideWalletRefreshStatus).toHaveBeenCalledWith("evt-1"));

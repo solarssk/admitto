@@ -2387,8 +2387,8 @@ export function AttendeesPage() {
 
       <ConfirmDialog
         open={eventWideRefreshStatusConfirmOpen}
-        title="Refresh the wallet status for every attendee with a pass?"
-        message="Pulls each attendee's current device-registration status from the provider, across the whole event. Attendees with no pass are left untouched."
+        title="Refresh the wallet status for every active wallet pass?"
+        message="Pulls the current status of every active wallet pass from the provider, across the whole event. A pass the provider reports as voided or expired is marked Voided. Passes that are already voided or expired, and attendees with no pass, are left untouched."
         errorMessage={eventWideRefreshStatusError}
         confirmLabel="Refresh status"
         confirmVariant="primary"
