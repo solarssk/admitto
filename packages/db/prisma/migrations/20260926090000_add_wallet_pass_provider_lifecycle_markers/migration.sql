@@ -8,7 +8,7 @@ ADD COLUMN     "provider_commanded_at" TIMESTAMP(3);
 -- candidate, and registration-sync.ts's candidate query now carries the same condition. Postgres
 -- only uses a partial index for a query whose WHERE implies the index predicate, so the query and
 -- this predicate have to change together.
-DROP INDEX "WalletPass_registration_sync_pending_idx";
+DROP INDEX IF EXISTS "WalletPass_registration_sync_pending_idx";
 CREATE INDEX "WalletPass_registration_sync_pending_idx"
   ON "WalletPass" ("registration_sync_attempted_at" ASC NULLS FIRST)
   WHERE "status" IN ('active', 'voided') AND "provider_pass_id" IS NOT NULL AND "user_provided_id" IS NOT NULL AND "provider_removed_at" IS NULL;
