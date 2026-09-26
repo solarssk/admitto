@@ -414,6 +414,20 @@ model WalletPass {
   registration_checked_at        DateTime?
   registration_sync_attempted_at DateTime?
 
+  // Provider presence, independent of the pass's validity (`status` above): set once Admitto has
+  // confirmed the remote pass is gone - only ever by a successful delete at the provider (2xx or
+  // 404), never inferred from a lookup returning nothing (a search index can lag). The row, and
+  // every registration count and first_confirmed_at on it, stays as historical data; nothing
+  // provider-facing (sync, void, restore, push, ...) may touch a row with this set. Null = the
+  // remote pass is still managed by Admitto.
+  provider_removed_at DateTime?
+  // When Admitto last sent the provider a command that changes the pass's validity (void,
+  // restore). A provider read within the provider's own consistency window after this may still
+  // show the state from before the command, so reconciliation ignores it (see
+  // WalletProviderConsistencyPolicy in packages/wallet). Deliberately NOT updated_at, which the
+  // sync worker bumps on its own writes and so says nothing about a command.
+  provider_commanded_at DateTime?
+
   // Raw request User-Agent captured on Admitto's own /t/:token/wallet/:platform redirect (the
   // attendee's first hop, before PassCreator's own apple_url/android_url) - same
   // store-raw-parse-at-read-time convention as Session.user_agent/ApiKey.user_agent, parsed via
