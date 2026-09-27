@@ -27,6 +27,12 @@ function makeDb(count = 1, row: Record<string, unknown> | null = ACTIVE_ROW) {
   } as any;
 }
 
+const RECENTLY_COMMANDED_ROW = {
+  status: "active",
+  provider_commanded_at: new Date(Date.now() - 60_000),
+  provider_removed_at: null,
+};
+
 describe("refreshOneWalletPassStatus", () => {
   const provider = {
     getPassSnapshot: vi.fn(),
@@ -124,6 +130,18 @@ describe("refreshOneWalletPassStatus", () => {
     const result = await refreshOneWalletPassStatus(db, target, provider as never);
 
     expect(result).toBe("conflict");
+  });
+
+  it("returns suppressed (not refreshed or conflict) for a voided report that falls inside the window right after Admitto's own last command", async () => {
+    const db = makeDb(1, RECENTLY_COMMANDED_ROW);
+    provider.getPassSnapshot.mockResolvedValueOnce(VOIDED_SNAPSHOT);
+
+    const result = await refreshOneWalletPassStatus(db, target, provider as never);
+
+    expect(result).toBe("suppressed");
+    // The registration counts are still refreshed - only the lifecycle transition is held back.
+    expect(db.walletPass.updateMany.mock.calls[0][0].data).not.toHaveProperty("status");
+    expect(db.walletPass.updateMany.mock.calls[0][0].data.apple_active_registrations).toBe(1);
   });
 
   it("returns conflict without a provider call when the pass is no longer there to be read", async () => {

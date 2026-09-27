@@ -173,16 +173,43 @@ describe("applyProviderSnapshotToWalletPass", () => {
     expect(data).not.toHaveProperty("voided_at");
   });
 
-  it("does not undo an Admitto command with a stale read: a 'voided' snapshot taken right after a Restore only refreshes the counts", async () => {
+  it("does not undo an Admitto command with a stale read: a 'voided' snapshot taken right after a Restore only refreshes the counts, and reports suppressed", async () => {
     const db = makeDb();
     const justRestored = target({ provider_commanded_at: new Date(NOW.getTime() - 60_000) });
     const stale = snapshotAtNow({ appleActive: 1 }, { validity: { voided: true, expirationRaw: null, expiresAt: null } });
 
-    await applyProviderSnapshotToWalletPass(db, justRestored, stale, options);
+    expect(await applyProviderSnapshotToWalletPass(db, justRestored, stale, options)).toBe("suppressed");
 
     const { data } = db.walletPass.updateMany.mock.calls[0][0];
     expect(data).not.toHaveProperty("status");
+    expect(data).not.toHaveProperty("voided_at");
     expect(data.apple_active_registrations).toBe(1);
+    // Suppressed is not a lifecycle transition - nothing was actually observed to change.
+    expect(emitSystemLog).not.toHaveBeenCalled();
+  });
+
+  it("reports suppressed (not applied) for a voided read taken before Admitto's command it would otherwise contradict", async () => {
+    const db = makeDb();
+    const commandedSoonAfter = target({ provider_commanded_at: new Date(NOW.getTime() + 5_000) });
+    const voided = snapshotAtNow({}, { validity: { voided: true, expirationRaw: null, expiresAt: null } });
+
+    expect(await applyProviderSnapshotToWalletPass(db, commandedSoonAfter, voided, options)).toBe("suppressed");
+  });
+
+  it("does not report suppressed for a genuinely clean read (not voided) taken inside the command window - there is nothing to suppress", async () => {
+    const db = makeDb();
+    const justRestored = target({ provider_commanded_at: new Date(NOW.getTime() - 60_000) });
+    const clean = snapshotAtNow();
+
+    expect(await applyProviderSnapshotToWalletPass(db, justRestored, clean, options)).toBe("applied");
+  });
+
+  it("returns conflict (not suppressed) when a suppressible read also fails the identity/ordering guard", async () => {
+    const db = makeDb(0);
+    const justRestored = target({ provider_commanded_at: new Date(NOW.getTime() - 60_000) });
+    const stale = snapshotAtNow({}, { validity: { voided: true, expirationRaw: null, expiresAt: null } });
+
+    expect(await applyProviderSnapshotToWalletPass(db, justRestored, stale, options)).toBe("conflict");
   });
 
   it("defaults the write-time stamp (registration_checked_at) to the current time when none is given", async () => {

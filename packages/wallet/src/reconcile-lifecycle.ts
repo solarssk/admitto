@@ -74,9 +74,25 @@ function providerExpirationInstant(validity: WalletProviderValidity, providerTim
   return naiveWallClockToInstant(validity.expirationRaw, providerTimeZone);
 }
 
+/** What one provider read decided for a pass: the transition it causes (if any), and whether a
+ * transition it WOULD have caused was instead suppressed for being too close to Admitto's own last
+ * command. */
+export interface WalletLifecycleReconciliation {
+  transition: "voided" | "expired" | null;
+  /** True when the provider reported the pass voided (validity.voided === true) but the read fell
+   * inside `observationStalenessWindowMs` of `provider_commanded_at`, so it was neither applied nor
+   * treated as settled. Timestamps alone cannot tell a stale search-index read (still showing the
+   * state from before Admitto's own command) from a second, genuine void that happened to land in
+   * the same window - a caller that only refreshes registration counts can safely ignore this, but
+   * a caller acting on an external signal (the `pass_voided` webhook) must not treat it as "nothing
+   * to do": that would let a real void go unrecorded indefinitely on an archived or switched-off
+   * event, which has no periodic sync to ever revisit it (Codex review, 2026-09-27). */
+  suppressedByRecentCommand: boolean;
+}
+
 /**
  * Decides whether one provider read moves an Admitto pass out of `active` - the only transition an
- * observation is allowed to cause. Returns the next status, or null to leave the pass alone.
+ * observation is allowed to cause.
  *
  * Admitto owns a pass's validity; the provider is only asked what it currently sees. Hence:
  *
@@ -85,23 +101,29 @@ function providerExpirationInstant(validity: WalletProviderValidity, providerTim
  *   Restore action's job - and a read that says "not voided" is simply not evidence of anything.
  * - Not right after Admitto's own command. Within `observationStalenessWindowMs` of
  *   `provider_commanded_at` the provider may still be serving the state from before that command
- *   (PassCreator's search index lags), so the read is ignored: a Restore must not be undone by a
- *   stale "voided" read of the same pass. This guards against read-after-write staleness, not
- *   against webhook ordering.
+ *   (PassCreator's search index lags), so a report of voided is suppressed rather than applied: a
+ *   Restore must not be undone by a stale "voided" read of the same pass. This guards against
+ *   read-after-write staleness, not against webhook ordering - see `suppressedByRecentCommand`
+ *   above for what a caller does with that instead of silently dropping it.
  * - `voided: true` means "voided OR expired" for PassCreator, which does not say which. It is read
  *   as `expired` only when the provider's own expiration is known and already past; otherwise it is
  *   `voided`. Without a configured provider zone a naive expiration is not interpreted, so the
  *   answer is `voided`, never a guessed `expired`.
  */
-export function reconcileWalletPassLifecycle(input: ReconcileWalletPassLifecycleInput): "voided" | "expired" | null {
+export function reconcileWalletPassLifecycle(
+  input: ReconcileWalletPassLifecycleInput,
+): WalletLifecycleReconciliation {
   const { current, validity, observedAt, policy, providerTimeZone } = input;
-  if (current.status !== "active" || current.provider_removed_at) return null;
+  const nothingToDo: WalletLifecycleReconciliation = { transition: null, suppressedByRecentCommand: false };
+  if (current.status !== "active" || current.provider_removed_at) return nothingToDo;
+  if (validity.voided !== true) return nothingToDo;
 
   const commandedAt = current.provider_commanded_at;
-  if (commandedAt && observedAt.getTime() - commandedAt.getTime() < policy.observationStalenessWindowMs) return null;
-
-  if (validity.voided !== true) return null;
+  if (commandedAt && observedAt.getTime() - commandedAt.getTime() < policy.observationStalenessWindowMs) {
+    return { transition: null, suppressedByRecentCommand: true };
+  }
 
   const expiresAt = providerExpirationInstant(validity, providerTimeZone);
-  return expiresAt && expiresAt.getTime() <= observedAt.getTime() ? "expired" : "voided";
+  const transition = expiresAt && expiresAt.getTime() <= observedAt.getTime() ? "expired" : "voided";
+  return { transition, suppressedByRecentCommand: false };
 }

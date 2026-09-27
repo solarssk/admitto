@@ -28,6 +28,14 @@ export type ApplyProviderSnapshotOptions = {
  * this same write therefore freezes the newest registration counts it will ever have: nothing polls
  * an inactive pass afterwards, so those are its last known values.
  *
+ * Returns "suppressed" instead of "applied" when the provider reported the pass voided but
+ * reconcileWalletPassLifecycle held the transition back for being too close to Admitto's own last
+ * command - the registration-count write still happens exactly as for "applied". A caller that only
+ * cares about registration data (the periodic sync, a manual Refresh) can treat "suppressed" the
+ * same as "applied"; a caller acting on an external signal (the `pass_voided` webhook) must not, or
+ * a real void that happens to land in that window is silently lost forever on an archived or
+ * switched-off event.
+ *
  * Reads are ordered on `registration_sync_attempted_at`, stamped with the moment the snapshot was
  * OBSERVED (not when it was written): the write only lands while the stored value is not newer than
  * that. Two overlapping reads of one pass (the worker's tick, a manual Refresh, a `pass_voided`
@@ -56,9 +64,9 @@ export async function applyProviderSnapshotToWalletPass(
   target: WalletPassSnapshotTarget,
   snapshot: WalletProviderSnapshot,
   options: ApplyProviderSnapshotOptions,
-): Promise<"applied" | "conflict"> {
+): Promise<"applied" | "conflict" | "suppressed"> {
   const now = options.now ?? new Date();
-  const transition = reconcileWalletPassLifecycle({
+  const { transition, suppressedByRecentCommand } = reconcileWalletPassLifecycle({
     current: target,
     validity: snapshot.validity,
     observedAt: snapshot.observedAt,
@@ -96,5 +104,5 @@ export async function applyProviderSnapshotToWalletPass(
       to: transition,
     });
   }
-  return "applied";
+  return suppressedByRecentCommand ? "suppressed" : "applied";
 }

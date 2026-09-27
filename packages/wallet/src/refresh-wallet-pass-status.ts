@@ -15,8 +15,13 @@ export class WalletStatusCheckInconclusiveError extends Error {
 }
 
 /** "inactive" = the pass is not active (voided, expired, removed, or never issued) - nothing to
- * refresh, and no provider call was made. */
-export type WalletStatusRefreshOutcome = "refreshed" | "conflict" | "inactive";
+ * refresh, and no provider call was made. "suppressed" = the provider reported the pass voided, but
+ * the read fell too close to Admitto's own last Void/Restore to trust (see
+ * reconcileWalletPassLifecycle's own `suppressedByRecentCommand`) - registration counts were still
+ * refreshed. Safe to treat like "refreshed" for a caller that only shows/uses registration data;
+ * a caller acting on an external signal (the `pass_voided` webhook) must not, since that would let
+ * a real void go unrecorded forever on an archived or switched-off event. */
+export type WalletStatusRefreshOutcome = "refreshed" | "conflict" | "inactive" | "suppressed";
 
 /**
  * Pulls one attendee's current state directly from the provider (a read, not a push) and writes it
@@ -71,5 +76,6 @@ export async function refreshOneWalletPassStatus(
     policy: provider.consistencyPolicy,
     providerTimeZone: options.providerTimeZone ?? null,
   });
-  return outcome === "applied" ? "refreshed" : "conflict";
+  if (outcome === "conflict") return "conflict";
+  return outcome === "suppressed" ? "suppressed" : "refreshed";
 }

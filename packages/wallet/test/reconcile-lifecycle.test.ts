@@ -18,61 +18,90 @@ function input(overrides: Partial<ReconcileWalletPassLifecycleInput> = {}): Reco
   };
 }
 
+/** No transition, and nothing was held back either - the common "nothing to do" case. */
+const NOTHING_TO_DO = { transition: null, suppressedByRecentCommand: false };
+
+function transition(overrides: Partial<ReconcileWalletPassLifecycleInput> = {}) {
+  return reconcileWalletPassLifecycle(input(overrides)).transition;
+}
+
 describe("reconcileWalletPassLifecycle", () => {
   describe("what an observation may change", () => {
     it("moves an active pass the provider reports voided to voided", () => {
-      expect(reconcileWalletPassLifecycle(input())).toBe("voided");
+      expect(reconcileWalletPassLifecycle(input())).toEqual({
+        transition: "voided",
+        suppressedByRecentCommand: false,
+      });
     });
 
     it("leaves an active pass alone when the provider reports it not voided", () => {
-      expect(reconcileWalletPassLifecycle(input({ validity: { voided: false, expirationRaw: null, expiresAt: null } }))).toBeNull();
+      const validity = { voided: false, expirationRaw: null, expiresAt: null };
+      expect(reconcileWalletPassLifecycle(input({ validity }))).toEqual(NOTHING_TO_DO);
     });
 
     it("leaves an active pass alone when the provider did not report a voided flag - a missing field is not 'not voided', and not 'voided' either", () => {
-      expect(reconcileWalletPassLifecycle(input({ validity: { voided: null, expirationRaw: null, expiresAt: null } }))).toBeNull();
+      const validity = { voided: null, expirationRaw: null, expiresAt: null };
+      expect(reconcileWalletPassLifecycle(input({ validity }))).toEqual(NOTHING_TO_DO);
     });
 
     it.each(["voided", "expired", "pending", "failed"])(
       "never changes a %s pass: observation only ever moves an active pass forward",
       (status) => {
         const current = { status, provider_commanded_at: null, provider_removed_at: null };
-        expect(reconcileWalletPassLifecycle(input({ current }))).toBeNull();
+        expect(reconcileWalletPassLifecycle(input({ current }))).toEqual(NOTHING_TO_DO);
         // Not even back to active on a clean read: that is the explicit Restore action's job.
         expect(
           reconcileWalletPassLifecycle(
             input({ current, validity: { voided: false, expirationRaw: null, expiresAt: null } }),
           ),
-        ).toBeNull();
+        ).toEqual(NOTHING_TO_DO);
       },
     );
 
     it("never changes a pass whose remote resource was deleted", () => {
       const current = { status: "active", provider_commanded_at: null, provider_removed_at: new Date("2026-09-20T10:00:00.000Z") };
-      expect(reconcileWalletPassLifecycle(input({ current }))).toBeNull();
+      expect(reconcileWalletPassLifecycle(input({ current }))).toEqual(NOTHING_TO_DO);
     });
   });
 
   describe("read-after-write staleness (provider_commanded_at)", () => {
     const commandedAt = (msBeforeObservation: number) => new Date(OBSERVED_AT.getTime() - msBeforeObservation);
 
-    it("ignores a 'voided' read taken inside the window after Admitto's own command - a Restore must not be undone by the provider's stale view", () => {
+    it("suppresses (does not apply) a 'voided' read taken inside the window after Admitto's own command - a Restore must not be undone by the provider's stale view", () => {
       const current = { status: "active", provider_commanded_at: commandedAt(WINDOW_MS - 1), provider_removed_at: null };
-      expect(reconcileWalletPassLifecycle(input({ current }))).toBeNull();
+      expect(reconcileWalletPassLifecycle(input({ current }))).toEqual({
+        transition: null,
+        suppressedByRecentCommand: true,
+      });
+    });
+
+    it("does not report suppression when there was nothing to suppress (the provider did not report voided) even inside the window", () => {
+      const current = { status: "active", provider_commanded_at: commandedAt(WINDOW_MS - 1), provider_removed_at: null };
+      const validity = { voided: false, expirationRaw: null, expiresAt: null };
+      expect(reconcileWalletPassLifecycle(input({ current, validity }))).toEqual(NOTHING_TO_DO);
     });
 
     it("trusts the read once the window has passed", () => {
       const current = { status: "active", provider_commanded_at: commandedAt(WINDOW_MS), provider_removed_at: null };
-      expect(reconcileWalletPassLifecycle(input({ current }))).toBe("voided");
+      expect(reconcileWalletPassLifecycle(input({ current }))).toEqual({
+        transition: "voided",
+        suppressedByRecentCommand: false,
+      });
     });
 
-    it("ignores a read that was taken before the command it would otherwise contradict", () => {
+    it("suppresses a read that was taken before the command it would otherwise contradict", () => {
       const current = { status: "active", provider_commanded_at: commandedAt(-5_000), provider_removed_at: null };
-      expect(reconcileWalletPassLifecycle(input({ current }))).toBeNull();
+      expect(reconcileWalletPassLifecycle(input({ current }))).toEqual({
+        transition: null,
+        suppressedByRecentCommand: true,
+      });
     });
 
     it("has no window for a provider with strongly consistent reads (0 ms)", () => {
       const current = { status: "active", provider_commanded_at: commandedAt(1), provider_removed_at: null };
-      expect(reconcileWalletPassLifecycle(input({ current, policy: { observationStalenessWindowMs: 0 } }))).toBe("voided");
+      expect(
+        reconcileWalletPassLifecycle(input({ current, policy: { observationStalenessWindowMs: 0 } })),
+      ).toEqual({ transition: "voided", suppressedByRecentCommand: false });
     });
   });
 
@@ -83,32 +112,32 @@ describe("reconcileWalletPassLifecycle", () => {
         expirationRaw: "2026-09-24T17:00:00+00:00",
         expiresAt: new Date("2026-09-24T17:00:00.000Z"),
       };
-      expect(reconcileWalletPassLifecycle(input({ validity }))).toBe("expired");
+      expect(transition({ validity })).toBe("expired");
     });
 
     it("keeps it voided when the provider's expiration is still in the future - an explicit void", () => {
       const validity = { voided: true, expirationRaw: null, expiresAt: new Date("2026-09-24T19:00:00.000Z") };
-      expect(reconcileWalletPassLifecycle(input({ validity }))).toBe("voided");
+      expect(transition({ validity })).toBe("voided");
     });
 
     it("never guesses expired from a naive wall-clock expiration when no provider time zone is configured", () => {
       const validity = { voided: true, expirationRaw: "2026-09-24 10:00", expiresAt: null };
-      expect(reconcileWalletPassLifecycle(input({ validity, providerTimeZone: null }))).toBe("voided");
+      expect(transition({ validity, providerTimeZone: null })).toBe("voided");
     });
 
     it("reads a naive expiration in the configured provider time zone", () => {
       // 19:00 in Warsaw (UTC+2 in September) is 17:00Z: already past at 18:00Z.
       const past = { voided: true, expirationRaw: "2026-09-24 19:00", expiresAt: null };
-      expect(reconcileWalletPassLifecycle(input({ validity: past, providerTimeZone: "Europe/Warsaw" }))).toBe("expired");
+      expect(transition({ validity: past, providerTimeZone: "Europe/Warsaw" })).toBe("expired");
       // 21:00 in Warsaw is 19:00Z: still ahead. The same digits read as UTC would already be past,
       // which is exactly the wrong answer this zone handling exists to avoid.
       const future = { voided: true, expirationRaw: "2026-09-24 21:00", expiresAt: null };
-      expect(reconcileWalletPassLifecycle(input({ validity: future, providerTimeZone: "Europe/Warsaw" }))).toBe("voided");
+      expect(transition({ validity: future, providerTimeZone: "Europe/Warsaw" })).toBe("voided");
     });
 
     it("accepts seconds in the naive expiration", () => {
       const validity = { voided: true, expirationRaw: "2026-09-24 19:00:00", expiresAt: null };
-      expect(reconcileWalletPassLifecycle(input({ validity, providerTimeZone: "Europe/Warsaw" }))).toBe("expired");
+      expect(transition({ validity, providerTimeZone: "Europe/Warsaw" })).toBe("expired");
     });
 
     it.each([
@@ -121,12 +150,12 @@ describe("reconcileWalletPassLifecycle", () => {
       ["a truncated time", "2026-09-24 19:0"],
     ])("falls back to voided for %s", (_label, raw) => {
       const validity = { voided: true, expirationRaw: raw, expiresAt: null };
-      expect(reconcileWalletPassLifecycle(input({ validity, providerTimeZone: "Europe/Warsaw" }))).toBe("voided");
+      expect(transition({ validity, providerTimeZone: "Europe/Warsaw" })).toBe("voided");
     });
 
     it("falls back to voided for a time zone Intl does not know, instead of throwing", () => {
       const validity = { voided: true, expirationRaw: "2026-09-24 10:00", expiresAt: null };
-      expect(reconcileWalletPassLifecycle(input({ validity, providerTimeZone: "Not/AZone" }))).toBe("voided");
+      expect(transition({ validity, providerTimeZone: "Not/AZone" })).toBe("voided");
     });
 
     it("prefers the adapter-parsed instant over re-reading the raw value", () => {
@@ -136,7 +165,7 @@ describe("reconcileWalletPassLifecycle", () => {
         expirationRaw: "2026-09-24 10:00",
         expiresAt: new Date("2026-09-24T19:00:00.000Z"),
       };
-      expect(reconcileWalletPassLifecycle(input({ validity, providerTimeZone: "Europe/Warsaw" }))).toBe("voided");
+      expect(transition({ validity, providerTimeZone: "Europe/Warsaw" })).toBe("voided");
     });
   });
 });
