@@ -85,7 +85,10 @@ and a naive expiration timestamp is never given a guessed timezone by the adapte
   that command, or a second, real void landing in the same window, and the two are indistinguishable
   from timestamps alone - so it is answered like an inconclusive read rather than acknowledged,
   which would otherwise lose a real void forever on an archived or switched-off event. Registration
-  webhooks only ever update counts. The receiver resolves the
+  webhooks only ever update counts. `expired` is irreversible - the public Add-to-Wallet flow
+  never tries to recreate or recover it (that would have PassCreator's own duplicate-rejection
+  recover into a false "active" without ever clearing the provider-side expiration), and the admin
+  UI offers only Delete for it, never Restore. The receiver resolves the
   provider from the event's credentials alone, not the wallet master switch: switching Wallet off
   does not unsubscribe the hooks, so deliveries for existing passes keep arriving. A "suppressed"
   outcome still wrote the registration counts, so a caller that only reports on those (a bulk
