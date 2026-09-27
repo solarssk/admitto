@@ -276,10 +276,10 @@ An invalid or unrecognised ticket link shows "This link is invalid or the page n
 | Void | Wallet configured for the event, and a wallet pass on that attendee | Required |
 | Restore | Wallet configured for the event, and a wallet pass on that attendee | Required |
 | Push updates | Wallet configured for the event, and a wallet pass on that attendee | Required |
-| Refresh status | Wallet configured for the event, and a wallet pass on that attendee | Not required |
+| Refresh status | PassCreator credentials configured for the event (the Wallet switch and the archived state do not matter), and an active wallet pass on that attendee | Not required |
 | Delete | Wallet configured for the event, and a wallet pass on that attendee | Required, warns that the action is permanent and that Apple/Google Wallet gives no way to remove a pass from someone's phone - only the attendee can do that |
 
-If a requirement isn't met, each action gives a specific reason: "This attendee has no wallet pass to act on." or "Wallet isn't configured for this event."
+If a requirement isn't met, each action gives a specific reason: "This attendee has no wallet pass to act on." or "Wallet isn't configured for this event." Refresh status on a pass that is no longer active says "This wallet pass is no longer active, so there is nothing to refresh."
 
 - A provider (PassCreator) rejection is always translated to a specific reason, never a bare error: a wrong API key, the pass not found, PassCreator rate-limiting the instance, or a timeout.
 - Revoking or restoring an attendee's admission status automatically voids or restores their wallet pass to match, best-effort, without blocking the attendee save itself if that sync fails.

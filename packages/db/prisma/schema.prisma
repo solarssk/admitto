@@ -413,6 +413,17 @@ model WalletPass {
   // persistently-failing row still backs off instead of starving every other candidate.
   registration_checked_at        DateTime?
   registration_sync_attempted_at DateTime?
+  // The observedAt of the last provider snapshot applyProviderSnapshotToWalletPass actually
+  // considered - its own single-purpose ordering marker (packages/wallet), so two overlapping reads
+  // of one pass (the worker's tick, a manual Refresh, a pass_voided webhook) can never let an older
+  // observation overwrite a newer one. Deliberately separate from registration_sync_attempted_at
+  // above: that column is also bumped by writes that carry no observation at all (a per-pass
+  // no-match/failure, or a whole-event "wallet not configured" skip in registration-sync.ts) purely
+  // for scheduling/backoff, and using it for ordering too let exactly those no-data writes race
+  // ahead of, and silently discard, a real one (Codex review, 2026-09-27 - the third such write site
+  // found after registration_checked_at and the per-pass failure branch). No other writer touches
+  // this column.
+  lifecycle_observed_at DateTime?
 
   // Provider presence, independent of the pass's validity (`status` above): set once Admitto has
   // confirmed the remote pass is gone - only ever by a successful delete at the provider (2xx or

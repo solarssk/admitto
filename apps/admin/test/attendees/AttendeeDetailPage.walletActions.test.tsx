@@ -30,6 +30,7 @@ let mockWalletEnabled = true;
 let mockWalletAppleEnabled = true;
 let mockWalletGoogleEnabled = true;
 let mockWalletSamsungEnabled = true;
+let mockWalletConfigured = true;
 
 vi.mock("react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router")>();
@@ -55,6 +56,9 @@ vi.mock("react-router", async (importOriginal) => {
         },
         get wallet_samsung_enabled() {
           return mockWalletSamsungEnabled;
+        },
+        get wallet_configured() {
+          return mockWalletConfigured;
         },
         get archived_at() {
           return mockArchivedAt;
@@ -175,6 +179,7 @@ afterEach(() => {
   mockWalletAppleEnabled = true;
   mockWalletGoogleEnabled = true;
   mockWalletSamsungEnabled = true;
+  mockWalletConfigured = true;
   vi.unstubAllGlobals();
 });
 
@@ -216,7 +221,20 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
     });
 
-    it("hides every wallet lifecycle action, even for an active pass, once the event's Wallet feature is disabled", async () => {
+    it("shows only Delete for an expired pass - it is irreversible, so there is no Restore, and Refresh has nothing left to read", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "expired" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      expect(screen.getByRole("menuitem", { name: /Delete wallet pass/ })).toBeTruthy();
+      expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Restore wallet pass/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Push updates/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
+    });
+
+    it("keeps only the read-only Refresh status, for an active pass, once the event's Wallet feature is disabled", async () => {
       mockWalletEnabled = false;
       mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
       renderPage();
@@ -226,8 +244,44 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
       expect(screen.queryByRole("menuitem", { name: /Restore wallet pass/ })).toBeNull();
       expect(screen.queryByRole("menuitem", { name: /Push updates/ })).toBeNull();
-      expect(screen.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
       expect(screen.queryByRole("menuitem", { name: /Delete wallet pass/ })).toBeNull();
+      // Reading changes nothing at the provider, so the switch does not hide it.
+      expect(screen.getByRole("menuitem", { name: /Refresh status/ })).toBeTruthy();
+    });
+
+    it("shows no wallet action at all with the Wallet feature disabled and no credentials configured", async () => {
+      mockWalletEnabled = false;
+      mockWalletConfigured = false;
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      expect(screen.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
+    });
+
+    it("does not offer Refresh status when the platforms are on but the event has no credentials configured: every click would 409", async () => {
+      mockWalletConfigured = false;
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      expect(screen.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
+      // The other wallet actions are unaffected by the credentials gate.
+      expect(screen.getByRole("menuitem", { name: /Void wallet pass/ })).toBeTruthy();
+    });
+
+    it("shows nothing for a voided pass once the Wallet feature is disabled, even with credentials: there is nothing left to read", async () => {
+      mockWalletEnabled = false;
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "voided" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      expect(screen.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Restore wallet pass/ })).toBeNull();
     });
   });
 
@@ -420,6 +474,30 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       });
       expect(screen.getByTestId("at-toast").textContent).toMatch(/Wallet status refreshed\./);
       expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it.each(["voided", "expired"] as const)(
+      "is not offered for a %s pass: that state is Admitto's own record and is never read again",
+      async (status) => {
+        mockLoad(baseDetail({ wallet_pass: walletPass({ status }) }));
+        renderPage();
+        await screen.findByRole("heading", { name: "Anna" });
+
+        openMoreActionsMenu();
+        expect(screen.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
+      },
+    );
+
+    it("stays available on an archived event, where the other wallet actions are disabled: it only reads", async () => {
+      mockArchivedAt = "2026-01-01T00:00:00.000Z";
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      const refresh = screen.getByRole("menuitem", { name: /Refresh status/ }) as HTMLButtonElement;
+      expect(refresh.disabled).toBe(false);
+      expect((screen.getByRole("menuitem", { name: /Push updates/ }) as HTMLButtonElement).disabled).toBe(true);
     });
 
     it("toasts an error (not an inline dialog message, since this action has no dialog) when refreshWalletPassStatus fails", async () => {

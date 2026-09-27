@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateKeyPairSync, createSign } from "node:crypto";
+import { encryptToString } from "@admitto/crypto";
 import type { PrismaClient } from "@admitto/db";
 import { createTestPrismaClient } from "@admitto/db/testing";
 import type { WalletPassInput, WalletPassProvider } from "@admitto/wallet";
@@ -7,6 +8,7 @@ import { PASSCREATOR_CAPABILITIES, PASSCREATOR_CONSISTENCY_POLICY } from "@admit
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 import { createApp } from "../../src/app.js";
 import { createRateLimitStore } from "../../src/rate-limit/index.js";
+import { walletSnapshot } from "../helpers/wallet-snapshot.js";
 
 const ORG_ID = "org-wallet-webhook";
 const EVENT_ID = "evt-wallet-webhook";
@@ -17,6 +19,11 @@ const CACHE_TEST_EVENT_ID = "evt-wallet-webhook-cache";
 // file - publicKeyCache is module-scoped and never cleared between tests, so reusing an id
 // another test has already delivered to would silently skip the fetch this test needs to fail.
 const KEY_FETCH_FAILURE_EVENT_ID = "evt-wallet-webhook-key-failure";
+// Credentials configured, Wallet master switch OFF - resolved through the real provider path, not
+// an injected stub (own id for the same publicKeyCache reason as above).
+const SWITCH_OFF_EVENT_ID = "evt-wallet-webhook-switch-off";
+const SWITCH_OFF_ATTENDEE_ID = "attendee-wallet-webhook-switch-off";
+const SWITCH_OFF_USER_PROVIDED_ID = `admitto:${SWITCH_OFF_EVENT_ID}:${SWITCH_OFF_ATTENDEE_ID}`;
 const ATTENDEE_ID = "attendee-wallet-webhook";
 const USER_PROVIDED_ID = `admitto:${EVENT_ID}:${ATTENDEE_ID}`;
 
@@ -54,8 +61,15 @@ function stubProvider(publicKey: string): WalletPassProvider & {
 }
 
 async function seedFixture(client: PrismaClient): Promise<void> {
-  const eventIds = [EVENT_ID, OTHER_EVENT_ID, UNCONFIGURED_EVENT_ID, CACHE_TEST_EVENT_ID, KEY_FETCH_FAILURE_EVENT_ID];
-  await client.walletPass.deleteMany({ where: { attendee_id: ATTENDEE_ID } });
+  const eventIds = [
+    EVENT_ID,
+    OTHER_EVENT_ID,
+    UNCONFIGURED_EVENT_ID,
+    CACHE_TEST_EVENT_ID,
+    KEY_FETCH_FAILURE_EVENT_ID,
+    SWITCH_OFF_EVENT_ID,
+  ];
+  await client.walletPass.deleteMany({ where: { attendee: { event_id: { in: eventIds } } } });
   await client.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.event.deleteMany({ where: { id: { in: eventIds } } });
   await client.organization.deleteMany({ where: { id: ORG_ID } });
@@ -111,6 +125,36 @@ async function seedFixture(client: PrismaClient): Promise<void> {
       wallet_template_id: "tmpl-key-failure-gala",
     },
   });
+  await client.event.create({
+    data: {
+      id: SWITCH_OFF_EVENT_ID,
+      title: "Switch Off Gala",
+      slug: "switch-off-gala",
+      date: new Date("2026-09-01"),
+      organization_id: ORG_ID,
+      wallet_enabled: false,
+      wallet_template_id: "tmpl-switch-off-gala",
+      wallet_api_key_enc: encryptToString("test-api-key"),
+    },
+  });
+  await client.attendee.create({
+    data: {
+      id: SWITCH_OFF_ATTENDEE_ID,
+      event_id: SWITCH_OFF_EVENT_ID,
+      email: "switch-off@example.com",
+      name: "Switch Off Guest",
+      status: "registered",
+    },
+  });
+  await client.walletPass.create({
+    data: {
+      attendee_id: SWITCH_OFF_ATTENDEE_ID,
+      provider: "passcreator",
+      provider_pass_id: "pc-switch-off-1",
+      user_provided_id: SWITCH_OFF_USER_PROVIDED_ID,
+      status: "active",
+    },
+  });
   await client.attendee.create({
     data: {
       id: ATTENDEE_ID,
@@ -152,18 +196,32 @@ afterEach(async () => {
     data: {
       status: "active",
       voided_at: null,
+      provider_commanded_at: null,
+      provider_removed_at: null,
       apple_active_registrations: null,
       apple_inactive_registrations: null,
       first_downloaded_at: null,
       registration_checked_at: null,
+      registration_sync_attempted_at: null,
+      // The ordering guard applyProviderSnapshotToWalletPass reads (lifecycle_observed_at) must
+      // also be reset - a value left over from an earlier test would otherwise block a later
+      // test's own (older, deliberately backdated) observedAt as "stale".
+      lifecycle_observed_at: null,
       first_confirmed_at: null,
     },
   });
 });
 
 afterAll(async () => {
-  const eventIds = [EVENT_ID, OTHER_EVENT_ID, UNCONFIGURED_EVENT_ID, CACHE_TEST_EVENT_ID, KEY_FETCH_FAILURE_EVENT_ID];
-  await prisma.walletPass.deleteMany({ where: { attendee_id: ATTENDEE_ID } });
+  const eventIds = [
+    EVENT_ID,
+    OTHER_EVENT_ID,
+    UNCONFIGURED_EVENT_ID,
+    CACHE_TEST_EVENT_ID,
+    KEY_FETCH_FAILURE_EVENT_ID,
+    SWITCH_OFF_EVENT_ID,
+  ];
+  await prisma.walletPass.deleteMany({ where: { attendee: { event_id: { in: eventIds } } } });
   await prisma.attendee.deleteMany({ where: { event_id: { in: eventIds } } });
   await prisma.event.deleteMany({ where: { id: { in: eventIds } } });
   await prisma.organization.deleteMany({ where: { id: ORG_ID } });
@@ -214,7 +272,7 @@ describe("POST /api/wallet/webhook/passcreator/:eventId", () => {
   it("logs wallet_webhook_unmatched (not applied) for a validly signed delivery whose pass no longer exists", async () => {
     const provider = stubProvider(keyPair.publicKey);
     const app = makeApp(provider);
-    const body = signedRequest({ identifier: "pc-does-not-exist", voided: true });
+    const body = signedRequest({ identifier: "pc-does-not-exist" });
 
     const res = await app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}`, {
       method: "POST",
@@ -227,7 +285,7 @@ describe("POST /api/wallet/webhook/passcreator/:eventId", () => {
     expect(querySystemLogs({ search: "wallet_webhook_applied" })).toHaveLength(0);
   });
 
-  it("applies a voided:true payload as a status transition", async () => {
+  it("never reads a voided flag out of a registration delivery: status stays active", async () => {
     const provider = stubProvider(keyPair.publicKey);
     const app = makeApp(provider);
     const body = signedRequest({ identifier: "pc-webhook-1", userProvidedId: USER_PROVIDED_ID, voided: true });
@@ -240,8 +298,8 @@ describe("POST /api/wallet/webhook/passcreator/:eventId", () => {
 
     expect(res.status).toBe(200);
     const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
-    expect(row?.status).toBe("voided");
-    expect(row?.voided_at).not.toBeNull();
+    expect(row?.status).toBe("active");
+    expect(row?.voided_at).toBeNull();
   });
 
   it("caches the public key across deliveries for the same event", async () => {
@@ -400,26 +458,311 @@ describe("POST /api/wallet/webhook/passcreator/:eventId", () => {
   });
 });
 
-describe("POST /api/wallet/webhook/passcreator/:eventId/voided", () => {
-  it("applies a voided status transition even though the real pass_voided payload has no `voided` field", async () => {
-    const provider = stubProvider(keyPair.publicKey);
-    const app = makeApp(provider);
-    // No `voided` key at all - matches the confirmed live shape of a pass_voided delivery
-    // (developer.passcreator.com/en/webhooks/pass-hooks, 2026-08-19): arriving on this route is
-    // the only voided signal there is.
-    const body = signedRequest({ identifier: "pc-webhook-1", userProvidedId: USER_PROVIDED_ID });
+describe("webhooks for an event whose Wallet master switch is off but whose credentials are configured", () => {
+  // Switching Wallet off stops new passes; it does not unsubscribe the PassCreator hooks, so the
+  // deliveries for passes that already exist keep arriving. No injected provider here: this goes
+  // through the real resolution from the event's stored credentials, with PassCreator's HTTP API
+  // stubbed at the global fetch.
+  function stubPassCreatorApi(searchStatus = 500) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        if (String(input).includes("/api/hook/publickey")) {
+          return new Response(JSON.stringify({ publicKey: keyPair.publicKey }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ success: false, errors: ["stubbed"] }), {
+          status: searchStatus,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+  }
 
-    const res = await app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}/voided`, {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("still applies a registration delivery", async () => {
+    stubPassCreatorApi();
+    const app = makeApp(undefined);
+    const body = signedRequest({
+      identifier: "pc-switch-off-1",
+      userProvidedId: SWITCH_OFF_USER_PROVIDED_ID,
+      operatingSystem: "iOS",
+      noOfActivePasses: 1,
+    });
+
+    const res = await app.request(`/api/wallet/webhook/passcreator/${SWITCH_OFF_EVENT_ID}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
 
     expect(res.status).toBe(200);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: SWITCH_OFF_ATTENDEE_ID } });
+    expect(row?.apple_active_registrations).toBe(1);
+  });
+
+  it("records a real void even though a no-data write (a periodic sync attempt that found no provider, or a per-pass failure) advanced registration_sync_attempted_at for this same pass in between - that column is not the ordering guard", async () => {
+    // Simulates the exact race the sync's own "wallet not configured" bucket-skip (or a per-pass
+    // no-match/failure attempt) can cause: a write that bumps registration_sync_attempted_at with
+    // no observation attached, landing between the webhook's re-read starting and its own write.
+    await prisma.walletPass.update({
+      where: { attendee_id: SWITCH_OFF_ATTENDEE_ID },
+      data: { registration_sync_attempted_at: new Date() },
+    });
+    const provider = stubProvider(keyPair.publicKey);
+    vi.mocked(provider.getPassSnapshot).mockResolvedValue(
+      walletSnapshot(
+        { appleActive: 1 },
+        { observedAt: new Date(Date.now() - 10_000), validity: { voided: true, expirationRaw: null, expiresAt: null } },
+      ),
+    );
+    const app = makeApp(provider);
+
+    const res = await app.request(`/api/wallet/webhook/passcreator/${SWITCH_OFF_EVENT_ID}/voided`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(signedRequest({ identifier: "pc-switch-off-1", userProvidedId: SWITCH_OFF_USER_PROVIDED_ID })),
+    });
+
+    expect(res.status).toBe(200);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: SWITCH_OFF_ATTENDEE_ID } });
+    expect(row?.status).toBe("voided");
+    expect(row?.apple_active_registrations).toBe(1);
+
+    await prisma.walletPass.update({
+      where: { attendee_id: SWITCH_OFF_ATTENDEE_ID },
+      data: { status: "active", voided_at: null, apple_active_registrations: null, lifecycle_observed_at: null },
+    });
+  });
+
+  it("still reaches the pass_voided reconciliation instead of dropping the delivery with a 404", async () => {
+    stubPassCreatorApi(500);
+    const app = makeApp(undefined);
+    const body = signedRequest({ identifier: "pc-switch-off-1", userProvidedId: SWITCH_OFF_USER_PROVIDED_ID });
+
+    const res = await app.request(`/api/wallet/webhook/passcreator/${SWITCH_OFF_EVENT_ID}/voided`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    // 503, not 404: the provider was resolved from the stored credentials and the re-read of the
+    // pass was attempted (and failed against the stubbed API), so PassCreator redelivers.
+    expect(res.status).toBe(503);
+    expect(querySystemLogs({ search: "wallet_webhook_reconcile_failed" })).toHaveLength(1);
+  });
+});
+
+describe("POST /api/wallet/webhook/passcreator/:eventId/voided", () => {
+  // The real pass_voided payload has no `voided` field (developer.passcreator.com/en/webhooks/pass-hooks,
+  // 2026-08-19): arriving on this route is only a signal that the pass MAY have changed, so every
+  // case below decides from what the provider says on a fresh read.
+  const voidedDelivery = () => signedRequest({ identifier: "pc-webhook-1", userProvidedId: USER_PROVIDED_ID });
+
+  function postVoided(app: ReturnType<typeof makeApp>, body: object, eventId = EVENT_ID) {
+    return app.request(`/api/wallet/webhook/passcreator/${eventId}/voided`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("records the void when the provider, asked again, reports the pass voided", async () => {
+    const provider = stubProvider(keyPair.publicKey);
+    vi.mocked(provider.getPassSnapshot).mockResolvedValue(
+      walletSnapshot({ appleActive: 1 }, { validity: { voided: true, expirationRaw: null, expiresAt: null } }),
+    );
+    const app = makeApp(provider);
+
+    const res = await postVoided(app, voidedDelivery());
+
+    expect(res.status).toBe(200);
+    expect(provider.getPassSnapshot).toHaveBeenCalledWith({
+      providerPassId: "pc-webhook-1",
+      userProvidedId: USER_PROVIDED_ID,
+    });
     const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
     expect(row?.status).toBe("voided");
     expect(row?.voided_at).not.toBeNull();
+    // The counts of that same read are kept: nothing polls a voided pass afterwards.
+    expect(row?.apple_active_registrations).toBe(1);
     expect(querySystemLogs({ search: "wallet_webhook_applied" })).toHaveLength(1);
+    expect(querySystemLogs({ search: "wallet_pass_lifecycle_observed" })).toHaveLength(1);
+  });
+
+  it("changes nothing for a late redelivery: the provider now says the pass is not voided (it was restored since)", async () => {
+    const provider = stubProvider(keyPair.publicKey);
+    vi.mocked(provider.getPassSnapshot).mockResolvedValue(walletSnapshot());
+    const app = makeApp(provider);
+
+    const res = await postVoided(app, voidedDelivery());
+
+    expect(res.status).toBe(200);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    expect(row?.status).toBe("active");
+    expect(row?.voided_at).toBeNull();
+  });
+
+  it("does not let a stale 'voided' read undo Admitto's own Restore made a minute ago - and answers 503, since a real re-void landing in the same window would look identical", async () => {
+    await prisma.walletPass.update({
+      where: { attendee_id: ATTENDEE_ID },
+      data: { provider_commanded_at: new Date(Date.now() - 60_000) },
+    });
+    const provider = stubProvider(keyPair.publicKey);
+    vi.mocked(provider.getPassSnapshot).mockResolvedValue(
+      walletSnapshot({ appleActive: 1 }, { observedAt: new Date(), validity: { voided: true, expirationRaw: null, expiresAt: null } }),
+    );
+    const app = makeApp(provider);
+
+    const res = await postVoided(app, voidedDelivery());
+
+    expect(res.status).toBe(503);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    // Not undone, and not recorded as voided either - genuinely undecided, so PassCreator must
+    // redeliver rather than being told this delivery is fully handled. The registration counts of
+    // that same read are still kept.
+    expect(row?.status).toBe("active");
+    expect(row?.apple_active_registrations).toBe(1);
+    expect(querySystemLogs({ search: "wallet_webhook_reconcile_suppressed" })).toHaveLength(1);
+  });
+
+  it("answers 503, so PassCreator redelivers, when the provider cannot be reached", async () => {
+    const provider = stubProvider(keyPair.publicKey);
+    vi.mocked(provider.getPassSnapshot).mockRejectedValue(new Error("provider down"));
+    const app = makeApp(provider);
+
+    const res = await postVoided(app, voidedDelivery());
+
+    expect(res.status).toBe(503);
+    expect(await res.text()).toBe("");
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    expect(row?.status).toBe("active");
+    expect(querySystemLogs({ search: "wallet_webhook_reconcile_failed" })).toHaveLength(1);
+  });
+
+  it("answers 503 when the provider has no match for the pass even after the retry - a no-match is not proof of anything", async () => {
+    const provider = stubProvider(keyPair.publicKey);
+    vi.mocked(provider.getPassSnapshot).mockResolvedValue(null);
+    const app = makeApp(provider);
+
+    const res = await postVoided(app, voidedDelivery());
+
+    expect(res.status).toBe(503);
+    expect(provider.getPassSnapshot).toHaveBeenCalledTimes(2);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    expect(row?.status).toBe("active");
+  });
+
+  it("acks 200 without asking the provider when the pass is already voided in Admitto", async () => {
+    await prisma.walletPass.update({
+      where: { attendee_id: ATTENDEE_ID },
+      data: { status: "voided", voided_at: new Date("2026-09-20T10:00:00.000Z") },
+    });
+    const provider = stubProvider(keyPair.publicKey);
+    const app = makeApp(provider);
+
+    const res = await postVoided(app, voidedDelivery());
+
+    expect(res.status).toBe(200);
+    expect(provider.getPassSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("acks 200 without asking the provider when the delivery names no pass of this event", async () => {
+    const provider = stubProvider(keyPair.publicKey);
+    const app = makeApp(provider);
+
+    const unknown = await postVoided(app, signedRequest({ identifier: "pc-does-not-exist" }));
+    // The same pass id delivered to a different event's URL is not this event's pass either.
+    const otherEvent = await postVoided(app, signedRequest({ identifier: "pc-webhook-1" }), OTHER_EVENT_ID);
+
+    expect(unknown.status).toBe(200);
+    expect(otherEvent.status).toBe(200);
+    expect(provider.getPassSnapshot).not.toHaveBeenCalled();
+    expect(querySystemLogs({ search: "wallet_webhook_unmatched" })).toHaveLength(2);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    expect(row?.status).toBe("active");
+  });
+
+  it("does not let a second write at the exact same millisecond-resolution observedAt overwrite the first, against real Postgres comparison semantics (strict <, not <=)", async () => {
+    const tiedAt = new Date();
+    await prisma.walletPass.update({
+      where: { attendee_id: ATTENDEE_ID },
+      // Simulates a first read that already landed at exactly this instant, reporting the pass
+      // NOT voided (a clean read) with its own registration counts.
+      data: { lifecycle_observed_at: tiedAt, apple_active_registrations: 5 },
+    });
+    const provider = stubProvider(keyPair.publicKey);
+    vi.mocked(provider.getPassSnapshot).mockResolvedValue(
+      // A second, independent read tied at the exact same instant - Date/TIMESTAMP(3) both
+      // truncate to milliseconds, so this is a genuine collision, not a contrived one. With a
+      // non-strict `<=` guard this write would still match and could overwrite the first read's
+      // data with its own, whichever one the database happens to apply last (the bug reported).
+      walletSnapshot({ appleActive: 1 }, { observedAt: tiedAt, validity: { voided: true, expirationRaw: null, expiresAt: null } }),
+    );
+    const app = makeApp(provider);
+
+    const res = await app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}/voided`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(voidedDelivery()),
+    });
+
+    // A conflict, same as any other pass whose identity changed mid-flight - answered 200, like
+    // every other conflict in this design (something else already recorded a valid answer for this
+    // exact instant). The important part is what did NOT happen: the losing write's own data (voided,
+    // apple_active_registrations: 1) never lands on top of the first read's.
+    expect(res.status).toBe(200);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    expect(row?.status).toBe("active");
+    expect(row?.apple_active_registrations).toBe(5);
+  });
+
+  it("records the void even though a plain registration webhook advanced registration_checked_at while the re-read was in flight (a count-only delivery carries no lifecycle observation)", async () => {
+    // Simulates: a pass_voided delivery starts its re-read (observedAt stamped at request time,
+    // see PassCreatorClient.getPassSnapshot), a plain registration webhook for the SAME pass lands
+    // and is applied before the re-read's own answer comes back, then the re-read resolves as
+    // voided. Only registration_checked_at is bumped by the registration webhook - the ordering
+    // guard is keyed on registration_sync_attempted_at, which that delivery never touches - so the
+    // voided write must still land.
+    const registrationOnlyProvider = stubProvider(keyPair.publicKey);
+    const registrationApp = makeApp(registrationOnlyProvider);
+    await registrationApp.request(`/api/wallet/webhook/passcreator/${EVENT_ID}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        signedRequest({
+          identifier: "pc-webhook-1",
+          userProvidedId: USER_PROVIDED_ID,
+          operatingSystem: "iOS",
+          noOfActivePasses: 1,
+        }),
+      ),
+    });
+    const afterRegistration = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    expect(afterRegistration?.apple_active_registrations).toBe(1);
+
+    const provider = stubProvider(keyPair.publicKey);
+    vi.mocked(provider.getPassSnapshot).mockResolvedValue(
+      // Observed before the registration webhook above was even applied.
+      walletSnapshot({}, { observedAt: new Date(Date.now() - 10_000), validity: { voided: true, expirationRaw: null, expiresAt: null } }),
+    );
+    const app2 = makeApp(provider);
+
+    const res = await app2.request(`/api/wallet/webhook/passcreator/${EVENT_ID}/voided`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(voidedDelivery()),
+    });
+
+    expect(res.status).toBe(200);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    expect(row?.status).toBe("voided");
+    expect(row?.voided_at).not.toBeNull();
   });
 
   it("still 401s a delivery with a bad signature - the /voided route isn't a verification shortcut", async () => {

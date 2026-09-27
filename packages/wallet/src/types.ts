@@ -140,6 +140,9 @@ export interface WalletProviderValidity {
  * download, taken together so a single lookup can feed every consumer. Returned by
  * WalletPassProvider.getPassSnapshot. */
 export interface WalletProviderSnapshot {
+  /** When the read was started (not when its answer arrived): the answer reflects the provider's
+   * state from some moment after that. Used to order overlapping reads of one pass, and to tell a
+   * read that began before one of Admitto's own commands from one that began after it. */
   observedAt: Date;
   validity: WalletProviderValidity;
   /** null = the provider cannot report registrations (capabilities.registrationSnapshot false). */

@@ -81,7 +81,9 @@ export async function handleTriggerEventWideWalletRefreshStatus(c: Context, db: 
   const event = await db.event.findUnique({ where: { id: eventId }, select: { organization_id: true } });
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const provider = await resolveEventWalletProvider(db, eventId);
+  // Read-only, so no wallet master switch and (in app.ts) no archived-event guard: checking what
+  // the provider says about existing passes is what an operator does after an event has ended.
+  const provider = await resolveEventWalletProvider(db, eventId, { ignoreWalletEnabled: true });
   if (!provider) return c.json({ error: "wallet_not_configured" }, 409);
 
   const jobId = await enqueueEventWideWalletRefreshStatusJob(db, c, eventId, event.organization_id);

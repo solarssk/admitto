@@ -4,13 +4,17 @@ import { emitSystemLog } from "@admitto/shared/system-log";
 import {
   applyFirstConfirmedAt,
   applyWebhookUpdate,
+  findWebhookPassTarget,
   parseAdmittoUserProvidedId,
   parseWebhookData,
   parseWebhookEnvelope,
-  resolveWalletProvider,
+  refreshOneWalletPassStatus,
+  resolveConfiguredWalletProvider,
   verifyWebhookSignature,
+  WalletStatusCheckInconclusiveError,
   type PassCreatorWebhookData,
   type WalletPassProvider,
+  type WalletStatusRefreshOutcome,
 } from "@admitto/wallet";
 
 interface WebhookCapableProvider {
@@ -68,6 +72,55 @@ function payloadNamesADifferentEvent(eventId: string, data: PassCreatorWebhookDa
   return true;
 }
 
+/** Handles a `pass_voided` delivery: a signal that the pass's state MAY have changed, not the new
+ * state - the delivery carries no validity field, and a late redelivery can arrive after a Restore
+ * that already undid the void. So it re-reads the pass from the provider and lets the same
+ * reconciliation as the periodic sync and manual Refresh decide (an active pass the provider now
+ * reports voided or expired becomes voided/expired; nothing else changes).
+ *
+ * 200 = the delivery was dealt with, including "no such pass of ours" and "pass is not active, so
+ * nothing to reconcile". 503 = the re-read could not be completed (provider error, or a no-match
+ * that even the retry inside refreshOneWalletPassStatus could not turn into a read) - PassCreator
+ * redelivers on a non-2xx (`retryEnabled` at subscribe time), and the background sync is no safety
+ * net here since it skips archived events. A 503 carries no detail, like every other rejection on
+ * this unauthenticated endpoint. */
+async function reconcileVoidedSignal(
+  c: Context,
+  db: PrismaClient,
+  provider: WalletPassProvider,
+  eventId: string,
+  data: PassCreatorWebhookData,
+): Promise<Response> {
+  const target = await findWebhookPassTarget(db, eventId, data);
+  if (!target) {
+    emitSystemLog("wallet", "info", "wallet_webhook_unmatched", { eventId });
+    return c.body(null, 200);
+  }
+  let outcome: WalletStatusRefreshOutcome;
+  try {
+    outcome = await refreshOneWalletPassStatus(db, target, provider);
+  } catch (err) {
+    emitSystemLog("wallet", "warn", "wallet_webhook_reconcile_failed", {
+      eventId,
+      reason: err instanceof WalletStatusCheckInconclusiveError ? "inconclusive" : "provider_error",
+    });
+    return c.body(null, 503);
+  }
+  if (outcome === "suppressed") {
+    // The provider genuinely reports this pass voided, but the read fell inside the consistency
+    // window right after Admitto's own last Void/Restore - it might be a stale search-index read
+    // of the state from before that command, or a second, real void that happens to land in the
+    // same window; the two look identical from timestamps alone. 200 here would tell PassCreator
+    // the delivery is fully handled and stop it from redelivering, silently losing a real void on
+    // an archived or switched-off event (no periodic sync there to ever revisit it) - so this is
+    // answered the same as an inconclusive read (Codex review, 2026-09-27).
+    emitSystemLog("wallet", "info", "wallet_webhook_reconcile_suppressed", { eventId });
+    return c.body(null, 503);
+  }
+  emitSystemLog("wallet", "info", "wallet_webhook_applied", { eventId });
+  return c.body(null, 200);
+}
+
 async function resolveEventWebhookProvider(
   db: PrismaClient,
   eventId: string,
@@ -75,12 +128,15 @@ async function resolveEventWebhookProvider(
 ): Promise<(WalletPassProvider & WebhookCapableProvider) | null> {
   const event = await db.event.findUnique({
     where: { id: eventId },
-    select: { wallet_enabled: true, wallet_template_id: true, wallet_api_key_enc: true },
+    select: { wallet_template_id: true, wallet_api_key_enc: true },
   });
   if (!event) return null;
-  const provider = resolveWalletProvider(
+  // The event's credentials alone, not the wallet master switch: switching Wallet off stops new
+  // passes being issued but does not unsubscribe the PassCreator hooks, so deliveries for the
+  // passes that already exist keep arriving and still need their signature key and a provider to
+  // re-read the pass with (a void reported while the switch was off must not be dropped).
+  const provider = resolveConfiguredWalletProvider(
     {
-      walletEnabled: event.wallet_enabled,
       walletTemplateId: event.wallet_template_id,
       walletApiKeyEnc: event.wallet_api_key_enc,
       walletFieldMapping: null,
@@ -106,10 +162,9 @@ async function resolveEventWebhookProvider(
  * `isVoidedRoute` distinguishes a `pass_voided` delivery from the three registration events -
  * confirmed 2026-08-19 (developer.passcreator.com/en/webhooks/pass-hooks) that PassCreator's
  * payload carries no field naming which event fired, and a `pass_voided` delivery specifically has
- * no `voided` field at all (unlike what PassCreatorWebhookData's optional `voided` field used to
- * assume). subscribeWalletWebhooksBestEffort (event-settings-routes.ts) points `pass_voided` at
- * its own `/voided`-suffixed target URL for exactly this reason, so arriving on that route at all
- * - not any field in the body - is the actual voided signal. `isFirstConfirmedRoute` is the same
+ * no `voided` field at all. subscribeWalletWebhooksBestEffort (event-settings-routes.ts) points
+ * `pass_voided` at its own `/voided`-suffixed target URL for exactly this reason, so arriving on
+ * that route at all - not any field in the body - is the signal, handled by reconcileVoidedSignal. `isFirstConfirmedRoute` is the same
  * idea for `first_pushnotification_registered` (its own `/first-confirmed`-suffixed URL, added
  * later): a delivery there triggers applyFirstConfirmedAt in addition to the normal
  * applyWebhookUpdate, rather than instead of it - the delivery still carries real registration-
@@ -146,9 +201,10 @@ export async function handlePassCreatorWebhook(
 
   const data = parseWebhookData(envelope.signedData);
   if (!data) return c.body(null, 400);
-  if (isVoidedRoute) data.voided = true;
 
   if (payloadNamesADifferentEvent(eventId, data)) return c.body(null, 200);
+
+  if (isVoidedRoute) return reconcileVoidedSignal(c, db, provider, eventId, data);
 
   // Success is otherwise silent (a bare 200) - this is the only positive signal in System Logs
   // that a delivery actually reached us, verified, and either found or missed its WalletPass row.

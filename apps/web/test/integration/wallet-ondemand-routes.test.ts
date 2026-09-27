@@ -450,6 +450,40 @@ describe("On-demand wallet routes", () => {
     const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
     expect(saved?.status).toBe("active");
     expect(saved?.voided_at).toBeNull();
+    // A Restore is a validity command like any other: the next reconciliation must not read the
+    // provider's not-yet-updated "voided" as a fresh void.
+    expect(saved?.provider_commanded_at).not.toBeNull();
+  });
+
+  it("does not recreate or reactivate an expired pass: redirects with walletError=1 and never calls the provider", async () => {
+    // Expired is irreversible and stays the SAME resource at the provider - falling through to
+    // create would have PassCreator reject it as a duplicate of that still-there, still-expired
+    // pass, and duplicate-recovery would then mark it active in Admitto WITHOUT ever clearing its
+    // provider-side expiration, leaving the attendee believing they have a valid pass while
+    // PassCreator still shows it dead (Codex review, 2026-09-27).
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: ATTENDEE_MODE_A_ID,
+        provider: "passcreator",
+        provider_pass_id: "pc-expired-retry",
+        user_provided_id: `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
+        status: "expired",
+        apple_url: "https://pc.test/apple/dead",
+        android_url: "https://pc.test/android/dead",
+      },
+    });
+    const provider = stubProvider();
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+    expect(provider.createPass).not.toHaveBeenCalled();
+    expect(provider.findByUserProvidedId).not.toHaveBeenCalled();
+
+    const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(saved?.status).toBe("expired");
   });
 
   it("redirects back with walletError=1 and records status=failed on provider error", async () => {

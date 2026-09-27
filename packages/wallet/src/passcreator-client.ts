@@ -424,6 +424,12 @@ export class PassCreatorClient implements WalletPassProvider {
         "PassCreator snapshot lookup needs the pass's userProvidedId",
       );
     }
+    // When the read was REQUESTED, not when the response came back: the provider answers with its
+    // state from somewhere after this moment, so a slow response must not make an old state look
+    // newer than a read that started later and finished first (snapshot ordering, see
+    // applyProviderSnapshotToWalletPass) or make a read that began before an Admitto command look
+    // like it came after it (reconcileWalletPassLifecycle's staleness window).
+    const observedAt = new Date();
     const row = await this.searchByUserProvidedId(ref.userProvidedId);
     if (!row) return null;
     // userProvidedId is only an idempotency key: once a pass has been deleted and issued again
@@ -437,7 +443,7 @@ export class PassCreatorClient implements WalletPassProvider {
     const expirationRaw =
       typeof row.expirationDate === "string" && row.expirationDate.trim() !== "" ? row.expirationDate : null;
     return {
-      observedAt: new Date(),
+      observedAt,
       validity: {
         voided: typeof row.voided === "boolean" ? row.voided : null,
         expirationRaw,

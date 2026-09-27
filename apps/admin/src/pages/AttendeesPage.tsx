@@ -746,7 +746,8 @@ interface HeaderMoreMenuProps {
   /** Whether the event actually has a wallet template + decryptable API key - distinct from
    * walletPlatforms.any (the platform toggles), which can be true with nothing configured yet.
    * Gates "Push updates" alongside walletPlatforms.any so the item isn't offered when every click
-   * would deterministically 409 wallet_not_configured (bot review). */
+   * would deterministically 409 wallet_not_configured (bot review), and "Refresh status" on its
+   * own, since that only reads from the provider and works with the Wallet switch off. */
   walletConfigured: boolean;
   onTriggerEventWidePush: () => void;
   eventWidePushBusy: boolean;
@@ -824,11 +825,14 @@ function HeaderMoreMenu({
             }}
           />
           {/* One divider for both wallet actions, not one each - they're a single group
-           * (same convention as BulkMoreActionsMenu's wallet section, AttendeesTable.tsx). */}
-          {walletPlatforms.any && (
+           * (same convention as BulkMoreActionsMenu's wallet section, AttendeesTable.tsx). Push
+           * updates needs a wallet platform to still be on AND the event configured; Refresh status
+           * only reads from the provider, so it needs only the event's credentials - it stays
+           * available with the Wallet switch off (bot review). */}
+          {(walletPlatforms.any || walletConfigured) && (
             <>
               <hr className="more-actions-menu__divider" />
-              {walletConfigured && (
+              {walletPlatforms.any && walletConfigured && (
                 <MoreActionsMenuItem
                   icon="refresh-dot"
                   label={eventWidePushBusy ? "Pushing updates…" : "Push updates"}
@@ -841,17 +845,18 @@ function HeaderMoreMenu({
                   }}
                 />
               )}
-              <MoreActionsMenuItem
-                icon="cloud-download"
-                label={eventWideRefreshStatusBusy ? "Refreshing status…" : "Refresh status"}
-                hint="Pull the latest device status for every wallet pass"
-                disabled={archived || eventWideRefreshStatusBusy}
-                tooltip={archived ? ARCHIVED_ACTION_TOOLTIP : undefined}
-                onClick={() => {
-                  setOpen(false);
-                  onTriggerEventWideRefreshStatus();
-                }}
-              />
+              {walletConfigured && (
+                <MoreActionsMenuItem
+                  icon="cloud-download"
+                  label={eventWideRefreshStatusBusy ? "Refreshing status…" : "Refresh status"}
+                  hint="Pull the latest status for every active wallet pass"
+                  disabled={eventWideRefreshStatusBusy}
+                  onClick={() => {
+                    setOpen(false);
+                    onTriggerEventWideRefreshStatus();
+                  }}
+                />
+              )}
             </>
           )}
           {!isDesktop && (
@@ -2265,6 +2270,7 @@ export function AttendeesPage() {
         eventTimezone={event.timezone}
         event={event}
         walletPlatforms={walletPlatforms}
+        walletConfigured={event.wallet_configured}
       />
       )}
 
@@ -2381,8 +2387,8 @@ export function AttendeesPage() {
 
       <ConfirmDialog
         open={eventWideRefreshStatusConfirmOpen}
-        title="Refresh the wallet status for every attendee with a pass?"
-        message="Pulls each attendee's current device-registration status from the provider, across the whole event. Attendees with no pass are left untouched."
+        title="Refresh the wallet status for every active wallet pass?"
+        message="Pulls the current status of every active wallet pass from the provider, across the whole event. A pass the provider reports as voided or expired is marked Voided. Passes that are already voided or expired, and attendees with no pass, are left untouched."
         errorMessage={eventWideRefreshStatusError}
         confirmLabel="Refresh status"
         confirmVariant="primary"
