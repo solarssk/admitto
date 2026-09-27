@@ -221,6 +221,19 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
     });
 
+    it("shows only Delete for an expired pass - it is irreversible, so there is no Restore, and Refresh has nothing left to read", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "expired" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      expect(screen.getByRole("menuitem", { name: /Delete wallet pass/ })).toBeTruthy();
+      expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Restore wallet pass/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Push updates/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
+    });
+
     it("keeps only the read-only Refresh status, for an active pass, once the event's Wallet feature is disabled", async () => {
       mockWalletEnabled = false;
       mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));

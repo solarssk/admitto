@@ -316,7 +316,7 @@ function MoreActionsMenu({
               this menu even though the Wallet card itself is now hidden (bot review). Refresh
               status only reads from the provider, so an active pass keeps it whenever the event's
               credentials are configured, switch or not (bot review). */}
-          {(walletPlatforms.any ? hasWalletLifecycleActions(walletPass) : refreshAvailable) && (
+          {(walletPlatforms.any ? hasAnyWalletMenuAction(walletPass) : refreshAvailable) && (
             <>
               <hr className="more-actions-menu__divider" />
               <WalletActionMenuItems
@@ -486,9 +486,12 @@ function RevokeActionMenuItems({
  * (walletPass null until their first "Add to Wallet" click succeeds or fails) - nothing renders
  * before then, matching RevokeActionMenuItems' own toggle-by-state shape above. Reissue stays
  * available in both active and voided states (it only pushes fresh data, independent of void
- * state); Void/Restore toggle the same way Revoke/Restore pass do above. This gate duplicates the
- * caller's own hasWalletLifecycleActions check (defense in depth, cheap on a null/two-value
- * check) rather than trusting the caller not to render this with an ineligible pass. */
+ * state); Void/Restore toggle the same way Revoke/Restore pass do above. Delete is offered one
+ * state further, for `expired` too - unlike voided, expired is irreversible (there is no Restore
+ * for it), so Delete is the only way today to get unstuck from one (removing the local row lets the
+ * attendee start over; Remove-from-provider proper is PR 3's job) - Codex review, 2026-09-27. Each
+ * section gates itself rather than one early return, so Delete still renders for a pass none of the
+ * other sections apply to. */
 function WalletActionMenuItems({
   event,
   platformActions,
@@ -515,11 +518,11 @@ function WalletActionMenuItems({
   onRefreshStatus: () => void;
   onDelete: () => void;
 }>) {
-  if (!hasWalletLifecycleActions(walletPass)) return null;
+  if (!walletPass) return null;
 
   return (
     <>
-      {platformActions && (
+      {platformActions && hasWalletLifecycleActions(walletPass) && (
         <>
           {walletPass.status === "active" ? (
             <ArchivedGuard event={event} reasonId="void-wallet-pass-reason-menu" disabled={walletBusy}>
@@ -590,7 +593,7 @@ function WalletActionMenuItems({
           </span>
         </button>
       )}
-      {platformActions && (
+      {platformActions && hasAnyWalletMenuAction(walletPass) && (
         <ArchivedGuard event={event} reasonId="delete-wallet-pass-reason-menu" disabled={walletBusy}>
           {(guard) => (
             <button
@@ -722,12 +725,19 @@ function mailTone(status: string | null): ChipTone {
   return variant === "ok" || variant === "warn" || variant === "error" ? variant : "neutral";
 }
 
-/** Void/Restore/Reissue only make sense once the attendee has actually added a pass to a wallet
- * (walletPass null until their first "Add to Wallet" click succeeds or fails) and it's still in
- * an active or voided state - shared by the divider-visibility check and WalletActionMenuItems'
- * own gate, which independently tested the identical condition (bot review). */
+/** Gates Void/Restore/Push updates: only makes sense once the attendee has actually added a pass
+ * to a wallet (walletPass null until their first "Add to Wallet" click succeeds or fails) and it's
+ * still in an active or voided state. */
 function hasWalletLifecycleActions(pass: WalletPassActionDto | null): pass is WalletPassActionDto {
   return !!pass && (pass.status === "active" || pass.status === "voided");
+}
+
+/** Gates Delete, and the divider that shows the wallet action section at all: one state wider than
+ * hasWalletLifecycleActions above - expired is irreversible, so Void/Restore/Push don't apply to
+ * it, but Delete (removing the local row) is still the one way to get unstuck from an expired pass
+ * today (Codex review, 2026-09-27). */
+function hasAnyWalletMenuAction(pass: WalletPassActionDto | null): pass is WalletPassActionDto {
+  return !!pass && (pass.status === "active" || pass.status === "voided" || pass.status === "expired");
 }
 
 function walletTone(pass: WalletPassActionDto | null): ChipTone {
