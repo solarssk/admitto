@@ -1919,11 +1919,11 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         });
         getPassSnapshotSpy.mockImplementationOnce(async () => {
           // A newer read of the same pass (say the worker's tick, or another Refresh) is stored
-          // while this slower one is still in flight - registration_sync_attempted_at, not
-          // registration_checked_at, is the ordering column a snapshot write advances.
+          // while this slower one is still in flight - lifecycle_observed_at is the one column a
+          // snapshot write orders itself on.
           await prisma.walletPass.update({
             where: { attendee_id: attendeeId },
-            data: { registration_sync_attempted_at: new Date(), apple_active_registrations: 5 },
+            data: { lifecycle_observed_at: new Date(), apple_active_registrations: 5 },
           });
           return walletSnapshot(
             { appleActive: 1 },
@@ -2500,6 +2500,38 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       } finally {
         await prisma.walletPass.deleteMany({ where: { attendee_id: { in: [knownId, noUpidId] } } });
         await prisma.attendee.deleteMany({ where: { id: { in: [knownId, noUpidId] } } });
+      }
+    });
+
+    it("counts a 'suppressed' outcome as refreshed, not skipped - the registration counts were still written, only the lifecycle transition was held back", async () => {
+      const attendeeId = "att-bulk-wallet-refresh-suppressed";
+      try {
+        await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, {
+          withPass: true,
+          providerCommandedAt: new Date(Date.now() - 60_000),
+          userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
+        });
+        getPassSnapshotSpy.mockResolvedValueOnce(
+          walletSnapshot({ appleActive: 1 }, { validity: { voided: true, expirationRaw: null, expiresAt: null } }),
+        );
+
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-refresh-status`,
+          {
+            method: "POST",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ attendeeIds: [attendeeId] }),
+          },
+        );
+
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ refreshed: 1, skipped: 0, errored: 0 });
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.status).toBe("active");
+        expect(row?.apple_active_registrations).toBe(1);
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
       }
     });
 

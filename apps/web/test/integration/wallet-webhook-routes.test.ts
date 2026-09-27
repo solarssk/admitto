@@ -202,10 +202,11 @@ afterEach(async () => {
       apple_inactive_registrations: null,
       first_downloaded_at: null,
       registration_checked_at: null,
-      // The ordering guard applyProviderSnapshotToWalletPass reads (registration_sync_attempted_at)
-      // must also be reset - a value left over from an earlier test would otherwise block a later
-      // test's own (older, deliberately backdated) observedAt as "stale".
       registration_sync_attempted_at: null,
+      // The ordering guard applyProviderSnapshotToWalletPass reads (lifecycle_observed_at) must
+      // also be reset - a value left over from an earlier test would otherwise block a later
+      // test's own (older, deliberately backdated) observedAt as "stale".
+      lifecycle_observed_at: null,
       first_confirmed_at: null,
     },
   });
@@ -503,6 +504,40 @@ describe("webhooks for an event whose Wallet master switch is off but whose cred
     expect(res.status).toBe(200);
     const row = await prisma.walletPass.findUnique({ where: { attendee_id: SWITCH_OFF_ATTENDEE_ID } });
     expect(row?.apple_active_registrations).toBe(1);
+  });
+
+  it("records a real void even though a no-data write (a periodic sync attempt that found no provider, or a per-pass failure) advanced registration_sync_attempted_at for this same pass in between - that column is not the ordering guard", async () => {
+    // Simulates the exact race the sync's own "wallet not configured" bucket-skip (or a per-pass
+    // no-match/failure attempt) can cause: a write that bumps registration_sync_attempted_at with
+    // no observation attached, landing between the webhook's re-read starting and its own write.
+    await prisma.walletPass.update({
+      where: { attendee_id: SWITCH_OFF_ATTENDEE_ID },
+      data: { registration_sync_attempted_at: new Date() },
+    });
+    const provider = stubProvider(keyPair.publicKey);
+    vi.mocked(provider.getPassSnapshot).mockResolvedValue(
+      walletSnapshot(
+        { appleActive: 1 },
+        { observedAt: new Date(Date.now() - 10_000), validity: { voided: true, expirationRaw: null, expiresAt: null } },
+      ),
+    );
+    const app = makeApp(provider);
+
+    const res = await app.request(`/api/wallet/webhook/passcreator/${SWITCH_OFF_EVENT_ID}/voided`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(signedRequest({ identifier: "pc-switch-off-1", userProvidedId: SWITCH_OFF_USER_PROVIDED_ID })),
+    });
+
+    expect(res.status).toBe(200);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: SWITCH_OFF_ATTENDEE_ID } });
+    expect(row?.status).toBe("voided");
+    expect(row?.apple_active_registrations).toBe(1);
+
+    await prisma.walletPass.update({
+      where: { attendee_id: SWITCH_OFF_ATTENDEE_ID },
+      data: { status: "active", voided_at: null, apple_active_registrations: null, lifecycle_observed_at: null },
+    });
   });
 
   it("still reaches the pass_voided reconciliation instead of dropping the delivery with a 404", async () => {

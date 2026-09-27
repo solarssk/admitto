@@ -3403,8 +3403,11 @@ async function voidOneWalletPass(
  * single-attendee "Refresh status" route uses. Attendees with no resolvable userProvidedId (never
  * registered a device) count as skipped, same convention as void/reissue/delete above; so does a
  * pass that is not active (voided/expired/removed: nothing left to read) and a CAS "conflict"
- * (pass changed mid-loop) - nothing to report to the operator beyond "already handled". Read-only at the provider - no
- * writeActionLog entry, matching the single-attendee route's own behavior. */
+ * (pass changed mid-loop) - nothing to report to the operator beyond "already handled". A
+ * "suppressed" outcome (the provider reported voided, but the read fell inside the post-command
+ * consistency window) still wrote the registration counts and counts as refreshed - only the
+ * webhook path needs to treat that one differently (Codex review, 2026-09-27). Read-only at the
+ * provider - no writeActionLog entry, matching the single-attendee route's own behavior. */
 async function refreshOneWalletStatusForBulk(
   db: PrismaClient,
   _eventId: string,
@@ -3418,7 +3421,11 @@ async function refreshOneWalletStatusForBulk(
     { attendeeId: target.attendeeId, providerPassId: target.providerPassId, userProvidedId: target.userProvidedId },
     provider,
   );
-  return outcome === "refreshed" ? "refreshed" : "skipped";
+  // "suppressed" still wrote the registration counts, exactly like "refreshed" - only the
+  // lifecycle transition was held back (a real void inside the post-command consistency window
+  // stays retryable for the webhook, but a manual bulk refresh has nothing further to report
+  // here). Only "inactive" and "conflict" are genuinely nothing-to-do.
+  return outcome === "refreshed" || outcome === "suppressed" ? "refreshed" : "skipped";
 }
 
 /** Caps concurrent in-flight bulk-wallet requests to 1 per user+event. admin:wallet-action-bulk

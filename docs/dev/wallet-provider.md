@@ -87,7 +87,10 @@ and a naive expiration timestamp is never given a guessed timezone by the adapte
   which would otherwise lose a real void forever on an archived or switched-off event. Registration
   webhooks only ever update counts. The receiver resolves the
   provider from the event's credentials alone, not the wallet master switch: switching Wallet off
-  does not unsubscribe the hooks, so deliveries for existing passes keep arriving.
+  does not unsubscribe the hooks, so deliveries for existing passes keep arriving. A "suppressed"
+  outcome still wrote the registration counts, so a caller that only reports on those (a bulk
+  selection, the event-wide job) counts it as refreshed, not skipped - only the webhook path treats
+  it as retryable.
 - **"Reset" is a domain concept, not HTTP DELETE.** With `remoteDelete` it removes the remote pass.
   Without it, a reset must retire the old remote object (void/expire) and issue the next pass under
   a *new* provider identity (a generation counter mixed into it), because today's stable

@@ -259,6 +259,20 @@ describe("drainWalletRefreshStatusJobs", () => {
     expect(finalCall![0].data.result_json).toMatchObject({ refreshed: 1, skipped: 1, errored: 0 });
   });
 
+  it("counts a 'suppressed' outcome as refreshed, not skipped - the registration counts were still written", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
+    vi.mocked(refreshOneWalletPassStatus)
+      .mockResolvedValueOnce("suppressed" as never)
+      .mockResolvedValueOnce("refreshed" as never);
+
+    await drainWalletRefreshStatusJobs(db as never);
+
+    const finalCall = db.adminJob.update.mock.calls.find(
+      (call: unknown[]) => (call[0] as { data: { status?: string } }).data.status === "succeeded",
+    );
+    expect(finalCall![0].data.result_json).toMatchObject({ refreshed: 2, skipped: 0, errored: 0 });
+  });
+
   it("maps an unexpected exception (e.g. a database error) to the generic error message and logs the real one server-side", async () => {
     vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
     db.walletPass.findMany.mockRejectedValueOnce(new Error("db exploded"));

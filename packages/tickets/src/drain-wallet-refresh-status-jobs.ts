@@ -199,8 +199,11 @@ async function runOneWalletRefreshStatusJob(
         batch.map((target) => refreshOneWalletPassStatus(db, target, provider)),
       );
       for (const outcome of settled) {
+        // "suppressed" still wrote the registration counts, exactly like "refreshed" - only the
+        // lifecycle transition was held back for being too close to Admitto's own last command
+        // (the webhook path is the one that must treat it as retryable, not this job).
         if (outcome.status === "rejected") errored += 1;
-        else if (outcome.value === "refreshed") refreshed += 1;
+        else if (outcome.value === "refreshed" || outcome.value === "suppressed") refreshed += 1;
         else skipped += 1;
       }
       done += batch.length;
