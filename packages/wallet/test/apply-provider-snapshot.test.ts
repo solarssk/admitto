@@ -73,31 +73,53 @@ describe("applyProviderSnapshotToWalletPass", () => {
       status: "active",
       provider_commanded_at: COMMANDED_AT,
       provider_removed_at: null,
-      // Ordering: an older observation must never overwrite a newer one already stored.
-      OR: [{ registration_checked_at: null }, { registration_checked_at: { lte: NOW } }],
+      // Ordering: an older observation must never overwrite a newer one already stored. Keyed on
+      // registration_sync_attempted_at, not registration_checked_at - a plain registration webhook
+      // (applyWebhookUpdate) also writes registration_checked_at, so using that column would let an
+      // unrelated webhook block a genuine lifecycle observation.
+      OR: [{ registration_sync_attempted_at: null }, { registration_sync_attempted_at: { lte: NOW } }],
     });
   });
 
-  it("stamps registration_checked_at with when the snapshot was observed, not when it is written, so overlapping reads order by observation", async () => {
+  it("stamps registration_sync_attempted_at with when the snapshot was observed (registration_checked_at stays the write time), so overlapping reads order by observation", async () => {
     const db = makeDb();
     const observedAt = new Date(NOW.getTime() - 30_000);
 
     await applyProviderSnapshotToWalletPass(db, target(), snapshotAtNow({}, { observedAt }), options);
 
     const call = db.walletPass.updateMany.mock.calls[0][0];
-    expect(call.data.registration_checked_at).toBe(observedAt);
-    expect(call.data.registration_sync_attempted_at).toBe(NOW);
-    expect(call.where.OR).toEqual([{ registration_checked_at: null }, { registration_checked_at: { lte: observedAt } }]);
+    expect(call.data.registration_sync_attempted_at).toBe(observedAt);
+    expect(call.data.registration_checked_at).toBe(NOW);
+    expect(call.where.OR).toEqual([
+      { registration_sync_attempted_at: null },
+      { registration_sync_attempted_at: { lte: observedAt } },
+    ]);
   });
 
   it("writes nothing and reports conflict when a newer observation is already stored (the guard makes the conditional write match no row)", async () => {
-    // The stored registration_checked_at is newer than this snapshot's observation, so the OR
-    // guard excludes the row and updateMany matches nothing.
+    // The stored registration_sync_attempted_at is newer than this snapshot's observation, so the
+    // OR guard excludes the row and updateMany matches nothing.
     const db = makeDb(0);
     const stale = snapshotAtNow({}, { observedAt: new Date(NOW.getTime() - 60_000), validity: { voided: true, expirationRaw: null, expiresAt: null } });
 
     expect(await applyProviderSnapshotToWalletPass(db, target(), stale, options)).toBe("conflict");
     expect(emitSystemLog).not.toHaveBeenCalled();
+  });
+
+  it("is not blocked by a plain registration webhook that advanced registration_checked_at (not registration_sync_attempted_at) while the read was in flight", async () => {
+    const db = makeDb();
+    // Simulates applyWebhookUpdate's own write racing in: a fresher registration_checked_at, but
+    // registration_sync_attempted_at (this function's own ordering column) is untouched by it.
+    db.walletPass.updateMany.mockResolvedValueOnce({ count: 1 });
+    const voided = snapshotAtNow({ appleActive: 1 }, { validity: { voided: true, expirationRaw: null, expiresAt: null } });
+
+    expect(await applyProviderSnapshotToWalletPass(db, target(), voided, options)).toBe("applied");
+    const call = db.walletPass.updateMany.mock.calls[0][0];
+    expect(call.where.OR).toEqual([
+      { registration_sync_attempted_at: null },
+      { registration_sync_attempted_at: { lte: NOW } },
+    ]);
+    expect(call.where).not.toHaveProperty("registration_checked_at");
   });
 
   it("returns conflict, and logs nothing, when the row no longer matches", async () => {
@@ -163,11 +185,11 @@ describe("applyProviderSnapshotToWalletPass", () => {
     expect(data.apple_active_registrations).toBe(1);
   });
 
-  it("defaults the attempt stamp to the current time when none is given", async () => {
+  it("defaults the write-time stamp (registration_checked_at) to the current time when none is given", async () => {
     const db = makeDb();
     const before = Date.now();
     await applyProviderSnapshotToWalletPass(db, target(), snapshotAtNow(), { policy: POLICY, providerTimeZone: null });
-    const stamped = db.walletPass.updateMany.mock.calls[0][0].data.registration_sync_attempted_at as Date;
+    const stamped = db.walletPass.updateMany.mock.calls[0][0].data.registration_checked_at as Date;
     expect(stamped.getTime()).toBeGreaterThanOrEqual(before);
   });
 });

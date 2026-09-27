@@ -59,8 +59,13 @@ describe("refreshOneWalletPassStatus", () => {
         status: "active",
         provider_commanded_at: null,
         provider_removed_at: null,
-        // A newer observation already stored blocks this write.
-        OR: [{ registration_checked_at: null }, { registration_checked_at: { lte: SNAPSHOT.observedAt } }],
+        // A newer observation already stored blocks this write. Keyed on
+        // registration_sync_attempted_at, not registration_checked_at (a plain registration
+        // webhook also writes that column without carrying any observation).
+        OR: [
+          { registration_sync_attempted_at: null },
+          { registration_sync_attempted_at: { lte: SNAPSHOT.observedAt } },
+        ],
       },
       data: {
         apple_active_registrations: SNAPSHOT.registrations!.appleActive,
@@ -70,9 +75,9 @@ describe("refreshOneWalletPassStatus", () => {
         samsung_active_registrations: SNAPSHOT.registrations!.samsungActive,
         samsung_inactive_registrations: SNAPSHOT.registrations!.samsungInactive,
         first_downloaded_at: SNAPSHOT.firstDownloadedAt,
+        registration_checked_at: expect.any(Date),
         // The moment of the read, so overlapping reads order by observation.
-        registration_checked_at: SNAPSHOT.observedAt,
-        registration_sync_attempted_at: expect.any(Date),
+        registration_sync_attempted_at: SNAPSHOT.observedAt,
       },
     });
   });

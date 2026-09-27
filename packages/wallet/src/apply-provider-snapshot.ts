@@ -28,17 +28,28 @@ export type ApplyProviderSnapshotOptions = {
  * this same write therefore freezes the newest registration counts it will ever have: nothing polls
  * an inactive pass afterwards, so those are its last known values.
  *
- * Reads are ordered: registration_checked_at is stamped with the moment the snapshot was OBSERVED
- * (not when it was written), and the write only lands while that is not newer than the snapshot's
- * own observation. Two overlapping reads of one pass (the worker's tick, a manual Refresh, a
+ * Reads are ordered on `registration_sync_attempted_at`, stamped with the moment the snapshot was
+ * OBSERVED (not when it was written): the write only lands while the stored value is not newer than
+ * that. Two overlapping reads of one pass (the worker's tick, a manual Refresh, a `pass_voided`
  * webhook) can therefore never let the older observation overwrite the newer one, whichever
  * finishes last - which matters most for a stale "voided" read, since nothing polls a voided pass
  * again to correct it.
  *
+ * Deliberately NOT `registration_checked_at`: that column is also written by
+ * `applyWebhookUpdate` (passcreator-webhook.ts) for every plain registration delivery
+ * (pushnotification_registered/unregistered), which carries no lifecycle observation at all. Using
+ * it as the ordering key let an unrelated registration webhook that merely arrived while a
+ * `pass_voided` re-read was in flight advance it past that read's `observedAt`, making the
+ * re-read's own write look "stale" and silently drop the voided transition - `refreshOneWalletPassStatus`
+ * doesn't throw on a mismatch, so the webhook handler answered 200 as if it had been applied, and
+ * archived/switched-off events have no periodic sync to ever retry it (Codex review, 2026-09-27).
+ * `registration_sync_attempted_at` is written only by the sync/refresh/webhook-reconciliation
+ * paths that actually go through this function, never by a plain registration webhook, so it
+ * can't be advanced by anything unrelated to an observation.
+ *
  * Returns "conflict" (writes nothing) when the row no longer matches `target` or a newer
  * observation is already stored, and never throws for it - a caller looping over many passes
- * treats it like "already handled elsewhere". Stamps registration_sync_attempted_at like the
- * callers' own success writes did before this existed.
+ * treats it like "already handled elsewhere".
  */
 export async function applyProviderSnapshotToWalletPass(
   db: PrismaClient,
@@ -63,12 +74,15 @@ export async function applyProviderSnapshotToWalletPass(
       status: target.status,
       provider_commanded_at: target.provider_commanded_at,
       provider_removed_at: target.provider_removed_at,
-      OR: [{ registration_checked_at: null }, { registration_checked_at: { lte: snapshot.observedAt } }],
+      OR: [
+        { registration_sync_attempted_at: null },
+        { registration_sync_attempted_at: { lte: snapshot.observedAt } },
+      ],
     },
     data: {
       ...snapshotToWalletPassFields(snapshot),
-      registration_checked_at: snapshot.observedAt,
-      registration_sync_attempted_at: now,
+      registration_checked_at: now,
+      registration_sync_attempted_at: snapshot.observedAt,
       ...(transition ? { status: transition } : {}),
       ...(transition === "voided" ? { voided_at: now } : {}),
     },
