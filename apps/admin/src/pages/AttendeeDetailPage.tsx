@@ -591,25 +591,23 @@ function WalletActionMenuItems({
         </button>
       )}
       {platformActions && (
-        <>
-          <ArchivedGuard event={event} reasonId="delete-wallet-pass-reason-menu" disabled={walletBusy}>
-            {(guard) => (
-              <button
-                type="button"
-                role="menuitem"
-                className="more-actions-menu__item more-actions-menu__item--danger"
-                {...guard}
-                onClick={onDelete}
-              >
-                <i className="ti ti-trash" aria-hidden="true" />
-                <span className="more-actions-menu__item-text">
-                  <span>Delete wallet pass</span>
-                  <span className="more-actions-menu__item-hint">Permanently deletes the pass record</span>
-                </span>
-              </button>
-            )}
-          </ArchivedGuard>
-        </>
+        <ArchivedGuard event={event} reasonId="delete-wallet-pass-reason-menu" disabled={walletBusy}>
+          {(guard) => (
+            <button
+              type="button"
+              role="menuitem"
+              className="more-actions-menu__item more-actions-menu__item--danger"
+              {...guard}
+              onClick={onDelete}
+            >
+              <i className="ti ti-trash" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>Delete wallet pass</span>
+                <span className="more-actions-menu__item-hint">Permanently deletes the pass record</span>
+              </span>
+            </button>
+          )}
+        </ArchivedGuard>
       )}
     </>
   );
