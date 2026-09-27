@@ -202,6 +202,10 @@ afterEach(async () => {
       apple_inactive_registrations: null,
       first_downloaded_at: null,
       registration_checked_at: null,
+      // The ordering guard applyProviderSnapshotToWalletPass reads (registration_sync_attempted_at)
+      // must also be reset - a value left over from an earlier test would otherwise block a later
+      // test's own (older, deliberately backdated) observedAt as "stale".
+      registration_sync_attempted_at: null,
       first_confirmed_at: null,
     },
   });
@@ -642,6 +646,49 @@ describe("POST /api/wallet/webhook/passcreator/:eventId/voided", () => {
     expect(querySystemLogs({ search: "wallet_webhook_unmatched" })).toHaveLength(2);
     const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
     expect(row?.status).toBe("active");
+  });
+
+  it("records the void even though a plain registration webhook advanced registration_checked_at while the re-read was in flight (a count-only delivery carries no lifecycle observation)", async () => {
+    // Simulates: a pass_voided delivery starts its re-read (observedAt stamped at request time,
+    // see PassCreatorClient.getPassSnapshot), a plain registration webhook for the SAME pass lands
+    // and is applied before the re-read's own answer comes back, then the re-read resolves as
+    // voided. Only registration_checked_at is bumped by the registration webhook - the ordering
+    // guard is keyed on registration_sync_attempted_at, which that delivery never touches - so the
+    // voided write must still land.
+    const registrationOnlyProvider = stubProvider(keyPair.publicKey);
+    const registrationApp = makeApp(registrationOnlyProvider);
+    await registrationApp.request(`/api/wallet/webhook/passcreator/${EVENT_ID}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        signedRequest({
+          identifier: "pc-webhook-1",
+          userProvidedId: USER_PROVIDED_ID,
+          operatingSystem: "iOS",
+          noOfActivePasses: 1,
+        }),
+      ),
+    });
+    const afterRegistration = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    expect(afterRegistration?.apple_active_registrations).toBe(1);
+
+    const provider = stubProvider(keyPair.publicKey);
+    vi.mocked(provider.getPassSnapshot).mockResolvedValue(
+      // Observed before the registration webhook above was even applied.
+      walletSnapshot({}, { observedAt: new Date(Date.now() - 10_000), validity: { voided: true, expirationRaw: null, expiresAt: null } }),
+    );
+    const app2 = makeApp(provider);
+
+    const res = await app2.request(`/api/wallet/webhook/passcreator/${EVENT_ID}/voided`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(voidedDelivery()),
+    });
+
+    expect(res.status).toBe(200);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    expect(row?.status).toBe("voided");
+    expect(row?.voided_at).not.toBeNull();
   });
 
   it("still 401s a delivery with a bad signature - the /voided route isn't a verification shortcut", async () => {

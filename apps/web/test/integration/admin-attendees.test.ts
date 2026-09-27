@@ -1918,11 +1918,12 @@ describe("attendee wallet actions — void/restore/reissue", () => {
           userProvidedId: `admitto:${WALLET_ACTION_EVENT}:${attendeeId}`,
         });
         getPassSnapshotSpy.mockImplementationOnce(async () => {
-          // A newer read of the same pass (say the worker's tick) is stored while this slower one
-          // is still in flight.
+          // A newer read of the same pass (say the worker's tick, or another Refresh) is stored
+          // while this slower one is still in flight - registration_sync_attempted_at, not
+          // registration_checked_at, is the ordering column a snapshot write advances.
           await prisma.walletPass.update({
             where: { attendee_id: attendeeId },
-            data: { registration_checked_at: new Date(), apple_active_registrations: 5 },
+            data: { registration_sync_attempted_at: new Date(), apple_active_registrations: 5 },
           });
           return walletSnapshot(
             { appleActive: 1 },
