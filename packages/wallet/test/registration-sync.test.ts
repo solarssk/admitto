@@ -140,6 +140,37 @@ describe("runWalletRegistrationSync", () => {
     });
   });
 
+  it("stamps registration_sync_attempted_at with when the failed/no-match attempt STARTED, not when the slow provider call finished, so it cannot outrank a genuinely newer observation written by a faster, concurrent Refresh/webhook for the same pass", async () => {
+    const db = makeDb([row()]);
+    const before = Date.now();
+    const getPassSnapshot = vi.fn().mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      throw new Error("network down");
+    });
+    mockResolveWalletProvider.mockReturnValue({ getPassSnapshot, consistencyPolicy: POLICY });
+
+    await runWalletRegistrationSync(db);
+
+    const stamped = db.walletPass.updateMany.mock.calls[0][0].data.registration_sync_attempted_at as Date;
+    expect(stamped.getTime()).toBeGreaterThanOrEqual(before);
+    // Started before the 40ms provider call, not after it.
+    expect(Date.now() - stamped.getTime()).toBeGreaterThanOrEqual(40);
+  });
+
+  it("same as above, for a resolved-null (no match) result, not just a thrown error", async () => {
+    const db = makeDb([row()]);
+    const getPassSnapshot = vi.fn().mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return null;
+    });
+    mockResolveWalletProvider.mockReturnValue({ getPassSnapshot, consistencyPolicy: POLICY });
+
+    await runWalletRegistrationSync(db);
+
+    const stamped = db.walletPass.updateMany.mock.calls[0][0].data.registration_sync_attempted_at as Date;
+    expect(Date.now() - stamped.getTime()).toBeGreaterThanOrEqual(40);
+  });
+
   it("groups candidates by event, resolving the provider once per event not once per pass", async () => {
     const rows = [
       row(),

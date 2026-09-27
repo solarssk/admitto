@@ -78,6 +78,15 @@ async function syncOne(
   row: CandidateRow,
   providerTimeZone: string | null,
 ): Promise<void> {
+  // Captured before the provider call, not after: the no-match/failure write below stamps
+  // registration_sync_attempted_at (the same column a *found* snapshot orders itself on, see
+  // applyProviderSnapshotToWalletPass) with this attempt's own start, not its completion. A failed
+  // lookup can take up to the client's own request timeout to resolve - stamping it with "now" at
+  // that point could land later than a genuinely newer observation's own observedAt (a manual
+  // Refresh or a webhook-triggered re-read for the same pass, racing this tick and finishing first
+  // with real data), and wrongly reject that observation's own write as stale even though this one
+  // carries no data to prefer over it (Codex review, 2026-09-27).
+  const attemptStartedAt = new Date();
   let snapshot: Awaited<ReturnType<WalletPassProvider["getPassSnapshot"]>> | null = null;
   let failure: unknown;
   let registrationStatusFailed = false;
@@ -113,7 +122,7 @@ async function syncOne(
         provider_pass_id: row.provider_pass_id,
         user_provided_id: row.user_provided_id,
       },
-      data: { registration_sync_attempted_at: new Date() },
+      data: { registration_sync_attempted_at: attemptStartedAt },
     });
   }
   if (registrationStatusFailed) {
