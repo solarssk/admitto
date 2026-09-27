@@ -1103,6 +1103,16 @@ export function createApp(options: CreateAppOptions = {}) {
       if (existing?.status === "voided" && existing.provider_pass_id) {
         return restoreExistingPass(existing.provider_pass_id);
       }
+      // Expired is irreversible (unlike voided) and stays the SAME resource at the provider, so
+      // falling through to createOrRecoverPass below would have PassCreator reject the create as a
+      // duplicate of that still-there, still-expired pass - recoverDuplicatePass would then find it
+      // and markActive would mark it active in Admitto WITHOUT ever clearing its provider-side
+      // expiration (createPass/updatePass don't touch expirationDate once set - PR 6's own job),
+      // leaving the attendee believing they have a valid pass while PassCreator still shows it dead
+      // (Codex review, 2026-09-27). No recovery path exists yet (that's PR 3/6's job) - bail out.
+      if (existing?.status === "expired") {
+        return null;
+      }
 
       // Checked and set with no `await` between them - a second concurrent call for the same
       // attendee.id is guaranteed to see the first's promise already registered here, however
@@ -1132,6 +1142,10 @@ export function createApp(options: CreateAppOptions = {}) {
         }
         if (latest?.status === "voided" && latest.provider_pass_id) {
           return restoreExistingPass(latest.provider_pass_id);
+        }
+        // Same reasoning as the pre-lock check above.
+        if (latest?.status === "expired") {
+          return null;
         }
         const display = await resolveTicketPageDisplay(db, resolved);
         const customFieldPlaceholders = await resolveWalletCustomFieldPlaceholders(
