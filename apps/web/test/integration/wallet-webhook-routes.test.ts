@@ -688,6 +688,40 @@ describe("POST /api/wallet/webhook/passcreator/:eventId/voided", () => {
     expect(row?.status).toBe("active");
   });
 
+  it("does not let a second write at the exact same millisecond-resolution observedAt overwrite the first, against real Postgres comparison semantics (strict <, not <=)", async () => {
+    const tiedAt = new Date();
+    await prisma.walletPass.update({
+      where: { attendee_id: ATTENDEE_ID },
+      // Simulates a first read that already landed at exactly this instant, reporting the pass
+      // NOT voided (a clean read) with its own registration counts.
+      data: { lifecycle_observed_at: tiedAt, apple_active_registrations: 5 },
+    });
+    const provider = stubProvider(keyPair.publicKey);
+    vi.mocked(provider.getPassSnapshot).mockResolvedValue(
+      // A second, independent read tied at the exact same instant - Date/TIMESTAMP(3) both
+      // truncate to milliseconds, so this is a genuine collision, not a contrived one. With a
+      // non-strict `<=` guard this write would still match and could overwrite the first read's
+      // data with its own, whichever one the database happens to apply last (the bug reported).
+      walletSnapshot({ appleActive: 1 }, { observedAt: tiedAt, validity: { voided: true, expirationRaw: null, expiresAt: null } }),
+    );
+    const app = makeApp(provider);
+
+    const res = await app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}/voided`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(voidedDelivery()),
+    });
+
+    // A conflict, same as any other pass whose identity changed mid-flight - answered 200, like
+    // every other conflict in this design (something else already recorded a valid answer for this
+    // exact instant). The important part is what did NOT happen: the losing write's own data (voided,
+    // apple_active_registrations: 1) never lands on top of the first read's.
+    expect(res.status).toBe(200);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    expect(row?.status).toBe("active");
+    expect(row?.apple_active_registrations).toBe(5);
+  });
+
   it("records the void even though a plain registration webhook advanced registration_checked_at while the re-read was in flight (a count-only delivery carries no lifecycle observation)", async () => {
     // Simulates: a pass_voided delivery starts its re-read (observedAt stamped at request time,
     // see PassCreatorClient.getPassSnapshot), a plain registration webhook for the SAME pass lands

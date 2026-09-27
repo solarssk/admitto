@@ -37,11 +37,19 @@ export type ApplyProviderSnapshotOptions = {
  * switched-off event.
  *
  * Reads are ordered on `lifecycle_observed_at`, stamped with the moment the snapshot was OBSERVED
- * (not when it was written): the write only lands while the stored value is not newer than that.
- * Two overlapping reads of one pass (the worker's tick, a manual Refresh, a `pass_voided` webhook)
- * can therefore never let the older observation overwrite the newer one, whichever finishes last -
- * which matters most for a stale "voided" read, since nothing polls a voided pass again to correct
- * it.
+ * (not when it was written): the write only lands while the stored value is STRICTLY older than
+ * that (`<`, not `<=`). Two overlapping reads of one pass (the worker's tick, a manual Refresh, a
+ * `pass_voided` webhook) can therefore never let the older observation overwrite the newer one,
+ * whichever finishes last - which matters most for a stale "voided" read, since nothing polls a
+ * voided pass again to correct it. The strict inequality also covers the tie itself: two reads that
+ * happen to share the same millisecond-resolution `observedAt` (Date/`TIMESTAMP(3)` both truncate
+ * to milliseconds) are not orderable by timestamp alone, and a non-strict `<=` would let whichever
+ * one simply finishes its DB write last win regardless of which one is actually fresher - possibly
+ * applying a stale transition after a genuinely newer one already landed. With `<`, only the FIRST
+ * write for a given timestamp (equal or otherwise) can ever land; a second one claiming the exact
+ * same instant becomes an ordinary "conflict" instead of a coin-flip overwrite (Codex review,
+ * 2026-09-27) - the same safe, self-correcting outcome every other race in this function already
+ * falls back to.
  *
  * `lifecycle_observed_at` has exactly one writer: this function, only when a snapshot was actually
  * read. It is deliberately its own column, not reused from `registration_checked_at` or
@@ -83,7 +91,7 @@ export async function applyProviderSnapshotToWalletPass(
       status: target.status,
       provider_commanded_at: target.provider_commanded_at,
       provider_removed_at: target.provider_removed_at,
-      OR: [{ lifecycle_observed_at: null }, { lifecycle_observed_at: { lte: snapshot.observedAt } }],
+      OR: [{ lifecycle_observed_at: null }, { lifecycle_observed_at: { lt: snapshot.observedAt } }],
     },
     data: {
       ...snapshotToWalletPassFields(snapshot),

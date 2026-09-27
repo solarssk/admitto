@@ -78,8 +78,12 @@ describe("applyProviderSnapshotToWalletPass", () => {
       // lifecycle_observed_at, a column with exactly one writer (this function) - neither
       // registration_checked_at nor registration_sync_attempted_at qualifies, since both are also
       // written by code paths that carry no observation at all (a plain registration webhook, a
-      // per-pass no-match/failure, a whole-event "wallet not configured" skip).
-      OR: [{ lifecycle_observed_at: null }, { lifecycle_observed_at: { lte: NOW } }],
+      // per-pass no-match/failure, a whole-event "wallet not configured" skip). Strictly `lt`, not
+      // `lte`: Date/TIMESTAMP(3) both truncate to milliseconds, so two independent reads can
+      // genuinely tie - `lte` would let whichever one simply finishes writing last win regardless of
+      // which one is actually fresher (Codex review, 2026-09-27; see the real-Postgres tie test in
+      // wallet-webhook-routes.test.ts, since a mocked updateMany can't exercise SQL `<` vs `<=`).
+      OR: [{ lifecycle_observed_at: null }, { lifecycle_observed_at: { lt: NOW } }],
     });
   });
 
@@ -95,7 +99,7 @@ describe("applyProviderSnapshotToWalletPass", () => {
     expect(call.data.registration_sync_attempted_at).toBe(NOW);
     expect(call.where.OR).toEqual([
       { lifecycle_observed_at: null },
-      { lifecycle_observed_at: { lte: observedAt } },
+      { lifecycle_observed_at: { lt: observedAt } },
     ]);
   });
 
@@ -115,7 +119,7 @@ describe("applyProviderSnapshotToWalletPass", () => {
 
     expect(await applyProviderSnapshotToWalletPass(db, target(), voided, options)).toBe("applied");
     const call = db.walletPass.updateMany.mock.calls[0][0];
-    expect(call.where.OR).toEqual([{ lifecycle_observed_at: null }, { lifecycle_observed_at: { lte: NOW } }]);
+    expect(call.where.OR).toEqual([{ lifecycle_observed_at: null }, { lifecycle_observed_at: { lt: NOW } }]);
     expect(call.where).not.toHaveProperty("registration_checked_at");
     expect(call.where).not.toHaveProperty("registration_sync_attempted_at");
   });

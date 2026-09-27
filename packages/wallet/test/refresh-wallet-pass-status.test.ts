@@ -70,7 +70,7 @@ describe("refreshOneWalletPassStatus", () => {
         // registration_sync_attempted_at, both also written elsewhere with no observation attached.
         OR: [
           { lifecycle_observed_at: null },
-          { lifecycle_observed_at: { lte: SNAPSHOT.observedAt } },
+          { lifecycle_observed_at: { lt: SNAPSHOT.observedAt } },
         ],
       },
       data: {
