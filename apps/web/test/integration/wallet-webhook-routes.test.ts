@@ -573,22 +573,27 @@ describe("POST /api/wallet/webhook/passcreator/:eventId/voided", () => {
     expect(row?.voided_at).toBeNull();
   });
 
-  it("does not let a stale 'voided' read undo Admitto's own Restore made a minute ago", async () => {
+  it("does not let a stale 'voided' read undo Admitto's own Restore made a minute ago - and answers 503, since a real re-void landing in the same window would look identical", async () => {
     await prisma.walletPass.update({
       where: { attendee_id: ATTENDEE_ID },
       data: { provider_commanded_at: new Date(Date.now() - 60_000) },
     });
     const provider = stubProvider(keyPair.publicKey);
     vi.mocked(provider.getPassSnapshot).mockResolvedValue(
-      walletSnapshot({}, { observedAt: new Date(), validity: { voided: true, expirationRaw: null, expiresAt: null } }),
+      walletSnapshot({ appleActive: 1 }, { observedAt: new Date(), validity: { voided: true, expirationRaw: null, expiresAt: null } }),
     );
     const app = makeApp(provider);
 
     const res = await postVoided(app, voidedDelivery());
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(503);
     const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    // Not undone, and not recorded as voided either - genuinely undecided, so PassCreator must
+    // redeliver rather than being told this delivery is fully handled. The registration counts of
+    // that same read are still kept.
     expect(row?.status).toBe("active");
+    expect(row?.apple_active_registrations).toBe(1);
+    expect(querySystemLogs({ search: "wallet_webhook_reconcile_suppressed" })).toHaveLength(1);
   });
 
   it("answers 503, so PassCreator redelivers, when the provider cannot be reached", async () => {

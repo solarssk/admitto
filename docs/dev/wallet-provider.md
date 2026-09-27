@@ -79,7 +79,13 @@ and a naive expiration timestamp is never given a guessed timezone by the adapte
 - **A webhook is a signal, not a state.** `pass_voided` re-reads the pass through the same
   reconciliation. 200 means dealt with (including "not ours" and "already inactive"); 503 means the
   re-read could not be completed (provider error, or a no-match that survived the retry), so
-  PassCreator redelivers. Registration webhooks only ever update counts. The receiver resolves the
+  PassCreator redelivers. So does a report the provider genuinely gives as voided but that falls
+  inside the consistency window right after Admitto's own last Void/Restore
+  (`suppressedByRecentCommand`): it might be a stale search-index read of the state from before
+  that command, or a second, real void landing in the same window, and the two are indistinguishable
+  from timestamps alone - so it is answered like an inconclusive read rather than acknowledged,
+  which would otherwise lose a real void forever on an archived or switched-off event. Registration
+  webhooks only ever update counts. The receiver resolves the
   provider from the event's credentials alone, not the wallet master switch: switching Wallet off
   does not unsubscribe the hooks, so deliveries for existing passes keep arriving.
 - **"Reset" is a domain concept, not HTTP DELETE.** With `remoteDelete` it removes the remote pass.

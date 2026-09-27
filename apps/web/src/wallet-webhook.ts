@@ -14,6 +14,7 @@ import {
   WalletStatusCheckInconclusiveError,
   type PassCreatorWebhookData,
   type WalletPassProvider,
+  type WalletStatusRefreshOutcome,
 } from "@admitto/wallet";
 
 interface WebhookCapableProvider {
@@ -95,13 +96,25 @@ async function reconcileVoidedSignal(
     emitSystemLog("wallet", "info", "wallet_webhook_unmatched", { eventId });
     return c.body(null, 200);
   }
+  let outcome: WalletStatusRefreshOutcome;
   try {
-    await refreshOneWalletPassStatus(db, target, provider);
+    outcome = await refreshOneWalletPassStatus(db, target, provider);
   } catch (err) {
     emitSystemLog("wallet", "warn", "wallet_webhook_reconcile_failed", {
       eventId,
       reason: err instanceof WalletStatusCheckInconclusiveError ? "inconclusive" : "provider_error",
     });
+    return c.body(null, 503);
+  }
+  if (outcome === "suppressed") {
+    // The provider genuinely reports this pass voided, but the read fell inside the consistency
+    // window right after Admitto's own last Void/Restore - it might be a stale search-index read
+    // of the state from before that command, or a second, real void that happens to land in the
+    // same window; the two look identical from timestamps alone. 200 here would tell PassCreator
+    // the delivery is fully handled and stop it from redelivering, silently losing a real void on
+    // an archived or switched-off event (no periodic sync there to ever revisit it) - so this is
+    // answered the same as an inconclusive read (Codex review, 2026-09-27).
+    emitSystemLog("wallet", "info", "wallet_webhook_reconcile_suppressed", { eventId });
     return c.body(null, 503);
   }
   emitSystemLog("wallet", "info", "wallet_webhook_applied", { eventId });
