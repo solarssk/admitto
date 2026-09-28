@@ -219,17 +219,22 @@ export async function buildExportPdfBuffer(
   const cellOptions = (width: number, rowHeight: number) =>
     plan.mode === "wrap" ? { width, height: rowHeight } : ellipsisFallbackTextOptions(width);
 
+  /** One table row at the current y, one text box per column; a missing trailing cell is empty. */
+  const drawCells = (cells: string[], rowHeight: number) => {
+    let x = PDF_MARGIN;
+    for (const [i, contentWidth] of plan.contentWidths.entries()) {
+      doc.text(cells.at(i) ?? "", x, y, cellOptions(contentWidth, rowHeight));
+      x += slotWidthOf(contentWidth);
+    }
+  };
+
   const drawTableHeader = () => {
     doc.fontSize(PDF_FONT_SIZE).font(PDF_FONT_BOLD);
     const headerHeight =
       plan.mode === "wrap"
         ? measureRowHeight(doc, exportColumns, plan.contentWidths, printableHeight)
         : PDF_MIN_ROW_HEIGHT;
-    let x = PDF_MARGIN;
-    for (const [i, contentWidth] of plan.contentWidths.entries()) {
-      doc.text(exportColumns.at(i) ?? "", x, y, cellOptions(contentWidth, headerHeight));
-      x += slotWidthOf(contentWidth);
-    }
+    drawCells(exportColumns, headerHeight);
     y += headerHeight;
     doc.font(PDF_FONT);
   };
@@ -250,11 +255,7 @@ export async function buildExportPdfBuffer(
       drawTableHeader();
     }
 
-    let x = PDF_MARGIN;
-    for (const [i, contentWidth] of plan.contentWidths.entries()) {
-      doc.text(cells.at(i) ?? "", x, y, cellOptions(contentWidth, rowHeight));
-      x += slotWidthOf(contentWidth);
-    }
+    drawCells(cells, rowHeight);
     y += rowHeight;
   }
 
