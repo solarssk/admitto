@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PrismaClient } from "@admitto/db";
@@ -301,6 +301,44 @@ describe("fileStorageRow", () => {
     expect(row.status).toBe("not_configured");
     expect(row.summary).toBe("Missing directory · created on first upload");
     expect(row.details.find((d) => d.key === "reason")?.value).toBe("missing_directory");
+  });
+
+  it("reports not_configured (not down) on a live check when the missing directory can actually be created", async () => {
+    const missingChild = join(uploadFixture.dir, "not-created-yet");
+    const row = await fileStorageRow({ UPLOAD_DIR: missingChild }, checkedAt, true);
+    expect(row.status).toBe("not_configured");
+    expect(row.summary).toBe("Missing directory · created on first upload");
+    // canCreateUploadDir() must leave no trace of its own probe on success.
+    await expect(stat(missingChild)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("reports down on a live check when the missing directory's parent cannot be written into", async () => {
+    const readOnlyParent = await mkdtemp(join(tmpdir(), "admitto-health-readonly-parent-"));
+    const missingChild = join(readOnlyParent, "uploads");
+    try {
+      await chmod(readOnlyParent, 0o555);
+      const row = await fileStorageRow({ UPLOAD_DIR: missingChild }, checkedAt, true);
+      expect(row.status).toBe("down");
+      expect(row.summary).toBe("Cannot create the upload folder");
+      expect(row.details.find((d) => d.key === "reason")?.value).toBe("cannot_create_directory");
+    } finally {
+      await chmod(readOnlyParent, 0o755);
+      await rm(readOnlyParent, { recursive: true, force: true });
+    }
+  });
+
+  it("does not probe creatability on a passive check, even under a read-only parent", async () => {
+    const readOnlyParent = await mkdtemp(join(tmpdir(), "admitto-health-readonly-parent-"));
+    const missingChild = join(readOnlyParent, "uploads");
+    try {
+      await chmod(readOnlyParent, 0o555);
+      const row = await fileStorageRow({ UPLOAD_DIR: missingChild }, checkedAt, false);
+      expect(row.status).toBe("not_configured");
+      expect(row.summary).toBe("Missing directory · created on first upload");
+    } finally {
+      await chmod(readOnlyParent, 0o755);
+      await rm(readOnlyParent, { recursive: true, force: true });
+    }
   });
 
   it("reports down when UPLOAD_DIR is a regular file", async () => {

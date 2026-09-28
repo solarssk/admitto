@@ -7,7 +7,7 @@
 import type { Context } from "hono";
 import { execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { access, constants, unlink, writeFile, stat } from "node:fs/promises";
+import { access, constants, mkdir, rmdir, unlink, writeFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { Prisma, type PrismaClient } from "@admitto/db";
 import {
@@ -1205,9 +1205,34 @@ async function walletRow(db: PrismaClient, checkedAt: string): Promise<HealthChe
 }
 
 /**
+ * True when `dir` can be created and written into - mirrors what `LocalStorageAdapter.put()`'s
+ * `mkdir(recursive)` + write will really do on the next upload. Creates then removes its own
+ * probe file and, if it had to create `dir` itself, `dir` too, leaving no trace on success. If
+ * `mkdir(recursive)` also had to create parent directories that did not exist yet, those are
+ * left in place (removing them risks deleting an ancestor something else created concurrently).
+ */
+async function canCreateUploadDir(dir: string): Promise<boolean> {
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await mkdir(dir, { recursive: true });
+    const probePath = join(dir, `.admitto-health-probe-${randomUUID()}`);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await writeFile(probePath, "ok");
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await unlink(probePath);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await rmdir(dir);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Local branding upload volume (`UPLOAD_DIR` / `@admitto/storage`).
  * Passive: path must be an existing directory that is readable, writable, and searchable
- * (`R_OK|W_OK|X_OK`). Missing root is degraded (adapter `mkdir` on first put), not an outage.
+ * (`R_OK|W_OK|X_OK`). A missing root is not_configured (adapter `mkdir` on first put), not an
+ * outage, unless a live check finds it cannot actually be created (see `canCreateUploadDir`).
  * Live: write+unlink a tiny probe file under that root.
  */
 export async function fileStorageRow(
@@ -1283,10 +1308,32 @@ export async function fileStorageRow(
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
-      // LocalStorageAdapter.put mkdir(recursive) on first branding save - not an outage, and not
-      // a warning either: a fresh install with no branding uploaded yet is expected to have no
-      // upload directory, so this must not count toward the overall verdict
-      // (worstHealthStatus() already skips not_configured and planned rows for that).
+      // Passive: LocalStorageAdapter.put mkdir(recursive) on first branding save - a fresh
+      // install with no branding uploaded yet is expected to have no upload directory, so on
+      // its own this must not count toward the overall verdict (worstHealthStatus() already
+      // skips not_configured and planned rows for that).
+      //
+      // Live: a missing directory can ALSO mean its parent cannot actually be created into (for
+      // example a read-only parent), in which case every real upload will fail the same
+      // mkdir(recursive) call - reporting not_configured for that would tell an operator the
+      // instance is healthy when uploads are already broken. A live check verifies this
+      // directly instead of assuming the benign case.
+      if (live && !(await canCreateUploadDir(uploadPath))) {
+        return {
+          id: "file_storage",
+          label,
+          status: "down",
+          summary: "Cannot create the upload folder",
+          details: detailsFromEntries([
+            ["status", "down"],
+            ["provider", "local"],
+            ["path", uploadPath],
+            ["writable", "no"],
+            ["reason", "cannot_create_directory"],
+            ["last_checked", checkedAt],
+          ]),
+        };
+      }
       return {
         id: "file_storage",
         label,
