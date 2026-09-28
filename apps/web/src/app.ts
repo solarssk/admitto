@@ -163,6 +163,7 @@ import {
   handleBulkVoidAttendeeWalletPass,
   handleBulkReissueAttendeeWalletPass,
   handleBulkDeleteAttendeeWalletPass,
+  handleBulkRemoveAttendeeWalletPass,
   handleBulkRefreshAttendeeWalletStatus,
   handleBulkTicketTypeEventAttendees,
   handleBulkRsvpEventAttendees,
@@ -182,6 +183,7 @@ import {
   handleReissueAttendeeWalletPass,
   handleRefreshAttendeeWalletStatus,
   handleDeleteAttendeeWalletPass,
+  handleRemoveAttendeeWalletPass,
   handleAddAttendeeNote,
   handlePatchAttendeeNote,
   handleDeleteAttendeeNote,
@@ -1747,7 +1749,10 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     bulkAttendeeIdsBodyLimit,
     adminWalletActionBulkRateLimit,
-    guardArchivedEvent((c) => handleBulkVoidAttendeeWalletPass(c, db)),
+    // No guardArchivedEvent: Void is archive/switched-off-exempt (business rules table) - an
+    // operator must be able to void passes for an event that has already ended or been archived,
+    // on whichever provider is still configured (ignoreWalletEnabled inside the handler).
+    (c) => handleBulkVoidAttendeeWalletPass(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-wallet-reissue",
@@ -1763,7 +1768,20 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     bulkAttendeeIdsBodyLimit,
     adminWalletActionBulkRateLimit,
-    guardArchivedEvent((c) => handleBulkDeleteAttendeeWalletPass(c, db)),
+    // No guardArchivedEvent: Delete/reset is archive/switched-off-exempt, same reasoning as
+    // bulk-wallet-void above.
+    (c) => handleBulkDeleteAttendeeWalletPass(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/bulk-wallet-remove",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminWalletActionBulkRateLimit,
+    // No guardArchivedEvent: Remove from provider is archive/switched-off-exempt, same
+    // reasoning as bulk-wallet-void above - this is the action that lets an operator stop
+    // the provider counting these passes against the account's plan after an event has ended.
+    (c) => handleBulkRemoveAttendeeWalletPass(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-wallet-refresh-status",
@@ -1830,7 +1848,9 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminWalletActionRateLimit,
-    guardArchivedEvent((c) => handleVoidAttendeeWalletPass(c, db)),
+    // No guardArchivedEvent: Void is archive/switched-off-exempt, same reasoning as
+    // bulk-wallet-void above.
+    (c) => handleVoidAttendeeWalletPass(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/wallet/restore",
@@ -1859,7 +1879,18 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminWalletActionRateLimit,
-    guardArchivedEvent((c) => handleDeleteAttendeeWalletPass(c, db)),
+    // No guardArchivedEvent: Delete/reset is archive/switched-off-exempt, same reasoning as
+    // bulk-wallet-void above.
+    (c) => handleDeleteAttendeeWalletPass(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/wallet/remove",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminWalletActionRateLimit,
+    // No guardArchivedEvent: Remove from provider is archive/switched-off-exempt, same
+    // reasoning as bulk-wallet-remove above.
+    (c) => handleRemoveAttendeeWalletPass(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/items/:itemKey/revoke",
