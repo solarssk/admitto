@@ -387,9 +387,9 @@ export function CfAccessEditor() {
         saving={saving}
         testing={testing}
         dirty={dirty}
-        onSubmit={handleSubmit}
+        onSubmit={(event) => void handleSubmit(event)}
         onCancel={handleCancel}
-        onTest={handleTest}
+        onTest={() => void handleTest()}
       />
     );
   }

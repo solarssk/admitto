@@ -228,7 +228,7 @@ export function SecurityPanel() {
       <Card title={<HintLabel hint={SECURITY_CARD_HINT}>Sessions</HintLabel>}>
         <div className="sessions-status">
           <p>{error ?? "Unexpected error."}</p>
-          <Button type="button" variant="secondary" onClick={load}>
+          <Button type="button" variant="secondary" onClick={() => void load()}>
             Retry
           </Button>
         </div>

@@ -1134,7 +1134,7 @@ export function EventSettingsPage() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [pageDirty, pageBusy]);
 
-  const goBack = () => navigate(eventOverviewPath(eventId));
+  const goBack = () => void navigate(eventOverviewPath(eventId));
 
   function handleBasicReset() {
     if (original) setForm({ ...original });

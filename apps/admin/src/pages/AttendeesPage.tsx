@@ -2164,7 +2164,7 @@ export function AttendeesPage() {
             </ArchivedGuard>
             <HeaderMoreMenu
               archived={isEventArchived(event)}
-              onImport={() => navigate(`/admin/events/${eventId}/attendees/import`)}
+              onImport={() => void navigate(`/admin/events/${eventId}/attendees/import`)}
               sendBusy={sendBusy}
               mailConfigured={mailConfigured}
               onSendTickets={() => {
@@ -2174,7 +2174,7 @@ export function AttendeesPage() {
               }}
               isDesktop={isDesktop}
               exportingFormat={exportingFormat}
-              onExport={handleExport}
+              onExport={(format) => void handleExport(format)}
               walletPlatforms={walletPlatforms}
               walletConfigured={event.wallet_configured}
               onTriggerEventWidePush={() => {
@@ -2191,7 +2191,7 @@ export function AttendeesPage() {
             {/* Hidden below 768px — its 3 formats fold into HeaderMoreMenu's own panel there
              * instead (above), so only "+ Add"/"More" remain as standalone buttons, which is
              * few enough to sit beside the "Attendees" title (attendees.css). */}
-            {isDesktop && <ExportMenu exportingFormat={exportingFormat} onExport={handleExport} />}
+            {isDesktop && <ExportMenu exportingFormat={exportingFormat} onExport={(format) => void handleExport(format)} />}
           </>
         }
       />
@@ -2263,7 +2263,7 @@ export function AttendeesPage() {
           }
           setPage(1);
         }}
-        onViewAttendee={(id) => navigate(`/admin/events/${eventId}/attendees/${id}`)}
+        onViewAttendee={(id) => void navigate(`/admin/events/${eventId}/attendees/${id}`)}
         onPageChange={setPage}
         onPageSizeChange={(v) => {
           setPageSize(v);

@@ -540,7 +540,7 @@ export const EventMailSettingsCard = forwardRef<
               <OrgMailSummary
                 data={apiData}
                 canOpenInstanceSettings={isSa}
-                onOpenInstanceSettings={() => navigate("/admin/settings?tab=mail")}
+                onOpenInstanceSettings={() => void navigate("/admin/settings?tab=mail")}
               />
             ) : (
               <Notice variant="info">
