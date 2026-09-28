@@ -158,3 +158,57 @@ describe("CSS var() fallback values match their canonical token", () => {
     ).toEqual([]);
   });
 });
+
+const TOKENS_DIR = join(UI_SRC, "styles/tokens");
+const HEALTH_CHECK_CSS = join(ADMIN_SRC, "settings/health-check.css");
+
+/** Every `--token:` declared in packages/ui/src/styles/tokens/*.css. */
+function declaredTokenNames(): Set<string> {
+  const names = new Set<string>();
+  for (const file of readdirSync(TOKENS_DIR)) {
+    if (!file.endsWith(".css")) continue;
+    for (const m of readFileSync(join(TOKENS_DIR, file), "utf8").matchAll(/(--[a-z0-9-]+)\s*:/g)) {
+      names.add(m[1]!);
+    }
+  }
+  return names;
+}
+
+/** First-argument token names of every `var()` that is not itself inside another `var()`'s
+ * fallback. Only those decide whether a declaration is valid: an undefined first argument with
+ * an undefined fallback makes the whole declaration invalid at computed-value time, so
+ * `border-color` silently computes to `currentcolor` and an inherited `color` is inherited. */
+function primaryVarNames(css: string): string[] {
+  const names: string[] = [];
+  const open: boolean[] = []; // one entry per open "(", true when it opened a var(
+  for (let i = 0; i < css.length; i++) {
+    if (css.startsWith("var(", i)) {
+      const name = /^var\(\s*(--[a-z0-9-]+)/.exec(css.slice(i, i + 80))?.[1];
+      if (name && !open.includes(true)) names.push(name);
+      open.push(true);
+      i += 3;
+    } else if (css[i] === "(") {
+      open.push(false);
+    } else if (css[i] === ")") {
+      open.pop();
+    }
+  }
+  return names;
+}
+
+describe("health-check.css only names tokens that exist", () => {
+  it("every primary var(--token) resolves to a token declared in packages/ui/src/styles/tokens", () => {
+    const declared = declaredTokenNames();
+    expect(declared.size).toBeGreaterThan(50);
+
+    const css = readFileSync(HEALTH_CHECK_CSS, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const used = primaryVarNames(css);
+    expect(used.length).toBeGreaterThan(20);
+
+    const unknown = [...new Set(used)].filter((name) => !declared.has(name)).sort();
+    expect(
+      unknown,
+      "health-check.css uses a token that no file under packages/ui/src/styles/tokens declares (for example --status-err instead of --status-error). The declaration is silently dropped, so a down row loses its red border. Use the real token name.",
+    ).toEqual([]);
+  });
+});

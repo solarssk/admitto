@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   formatRunningBuildLabel,
   HealthCheckPanel,
+  LIVE_CHECKS_HINT,
 } from "../../src/settings/HealthCheckPanel.js";
 import { renderWithToast } from "../test-utils.js";
 import type { HealthReportDto } from "../../src/api/types.js";
@@ -208,6 +209,41 @@ describe("HealthCheckPanel", () => {
     expect(screen.getByRole("button", { name: /Run live checks/ })).toBeTruthy();
   });
 
+  it("puts the Generated line directly under the description", async () => {
+    renderWithToast(<HealthCheckPanel />);
+    await screen.findByText("Core infrastructure");
+    const description = screen.getByText(/Review whether this instance/);
+    const meta = description.nextElementSibling;
+    expect(meta?.textContent).toMatch(/^Generated /);
+    const time = meta?.querySelector("time");
+    expect(time?.getAttribute("datetime")).toBe("2026-08-03T12:54:24.000Z");
+    expect(meta?.textContent).toContain(`v${__APP_VERSION__} · ${__APP_COMMIT__}`);
+  });
+
+  it("gives Background worker and Bounce detection their own icons", async () => {
+    mockFetch.mockResolvedValueOnce(
+      sampleReport({
+        groups: [
+          {
+            id: "core",
+            label: "Core infrastructure",
+            subtitle: "Owned and run by this instance",
+            status: "ok",
+            checks: [
+              { id: "background_worker", label: "Background worker", status: "ok", summary: "Running", details: [] },
+              { id: "bounce_ingest", label: "Bounce detection", status: "ok", summary: "Idle", details: [] },
+            ],
+          },
+        ],
+      }),
+    );
+    const { container } = renderWithToast(<HealthCheckPanel />);
+    await screen.findByText("Background worker");
+    expect(container.querySelector(".ti-activity-heartbeat")).not.toBeNull();
+    expect(container.querySelector(".ti-mail-exclamation")).not.toBeNull();
+    expect(container.querySelector(".ti-circle-dot")).toBeNull();
+  });
+
   it("uses the SPA build identity even when the API reports a different commit", async () => {
     mockFetch.mockResolvedValueOnce(sampleReport({ commit: "unknown", version: "9.9.9" }));
     renderWithToast(<HealthCheckPanel />);
@@ -337,6 +373,20 @@ describe("HealthCheckPanel", () => {
     });
     // Menu closes on selection, same as the other More actions items.
     expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("describes every live probe, and the More actions item uses the same text", async () => {
+    expect(LIVE_CHECKS_HINT).toMatch(/address lookup/);
+    expect(LIVE_CHECKS_HINT).toMatch(/weather/);
+    expect(LIVE_CHECKS_HINT).toMatch(/mail connection/);
+    expect(LIVE_CHECKS_HINT).toMatch(/identity providers/);
+    expect(LIVE_CHECKS_HINT).toMatch(/Cloudflare Access/);
+    expect(LIVE_CHECKS_HINT).toMatch(/upload folder/);
+
+    renderWithToast(<HealthCheckPanel />);
+    await screen.findByRole("button", { name: /More actions/ });
+    fireEvent.click(screen.getByRole("button", { name: /More actions/ }));
+    expect(within(screen.getByRole("menu")).getByText(LIVE_CHECKS_HINT)).toBeTruthy();
   });
 
   it("copies a Markdown snapshot via More actions", async () => {
