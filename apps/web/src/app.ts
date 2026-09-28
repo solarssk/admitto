@@ -441,6 +441,7 @@ import { resolvePostLoginRedirectForUser } from "./auth/post-login-redirect.js";
 import { handleReadyz } from "./ops/readyz.js";
 import { handleOpsSystemLogIngest } from "./ops/system-log-ingest.js";
 import { emitSystemLog, recordSystemLog } from "@admitto/shared/system-log";
+import { isWalletAddClosed } from "@admitto/shared";
 
 /** Injectable dependencies for `createApp()` (tests and custom deploy wiring). */
 export interface CreateAppOptions {
@@ -520,6 +521,47 @@ async function resolveQrPayloadOrRespond(
     return onMissing();
   }
   return buildQrPayload("agency", { agencyPayload });
+}
+
+/** Marker `handleWalletRedirect`'s creation path returns for "nothing to hand out, and that is not
+ * an error" - a redirect back to the ticket page without the retry notice. */
+const WALLET_PASS_UNAVAILABLE = "unavailable" as const;
+
+/** A pass Admitto will never hand out (again) through the public Add to Wallet tap: voided and
+ * expired are not revived from here (Restore is an explicit staff action, expiry is permanent), and
+ * a pass removed at the provider no longer exists there. */
+function isWalletPassUnavailable(
+  pass: { status: string; provider_removed_at: Date | null } | null | undefined,
+): boolean {
+  if (!pass) return false;
+  return pass.provider_removed_at !== null || pass.status === "voided" || pass.status === "expired";
+}
+
+/** Which Add to Wallet buttons the ticket page offers: the configured platforms, minus everything
+ * once the event is over or archived, or once this attendee's pass can no longer be added
+ * (voided, expired or removed). The pass is only looked up when a button would otherwise show, and
+ * a failed lookup keeps the buttons (the route itself re-checks). Module scope, like
+ * computeWalletPlatformVisibility, to keep renderTicketPage's cognitive complexity down. */
+async function resolveWalletOffer(
+  db: PrismaClient,
+  event: Parameters<typeof computeWalletPlatformVisibility>[0] & Parameters<typeof isWalletAddClosed>[0],
+  attendeeId: string,
+  hasInjectedWalletProvider: boolean,
+): Promise<{ apple: boolean; google: boolean; samsung: boolean }> {
+  const visible = computeWalletPlatformVisibility(event, hasInjectedWalletProvider);
+  const none = { apple: false, google: false, samsung: false };
+  if (!visible.apple && !visible.google && !visible.samsung) return none;
+  if (isWalletAddClosed(event)) return none;
+  try {
+    const pass = await db.walletPass.findUnique({
+      where: { attendee_id: attendeeId },
+      select: { status: true, provider_removed_at: true },
+    });
+    return isWalletPassUnavailable(pass) ? none : visible;
+  } catch (err) {
+    console.error("walletPass lookup (ticket page) failed:", err);
+    return visible;
+  }
 }
 
 // No template or API key configured for this event yet (Event settings -> Wallet) - the
@@ -836,7 +878,7 @@ export function createApp(options: CreateAppOptions = {}) {
    */
   const walletCreateLocks = new Map<
     string,
-    Promise<{ apple_url: string | null; android_url: string | null } | null>
+    Promise<{ apple_url: string | null; android_url: string | null } | typeof WALLET_PASS_UNAVAILABLE | null>
   >();
 
   /**
@@ -854,6 +896,11 @@ export function createApp(options: CreateAppOptions = {}) {
     const { attendee, event } = resolved;
 
     if (!isAdmittable(attendee.status as AttendeeStatus)) {
+      return c.redirect(backHref, 302);
+    }
+    // Over or archived: nothing to hand out, and no error - the ticket page has already dropped
+    // the buttons, this covers an old link (mail, bookmark).
+    if (isWalletAddClosed(event)) {
       return c.redirect(backHref, 302);
     }
     const platformEnabled =
@@ -892,6 +939,7 @@ export function createApp(options: CreateAppOptions = {}) {
       });
       return c.redirect(`${backHref}?walletError=1`, 302);
     }
+    if (isWalletPassUnavailable(existing)) return c.redirect(backHref, 302);
 
     /** Returns null (after logging) instead of throwing - a database error here must still land
      * on the retry redirect below, not escape to app.onError as a bare JSON 500. Also guards
@@ -1001,50 +1049,6 @@ export function createApp(options: CreateAppOptions = {}) {
       return null;
     }
 
-    /** Un-voids an already-issued pass at the provider (e.g. after a staff-only "Void wallet
-     * pass" action, independent of the attendee's own admittable status) instead of treating a
-     * voided WalletPass row as "never created": createPass would just get rejected as a
-     * duplicate on the shared userProvidedId, and recovering that rejection via
-     * findByUserProvidedId would mark the row "active" locally without ever calling restorePass,
-     * leaving the pass permanently voided at the provider while Admitto believes it's valid
-     * again and hides the Restore action (CodeRabbit review). Never throws: a provider/DB error
-     * here must still land on the retry redirect below. */
-    async function restoreExistingPass(
-      providerPassId: string,
-    ): Promise<{ apple_url: string | null; android_url: string | null } | null> {
-      try {
-        await provider.restorePass(providerPassId);
-      } catch (err) {
-        console.error("PassCreator restorePass failed:", err);
-        recordSystemLog({
-          level: "error",
-          source: "api",
-          message: "wallet_pass_restore_failed",
-          fields: { eventId: event.id, attendeeId: attendee.id },
-        });
-        return null;
-      }
-      try {
-        // Conditional on the pass not having been removed while the provider call was in flight.
-        const { count } = await db.walletPass.updateMany({
-          where: { attendee_id: attendee.id, provider_removed_at: null },
-          data: { status: "active", voided_at: null, provider_commanded_at: new Date(), last_error_code: null },
-        });
-        if (count === 0) return null;
-        const row = await db.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } });
-        return { apple_url: row.apple_url, android_url: row.android_url };
-      } catch (err) {
-        console.error("walletPass update (restore) failed:", err);
-        recordSystemLog({
-          level: "error",
-          source: "api",
-          message: "wallet_pass_upsert_failed",
-          fields: { eventId: event.id, attendeeId: attendee.id },
-        });
-        return null;
-      }
-    }
-
     /** PassCreator's createPass duplicate-rejection and its own search index can briefly
      * disagree: a search right after a "duplicate" rejection sometimes finds nothing yet even
      * though the winning pass genuinely exists there (search-index lag, not a real
@@ -1101,27 +1105,14 @@ export function createApp(options: CreateAppOptions = {}) {
     /** Dispatches on the existing WalletPass row's status - split out of the main handler body to
      * keep its cognitive complexity under the SonarCloud threshold (S3776). Returns null (after
      * the callee's own logging) when none of the three paths could produce a usable URL. */
-    async function resolvePassUrls(): Promise<{ apple_url: string | null; android_url: string | null } | null> {
-      // A pass removed at the provider is gone there for good: neither restoring nor re-creating it
-      // may be attempted from a public tap (restorePass would hit a deleted resource, and a
-      // successful-looking answer would mark the frozen row active again). Answered like an expired
-      // pass until the public Add to Wallet rules define the proper page.
-      if (existing?.provider_removed_at) return null;
+    async function resolvePassUrls(): Promise<
+      { apple_url: string | null; android_url: string | null } | typeof WALLET_PASS_UNAVAILABLE | null
+    > {
+      // Voided, expired and removed passes are answered before this point (see the early exit right
+      // after the lookup above): a tap never restores or re-creates one. Only an active pass is
+      // handed out as is; anything else (no row, pending, failed) creates below.
       if (existing?.status === "active") {
         return { apple_url: existing.apple_url, android_url: existing.android_url };
-      }
-      if (existing?.status === "voided" && existing.provider_pass_id) {
-        return restoreExistingPass(existing.provider_pass_id);
-      }
-      // Expired is irreversible (unlike voided) and stays the SAME resource at the provider, so
-      // falling through to createOrRecoverPass below would have PassCreator reject the create as a
-      // duplicate of that still-there, still-expired pass - recoverDuplicatePass would then find it
-      // and markActive would mark it active in Admitto WITHOUT ever clearing its provider-side
-      // expiration (createPass/updatePass don't touch expirationDate once set - PR 6's own job),
-      // leaving the attendee believing they have a valid pass while PassCreator still shows it dead
-      // (Codex review, 2026-09-27). No recovery path exists yet (that's PR 3/6's job) - bail out.
-      if (existing?.status === "expired") {
-        return null;
       }
 
       // Checked and set with no `await` between them - a second concurrent call for the same
@@ -1147,17 +1138,11 @@ export function createApp(options: CreateAppOptions = {}) {
           });
           return null;
         }
-        // Same reasoning as the pre-lock check above.
-        if (latest?.provider_removed_at) return null;
+        // Same rule as the early exit above, re-checked because another request may have voided,
+        // expired or removed the pass since that read.
+        if (isWalletPassUnavailable(latest)) return WALLET_PASS_UNAVAILABLE;
         if (latest?.status === "active") {
           return { apple_url: latest.apple_url, android_url: latest.android_url };
-        }
-        if (latest?.status === "voided" && latest.provider_pass_id) {
-          return restoreExistingPass(latest.provider_pass_id);
-        }
-        // Same reasoning as the pre-lock check above.
-        if (latest?.status === "expired") {
-          return null;
         }
         const display = await resolveTicketPageDisplay(db, resolved);
         const customFieldPlaceholders = await resolveWalletCustomFieldPlaceholders(
@@ -1176,6 +1161,7 @@ export function createApp(options: CreateAppOptions = {}) {
     }
 
     const providerUrls = await resolvePassUrls();
+    if (providerUrls === WALLET_PASS_UNAVAILABLE) return c.redirect(backHref, 302);
     if (!providerUrls) return c.redirect(`${backHref}?walletError=1`, 302);
 
     const url = platform === "apple" ? providerUrls.apple_url : providerUrls.android_url;
@@ -1291,8 +1277,10 @@ export function createApp(options: CreateAppOptions = {}) {
       route === "/t/:eventSlug/a/:ref"
         ? `/t/${resolvedForDisplay.event.slug}/a/${agencyPublicRef}`
         : `/t/${internalToken}`;
-    const walletVisible = computeWalletPlatformVisibility(
+    const walletVisible = await resolveWalletOffer(
+      db,
       resolvedForDisplay.event,
+      attendee.id,
       options.walletPassProvider !== undefined,
     );
     return htmlWithSecurityHeaders(
