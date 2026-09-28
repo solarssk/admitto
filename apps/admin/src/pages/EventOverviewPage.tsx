@@ -1746,20 +1746,31 @@ export function EventOverviewPage() {
   // show them only once the fetch has genuinely taken a moment.
   const showLoading = useDelayedLoading(loading);
 
+  // This page stays mounted when the route moves to another event, so a restore still in flight
+  // must not touch the dialog or the layout of the event that is now showing.
+  useEffect(() => {
+    setRestoreOpen(false);
+    setRestoreError(null);
+    setRestoring(false);
+  }, [event.id]);
+
   const handleRestore = async () => {
+    const restoringId = event.id;
+    const stillHere = () => currentEventIdRef.current === restoringId;
     setRestoring(true);
     setRestoreError(null);
     try {
-      await unarchiveEvent(event.id);
+      await unarchiveEvent(restoringId);
       addToast("Event restored.", "success");
+      if (!stillHere()) return;
       setRestoreOpen(false);
       await refreshEvent?.();
     } catch (err) {
       // Shown inside the still-open dialog (errorMessage), not a toast - the dialog's backdrop
       // sits above the toast stack, so a toast-only failure would be invisible behind it.
-      setRestoreError(operatorApiErrorMessage(err, "Could not restore the event."));
+      if (stillHere()) setRestoreError(operatorApiErrorMessage(err, "Could not restore the event."));
     } finally {
-      setRestoring(false);
+      if (stillHere()) setRestoring(false);
     }
   };
 

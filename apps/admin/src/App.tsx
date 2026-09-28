@@ -175,6 +175,10 @@ export function EventLayout() {
   }, [eventId, location.pathname]);
 
   useEffect(() => {
+    // Moving to another event invalidates any refreshEvent() still in flight for the previous
+    // one: its closure is bound to the old eventId, so without this a late response would install
+    // the old event's snapshot under the new event's URL.
+    refreshEventSeqRef.current += 1;
     const fromState = navStateEventRef.current;
     setEvent(fromState);
     setError(false);
