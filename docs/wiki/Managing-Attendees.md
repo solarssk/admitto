@@ -94,6 +94,10 @@ The attendee appears once in the event with accurate contact, ticket, and event-
   - Appears once this event has Wallet configured. The run shows up in Event Settings → Wallet's push history as "Whole event · manual push".
 - Attendees' header **More actions** also has a **Refresh status** for the whole event, not just a selection. It pulls the current status for every active wallet pass under the event at once, running in the background with a summary toast once it finishes. Voided and expired passes are skipped.
   - Appears once this event has Wallet configured, and stays available on an archived event.
+- Attendees' header **More actions** also has **Void active passes**. It makes every active wallet pass of the event show as invalid in one go (a selection is limited to 100 attendees). It asks first, then runs in the background and shows a summary when it is done: how many passes were voided, how many were left alone because they were no longer active, and how many could not be voided (run it again to try those once more). The pass stays on the attendee's phone and their ticket is not changed. You can restore a single pass from the attendee's page while Wallet is on for this event and the event has not ended. Attendees who have not added a pass yet can still add one under the same conditions; to stop that, a Superadmin can turn Wallet off in Event settings. It is not the same as **Remove from provider** or **Delete wallet pass**, which erase the pass from the wallet service for good.
+  - Appears once this event has Wallet configured, and works on an archived event and with the Wallet switch off, like **Void wallet pass**.
+  - If someone restores a pass while the run is voiding it, the restore wins: that pass stays active and is counted as left alone.
+  - Only one run at a time per event: while one is running, starting another says so and waits. When it has finished, run it again if you want it to catch passes that became active in the meantime.
 - Export attendee information only for an approved event purpose.
 
 ## What changes after this action

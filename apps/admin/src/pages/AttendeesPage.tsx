@@ -56,10 +56,13 @@ import { AttendeesTable } from "../attendees/AttendeesTable.js";
 import { pollBulkSendCompletion } from "../attendees/pollBulkSendCompletion.js";
 import { pollWalletPushCompletion } from "../attendees/pollWalletPushCompletion.js";
 import { pollWalletRefreshStatusCompletion } from "../attendees/pollWalletRefreshStatusCompletion.js";
+import { reportBulkActionError, type BulkActionErrorReporters } from "../attendees/reportBulkActionError.js";
 import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { RSVP_LABELS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
+import { useEventScopedConfirm } from "../attendees/useEventScopedConfirm.js";
 import { useMailConfigured } from "../attendees/useMailConfigured.js";
+import { useWalletVoidActive } from "../attendees/useWalletVoidActive.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
@@ -323,26 +326,6 @@ function notifyBulkAssignResult(
   );
 }
 
-/** The error-surfacing half of {@link RunBulkActionParams} — split out so
- * {@link reportBulkActionError} can take just these, independent of the action's result type T. */
-interface BulkActionErrorReporters {
-  reportApiError: (status: number) => void;
-  /** Inline dialog error setter. Omit for an action with no confirm dialog (Send tickets, Check
-   * in) — those toast the error instead, matching AGENTS.md's toast-vs-inline convention. */
-  setError?: (message: string | null) => void;
-  addToast: (message: string, variant?: ToastVariant) => void;
-  /** Passed to operatorApiErrorMessage() as the fallback for a recognized ApiError with no safe
-   * user-facing detail. Ignored when mapErrorMessage is provided. */
-  apiErrorFallback: string;
-  /** Message shown for a thrown non-ApiError value (network failure, unexpected exception) —
-   * deliberately a different string than apiErrorFallback in every caller below; that split
-   * already existed per-handler before this helper, not something introduced here. */
-  genericFallback: string;
-  /** Overrides the default operatorApiErrorMessage(err, apiErrorFallback) computation for a
-   * recognized ApiError — e.g. Change ticket type's unknown_ticket_type code needs its own copy. */
-  mapErrorMessage?: (err: ApiError) => string;
-}
-
 interface RunBulkActionParams<T> extends BulkActionErrorReporters {
   eventId: string | undefined;
   /** Detects the operator navigating to a different event's Attendees list before the request
@@ -353,28 +336,6 @@ interface RunBulkActionParams<T> extends BulkActionErrorReporters {
   setBusy: (busy: boolean) => void;
   action: (eventId: string) => Promise<T>;
   onSuccess: (result: T) => void;
-}
-
-/** Resolves and surfaces a bulk action's caught error — the 401 redirect, the
- * mapErrorMessage/operatorApiErrorMessage selection, and the setError-vs-addToast branching.
- * Extracted out of runBulkAction to keep its own cognitive complexity under SonarCloud's
- * threshold (bot review). */
-function reportBulkActionError(err: unknown, reporters: BulkActionErrorReporters): void {
-  const { reportApiError, setError, addToast, apiErrorFallback, genericFallback, mapErrorMessage } = reporters;
-  if (!(err instanceof ApiError)) {
-    if (setError) setError(genericFallback);
-    else addToast(genericFallback, "error");
-    return;
-  }
-  reportApiError(err.status);
-  if (err.status === 401) {
-    const next = encodeURIComponent(window.location.pathname);
-    window.location.assign(`/login?next=${next}`);
-    return;
-  }
-  const message = mapErrorMessage ? mapErrorMessage(err) : operatorApiErrorMessage(err, apiErrorFallback);
-  if (setError) setError(message);
-  else addToast(message, "error");
 }
 
 /** Shared skeleton for the Attendees list's bulk actions (send tickets/check in/revoke check-in/
@@ -794,6 +755,8 @@ interface HeaderMoreMenuProps {
   eventWidePushBusy: boolean;
   onTriggerEventWideRefreshStatus: () => void;
   eventWideRefreshStatusBusy: boolean;
+  onTriggerEventWideVoidActive: () => void;
+  eventWideVoidActiveBusy: boolean;
 }
 
 /** Header "More" menu — bundles Import and Send tickets behind one compact button, keeping
@@ -821,6 +784,8 @@ function HeaderMoreMenu({
   eventWidePushBusy,
   onTriggerEventWideRefreshStatus,
   eventWideRefreshStatusBusy,
+  onTriggerEventWideVoidActive,
+  eventWideVoidActiveBusy,
 }: Readonly<HeaderMoreMenuProps>) {
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
@@ -887,16 +852,29 @@ function HeaderMoreMenu({
                 />
               )}
               {walletConfigured && (
-                <MoreActionsMenuItem
-                  icon="cloud-download"
-                  label={eventWideRefreshStatusBusy ? "Refreshing status…" : "Refresh status"}
-                  hint="Get the latest status of every active pass"
-                  disabled={eventWideRefreshStatusBusy}
-                  onClick={() => {
-                    setOpen(false);
-                    onTriggerEventWideRefreshStatus();
-                  }}
-                />
+                <>
+                  <MoreActionsMenuItem
+                    icon="cloud-download"
+                    label={eventWideRefreshStatusBusy ? "Refreshing status…" : "Refresh status"}
+                    hint="Get the latest status of every active pass"
+                    disabled={eventWideRefreshStatusBusy}
+                    onClick={() => {
+                      setOpen(false);
+                      onTriggerEventWideRefreshStatus();
+                    }}
+                  />
+                  <MoreActionsMenuItem
+                    icon="wallet-off"
+                    variant="warning"
+                    label={eventWideVoidActiveBusy ? "Voiding passes…" : "Void active passes"}
+                    hint="Make every active wallet pass invalid"
+                    disabled={eventWideVoidActiveBusy}
+                    onClick={() => {
+                      setOpen(false);
+                      onTriggerEventWideVoidActive();
+                    }}
+                  />
+                </>
               )}
             </>
           )}
@@ -1147,12 +1125,16 @@ export function AttendeesPage() {
   const [bulkRemoveWalletConfirmOpen, setBulkRemoveWalletConfirmOpen] = useState(false);
   const [bulkRemoveWalletError, setBulkRemoveWalletError] = useState<string | null>(null);
   const [eventWidePushBusy, setEventWidePushBusy] = useState(false);
-  const [eventWidePushConfirmOpen, setEventWidePushConfirmOpen] = useState(false);
-  const [eventWidePushError, setEventWidePushError] = useState<string | null>(null);
+  const eventWidePushConfirm = useEventScopedConfirm(eventId);
   const [eventWideRefreshStatusBusy, setEventWideRefreshStatusBusy] = useState(false);
-  const [eventWideRefreshStatusConfirmOpen, setEventWideRefreshStatusConfirmOpen] = useState(false);
-  const [eventWideRefreshStatusError, setEventWideRefreshStatusError] = useState<string | null>(null);
+  const eventWideRefreshStatusConfirm = useEventScopedConfirm(eventId);
   const [reloadToken, setReloadToken] = useState(0);
+  const eventWideVoidActive = useWalletVoidActive({
+    eventId,
+    addToast,
+    reportApiError,
+    onFinished: () => setReloadToken((n) => n + 1),
+  });
 
   // Lets the debounce timer below compare against the *currently committed* search value
   // without adding `searchQuery` itself as a dependency (which would reschedule this effect
@@ -1491,17 +1473,18 @@ export function AttendeesPage() {
    * already-issued active pass under the event is a target, resolved by the job itself. Guards
    * its success/error side effects against the operator navigating to a different event before
    * the request resolves, same isStillOnEvent pattern as handleTriggerEventWideRefreshStatus
-   * (CodeRabbit review) - busy cleanup stays unconditional. */
+   * (CodeRabbit review) - busy cleanup stays unconditional. It acts on the event its confirmation
+   * was opened on (useEventScopedConfirm), never on whichever event the route shows by then. */
   const handleTriggerEventWidePush = async () => {
-    if (!eventId) return;
-    const initiatingEventId = eventId;
+    const initiatingEventId = eventWidePushConfirm.target();
+    if (!initiatingEventId) return;
     const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
     setEventWidePushBusy(true);
-    setEventWidePushError(null);
+    eventWidePushConfirm.setError(null);
     try {
       const result = await triggerEventWideWalletPush(initiatingEventId);
       if (!isStillOnEvent()) return;
-      setEventWidePushConfirmOpen(false);
+      eventWidePushConfirm.close();
       addToast("Push queued - you'll see a summary once it finishes.", "info");
       walletPushPollRef.current?.abort();
       const ac = new AbortController();
@@ -1514,7 +1497,7 @@ export function AttendeesPage() {
       if (isStillOnEvent()) {
         reportBulkActionError(err, {
           reportApiError,
-          setError: setEventWidePushError,
+          setError: eventWidePushConfirm.setError,
           addToast,
           apiErrorFallback: "Push failed.",
           genericFallback: "Failed to push updates.",
@@ -1531,17 +1514,18 @@ export function AttendeesPage() {
    * pass with a known device-registration id is a target, resolved by the job itself. Guards its
    * success/error side effects against the operator navigating to a different event before the
    * request resolves, same isStillOnEvent pattern as runBulkAction (CodeRabbit review) - busy
-   * cleanup stays unconditional. */
+   * cleanup stays unconditional. It acts on the event its confirmation was opened on
+   * (useEventScopedConfirm), never on whichever event the route shows by then. */
   const handleTriggerEventWideRefreshStatus = async () => {
-    if (!eventId) return;
-    const initiatingEventId = eventId;
+    const initiatingEventId = eventWideRefreshStatusConfirm.target();
+    if (!initiatingEventId) return;
     const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
     setEventWideRefreshStatusBusy(true);
-    setEventWideRefreshStatusError(null);
+    eventWideRefreshStatusConfirm.setError(null);
     try {
       const result = await triggerEventWideWalletRefreshStatus(initiatingEventId);
       if (!isStillOnEvent()) return;
-      setEventWideRefreshStatusConfirmOpen(false);
+      eventWideRefreshStatusConfirm.close();
       addToast("Refresh queued - you'll see a summary once it finishes.", "info");
       walletRefreshStatusPollRef.current?.abort();
       const ac = new AbortController();
@@ -1557,7 +1541,7 @@ export function AttendeesPage() {
       if (isStillOnEvent()) {
         reportBulkActionError(err, {
           reportApiError,
-          setError: setEventWideRefreshStatusError,
+          setError: eventWideRefreshStatusConfirm.setError,
           addToast,
           apiErrorFallback: "Refresh failed.",
           genericFallback: "Failed to refresh wallet status.",
@@ -2177,16 +2161,12 @@ export function AttendeesPage() {
               onExport={(format) => void handleExport(format)}
               walletPlatforms={walletPlatforms}
               walletConfigured={event.wallet_configured}
-              onTriggerEventWidePush={() => {
-                setEventWidePushError(null);
-                setEventWidePushConfirmOpen(true);
-              }}
+              onTriggerEventWidePush={eventWidePushConfirm.request}
               eventWidePushBusy={eventWidePushBusy}
-              onTriggerEventWideRefreshStatus={() => {
-                setEventWideRefreshStatusError(null);
-                setEventWideRefreshStatusConfirmOpen(true);
-              }}
+              onTriggerEventWideRefreshStatus={eventWideRefreshStatusConfirm.request}
               eventWideRefreshStatusBusy={eventWideRefreshStatusBusy}
+              onTriggerEventWideVoidActive={eventWideVoidActive.requestConfirm}
+              eventWideVoidActiveBusy={eventWideVoidActive.busy}
             />
             {/* Hidden below 768px — its 3 formats fold into HeaderMoreMenu's own panel there
              * instead (above), so only "+ Add"/"More" remain as standalone buttons, which is
@@ -2446,37 +2426,43 @@ export function AttendeesPage() {
       />
 
       <ConfirmDialog
-        open={eventWidePushConfirmOpen}
+        open={eventWidePushConfirm.open}
         title="Push updates to every installed wallet pass?"
         message="This sends each attendee's current name, ticket type, and event details to the pass on their phone, for the whole event. Attendees with no pass are not changed."
-        errorMessage={eventWidePushError}
+        errorMessage={eventWidePushConfirm.error}
         confirmLabel="Push updates"
         confirmVariant="primary"
         loading={eventWidePushBusy}
         onConfirm={() => void handleTriggerEventWidePush()}
         onCancel={() => {
-          if (!eventWidePushBusy) {
-            setEventWidePushConfirmOpen(false);
-            setEventWidePushError(null);
-          }
+          if (!eventWidePushBusy) eventWidePushConfirm.close();
         }}
       />
 
       <ConfirmDialog
-        open={eventWideRefreshStatusConfirmOpen}
+        open={eventWideRefreshStatusConfirm.open}
         title="Refresh the wallet status for every active wallet pass?"
         message="This checks the current status of every active wallet pass in the wallet service, for the whole event. If the wallet service says a pass is voided or expired, it is marked Voided here. Passes that are already voided or expired, and attendees with no pass, are not changed."
-        errorMessage={eventWideRefreshStatusError}
+        errorMessage={eventWideRefreshStatusConfirm.error}
         confirmLabel="Refresh status"
         confirmVariant="primary"
         loading={eventWideRefreshStatusBusy}
         onConfirm={() => void handleTriggerEventWideRefreshStatus()}
         onCancel={() => {
-          if (!eventWideRefreshStatusBusy) {
-            setEventWideRefreshStatusConfirmOpen(false);
-            setEventWideRefreshStatusError(null);
-          }
+          if (!eventWideRefreshStatusBusy) eventWideRefreshStatusConfirm.close();
         }}
+      />
+
+      <ConfirmDialog
+        open={eventWideVoidActive.confirmOpen}
+        title="Void every active wallet pass for this event?"
+        message="Voiding makes a wallet pass show as invalid on the attendee's phone. The pass stays on the phone and the attendee's ticket is not changed. This covers every active pass of the event, not only the selected attendees, and runs in the background. You can restore one pass at a time from the attendee's page, while Wallet is on for this event and the event has not ended. Attendees who have not added a pass yet can still add one under the same conditions. To stop that, ask a Superadmin to turn Wallet off in Event settings. It is not the same as Remove from provider or Delete wallet pass: those erase the pass from the wallet service for good."
+        errorMessage={eventWideVoidActive.error}
+        confirmLabel="Void all"
+        confirmVariant="danger"
+        loading={eventWideVoidActive.busy}
+        onConfirm={() => void eventWideVoidActive.confirm()}
+        onCancel={eventWideVoidActive.cancel}
       />
 
       <ConfirmDialog
