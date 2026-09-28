@@ -55,7 +55,7 @@ Open the correct event and confirm its time zone. Before archiving, finish check
 2. Review the status and make sure no operator is still using check-in.
 3. Select **Archive event**.
 4. Read the confirmation message and confirm.
-5. Check that the event is shown as archived and read-only.
+5. Check that the event is shown as archived and read-only. Its **Overview** page shows an amber archived notice.
 
 Organisation settings → **Archiving** lists active and archived events (one toggle, paginated) and shows who created and who last archived each event, and when.
 
@@ -79,7 +79,7 @@ An export creates a separate file outside Admitto and must be handled accordingl
 - **The archive control is disabled:** it is Superadmin-only.
 - **A report time looks unexpected:** check the event time zone and active filters.
 - **The report does not show an expected admission:** review the attendee activity and the operator's scan result before editing data.
-- **More work is needed after archiving:** ask a Superadmin to verify the reason and restore the event.
+- **More work is needed after archiving:** ask a Superadmin to verify the reason and restore the event. A Superadmin can select **Restore event** in the archived notice on the event's **Overview** page and confirm, or use **Unarchive event** in **Event settings** → **Danger zone**. Other roles see the notice without the button.
 
 ## Related pages
 

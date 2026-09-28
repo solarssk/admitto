@@ -2,12 +2,12 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { Link, useOutletContext } from "react-router";
 import {
   Avatar,
-  Badge,
   Button,
   Card,
   EmptyState,
   Input,
   ModalBackdrop,
+  Notice,
   PageHeader,
   ticketTypeChartColor,
   useToast,
@@ -23,7 +23,11 @@ import {
   createEventResource,
   updateEventResource,
   deleteEventResource,
+  unarchiveEvent,
 } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { useAuth } from "../auth/AuthProvider.js";
+import { isSuperadmin } from "../auth/capabilities.js";
 import type {
   EventDto,
   EventOverviewDto,
@@ -129,6 +133,7 @@ function OverviewKpiTile({
   label,
   value,
   sub,
+  textValue = false,
   children,
 }: Readonly<{
   icon: ReactNode;
@@ -136,6 +141,8 @@ function OverviewKpiTile({
   label: string;
   value: ReactNode;
   sub?: ReactNode;
+  /** The value is a phrase ("Ended 3 days ago"), not a number: smaller type that may wrap to two lines instead of truncating. */
+  textValue?: boolean;
   children?: ReactNode;
 }>) {
   return (
@@ -145,7 +152,7 @@ function OverviewKpiTile({
           {icon}
         </span>
         <div className="overview-kpi__body">
-          <span className="overview-kpi__value">{value}</span>
+          <span className={`overview-kpi__value${textValue ? " overview-kpi__value--text" : ""}`}>{value}</span>
           <span className="overview-kpi__label">{label}</span>
           {sub != null && <span className="overview-kpi__sub">{sub}</span>}
         </div>
@@ -1479,9 +1486,18 @@ function kpiCountText(value: number | null, loading: boolean, showLoading: boole
 /** Event-scoped dashboard — event command center with KPIs, a setup checklist, check-in progress,
  * and a live activity feed. */
 export function EventOverviewPage() {
-  const { event } = useOutletContext<{ event: EventDto }>();
+  const { event, refreshEvent } = useOutletContext<{
+    event: EventDto;
+    refreshEvent?: () => Promise<void>;
+  }>();
   const { reportApiError } = useConnectionState();
   const { addToast } = useToast();
+  const { assignments } = useAuth();
+  // Unarchiving is a superadmin-only API (POST /events/:id/unarchive), so only they get the button.
+  const canRestore = isSuperadmin(assignments);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const seenCheckinsRef = useRef(new Map<string, number>());
   const statsErrorToastedRef = useRef(false);
@@ -1733,23 +1749,68 @@ export function EventOverviewPage() {
   // show them only once the fetch has genuinely taken a moment.
   const showLoading = useDelayedLoading(loading);
 
+  const handleRestore = async () => {
+    setRestoring(true);
+    setRestoreError(null);
+    try {
+      await unarchiveEvent(event.id);
+      addToast("Event restored.", "success");
+      setRestoreOpen(false);
+      await refreshEvent?.();
+    } catch (err) {
+      // Shown inside the still-open dialog (errorMessage), not a toast - the dialog's backdrop
+      // sits above the toast stack, so a toast-only failure would be invisible behind it.
+      setRestoreError(operatorApiErrorMessage(err, "Could not restore the event."));
+    } finally {
+      setRestoring(false);
+    }
+  };
+
   return (
     <div className="screen">
-      <PageHeader
-        title="Overview"
-        subtitle={OVERVIEW_SUBTITLE}
-        actions={event.archived_at ? <Badge variant="neutral">Archived · read-only</Badge> : undefined}
-      />
+      <PageHeader title="Overview" subtitle={OVERVIEW_SUBTITLE} />
 
       {event.archived_at && (
-        <p className="overview-archived-note">
-          Archived on{" "}
+        <Notice
+          variant="warning"
+          icon="archive"
+          action={
+            canRestore ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<i className="ti ti-archive-off" aria-hidden="true" />}
+                onClick={() => setRestoreOpen(true)}
+              >
+                Restore event
+              </Button>
+            ) : undefined
+          }
+        >
+          This event is archived. Data is kept, but editing and check-in are locked. Archived on{" "}
           {event.archived_by_timezone
             ? formatEventDateTime(event.archived_at, event.archived_by_timezone)
             : formatUtcDateTime(event.archived_at)}
-          . Restore from event settings if you need to edit again.
-        </p>
+          .{canRestore ? "" : " Ask a superadmin to restore it."}
+        </Notice>
       )}
+
+      <ConfirmDialog
+        open={restoreOpen}
+        icon={<i className="ti ti-archive-off" />}
+        title="Restore this event?"
+        message={`"${event.title}" will become active again. Editing and check-in will be allowed, and it will show up in default event lists.`}
+        confirmLabel="Restore event"
+        loading={restoring}
+        errorMessage={restoreError}
+        onConfirm={() => void handleRestore()}
+        onCancel={() => {
+          if (!restoring) {
+            setRestoreOpen(false);
+            setRestoreError(null);
+          }
+        }}
+      />
 
       <div className="overview-stats">
         <OverviewKpiTile
@@ -1779,6 +1840,7 @@ export function EventOverviewPage() {
           icon={<i className="ti ti-calendar-event" aria-hidden="true" />}
           label={daysToEventLabel}
           value={countdownValue}
+          textValue={Number.isNaN(Number(countdownValue))}
         />
         <OverviewKpiTile
           tone="error"

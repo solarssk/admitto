@@ -10,7 +10,12 @@ import type {
   EventResourceDto,
 } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
-import { connectionStateValue, makeTicketType, renderWithToast } from "../test-utils.js";
+import {
+  connectionStateValue,
+  makeSuperadminAssignment,
+  makeTicketType,
+  renderWithToast,
+} from "../test-utils.js";
 import { formatEventCalendarDate } from "../../src/utils/event-dates.js";
 
 const fetchEventOverview = vi.fn();
@@ -22,6 +27,12 @@ let activityChangedHandler: (() => void) | null = null;
 // Lets a test simulate the SSE handshake not having completed yet (#C) — defaults to true so
 // every other test keeps its original "always connected" behavior.
 let mockStreamConnected = true;
+// Per-test knobs for the archived-event tests: fields merged over the mocked outlet event, the
+// layout's refreshEvent(), and the signed-in role assignments.
+let mockEventOverrides: Record<string, unknown> = {};
+const mockRefreshEvent = vi.fn();
+let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [];
+const mockUnarchiveEvent = vi.fn();
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
   useEventStream: (
@@ -37,6 +48,10 @@ vi.mock("../../src/hooks/useEventStream.js", () => ({
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => connectionStateValue("connected", reportApiError),
+}));
+
+vi.mock("../../src/auth/AuthProvider.js", () => ({
+  useAuth: () => ({ assignments: mockAssignments }),
 }));
 
 vi.mock("react-router", async () => {
@@ -55,7 +70,9 @@ vi.mock("react-router", async () => {
         archived_at: null,
         organization_id: "org-1",
         attendee_count: 50,
+        ...mockEventOverrides,
       },
+      refreshEvent: mockRefreshEvent,
     }),
   };
 });
@@ -71,6 +88,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   createEventResource: vi.fn(),
   updateEventResource: vi.fn(),
   deleteEventResource: vi.fn(),
+  unarchiveEvent: (...args: unknown[]) => mockUnarchiveEvent(...args),
 }));
 
 import {
@@ -168,6 +186,8 @@ afterEach(() => {
   streamHandler = null;
   activityChangedHandler = null;
   mockStreamConnected = true;
+  mockEventOverrides = {};
+  mockAssignments = [];
 });
 
 describe("EventOverviewPage live stats", () => {
@@ -1469,5 +1489,123 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
       expect(screen.getByText("Gate B is closed today")).toBeTruthy();
     });
     expect(document.querySelector(".overview-pinned-note")).toBeNull();
+  });
+
+  it("shrinks a phrase countdown value so it wraps instead of truncating, but leaves a bare day count at full size", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.setSystemTime(new Date("2026-07-04T10:00:00.000Z"));
+      fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+      renderPage();
+
+      const phrase = await screen.findByText("Ended 3 days ago");
+      expect(phrase.className).toContain("overview-kpi__value--text");
+      for (const count of within(statsRow()).getAllByText("50")) {
+        expect(count.className).not.toContain("overview-kpi__value--text");
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("EventOverviewPage archived event", () => {
+  const archivedAt = "2026-07-02T06:03:00.000Z";
+
+  beforeEach(() => {
+    fetchEventOverview.mockReset();
+    fetchTicketTypes.mockReset();
+    fetchTicketTypes.mockResolvedValue([]);
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+    mockUnarchiveEvent.mockReset();
+    mockRefreshEvent.mockReset();
+    mockRefreshEvent.mockResolvedValue(undefined);
+    mockEventOverrides = { archived_at: archivedAt, archived_by_timezone: "Asia/Kolkata" };
+    mockAssignments = [makeSuperadminAssignment()];
+  });
+
+  it("shows no archived badge, notice or restore button for an active event", async () => {
+    mockEventOverrides = {};
+
+    renderPage();
+
+    await screen.findByText("Attendees");
+    expect(screen.queryByText(/This event is archived/)).toBeNull();
+    expect(document.querySelector(".at-notice")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Restore event" })).toBeNull();
+  });
+
+  it("shows a warning-toned archived notice with a Restore button for a superadmin, and no separate read-only badge", async () => {
+    renderPage();
+
+    await screen.findByText("Attendees");
+    expect(screen.queryByText(/Read-only since/)).toBeNull();
+    const notice = document.querySelector(".at-notice") as HTMLElement;
+    expect(notice.className).toContain("at-notice--warning");
+    expect(notice.textContent).toContain("This event is archived.");
+    expect(notice.textContent).toContain("editing and check-in are locked");
+    expect(within(notice).getByRole("button", { name: "Restore event" })).toBeTruthy();
+    expect(notice.textContent).not.toContain("Ask a superadmin");
+  });
+
+  it("hides the Restore button and points to a superadmin for everyone else", async () => {
+    mockAssignments = [];
+
+    renderPage();
+
+    await screen.findByText("Attendees");
+    expect(screen.queryByRole("button", { name: "Restore event" })).toBeNull();
+    expect((document.querySelector(".at-notice") as HTMLElement).textContent).toContain(
+      "Ask a superadmin to restore it.",
+    );
+  });
+
+  it("asks for confirmation before restoring and does nothing on Cancel", async () => {
+    renderPage();
+
+    await screen.findByText("Attendees");
+    fireEvent.click(screen.getByRole("button", { name: "Restore event" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Restore this event?" });
+    expect(within(dialog).getByText(/"Demo Event" will become active again/)).toBeTruthy();
+    expect(mockUnarchiveEvent).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mockUnarchiveEvent).not.toHaveBeenCalled();
+    expect(mockRefreshEvent).not.toHaveBeenCalled();
+  });
+
+  it("restores the event on confirm, then refreshes the layout event and closes the dialog", async () => {
+    mockUnarchiveEvent.mockResolvedValue(undefined);
+
+    renderPage();
+
+    await screen.findByText("Attendees");
+    fireEvent.click(screen.getByRole("button", { name: "Restore event" }));
+    const dialog = await screen.findByRole("dialog", { name: "Restore this event?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore event" }));
+
+    await waitFor(() => expect(mockUnarchiveEvent).toHaveBeenCalledWith("evt-1"));
+    await waitFor(() => expect(mockRefreshEvent).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(await screen.findByText("Event restored.")).toBeTruthy();
+  });
+
+  it("keeps the dialog open with an inline error when restoring fails, and does not refresh", async () => {
+    mockUnarchiveEvent.mockRejectedValue(new Error("boom"));
+
+    renderPage();
+
+    await screen.findByText("Attendees");
+    fireEvent.click(screen.getByRole("button", { name: "Restore event" }));
+    const dialog = await screen.findByRole("dialog", { name: "Restore this event?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore event" }));
+
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toBeTruthy());
+    expect(screen.getByRole("dialog", { name: "Restore this event?" })).toBeTruthy();
+    expect(mockRefreshEvent).not.toHaveBeenCalled();
   });
 });
