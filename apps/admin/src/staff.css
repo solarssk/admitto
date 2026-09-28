@@ -7062,23 +7062,41 @@ output.mail-field-hint {
   gap: var(--space-3);
 }
 
+/* A native <progress>, not a div with role="progressbar": it carries its own accessibility
+ * semantics on every device. It needs the vendor pseudo-elements to be styled: -webkit- for
+ * Chromium and Safari, -moz- for Firefox. */
 .overview-setup__bar {
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  width: 100%;
   height: 8px;
+  border: 0;
   border-radius: 4px;
   overflow: hidden;
   background: var(--surface-sunken);
 }
 
-.overview-setup__bar > span {
-  display: block;
-  height: 100%;
+.overview-setup__bar::-webkit-progress-bar {
+  background: var(--surface-sunken);
+  border-radius: 4px;
+}
+
+.overview-setup__bar::-webkit-progress-value {
   border-radius: 4px;
   transition: width var(--dur-fast, 120ms);
 }
 
-.overview-setup__bar--ok > span { background: var(--status-ok); }
-.overview-setup__bar--warn > span { background: var(--status-warn); }
-.overview-setup__bar--error > span { background: var(--status-error); }
+.overview-setup__bar::-moz-progress-bar {
+  border-radius: 4px;
+}
+
+.overview-setup__bar--ok::-webkit-progress-value { background: var(--status-ok); }
+.overview-setup__bar--ok::-moz-progress-bar { background: var(--status-ok); }
+.overview-setup__bar--warn::-webkit-progress-value { background: var(--status-warn); }
+.overview-setup__bar--warn::-moz-progress-bar { background: var(--status-warn); }
+.overview-setup__bar--error::-webkit-progress-value { background: var(--status-error); }
+.overview-setup__bar--error::-moz-progress-bar { background: var(--status-error); }
 
 .overview-checklist {
   display: flex;

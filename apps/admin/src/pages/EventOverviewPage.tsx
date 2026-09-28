@@ -334,16 +334,12 @@ function SetupChecklistCard({
       }
     >
       <div className="overview-setup">
-        <div
+        <progress
           className={`overview-setup__bar overview-setup__bar--${tone}`}
-          role="progressbar"
           aria-label="Setup progress"
-          aria-valuemin={0}
-          aria-valuemax={total}
-          aria-valuenow={okCount}
-        >
-          <span style={{ width: `${total > 0 ? (okCount / total) * 100 : 0}%` }} />
-        </div>
+          max={total || 1}
+          value={okCount}
+        />
         <div className="overview-checklist">
           {/* Array.sort is stable, so rows of the same status keep their natural order. */}
           {[...items]

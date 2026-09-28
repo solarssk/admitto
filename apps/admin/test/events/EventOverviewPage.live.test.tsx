@@ -820,9 +820,11 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
     const card = within(await screen.findByText("Setup checklist").then(() => checklistCard()));
     expect(card.getByText("4 of 4 done")).toBeTruthy();
-    const bar = card.getByRole("progressbar", { name: "Setup progress" });
-    expect(bar.getAttribute("aria-valuenow")).toBe("4");
-    expect(bar.getAttribute("aria-valuemax")).toBe("4");
+    // A native <progress>: value and max carry the semantics, no ARIA attributes to keep in sync.
+    const bar = card.getByRole("progressbar", { name: "Setup progress" }) as HTMLProgressElement;
+    expect(bar.tagName).toBe("PROGRESS");
+    expect(bar.value).toBe(4);
+    expect(bar.max).toBe(4);
     expect(bar.className).toContain("overview-setup__bar--ok");
     // Status lives in the bar tone and each row's coloured icon, not in a second banner.
     expect(checklistCard().querySelector(".at-notice")).toBeNull();
