@@ -473,12 +473,15 @@ interface ArchiveDialogCopy {
   confirmVariant: "primary" | "danger";
 }
 
+function walletManagedAtProviderHint(count: number): string {
+  if (count <= 0) return "";
+  const passWord = count === 1 ? "pass is" : "passes are";
+  return ` ${count} inactive wallet ${passWord} still at the wallet service - archiving does not remove them. Use Remove inactive passes on Attendees, or Remove from provider, after archiving if you want to stop them being counted there.`;
+}
+
 function getArchiveDialogCopy(archiveMode: "archive" | "unarchive", walletPassesManagedAtProviderCount: number): ArchiveDialogCopy {
   if (archiveMode === "archive") {
-    const walletHint =
-      walletPassesManagedAtProviderCount > 0
-        ? ` ${walletPassesManagedAtProviderCount} inactive wallet ${walletPassesManagedAtProviderCount === 1 ? "pass is" : "passes are"} still at the wallet service - archiving does not remove them. Use Remove inactive passes on Attendees, or Remove from provider, after archiving if you want to stop them being counted there.`
-        : "";
+    const walletHint = walletManagedAtProviderHint(walletPassesManagedAtProviderCount);
     return {
       title: "Archive this event?",
       message:

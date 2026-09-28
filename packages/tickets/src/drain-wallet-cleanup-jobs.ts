@@ -90,6 +90,35 @@ type WalletCleanupHandler = {
   ): Promise<"done" | "skipped">;
 };
 
+/** The fields every clean-up target-loading query reads, and how the row maps to a
+ * WalletCleanupTarget - shared so the type-specific queries below differ only in their `where`. */
+const WALLET_CLEANUP_TARGET_SELECT = {
+  attendee_id: true,
+  provider_pass_id: true,
+  user_provided_id: true,
+  status: true,
+  provider_commanded_at: true,
+  provider_removed_at: true,
+} as const;
+
+function mapRowToWalletCleanupTarget(row: {
+  attendee_id: string;
+  provider_pass_id: string | null;
+  user_provided_id: string | null;
+  status: string;
+  provider_commanded_at: Date | null;
+  provider_removed_at: Date | null;
+}): WalletCleanupTarget {
+  return {
+    attendeeId: row.attendee_id,
+    providerPassId: row.provider_pass_id!,
+    userProvidedId: row.user_provided_id,
+    status: row.status,
+    providerCommandedAt: row.provider_commanded_at,
+    providerRemovedAt: row.provider_removed_at,
+  };
+}
+
 /** Every active pass under the event that still exists at the provider. */
 async function loadActivePassTargets(db: PrismaClient, eventId: string): Promise<WalletCleanupTarget[]> {
   const rows = await db.walletPass.findMany({
@@ -99,23 +128,9 @@ async function loadActivePassTargets(db: PrismaClient, eventId: string): Promise
       provider_removed_at: null,
       attendee: { event_id: eventId },
     },
-    select: {
-      attendee_id: true,
-      provider_pass_id: true,
-      user_provided_id: true,
-      status: true,
-      provider_commanded_at: true,
-      provider_removed_at: true,
-    },
+    select: WALLET_CLEANUP_TARGET_SELECT,
   });
-  return rows.map((row) => ({
-    attendeeId: row.attendee_id,
-    providerPassId: row.provider_pass_id!,
-    userProvidedId: row.user_provided_id,
-    status: row.status,
-    providerCommandedAt: row.provider_commanded_at,
-    providerRemovedAt: row.provider_removed_at,
-  }));
+  return rows.map(mapRowToWalletCleanupTarget);
 }
 
 /** Every voided pass under the event, past its grace period, that still exists at the provider.
@@ -129,23 +144,9 @@ async function loadGracedInactivePassTargets(db: PrismaClient, eventId: string):
       provider_removed_at: null,
       attendee: { event_id: eventId },
     },
-    select: {
-      attendee_id: true,
-      provider_pass_id: true,
-      user_provided_id: true,
-      status: true,
-      provider_commanded_at: true,
-      provider_removed_at: true,
-    },
+    select: WALLET_CLEANUP_TARGET_SELECT,
   });
-  return rows.map((row) => ({
-    attendeeId: row.attendee_id,
-    providerPassId: row.provider_pass_id!,
-    userProvidedId: row.user_provided_id,
-    status: row.status,
-    providerCommandedAt: row.provider_commanded_at,
-    providerRemovedAt: row.provider_removed_at,
-  }));
+  return rows.map(mapRowToWalletCleanupTarget);
 }
 
 /** Removes one pass listed by loadGracedInactivePassTargets - re-read right before acting, the
@@ -154,7 +155,14 @@ async function loadGracedInactivePassTargets(db: PrismaClient, eventId: string):
  * remove) or already removed it directly in the meantime. `removeOneWalletPassFromProvider` itself
  * has no status guard - it only checks `provider_removed_at` - so skipping here on a pass that is
  * no longer voided or expired is what keeps a restored pass from being deleted at the provider out
- * from under the admin who just restored it. */
+ * from under the admin who just restored it.
+ *
+ * A restore-then-void in that same window leaves the pass `voided` again, so the status check
+ * alone would not catch it - but it also gives the pass a brand new `voided_at`, so the grace
+ * period this job promises ("only touches a pass voided for at least a day") no longer applies to
+ * it. The re-read checks `voided_at` against the same cutoff loadGracedInactivePassTargets used,
+ * not just status, so a freshly re-voided pass is left for a later run instead of being removed
+ * before its own new grace period has elapsed. */
 async function removeOneGracedInactivePass(
   db: PrismaClient,
   eventId: string,
@@ -166,6 +174,7 @@ async function removeOneGracedInactivePass(
     where: { attendee_id: target.attendeeId, provider_pass_id: target.providerPassId },
     select: {
       status: true,
+      voided_at: true,
       provider_removed_at: true,
       provider_commanded_at: true,
       user_provided_id: true,
@@ -173,6 +182,12 @@ async function removeOneGracedInactivePass(
   });
   if (!current || current.provider_removed_at) return "skipped";
   if (current.status !== "voided" && current.status !== "expired") return "skipped";
+  if (
+    current.status === "voided" &&
+    (!current.voided_at || current.voided_at.getTime() > Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS)
+  ) {
+    return "skipped";
+  }
 
   const outcome = await removeOneWalletPassFromProvider(
     db,

@@ -350,6 +350,7 @@ describe("drainWalletCleanupJobs (wallet_remove_inactive)", () => {
     db.walletPass.findMany.mockReset().mockResolvedValue([votedRow(1)]);
     db.walletPass.findFirst.mockReset().mockResolvedValue({
       status: "voided",
+      voided_at: new Date(Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS - 60_000),
       provider_removed_at: null,
       provider_commanded_at: null,
       user_provided_id: "admitto:evt-1:att-1",
@@ -388,6 +389,7 @@ describe("drainWalletCleanupJobs (wallet_remove_inactive)", () => {
     const commandedAt = new Date("2026-09-28T10:00:00Z");
     db.walletPass.findFirst.mockResolvedValueOnce({
       status: "voided",
+      voided_at: new Date(Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS - 60_000),
       provider_removed_at: null,
       provider_commanded_at: commandedAt,
       user_provided_id: "admitto:evt-1:att-1",
@@ -398,7 +400,13 @@ describe("drainWalletCleanupJobs (wallet_remove_inactive)", () => {
     expect(result).toMatchObject({ claimed: 1, succeeded: 1 });
     expect(db.walletPass.findFirst).toHaveBeenCalledWith({
       where: { attendee_id: "att-1", provider_pass_id: "pc-1" },
-      select: { status: true, provider_removed_at: true, provider_commanded_at: true, user_provided_id: true },
+      select: {
+        status: true,
+        voided_at: true,
+        provider_removed_at: true,
+        provider_commanded_at: true,
+        user_provided_id: true,
+      },
     });
     expect(removeOneWalletPassFromProvider).toHaveBeenCalledWith(
       db,
@@ -422,6 +430,10 @@ describe("drainWalletCleanupJobs (wallet_remove_inactive)", () => {
     ["restored back to active since the listing", { status: "active", provider_removed_at: null }],
     ["already removed by someone else since the listing", { status: "voided", provider_removed_at: new Date() }],
     ["gone since the listing (row not found)", null],
+    [
+      "restored and voided again since the listing, still within its own new grace period (regression)",
+      { status: "voided", voided_at: new Date(), provider_removed_at: null },
+    ],
   ])("skips a pass that was %s, without calling the provider", async (_label, row) => {
     vi.mocked(claimNextAdminJob).mockResolvedValueOnce(null).mockResolvedValueOnce(removeJob() as never);
     db.walletPass.findFirst.mockResolvedValueOnce(row);

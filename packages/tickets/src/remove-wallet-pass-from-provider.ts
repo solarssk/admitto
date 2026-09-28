@@ -31,14 +31,24 @@ export type RemoveWalletPassOutcome = "removed" | "already_removed" | "not_found
  *    existing data alone without drawing any conclusion - it is not proof of anything. A thrown
  *    provider error aborts this pass entirely (the caller's Promise.allSettled counts it as failed,
  *    safe to retry) rather than proceeding to delete without knowing what was last true.
- * 2. Always `deletePass(providerPassId)` - 2xx or 404 (already gone) both count as success, per its
+ * 2. A second, later re-read, right before the one call that cannot be undone - the same
+ *    provider_commanded_at compare-and-swap voidOneWalletPassAtProvider uses at its write, just
+ *    moved ahead of the provider call instead of after it, because delete has no self-heal to fall
+ *    back on. Every caller (single-attendee, bulk, and the event-wide job) does its own eligibility
+ *    check before calling this function, but that check can be seconds to minutes stale by the time
+ *    this point is reached, including across the snapshot read in step 1. A status or
+ *    provider_commanded_at that no longer matches what the caller last knew - a Restore, most
+ *    plausibly - aborts before `deletePass` fires, as `changed`, the same outcome already used for
+ *    a post-delete identity mismatch, so every caller already handles it. This narrows the race to
+ *    the `deletePass` round trip itself, which cannot be closed without a distributed lock.
+ * 3. Always `deletePass(providerPassId)` - 2xx or 404 (already gone) both count as success, per its
  *    own contract.
- * 3. Only once that has genuinely succeeded: stamp `provider_removed_at` and write the action log
+ * 4. Only once that has genuinely succeeded: stamp `provider_removed_at` and write the action log
  *    entry, in one transaction. The stamp is conditional (same pass identity, not yet removed), so
  *    two concurrent removals log one entry between them; the loser reports `already_removed`. If a
- *    concurrent Restore landed between the caller's eligibility check and the provider call, the
- *    remote pass is gone regardless and a removed pass is always inactive, so the row is put back
- *    to `voided` in the same transaction (the log entry says so) instead of being left `active`
+ *    concurrent Restore landed in the one window step 2 cannot close (during `deletePass` itself),
+ *    the remote pass is gone regardless and a removed pass is always inactive, so the row is put
+ *    back to `voided` in the same transaction (the log entry says so) instead of being left `active`
  *    with nothing behind it at the provider.
  */
 export async function removeOneWalletPassFromProvider(
@@ -78,6 +88,17 @@ export async function removeOneWalletPassFromProvider(
         { policy: provider.consistencyPolicy, providerTimeZone: null },
       );
     }
+  }
+
+  const stillEligible = await db.walletPass.findFirst({
+    where: { attendee_id: target.attendeeId, provider_pass_id: target.providerPassId },
+    select: { status: true, provider_removed_at: true, provider_commanded_at: true },
+  });
+  if (!stillEligible) return "not_found";
+  if (stillEligible.provider_removed_at) return "already_removed";
+  if (stillEligible.status !== "voided" && stillEligible.status !== "expired") return "changed";
+  if ((stillEligible.provider_commanded_at?.getTime() ?? null) !== (target.providerCommandedAt?.getTime() ?? null)) {
+    return "changed";
   }
 
   await provider.deletePass(target.providerPassId);

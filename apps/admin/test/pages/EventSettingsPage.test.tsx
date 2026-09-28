@@ -3573,6 +3573,18 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     ).toBeTruthy();
   });
 
+  it("uses singular wording for exactly one inactive wallet pass, in the archive dialog", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, wallet_passes_managed_at_provider_count: 1 });
+    renderSettings();
+    await openDangerZone();
+    fireEvent.click(await screen.findByRole("button", { name: "Archive event" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(/1 inactive wallet pass is still at the wallet service - archiving does not remove them\./),
+    ).toBeTruthy();
+  });
+
   it("closes archive confirmation without changing the event", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(activeEvent);
     renderSettings();
