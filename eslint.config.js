@@ -51,8 +51,12 @@ const typeAwareFollowUpRules = {
 
 // The only remaining uses are audited, module-relative build-time assets with narrow local
 // suppressions. New dynamic filesystem filenames must now fail lint rather than add debt.
+// `detect-object-injection` is an error for packages/*/src/**/*.ts too (the React/TSX config
+// below keeps it off): the two computed-key lookups left there read from a fixed key set and each
+// carries a narrow local suppression saying which one.
 const securityFollowUpRules = {
   "security/detect-non-literal-fs-filename": "error",
+  "security/detect-object-injection": "error",
 };
 
 // Shared by packages/ui's own *.tsx files and every apps/*/src file below — both are React/TSX,

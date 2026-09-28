@@ -163,8 +163,7 @@ function splitMimeMessage(rawBinary: string, depth = 0): MimeLeaf[] {
     const delimiter = `--${boundary}`;
     const segments = body.split(delimiter);
     const leaves: MimeLeaf[] = [];
-    for (let i = 1; i < segments.length; i++) {
-      const seg = segments[i] ?? "";
+    for (const seg of segments.slice(1)) {
       if (seg.startsWith("--")) break;
       const trimmed = seg.replace(/^\r?\n/, "").replace(/\r?\n$/, "");
       if (!trimmed.trim()) continue;

@@ -143,12 +143,18 @@ export function toPassCreatorData(
   // customFieldLabels' keys are already namespaced ("custom:<source_field>", see
   // wallet-custom-fields.ts) so they can never collide with a WALLET_MAPPING_PLACEHOLDERS entry -
   // a plain merge is enough, no precedence rule needed between the two sources.
-  const values: Record<string, string | undefined> = { ...walletPlaceholderValues(input), ...input.customFieldLabels };
-  const custom: Record<string, unknown> = {};
-  for (const [key, placeholder] of Object.entries(fieldMapping)) {
-    const value = values[placeholder];
-    if (value) custom[key] = value;
-  }
+  // A Map, so a stored placeholder such as "constructor" or "__proto__" finds nothing instead of
+  // an inherited Object.prototype member; `__proto__` is also skipped as a target key, since an
+  // own property of that name would otherwise be serialized into the request body.
+  const values = new Map<string, string | undefined>(
+    Object.entries({ ...walletPlaceholderValues(input), ...input.customFieldLabels }),
+  );
+  const custom = Object.fromEntries(
+    Object.entries(fieldMapping).flatMap(([key, placeholder]) => {
+      const value = values.get(placeholder);
+      return value && key !== "__proto__" ? [[key, value] as const] : [];
+    }),
+  );
   // base last: an admin's own field-mapping key (e.g. accidentally named "userProvidedId" or
   // "barcodeValue" after PassCreator's own API vocabulary) must never override the provider-
   // controlled identity/QR fields - those decide idempotency and which pass the barcode matches.
@@ -331,7 +337,9 @@ export function isWalletFieldMappingRelevant(
   table: Record<string, readonly string[]>,
   fieldMapping: Record<string, string> | null | undefined,
 ): boolean {
-  const placeholders = table[field];
+  // Own entries only: `table[field]` would hand back Object.prototype members ("constructor",
+  // "toString") for an unknown field name and crash on `.some` instead of failing open.
+  const placeholders = Object.entries(table).find(([name]) => name === field)?.[1];
   if (placeholders === undefined) return true;
   if (!fieldMapping) return false;
   const mapped = new Set(Object.values(fieldMapping));
