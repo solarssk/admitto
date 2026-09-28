@@ -2,12 +2,12 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { Link, useOutletContext } from "react-router";
 import {
   Avatar,
-  Badge,
   Button,
   Card,
   EmptyState,
   Input,
   ModalBackdrop,
+  Notice,
   PageHeader,
   ticketTypeChartColor,
   useToast,
@@ -23,7 +23,11 @@ import {
   createEventResource,
   updateEventResource,
   deleteEventResource,
+  unarchiveEvent,
 } from "../api/client.js";
+import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { useAuth } from "../auth/AuthProvider.js";
+import { isSuperadmin } from "../auth/capabilities.js";
 import type {
   EventDto,
   EventOverviewDto,
@@ -153,6 +157,26 @@ function OverviewKpiTile({
       {children}
     </Card>
   );
+}
+
+/** Value and label for the countdown KPI tile.
+ * computeLabel() itself falls back to the plain calendar date for anything more than a week out
+ * (fine for the header's prose chip, wrong for this numeric tile, it would just repeat the date
+ * already shown in the page header), so beyond that window the tile shows the raw day count under a
+ * "Days to/since event" label, on either side. Within the week the label stays a neutral
+ * "Event countdown" for upcoming events. A past event reads "3 days ago" under "Event ended"
+ * instead of "Ended 3 days ago" under "Event countdown": the shorter value fits the tile at the same
+ * type size as the other three numbers, and the label still says which way it points. */
+function countdownTileText(
+  daysUntil: number | null,
+  countdownLabel: string,
+): { value: string; label: string } {
+  if (daysUntil != null && Math.abs(daysUntil) > 7) {
+    return { value: String(Math.abs(daysUntil)), label: daysUntil < 0 ? "Days since event" : "Days to event" };
+  }
+  const ended = /^Ended (.+)$/.exec(countdownLabel)?.[1];
+  if (ended) return { value: ended.charAt(0).toUpperCase() + ended.slice(1), label: "Event ended" };
+  return { value: countdownLabel, label: "Event countdown" };
 }
 
 interface ReadinessItem {
@@ -1479,9 +1503,18 @@ function kpiCountText(value: number | null, loading: boolean, showLoading: boole
 /** Event-scoped dashboard — event command center with KPIs, a setup checklist, check-in progress,
  * and a live activity feed. */
 export function EventOverviewPage() {
-  const { event } = useOutletContext<{ event: EventDto }>();
+  const { event, refreshEvent } = useOutletContext<{
+    event: EventDto;
+    refreshEvent?: () => Promise<void>;
+  }>();
   const { reportApiError } = useConnectionState();
   const { addToast } = useToast();
+  const { assignments } = useAuth();
+  // Unarchiving is a superadmin-only API (POST /events/:id/unarchive), so only they get the button.
+  const canRestore = isSuperadmin(assignments);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const seenCheckinsRef = useRef(new Map<string, number>());
   const statsErrorToastedRef = useRef(false);
@@ -1702,27 +1735,7 @@ export function EventOverviewPage() {
       : null;
   const countdownLabel = useCountdown(eventDateIso, eventTimezone);
   const daysUntil = daysUntilEvent(eventDateIso, eventTimezone);
-  // computeLabel() itself falls back to the plain calendar date for anything more than a week out
-  // (fine for the header's prose chip, wrong for this numeric tile — it would just repeat the date
-  // already shown in the page header). Show the raw day count instead beyond that week window, on
-  // either side (future or already-past) — symmetric so a long-over event doesn't read as a full
-  // sentence next to a clean number for upcoming ones. The short phrasings for everything within a
-  // week ("Today"/"Tomorrow"/"Yesterday"/"In N days"/"Ended N days ago") already read fine as-is.
-  const countdownValue =
-    daysUntil != null && Math.abs(daysUntil) > 7 ? String(Math.abs(daysUntil)) : countdownLabel;
-  // No sub-line (it broke KPI row icon alignment — this was the only tile with a 3rd line).
-  // Label mirrors countdownValue's own bare-number/prose split above: "Days to/since event" only
-  // once the value is a bare number that needs a unit — a prose value ("In 7 days", "Ended 3 days
-  // ago") already states its own direction, so the label stays a neutral "Event countdown" instead
-  // of repeating "days" or contradicting which way that value points.
-  let daysToEventLabel: string;
-  if (daysUntil == null || Math.abs(daysUntil) <= 7) {
-    daysToEventLabel = "Event countdown";
-  } else if (daysUntil < 0) {
-    daysToEventLabel = "Days since event";
-  } else {
-    daysToEventLabel = "Days to event";
-  }
+  const { value: countdownValue, label: daysToEventLabel } = countdownTileText(daysUntil, countdownLabel);
   const emailFailedTotal =
     currentOverview != null
       ? currentOverview.email_failed + currentOverview.email_bounced
@@ -1733,23 +1746,79 @@ export function EventOverviewPage() {
   // show them only once the fetch has genuinely taken a moment.
   const showLoading = useDelayedLoading(loading);
 
+  // This page stays mounted when the route moves to another event, so a restore still in flight
+  // must not touch the dialog or the layout of the event that is now showing.
+  useEffect(() => {
+    setRestoreOpen(false);
+    setRestoreError(null);
+    setRestoring(false);
+  }, [event.id]);
+
+  const handleRestore = async () => {
+    const restoringId = event.id;
+    const stillHere = () => currentEventIdRef.current === restoringId;
+    setRestoring(true);
+    setRestoreError(null);
+    try {
+      await unarchiveEvent(restoringId);
+      addToast("Event restored.", "success");
+      if (!stillHere()) return;
+      setRestoreOpen(false);
+      await refreshEvent?.();
+    } catch (err) {
+      // Shown inside the still-open dialog (errorMessage), not a toast - the dialog's backdrop
+      // sits above the toast stack, so a toast-only failure would be invisible behind it.
+      if (stillHere()) setRestoreError(operatorApiErrorMessage(err, "Could not restore the event."));
+    } finally {
+      if (stillHere()) setRestoring(false);
+    }
+  };
+
   return (
     <div className="screen">
-      <PageHeader
-        title="Overview"
-        subtitle={OVERVIEW_SUBTITLE}
-        actions={event.archived_at ? <Badge variant="neutral">Archived · read-only</Badge> : undefined}
-      />
+      <PageHeader title="Overview" subtitle={OVERVIEW_SUBTITLE} />
 
       {event.archived_at && (
-        <p className="overview-archived-note">
-          Archived on{" "}
+        <Notice
+          variant="warning"
+          icon="archive"
+          action={
+            canRestore ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<i className="ti ti-archive-off" aria-hidden="true" />}
+                onClick={() => setRestoreOpen(true)}
+              >
+                Restore event
+              </Button>
+            ) : undefined
+          }
+        >
+          This event is archived. Data is kept, but editing and check-in are locked. Archived on{" "}
           {event.archived_by_timezone
             ? formatEventDateTime(event.archived_at, event.archived_by_timezone)
             : formatUtcDateTime(event.archived_at)}
-          . Restore from event settings if you need to edit again.
-        </p>
+          .{canRestore ? "" : " Ask a superadmin to restore it."}
+        </Notice>
       )}
+
+      <ConfirmDialog
+        open={restoreOpen}
+        icon={<i className="ti ti-archive-off" />}
+        title="Restore this event?"
+        message={`"${event.title}" will become active again. Editing and check-in will be allowed, and it will show up in default event lists.`}
+        confirmLabel="Restore event"
+        loading={restoring}
+        errorMessage={restoreError}
+        onConfirm={() => void handleRestore()}
+        onCancel={() => {
+          if (!restoring) {
+            setRestoreOpen(false);
+            setRestoreError(null);
+          }
+        }}
+      />
 
       <div className="overview-stats">
         <OverviewKpiTile

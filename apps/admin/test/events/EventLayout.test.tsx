@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useEffect } from "react";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
@@ -7,6 +8,9 @@ import { EventLayout, preloadLazyRoute } from "../../src/App.js";
 import type { EventDto } from "../../src/api/types.js";
 
 const fetchAdminEvent = vi.fn();
+// When set, the mocked shell asks for a refresh from a mount effect, like AttendeesPage does to
+// pick up the active_attendee_count that the event picker's snapshot omits.
+let refreshOnMount = false;
 
 vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),
@@ -20,17 +24,23 @@ vi.mock("../../src/layouts/AdminShell.js", () => ({
   }: {
     event: EventDto;
     refreshEvent?: () => Promise<void>;
-  }) => (
-    <div>
-      <div>shell:{event.title}</div>
-      <div data-testid="shell-archived-at">{event.archived_at ?? "active"}</div>
-      {refreshEvent && (
-        <button type="button" onClick={() => void refreshEvent()}>
-          refresh
-        </button>
-      )}
-    </div>
-  ),
+  }) => {
+    useEffect(() => {
+      if (refreshOnMount) void refreshEvent?.();
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only, mirrors the page it stands in for
+    }, []);
+    return (
+      <div>
+        <div>shell:{event.title}</div>
+        <div data-testid="shell-archived-at">{event.archived_at ?? "active"}</div>
+        {refreshEvent && (
+          <button type="button" onClick={() => void refreshEvent()}>
+            refresh
+          </button>
+        )}
+      </div>
+    );
+  },
 }));
 
 function eventDto(id: string, title: string, archivedAt: string | null = null): EventDto {
@@ -59,6 +69,7 @@ function renderLayout(initialEntry: { pathname: string; state?: unknown }) {
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+  refreshOnMount = false;
 });
 
 describe("EventLayout (#274)", () => {
@@ -213,6 +224,55 @@ describe("EventLayout (#274)", () => {
       resolveFirst(eventDto("evt-1", "Spring Gala", "2026-01-01T00:00:00.000Z"));
     });
     expect(screen.getByTestId("shell-archived-at").textContent).toBe("2026-03-01T00:00:00.000Z");
+  });
+
+  it("applies a refreshEvent that a child page starts from its own mount effect (event opened from the picker)", async () => {
+    refreshOnMount = true;
+    fetchAdminEvent.mockResolvedValueOnce(eventDto("evt-1", "Spring Gala", "2026-02-01T00:00:00.000Z"));
+
+    renderLayout({
+      pathname: "/admin/events/evt-1/attendees",
+      state: { event: eventDto("evt-1", "Spring Gala") },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("shell-archived-at").textContent).toBe("2026-02-01T00:00:00.000Z");
+    });
+    expect(fetchAdminEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a refreshEvent response that lands after navigating to another event", async () => {
+    const router = createMemoryRouter(
+      [
+        { path: "/admin", element: <div>picker</div> },
+        { path: "/admin/events/:eventId/*", element: <EventLayout /> },
+      ],
+      {
+        initialEntries: [
+          { pathname: "/admin/events/evt-1/overview", state: { event: eventDto("evt-1", "Spring Gala") } },
+        ],
+      },
+    );
+    render(<RouterProvider router={router} />);
+
+    let resolveStale!: (event: EventDto) => void;
+    fetchAdminEvent.mockImplementationOnce(() => new Promise((resolve) => (resolveStale = resolve)));
+    screen.getByRole("button", { name: "refresh" }).click(); // refresh bound to evt-1, still pending
+
+    await act(async () => {
+      await router.navigate("/admin/events/evt-2/overview", {
+        state: { event: eventDto("evt-2", "Autumn Summit") },
+      });
+    });
+    await screen.findByText("shell:Autumn Summit");
+
+    // evt-1's response arrives late: it must not replace evt-2 under evt-2's URL.
+    await act(async () => {
+      resolveStale(eventDto("evt-1", "Spring Gala", "2026-02-01T00:00:00.000Z"));
+    });
+    expect(screen.getByText("shell:Autumn Summit")).toBeTruthy();
+    expect(screen.queryByText("shell:Spring Gala")).toBeNull();
+    expect(screen.getByTestId("shell-archived-at").textContent).toBe("active");
   });
 
   it("refreshEvent silently keeps the last-known snapshot when the background re-fetch fails", async () => {
