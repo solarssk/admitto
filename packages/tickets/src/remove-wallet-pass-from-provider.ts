@@ -2,7 +2,14 @@ import type { PrismaClient } from "@admitto/db";
 import { applyProviderSnapshotToWalletPass, type WalletPassProvider } from "@admitto/wallet";
 import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
 
-export type RemoveWalletPassOutcome = "removed" | "already_removed";
+/**
+ * `removed` - this call stamped the row. `already_removed` - the row was already stamped (an earlier
+ * call, or a concurrent one that won the race). `not_found` - the WalletPass row is gone (erased
+ * while the provider call was in flight). `changed` - the row now holds a different provider pass
+ * than the one that was deleted (deleted and re-added in between), so there is nothing to stamp.
+ * Callers treat everything except `removed` and `already_removed` as "not stamped".
+ */
+export type RemoveWalletPassOutcome = "removed" | "already_removed" | "not_found" | "changed";
 
 /**
  * Permanently removes one wallet pass from the provider while keeping the local WalletPass row and
@@ -27,7 +34,12 @@ export type RemoveWalletPassOutcome = "removed" | "already_removed";
  * 2. Always `deletePass(providerPassId)` - 2xx or 404 (already gone) both count as success, per its
  *    own contract.
  * 3. Only once that has genuinely succeeded: stamp `provider_removed_at` and write the action log
- *    entry, in one transaction.
+ *    entry, in one transaction. The stamp is conditional (same pass identity, not yet removed), so
+ *    two concurrent removals log one entry between them; the loser reports `already_removed`. If a
+ *    concurrent Restore landed between the caller's eligibility check and the provider call, the
+ *    remote pass is gone regardless and a removed pass is always inactive, so the row is put back
+ *    to `voided` in the same transaction (the log entry says so) instead of being left `active`
+ *    with nothing behind it at the provider.
  */
 export async function removeOneWalletPassFromProvider(
   db: PrismaClient,
@@ -70,19 +82,36 @@ export async function removeOneWalletPassFromProvider(
 
   await provider.deletePass(target.providerPassId);
 
-  await db.$transaction(async (tx) => {
-    await tx.walletPass.update({
-      where: { attendee_id: target.attendeeId },
-      data: { provider_removed_at: new Date() },
+  return db.$transaction(async (tx): Promise<RemoveWalletPassOutcome> => {
+    const now = new Date();
+    const { count } = await tx.walletPass.updateMany({
+      where: {
+        attendee_id: target.attendeeId,
+        provider_pass_id: target.providerPassId,
+        provider_removed_at: null,
+      },
+      data: { provider_removed_at: now },
+    });
+    if (count === 0) {
+      const current = await tx.walletPass.findUnique({
+        where: { attendee_id: target.attendeeId },
+        select: { provider_removed_at: true },
+      });
+      if (!current) return "not_found";
+      return current.provider_removed_at ? "already_removed" : "changed";
+    }
+
+    const { count: statusReset } = await tx.walletPass.updateMany({
+      where: { attendee_id: target.attendeeId, status: { notIn: ["voided", "expired"] } },
+      data: { status: "voided", voided_at: now },
     });
     await writeActionLog(tx, {
       event_id: eventId,
       attendee_id: target.attendeeId,
       action_type: "wallet_pass_removed",
       audit,
-      metadata: options.bulk ? { bulk: true } : {},
+      metadata: { ...(options.bulk ? { bulk: true } : {}), ...(statusReset > 0 ? { status_reset: true } : {}) },
     });
+    return "removed";
   });
-
-  return "removed";
 }
