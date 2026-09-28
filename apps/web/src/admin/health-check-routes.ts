@@ -1084,6 +1084,18 @@ async function weatherPassiveRow(
   };
 }
 
+/** `weather-service.ts#probeErrorMessage()` falls back to the raw `Error.message` for any
+ * failure it does not itself wrap in `WeatherProviderError` (its own "timeout"/"unavailable"
+ * kinds, or the health check's own "support_contact_required"). `live_check` is whitelisted for
+ * the "Copy for GitHub Issue" export (ADR 0037), so an unexpected error must not reach it
+ * unfiltered - map to this closed set instead of trusting the source. */
+const WEATHER_LIVE_CHECK_REASONS = new Set(["timeout", "unavailable", "support_contact_required"]);
+
+function weatherLiveCheckReason(error: string | undefined): string {
+  if (error && WEATHER_LIVE_CHECK_REASONS.has(error)) return error;
+  return "failed";
+}
+
 function weatherLiveFailedRow(
   label: string,
   config: WeatherConfig,
@@ -1103,7 +1115,7 @@ function weatherLiveFailedRow(
       ["status", "down"],
       ["provider", config.provider],
       ["endpoint", endpoint],
-      ["live_check", probe.error ?? "failed"],
+      ["live_check", weatherLiveCheckReason(probe.error)],
       ["latency_ms", String(probe.latencyMs)],
       ["last_checked", checkedAt],
     ]),
@@ -1218,11 +1230,14 @@ export async function fileStorageRow(
   }
 
   if (providerRaw !== "local") {
+    // The raw STORAGE_PROVIDER value stays in the whitelisted "provider" detail (ADR 0037), not
+    // in the summary text: an operator can set it to anything, and the summary is emitted
+    // verbatim (not detail-key-filtered) in the "Copy for GitHub Issue" export.
     return {
       id: "file_storage",
       label,
       status: "degraded",
-      summary: `Unknown provider (${providerRaw})`,
+      summary: "Unknown provider",
       details: detailsFromEntries([
         ["status", "degraded"],
         ["provider", providerRaw],
