@@ -671,21 +671,27 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
   describe("Remove from provider", () => {
     const REMOVED_AT = "2026-09-20T10:00:00.000Z";
 
-    it("is offered for a voided and for an expired pass, but not for an active one", async () => {
+    it("is enabled for a voided and for an expired pass", async () => {
       for (const status of ["voided", "expired"] as const) {
         mockLoad(baseDetail({ wallet_pass: walletPass({ status }) }));
         renderPage();
         await screen.findByRole("heading", { name: "Anna" });
         openMoreActionsMenu();
-        expect(screen.getByRole("menuitem", { name: /Remove from provider/ })).toBeTruthy();
+        const item = screen.getByRole("menuitem", { name: /Remove from provider/ }) as HTMLButtonElement;
+        expect(item.disabled).toBe(false);
         cleanup();
       }
+    });
 
+    it("is shown disabled for an active pass, with the reason: void the pass first", async () => {
       mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
       renderPage();
       await screen.findByRole("heading", { name: "Anna" });
+
       openMoreActionsMenu();
-      expect(screen.queryByRole("menuitem", { name: /Remove from provider/ })).toBeNull();
+      const item = screen.getByRole("menuitem", { name: /Remove from provider/ }) as HTMLButtonElement;
+      expect(item.disabled).toBe(true);
+      expect(getTooltipText(item)).toBe("Void this wallet pass first. Only a voided or expired pass can be removed.");
     });
 
     it("is not offered again once the pass has been removed", async () => {

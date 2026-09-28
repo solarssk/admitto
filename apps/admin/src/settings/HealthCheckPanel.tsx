@@ -223,7 +223,7 @@ function HealthCheckMoreActions({
         More actions
       </Button>
       {open && (
-        <div className="more-actions-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
+        <div className="more-actions-menu__panel at-scroll" role="menu" ref={panelRef} style={panelStyle}>
           {/* Mirrors the standalone "Run live checks" button in the header — hidden there and
               shown only here below the header's mobile breakpoint (health-check.css), so the
               header stays one row instead of wrapping. */}

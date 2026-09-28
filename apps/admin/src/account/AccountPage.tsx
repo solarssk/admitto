@@ -234,7 +234,7 @@ function AccountIdentityActionsMenu({
       </Button>
       {moreActions.open && (
         <div
-          className="more-actions-menu__panel"
+          className="more-actions-menu__panel at-scroll"
           role="menu"
           ref={moreActions.panelRef}
           style={moreActions.panelStyle}
@@ -301,7 +301,7 @@ function TwoFactorMoreActions({
         <i className="ti ti-dots-vertical" aria-hidden="true" />
       </button>
       {open && (
-        <div className="more-actions-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
+        <div className="more-actions-menu__panel at-scroll" role="menu" ref={panelRef} style={panelStyle}>
           <MoreActionsMenuItem
             icon="devices-off"
             label="Forget all trusted devices"

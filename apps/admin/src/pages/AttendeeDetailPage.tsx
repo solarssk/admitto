@@ -98,6 +98,7 @@ import {
 import { useModalFocusTrap } from "../components/useModalFocusTrap.js";
 import { useDropdownMenu } from "../components/useDropdownMenu.js";
 import { SamsungGlyphIcon } from "../components/SamsungWalletIcon.js";
+import { MoreActionsMenuItem } from "../components/MoreActionsMenuItem.js";
 import { PaginationFooter } from "../components/PaginationFooter.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { canRevokeCheckIn } from "../checkin/revokeEligibility.js";
@@ -226,7 +227,7 @@ function MoreActionsMenu({
   // credentials and a pass in the right state, not the Wallet switch (walletPlatforms.any) and not
   // an unarchived event.
   const voidAvailable = walletConfigured && walletPass?.status === "active";
-  const removeAvailable = walletConfigured && canRemoveWalletPass(walletPass);
+  const removeState = removeMenuState(walletConfigured, walletPass);
   const deleteAvailable = walletConfigured && hasAnyWalletMenuAction(walletPass);
 
   return (
@@ -244,7 +245,7 @@ function MoreActionsMenu({
         More actions
       </Button>
       {open && (
-        <div className="more-actions-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
+        <div className="more-actions-menu__panel at-scroll" role="menu" ref={panelRef} style={panelStyle}>
           {showEdit && (
             <>
               <ArchivedGuard event={event} reasonId="edit-profile-reason-menu">
@@ -351,7 +352,7 @@ function MoreActionsMenu({
           {((walletPlatforms.any && hasAnyWalletMenuAction(walletPass)) ||
             voidAvailable ||
             refreshAvailable ||
-            removeAvailable ||
+            removeState !== "hidden" ||
             deleteAvailable) && (
             <>
               <hr className="more-actions-menu__divider" />
@@ -361,7 +362,7 @@ function MoreActionsMenu({
                 eventEnded={eventEnded}
                 voidAvailable={voidAvailable}
                 refreshAvailable={refreshAvailable}
-                removeAvailable={removeAvailable}
+                removeState={removeState}
                 deleteAvailable={deleteAvailable}
                 walletPass={walletPass}
                 walletBusy={walletBusy}
@@ -540,7 +541,7 @@ function WalletActionMenuItems({
   eventEnded,
   voidAvailable,
   refreshAvailable,
-  removeAvailable,
+  removeState,
   deleteAvailable,
   walletPass,
   walletBusy,
@@ -561,9 +562,9 @@ function WalletActionMenuItems({
   voidAvailable: boolean;
   /** Refresh status is offered: the event has credentials configured and the pass is active. */
   refreshAvailable: boolean;
-  /** Remove from provider is offered: the event has credentials configured and the pass is
-   * voided or expired and not already removed. */
-  removeAvailable: boolean;
+  /** Remove from provider: hidden without credentials or once removed, disabled (with the reason
+   * as a tooltip) while the pass is still active, enabled for a voided or expired pass. */
+  removeState: RemoveMenuState;
   /** Delete is offered: the event has credentials configured and a pass exists in any of the
    * active, voided or expired states. */
   deleteAvailable: boolean;
@@ -644,20 +645,16 @@ function WalletActionMenuItems({
       )}
       {/* This is what actually stops the provider counting a voided/expired pass towards its own
         * plan; Delete below only wipes the local row and Reports history along with it. */}
-      {removeAvailable && (
-        <button
-          type="button"
-          role="menuitem"
-          className="more-actions-menu__item more-actions-menu__item--danger"
-          disabled={walletBusy}
+      {removeState !== "hidden" && (
+        <MoreActionsMenuItem
+          icon="cloud-off"
+          variant="danger"
+          label="Remove from provider"
+          hint="Delete at the provider, keep this attendee's history"
+          disabled={walletBusy || removeState === "disabled"}
+          tooltip={removeState === "disabled" ? REMOVE_DISABLED_TOOLTIP : undefined}
           onClick={onRemove}
-        >
-          <i className="ti ti-cloud-off" aria-hidden="true" />
-          <span className="more-actions-menu__item-text">
-            <span>Remove from provider</span>
-            <span className="more-actions-menu__item-hint">Delete at the provider, keep this attendee&rsquo;s history</span>
-          </span>
-        </button>
+        />
       )}
       {deleteAvailable && (
         <button
@@ -718,7 +715,7 @@ function WalletLinksMenu({
         <i className="ti ti-dots-vertical" aria-hidden="true" />
       </button>
       {open && (
-        <div className="more-actions-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
+        <div className="more-actions-menu__panel at-scroll" role="menu" ref={panelRef} style={panelStyle}>
           {appleUrl && (
             <button
               type="button"
@@ -800,6 +797,18 @@ function hasWalletLifecycleActions(pass: WalletPassActionDto | null): pass is Wa
  * today (Codex review, 2026-09-27). */
 function hasAnyWalletMenuAction(pass: WalletPassActionDto | null): pass is WalletPassActionDto {
   return !!pass && (pass.status === "active" || pass.status === "voided" || pass.status === "expired");
+}
+
+type RemoveMenuState = "hidden" | "disabled" | "enabled";
+
+const REMOVE_DISABLED_TOOLTIP = "Void this wallet pass first. Only a voided or expired pass can be removed.";
+
+/** How the "Remove from provider" item shows: not at all without the event's provider credentials
+ * or once the pass is removed, disabled with its reason while the pass is still active (so an
+ * admin can see the action exists, as in the bulk menu), enabled for a voided or expired pass. */
+function removeMenuState(walletConfigured: boolean, pass: WalletPassActionDto | null): RemoveMenuState {
+  if (!walletConfigured || !hasAnyWalletMenuAction(pass) || pass.provider_removed_at) return "hidden";
+  return canRemoveWalletPass(pass) ? "enabled" : "disabled";
 }
 
 /** Gates "Remove from provider": voided or expired, and not already removed at the provider.

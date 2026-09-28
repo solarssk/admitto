@@ -66,7 +66,7 @@ Open the correct event. Check its ticket types and custom attendee fields before
    - **Copy ticket link**: copies the attendee's ticket URL to the clipboard without sending anything. It issues the ticket first if it hasn't been issued yet, so this works even for an attendee who has never been sent a mail. It fails only when a ticket can never be issued: for a cancelled or revoked attendee, or an agency-imported attendee missing its reference.
    - **Revoke items**
    - **Delete attendee** (typed confirmation for GDPR erasure)
-   - Once the attendee has added a wallet pass: **Void wallet pass**, **Push updates**, **Refresh status**, **Delete wallet pass**, and, once it is voided or expired, **Remove from provider**. A pass that has expired only offers **Delete wallet pass** and **Remove from provider** - expiry is permanent, so there is no Restore, Push updates, or Refresh status for it.
+   - Once the attendee has added a wallet pass: **Void wallet pass**, **Push updates**, **Refresh status**, **Delete wallet pass**, and **Remove from provider** (shown greyed out until the pass is voided or expired). A pass that has expired only offers **Delete wallet pass** and **Remove from provider** - expiry is permanent, so there is no Restore, Push updates, or Refresh status for it.
 
    **Restore wallet pass** is only offered until the event is over (and never on an archived event), because a pass must not become valid again after it. **Restore pass** asks for confirmation before applying; **Refresh status** does not, since it only reads from the provider. Revoking the attendee's pass also voids their wallet pass automatically, if they have one; restoring it does the same in reverse.
 
