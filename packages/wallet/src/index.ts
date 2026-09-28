@@ -71,4 +71,5 @@ export {
   verifyWebhookSignature,
   type PassCreatorWebhookData,
   type PassCreatorWebhookEnvelope,
+  type WebhookPassTarget,
 } from "./passcreator-webhook.js";

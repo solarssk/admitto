@@ -318,6 +318,38 @@ describe("POST /api/wallet/webhook/passcreator/:eventId", () => {
     expect(querySystemLogs({ search: "wallet_webhook_applied" })).toHaveLength(0);
   });
 
+  it("also freezes a removed pass that has no user_provided_id, when the delivery names it by identifier only", async () => {
+    await prisma.walletPass.update({
+      where: { attendee_id: ATTENDEE_ID },
+      data: {
+        status: "voided",
+        user_provided_id: null,
+        provider_removed_at: new Date("2026-09-20T10:00:00.000Z"),
+        apple_active_registrations: 5,
+      },
+    });
+    try {
+      const app = makeApp(stubProvider(keyPair.publicKey));
+      const body = signedRequest({ identifier: "pc-webhook-1", operatingSystem: "iOS", noOfActivePasses: 99 });
+
+      const res = await app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      expect(res.status).toBe(200);
+      const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+      expect(row?.apple_active_registrations).toBe(5);
+      expect(querySystemLogs({ search: "wallet_webhook_removed_skipped" })).toHaveLength(1);
+    } finally {
+      await prisma.walletPass.update({
+        where: { attendee_id: ATTENDEE_ID },
+        data: { user_provided_id: USER_PROVIDED_ID },
+      });
+    }
+  });
+
   it("never reads a voided flag out of a registration delivery: status stays active", async () => {
     const provider = stubProvider(keyPair.publicKey);
     const app = makeApp(provider);

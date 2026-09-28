@@ -202,7 +202,11 @@ describe("applyWebhookUpdate", () => {
     });
     expect(result).toEqual({ matched: true });
     expect(db.walletPass.update).toHaveBeenCalledWith({
-      where: { provider_user_provided_id: { provider: "passcreator", user_provided_id: "admitto:evt-1:att-1" } },
+      // provider_removed_at: null makes "never write a removed pass" atomic with the write itself.
+      where: {
+        provider_user_provided_id: { provider: "passcreator", user_provided_id: "admitto:evt-1:att-1" },
+        provider_removed_at: null,
+      },
       data: expect.objectContaining({
         google_active_registrations: 1,
         google_inactive_registrations: 0,
@@ -304,7 +308,10 @@ describe("applyWebhookUpdate", () => {
     await applyWebhookUpdate(db as never, { identifier: "pc-pass-1" });
     expect(db.walletPass.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { provider_provider_pass_id: { provider: "passcreator", provider_pass_id: "pc-pass-1" } },
+        where: {
+          provider_provider_pass_id: { provider: "passcreator", provider_pass_id: "pc-pass-1" },
+          provider_removed_at: null,
+        },
       }),
     );
   });
@@ -367,8 +374,18 @@ describe("findWebhookPassTarget", () => {
   function makeDb(row: unknown) {
     return { walletPass: { findFirst: vi.fn().mockResolvedValue(row) } };
   }
-  const found = { attendee_id: "att-1", provider_pass_id: "pc-1", user_provided_id: "admitto:evt-1:att-1" };
-  const expected = { attendeeId: "att-1", providerPassId: "pc-1", userProvidedId: "admitto:evt-1:att-1" };
+  const found = {
+    attendee_id: "att-1",
+    provider_pass_id: "pc-1",
+    user_provided_id: "admitto:evt-1:att-1",
+    provider_removed_at: null,
+  };
+  const expected = {
+    attendeeId: "att-1",
+    providerPassId: "pc-1",
+    userProvidedId: "admitto:evt-1:att-1",
+    providerRemovedAt: null,
+  };
 
   it("matches by user_provided_id, scoped to the event, and returns the reference a re-read needs", async () => {
     const db = makeDb(found);
@@ -411,6 +428,26 @@ describe("findWebhookPassTarget", () => {
     const db2 = makeDb({ ...found, user_provided_id: null });
     expect(await findWebhookPassTarget(db2 as never, "evt-1", { identifier: "pc-1" })).toBeNull();
   });
+
+  it("reports a removed pass with the moment it was removed", async () => {
+    const removedAt = new Date("2026-09-20T10:00:00.000Z");
+    const db = makeDb({ ...found, provider_removed_at: removedAt });
+    expect(await findWebhookPassTarget(db as never, "evt-1", { identifier: "pc-1" })).toEqual({
+      ...expected,
+      providerRemovedAt: removedAt,
+    });
+  });
+
+  it("still reports a removed pass that never had a user_provided_id, so the frozen-snapshot guard sees it", async () => {
+    const removedAt = new Date("2026-09-20T10:00:00.000Z");
+    const db = makeDb({ ...found, user_provided_id: null, provider_removed_at: removedAt });
+    expect(await findWebhookPassTarget(db as never, "evt-1", { identifier: "pc-1" })).toEqual({
+      attendeeId: "att-1",
+      providerPassId: "pc-1",
+      userProvidedId: null,
+      providerRemovedAt: removedAt,
+    });
+  });
 });
 
 describe("applyFirstConfirmedAt", () => {
@@ -432,6 +469,7 @@ describe("applyFirstConfirmedAt", () => {
         provider: "passcreator",
         user_provided_id: "admitto:evt-1:att-1",
         first_confirmed_at: null,
+        provider_removed_at: null,
       },
       data: { first_confirmed_at: expect.any(Date) },
     });

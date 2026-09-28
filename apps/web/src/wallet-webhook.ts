@@ -15,6 +15,7 @@ import {
   type PassCreatorWebhookData,
   type WalletPassProvider,
   type WalletStatusRefreshOutcome,
+  type WebhookPassTarget,
 } from "@admitto/wallet";
 
 interface WebhookCapableProvider {
@@ -91,7 +92,7 @@ async function reconcileVoidedSignal(
   db: PrismaClient,
   provider: WalletPassProvider,
   eventId: string,
-  target: NonNullable<Awaited<ReturnType<typeof findWebhookPassTarget>>>,
+  target: WebhookPassTarget & { providerRemovedAt: null },
 ): Promise<Response> {
   let outcome: WalletStatusRefreshOutcome;
   try {
