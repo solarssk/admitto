@@ -1227,6 +1227,40 @@ export async function fetchWalletRefreshStatusJobStatus(
   return parseJson<WalletRefreshStatusJobStatusResponse>(res);
 }
 
+/** Event managers: void every active wallet pass of the event in the background (a selection on
+ * the Attendees list is capped at 100 attendees, this is not), from the Attendees header's "More
+ * actions" menu. Works on an archived event and with the Wallet switch off. */
+export async function triggerEventWideWalletVoidActive(eventId: string): Promise<{ jobId: string }> {
+  const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/wallet-void-active`, jsonPostInit({}));
+  return parseJson<{ jobId: string }>(res);
+}
+
+export interface WalletCleanupJobStatusResponse {
+  jobId: string;
+  type: "wallet_void_active";
+  status: "pending" | "running" | "succeeded" | "failed";
+  error: string | null;
+  progressTotal: number | null;
+  progressDone: number | null;
+  done: number | null;
+  skipped: number | null;
+  errored: number | null;
+}
+
+/** Poll an event-wide wallet clean-up job (currently wallet_void_active), enqueued by
+ * triggerEventWideWalletVoidActive above. */
+export async function fetchWalletCleanupJobStatus(
+  eventId: string,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<WalletCleanupJobStatusResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet-cleanup/jobs/${encodeURIComponent(jobId)}`,
+    { credentials: "same-origin", signal },
+  );
+  return parseJson<WalletCleanupJobStatusResponse>(res);
+}
+
 /** Which attendees a wallet_push job actually targeted - `null` for a job that predates this
  * field, or whose stored request wasn't recognized. */
 export type WalletPushHistoryScope =

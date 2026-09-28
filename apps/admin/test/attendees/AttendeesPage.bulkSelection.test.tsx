@@ -12,6 +12,7 @@ import { reportApiError } from "../../src/connection/ConnectionStateProvider.js"
 // Read lazily by the mocked useOutletContext below, so a test can archive the event.
 let mockArchivedAt: string | null = null;
 let mockWalletEnabled = true;
+let mockWalletConfigured = true;
 const fetchEventAttendees = vi.fn();
 const fetchEventMailSettings = vi.fn();
 const sendEventBulk = vi.fn();
@@ -37,6 +38,8 @@ const pollWalletPushCompletion = vi.fn();
 const triggerEventWideWalletPush = vi.fn();
 const triggerEventWideWalletRefreshStatus = vi.fn();
 const pollWalletRefreshStatusCompletion = vi.fn();
+const triggerEventWideWalletVoidActive = vi.fn();
+const pollWalletCleanupCompletion = vi.fn();
 
 function mailSettings(provider: string | null) {
   return {
@@ -113,6 +116,10 @@ vi.mock("../../src/attendees/pollWalletRefreshStatusCompletion.js", () => ({
   pollWalletRefreshStatusCompletion: (...args: unknown[]) => pollWalletRefreshStatusCompletion(...args),
 }));
 
+vi.mock("../../src/attendees/pollWalletCleanupCompletion.js", () => ({
+  pollWalletCleanupCompletion: (...args: unknown[]) => pollWalletCleanupCompletion(...args),
+}));
+
 vi.mock("../../src/api/client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/api/client.js")>()),
   fetchEventAttendees: (...args: unknown[]) => fetchEventAttendees(...args),
@@ -139,6 +146,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   bulkRemoveWalletPass: (...args: unknown[]) => bulkRemoveWalletPass(...args),
   triggerEventWideWalletPush: (...args: unknown[]) => triggerEventWideWalletPush(...args),
   triggerEventWideWalletRefreshStatus: (...args: unknown[]) => triggerEventWideWalletRefreshStatus(...args),
+  triggerEventWideWalletVoidActive: (...args: unknown[]) => triggerEventWideWalletVoidActive(...args),
   updateAttendee: vi.fn(),
 }));
 
@@ -158,7 +166,7 @@ vi.mock("react-router", async (importOriginal) => {
         wallet_enabled: mockWalletEnabled,
         wallet_apple_enabled: true,
         wallet_google_enabled: true,
-        wallet_configured: true,
+        wallet_configured: mockWalletConfigured,
       },
     }),
   };
@@ -209,6 +217,7 @@ function clickMenuItemAndArmDialog(menuItemName: RegExp, dialogName?: string) {
 beforeEach(() => {
   mockArchivedAt = null;
   mockWalletEnabled = true;
+  mockWalletConfigured = true;
   mockMatchMedia(true);
   fetchEventMailSettings.mockResolvedValue(mailSettings("smtp"));
   fetchTicketTypes.mockResolvedValue([]);
@@ -3491,6 +3500,200 @@ describe("AttendeesPage header 'Refresh status' (event-wide, wallet configured)"
     });
 
     // The stale-event dialog never got an error surfaced onto it.
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("AttendeesPage header 'Void active passes' (event-wide, wallet configured)", () => {
+  const DIALOG = "Void every active wallet pass for this event?";
+
+  beforeEach(() => {
+    triggerEventWideWalletVoidActive.mockReset();
+    pollWalletCleanupCompletion.mockReset().mockResolvedValue(undefined);
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+  });
+
+  /** Opens the header menu and the confirm dialog of the event-wide void. */
+  async function openVoidActiveDialog() {
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Void active passes/ }));
+    return screen.getByRole("dialog", { name: DIALOG });
+  }
+
+  it("confirms, queues the event-wide job, toasts that it's queued, and polls for completion", async () => {
+    triggerEventWideWalletVoidActive.mockResolvedValue({ jobId: "job-1" });
+
+    const dialog = await openVoidActiveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Void all" }));
+
+    await waitFor(() => expect(triggerEventWideWalletVoidActive).toHaveBeenCalledWith("evt-1"));
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Voiding queued - you'll see a summary once it finishes.", "info");
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: DIALOG })).toBeNull());
+    await waitFor(() => {
+      expect(pollWalletCleanupCompletion).toHaveBeenCalledWith(
+        "void_active",
+        "evt-1",
+        "job-1",
+        expect.any(Function),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+  });
+
+  it("is also offered with the Wallet switch off (it only needs the event's credentials)", async () => {
+    mockWalletEnabled = false;
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+
+    expect(screen.getByRole("menuitem", { name: /^Void active passes/ })).toBeTruthy();
+  });
+
+  it("is not offered when the event has no wallet configured", async () => {
+    mockWalletConfigured = false;
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+
+    expect(screen.queryByRole("menuitem", { name: /^Void active passes/ })).toBeNull();
+  });
+
+  it("shows an inline dialog error and keeps the dialog open when queueing fails", async () => {
+    triggerEventWideWalletVoidActive.mockRejectedValueOnce(new Error("network down"));
+
+    const dialog = await openVoidActiveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Void all" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByRole("alert").textContent).toBe("Failed to void the wallet passes.");
+    });
+    expect(pollWalletCleanupCompletion).not.toHaveBeenCalled();
+  });
+
+  it("closes without queueing anything when Cancel is clicked", async () => {
+    const dialog = await openVoidActiveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: DIALOG })).toBeNull();
+    expect(triggerEventWideWalletVoidActive).not.toHaveBeenCalled();
+  });
+
+  it("shows the busy label and keeps the dialog open while the request is in flight", async () => {
+    let resolveTrigger!: (value: { jobId: string }) => void;
+    triggerEventWideWalletVoidActive.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveTrigger = resolve;
+      }),
+    );
+
+    const dialog = await openVoidActiveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Void all" }));
+    await waitFor(() => expect(triggerEventWideWalletVoidActive).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect((screen.getByRole("menuitem", { name: /^Voiding passes…/ }) as HTMLButtonElement).disabled).toBe(true);
+    // The backdrop is wired to onCancel unconditionally: the hook's own busy guard keeps it open.
+    fireEvent.click(document.querySelector(".at-modal-backdrop")!);
+    expect(screen.getByRole("dialog", { name: DIALOG })).toBeTruthy();
+
+    await act(async () => {
+      resolveTrigger({ jobId: "job-1" });
+      await Promise.resolve();
+    });
+  });
+
+  it("reloads the attendee list once the background job reports success", async () => {
+    triggerEventWideWalletVoidActive.mockResolvedValue({ jobId: "job-1" });
+
+    const dialog = await openVoidActiveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Void all" }));
+    await waitFor(() => expect(pollWalletCleanupCompletion).toHaveBeenCalled());
+    const callsBefore = fetchEventAttendees.mock.calls.length;
+    const options = pollWalletCleanupCompletion.mock.calls[0]?.[4] as { onSuccess?: () => void };
+
+    act(() => options.onSuccess?.());
+
+    await waitFor(() => expect(fetchEventAttendees.mock.calls.length).toBeGreaterThan(callsBefore));
+  });
+
+  it("toasts a fallback when the completion poll itself fails (not aborted)", async () => {
+    triggerEventWideWalletVoidActive.mockResolvedValue({ jobId: "job-1" });
+    pollWalletCleanupCompletion.mockRejectedValueOnce(new Error("network down"));
+
+    const dialog = await openVoidActiveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Void all" }));
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        "Voiding the wallet passes failed to run. Try again from More actions.",
+        "info",
+      );
+    });
+  });
+
+  it("ignores a stale success after navigating to a different event mid-request", async () => {
+    let resolveTrigger!: (value: { jobId: string }) => void;
+    triggerEventWideWalletVoidActive.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveTrigger = resolve;
+      }),
+    );
+    const router = createMemoryRouter([{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }], {
+      initialEntries: ["/admin/events/evt-1/attendees"],
+    });
+    render(<RouterProvider router={router} />);
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Void active passes/ }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: DIALOG })).getByRole("button", { name: "Void all" }));
+    await waitFor(() => expect(triggerEventWideWalletVoidActive).toHaveBeenCalledWith("evt-1"));
+
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+    await act(async () => {
+      resolveTrigger({ jobId: "job-1" });
+      await Promise.resolve();
+    });
+
+    expect(addToast).not.toHaveBeenCalledWith("Voiding queued - you'll see a summary once it finishes.", "info");
+    expect(pollWalletCleanupCompletion).not.toHaveBeenCalled();
+  });
+
+  it("ignores a stale error after navigating to a different event mid-request", async () => {
+    let rejectTrigger!: (err: unknown) => void;
+    triggerEventWideWalletVoidActive.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectTrigger = reject;
+      }),
+    );
+    const router = createMemoryRouter([{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }], {
+      initialEntries: ["/admin/events/evt-1/attendees"],
+    });
+    render(<RouterProvider router={router} />);
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Void active passes/ }));
+    const dialog = screen.getByRole("dialog", { name: DIALOG });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Void all" }));
+    await waitFor(() => expect(triggerEventWideWalletVoidActive).toHaveBeenCalledWith("evt-1"));
+
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+    await act(async () => {
+      rejectTrigger(new Error("network down"));
+      await Promise.resolve();
+    });
+
     expect(within(dialog).queryByRole("alert")).toBeNull();
   });
 });

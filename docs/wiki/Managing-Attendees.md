@@ -94,6 +94,8 @@ The attendee appears once in the event with accurate contact, ticket, and event-
   - Appears once this event has Wallet configured. The run shows up in Event Settings → Wallet's push history as "Whole event · manual push".
 - Attendees' header **More actions** also has a **Refresh status** for the whole event, not just a selection. It pulls the current status for every active wallet pass under the event at once, running in the background with a summary toast once it finishes. Voided and expired passes are skipped.
   - Appears once this event has Wallet configured, and stays available on an archived event.
+- Attendees' header **More actions** also has **Void active passes**, which voids every active wallet pass of the event in one go, not just a selection (a selection is limited to 100 attendees). It asks for confirmation first, then runs in the background and shows a summary once it finishes: how many passes were voided, how many were skipped, and how many could not be voided (run it again to retry those). Passes that are already voided or expired, or already removed at the provider, are left alone. Each pass stays installed on the attendee's phone but shows as invalid; a single pass can still be restored from the attendee's page until the event is over.
+  - Appears once this event has Wallet configured, and works on an archived event and with the Wallet switch off, like **Void wallet pass**.
 - Export attendee information only for an approved event purpose.
 
 ## What changes after this action
