@@ -3778,6 +3778,31 @@ describe("AttendeesPage header 'Void active passes' (event-wide, wallet configur
     await waitFor(() => expect(triggerEventWideWalletVoidActive).toHaveBeenCalledWith("evt-2"));
   });
 
+  it("does not come back when the operator returns to the event it was opened on", async () => {
+    const router = createMemoryRouter([{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }], {
+      initialEntries: ["/admin/events/evt-1/attendees"],
+    });
+    render(<RouterProvider router={router} />);
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Void active passes/ }));
+    expect(screen.getByRole("dialog", { name: DIALOG })).toBeTruthy();
+
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+    await act(async () => router.navigate("/admin/events/evt-1/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees.mock.calls.filter((call) => call[0] === "evt-1").length).toBeGreaterThan(1);
+    });
+
+    // The confirmation from before the round trip must not silently reappear and be confirmable -
+    // it belonged to a menu click that is no longer the one that's open.
+    expect(screen.queryByRole("dialog", { name: DIALOG })).toBeNull();
+    expect(triggerEventWideWalletVoidActive).not.toHaveBeenCalled();
+  });
+
   it("shows the server's message inline when a void is already running for the event", async () => {
     const { ApiError } = await import("../../src/api/client.js");
     triggerEventWideWalletVoidActive.mockRejectedValueOnce(new ApiError(409, "wallet_cleanup_already_running"));

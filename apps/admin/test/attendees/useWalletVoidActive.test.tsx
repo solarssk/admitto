@@ -83,6 +83,21 @@ describe("useWalletVoidActive", () => {
     expect(triggerEventWideWalletVoidActive).not.toHaveBeenCalled();
   });
 
+  it("does not come back when the operator returns to the event it was opened on, and confirming there does nothing", async () => {
+    const { result, rerender } = setup("evt-1");
+    act(() => result.current.requestConfirm());
+    expect(result.current.confirmOpen).toBe(true);
+
+    rerender({ eventId: "evt-2" });
+    rerender({ eventId: "evt-1" });
+
+    expect(result.current.confirmOpen).toBe(false);
+    await act(async () => {
+      await result.current.confirm();
+    });
+    expect(triggerEventWideWalletVoidActive).not.toHaveBeenCalled();
+  });
+
   it("shows an error only on the event it happened on", async () => {
     triggerEventWideWalletVoidActive.mockRejectedValueOnce(new Error("network down"));
     const { result, rerender } = setup("evt-1");
