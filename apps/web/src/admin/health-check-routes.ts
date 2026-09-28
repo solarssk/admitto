@@ -1230,9 +1230,13 @@ export async function fileStorageRow(
   }
 
   if (providerRaw !== "local") {
-    // The raw STORAGE_PROVIDER value stays in the whitelisted "provider" detail (ADR 0037), not
-    // in the summary text: an operator can set it to anything, and the summary is emitted
-    // verbatim (not detail-key-filtered) in the "Copy for GitHub Issue" export.
+    // STORAGE_PROVIDER is operator-controlled and completely unconstrained here (anything that
+    // is not "local" or "s3" lands in this branch), unlike every other check's "provider" value,
+    // which the code itself chooses from a fixed set. "provider" is on the Markdown export
+    // whitelist (ADR 0037) and its value is emitted verbatim, so it stays a fixed, safe value;
+    // the real one is under "provider_raw" instead, which is deliberately NOT on the whitelist
+    // and so never reaches "Copy for GitHub Issue" - only the Superadmin tab, which shows every
+    // detail regardless of the whitelist.
     return {
       id: "file_storage",
       label,
@@ -1240,7 +1244,8 @@ export async function fileStorageRow(
       summary: "Unknown provider",
       details: detailsFromEntries([
         ["status", "degraded"],
-        ["provider", providerRaw],
+        ["provider", "unknown"],
+        ["provider_raw", providerRaw],
         ["reason", "unknown_provider"],
         ["last_checked", checkedAt],
       ]),

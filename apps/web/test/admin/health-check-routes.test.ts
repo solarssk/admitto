@@ -328,17 +328,24 @@ describe("fileStorageRow", () => {
     await expect(fileStorageRow({ STORAGE_PROVIDER: "s3" }, checkedAt, false)).resolves.toMatchObject(
       { status: "degraded", summary: "S3 not implemented" },
     );
+    // An arbitrary, unconstrained STORAGE_PROVIDER value (anything that is not "local" or
+    // "s3") must never reach a whitelisted detail: "provider" is on the Markdown export
+    // whitelist (ADR 0037) and is emitted verbatim, unlike every other check's "provider"
+    // value, which the code itself chooses from a fixed set. The real value lives under
+    // "provider_raw" instead, which stays off the whitelist and so off the export, and is
+    // visible only in the Superadmin tab (which shows every detail regardless of the
+    // whitelist).
     const azureRow = await fileStorageRow(
-      { STORAGE_PROVIDER: "azure", UPLOAD_DIR: uploadFixture.dir },
+      { STORAGE_PROVIDER: "azure-with-a-secret-abc123", UPLOAD_DIR: uploadFixture.dir },
       checkedAt,
       false,
     );
-    // The raw STORAGE_PROVIDER value stays out of the summary, which is emitted verbatim (not
-    // detail-key-filtered) in the "Copy for GitHub Issue" export (ADR 0037) - only the
-    // whitelisted "provider" detail carries it.
     expect(azureRow).toMatchObject({ status: "degraded", summary: "Unknown provider" });
     expect(azureRow.summary).not.toContain("azure");
-    expect(azureRow.details.find((d) => d.key === "provider")?.value).toBe("azure");
+    expect(azureRow.details.find((d) => d.key === "provider")?.value).toBe("unknown");
+    expect(azureRow.details.find((d) => d.key === "provider_raw")?.value).toBe(
+      "azure-with-a-secret-abc123",
+    );
   });
 
   it("reports degraded when the live write probe fails", async () => {
