@@ -103,9 +103,9 @@ works; Admitto never signs or hosts pass files itself.
     counting a no-longer-valid pass against its own plan, which void alone does not
     do. Remove is only offered once a pass is voided or expired, and cannot be undone at the
     provider.
-  - **Archived events and the Wallet switch:** void, delete, remove, and refresh status all still
-    work on an archived event and when the event's Wallet switch is off, so a pass can be wound
-    down after an event has ended. Restore and push updates stay blocked there.
+  - **Archived events and the Wallet switch:** remove and refresh status still work on an archived
+    event and when the event's Wallet switch is off, so a pass can be wound down after an event has
+    ended. Void, delete, restore and push updates stay disabled there.
   - **Rate and pacing limits:** a bulk wallet action accepts at most 100 attendees per selection.
     Each attendee's pass is updated one call at a time at a fixed pace, to stay within
     PassCreator's own request limit, rather than all at once, so a bulk action against a large
