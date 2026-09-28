@@ -25,19 +25,18 @@ export function parseTicketAddressComponents(
 ): ResolvedTicket["event"]["addressComponents"] {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
-  const read = (key: string): string | null => {
-    const v = raw[key];
+  const read = (v: unknown): string | null => {
     if (typeof v !== "string") return null;
     const trimmed = v.trim();
     return trimmed || null;
   };
   const components = {
-    object_name: read("object_name"),
-    street: read("street"),
-    postcode: read("postcode"),
-    city: read("city"),
-    region: read("region"),
-    country: read("country"),
+    object_name: read(raw.object_name),
+    street: read(raw.street),
+    postcode: read(raw.postcode),
+    city: read(raw.city),
+    region: read(raw.region),
+    country: read(raw.country),
   };
   if (!Object.values(components).some(Boolean)) return null;
   return components;
@@ -46,11 +45,13 @@ export function parseTicketAddressComponents(
 /** Best-effort read of Event.wallet_field_mapping JSON - never trust raw DB JSON blindly. */
 export function parseWalletFieldMapping(value: unknown): Record<string, string> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const out: Record<string, string> = {};
-  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof v === "string" && v.trim()) out[key] = v.trim();
-  }
-  return Object.keys(out).length > 0 ? out : null;
+  // Object.fromEntries defines own data properties, so a stored key can never reach the
+  // `__proto__` setter; that key is skipped explicitly rather than by accident of the setter
+  // ignoring a string value.
+  const entries = Object.entries(value as Record<string, unknown>).flatMap(([key, v]) =>
+    key !== "__proto__" && typeof v === "string" && v.trim() ? [[key, v.trim()] as const] : [],
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : null;
 }
 
 /** Event logo, falling back to the organization's when the event has none set - null when
