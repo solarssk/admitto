@@ -3101,7 +3101,7 @@ export function AttendeeDetailPage() {
       <ConfirmDialog
         open={activeWalletAction === "void"}
         title="Void wallet pass?"
-        message={`Voiding makes ${detail.name}'s pass show as invalid on their phone. The pass stays on the phone and the ticket is not changed. You can restore it later, until the event is over.`}
+        message={`Voiding makes ${detail.name}'s pass show as invalid on their phone. The pass stays on the phone and the ticket is not changed. You can restore it later, while Wallet is on for this event and the event has not ended.`}
         confirmLabel="Void"
         confirmVariant="danger"
         loading={walletBusy}
@@ -3168,7 +3168,7 @@ export function AttendeeDetailPage() {
         <ul className="confirm-dialog__list">
           <li>The pass stays on their phone. Only they can remove it there (Apple and Google do not let us)</li>
           <li>Check-in is not affected. Use Revoke pass to block entry</li>
-          <li>They can add a new pass from their ticket page, if the event is not over yet</li>
+          <li>They can only add a new pass from their ticket page while Wallet is on for this event and the event has not ended</li>
           <li>
             This also erases the pass from Reports (installs and registrations). Use Remove from
             provider instead to keep that history

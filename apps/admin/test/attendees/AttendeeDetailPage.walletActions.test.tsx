@@ -611,7 +611,7 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
         within(dialog).getByText(/Only they can remove it there \(Apple and Google do not let us\)/),
       ).toBeTruthy();
       expect(within(dialog).getByText(/Check-in is not affected/)).toBeTruthy();
-      expect(within(dialog).getByText(/They can add a new pass from their ticket page, if the event is not over yet/)).toBeTruthy();
+      expect(within(dialog).getByText(/They can only add a new pass from their ticket page while Wallet is on for this event and the event has not ended/)).toBeTruthy();
     });
 
     it("confirms, calls deleteWalletPass, toasts, and reloads detail", async () => {
