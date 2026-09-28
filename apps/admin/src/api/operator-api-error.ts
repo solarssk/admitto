@@ -240,6 +240,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   wallet_provider_remove_unsupported: "The wallet provider doesn't support removing a pass remotely.",
   wallet_provider_timeout: "The wallet provider didn't respond in time. Try again.",
   wallet_provider_unauthorized: "The wallet provider rejected the configured API key. Check the wallet configuration.",
+  wallet_restore_closed: "This event is over, so a voided wallet pass can no longer be restored.",
   wallet_push_already_running: "A push is already running for this event. Try again once it finishes.",
   wallet_status_check_inconclusive: "Could not confirm the wallet pass status. Try again shortly.",
   wallet_key_verification_failed:

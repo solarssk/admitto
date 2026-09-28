@@ -275,18 +275,18 @@ async function resolveDispatchAuditRecipients(
 async function readOrgSettings(
   db: Db,
   organizationId: string,
-): Promise<{ disabledChannelsByType: Record<string, NotificationChannelKey[]> }> {
+): Promise<{ disabledChannelsByType: Map<string, NotificationChannelKey[]> }> {
   const settings = await db.notificationSettings.findUnique({
     where: { scope_type_scope_id: { scope_type: "organization", scope_id: organizationId } },
     select: { disabled_channels: true },
   });
   const raw = settings?.disabled_channels;
-  const disabledChannelsByType: Record<string, NotificationChannelKey[]> = {};
+  const disabledChannelsByType = new Map<string, NotificationChannelKey[]>();
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     for (const [type, channels] of Object.entries(raw as Record<string, unknown>)) {
       if (!Array.isArray(channels)) continue;
       const normalized = channels.filter((entry): entry is string => typeof entry === "string");
-      if (normalized.length > 0) disabledChannelsByType[type] = normalized as NotificationChannelKey[];
+      if (normalized.length > 0) disabledChannelsByType.set(type, normalized as NotificationChannelKey[]);
     }
   }
   return { disabledChannelsByType };
@@ -591,7 +591,7 @@ export async function notify(
     }
 
     const { disabledChannelsByType } = await readOrgSettings(db, event.organizationId);
-    const disabledChannels = typeDef.orgDisableable ? (disabledChannelsByType[type] ?? []) : [];
+    const disabledChannels = typeDef.orgDisableable ? (disabledChannelsByType.get(type) ?? []) : [];
     // Fully disabled across every channel this type can even use - skip audience resolution and
     // the throttle claim entirely, not just the channel sends, since nothing downstream would do
     // anything either way.

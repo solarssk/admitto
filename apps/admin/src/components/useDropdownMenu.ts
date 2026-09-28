@@ -135,9 +135,6 @@ export function useDropdownMenu<
 
     const updatePlacement = () => {
       const triggerRect = trigger.getBoundingClientRect();
-      const panelWidth = matchTriggerWidth
-        ? Math.max(minWidth ?? 0, triggerRect.width)
-        : panel.getBoundingClientRect().width;
       // `scrollHeight` stays natural after this effect applies a maxHeight, while the bounding
       // rect covers test environments and panels whose content has no scroll container.
       const panelHeight = Math.max(panel.scrollHeight, panel.getBoundingClientRect().height);
@@ -163,6 +160,17 @@ export function useDropdownMenu<
       const maxHeight = panelHeight > available ? available : undefined;
       const usedHeight = Math.min(panelHeight, maxHeight ?? panelHeight);
       const top = above ? triggerRect.top - usedHeight - gap : triggerRect.bottom + gap;
+
+      // Apply the height clamp to the DOM now, before reading the width: a panel that scrolls is
+      // wider by its scrollbar, and `align: "end"` derives `left` from that width. Measured before
+      // the clamp, `left` was off by the scrollbar's width for one paint (the panel stuck out past
+      // the trigger's edge, then jumped back when the ResizeObserver re-ran this), visible as a
+      // flash on tall menus. React applies the same values from `panelStyle` right after.
+      panel.style.maxHeight = maxHeight !== undefined ? `${maxHeight}px` : "";
+      panel.style.overflowY = maxHeight !== undefined ? "auto" : "";
+      const panelWidth = matchTriggerWidth
+        ? Math.max(minWidth ?? 0, triggerRect.width)
+        : panel.getBoundingClientRect().width;
 
       let left = align === "end" ? triggerRect.right - panelWidth : triggerRect.left;
       left = Math.min(left, viewport.right - VIEWPORT_PAD_PX - panelWidth);

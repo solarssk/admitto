@@ -117,6 +117,23 @@ describe("describeNotificationSettings", () => {
     expect(result.extra_email_recipients[0]?.description).toBe("Second");
   });
 
+  it("skips a stored '__proto__' type key and leaves the result's prototype alone", async () => {
+    const db = createStubDb();
+    db.notificationSettings.findUnique.mockResolvedValue({
+      webhook_url_enc: null,
+      webhook_kind: null,
+      extra_email_recipients: [],
+      // JSON.parse creates an own '__proto__' property, exactly like a value read back from the DB.
+      disabled_channels: JSON.parse('{"__proto__": ["email"], "auth.mfa.break_glass": ["email"]}'),
+    });
+
+    const result = await describeNotificationSettings(db as unknown as PrismaClient, ORG_ID);
+
+    expect(result.disabled_channels).toEqual({ "auth.mfa.break_glass": ["email"] });
+    expect(Object.hasOwn(result.disabled_channels, "__proto__")).toBe(false);
+    expect(Object.getPrototypeOf(result.disabled_channels)).toBe(Object.prototype);
+  });
+
   it("drops a type entry whose channel list normalizes to empty - equivalent to the type being absent", async () => {
     const db = createStubDb();
     db.notificationSettings.findUnique.mockResolvedValue({

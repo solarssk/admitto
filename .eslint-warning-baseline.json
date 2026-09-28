@@ -27,33 +27,6 @@
     "contextAfter": "}"
   },
   {
-    "ruleId": "security/detect-object-injection",
-    "filePath": "packages/auth/src/settings/resolver.ts",
-    "message": "Variable Assigned to Object Injection Sink",
-    "codeLine": "const raw = process.env[envName];",
-    "column": 15,
-    "contextBefore": "if (!envName) return undefined;",
-    "contextAfter": "if (raw === undefined || raw.trim() === \"\") return undefined;"
-  },
-  {
-    "ruleId": "security/detect-object-injection",
-    "filePath": "packages/location/src/addressComponents.ts",
-    "message": "Generic Object Injection Sink",
-    "codeLine": "const housenumber = parts[numberIdx]!;",
-    "column": 25,
-    "contextBefore": "if (numberIdx >= 0 && parts.length >= 2) {",
-    "contextAfter": "const streetName = parts.find((s, i) => i !== numberIdx && !HOUSE_NUMBER_RE.test(s));"
-  },
-  {
-    "ruleId": "security/detect-object-injection",
-    "filePath": "packages/location/src/addressComponents.ts",
-    "message": "Variable Assigned to Object Injection Sink",
-    "codeLine": "const v = raw[key];",
-    "column": 15,
-    "contextBefore": "const read = (key: keyof AddressComponents): string | null => {",
-    "contextAfter": "if (v === null || v === undefined) return null;"
-  },
-  {
     "ruleId": "security/detect-unsafe-regex",
     "filePath": "packages/location/src/addressComponents.ts",
     "message": "Unsafe Regular Expression",
@@ -72,24 +45,6 @@
     "contextAfter": ""
   },
   {
-    "ruleId": "security/detect-object-injection",
-    "filePath": "packages/location/src/validation.ts",
-    "message": "Generic Object Injection Sink",
-    "codeLine": "if (value !== undefined) result[key] = value;",
-    "column": 28,
-    "contextBefore": "): void {",
-    "contextAfter": "}"
-  },
-  {
-    "ruleId": "security/detect-object-injection",
-    "filePath": "packages/mail-delivery/src/bounceIngest/extractMimeText.ts",
-    "message": "Generic Object Injection Sink",
-    "codeLine": "const seg = segments[i] ?? \"\";",
-    "column": 19,
-    "contextBefore": "for (let i = 1; i < segments.length; i++) {",
-    "contextAfter": "if (seg.startsWith(\"--\")) break;"
-  },
-  {
     "ruleId": "security/detect-unsafe-regex",
     "filePath": "packages/mail-delivery/src/bounceIngest/extractMimeText.ts",
     "message": "Unsafe Regular Expression",
@@ -97,15 +52,6 @@
     "column": 46,
     "contextBefore": ".replace(/<\\/(p|div|li|tr|h[1-6])>/gi, \"\\n\");",
     "contextAfter": "return decodeHtmlEntities(withoutTags)"
-  },
-  {
-    "ruleId": "security/detect-object-injection",
-    "filePath": "packages/mail-delivery/src/bounceIngest/lastRun.ts",
-    "message": "Variable Assigned to Object Injection Sink",
-    "codeLine": "const raw = env[key];",
-    "column": 15,
-    "contextBefore": ": \"BOUNCE_INGEST_INTERVAL_SECONDS\";",
-    "contextAfter": "if (raw === undefined || raw === \"\") return;"
   },
   {
     "ruleId": "security/detect-non-literal-regexp",
@@ -198,33 +144,6 @@
     "contextAfter": "parseOneDsnBlock(block, out, seen);"
   },
   {
-    "ruleId": "security/detect-object-injection",
-    "filePath": "packages/notifications/src/dispatcher.ts",
-    "message": "Generic Object Injection Sink",
-    "codeLine": "const disabledChannels = typeDef.orgDisableable ? (disabledChannelsByType[type] ?? []) : [];",
-    "column": 56,
-    "contextBefore": "const { disabledChannelsByType } = await readOrgSettings(db, event.organizationId);",
-    "contextAfter": "// Fully disabled across every channel this type can even use - skip audience resolution and"
-  },
-  {
-    "ruleId": "security/detect-object-injection",
-    "filePath": "packages/notifications/src/dispatcher.ts",
-    "message": "Generic Object Injection Sink",
-    "codeLine": "if (normalized.length > 0) disabledChannelsByType[type] = normalized as NotificationChannelKey[];",
-    "column": 34,
-    "contextBefore": "const normalized = channels.filter((entry): entry is string => typeof entry === \"string\");",
-    "contextAfter": "}"
-  },
-  {
-    "ruleId": "security/detect-object-injection",
-    "filePath": "packages/notifications/src/settings.ts",
-    "message": "Generic Object Injection Sink",
-    "codeLine": "if (normalized.length > 0) result[type] = normalized;",
-    "column": 32,
-    "contextBefore": "const normalized = normalizeStringArray(channels) as NotificationChannelKey[];",
-    "contextAfter": "}"
-  },
-  {
     "ruleId": "security/detect-unsafe-regex",
     "filePath": "packages/shared/src/timezones.ts",
     "message": "Unsafe Regular Expression",
@@ -250,32 +169,5 @@
     "column": 17,
     "contextBefore": "if (!part || part === \"GMT\") return \"Z\";",
     "contextAfter": "if (!match) return \"Z\";"
-  },
-  {
-    "ruleId": "security/detect-object-injection",
-    "filePath": "packages/wallet/src/passcreator-mapper.ts",
-    "message": "Generic Object Injection Sink",
-    "codeLine": "if (value) custom[key] = value;",
-    "column": 16,
-    "contextBefore": "const value = values[placeholder];",
-    "contextAfter": "}"
-  },
-  {
-    "ruleId": "security/detect-object-injection",
-    "filePath": "packages/wallet/src/passcreator-mapper.ts",
-    "message": "Variable Assigned to Object Injection Sink",
-    "codeLine": "const placeholders = table[field];",
-    "column": 24,
-    "contextBefore": "): boolean {",
-    "contextAfter": "if (placeholders === undefined) return true;"
-  },
-  {
-    "ruleId": "security/detect-object-injection",
-    "filePath": "packages/wallet/src/passcreator-mapper.ts",
-    "message": "Variable Assigned to Object Injection Sink",
-    "codeLine": "const value = values[placeholder];",
-    "column": 19,
-    "contextBefore": "for (const [key, placeholder] of Object.entries(fieldMapping)) {",
-    "contextAfter": "if (value) custom[key] = value;"
   }
 ]
