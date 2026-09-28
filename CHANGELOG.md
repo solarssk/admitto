@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Overview cards now line up. Each row of cards has one height, Recent activity scrolls inside the height of Check-in progress instead of using a fixed height of its own, and what is inside a card keeps its normal size at the top instead of being stretched, so short cards end with a single quiet blank strip rather than gaps between items. Setup checklist rows are also a little more compact.
 - Check-in progress on Overview is simpler: the ring now sits beside one large checked-in number, with the rest shown as **not yet arrived**, or as **no-shows** once the event is over (after its end time when one is set, otherwise at the end of its day). The ticket-type breakdown and the repeated legend are gone (ticket types are in Reports), and Busiest hour appears only when the event does not use wallets.
 - The Overview **Setup checklist** now shows a progress bar (green, amber, or red depending on the worst check), lists problems before completed checks, and every row links to the page that fixes it. The link to Event settings at the bottom is gone.
+- Bringing an archived event back is now called **Restore** everywhere, matching the button on the Overview: the **Restore event** button and the **Restore this event?** dialog in Event settings, the **Restore** button and dialog in the Archiving list, the **Event restored.** message, and the **Event restored** entry in the audit log (older entries show the new name too). What it does is unchanged.
 
 ### Fixed
 
