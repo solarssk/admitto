@@ -52,7 +52,6 @@ import {
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { useCountdown, daysUntilEvent } from "../utils/event-countdown.js";
-import { eventEndsAtUtc } from "@admitto/shared";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
@@ -64,6 +63,7 @@ import { composePhoneE164, splitPhoneForPicker } from "../utils/phoneCountries.j
 import {
   CONTACT_EMAIL_MAX_LENGTH,
   CONTACT_PHONE_MAX_LENGTH,
+  eventEndsAtUtc,
   isValidContactPhone,
   sanitizeContactPhoneInput,
 } from "@admitto/shared";
