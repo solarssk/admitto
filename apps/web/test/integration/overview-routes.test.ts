@@ -26,6 +26,7 @@ const EVENT_BOUNCE_RESOLUTION = "evt-overview-bounce-resolution";
 const EVENT_WALLET = "evt-overview-wallet";
 const EVENT_WALLET_OFF = "evt-overview-wallet-off";
 const EVENT_WALLET_NO_GOOGLE_APPLE = "evt-overview-wallet-samsung-only";
+const EVENT_WALLET_BLANK = "evt-overview-wallet-blank";
 
 const EMAIL_SUPER = "overview-super@example.com";
 const EMAIL_ADMIN = "overview-admin@example.com";
@@ -77,6 +78,7 @@ async function seed(client: PrismaClient) {
     EVENT_WALLET,
     EVENT_WALLET_OFF,
     EVENT_WALLET_NO_GOOGLE_APPLE,
+    EVENT_WALLET_BLANK,
   ];
   await client.checkIn.deleteMany({ where: { event_id: { in: eventIds } } });
   await client.attendeeActionLog.deleteMany({ where: { event_id: { in: eventIds } } });
@@ -211,6 +213,17 @@ async function seed(client: PrismaClient) {
         wallet_google_enabled: false,
         wallet_template_id: "tmpl-overview",
         wallet_api_key_enc: "not-a-real-ciphertext",
+      },
+      // Platforms on, but the template and key were cleared to empty strings: not configured.
+      {
+        id: EVENT_WALLET_BLANK,
+        title: "Overview Wallet Blank Event",
+        slug: "overview-wallet-blank",
+        date: new Date("2027-08-01T12:00:00.000Z"),
+        timezone: "UTC",
+        organization_id: ORG_OV,
+        wallet_template_id: "",
+        wallet_api_key_enc: "",
       },
     ],
   });
@@ -992,8 +1005,10 @@ describe("GET /api/admin/events/:eventId/overview", () => {
   it("returns wallet_installed as null when the event has wallets off, no Apple or Google platform, or no saved template and key", async () => {
     expect((await overviewFor(EVENT_WALLET_OFF)).wallet_installed).toBeNull();
     expect((await overviewFor(EVENT_WALLET_NO_GOOGLE_APPLE)).wallet_installed).toBeNull();
-    // EVENT_MAIN has the default platform toggles on but never saved a template or API key.
+    // EVENT_MAIN has the default platform toggles on but never saved a template or API key, and
+    // an emptied template and key count as never saved too.
     expect((await overviewFor(EVENT_MAIN)).wallet_installed).toBeNull();
+    expect((await overviewFor(EVENT_WALLET_BLANK)).wallet_installed).toBeNull();
   });
 
   it("returns recent_activity merged newest-first across check-ins, mail failures, imports, attendee adds, and item issue/return", async () => {

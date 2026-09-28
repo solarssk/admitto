@@ -171,12 +171,19 @@ async function loadCheckInTimingStats(
 async function loadWalletInstalledCount(
   db: PrismaClient,
   eventId: string,
-  wallet: Parameters<typeof enabledWalletPlatforms>[0] & {
-    wallet_template_id: string | null;
-    wallet_api_key_enc: string | null;
-  },
+  toggles: Parameters<typeof enabledWalletPlatforms>[0],
 ): Promise<number | null> {
-  if (!enabledWalletPlatforms(wallet).any || !wallet.wallet_template_id || !wallet.wallet_api_key_enc) return null;
+  if (!enabledWalletPlatforms(toggles).any) return null;
+  // Asked of the database instead of selecting the columns: the API key's ciphertext is a secret
+  // this route has no reason to load into memory just to see whether it is set.
+  const configured = await db.event.count({
+    where: {
+      id: eventId,
+      wallet_template_id: { not: null, notIn: [""] },
+      wallet_api_key_enc: { not: null, notIn: [""] },
+    },
+  });
+  if (configured === 0) return null;
   return db.attendee.count({
     where: {
       event_id: eventId,
@@ -389,8 +396,6 @@ export async function handleGetEventOverview(c: Context, db: PrismaClient): Prom
       organization_id: true,
       pinned_note: true,
       wallet_enabled: true,
-      wallet_template_id: true,
-      wallet_api_key_enc: true,
       wallet_apple_enabled: true,
       wallet_google_enabled: true,
       wallet_samsung_enabled: true,
