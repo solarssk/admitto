@@ -24,6 +24,7 @@ import {
   bulkReissueWalletPass,
   bulkRefreshWalletStatus,
   bulkDeleteWalletPass,
+  bulkRemoveWalletPass,
   bulkDeleteAttendees,
   bulkResendTickets,
   bulkRevokeItems,
@@ -44,6 +45,7 @@ import type {
   AttendeeSortBy,
   AttendeeSortDir,
   AttendeeMailStatusFilter,
+  BulkWalletRemoveResponse,
   EventCustomFieldDto,
   EventDto,
   RsvpStatus,
@@ -237,6 +239,45 @@ function notifyBulkWalletActionResult(
   }
 
   addToast(`No wallet passes ${verb}${noteSuffix}.`, "error");
+}
+
+/** Body of the bulk Remove confirm dialog. The count is the selection, not the number of passes
+ * that will be removed: only the voided or expired ones among them are. */
+function bulkRemoveDialogMessage(selected: number): string {
+  const attendees = selected === 1 ? "attendee" : "attendees";
+  return `Permanently deletes the voided or expired passes among the ${selected} selected ${attendees} at the provider. Unlike Delete, this keeps the local record and its Reports history - it just stops the provider counting these passes towards its own plan.`;
+}
+
+/** Inline hint of the bulk Remove dialog after some removals failed - a repeat only retries what is
+ * left, since passes that were already removed are skipped. */
+function bulkRemoveRetryMessage(errored: number): string {
+  const passes = errored === 1 ? "pass" : "passes";
+  return `${errored} ${passes} could not be removed. Try again - passes that were already removed are skipped.`;
+}
+
+/** Outcome of a bulk Remove: always the summary toast, then either the retry hint (some removals
+ * failed - failures are safe to retry, so the selection and the dialog stay, and the list is not
+ * reloaded because reloading clears the selection; the dialog's Cancel reloads instead) or the
+ * normal finish. Lives outside the page component to keep its cognitive complexity in check. */
+function applyBulkRemoveResult(
+  result: BulkWalletRemoveResponse,
+  addToast: (message: string, variant?: ToastVariant) => void,
+  ui: { showRetryHint: (message: string) => void; finish: () => void },
+) {
+  notifyBulkWalletActionResult(
+    { count: result.removed, skipped: result.skipped, errored: result.errored },
+    {
+      verb: "removed",
+      skipReason: "had no pass, wasn't voided or expired, or was already removed",
+      noneMessage: "None of the selected attendees had a voided or expired pass to remove from the provider.",
+    },
+    addToast,
+  );
+  if (result.errored > 0) {
+    ui.showRetryHint(bulkRemoveRetryMessage(result.errored));
+    return;
+  }
+  ui.finish();
 }
 
 /** Shared three-way "none found / already set / N changed" toast for a bulk field-assignment
@@ -1102,6 +1143,9 @@ export function AttendeesPage() {
   const [bulkDeleteWalletBusy, setBulkDeleteWalletBusy] = useState(false);
   const [bulkDeleteWalletConfirmOpen, setBulkDeleteWalletConfirmOpen] = useState(false);
   const [bulkDeleteWalletError, setBulkDeleteWalletError] = useState<string | null>(null);
+  const [bulkRemoveWalletBusy, setBulkRemoveWalletBusy] = useState(false);
+  const [bulkRemoveWalletConfirmOpen, setBulkRemoveWalletConfirmOpen] = useState(false);
+  const [bulkRemoveWalletError, setBulkRemoveWalletError] = useState<string | null>(null);
   const [eventWidePushBusy, setEventWidePushBusy] = useState(false);
   const [eventWidePushConfirmOpen, setEventWidePushConfirmOpen] = useState(false);
   const [eventWidePushError, setEventWidePushError] = useState<string | null>(null);
@@ -2011,6 +2055,34 @@ export function AttendeesPage() {
       },
     });
 
+  /** Bulk "Remove from provider" for an explicit subset of selected attendees - same effect as
+   * the attendee detail page's single "Remove from provider" action, run once per selected
+   * attendee. Unlike Delete above, keeps the local WalletPass row and its Reports history;
+   * irreversible at the provider. An attendee with no pass, an active pass, or an already-removed
+   * pass is left untouched server-side and counted separately, not treated as a failure. */
+  const handleBulkRemoveWalletSelected = () =>
+    runBulkAction({
+      eventId,
+      eventIdRef,
+      selectedCount: selectedIds.size,
+      reportApiError,
+      setBusy: setBulkRemoveWalletBusy,
+      setError: setBulkRemoveWalletError,
+      addToast,
+      apiErrorFallback: "Remove from provider failed.",
+      genericFallback: "Failed to remove wallet passes from the provider.",
+      action: (id) => bulkRemoveWalletPass(id, [...selectedIds]),
+      onSuccess: (result) =>
+        applyBulkRemoveResult(result, addToast, {
+          showRetryHint: setBulkRemoveWalletError,
+          finish: () => {
+            setBulkRemoveWalletConfirmOpen(false);
+            clearSelection();
+            setReloadToken((n) => n + 1);
+          },
+        }),
+    });
+
   const isUnfilteredEmpty =
     total === 0 &&
     !searchQuery &&
@@ -2263,6 +2335,11 @@ export function AttendeesPage() {
           setBulkDeleteWalletConfirmOpen(true);
         }}
         bulkDeleteWalletBusy={bulkDeleteWalletBusy}
+        onBulkRemoveWallet={() => {
+          setBulkRemoveWalletError(null);
+          setBulkRemoveWalletConfirmOpen(true);
+        }}
+        bulkRemoveWalletBusy={bulkRemoveWalletBusy}
         onBulkDelete={() => {
           setBulkDeleteError(null);
           setBulkDeleteConfirmOpen(true);
@@ -2567,6 +2644,37 @@ export function AttendeesPage() {
           <li>Apple/Google Wallet gives us no way to remove it from their phones - only they can do that</li>
           <li>Doesn't affect check-in - use Revoke pass to block entry</li>
           <li>Attendees with no pass are left untouched</li>
+          <li>
+            Also erases these passes from Reports (installs, registrations) - use Remove from
+            provider instead to stop them being counted at the provider while keeping that history
+          </li>
+        </ul>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={bulkRemoveWalletConfirmOpen}
+        title="Remove wallet passes from the provider?"
+        message={bulkRemoveDialogMessage(selectedIds.size)}
+        errorMessage={bulkRemoveWalletError}
+        confirmLabel="Remove"
+        confirmVariant="danger"
+        loading={bulkRemoveWalletBusy}
+        onConfirm={() => void handleBulkRemoveWalletSelected()}
+        onCancel={() => {
+          if (!bulkRemoveWalletBusy) {
+            setBulkRemoveWalletConfirmOpen(false);
+            // A partial failure left the list as it was before the removals, so refresh it now
+            // (branch-free: the token only moves when there was an error to leave behind).
+            setReloadToken((n) => n + Number(bulkRemoveWalletError !== null));
+            setBulkRemoveWalletError(null);
+          }
+        }}
+      >
+        <ul className="confirm-dialog__list">
+          <li>Irreversible at the provider - there is no way to bring these passes back there</li>
+          <li>Only meaningful for a pass that is already voided or expired</li>
+          <li>Attendees with no pass, an active pass, or an already-removed pass are left untouched</li>
+          <li>Doesn't affect check-in, and doesn't touch attendees' Reports history</li>
         </ul>
       </ConfirmDialog>
     </>

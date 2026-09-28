@@ -29,7 +29,8 @@ export function describeWalletKeyClearConfirm(issuedCount: number): string {
  * already-issued passes (EventSettingsPage.tsx's own handleSave). Broader than
  * describeWalletKeyClearConfirm above: turning this off pauses the periodic wallet_sync worker
  * for the event (runWalletRegistrationSync/resolveWalletProvider both gate on wallet_enabled) and
- * every admin-initiated sync/void/restore/push - but it no longer drops PassCreator's own webhook
+ * every admin-initiated sync/restore/push (void, remove and delete keep working: they wind a pass
+ * down and only need the event's credentials) - but it no longer drops PassCreator's own webhook
  * notifications. Those used to get a bare 404 (PO report, 2026-09-02: "trzeba zabezpieczyć
  * sytuację w której ktoś mógłby przez przypadek... wyłączyć funkcjonalność walletów"), which
  * PassCreator never retries - so a registration or void it carried was gone outright, not merely
@@ -40,7 +41,7 @@ export function describeWalletKeyClearConfirm(issuedCount: number): string {
 export function describeWalletDisableConfirm(issuedCount: number): string {
   const pass = issuedCount === 1 ? "pass" : "passes";
   const it = issuedCount === 1 ? "it" : "them";
-  return `This event has ${issuedCount} issued wallet ${pass}. Turning off wallet passes stops syncing, voiding, restoring, and pushing updates to ${it}. PassCreator's own notifications - a device registration, or a pass voided or expired - are still read and applied while it's off; only the periodic background check pauses, and resumes once you turn this back on.`;
+  return `This event has ${issuedCount} issued wallet ${pass}. Turning off wallet passes stops syncing, restoring, and pushing updates to ${it}. You can still void, remove or delete ${it}. PassCreator's own notifications - a device registration, or a pass voided or expired - are still read and applied while it's off; only the periodic background check pauses, and resumes once you turn this back on.`;
 }
 
 /** Confirm-dialog copy for turning off one or more per-platform toggles (wallet_apple_enabled /

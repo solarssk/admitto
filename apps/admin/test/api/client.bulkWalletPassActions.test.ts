@@ -4,6 +4,7 @@ import {
   bulkDeleteWalletPass,
   bulkReissueWalletPass,
   bulkRefreshWalletStatus,
+  bulkRemoveWalletPass,
   bulkVoidWalletPass,
 } from "../../src/api/client.js";
 
@@ -96,5 +97,27 @@ describe("bulkDeleteWalletPass (client) — thin wrapper coverage", () => {
       }),
     );
     expect(result).toEqual({ deleted: 2, skipped: 1, errored: 0 });
+  });
+});
+
+describe("bulkRemoveWalletPass (client) — thin wrapper coverage", () => {
+  it("POSTs the encoded bulk-wallet-remove endpoint with the selected ids", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ removed: 2, skipped: 1, errored: 0 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await bulkRemoveWalletPass("evt-1", ["att-1", "att-2"]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/events/evt-1/attendees/bulk-wallet-remove",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        body: JSON.stringify({ attendeeIds: ["att-1", "att-2"] }),
+      }),
+    );
+    expect(result).toEqual({ removed: 2, skipped: 1, errored: 0 });
   });
 });

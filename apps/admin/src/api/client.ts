@@ -32,6 +32,7 @@ import type {
   BulkWalletVoidResponse,
   BulkWalletReissueResponse,
   BulkWalletDeleteResponse,
+  BulkWalletRemoveResponse,
   BulkWalletRefreshStatusResponse,
   WalletPassActionDto,
   EventItemDto,
@@ -911,6 +912,18 @@ export async function deleteWalletPass(eventId: string, attendeeId: string): Pro
   return parseJson<{ deleted: boolean }>(res);
 }
 
+/** Admin/superadmin-only: permanently removes a voided/expired pass at the provider while keeping
+ * the local WalletPass row and its history (Reports, registration counts) - unlike deleteWalletPass
+ * above, which wipes the row. This is what stops the provider counting the pass towards its own
+ * registration plan. Irreversible. */
+export async function removeWalletPassFromProvider(eventId: string, attendeeId: string): Promise<WalletPassActionDto> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/${encodeURIComponent(attendeeId)}/wallet/remove`,
+    jsonPostInit({}),
+  );
+  return parseJson<WalletPassActionDto>(res);
+}
+
 /** Add a note on the attendee detail page's Notes tab — shares the same AttendeeNote model
  * as the check-in operator note composer (submitAttendeeNote), so a note added here also
  * shows up on the check-in card, and vice versa. Returns the refreshed detail DTO so the
@@ -1383,6 +1396,21 @@ export async function bulkDeleteWalletPass(
     jsonPostInit({ attendeeIds }),
   );
   return parseJson<BulkWalletDeleteResponse>(res);
+}
+
+/** Admin/superadmin-only: permanently remove the wallet pass at the provider for every selected
+ * attendee whose pass is voided or expired, keeping the local row and its history - unlike
+ * bulkDeleteWalletPass above, which wipes the row. Irreversible, gated behind its own confirm
+ * dialog. Attendees with no pass, an active pass, or an already-removed pass are skipped. */
+export async function bulkRemoveWalletPass(
+  eventId: string,
+  attendeeIds: string[],
+): Promise<BulkWalletRemoveResponse> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/attendees/bulk-wallet-remove`,
+    jsonPostInit({ attendeeIds }),
+  );
+  return parseJson<BulkWalletRemoveResponse>(res);
 }
 
 /** Admin/superadmin-only: pull the current device-registration status from the provider for every

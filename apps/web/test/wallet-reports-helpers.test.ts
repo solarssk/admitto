@@ -569,6 +569,15 @@ describe("buildWalletExportCsvRow — enabledPlatforms gating", () => {
     expect(row[11]).toBe("Samsung");
   });
 
+  it("ends with the moment the pass was removed from the provider, blank until then", () => {
+    const untouched = exportRow({}, BOTH_ENABLED);
+    expect(untouched.at(-1)).toBe("");
+    const removed = exportRow({ status: "voided", provider_removed_at: new Date("2026-09-20T10:30:00.000Z") }, BOTH_ENABLED);
+    expect(removed.at(-1)).toBe("2026-09-20 10:30");
+    // Appended at the end so existing consumers of the earlier columns keep their positions.
+    expect(removed[3]).toBe("voided");
+  });
+
   it("blanks the Samsung columns and excludes Samsung from Confirmed platform when Samsung is disabled", () => {
     const row = exportRow(
       { apple_active_registrations: 0, google_active_registrations: 0, samsung_active_registrations: 1 },

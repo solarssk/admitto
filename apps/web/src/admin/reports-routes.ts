@@ -2162,6 +2162,7 @@ const WALLET_EXPORT_ATTENDEE_SELECT = {
       status: true,
       issued_at: true,
       voided_at: true,
+      provider_removed_at: true,
       apple_active_registrations: true,
       apple_inactive_registrations: true,
       google_active_registrations: true,
@@ -2284,6 +2285,7 @@ export function buildWalletExportCsvRow(
     row.admitted_at ? "Yes" : "No",
     row.admitted_at ? formatAdmittedAtExport(row.admitted_at, timeZone) : "",
     resolveOperatorLabel(resolveOperatorFields(row.admitted_by, operatorDisplayMap)),
+    pass?.provider_removed_at ? formatAdmittedAtExport(pass.provider_removed_at, timeZone) : "",
   ]
     .map((cell) => quoteCsvCell(sanitizeCsvCell(String(cell))))
     .join(",");
@@ -2344,6 +2346,7 @@ async function exportWalletReportsCsv(
     "Admitted",
     `Admitted at (${timeZone})`,
     "Checked in by",
+    `Removed from provider at (${timeZone})`,
   ];
   const dataRows = rows.map((row) => buildWalletExportCsvRow(row, catalog, timeZone, operatorDisplayMap, enabledPlatforms));
 

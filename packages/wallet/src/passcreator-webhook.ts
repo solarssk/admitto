@@ -171,16 +171,39 @@ export async function findWebhookPassTarget(
   db: PrismaClient,
   eventId: string,
   data: PassCreatorWebhookData,
-): Promise<{ attendeeId: string; providerPassId: string; userProvidedId: string } | null> {
+): Promise<WebhookPassTarget | null> {
   const where = webhookMatchFilter(data);
   if (!where) return null;
   const row = await db.walletPass.findFirst({
     where: { ...where, attendee: { event_id: eventId } },
-    select: { attendee_id: true, provider_pass_id: true, user_provided_id: true },
+    select: { attendee_id: true, provider_pass_id: true, user_provided_id: true, provider_removed_at: true },
   });
-  if (!row?.provider_pass_id || !row.user_provided_id) return null;
-  return { attendeeId: row.attendee_id, providerPassId: row.provider_pass_id, userProvidedId: row.user_provided_id };
+  if (!row?.provider_pass_id) return null;
+  // A removed row is reported even without a user_provided_id: the caller's frozen-snapshot guard
+  // must see it (an identifier-only delivery matches it by provider_pass_id in applyWebhookUpdate
+  // too). Any other row still needs the id, since a re-read of the pass looks it up by that.
+  if (row.provider_removed_at) {
+    return {
+      attendeeId: row.attendee_id,
+      providerPassId: row.provider_pass_id,
+      userProvidedId: row.user_provided_id,
+      providerRemovedAt: row.provider_removed_at,
+    };
+  }
+  if (!row.user_provided_id) return null;
+  return {
+    attendeeId: row.attendee_id,
+    providerPassId: row.provider_pass_id,
+    userProvidedId: row.user_provided_id,
+    providerRemovedAt: null,
+  };
 }
+
+/** The pass a delivery names. `userProvidedId` is only ever null on a removed row (see
+ * findWebhookPassTarget), so narrowing on `providerRemovedAt` also narrows it to a string. */
+export type WebhookPassTarget =
+  | { attendeeId: string; providerPassId: string; userProvidedId: string; providerRemovedAt: null }
+  | { attendeeId: string; providerPassId: string; userProvidedId: string | null; providerRemovedAt: Date };
 
 // operatingSystem names which platform's counts this delivery carries. Confirmed live 2026-08-13
 // on two separate deliveries: "iOS" (Apple) and "AndroidGooglePay" (Google) - PassCreator's own
@@ -228,7 +251,10 @@ export async function applyWebhookUpdate(
   }
 
   try {
-    await db.walletPass.update({ where, data: updateData });
+    // `provider_removed_at: null` in the where clause (extended unique filter) makes "never write a
+    // removed pass's frozen snapshot" atomic with the write itself: the caller's own preflight read
+    // of the marker can lose a race against a removal that lands right after it.
+    await db.walletPass.update({ where: { ...where, provider_removed_at: null }, data: updateData });
     return { matched: true };
   } catch (err) {
     // P2025 ("record to update not found") is the only expected failure here - the pass may have
@@ -260,7 +286,10 @@ export async function applyWebhookUpdate(
 export async function applyFirstConfirmedAt(db: PrismaClient, data: PassCreatorWebhookData): Promise<void> {
   const where = webhookMatchFilter(data);
   if (!where) return;
-  await db.walletPass.updateMany({ where: { ...where, first_confirmed_at: null }, data: { first_confirmed_at: new Date() } });
+  await db.walletPass.updateMany({
+    where: { ...where, first_confirmed_at: null, provider_removed_at: null },
+    data: { first_confirmed_at: new Date() },
+  });
 }
 
 /**

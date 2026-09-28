@@ -267,6 +267,8 @@ export interface AttendeesTableProps {
   bulkRefreshWalletStatusBusy: boolean;
   onBulkDeleteWallet: () => void;
   bulkDeleteWalletBusy: boolean;
+  onBulkRemoveWallet: () => void;
+  bulkRemoveWalletBusy: boolean;
   onBulkDelete: () => void;
   eventTimezone: string;
   event: ArchivedGuardEvent;
@@ -479,6 +481,8 @@ interface BulkItemPassWalletActions {
   bulkRefreshWalletStatusBusy: boolean;
   onBulkDeleteWallet: () => void;
   bulkDeleteWalletBusy: boolean;
+  onBulkRemoveWallet: () => void;
+  bulkRemoveWalletBusy: boolean;
   /** At least one selected attendee has a WalletPass row - there's something for Void/Reissue to
    * act on (may still include an already-voided pass for Void, resolved server-side). */
   canBulkWallet: boolean;
@@ -487,6 +491,130 @@ interface BulkItemPassWalletActions {
   /** The event has a template and a working API key (EventDto.wallet_configured), whatever the
    * Wallet master switch says - all the read-only Refresh status action needs. */
   walletConfigured: boolean;
+}
+
+/** The wallet group of the bulk More actions menu, with its own divider - rendered only when the
+ * event either still offers a wallet platform or has its provider credentials configured, so a
+ * bare divider never appears. A selection can retain historical wallet_status rows from before an
+ * admin turned the feature off.
+ *
+ * Void, Refresh status, Remove and Delete wind passes down: the API lets them through on an
+ * archived event and with the Wallet switch off (only the event's credentials matter), so they are
+ * gated on `walletConfigured` alone. Push updates changes what attendees' wallets show, so it keeps
+ * the platform gate and the archived lock. Each item is disabled once nothing in the selection has
+ * a WalletPass row - a mixed selection stays enabled, and the exact count can still include a pass
+ * the action skips server-side (the result toast reports those; the row list does not carry the
+ * finer status), which is why Remove's hint does not promise a number. */
+function BulkWalletMenuItems({
+  archived,
+  walletPlatforms,
+  walletConfigured,
+  canBulkWallet,
+  walletPassCount,
+  onBulkVoidWallet,
+  bulkVoidWalletBusy,
+  onBulkReissueWallet,
+  bulkReissueWalletBusy,
+  onBulkRefreshWalletStatus,
+  bulkRefreshWalletStatusBusy,
+  onBulkRemoveWallet,
+  bulkRemoveWalletBusy,
+  onBulkDeleteWallet,
+  bulkDeleteWalletBusy,
+  close,
+}: Readonly<
+  Pick<
+    BulkItemPassWalletActions,
+    | "walletPlatforms"
+    | "walletConfigured"
+    | "canBulkWallet"
+    | "walletPassCount"
+    | "onBulkVoidWallet"
+    | "bulkVoidWalletBusy"
+    | "onBulkReissueWallet"
+    | "bulkReissueWalletBusy"
+    | "onBulkRefreshWalletStatus"
+    | "bulkRefreshWalletStatusBusy"
+    | "onBulkRemoveWallet"
+    | "bulkRemoveWalletBusy"
+    | "onBulkDeleteWallet"
+    | "bulkDeleteWalletBusy"
+  > & { archived: boolean; close: () => void }
+>) {
+  if (!walletPlatforms.any && !walletConfigured) return null;
+  return (
+    <>
+      <hr className="more-actions-menu__divider" />
+      {walletConfigured && (
+        <MoreActionsMenuItem
+          icon="wallet-off"
+          variant="warning"
+          label={bulkVoidWalletBusy ? "Voiding wallet passes…" : "Void wallet pass"}
+          hint={`Show as invalid in their wallet for ${attendeeCount(walletPassCount)}`}
+          disabled={bulkVoidWalletBusy || !canBulkWallet}
+          tooltip={bulkWalletTooltip(false, canBulkWallet)}
+          onClick={() => {
+            close();
+            onBulkVoidWallet();
+          }}
+        />
+      )}
+      {walletPlatforms.any && (
+        <MoreActionsMenuItem
+          icon="refresh-dot"
+          label={bulkReissueWalletBusy ? "Pushing updates…" : "Push updates"}
+          hint={`Push the latest details for ${attendeeCount(walletPassCount)}`}
+          disabled={archived || bulkReissueWalletBusy || !canBulkWallet}
+          tooltip={bulkWalletTooltip(archived, canBulkWallet)}
+          onClick={() => {
+            close();
+            onBulkReissueWallet();
+          }}
+        />
+      )}
+      {walletConfigured && (
+        <MoreActionsMenuItem
+          icon="cloud-download"
+          label={bulkRefreshWalletStatusBusy ? "Refreshing status…" : "Refresh status"}
+          hint={`Pull the latest status for ${attendeeCount(walletPassCount)}`}
+          disabled={bulkRefreshWalletStatusBusy || !canBulkWallet}
+          tooltip={bulkWalletTooltip(false, canBulkWallet)}
+          onClick={() => {
+            close();
+            onBulkRefreshWalletStatus();
+          }}
+        />
+      )}
+      {walletConfigured && (
+        <MoreActionsMenuItem
+          icon="cloud-off"
+          variant="danger"
+          label={bulkRemoveWalletBusy ? "Removing from provider…" : "Remove from provider"}
+          hint="Voided or expired passes only, history is kept"
+          disabled={bulkRemoveWalletBusy || !canBulkWallet}
+          tooltip={bulkWalletTooltip(false, canBulkWallet)}
+          onClick={() => {
+            close();
+            onBulkRemoveWallet();
+          }}
+        />
+      )}
+      {walletConfigured && (
+        <MoreActionsMenuItem
+          icon="trash"
+          variant="danger"
+          label={bulkDeleteWalletBusy ? "Deleting wallet passes…" : "Delete wallet pass"}
+          hint={`Permanently deletes the pass record for ${attendeeCount(walletPassCount)}`}
+          disabled={bulkDeleteWalletBusy || !canBulkWallet}
+          tooltip={bulkWalletTooltip(false, canBulkWallet)}
+          onClick={() => {
+            close();
+            onBulkDeleteWallet();
+          }}
+        />
+      )}
+    </>
+  );
 }
 
 function BulkMoreActionsMenu({
@@ -529,6 +657,8 @@ function BulkMoreActionsMenu({
   bulkRefreshWalletStatusBusy,
   onBulkDeleteWallet,
   bulkDeleteWalletBusy,
+  onBulkRemoveWallet,
+  bulkRemoveWalletBusy,
   canBulkWallet,
   walletPassCount,
   walletPlatforms,
@@ -728,83 +858,24 @@ function BulkMoreActionsMenu({
               onBulkRevokePass();
             }}
           />
-          {/* Own divider + group only when the event still offers at least one wallet platform -
-           * a selection can retain historical wallet_status rows from before an admin turned the
-           * feature off, and the master switch off would make these requests fail server-side
-           * with wallet_not_configured anyway; both platforms off would let them mutate passes
-           * this page has deliberately hidden everywhere else (CodeRabbit review), same
-           * walletPlatforms.any gate as the attendee-detail page's own wallet action menu. Refresh
-           * status is the exception: it only reads from the provider, so it needs just the event's
-           * credentials and stays available with the Wallet switch off (bot review). */}
-          {(walletPlatforms.any || walletConfigured) && (
-            <>
-              <hr className="more-actions-menu__divider" />
-              {walletPlatforms.any && (
-                <>
-                  {/* Disabled once nothing in the selection has a WalletPass row at all - a mixed
-                   * selection stays enabled, same "nothing to do" gate as the actions above. The exact
-                   * count can still include an already-voided pass (skipped server-side and reported in
-                   * the result toast) - the row list doesn't carry that finer status. */}
-                  <MoreActionsMenuItem
-                    icon="wallet-off"
-                    variant="warning"
-                    label={bulkVoidWalletBusy ? "Voiding wallet passes…" : "Void wallet pass"}
-                    hint={`Show as invalid in their wallet for ${attendeeCount(walletPassCount)}`}
-                    disabled={archived || bulkVoidWalletBusy || !canBulkWallet}
-                    tooltip={bulkWalletTooltip(archived, canBulkWallet)}
-                    onClick={() => {
-                      setOpen(false);
-                      onBulkVoidWallet();
-                    }}
-                  />
-                  <MoreActionsMenuItem
-                    icon="refresh-dot"
-                    label={bulkReissueWalletBusy ? "Pushing updates…" : "Push updates"}
-                    hint={`Push the latest details for ${attendeeCount(walletPassCount)}`}
-                    disabled={archived || bulkReissueWalletBusy || !canBulkWallet}
-                    tooltip={bulkWalletTooltip(archived, canBulkWallet)}
-                    onClick={() => {
-                      setOpen(false);
-                      onBulkReissueWallet();
-                    }}
-                  />
-                </>
-              )}
-              {walletConfigured && (
-                  <MoreActionsMenuItem
-                    icon="cloud-download"
-                    label={bulkRefreshWalletStatusBusy ? "Refreshing status…" : "Refresh status"}
-                    hint={`Pull the latest status for ${attendeeCount(walletPassCount)}`}
-                    disabled={bulkRefreshWalletStatusBusy || !canBulkWallet}
-                    // Read-only, so still available on an archived event (see the server route).
-                    tooltip={bulkWalletTooltip(false, canBulkWallet)}
-                    onClick={() => {
-                      setOpen(false);
-                      onBulkRefreshWalletStatus();
-                    }}
-                  />
-              )}
-              {walletPlatforms.any && (
-                <>
-                  {/* Irreversible - removes the pass at the provider entirely, distinct from Void above
-                   * (which just marks it invalid while leaving it installed). Same "nothing to do" gate
-                   * as Void/Reissue. */}
-                  <MoreActionsMenuItem
-                    icon="trash"
-                    variant="danger"
-                    label={bulkDeleteWalletBusy ? "Deleting wallet passes…" : "Delete wallet pass"}
-                    hint={`Permanently deletes the pass record for ${attendeeCount(walletPassCount)}`}
-                    disabled={archived || bulkDeleteWalletBusy || !canBulkWallet}
-                    tooltip={bulkWalletTooltip(archived, canBulkWallet)}
-                    onClick={() => {
-                      setOpen(false);
-                      onBulkDeleteWallet();
-                    }}
-                  />
-                </>
-              )}
-            </>
-          )}
+          <BulkWalletMenuItems
+            archived={archived}
+            walletPlatforms={walletPlatforms}
+            walletConfigured={walletConfigured}
+            canBulkWallet={canBulkWallet}
+            walletPassCount={walletPassCount}
+            onBulkVoidWallet={onBulkVoidWallet}
+            bulkVoidWalletBusy={bulkVoidWalletBusy}
+            onBulkReissueWallet={onBulkReissueWallet}
+            bulkReissueWalletBusy={bulkReissueWalletBusy}
+            onBulkRefreshWalletStatus={onBulkRefreshWalletStatus}
+            bulkRefreshWalletStatusBusy={bulkRefreshWalletStatusBusy}
+            onBulkRemoveWallet={onBulkRemoveWallet}
+            bulkRemoveWalletBusy={bulkRemoveWalletBusy}
+            onBulkDeleteWallet={onBulkDeleteWallet}
+            bulkDeleteWalletBusy={bulkDeleteWalletBusy}
+            close={() => setOpen(false)}
+          />
           <hr className="more-actions-menu__divider" />
           {/* Not ArchivedGuard'd — GDPR erasure requests can legally arrive after an event
            * ends; the DELETE endpoint doesn't block on archived_at either. */}
@@ -893,6 +964,8 @@ function BulkBar({
   bulkRefreshWalletStatusBusy,
   onBulkDeleteWallet,
   bulkDeleteWalletBusy,
+  onBulkRemoveWallet,
+  bulkRemoveWalletBusy,
   canBulkWallet,
   walletPassCount,
   walletPlatforms,
@@ -1033,6 +1106,8 @@ function BulkBar({
           bulkRefreshWalletStatusBusy={bulkRefreshWalletStatusBusy}
           onBulkDeleteWallet={onBulkDeleteWallet}
           bulkDeleteWalletBusy={bulkDeleteWalletBusy}
+          onBulkRemoveWallet={onBulkRemoveWallet}
+          bulkRemoveWalletBusy={bulkRemoveWalletBusy}
           canBulkWallet={canBulkWallet}
           walletPassCount={walletPassCount}
           walletPlatforms={walletPlatforms}
@@ -1578,6 +1653,8 @@ export function AttendeesTable({
   bulkRefreshWalletStatusBusy,
   onBulkDeleteWallet,
   bulkDeleteWalletBusy,
+  onBulkRemoveWallet,
+  bulkRemoveWalletBusy,
   onBulkDelete,
   eventTimezone,
   event,
@@ -1695,6 +1772,8 @@ export function AttendeesTable({
           bulkRefreshWalletStatusBusy={bulkRefreshWalletStatusBusy}
           onBulkDeleteWallet={onBulkDeleteWallet}
           bulkDeleteWalletBusy={bulkDeleteWalletBusy}
+          onBulkRemoveWallet={onBulkRemoveWallet}
+          bulkRemoveWalletBusy={bulkRemoveWalletBusy}
           canBulkWallet={canBulkWallet}
           walletPassCount={walletPassCount}
           walletPlatforms={walletPlatforms}
