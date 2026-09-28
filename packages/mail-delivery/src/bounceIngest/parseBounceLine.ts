@@ -18,17 +18,29 @@ const EMAIL_RE = String.raw`([A-Z0-9][A-Z0-9._%+-]{0,62}@[A-Z0-9][A-Z0-9.-]{0,25
 const HOST_SAID = String.raw`host\s+\S+(?:\s+\([^)]*\))?\s+said:\s+`;
 const REPLY_TAIL = String.raw`(?:\s+\(in reply to\s+[^)]+\))?$`;
 
-const RE_ANGLE_EMAIL = new RegExp(`<${EMAIL_RE}>`, "i");
-const RE_BARE_EMAIL = new RegExp(`^${EMAIL_RE}$`, "i");
-const RE_ANY_EMAIL = new RegExp(EMAIL_RE, "i");
+/**
+ * The only place in this module that builds a RegExp from a string. Every caller passes a
+ * template made purely of this module's own constant fragments (EMAIL_RE, HOST_SAID, REPLY_TAIL)
+ * and fixed text, never part of a bounce body or any other runtime input, so the pattern cannot
+ * be steered from outside; composing them keeps each dialect readable instead of repeating the
+ * ~100-character address pattern in every literal. Do not pass anything else through here.
+ */
+function compileFragmentPattern(source: string, flags: string): RegExp {
+  // eslint-disable-next-line security/detect-non-literal-regexp
+  return new RegExp(source, flags);
+}
+
+const RE_ANGLE_EMAIL = compileFragmentPattern(`<${EMAIL_RE}>`, "i");
+const RE_BARE_EMAIL = compileFragmentPattern(`^${EMAIL_RE}$`, "i");
+const RE_ANY_EMAIL = compileFragmentPattern(EMAIL_RE, "i");
 const RE_STATUS = /^(\d)\.(\d+)\.(\d+)/;
 const RE_DIAG_SMTP = /\b(\d{3})\b/;
 const RE_DIAG_ENHANCED = /\b(\d\.\d\.\d)\b/;
-const RE_NEAR_ORPHAN = new RegExp(
+const RE_NEAR_ORPHAN = compileFragmentPattern(
   String.raw`${EMAIL_RE}\s*(?:\n[^\n]*){0,6}\nfailed:\s+host\s+`,
   "i",
 );
-const RE_ANGLE_EMAIL_GI = new RegExp(`<${EMAIL_RE}>`, "gi");
+const RE_ANGLE_EMAIL_GI = compileFragmentPattern(`<${EMAIL_RE}>`, "gi");
 
 function normalizeReason(raw: string): string {
   return raw.replace(/\s+/g, " ").trim().replace(/^:\s*/, "").slice(0, MAX_REASON_LEN);
@@ -169,8 +181,10 @@ export function parseRfc3464DsnBlocks(text: string): ParsedBounceLine[] {
   const out: ParsedBounceLine[] = [];
   const seen = new Set<string>();
 
-  // Split on blank lines into header-like field groups (RFC 3464 §2).
-  for (const block of normalized.split(/\n(?:[ \t]*\n)+/)) {
+  // Split on blank lines into header-like field groups (RFC 3464 §2). `\n[ \t\n]*\n` matches the
+  // same runs as `\n(?:[ \t]*\n)+` (a newline, then only spaces, tabs and newlines, ending in a
+  // newline) without the nested quantifier.
+  for (const block of normalized.split(/\n[ \t\n]*\n/)) {
     parseOneDsnBlock(block, out, seen);
   }
 
@@ -217,7 +231,7 @@ const FREE_TEXT_MATCHERS: ReadonlyArray<{
 }> = [
   {
     id: "postfix-enhanced",
-    pattern: new RegExp(
+    pattern: compileFragmentPattern(
       String.raw`${EMAIL_RE}\s+failed:\s+${HOST_SAID}(\d{3})\s+(\d\.\d\.\d)\s+\S+:\s+(.+?)${REPLY_TAIL}`,
       "gim",
     ),
@@ -231,7 +245,7 @@ const FREE_TEXT_MATCHERS: ReadonlyArray<{
   {
     // mailhop/Synology-style "<address>failed: host …" with optional brackets / enhanced code.
     id: "failed-host-said",
-    pattern: new RegExp(
+    pattern: compileFragmentPattern(
       String.raw`<?${EMAIL_RE}>?\s*failed:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?(?:\S+:\s+)?(.+?)${REPLY_TAIL}`,
       "gim",
     ),
@@ -244,7 +258,7 @@ const FREE_TEXT_MATCHERS: ReadonlyArray<{
   },
   {
     id: "postfix-angle-bracket",
-    pattern: new RegExp(
+    pattern: compileFragmentPattern(
       String.raw`<${EMAIL_RE}>:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?(?:<[^>]+>:\s+)?(.+?)${REPLY_TAIL}`,
       "gim",
     ),
@@ -257,7 +271,7 @@ const FREE_TEXT_MATCHERS: ReadonlyArray<{
   },
   {
     id: "orphan-failed",
-    pattern: new RegExp(
+    pattern: compileFragmentPattern(
       String.raw`(?:^|\n)failed:\s+${HOST_SAID}(\d{3})\s+(?:(\d\.\d\.\d)\s+)?:?\s*(.+?)${REPLY_TAIL}`,
       "gim",
     ),

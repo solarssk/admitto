@@ -54,7 +54,9 @@ export function stripHtmlTagsSafely(html: string): string {
   const withLineBreaks = html
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|li|tr|h[1-6])>/gi, "\n");
-  const withoutTags = withLineBreaks.replace(/<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^<>]*)?\/?>/g, " ");
+  // After the tag name, `(?=[\s>]|\/>)[^<>]*>` accepts exactly what `(?:\s[^<>]*)?\/?>` did (end of
+  // tag, self-closing slash, or whitespace-led attributes) without an optional group around a star.
+  const withoutTags = withLineBreaks.replace(/<\/?[a-zA-Z][a-zA-Z0-9-]*(?=[\s>]|\/>)[^<>]*>/g, " ");
   return decodeHtmlEntities(withoutTags)
     .split("\n")
     .map((line) => line.replace(/[ \t]+/g, " ").trim())

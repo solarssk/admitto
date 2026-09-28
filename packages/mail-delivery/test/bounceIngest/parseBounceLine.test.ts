@@ -408,3 +408,49 @@ describe("extractPlainTextFromSource", () => {
     }
   });
 });
+
+describe("parseRfc3464DsnBlocks block separators and hostile input", () => {
+  const block = (recipient: string) =>
+    [
+      `Final-Recipient: rfc822; ${recipient}`,
+      "Action: failed",
+      "Status: 5.1.1",
+      "Diagnostic-Code: smtp; 550 5.1.1 User unknown",
+    ].join("\n");
+
+  it("splits field groups on blank lines made of spaces, tabs, or nothing at all", () => {
+    // A blank line here may hold spaces or tabs, and several may follow each other.
+    const body = [block("one@example.org"), "  \t ", "", block("two@example.org"), "\t", block("three@example.org")].join(
+      "\n",
+    );
+
+    expect(parseRfc3464DsnBlocks(body).map((l) => l.recipientEmail)).toEqual([
+      "one@example.org",
+      "two@example.org",
+      "three@example.org",
+    ]);
+  });
+
+  it("does not split on a newline that is only followed by indentation", () => {
+    // No blank line: the second field is a continuation-looking line of the same group.
+    const body = [block("one@example.org"), "  X-Extra: kept in the same group"].join("\n");
+
+    expect(parseRfc3464DsnBlocks(body).map((l) => l.recipientEmail)).toEqual(["one@example.org"]);
+  });
+
+  it("stays fast on a very long run of blank-looking lines", () => {
+    const hostile = `${block("one@example.org")}${"\n \t".repeat(100_000)}\n${block("two@example.org")}`;
+    const started = performance.now();
+    const lines = parseRfc3464DsnBlocks(hostile);
+
+    expect(lines.map((l) => l.recipientEmail)).toEqual(["one@example.org", "two@example.org"]);
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+
+  it("returns nothing, quickly, for a body that is only newlines and whitespace", () => {
+    const started = performance.now();
+
+    expect(parseBounceLines("\n ".repeat(100_000))).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+});

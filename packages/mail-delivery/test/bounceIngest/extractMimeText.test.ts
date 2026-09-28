@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractPlainTextFromSource } from "../../src/bounceIngest/extractMimeText.js";
+import { extractPlainTextFromSource, stripHtmlTagsSafely } from "../../src/bounceIngest/extractMimeText.js";
 import { parseBounceLines } from "../../src/bounceIngest/parseBounceLine.js";
 import {
   iso8859QpNdr,
@@ -108,5 +108,33 @@ describe("extractPlainTextFromSource (libmime stack)", () => {
       "",
     ].join("\r\n");
     expect(extractPlainTextFromSource(source)).toContain("550 5.1.1");
+  });
+});
+
+describe("stripHtmlTagsSafely", () => {
+  it("removes opening, closing, self-closing and attribute-carrying tags", () => {
+    const html = '<div class="a"><p>Hello <b>there</b></p><img src="x.png" /><hr/><br>next</div>';
+
+    expect(stripHtmlTagsSafely(html)).toBe("Hello there\nnext");
+  });
+
+  it("keeps a literal address in angle brackets, which is not tag syntax", () => {
+    expect(stripHtmlTagsSafely("<p>Contact <user@example.com> now</p>")).toBe("Contact <user@example.com> now");
+  });
+
+  it("leaves malformed tags alone instead of guessing", () => {
+    // No closing '>', a slash in the middle of the tag, and a digit where a name must start.
+    expect(stripHtmlTagsSafely("<a href=x")).toBe("<a href=x");
+    expect(stripHtmlTagsSafely("x <a/b> y")).toBe("x <a/b> y");
+    expect(stripHtmlTagsSafely("1 < 2 and <3 and 4>")).toBe("1 < 2 and <3 and 4>");
+  });
+
+  it("stays fast on unclosed or repeated tag openings", () => {
+    const started = performance.now();
+
+    expect(stripHtmlTagsSafely(`<${"a".repeat(200_000)}`)).toHaveLength(200_001);
+    expect(stripHtmlTagsSafely("<a ".repeat(100_000))).toBe("<a ".repeat(100_000).trim().replace(/[ \t]+/g, " "));
+    expect(stripHtmlTagsSafely(`<a ${"x ".repeat(100_000)}`)).toContain("<a x x");
+    expect(performance.now() - started).toBeLessThan(2000);
   });
 });
