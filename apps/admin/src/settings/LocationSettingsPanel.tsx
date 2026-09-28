@@ -534,7 +534,7 @@ export function LocationSettingsPanel({
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => navigate("/admin/settings?tab=general")}
+                    onClick={() => void navigate("/admin/settings?tab=general")}
                   >
                     Open organisation settings
                   </Button>

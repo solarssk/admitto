@@ -271,7 +271,7 @@ export function IdentityProvidersPanel() {
               <ProviderRowItem
                 key={provider.id}
                 provider={provider}
-                onToggle={handleToggle}
+                onToggle={(provider) => void handleToggle(provider)}
                 disabled={togglingIds.has(provider.id)}
               />
             ))}
