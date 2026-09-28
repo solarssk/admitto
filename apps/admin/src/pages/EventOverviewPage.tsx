@@ -311,7 +311,7 @@ function SetupChecklistCard({
 }>) {
   if (!overview) {
     return (
-      <Card title="Setup checklist">
+      <Card title="Setup checklist" className="overview-card--fill">
         <p className="overview-muted">
           {unavailablePlaceholderText(loading, showLoading)}
         </p>
@@ -332,6 +332,7 @@ function SetupChecklistCard({
   return (
     <Card
       title="Setup checklist"
+      className="overview-card--fill"
       actions={
         <span className="overview-readiness-score">
           {okCount} of {total} done
@@ -1470,7 +1471,7 @@ function NotesAndContactsCard(props: Readonly<{
   onDeleteResource: (id: string) => Promise<void>;
 }>) {
   return (
-    <Card title="Notes & contacts">
+    <Card title="Notes & contacts" className="overview-card--fill">
       <PinnedNoteSection
         note={props.pinnedNote}
         loading={props.loading}
@@ -1886,7 +1887,7 @@ export function EventOverviewPage() {
             timezone={getBrowserTimeZone()}
           />
         </div>
-        <div className="overview-row">
+        <div className="overview-row overview-row--stretch">
           <SetupChecklistCard overview={currentOverview} loading={loading} showLoading={showLoading} eventId={event.id} />
           <NotesAndContactsCard
             pinnedNote={pinnedNote}

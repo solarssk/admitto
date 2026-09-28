@@ -6966,12 +6966,14 @@ output.mail-field-hint {
   }
 }
 
-/* Check-in progress / Recent activity row only: the two cards sit side by side, so they stretch
- * to one height (grid items default to `align-items: stretch`, but the base `.overview-row` above
- * opts every row out so a card normally keeps its natural height). The Setup checklist / Notes
- * row below keeps natural heights on purpose: stretching it spread Notes & contacts' sections
- * apart with large gaps to match a taller checklist. The row's height comes from Check-in
- * progress's own content; Recent activity's list scrolls inside whatever height that gives it
+/* Overview card sizing standard. Both rows of cards are equal-height rows: grid items default to
+ * `align-items: stretch`, but the base `.overview-row` above opts every row out so a card normally
+ * keeps its natural height, and `--stretch` opts one back in. Stretching alone leaves blank space
+ * inside the shorter card, so every card follows the same two rules: its main block grows to fill
+ * the card (`flex: 1`), and that block gives the extra room to its items evenly (each checklist
+ * row, each Notes section and its empty add tile grows equally), never by pushing items apart with
+ * `space-between` and fixed gaps, which is what made Notes & contacts look scattered. The top row's
+ * height comes from Check-in progress's own content; Recent activity's list scrolls inside it
  * (`.overview-card--timeline` below) instead of setting a height of its own. */
 .overview-row--stretch {
   align-items: stretch;
@@ -7000,6 +7002,37 @@ output.mail-field-hint {
  * instead of `space-between`'s single-child default of pinning it to the top. */
 .overview-card--header-fixed.overview-card--empty .at-card__body {
   justify-content: center;
+}
+
+/* Setup checklist and Notes & contacts: the lower equal-height row (see the sizing standard above). */
+.overview-card--fill {
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-card--fill .at-card__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.overview-card--fill .overview-setup,
+.overview-card--fill .overview-checklist {
+  flex: 1;
+}
+
+.overview-card--fill .overview-check {
+  flex: 1 1 auto;
+}
+
+.overview-card--fill .overview-notes-section {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.overview-card--fill .overview-note-empty {
+  flex: 1;
 }
 
 /* Recent activity's list fills the card body without contributing to its height: absolutely
