@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url);
 
 /** Static `ti ti-*` names and `ti ti-${name}` nav icons referenced in admin SPA. */
 const ADMIN_TABLER_ICON_CLASSES = [
+  "activity-heartbeat",
   "alert-triangle",
   "archive",
   "archive-off",
@@ -41,6 +42,7 @@ const ADMIN_TABLER_ICON_CLASSES = [
   "link",
   "logout",
   "mail",
+  "mail-exclamation",
   "map-pin",
   "menu-2",
   "moon",

@@ -17,13 +17,14 @@ import "./health-check.css";
 
 const CHECK_ICONS: Record<string, string> = {
   database: "database",
-  session_storage: "server-2",
   rate_limit_storage: "server-2",
   data_encryption: "lock",
+  background_worker: "activity-heartbeat",
   mail_delivery_queue: "mail-forward",
   instance_url: "link",
   file_storage: "folder",
   email_sending: "mail",
+  bounce_ingest: "mail-exclamation",
   wallet_passes: "wallet",
   address_lookup: "map-pin",
   map_tiles: "map-2",
@@ -31,6 +32,10 @@ const CHECK_ICONS: Record<string, string> = {
   identity_providers: "shield-lock",
   cloudflare_access: "brand-cloudflare",
 };
+
+/** Shared by the "Run live checks" tooltip and its mirror item in More actions (mobile). */
+export const LIVE_CHECKS_HINT =
+  "Adds tests for address lookup, weather, the mail connection, identity providers, Cloudflare Access, and writing to the upload folder.";
 
 function checkIcon(id: string): string {
   if (id.startsWith("identity_provider_")) return "shield-lock";
@@ -231,7 +236,7 @@ function HealthCheckMoreActions({
             className="health-check__live-menu-item"
             icon="refresh"
             label="Run live checks"
-            hint="Re-check local status and probe address lookup, mail transport, identity providers, and Cloudflare Access"
+            hint={LIVE_CHECKS_HINT}
             disabled={liveLoading}
             onClick={() => {
               close();
@@ -377,10 +382,7 @@ export function HealthCheckPanel() {
         title="Overview"
         actions={
           <div className="health-check__actions">
-            <Tooltip
-              content="Re-check local status and probe address lookup, mail transport (SMTP/Graph), identity providers, and Cloudflare Access when configured"
-              className="health-check__run-live-trigger"
-            >
+            <Tooltip content={LIVE_CHECKS_HINT} className="health-check__run-live-trigger">
               <Button
                 type="button"
                 variant="secondary"
@@ -407,19 +409,17 @@ export function HealthCheckPanel() {
           </div>
         }
       >
-        <div className="health-check__intro">
-          <p className="settings-card-intro health-check__intro-copy">
-            Review whether this instance and its integrations are healthy before an event, or copy
-            a sanitized snapshot when opening a support issue.
-          </p>
-          <p className="health-check__meta">
-            <i className="ti ti-clock" aria-hidden="true" />
-            <span>
-              Generated {formatEventDateTime(report.generated_at, getBrowserTimeZone())}
-              {runningBuildLabel()}
-            </span>
-          </p>
-        </div>
+        <p className="settings-card-intro">
+          Review whether this instance and its integrations are healthy before an event, or copy a
+          sanitized snapshot when opening a support issue.
+        </p>
+        <p className="health-check__meta">
+          Generated{" "}
+          <time dateTime={report.generated_at}>
+            {formatEventDateTime(report.generated_at, getBrowserTimeZone())}
+          </time>
+          {runningBuildLabel()}
+        </p>
 
         <div className="health-check__groups">
           {report.groups.map((group) => (
