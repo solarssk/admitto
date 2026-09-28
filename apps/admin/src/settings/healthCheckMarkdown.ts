@@ -75,8 +75,33 @@ export function formatHealthDetailValue(key: string, value: string): string {
  */
 function exportSafeDetailValue(key: string, value: string): string {
   const formatted = formatHealthDetailValue(key, value);
-  if (key === "engine") return formatted.replace(/^(\D*\d+)\.\d+.*$/, "$1");
+  if (key === "engine") return coarsenEngineVersion(formatted);
   return formatted;
+}
+
+/**
+ * "PostgreSQL 16.2" -> "PostgreSQL 16": drop the decimal point and everything after it, but
+ * only when it directly follows the leading run of digits (the major version) and another
+ * digit follows the dot. Anything else (no digit run, or a dot that is not part of an "N.M"
+ * version) is left unchanged.
+ *
+ * Written as an explicit character scan, not a regular expression: an equivalent
+ * `/^(\D*\d+)\.\d+.*$/` was flagged by SonarCloud (typescript:S8786) for adjacent unbounded
+ * quantifiers (`\D*` directly followed by `\d+`), a pattern that risks super-linear backtracking
+ * on pathological input even though the values this function actually receives are short.
+ */
+function coarsenEngineVersion(value: string): string {
+  // charAt(), not bracket indexing: it always returns a string ("" past the end), so the
+  // bounds check in each while condition is enough for TypeScript's noUncheckedIndexedAccess
+  // too, with no non-null assertions needed.
+  let i = 0;
+  while (i < value.length && (value.charAt(i) < "0" || value.charAt(i) > "9")) i++;
+  let j = i;
+  while (j < value.length && value.charAt(j) >= "0" && value.charAt(j) <= "9") j++;
+  if (j === i) return value; // no digit run at all
+  const afterDot = value.charAt(j + 1);
+  if (value.charAt(j) !== "." || afterDot === "" || afterDot < "0" || afterDot > "9") return value;
+  return value.slice(0, j);
 }
 
 /**
