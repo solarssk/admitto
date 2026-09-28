@@ -72,7 +72,7 @@ const ACTION_LABELS: Record<string, string> = {
   event_resource_created: "Event resource added",
   event_resource_deleted: "Event resource removed",
   event_resource_updated: "Event resource updated",
-  event_unarchived: "Event unarchived",
+  event_unarchived: "Event restored",
   event_updated: "Event updated",
   identity_cf_access_updated: "Cloudflare Access settings updated",
   identity_provider_created: "SSO provider created",

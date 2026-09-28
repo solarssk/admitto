@@ -484,9 +484,10 @@ function getArchiveDialogCopy(archiveMode: "archive" | "unarchive"): ArchiveDial
     };
   }
   return {
-    title: "Unarchive this event?",
-    message: "This event will become active again and editable in admin.",
-    confirmLabel: "Unarchive",
+    title: "Restore this event?",
+    message:
+      "This event will become active again. Editing and check-in will be allowed, and it will show up in default event lists.",
+    confirmLabel: "Restore",
     confirmVariant: "primary",
   };
 }
@@ -633,7 +634,7 @@ async function confirmArchiveToggle(deps: ArchiveToggleDeps): Promise<void> {
       addToast("Event archived.", "success");
     } else {
       await unarchiveEvent(eventId);
-      addToast("Event unarchived.", "success");
+      addToast("Event restored.", "success");
     }
     setArchiveOpen(false);
     setMailCardResetKey((n) => n + 1);
@@ -1291,7 +1292,7 @@ export function EventSettingsPage() {
         setArchiveOpen(true);
       }}
     >
-      Unarchive event
+      Restore event
     </Button>
   ) : (
     <Button
