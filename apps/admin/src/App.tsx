@@ -155,12 +155,19 @@ export function EventLayout() {
   // the fresher snapshot and leave capacity-gated controls stuck on stale data until another
   // refresh or navigation.
   const refreshEventSeqRef = useRef(0);
+  // The event the route currently shows. refreshEvent is bound to the eventId it was created for,
+  // so a refresh still in flight when the route moves to another event compares against this and
+  // drops its response instead of installing the old event's snapshot under the new event's URL.
+  // Read straight off the route (not bumped from an effect), so it cannot race a child page's own
+  // mount-time refresh: child effects run before this component's.
+  const routeEventIdRef = useRef(eventId);
+  routeEventIdRef.current = eventId;
   const refreshEvent = useCallback(async () => {
     if (!eventId) return;
     const seq = ++refreshEventSeqRef.current;
     try {
       const fresh = await fetchAdminEvent(eventId);
-      if (refreshEventSeqRef.current !== seq) return;
+      if (refreshEventSeqRef.current !== seq || routeEventIdRef.current !== eventId) return;
       setEvent(fresh);
     } catch {
       // Best-effort: the mutation that triggered this already reported its
@@ -175,10 +182,6 @@ export function EventLayout() {
   }, [eventId, location.pathname]);
 
   useEffect(() => {
-    // Moving to another event invalidates any refreshEvent() still in flight for the previous
-    // one: its closure is bound to the old eventId, so without this a late response would install
-    // the old event's snapshot under the new event's URL.
-    refreshEventSeqRef.current += 1;
     const fromState = navStateEventRef.current;
     setEvent(fromState);
     setError(false);
