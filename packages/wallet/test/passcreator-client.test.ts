@@ -738,7 +738,8 @@ describe("PassCreatorClient.getPassSnapshot", () => {
     // Ordering overlapping reads by request time keeps a slow, old answer from outranking a read
     // that started later and finished first.
     expect(result!.observedAt.getTime()).toBeLessThanOrEqual(fetchedAt);
-    expect(Date.now() - result!.observedAt.getTime()).toBeGreaterThanOrEqual(40);
+    // 30ms, not 40: a setTimeout can fire ~1ms early relative to Date.now() on a loaded CI runner.
+    expect(Date.now() - result!.observedAt.getTime()).toBeGreaterThanOrEqual(30);
   });
 
   it("returns null when no pass matches", async () => {
