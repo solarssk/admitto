@@ -1358,6 +1358,33 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     });
   });
 
+  it("builds the Call and Email links from the safe forms, even for a value saved before the checks", async () => {
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(5, {
+        contacts: [
+          {
+            id: "c-links",
+            name: "Link Contact",
+            role: null,
+            phone: "call 555 0100",
+            email: "victim@example.com?subject=Hi&body=Send%20your%20password",
+            note: null,
+            sort_order: 0,
+          },
+        ],
+      }),
+    );
+
+    renderPage();
+
+    const call = await screen.findByRole("link", { name: "Call Link Contact" });
+    expect(call.getAttribute("href")).toBe("tel:5550100");
+    const mail = screen.getByRole("link", { name: "Email Link Contact" });
+    const href = mail.getAttribute("href") ?? "";
+    expect(href).toBe("mailto:victim@example.com%3Fsubject%3DHi%26body%3DSend%2520your%2520password");
+    expect(href).not.toMatch(/[?&]/);
+  });
+
   it("does not flag a contact's saved phone or email that predates these checks unless it is changed", async () => {
     fetchEventOverview.mockResolvedValue(
       overviewFixture(5, {

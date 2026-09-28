@@ -2927,6 +2927,9 @@ describe("event context routes", () => {
     const badPhone = await send("POST", "", { name: "Rejected contact", phone: "call the venue" });
     expect(badPhone.status).toBe(400);
     expect(await badPhone.json()).toEqual({ error: "invalid_phone" });
+    const hugeEmail = await send("POST", "", { name: "Rejected contact", email: `${"a".repeat(250)}@example.com` });
+    expect(hugeEmail.status).toBe(400);
+    expect(await hugeEmail.json()).toEqual({ error: "invalid_email" });
     // A non-string value is neither, and must be a 400, not a crash.
     const numericEmail = await send("POST", "", { name: "Rejected contact", email: 12345 });
     expect(numericEmail.status).toBe(400);

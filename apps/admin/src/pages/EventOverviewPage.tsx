@@ -25,7 +25,7 @@ import {
   deleteEventResource,
   unarchiveEvent,
 } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { CONTACT_PHONE_ERROR, INVALID_EMAIL_MESSAGE, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import type {
@@ -61,8 +61,9 @@ import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
 import { composePhoneE164, splitPhoneForPicker } from "../utils/phoneCountries.js";
-import { isValidContactPhone, sanitizeContactPhoneInput } from "@admitto/shared";
+import { CONTACT_PHONE_MAX_LENGTH, isValidContactPhone, sanitizeContactPhoneInput } from "@admitto/shared";
 import { isValidEmailFormat } from "../utils/email.js";
+import { mailtoHref, telHref } from "../utils/contactLinks.js";
 
 const OVERVIEW_REFRESH_MS = 30_000;
 const OVERVIEW_SUBTITLE =
@@ -842,9 +843,6 @@ function PinnedNoteModal({
   );
 }
 
-const CONTACT_EMAIL_ERROR = "Enter a valid email address.";
-const CONTACT_PHONE_ERROR = "Enter a valid phone number: digits only, between 6 and 15 in total.";
-
 function ContactModal({
   contact,
   onClose,
@@ -875,7 +873,7 @@ function ContactModal({
   // can still have its name or role edited (the server applies the same rule).
   const emailError =
     emailValue && emailValue !== (contact?.email ?? "") && !isValidEmailFormat(emailValue)
-      ? CONTACT_EMAIL_ERROR
+      ? INVALID_EMAIL_MESSAGE
       : null;
   const phoneError =
     composedPhone && composedPhone !== (contact?.phone ?? "") && !isValidContactPhone(composedPhone)
@@ -980,6 +978,7 @@ function ContactModal({
             icon={<i className="ti ti-phone" aria-hidden="true" />}
             type="tel"
             inputMode="tel"
+            maxLength={CONTACT_PHONE_MAX_LENGTH}
             name="event-contact-phone"
             value={phoneNumber}
             invalid={touched.phone && !!phoneError}
@@ -1270,12 +1269,12 @@ function KeyContactsSection({
             </div>
             <div className="overview-contact__actions">
               {contact.phone && (
-                <a href={`tel:${contact.phone}`} className="overview-contact__action" aria-label={`Call ${contact.name}`}>
+                <a href={telHref(contact.phone)} className="overview-contact__action" aria-label={`Call ${contact.name}`}>
                   <i className="ti ti-phone" aria-hidden="true" />
                 </a>
               )}
               {contact.email && (
-                <a href={`mailto:${contact.email}`} className="overview-contact__action" aria-label={`Email ${contact.name}`}>
+                <a href={mailtoHref(contact.email)} className="overview-contact__action" aria-label={`Email ${contact.name}`}>
                   <i className="ti ti-mail" aria-hidden="true" />
                 </a>
               )}

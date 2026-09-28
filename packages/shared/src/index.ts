@@ -2,6 +2,7 @@ export { splitCsvLine } from "./csvUtils.js";
 export { redactEmail } from "./redact.js";
 export {
   CONTACT_PHONE_MAX_DIGITS,
+  CONTACT_PHONE_MAX_LENGTH,
   CONTACT_PHONE_MIN_DIGITS,
   isValidContactPhone,
   sanitizeContactPhoneInput,

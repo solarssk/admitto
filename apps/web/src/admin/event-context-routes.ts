@@ -69,6 +69,9 @@ export async function handlePatchEventNote(c: Context, db: PrismaClient): Promis
 
 // ── Key contacts ────────────────────────────────────────────────────────────
 
+/** RFC 5321's limit on a mailbox address. */
+const MAX_CONTACT_EMAIL_LENGTH = 254;
+
 /** A contact's email or phone is shown to staff as a mailto:/tel: link, so a value that is not one
  * is rejected here as well as in the form (the form check is a convenience, not the gate). Only a
  * value that actually changes is checked on update, so a contact saved before this check existed
@@ -82,7 +85,9 @@ function contactFieldError(
   if (next.email != null && typeof next.email !== "string") return "invalid_email";
   if (next.phone != null && typeof next.phone !== "string") return "invalid_phone";
   const email = next.email?.trim() || null;
-  if (email && email !== current?.email && !isValidEmailFormat(email)) return "invalid_email";
+  if (email && email !== current?.email && (email.length > MAX_CONTACT_EMAIL_LENGTH || !isValidEmailFormat(email))) {
+    return "invalid_email";
+  }
   const phone = next.phone?.trim() || null;
   if (phone && phone !== current?.phone && !isValidContactPhone(phone)) return "invalid_phone";
   return null;
