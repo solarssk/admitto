@@ -56,7 +56,7 @@ function isSafeRedisSseUrl(rawUrl: string): boolean {
   if (url.protocol !== "redis:") return false;
 
   const host = url.hostname.toLowerCase();
-  return host === "localhost" || host === "redis" || host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host);
+  return host === "localhost" || host === "redis" || host === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
 }
 
 let redisPub: RedisClientType | null = null;
