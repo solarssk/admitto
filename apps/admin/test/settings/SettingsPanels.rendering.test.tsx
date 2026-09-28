@@ -2702,7 +2702,7 @@ describe("EventArchivingPanel rendering", () => {
     expect(screen.getByText("by -")).toBeTruthy();
   });
 
-  it("switches to the Archived view and renders the archived date, who archived it, and an Unarchive action", async () => {
+  it("switches to the Archived view and renders the archived date, who archived it, and a Restore action", async () => {
     // Pinned so the "Feb"/month-name assertion below doesn't depend on the test runner's own locale.
     setPreferredLocale("en-US");
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([
@@ -2720,7 +2720,7 @@ describe("EventArchivingPanel rendering", () => {
     await screen.findByText("Winter Meetup");
     expect(screen.getByText(/Feb 15, 2026/)).toBeTruthy();
     expect(screen.getByText("by Carol Superadmin")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Unarchive" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Restore" })).toBeTruthy();
   });
 
   it("shows empty-state copy with no table underneath, for both views", async () => {
