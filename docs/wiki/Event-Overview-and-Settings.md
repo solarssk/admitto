@@ -27,7 +27,7 @@ Open the correct organisation and event. If another manager may be editing the s
 ### Overview
 
 1. Open **Overview**.
-2. Review the **Setup checklist**. Its bar and notice say how many checks are done and how many need attention, problems are listed first, and each row opens the page where you fix it.
+2. Review the **Setup checklist**. Its bar and the **N of M done** count show progress, the bar turns amber or red when a check needs attention, problems are listed first, and each row opens the page where you fix it.
 3. Review KPI tiles (including attendees and **Failed delivery**), the **Check-in progress** card, and **Recent activity** (check-ins, attendees added, item issue/return/revoke, mail failures, and imports).
 4. Use **Pinned note**, **Key contacts**, and **Important links & files** when your event keeps that operational context on Overview.
 5. Follow a readiness prompt when it points to unfinished setup.

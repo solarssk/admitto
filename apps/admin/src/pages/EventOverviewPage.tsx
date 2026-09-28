@@ -322,12 +322,7 @@ function SetupChecklistCard({
   const items = buildReadinessItems(overview, eventId);
   const okCount = items.filter((i) => i.status === "ok").length;
   const total = items.filter((i) => i.status !== "neutral").length;
-  const attention = total - okCount;
   const tone = checklistTone(items);
-  const noticeVariant = { ok: "success", warn: "warning", error: "error" }[tone] as "success" | "warning" | "error";
-  let summary = "Everything is ready. Nothing needs your attention.";
-  if (attention === 1) summary = "1 item needs your attention.";
-  else if (attention > 1) summary = `${attention} items need your attention.`;
 
   return (
     <Card
@@ -349,7 +344,6 @@ function SetupChecklistCard({
         >
           <span style={{ width: `${total > 0 ? (okCount / total) * 100 : 0}%` }} />
         </div>
-        <Notice variant={noticeVariant}>{summary}</Notice>
         <div className="overview-checklist">
           {/* Array.sort is stable, so rows of the same status keep their natural order. */}
           {[...items]

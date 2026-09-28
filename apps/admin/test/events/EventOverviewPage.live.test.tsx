@@ -813,7 +813,7 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.queryByText("Wallet passes installed")).toBeNull();
   });
 
-  it("shows Setup checklist progress as 'N of M done' with an accessible progress bar and an all-clear notice when nothing needs doing", async () => {
+  it("shows Setup checklist progress as 'N of M done' with an accessible progress bar, and no separate status notice", async () => {
     fetchEventOverview.mockResolvedValue(overviewFixture(5));
 
     renderPage();
@@ -824,10 +824,11 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(bar.getAttribute("aria-valuenow")).toBe("4");
     expect(bar.getAttribute("aria-valuemax")).toBe("4");
     expect(bar.className).toContain("overview-setup__bar--ok");
-    expect(card.getByText("Everything is ready. Nothing needs your attention.")).toBeTruthy();
+    // Status lives in the bar tone and each row's coloured icon, not in a second banner.
+    expect(checklistCard().querySelector(".at-notice")).toBeNull();
   });
 
-  it("flags what needs attention in the notice and the bar tone, and lists problems before completed rows", async () => {
+  it("flags what needs attention in the bar tone and the row icons, and lists problems before completed rows", async () => {
     fetchEventOverview.mockResolvedValue(
       overviewFixture(5, { attendee_count: 50, attendees_with_ticket: 10, email_failed: 2 }),
     );
@@ -835,7 +836,6 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     renderPage();
 
     const card = within(await screen.findByText("Setup checklist").then(() => checklistCard()));
-    expect(card.getByText("2 items need your attention.")).toBeTruthy();
     expect(card.getByText("2 of 4 done")).toBeTruthy();
     // A failed delivery outranks a partly-sent warning, which outranks completed rows.
     const labels = Array.from(checklistCard().querySelectorAll(".overview-check__body strong")).map((el) => el.textContent);
@@ -845,14 +845,15 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(card.getByText("Needs attention")).toBeTruthy();
   });
 
-  it("uses the singular and an amber bar when exactly one required check is not done", async () => {
+  it("uses an amber bar when a required check is not done but nothing has failed", async () => {
     fetchEventOverview.mockResolvedValue(overviewFixture(5, { checkin_staff_count: 0 }));
 
     renderPage();
 
     const card = within(await screen.findByText("Setup checklist").then(() => checklistCard()));
-    expect(card.getByText("1 item needs your attention.")).toBeTruthy();
+    expect(card.getByText("3 of 4 done")).toBeTruthy();
     expect(card.getByRole("progressbar").className).toContain("overview-setup__bar--warn");
+    expect(checklistCard().querySelector(".overview-check__icon--warn")).toBeTruthy();
   });
 
   it("links each Setup checklist row to the page that fixes it", async () => {
