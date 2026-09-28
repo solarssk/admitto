@@ -26,13 +26,13 @@ const resolvedTicket = {
 const walletPassInput = { attendeeName: "Jane Doe" };
 
 function makeDb() {
-  const txWalletPassUpdate = vi.fn().mockResolvedValue({});
+  const txWalletPassUpdate = vi.fn().mockResolvedValue({ count: 1 });
   const db = {
     attendee: { findUnique: vi.fn() },
-    walletPass: { update: vi.fn().mockResolvedValue({}) },
-    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
-      await fn({ walletPass: { update: txWalletPassUpdate } });
-    }),
+    walletPass: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({ walletPass: { updateMany: txWalletPassUpdate } }),
+    ),
   };
   return { db, txWalletPassUpdate };
 }
@@ -109,7 +109,7 @@ describe("reissueOneWalletPass", () => {
     expect(buildWalletPassInput).toHaveBeenCalledWith(resolvedTicket, "qr-1", {});
     expect(provider.updatePass).toHaveBeenCalledWith("pc-1", walletPassInput);
     expect(txWalletPassUpdate).toHaveBeenCalledWith({
-      where: { attendee_id: "att-1" },
+      where: { attendee_id: "att-1", provider_removed_at: null },
       data: {
         download_url: "https://pc/download",
         apple_url: "https://pc/apple",
@@ -127,6 +127,35 @@ describe("reissueOneWalletPass", () => {
     });
   });
 
+  it("skips a pass already removed at the provider without reading anything or calling it", async () => {
+    const { db } = makeDb();
+
+    const result = await reissueOneWalletPass(
+      db as never,
+      "evt-1",
+      { ...target, providerRemovedAt: new Date("2026-09-20T10:00:00Z") },
+      provider as never,
+      audit,
+    );
+
+    expect(result).toBe("skipped");
+    expect(db.attendee.findUnique).not.toHaveBeenCalled();
+    expect(provider.updatePass).not.toHaveBeenCalled();
+  });
+
+  it("logs no reissue and reports skipped when the pass was removed while the provider call was in flight", async () => {
+    const { db, txWalletPassUpdate } = makeDb();
+    db.attendee.findUnique.mockResolvedValueOnce({ qr_payload: "qr-1", external_uuid: null, token_enc: null });
+    vi.mocked(resolveTicket).mockResolvedValueOnce(resolvedTicket as never);
+    provider.updatePass.mockResolvedValueOnce({ downloadUrl: "d", appleUrl: "a", androidUrl: "g" });
+    txWalletPassUpdate.mockResolvedValueOnce({ count: 0 });
+
+    const result = await reissueOneWalletPass(db as never, "evt-1", target, provider as never, audit);
+
+    expect(result).toBe("skipped");
+    expect(writeActionLog).not.toHaveBeenCalled();
+  });
+
   it("records the provider's error code on the WalletPass row and rethrows", async () => {
     const { db } = makeDb();
     db.attendee.findUnique.mockResolvedValueOnce({ qr_payload: "qr-1", external_uuid: null, token_enc: null });
@@ -138,8 +167,9 @@ describe("reissueOneWalletPass", () => {
       reissueOneWalletPass(db as never, "evt-1", target, provider as never, audit),
     ).rejects.toThrow(providerErr);
 
-    expect(db.walletPass.update).toHaveBeenCalledWith({
-      where: { attendee_id: "att-1" },
+    // Conditional on the pass not having been removed while the provider call was in flight.
+    expect(db.walletPass.updateMany).toHaveBeenCalledWith({
+      where: { attendee_id: "att-1", provider_removed_at: null },
       data: { last_error_code: "rate_limited" },
     });
   });
@@ -154,8 +184,8 @@ describe("reissueOneWalletPass", () => {
       reissueOneWalletPass(db as never, "evt-1", target, provider as never, audit),
     ).rejects.toThrow("network timeout");
 
-    expect(db.walletPass.update).toHaveBeenCalledWith({
-      where: { attendee_id: "att-1" },
+    expect(db.walletPass.updateMany).toHaveBeenCalledWith({
+      where: { attendee_id: "att-1", provider_removed_at: null },
       data: { last_error_code: "wallet_provider_rejected" },
     });
   });
@@ -166,7 +196,7 @@ describe("reissueOneWalletPass", () => {
     vi.mocked(resolveTicket).mockResolvedValueOnce(resolvedTicket as never);
     const providerErr = new Error("provider down");
     provider.updatePass.mockRejectedValueOnce(providerErr);
-    db.walletPass.update.mockRejectedValueOnce(new Error("row locked"));
+    db.walletPass.updateMany.mockRejectedValueOnce(new Error("row locked"));
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     await expect(

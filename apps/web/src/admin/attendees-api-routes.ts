@@ -4378,8 +4378,10 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
   try {
     result = await ctx.provider.updatePass(ctx.providerPassId, input);
   } catch (err) {
-    await db.walletPass.update({
-      where: { attendee_id: ctx.attendeeId },
+    // Conditional like every write on this path: a removal that landed during the provider call
+    // freezes the row, so the error code is not recorded onto it.
+    await db.walletPass.updateMany({
+      where: { attendee_id: ctx.attendeeId, provider_removed_at: null },
       data: { last_error_code: err instanceof WalletProviderError ? err.code : "wallet_provider_rejected" },
     });
     return walletProviderErrorResponse(c, err, "handleReissueAttendeeWalletPass");
@@ -4390,16 +4392,14 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
     // job, a separate explicit action) - status/voided_at are deliberately left untouched here so
     // an already-voided pass stays voided instead of falsely reporting "active" while the
     // installed pass is still invalid at the provider, which would also hide the Restore action.
-    const row = await tx.walletPass.update({
-      where: { attendee_id: ctx.attendeeId },
-      data: {
-        download_url: result.downloadUrl,
-        apple_url: result.appleUrl,
-        android_url: result.androidUrl,
-        last_error_code: null,
-        last_synced_at: new Date(),
-      },
+    const row = await updateWalletPassUnlessRemoved(tx, ctx.attendeeId, {
+      download_url: result.downloadUrl,
+      apple_url: result.appleUrl,
+      android_url: result.androidUrl,
+      last_error_code: null,
+      last_synced_at: new Date(),
     });
+    if (!row) return null;
     await writeActionLog(tx, {
       event_id: eventId,
       attendee_id: ctx.attendeeId,
@@ -4409,6 +4409,7 @@ export async function handleReissueAttendeeWalletPass(c: Context, db: PrismaClie
     });
     return row;
   });
+  if (!updated) return c.json({ error: "wallet_pass_removed" }, 409);
   return c.json(serializeWalletPassAction(updated));
 }
 

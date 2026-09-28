@@ -240,6 +240,13 @@ function notifyBulkWalletActionResult(
   addToast(`No wallet passes ${verb}${noteSuffix}.`, "error");
 }
 
+/** Inline hint of the bulk Remove dialog after some removals failed - a repeat only retries what is
+ * left, since passes that were already removed are skipped. */
+function bulkRemoveRetryMessage(errored: number): string {
+  const passes = errored === 1 ? "pass" : "passes";
+  return `${errored} ${passes} could not be removed. Try again - passes that were already removed are skipped.`;
+}
+
 /** Shared three-way "none found / already set / N changed" toast for a bulk field-assignment
  * result — change ticket type and change attendance status independently duplicated this exact
  * branching (bot review). `labels` lets each caller keep its own copy (e.g. quoted vs unquoted,
@@ -2047,9 +2054,7 @@ export function AttendeesPage() {
           // Failures are safe to retry (a repeat skips what is already removed), so keep the
           // selection and the dialog instead of making the operator rebuild it. No reload here:
           // reloading the list clears the selection. The dialog's Cancel reloads instead.
-          setBulkRemoveWalletError(
-            `${result.errored} ${result.errored === 1 ? "pass" : "passes"} could not be removed. Try again - passes that were already removed are skipped.`,
-          );
+          setBulkRemoveWalletError(bulkRemoveRetryMessage(result.errored));
           return;
         }
         setBulkRemoveWalletConfirmOpen(false);

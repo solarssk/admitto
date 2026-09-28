@@ -3950,6 +3950,24 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         data: { provider_removed_at: new Date("2026-09-20T10:00:00.000Z") },
       });
     }
+    // An attendee whose ticket can actually be rebuilt (matching token hash and encrypted token),
+    // which the reissue paths need before they reach the provider.
+    async function seedIssuedActivePass(attendeeId: string) {
+      const token = generateToken();
+      await prisma.attendee.create({
+        data: {
+          id: attendeeId,
+          event_id: WALLET_ACTION_EVENT,
+          email: `${attendeeId}@example.com`,
+          name: "Wallet Reissue",
+          token_hash: hashToken(token),
+          token_enc: encryptToString(token),
+        },
+      });
+      await prisma.walletPass.create({
+        data: { attendee_id: attendeeId, provider: "passcreator", provider_pass_id: `pc-${attendeeId}`, status: "active" },
+      });
+    }
     async function dropAttendee(attendeeId: string) {
       await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
       await prisma.attendee.deleteMany({ where: { id: attendeeId } });
@@ -4090,6 +4108,74 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         expect(audit?.metadata).toMatchObject({ status_reset: true });
       } finally {
         await dropAttendee(attendeeId);
+      }
+    });
+
+    it("a Push updates whose provider call lands after a removal answers 409 and records nothing on the frozen row", async () => {
+      const attendeeId = "att-removed-guard-reissue-race";
+      await seedIssuedActivePass(attendeeId);
+      const before = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendeeId } });
+      updateSpy.mockImplementationOnce(async () => {
+        await prisma.walletPass.update({
+          where: { attendee_id: attendeeId },
+          data: { status: "voided", provider_removed_at: new Date() },
+        });
+        return {
+          providerPassId: `pc-${attendeeId}`,
+          downloadUrl: "https://pc.test/p/new",
+          appleUrl: "https://pc.test/apple/new",
+          androidUrl: "https://pc.test/android/new",
+        };
+      });
+      try {
+        const res = await post(`${attendeeId}/wallet/reissue`);
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: "wallet_pass_removed" });
+        const row = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendeeId } });
+        expect(row.apple_url).toBe(before.apple_url);
+        const audit = await prisma.attendeeActionLog.findFirst({
+          where: { attendee_id: attendeeId, action_type: "wallet_pass_reissued" },
+        });
+        expect(audit).toBeNull();
+      } finally {
+        await dropAttendee(attendeeId);
+      }
+    });
+
+    it("a failed Push updates does not write its error code onto a pass removed in the meantime", async () => {
+      const attendeeId = "att-removed-guard-reissue-error";
+      await seedIssuedActivePass(attendeeId);
+      updateSpy.mockImplementationOnce(async () => {
+        await prisma.walletPass.update({
+          where: { attendee_id: attendeeId },
+          data: { status: "voided", provider_removed_at: new Date() },
+        });
+        throw new Error("pass gone");
+      });
+      try {
+        const res = await post(`${attendeeId}/wallet/reissue`);
+        expect(res.status).toBe(502);
+        const row = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: attendeeId } });
+        expect(row.last_error_code).toBeNull();
+      } finally {
+        await dropAttendee(attendeeId);
+      }
+    });
+
+    it("bulk Push updates skips a removed pass without calling the provider for it", async () => {
+      const removedId = "att-removed-guard-bulk-reissue-removed";
+      await seedRemovedPass(removedId);
+      try {
+        const res = await app.request(`/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-reissue`, {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: [removedId] }),
+        });
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ reissued: 0, skipped: 1, errored: 0 });
+        expect(updateSpy).not.toHaveBeenCalled();
+      } finally {
+        await dropAttendee(removedId);
       }
     });
 

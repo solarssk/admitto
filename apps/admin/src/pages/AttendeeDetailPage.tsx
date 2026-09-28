@@ -570,7 +570,9 @@ function WalletActionMenuItems({
           </span>
         </button>
       )}
-      {platformActions && walletPass.status === "voided" && (
+      {/* A removed pass is voided but can never be restored or updated again (409 wallet_pass_removed),
+        * so neither is offered. */}
+      {platformActions && !walletPass.provider_removed_at && walletPass.status === "voided" && (
         <ArchivedGuard event={event} reasonId="restore-wallet-pass-reason-menu" disabled={walletBusy}>
           {(guard) => (
             <button type="button" role="menuitem" className="more-actions-menu__item" {...guard} onClick={onRestore}>
@@ -583,7 +585,7 @@ function WalletActionMenuItems({
           )}
         </ArchivedGuard>
       )}
-      {platformActions && hasWalletLifecycleActions(walletPass) && (
+      {platformActions && !walletPass.provider_removed_at && hasWalletLifecycleActions(walletPass) && (
         <ArchivedGuard event={event} reasonId="reissue-wallet-pass-reason-menu" disabled={walletBusy}>
           {(guard) => (
             <button type="button" role="menuitem" className="more-actions-menu__item" {...guard} onClick={onReissue}>

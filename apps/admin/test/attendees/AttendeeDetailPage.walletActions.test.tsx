@@ -669,6 +669,18 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(screen.queryByRole("menuitem", { name: /Remove from provider/ })).toBeNull();
     });
 
+    it("hides Restore and Push updates once the pass is removed: both would only end in a rejection", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "voided", provider_removed_at: REMOVED_AT }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      expect(screen.queryByRole("menuitem", { name: /Restore wallet pass/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Push updates/ })).toBeNull();
+      // Deleting the local record is still the way to start over.
+      expect(screen.getByRole("menuitem", { name: /Delete wallet pass/ })).toBeTruthy();
+    });
+
     it("needs the event's provider credentials: without them every click would 409", async () => {
       mockWalletConfigured = false;
       mockLoad(baseDetail({ wallet_pass: walletPass({ status: "voided" }) }));
