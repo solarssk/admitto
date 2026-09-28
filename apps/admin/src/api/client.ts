@@ -1235,10 +1235,13 @@ export async function triggerEventWideWalletVoidActive(eventId: string): Promise
   return parseJson<{ jobId: string }>(res);
 }
 
+/** Lifecycle of an AdminJob as the status routes report it. */
+export type AdminJobStatus = "pending" | "running" | "succeeded" | "failed";
+
 export interface WalletCleanupJobStatusResponse {
   jobId: string;
   type: "wallet_void_active";
-  status: "pending" | "running" | "succeeded" | "failed";
+  status: AdminJobStatus;
   error: string | null;
   progressTotal: number | null;
   progressDone: number | null;

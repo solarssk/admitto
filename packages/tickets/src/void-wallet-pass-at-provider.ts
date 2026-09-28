@@ -30,10 +30,13 @@ export async function voidOneWalletPassAtProvider(
   return db.$transaction(async (tx): Promise<VoidWalletPassOutcome> => {
     const now = new Date();
     const { count } = await tx.walletPass.updateMany({
-      where: { attendee_id: target.attendeeId, provider_removed_at: null },
+      // The pass identity is part of the predicate, like the removal helper's: a pass deleted and
+      // issued again while the provider call was in flight is a different pass this call never
+      // voided, and its row must not be marked voided.
+      where: { attendee_id: target.attendeeId, provider_pass_id: target.providerPassId, provider_removed_at: null },
       data: { status: "voided", voided_at: now, provider_commanded_at: now, last_error_code: null },
     });
-    // Removed by someone else while this pass was being processed: nothing left to mark.
+    // Removed, or replaced by a different pass, while this one was being processed: nothing to mark.
     if (count === 0) return "skipped";
     await writeActionLog(tx, {
       event_id: eventId,

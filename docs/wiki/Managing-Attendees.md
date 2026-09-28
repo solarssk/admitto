@@ -96,6 +96,7 @@ The attendee appears once in the event with accurate contact, ticket, and event-
   - Appears once this event has Wallet configured, and stays available on an archived event.
 - Attendees' header **More actions** also has **Void active passes**. It makes every active wallet pass of the event show as invalid in one go (a selection is limited to 100 attendees). It asks first, then runs in the background and shows a summary when it is done: how many passes were voided, how many were left alone because they were no longer active, and how many could not be voided (run it again to try those once more). The pass stays on the attendee's phone and their ticket is not changed. You can restore a single pass from the attendee's page until the event is over. Attendees who have not added a pass yet can still add one until the event is over; to stop that, a Superadmin can turn Wallet off in Event settings. It is not the same as **Remove from provider** or **Delete wallet pass**, which erase the pass from the wallet service for good.
   - Appears once this event has Wallet configured, and works on an archived event and with the Wallet switch off, like **Void wallet pass**.
+  - Only one run at a time per event: while one is running, starting another says so and waits. When it has finished, run it again if you want it to catch passes that became active in the meantime.
 - Export attendee information only for an approved event purpose.
 
 ## What changes after this action

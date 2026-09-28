@@ -25,7 +25,7 @@ import {
 import { WALLET_MESSAGE_SEND_BODY_MAX_BYTES } from "../../src/admin/wallet-message-routes.js";
 import { handleTriggerEventWideWalletPush } from "../../src/admin/wallet-push-routes.js";
 import { handleTriggerEventWideWalletRefreshStatus } from "../../src/admin/wallet-refresh-status-routes.js";
-import { handleTriggerEventWideWalletVoidActive } from "../../src/admin/wallet-cleanup-routes.js";
+import { handleGetWalletCleanupJob, handleTriggerEventWideWalletVoidActive } from "../../src/admin/wallet-cleanup-routes.js";
 import { createRateLimitStore, InMemoryRateLimitStore } from "../../src/rate-limit/index.js";
 import { CAPACITY_EXCLUDED_STATUSES } from "../../src/admin/event-capacity.js";
 import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
@@ -3164,6 +3164,101 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         const job = await prisma.adminJob.findFirstOrThrow({ where: { event_id: VOID_ALL_EVENT, type: "wallet_void_active" } });
         expect(job.result_json).toMatchObject({ done: 1, skipped: 0, errored: 1 });
       }));
+
+    it("does not reuse a job that is already running (it took its list of passes when it started): 409 with that job's id", async () => {
+      const running = await prisma.adminJob.create({
+        data: {
+          type: "wallet_void_active",
+          status: "running",
+          started_at: new Date(),
+          organization_id: ORG_A,
+          event_id: WALLET_ACTION_EVENT,
+          result_json: { request: { eventId: WALLET_ACTION_EVENT } },
+        },
+      });
+
+      const res = await postVoidActive(WALLET_ACTION_EVENT);
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "wallet_cleanup_already_running", jobId: running.id });
+      expect(
+        await prisma.adminJob.count({ where: { event_id: WALLET_ACTION_EVENT, type: "wallet_void_active" } }),
+      ).toBe(1);
+    });
+
+    it("also answers 409 when the job that won the enqueue race is already running", async () => {
+      const running = await prisma.adminJob.create({
+        data: {
+          type: "wallet_void_active",
+          status: "running",
+          started_at: new Date(),
+          organization_id: ORG_A,
+          event_id: WALLET_ACTION_EVENT,
+          result_json: { request: { eventId: WALLET_ACTION_EVENT } },
+        },
+      });
+      // The first lookup sees nothing (the race), the insert then hits the unique index, and the
+      // winner lookup finds the running job.
+      const findFirst = vi.spyOn(prisma.adminJob, "findFirst").mockResolvedValueOnce(null);
+      try {
+        const res = await postVoidActive(WALLET_ACTION_EVENT);
+
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ error: "wallet_cleanup_already_running", jobId: running.id });
+      } finally {
+        findFirst.mockRestore();
+      }
+    });
+
+    it("surfaces an unexpected enqueue failure instead of swallowing it", async () => {
+      const create = vi.spyOn(prisma.adminJob, "create").mockRejectedValueOnce(new Error("db down"));
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const res = await postVoidActive(WALLET_ACTION_EVENT);
+
+        expect(res.status).toBe(500);
+      } finally {
+        create.mockRestore();
+        errSpy.mockRestore();
+      }
+    });
+
+    it("rethrows a unique-index conflict when the job that caused it is already gone", async () => {
+      const findFirst = vi.spyOn(prisma.adminJob, "findFirst").mockResolvedValue(null);
+      const create = vi.spyOn(prisma.adminJob, "create").mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", clientVersion: "test" }),
+      );
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        const res = await postVoidActive(WALLET_ACTION_EVENT);
+
+        expect(res.status).toBe(500);
+      } finally {
+        findFirst.mockRestore();
+        create.mockRestore();
+        errSpy.mockRestore();
+      }
+    });
+
+    it("answers 404 when the event disappears between the access check and the lookup", async () => {
+      // Both the access check and the handler read only `organization_id`: the first read passes
+      // through, the second (the handler's own lookup) finds the event gone.
+      const realFindUnique = prisma.event.findUnique.bind(prisma.event);
+      let orgOnlyReads = 0;
+      const findUnique = vi.spyOn(prisma.event, "findUnique").mockImplementation(((args: { select?: Record<string, boolean> }) => {
+        const keys = Object.keys(args.select ?? {});
+        const orgOnly = keys.length === 1 && keys[0] === "organization_id";
+        return orgOnly && ++orgOnlyReads > 1 ? Promise.resolve(null) : realFindUnique(args as never);
+      }) as never);
+      try {
+        const res = await postVoidActive(WALLET_ACTION_EVENT);
+
+        expect(res.status).toBe(404);
+        expect(await res.json()).toEqual({ error: "not_found" });
+      } finally {
+        findUnique.mockRestore();
+      }
+    });
 
     it("keeps one pending job when two requests race past the check (the partial unique index decides)", async () => {
       const [a, b] = await Promise.all([postVoidActive(WALLET_ACTION_EVENT), postVoidActive(WALLET_ACTION_EVENT)]);
@@ -10807,6 +10902,23 @@ describe("GET /api/admin/events/:eventId/wallet-cleanup/jobs/:jobId", () => {
       status: "failed",
       error: "Wallet is not configured for this event.",
     });
+  });
+
+  it("returns 400 when the eventId route param is missing", async () => {
+    const miniApp = new Hono();
+    miniApp.get("/wallet-cleanup/jobs/:jobId", (c) => handleGetWalletCleanupJob(c, prisma));
+
+    const res = await miniApp.request("/wallet-cleanup/jobs/job-1");
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "eventId required" });
+  });
+
+  it("reports when the job started", async () => {
+    const startedAt = new Date("2026-06-01T10:00:00Z");
+    const job = await seedJob({ status: "running", started_at: startedAt });
+
+    expect(await (await getJob(EVENT_A, job.id)).json()).toMatchObject({ started_at: startedAt.toISOString() });
   });
 
   it("reports null counts, not a crash, for a job whose result_json was never populated", async () => {

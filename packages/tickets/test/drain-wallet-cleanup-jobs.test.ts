@@ -53,7 +53,7 @@ describe("drainWalletCleanupJobs", () => {
 
   /** The single terminal write of a job (status is only ever set to succeeded/failed once). */
   const terminalWrite = () =>
-    db.adminJob.update.mock.calls
+    [...db.adminJob.update.mock.calls, ...db.adminJob.updateMany.mock.calls]
       .map((call) => (call[0] as { data: Record<string, unknown> }).data)
       .find((data) => data.status === "succeeded" || data.status === "failed");
 
@@ -64,7 +64,7 @@ describe("drainWalletCleanupJobs", () => {
     vi.mocked(resolveWalletProvider).mockReset().mockReturnValue(provider as never);
     db.adminJob.update.mockReset().mockResolvedValue({});
     db.adminJob.findMany.mockReset().mockResolvedValue([]);
-    db.adminJob.updateMany.mockReset().mockResolvedValue({ count: 0 });
+    db.adminJob.updateMany.mockReset().mockResolvedValue({ count: 1 });
     db.backgroundWorkerHeartbeat.findUnique.mockReset().mockResolvedValue({ last_beat_at: new Date() });
     db.walletPass.findMany.mockReset().mockResolvedValue([passRow(1), passRow(2), passRow(3)]);
     db.event.findUnique.mockReset().mockResolvedValue({
@@ -108,6 +108,35 @@ describe("drainWalletCleanupJobs", () => {
       result_json: { request: { eventId: "evt-1" }, done: 3, skipped: 0, errored: 0 },
       error: null,
     });
+  });
+
+  it("finalizes only a job that is still running, and leaves one that was reclaimed meanwhile as it is", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(voidJob() as never);
+    db.adminJob.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    const result = await drainWalletCleanupJobs(db as never);
+
+    expect(db.adminJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "job-1", status: "running" } }),
+    );
+    expect(result).toMatchObject({ claimed: 1, succeeded: 0, failed: 1 });
+  });
+
+  it("runs a job that has no recorded actor, with an empty audit context", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(
+      voidJob({ actor_user_id: null, session_id: null, client_timezone: null }) as never,
+    );
+
+    await drainWalletCleanupJobs(db as never);
+
+    expect(voidOneWalletPassAtProvider).toHaveBeenCalledWith(
+      db,
+      "evt-1",
+      expect.anything(),
+      provider,
+      { operator: undefined, sessionId: undefined, timezone: undefined },
+      { eventWide: true },
+    );
   });
 
   it("resolves the provider from the event's credentials alone, so it works with the Wallet switch off", async () => {

@@ -3631,10 +3631,52 @@ describe("AttendeesPage header 'Void active passes' (event-wide, wallet configur
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith(
-        "Voiding the wallet passes did not run. Try again from More actions.",
+        "Could not check on the voiding. It may still be running in the background.",
         "info",
       );
     });
+  });
+
+  it("closes the dialog when the route moves to another event, and voids the new event only after its own confirmation", async () => {
+    triggerEventWideWalletVoidActive.mockResolvedValue({ jobId: "job-2" });
+    const router = createMemoryRouter([{ path: "/admin/events/:eventId/attendees", element: <AttendeesPage /> }], {
+      initialEntries: ["/admin/events/evt-1/attendees"],
+    });
+    render(<RouterProvider router={router} />);
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Void active passes/ }));
+    expect(screen.getByRole("dialog", { name: DIALOG })).toBeTruthy();
+
+    await act(async () => router.navigate("/admin/events/evt-2/attendees"));
+    await waitFor(() => {
+      expect(fetchEventAttendees).toHaveBeenCalledWith("evt-2", expect.anything(), expect.anything());
+    });
+
+    // Nothing left open to click: the confirmation belonged to evt-1.
+    expect(screen.queryByRole("dialog", { name: DIALOG })).toBeNull();
+    expect(triggerEventWideWalletVoidActive).not.toHaveBeenCalled();
+
+    // Confirming again on the new event voids that event, after opening its own dialog.
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Void active passes/ }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: DIALOG })).getByRole("button", { name: "Void all" }));
+    await waitFor(() => expect(triggerEventWideWalletVoidActive).toHaveBeenCalledWith("evt-2"));
+  });
+
+  it("shows the server's message inline when a void is already running for the event", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    triggerEventWideWalletVoidActive.mockRejectedValueOnce(new ApiError(409, "wallet_cleanup_already_running"));
+
+    const dialog = await openVoidActiveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Void all" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByRole("alert").textContent).toBe(
+        "Voiding is already running for this event. Try again once it finishes.",
+      );
+    });
+    expect(pollWalletCleanupCompletion).not.toHaveBeenCalled();
   });
 
   it("ignores a stale success after navigating to a different event mid-request", async () => {
@@ -3665,6 +3707,7 @@ describe("AttendeesPage header 'Void active passes' (event-wide, wallet configur
 
     expect(addToast).not.toHaveBeenCalledWith("Voiding started. You'll see a summary when it's done.", "info");
     expect(pollWalletCleanupCompletion).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: DIALOG })).toBeNull();
   });
 
   it("ignores a stale error after navigating to a different event mid-request", async () => {

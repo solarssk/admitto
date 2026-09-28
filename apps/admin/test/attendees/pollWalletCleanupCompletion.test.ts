@@ -74,6 +74,15 @@ describe("pollWalletCleanupCompletion", () => {
     expect(await poll()).toHaveBeenCalledWith(expected, "warning");
   });
 
+  it("uses its own attempt limit and interval when none are given", async () => {
+    fetchWalletCleanupJobStatus.mockResolvedValueOnce(status({ status: "succeeded", done: 1 }));
+    const addToast = vi.fn();
+
+    await pollWalletCleanupCompletion("void_active", "evt-1", "job-1", addToast, { signal: new AbortController().signal });
+
+    expect(addToast).toHaveBeenCalledWith("1 wallet pass voided.", "success");
+  });
+
   it("calls onSuccess only for a succeeded job", async () => {
     const onSuccess = vi.fn();
     fetchWalletCleanupJobStatus.mockResolvedValueOnce(status({ status: "succeeded", done: 1 }));

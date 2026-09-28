@@ -27,7 +27,7 @@ describe("voidOneWalletPassAtProvider", () => {
     expect(result).toBe("voided");
     expect(provider.voidPass).toHaveBeenCalledWith("pc-1");
     expect(txUpdateMany).toHaveBeenCalledWith({
-      where: { attendee_id: "att-1", provider_removed_at: null },
+      where: { attendee_id: "att-1", provider_pass_id: "pc-1", provider_removed_at: null },
       data: {
         status: "voided",
         voided_at: expect.any(Date),
@@ -74,6 +74,17 @@ describe("voidOneWalletPassAtProvider", () => {
     const result = await voidOneWalletPassAtProvider(db as never, "evt-1", target, provider as never, audit);
 
     expect(result).toBe("skipped");
+    expect(writeActionLog).not.toHaveBeenCalled();
+  });
+
+  it("skips, logging nothing, when the pass was deleted and issued again while the provider call was in flight (the new pass is not the one voided)", async () => {
+    // The write matches on the voided pass's own identity, so the replacement row matches nothing.
+    txUpdateMany.mockResolvedValue({ count: 0 });
+
+    const result = await voidOneWalletPassAtProvider(db as never, "evt-1", target, provider as never, audit);
+
+    expect(result).toBe("skipped");
+    expect(txUpdateMany.mock.calls[0]![0].where).toMatchObject({ provider_pass_id: "pc-1" });
     expect(writeActionLog).not.toHaveBeenCalled();
   });
 

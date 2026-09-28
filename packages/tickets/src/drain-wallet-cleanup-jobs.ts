@@ -184,8 +184,10 @@ async function finalizeWalletCleanupJob(
   }
 
   const allFailed = targetCount > 0 && errored === targetCount;
-  await db.adminJob.update({
-    where: { id: job.id },
+  // Only a job that is still running is finalized: one that was reclaimed as stale (marked failed)
+  // while this loop was still going keeps that status instead of being overwritten.
+  const { count } = await db.adminJob.updateMany({
+    where: { id: job.id, status: "running" },
     data: {
       status: allFailed ? "failed" : "succeeded",
       finished_at: new Date(),
@@ -193,6 +195,7 @@ async function finalizeWalletCleanupJob(
       error: allFailed ? WALLET_CLEANUP_JOB_ALL_FAILED_ERROR : null,
     },
   });
+  if (count === 0) return "failed";
   return allFailed ? "failed" : "succeeded";
 }
 

@@ -11,10 +11,13 @@ import { WALLET_CLEANUP_COPY } from "./walletCleanupCopy.js";
  * page just wires `confirmOpen`/`busy`/`error` into a ConfirmDialog and `requestConfirm` into the
  * menu item.
  *
- * Guards its success/error side effects against the operator navigating to a different event
- * before the request resolves (same isStillOnEvent pattern as the page's own bulk actions) and
- * aborts the poll when the event changes or the page unmounts, so a toast never lands on the
- * wrong event. */
+ * The confirmation belongs to the event it was opened on: `confirmEventId` is captured by
+ * `requestConfirm`, `confirm` acts on that event only, and the dialog (and any error shown on it)
+ * disappears as soon as the route event differs. Otherwise a dialog left open across a navigation
+ * could void every active pass of an event the operator never confirmed. The success and error side
+ * effects of a request that resolves after such a navigation are dropped the same way, and the poll
+ * is aborted when the event changes or the page unmounts, so a toast never lands on the wrong
+ * event. */
 export function useWalletVoidActive(params: {
   eventId: string | undefined;
   addToast: (message: string, variant?: ToastVariant) => void;
@@ -24,8 +27,8 @@ export function useWalletVoidActive(params: {
 }) {
   const { eventId, addToast, reportApiError, onFinished } = params;
   const [busy, setBusy] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [confirmEventId, setConfirmEventId] = useState<string | null>(null);
+  const [errorState, setErrorState] = useState<{ eventId: string; message: string } | null>(null);
   const eventIdRef = useRef(eventId);
   eventIdRef.current = eventId;
   const pollRef = useRef<AbortController | null>(null);
@@ -37,43 +40,47 @@ export function useWalletVoidActive(params: {
     };
   }, [eventId]);
 
+  const confirmOpen = confirmEventId !== null && confirmEventId === eventId;
+  const error = errorState !== null && errorState.eventId === eventId ? errorState.message : null;
+
   const requestConfirm = () => {
-    setError(null);
-    setConfirmOpen(true);
+    if (!eventId) return;
+    setErrorState(null);
+    setConfirmEventId(eventId);
   };
 
   const cancel = () => {
     if (busy) return;
-    setConfirmOpen(false);
-    setError(null);
+    setConfirmEventId(null);
+    setErrorState(null);
   };
 
   const confirm = async () => {
-    if (!eventId) return;
-    const initiatingEventId = eventId;
-    const isStillOnEvent = () => eventIdRef.current === initiatingEventId;
+    const targetEventId = confirmEventId;
+    if (!targetEventId || targetEventId !== eventIdRef.current) return;
+    const isStillOnEvent = () => eventIdRef.current === targetEventId;
     setBusy(true);
-    setError(null);
+    setErrorState(null);
     try {
-      const result = await triggerEventWideWalletVoidActive(initiatingEventId);
+      const result = await triggerEventWideWalletVoidActive(targetEventId);
       if (!isStillOnEvent()) return;
-      setConfirmOpen(false);
+      setConfirmEventId(null);
       addToast(WALLET_CLEANUP_COPY.void_active.queued, "info");
       pollRef.current?.abort();
       const ac = new AbortController();
       pollRef.current = ac;
-      void pollWalletCleanupCompletion("void_active", initiatingEventId, result.jobId, addToast, {
+      void pollWalletCleanupCompletion("void_active", targetEventId, result.jobId, addToast, {
         signal: ac.signal,
         onSuccess: onFinished,
       }).catch(() => {
         if (ac.signal.aborted) return;
-        addToast(WALLET_CLEANUP_COPY.void_active.failed, "info");
+        addToast(WALLET_CLEANUP_COPY.void_active.pollFailed, "info");
       });
     } catch (err) {
       if (isStillOnEvent()) {
         reportBulkActionError(err, {
           reportApiError,
-          setError,
+          setError: (message) => setErrorState(message === null ? null : { eventId: targetEventId, message }),
           addToast,
           apiErrorFallback: "Voiding the wallet passes failed.",
           genericFallback: "Failed to void the wallet passes.",
