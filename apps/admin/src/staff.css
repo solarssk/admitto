@@ -6939,12 +6939,6 @@ output.mail-field-hint {
   }
 }
 
-.overview-archived-note {
-  margin: 0;
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-}
-
 /* Two stacked, genuinely symmetric 1fr/1fr rows (mockup-aligned) instead of a wide-left +
  * narrow-fixed-width sidebar. Collapses to 1-column earlier (900px) than the KPI stat row
  * above (1024px) — these cards' own content (timeline list, donut + legend) stays readable
