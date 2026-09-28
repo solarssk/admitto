@@ -61,7 +61,10 @@ export function tryParseUploadKey(urlOrKey: string): string | null {
 export function extractUploadKeysFromText(text: string): string[] {
   if (!text) return [];
   const keys: string[] = [];
-  // Capture path after /uploads/ until whitespace, quote, or HTML/CSS delimiter.
+  // Capture path after /uploads/ until whitespace, quote, or HTML/CSS delimiter. Every quantifier is
+  // bounded and neighbouring classes are disjoint, so this is linear; the heuristic only objects to
+  // the repetition counts (a test feeds it a very long near-miss text).
+  // eslint-disable-next-line security/detect-unsafe-regex -- linear: all quantifiers bounded
   const re = /\/uploads\/([a-z0-9][a-z0-9_-]{0,63}(?:\/(?:theme|events\/[a-z0-9][a-z0-9_-]{0,127}))?\/[0-9a-f-]{36}\.(?:png|jpg|webp|woff2|woff|ttf|otf))/gi;
   for (const match of text.matchAll(re)) {
     const key = tryParseUploadKey(`/uploads/${match[1]}`);

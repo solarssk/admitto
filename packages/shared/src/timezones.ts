@@ -93,7 +93,9 @@ export function getTimeZone(timeZone: string): TimeZoneDefinition | null {
 }
 
 const NICE_ABBREVIATION_RE = /^[A-Za-z]{2,5}$/;
-const GMT_OFFSET_RE = /^GMT([+-])(\d{1,2})(?::(\d{2}))?$/;
+// ICU's own spelling of a numeric offset ("GMT+2", "GMT+5:30"), read only to get minutes; the
+// minutes are an alternation, not an optional group, with the same match and the same groups.
+const GMT_OFFSET_RE = /^GMT([+-])(\d{1,2})(?:$|:(\d{2})$)/;
 
 function icuTimeZoneNamePart(iana: string, date: Date, style: "short" | "shortOffset"): string | undefined {
   try {

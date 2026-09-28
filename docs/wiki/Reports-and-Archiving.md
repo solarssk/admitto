@@ -65,7 +65,7 @@ Reports reflect the recorded admissions and event data. An archived event remain
 
 ## Important decisions
 
-- Only a Superadmin can archive or unarchive an event.
+- Only a Superadmin can archive or restore an event.
 - Archiving is not a substitute for correcting unfinished event data.
 - Keep exported attendee data only for the approved purpose and retention period.
 - Restoring an event makes supported work possible again; it should have a clear operational reason.
@@ -79,7 +79,7 @@ An export creates a separate file outside Admitto and must be handled accordingl
 - **The archive control is disabled:** it is Superadmin-only.
 - **A report time looks unexpected:** check the event time zone and active filters.
 - **The report does not show an expected admission:** review the attendee activity and the operator's scan result before editing data.
-- **More work is needed after archiving:** ask a Superadmin to verify the reason and restore the event. A Superadmin can select **Restore event** in the archived notice on the event's **Overview** page and confirm, or use **Unarchive event** in **Event settings** → **Danger zone**. Other roles see the notice without the button.
+- **More work is needed after archiving:** ask a Superadmin to verify the reason and restore the event. A Superadmin can select **Restore event** in the archived notice on the event's **Overview** page and confirm, or use **Restore event** in **Event settings** → **Danger zone**. Other roles see the notice without the button.
 
 ## Related pages
 

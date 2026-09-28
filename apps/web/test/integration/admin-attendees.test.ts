@@ -6213,6 +6213,45 @@ describe("PATCH /api/admin/events/:eventId/attendees/:id", () => {
       } finally {
         voidSpy.mockRestore();
         updateSpy.mockRestore();
+        await prisma.attendee.update({ where: { id: WP_ATTENDEE }, data: { status: "registered" } });
+      }
+    });
+
+    it("never calls the provider for a pass removed at the provider, even when the same PATCH revokes the attendee and renames them", async () => {
+      // A removed pass no longer exists at the provider. The "revoked in this request" override that
+      // lets a content change through for a just-voided pass must not apply to it: there is nothing
+      // to void (the cascade skips it) and nothing to update.
+      // The PATCH below must really revoke: without a registered attendee to start from, it would
+      // carry no status change, the "revoked in this request" override would stay off, and the test
+      // would pass without the fix (a preceding test can leave the attendee revoked).
+      await prisma.attendee.update({ where: { id: WP_ATTENDEE }, data: { status: "registered" } });
+      await prisma.walletPass.update({
+        where: { attendee_id: WP_ATTENDEE },
+        data: { status: "voided", voided_at: new Date(), provider_removed_at: new Date("2026-09-20T10:00:00Z") },
+      });
+      const voidSpy = vi.spyOn(PassCreatorClient.prototype, "voidPass").mockResolvedValue(undefined);
+      const updateSpy = vi.spyOn(PassCreatorClient.prototype, "updatePass").mockResolvedValue({
+        providerPassId: WP_PROVIDER_PASS_ID,
+        appleUrl: "https://pc.test/apple/should-not-happen",
+        androidUrl: "https://pc.test/android/should-not-happen",
+      });
+      try {
+        const res = await patchWpAttendee({ status: "revoked", first_name: "Renamed After Removal" });
+
+        expect(res.status).toBe(200);
+        // Proof that the revoke really happened in this request.
+        expect((await prisma.attendee.findUniqueOrThrow({ where: { id: WP_ATTENDEE } })).status).toBe("revoked");
+        expect(voidSpy).not.toHaveBeenCalled();
+        expect(updateSpy).not.toHaveBeenCalled();
+        const pass = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: WP_ATTENDEE } });
+        expect(pass.status).toBe("voided");
+        expect(pass.provider_removed_at).not.toBeNull();
+        expect(pass.apple_url).not.toBe("https://pc.test/apple/should-not-happen");
+      } finally {
+        voidSpy.mockRestore();
+        updateSpy.mockRestore();
+        await prisma.walletPass.update({ where: { attendee_id: WP_ATTENDEE }, data: { provider_removed_at: null } });
+        await prisma.attendee.update({ where: { id: WP_ATTENDEE }, data: { status: "registered" } });
       }
     });
 

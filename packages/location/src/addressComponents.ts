@@ -26,8 +26,13 @@ const COMPONENT_MAX_LENGTH = 200;
 const POSTCODE_RE = /^(?:\d{2}-\d{3}|\d{4,6}|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})$/i;
 const REGION_RE = /województwo|voivodeship|province|canton|oblast|région|region\b|state of/i;
 /** Standalone house-number token: `12`, `12A`, `12/14`, `1-3`. */
-const HOUSE_NUMBER_RE = /^\d+[a-zA-Z]?(?:[/-]\d+[a-zA-Z]?)?$/;
-/** "Wybrzeże Szczecińskie 1" - number glued to the street name in one Nominatim segment. */
+const HOUSE_NUMBER_RE = /^(?:\d+[a-zA-Z]?|\d+[a-zA-Z]?[/-]\d+[a-zA-Z]?)$/;
+/** "Wybrzeże Szczecińskie 1" - number glued to the street name in one Nominatim segment. The
+ * trailing number is the same grammar as {@link HOUSE_NUMBER_RE}, written as an optional group
+ * here - change one, change the other. */
+// Anchored, so it has a single start position: the unsafe-regex heuristic flags the `.*\S\s+` shape,
+// not a real blow-up (a test feeds it a very long hostile segment).
+// eslint-disable-next-line security/detect-unsafe-regex -- linear: anchored, single start
 const TRAILING_NUMBER_IN_SEGMENT_RE = /^(.*\S)\s+(\d+[a-zA-Z]?(?:[/-]\d+[a-zA-Z]?)?)$/;
 
 function cleanComponent(value: string | null | undefined): string | null {

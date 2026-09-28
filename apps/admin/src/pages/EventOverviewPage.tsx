@@ -346,7 +346,7 @@ function SetupChecklistCard({
         <progress
           className={`overview-setup__bar overview-setup__bar--${tone}`}
           aria-label="Setup progress"
-          max={total || 1}
+          max={total}
           value={okCount}
         />
         <div className="overview-checklist">
