@@ -12,6 +12,7 @@ const restoreWalletPass = vi.fn();
 const reissueWalletPass = vi.fn();
 const refreshWalletPassStatus = vi.fn();
 const deleteWalletPass = vi.fn();
+const removeWalletPassFromProvider = vi.fn();
 
 vi.mock("../../src/attendees/attendeeDetailForm.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/attendees/attendeeDetailForm.js")>();
@@ -80,6 +81,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => {
     reissueWalletPass: (...args: unknown[]) => reissueWalletPass(...args),
     refreshWalletPassStatus: (...args: unknown[]) => refreshWalletPassStatus(...args),
     deleteWalletPass: (...args: unknown[]) => deleteWalletPass(...args),
+    removeWalletPassFromProvider: (...args: unknown[]) => removeWalletPassFromProvider(...args),
   };
 });
 
@@ -103,6 +105,7 @@ function walletPass(overrides: Partial<Record<string, unknown>> = {}) {
     first_confirmed_at: null,
     user_agent: null,
     user_agent_captured_at: null,
+    provider_removed_at: null,
     ...overrides,
   };
 }
@@ -234,19 +237,20 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(screen.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
     });
 
-    it("keeps only the read-only Refresh status, for an active pass, once the event's Wallet feature is disabled", async () => {
+    it("keeps only the wind-down actions (Void, Refresh status, Delete) for an active pass once the event's Wallet feature is disabled", async () => {
       mockWalletEnabled = false;
       mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
       renderPage();
       await screen.findByRole("heading", { name: "Anna" });
 
       openMoreActionsMenu();
-      expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
+      // Restore and Push updates change what the attendee's wallet shows, so the switch hides them.
       expect(screen.queryByRole("menuitem", { name: /Restore wallet pass/ })).toBeNull();
       expect(screen.queryByRole("menuitem", { name: /Push updates/ })).toBeNull();
-      expect(screen.queryByRole("menuitem", { name: /Delete wallet pass/ })).toBeNull();
-      // Reading changes nothing at the provider, so the switch does not hide it.
+      // Voiding, reading and deleting only wind a pass down, so the switch does not hide them.
+      expect(screen.getByRole("menuitem", { name: /Void wallet pass/ })).toBeTruthy();
       expect(screen.getByRole("menuitem", { name: /Refresh status/ })).toBeTruthy();
+      expect(screen.getByRole("menuitem", { name: /Delete wallet pass/ })).toBeTruthy();
     });
 
     it("shows no wallet action at all with the Wallet feature disabled and no credentials configured", async () => {
@@ -261,7 +265,7 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
     });
 
-    it("does not offer Refresh status when the platforms are on but the event has no credentials configured: every click would 409", async () => {
+    it("offers no provider-facing wind-down action when the platforms are on but the event has no credentials configured: every click would 409", async () => {
       mockWalletConfigured = false;
       mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
       renderPage();
@@ -269,8 +273,10 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
 
       openMoreActionsMenu();
       expect(screen.queryByRole("menuitem", { name: /Refresh status/ })).toBeNull();
-      // The other wallet actions are unaffected by the credentials gate.
-      expect(screen.getByRole("menuitem", { name: /Void wallet pass/ })).toBeTruthy();
+      expect(screen.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: /Delete wallet pass/ })).toBeNull();
+      // Push updates is gated on the platforms, not on credentials.
+      expect(screen.getByRole("menuitem", { name: /Push updates/ })).toBeTruthy();
     });
 
     it("shows nothing for a voided pass once the Wallet feature is disabled, even with credentials: there is nothing left to read", async () => {
@@ -337,19 +343,18 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(voidWalletPass).not.toHaveBeenCalled();
     });
 
-    it("disables Void wallet pass (in More actions) for an archived event", async () => {
+    it("still offers Void wallet pass on an archived event, while Push updates stays locked: voiding winds a pass down", async () => {
       mockArchivedAt = "2026-01-01T00:00:00.000Z";
       mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
       renderPage();
       await screen.findByRole("heading", { name: "Anna" });
 
       openMoreActionsMenu();
-      const item = screen.getByRole("menuitem", { name: /Void wallet pass/ });
-      expect((item as HTMLButtonElement).disabled).toBe(true);
-      const describedBy = item.getAttribute("aria-describedby");
-      expect(describedBy).toBeTruthy();
-      expect(document.getElementById(describedBy!)?.textContent).toBe(ARCHIVED_ACTION_TOOLTIP);
-      expect(getTooltipText(item)).toBe(ARCHIVED_ACTION_TOOLTIP);
+      const voidItem = screen.getByRole("menuitem", { name: /Void wallet pass/ });
+      expect((voidItem as HTMLButtonElement).disabled).toBe(false);
+      const push = screen.getByRole("menuitem", { name: /Push updates/ });
+      expect((push as HTMLButtonElement).disabled).toBe(true);
+      expect(getTooltipText(push)).toBe(ARCHIVED_ACTION_TOOLTIP);
     });
   });
 
@@ -632,6 +637,147 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
 
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(deleteWalletPass).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Remove from provider", () => {
+    const REMOVED_AT = "2026-09-20T10:00:00.000Z";
+
+    it("is offered for a voided and for an expired pass, but not for an active one", async () => {
+      for (const status of ["voided", "expired"] as const) {
+        mockLoad(baseDetail({ wallet_pass: walletPass({ status }) }));
+        renderPage();
+        await screen.findByRole("heading", { name: "Anna" });
+        openMoreActionsMenu();
+        expect(screen.getByRole("menuitem", { name: /Remove from provider/ })).toBeTruthy();
+        cleanup();
+      }
+
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "active" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+      openMoreActionsMenu();
+      expect(screen.queryByRole("menuitem", { name: /Remove from provider/ })).toBeNull();
+    });
+
+    it("is not offered again once the pass has been removed", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "voided", provider_removed_at: REMOVED_AT }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      expect(screen.queryByRole("menuitem", { name: /Remove from provider/ })).toBeNull();
+    });
+
+    it("needs the event's provider credentials: without them every click would 409", async () => {
+      mockWalletConfigured = false;
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "voided" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      expect(screen.queryByRole("menuitem", { name: /Remove from provider/ })).toBeNull();
+    });
+
+    it("stays available on an archived event with the Wallet feature switched off: it is how a pass is wound down afterwards", async () => {
+      mockArchivedAt = "2026-01-01T00:00:00.000Z";
+      mockWalletEnabled = false;
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "voided" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      const item = screen.getByRole("menuitem", { name: /Remove from provider/ });
+      expect((item as HTMLButtonElement).disabled).toBe(false);
+      // Delete winds down too, but Restore and Push updates do not.
+      expect(screen.getByRole("menuitem", { name: /Delete wallet pass/ })).toBeTruthy();
+      expect(screen.queryByRole("menuitem", { name: /Restore wallet pass/ })).toBeNull();
+    });
+
+    it("explains in the confirm dialog how it differs from Delete", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "voided" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      fireEvent.click(screen.getByRole("menuitem", { name: /Remove from provider/ }));
+      const dialog = screen.getByRole("dialog", { name: "Remove from provider?" });
+      expect(within(dialog).getByText(/keeps the local record and its Reports history/)).toBeTruthy();
+      expect(within(dialog).getByText(/Irreversible at the provider/)).toBeTruthy();
+    });
+
+    it("confirms, calls removeWalletPassFromProvider, toasts, and reloads detail", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "voided" }) }));
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "voided", provider_removed_at: REMOVED_AT }) }));
+      removeWalletPassFromProvider.mockResolvedValueOnce(
+        walletPass({ status: "voided", provider_removed_at: REMOVED_AT }),
+      );
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      fireEvent.click(screen.getByRole("menuitem", { name: /Remove from provider/ }));
+      const dialog = screen.getByRole("dialog", { name: "Remove from provider?" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+      await waitFor(() => {
+        expect(removeWalletPassFromProvider).toHaveBeenCalledWith("evt-1", "att-1");
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Wallet pass removed from the provider\./);
+
+      openMoreActionsMenu();
+      expect(screen.queryByRole("menuitem", { name: /Remove from provider/ })).toBeNull();
+    });
+
+    it("shows an inline error and keeps the dialog open when the removal fails", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "voided" }) }));
+      const { ApiError } = await import("../../src/api/client.js");
+      removeWalletPassFromProvider.mockRejectedValueOnce(new ApiError(500, "server_error", "server_error"));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      fireEvent.click(screen.getByRole("menuitem", { name: /Remove from provider/ }));
+      const dialog = screen.getByRole("dialog", { name: "Remove from provider?" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+      expect(await within(dialog).findByText("Could not remove the wallet pass from the provider.")).toBeTruthy();
+      expect(screen.getByRole("dialog")).toBeTruthy();
+      expect(screen.queryByTestId("at-toast")).toBeNull();
+    });
+
+    it("Cancel closes the dialog without calling the API", async () => {
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "voided" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      fireEvent.click(screen.getByRole("menuitem", { name: /Remove from provider/ }));
+      const dialog = screen.getByRole("dialog", { name: "Remove from provider?" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(removeWalletPassFromProvider).not.toHaveBeenCalled();
+    });
+
+    it("shows when the pass was removed on the Wallet card, and labels its frozen counts 'Was registered'", async () => {
+      mockLoad(
+        baseDetail({
+          wallet_pass: walletPass({
+            status: "voided",
+            provider_removed_at: REMOVED_AT,
+            apple_active_registrations: 1,
+            apple_inactive_registrations: 0,
+          }),
+        }),
+      );
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      expect(screen.getByText("Removed from provider")).toBeTruthy();
+      expect(screen.getByText("Was registered")).toBeTruthy();
+      expect(screen.queryByText("Registered")).toBeNull();
     });
   });
 

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RouterProvider } from "react-router/dom";
 import { createMemoryRouter, MemoryRouter, Route, Routes } from "react-router";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
+import { ARCHIVED_ACTION_TOOLTIP } from "../../src/components/ArchivedGuard.js";
 import { getTooltipText, mockMatchMedia } from "../test-utils.js";
 import type { AttendeeRowDto } from "../../src/api/types.js";
 import { reportApiError } from "../../src/connection/ConnectionStateProvider.js";
@@ -23,6 +24,7 @@ const bulkVoidWalletPass = vi.fn();
 const bulkReissueWalletPass = vi.fn();
 const bulkRefreshWalletStatus = vi.fn();
 const bulkDeleteWalletPass = vi.fn();
+const bulkRemoveWalletPass = vi.fn();
 const bulkChangeTicketType = vi.fn();
 const bulkChangeRsvpStatus = vi.fn();
 const bulkSetAttendeeField = vi.fn();
@@ -134,6 +136,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   bulkReissueWalletPass: (...args: unknown[]) => bulkReissueWalletPass(...args),
   bulkRefreshWalletStatus: (...args: unknown[]) => bulkRefreshWalletStatus(...args),
   bulkDeleteWalletPass: (...args: unknown[]) => bulkDeleteWalletPass(...args),
+  bulkRemoveWalletPass: (...args: unknown[]) => bulkRemoveWalletPass(...args),
   triggerEventWideWalletPush: (...args: unknown[]) => triggerEventWideWalletPush(...args),
   triggerEventWideWalletRefreshStatus: (...args: unknown[]) => triggerEventWideWalletRefreshStatus(...args),
   updateAttendee: vi.fn(),
@@ -1128,7 +1131,7 @@ describe("AttendeesPage bulk wallet actions (#879)", () => {
     expect(getTooltipText(refreshItem)).toBe("None of the selected attendees have added a wallet pass.");
   });
 
-  it("keeps the bulk 'Refresh status' item enabled on an archived event while Void, Push updates and Delete are disabled: it only reads", async () => {
+  it("keeps the wind-down items (Void, Refresh status, Remove, Delete) enabled on an archived event while Push updates is disabled", async () => {
     mockArchivedAt = "2026-01-01T00:00:00.000Z";
     fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
 
@@ -1138,14 +1141,16 @@ describe("AttendeesPage bulk wallet actions (#879)", () => {
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
     fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
 
-    const refreshItem = bulkBar().getByRole("menuitem", { name: /^Refresh status/ }) as HTMLButtonElement;
-    expect(refreshItem.disabled).toBe(false);
-    for (const name of [/^Void wallet pass/, /^Push updates/, /^Delete wallet pass/]) {
-      expect((bulkBar().getByRole("menuitem", { name }) as HTMLButtonElement).disabled).toBe(true);
+    for (const name of [/^Void wallet pass/, /^Refresh status/, /^Remove from provider/, /^Delete wallet pass/]) {
+      expect((bulkBar().getByRole("menuitem", { name }) as HTMLButtonElement).disabled).toBe(false);
     }
+    // Push updates changes what attendees' wallets show, so the archived lock stays.
+    const push = bulkBar().getByRole("menuitem", { name: /^Push updates/ }) as HTMLButtonElement;
+    expect(push.disabled).toBe(true);
+    expect(getTooltipText(push)).toBe(ARCHIVED_ACTION_TOOLTIP);
   });
 
-  it("keeps only the read-only bulk 'Refresh status' with the Wallet switch off: Void, Push updates and Delete are not offered", async () => {
+  it("keeps the wind-down items with the Wallet switch off, and hides only Push updates", async () => {
     mockWalletEnabled = false;
     fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
 
@@ -1155,10 +1160,114 @@ describe("AttendeesPage bulk wallet actions (#879)", () => {
     await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
     fireEvent.click(bulkBar().getByRole("button", { name: "More actions" }));
 
-    expect((bulkBar().getByRole("menuitem", { name: /^Refresh status/ }) as HTMLButtonElement).disabled).toBe(false);
-    for (const name of [/^Void wallet pass/, /^Push updates/, /^Delete wallet pass/]) {
-      expect(bulkBar().queryByRole("menuitem", { name })).toBeNull();
+    for (const name of [/^Void wallet pass/, /^Refresh status/, /^Remove from provider/, /^Delete wallet pass/]) {
+      expect((bulkBar().getByRole("menuitem", { name }) as HTMLButtonElement).disabled).toBe(false);
     }
+    expect(bulkBar().queryByRole("menuitem", { name: /^Push updates/ })).toBeNull();
+  });
+
+  it("removes the selected attendees' passes from the provider, toasts, and clears the selection", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkRemoveWalletPass.mockResolvedValue({ removed: 1, skipped: 0, errored: 0 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Remove from provider/);
+    expect(within(dialog).getByText("Remove wallet passes from the provider?")).toBeTruthy();
+    expect(within(dialog).getByText(/voided or expired passes among the 1 selected attendee/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => expect(bulkRemoveWalletPass).toHaveBeenCalledWith("evt-1", ["att-1"]));
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith("1 wallet pass removed.", "success"));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeNull());
+  });
+
+  it("keeps the selection and the dialog open, with a retry hint, when some removals fail", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkRemoveWalletPass.mockResolvedValue({ removed: 1, skipped: 0, errored: 2 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Remove from provider/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => expect(addToast).toHaveBeenCalledWith(
+      "1 wallet pass removed (2 failed unexpectedly).",
+      "warning",
+    ));
+    expect(
+      await within(dialog).findByText(
+        "2 passes could not be removed. Try again - passes that were already removed are skipped.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(document.querySelector(".attendees-bulkbar")).toBeTruthy();
+
+    // Cancelling after a partial failure refreshes the list, which the failed attempt skipped.
+    const loadsBefore = fetchEventAttendees.mock.calls.length;
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(fetchEventAttendees.mock.calls.length).toBeGreaterThan(loadsBefore));
+  });
+
+  it("uses the singular in the retry hint when exactly one removal fails", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkRemoveWalletPass.mockResolvedValue({ removed: 0, skipped: 0, errored: 1 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Remove from provider/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    expect(
+      await within(dialog).findByText(
+        "1 pass could not be removed. Try again - passes that were already removed are skipped.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("Cancel closes the bulk remove dialog without calling bulkRemoveWalletPass", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Remove from provider/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(bulkRemoveWalletPass).not.toHaveBeenCalled();
+  });
+
+  it("toasts the all-skipped info message when nothing in the selection could be removed", async () => {
+    fetchEventAttendees.mockResolvedValue({ items: [walletA, walletB], total: 2, page: 1, pageSize: 25 });
+    bulkRemoveWalletPass.mockResolvedValue({ removed: 0, skipped: 1, errored: 0 });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Jane Doe" }));
+    await waitFor(() => expect(document.querySelector(".attendees-bulkbar")).toBeTruthy());
+
+    const dialog = openMenuItemAndArmDialog(/^Remove from provider/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() =>
+      expect(addToast).toHaveBeenCalledWith(
+        "None of the selected attendees had a voided or expired pass to remove from the provider.",
+        "info",
+      ),
+    );
   });
 
   it("Cancel closes the bulk-wallet-void dialog without calling bulkVoidWalletPass", async () => {

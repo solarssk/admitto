@@ -2043,6 +2043,15 @@ export function AttendeesPage() {
           },
           addToast,
         );
+        if (result.errored > 0) {
+          // Failures are safe to retry (a repeat skips what is already removed), so keep the
+          // selection and the dialog instead of making the operator rebuild it. No reload here:
+          // reloading the list clears the selection. The dialog's Cancel reloads instead.
+          setBulkRemoveWalletError(
+            `${result.errored} ${result.errored === 1 ? "pass" : "passes"} could not be removed. Try again - passes that were already removed are skipped.`,
+          );
+          return;
+        }
         setBulkRemoveWalletConfirmOpen(false);
         clearSelection();
         setReloadToken((n) => n + 1);
@@ -2619,8 +2628,8 @@ export function AttendeesPage() {
 
       <ConfirmDialog
         open={bulkRemoveWalletConfirmOpen}
-        title={`Remove ${walletPassCount} attendee${walletPassCount === 1 ? "" : "s"}' wallet pass from the provider?`}
-        message="Permanently deletes each attendee's pass at the provider. Unlike Delete, this keeps the local record and its Reports history - it just stops the provider counting these passes towards its own plan."
+        title="Remove wallet passes from the provider?"
+        message={`Permanently deletes the voided or expired passes among the ${selectedIds.size} selected attendee${selectedIds.size === 1 ? "" : "s"} at the provider. Unlike Delete, this keeps the local record and its Reports history - it just stops the provider counting these passes towards its own plan.`}
         errorMessage={bulkRemoveWalletError}
         confirmLabel="Remove"
         confirmVariant="danger"
@@ -2629,6 +2638,8 @@ export function AttendeesPage() {
         onCancel={() => {
           if (!bulkRemoveWalletBusy) {
             setBulkRemoveWalletConfirmOpen(false);
+            // A partial failure left the list as it was before the removals; refresh it now.
+            if (bulkRemoveWalletError) setReloadToken((n) => n + 1);
             setBulkRemoveWalletError(null);
           }
         }}

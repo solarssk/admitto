@@ -39,6 +39,25 @@ describe("WalletColumnCell", () => {
     expect(google.className).not.toContain("attendees-table-v2__wallet-icon--active");
   });
 
+  it("labels the counts of a pass removed at the provider 'Was registered': they are a frozen snapshot, not a live read", () => {
+    render(
+      <WalletColumnCell
+        status={{
+          apple_active_registrations: 1,
+          apple_inactive_registrations: 0,
+          google_active_registrations: 0,
+          google_inactive_registrations: 0,
+          samsung_active_registrations: 0,
+          samsung_inactive_registrations: 0,
+          provider_removed_at: "2026-09-20T10:00:00.000Z",
+        }}
+        enabledPlatforms={BOTH_ENABLED}
+      />,
+    );
+    expect(screen.getByLabelText("Apple Wallet: Was registered")).toBeTruthy();
+    expect(screen.getByLabelText("Google Wallet: Not added")).toBeTruthy();
+  });
+
   it("highlights the Samsung icon too once it has a real active registration", () => {
     render(
       <WalletColumnCell

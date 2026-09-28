@@ -200,9 +200,13 @@ function MoreActionsMenu({
   // still active - and nothing else (not the Wallet switch). Without credentials every click would
   // 409 wallet_not_configured (bot review).
   const refreshAvailable = walletConfigured && walletPass?.status === "active";
-  // Same posture as refreshAvailable above - Remove is archive/switched-off-exempt, so it needs
-  // the event's credentials and a removable pass, not the Wallet switch (walletPlatforms.any).
+  // Same posture as refreshAvailable above for the three actions that wind a pass down - Void,
+  // Remove and Delete are archive/switched-off-exempt at the API, so they need the event's
+  // credentials and a pass in the right state, not the Wallet switch (walletPlatforms.any) and not
+  // an unarchived event.
+  const voidAvailable = walletConfigured && walletPass?.status === "active";
   const removeAvailable = walletConfigured && canRemoveWalletPass(walletPass);
+  const deleteAvailable = walletConfigured && hasAnyWalletMenuAction(walletPass);
 
   return (
     <div className="more-actions-menu" ref={rootRef}>
@@ -317,19 +321,26 @@ function MoreActionsMenu({
           />
           {/* Own divider only when the group itself renders something - an unconditional one here
               would leave an empty gap between two adjacent dividers whenever the attendee has no
-              wallet pass yet (bot review). Void/restore/push/delete need the event to still offer a
-              wallet platform: an admin who turns Wallet off shouldn't still change a pass through
-              this menu even though the Wallet card itself is now hidden (bot review). Refresh
-              status and Remove only need the event's credentials configured, switch or not (bot
-              review; Remove is archive/switched-off-exempt the same way, plan v4.2 PR 3). */}
-          {(walletPlatforms.any ? hasAnyWalletMenuAction(walletPass) : refreshAvailable || removeAvailable) && (
+              wallet pass yet (bot review). Restore and push updates change what the attendee's
+              wallet shows, so they need the event to still offer a wallet platform: an admin who
+              turns Wallet off shouldn't still change a pass through this menu even though the Wallet
+              card itself is now hidden (bot review). Void, Refresh status, Remove and Delete only
+              need the event's credentials configured, switch or archive state aside - they wind a
+              pass down (plan v4.2 business rules). */}
+          {((walletPlatforms.any && hasAnyWalletMenuAction(walletPass)) ||
+            voidAvailable ||
+            refreshAvailable ||
+            removeAvailable ||
+            deleteAvailable) && (
             <>
               <hr className="more-actions-menu__divider" />
               <WalletActionMenuItems
                 event={event}
                 platformActions={walletPlatforms.any}
+                voidAvailable={voidAvailable}
                 refreshAvailable={refreshAvailable}
                 removeAvailable={removeAvailable}
+                deleteAvailable={deleteAvailable}
                 walletPass={walletPass}
                 walletBusy={walletBusy}
                 onVoid={() => {
@@ -493,21 +504,21 @@ function RevokeActionMenuItems({
   );
 }
 
-/** Void/Restore/Reissue only make sense once the attendee has actually added a pass to a wallet
- * (walletPass null until their first "Add to Wallet" click succeeds or fails) - nothing renders
- * before then, matching RevokeActionMenuItems' own toggle-by-state shape above. Reissue stays
- * available in both active and voided states (it only pushes fresh data, independent of void
- * state); Void/Restore toggle the same way Revoke/Restore pass do above. Delete is offered one
- * state further, for `expired` too - unlike voided, expired is irreversible (there is no Restore
- * for it), so Delete is the only way today to get unstuck from one (removing the local row lets the
- * attendee start over; Remove-from-provider proper is PR 3's job) - Codex review, 2026-09-27. Each
- * section gates itself rather than one early return, so Delete still renders for a pass none of the
- * other sections apply to. */
+/** Wallet actions only make sense once the attendee has actually added a pass (walletPass null
+ * until their first "Add to Wallet" click succeeds or fails) - nothing renders before then. Void,
+ * Refresh status, Remove and Delete wind a pass down and stay available on an archived event and
+ * with the Wallet switch off (only the event's credentials matter), so they are not wrapped in
+ * ArchivedGuard and do not depend on `platformActions`. Restore and Push updates change what the
+ * attendee's wallet shows and keep both gates. Delete is offered for `expired` too - unlike voided,
+ * expired is irreversible (there is no Restore for it). Each section gates itself rather than one
+ * early return, so an expired pass still gets Remove and Delete. */
 function WalletActionMenuItems({
   event,
   platformActions,
+  voidAvailable,
   refreshAvailable,
   removeAvailable,
+  deleteAvailable,
   walletPass,
   walletBusy,
   onVoid,
@@ -518,14 +529,19 @@ function WalletActionMenuItems({
   onRemove,
 }: Readonly<{
   event: ArchivedGuardEvent;
-  /** False when the event no longer offers any wallet platform: only the read-only Refresh
-   * status and Remove are left. */
+  /** False when the event no longer offers any wallet platform: Restore and Push updates are
+   * hidden (the wind-down actions below stay, see their own flags). */
   platformActions: boolean;
+  /** Void is offered: the event has credentials configured and the pass is active. */
+  voidAvailable: boolean;
   /** Refresh status is offered: the event has credentials configured and the pass is active. */
   refreshAvailable: boolean;
   /** Remove from provider is offered: the event has credentials configured and the pass is
    * voided or expired and not already removed. */
   removeAvailable: boolean;
+  /** Delete is offered: the event has credentials configured and a pass exists in any of the
+   * active, voided or expired states. */
+  deleteAvailable: boolean;
   walletPass: WalletPassActionDto | null;
   walletBusy: boolean;
   onVoid: () => void;
@@ -539,57 +555,46 @@ function WalletActionMenuItems({
 
   return (
     <>
-      {platformActions && hasWalletLifecycleActions(walletPass) && (
-        <>
-          {walletPass.status === "active" ? (
-            <ArchivedGuard event={event} reasonId="void-wallet-pass-reason-menu" disabled={walletBusy}>
-              {(guard) => (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="more-actions-menu__item more-actions-menu__item--warning"
-                  {...guard}
-                  onClick={onVoid}
-                >
-                  <i className="ti ti-wallet-off" aria-hidden="true" />
-                  <span className="more-actions-menu__item-text">
-                    <span>Void wallet pass</span>
-                    <span className="more-actions-menu__item-hint">Show as invalid in their wallet</span>
-                  </span>
-                </button>
-              )}
-            </ArchivedGuard>
-          ) : (
-            <ArchivedGuard event={event} reasonId="restore-wallet-pass-reason-menu" disabled={walletBusy}>
-              {(guard) => (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="more-actions-menu__item"
-                  {...guard}
-                  onClick={onRestore}
-                >
-                  <i className="ti ti-refresh" aria-hidden="true" />
-                  <span className="more-actions-menu__item-text">
-                    <span>Restore wallet pass</span>
-                    <span className="more-actions-menu__item-hint">Show as valid again in their wallet</span>
-                  </span>
-                </button>
-              )}
-            </ArchivedGuard>
+      {voidAvailable && (
+        <button
+          type="button"
+          role="menuitem"
+          className="more-actions-menu__item more-actions-menu__item--warning"
+          disabled={walletBusy}
+          onClick={onVoid}
+        >
+          <i className="ti ti-wallet-off" aria-hidden="true" />
+          <span className="more-actions-menu__item-text">
+            <span>Void wallet pass</span>
+            <span className="more-actions-menu__item-hint">Show as invalid in their wallet</span>
+          </span>
+        </button>
+      )}
+      {platformActions && walletPass.status === "voided" && (
+        <ArchivedGuard event={event} reasonId="restore-wallet-pass-reason-menu" disabled={walletBusy}>
+          {(guard) => (
+            <button type="button" role="menuitem" className="more-actions-menu__item" {...guard} onClick={onRestore}>
+              <i className="ti ti-refresh" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>Restore wallet pass</span>
+                <span className="more-actions-menu__item-hint">Show as valid again in their wallet</span>
+              </span>
+            </button>
           )}
-          <ArchivedGuard event={event} reasonId="reissue-wallet-pass-reason-menu" disabled={walletBusy}>
-            {(guard) => (
-              <button type="button" role="menuitem" className="more-actions-menu__item" {...guard} onClick={onReissue}>
-                <i className="ti ti-refresh-dot" aria-hidden="true" />
-                <span className="more-actions-menu__item-text">
-                  <span>Push updates</span>
-                  <span className="more-actions-menu__item-hint">Push the latest details to their wallet pass</span>
-                </span>
-              </button>
-            )}
-          </ArchivedGuard>
-        </>
+        </ArchivedGuard>
+      )}
+      {platformActions && hasWalletLifecycleActions(walletPass) && (
+        <ArchivedGuard event={event} reasonId="reissue-wallet-pass-reason-menu" disabled={walletBusy}>
+          {(guard) => (
+            <button type="button" role="menuitem" className="more-actions-menu__item" {...guard} onClick={onReissue}>
+              <i className="ti ti-refresh-dot" aria-hidden="true" />
+              <span className="more-actions-menu__item-text">
+                <span>Push updates</span>
+                <span className="more-actions-menu__item-hint">Push the latest details to their wallet pass</span>
+              </span>
+            </button>
+          )}
+        </ArchivedGuard>
       )}
       {/* Only for an active pass of an event with credentials configured: a voided or expired one
         * is Admitto's own recorded state and is never read again. Deliberately not ArchivedGuard'd -
@@ -610,11 +615,8 @@ function WalletActionMenuItems({
           </span>
         </button>
       )}
-      {/* Deliberately not ArchivedGuard'd, and not gated on platformActions - Remove is archive/
-        * switched-off-exempt (plan v4.2 PR 3 business rules table), same as Void and Delete
-        * already are at the API layer. This is what actually stops the provider counting a
-        * voided/expired pass towards its own registration plan; Delete below only wipes the local
-        * row and Reports history along with it. */}
+      {/* This is what actually stops the provider counting a voided/expired pass towards its own
+        * plan; Delete below only wipes the local row and Reports history along with it. */}
       {removeAvailable && (
         <button
           type="button"
@@ -630,24 +632,20 @@ function WalletActionMenuItems({
           </span>
         </button>
       )}
-      {platformActions && hasAnyWalletMenuAction(walletPass) && (
-        <ArchivedGuard event={event} reasonId="delete-wallet-pass-reason-menu" disabled={walletBusy}>
-          {(guard) => (
-            <button
-              type="button"
-              role="menuitem"
-              className="more-actions-menu__item more-actions-menu__item--danger"
-              {...guard}
-              onClick={onDelete}
-            >
-              <i className="ti ti-trash" aria-hidden="true" />
-              <span className="more-actions-menu__item-text">
-                <span>Delete wallet pass</span>
-                <span className="more-actions-menu__item-hint">Permanently deletes the pass record and its history</span>
-              </span>
-            </button>
-          )}
-        </ArchivedGuard>
+      {deleteAvailable && (
+        <button
+          type="button"
+          role="menuitem"
+          className="more-actions-menu__item more-actions-menu__item--danger"
+          disabled={walletBusy}
+          onClick={onDelete}
+        >
+          <i className="ti ti-trash" aria-hidden="true" />
+          <span className="more-actions-menu__item-text">
+            <span>Delete wallet pass</span>
+            <span className="more-actions-menu__item-hint">Permanently deletes the pass record and its history</span>
+          </span>
+        </button>
       )}
     </>
   );
