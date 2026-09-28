@@ -54,4 +54,13 @@ describe("extractUploadKeysFromText", () => {
       extractUploadKeysFromText("/uploads/default/------------------------------------.png"),
     ).toEqual([]);
   });
+
+  it("stays fast on a very long text of near-miss upload paths and still finds the real one", () => {
+    const key = "default/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.png";
+    const hostile = `${"/uploads/".repeat(50_000)}/uploads/${key}`;
+    const started = performance.now();
+
+    expect(extractUploadKeysFromText(hostile)).toEqual([key]);
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
 });

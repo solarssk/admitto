@@ -57,10 +57,14 @@ const typeAwareFollowUpRules = {
 // `detect-non-literal-regexp` is an error everywhere: the few string-built RegExps left are audited
 // and each carries a narrow local suppression (compilePattern() in the bounce parser, which only
 // accepts build-time fragments, and two copies of a static constant in the placeholder highlighter).
+// `detect-unsafe-regex` is an error too: the flagged patterns were rewritten without a nested
+// quantifier (same acceptance, checked on millions of generated inputs) or, where the pattern is
+// linear but has a shape the heuristic dislikes, keep a narrow suppression that says why.
 const securityFollowUpRules = {
   "security/detect-non-literal-fs-filename": "error",
   "security/detect-object-injection": "error",
   "security/detect-non-literal-regexp": "error",
+  "security/detect-unsafe-regex": "error",
 };
 
 // Shared by packages/ui's own *.tsx files and every apps/*/src file below — both are React/TSX,
