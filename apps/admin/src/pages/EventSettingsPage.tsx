@@ -473,12 +473,25 @@ interface ArchiveDialogCopy {
   confirmVariant: "primary" | "danger";
 }
 
-function getArchiveDialogCopy(archiveMode: "archive" | "unarchive"): ArchiveDialogCopy {
+function walletManagedAtProviderHint(count: number): string {
+  if (count <= 0) return "";
+  const passWord = count === 1 ? "pass is" : "passes are";
+  // walletPassesManagedAtProviderCount counts every voided or expired pass still at the wallet
+  // service, but "Remove inactive passes" only reaches voided ones past their own day-long grace
+  // period - naming just that action here could send an admin to run it and see the count unchanged.
+  // "Remove from provider" alone reaches all of them (voided or expired, no grace period), so the
+  // hint says which action covers which part instead of pointing at one action for the whole count.
+  return ` ${count} inactive wallet ${passWord} still at the wallet service - archiving does not remove them. Remove inactive passes on Attendees clears the ones voided for at least a day; Remove from provider (per attendee or a selection) reaches the rest, including any that are expired.`;
+}
+
+function getArchiveDialogCopy(archiveMode: "archive" | "unarchive", walletPassesManagedAtProviderCount: number): ArchiveDialogCopy {
   if (archiveMode === "archive") {
+    const walletHint = walletManagedAtProviderHint(walletPassesManagedAtProviderCount);
     return {
       title: "Archive this event?",
       message:
-        "This event will become fully read-only, including check-in. Attendee data is kept. Only a superadmin can undo this.",
+        "This event will become fully read-only, including check-in. Attendee data is kept. Only a superadmin can undo this." +
+        walletHint,
       confirmLabel: "Archive",
       confirmVariant: "danger",
     };
@@ -1274,7 +1287,7 @@ export function EventSettingsPage() {
   const eventWalletConfiguredForPush =
     event.wallet_enabled && !!event.wallet_template_id && event.wallet_api_key.configured;
 
-  const archiveDialogCopy = getArchiveDialogCopy(archiveMode);
+  const archiveDialogCopy = getArchiveDialogCopy(archiveMode, event.wallet_passes_managed_at_provider_count);
   const walletConfirmCopy = describeWalletConfirmDialog(
     walletConfirmKind,
     walletDisablingPlatforms,

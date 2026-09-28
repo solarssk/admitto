@@ -79,6 +79,10 @@ export type EventSettingsDto = {
    * (the master switch), a platform toggle only affects that platform's own already-installed
    * passes and new-attendee button visibility, so the confirm only needs that platform's count. */
   installed_wallet_pass_count_by_platform: { apple: number; google: number; samsung: number };
+  /** Voided or expired wallet passes still present at the provider (not yet removed there) - drives
+   * the archive confirm dialog's hint that these are not cleaned up by archiving alone; "Remove
+   * inactive passes" (Attendees → More actions) or Remove from provider is still needed. */
+  wallet_passes_managed_at_provider_count: number;
   organization_name: string;
   active_items: Array<{ id: string; name: string; enabled: boolean }>;
   /** Event's own branding overrides — null means "inherited from organization". */

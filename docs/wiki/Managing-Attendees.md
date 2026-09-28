@@ -98,6 +98,11 @@ The attendee appears once in the event with accurate contact, ticket, and event-
   - Appears once this event has Wallet configured, and works on an archived event and with the Wallet switch off, like **Void wallet pass**.
   - If someone restores a pass while the run is voiding it, the restore wins: that pass stays active and is counted as left alone.
   - Only one run at a time per event: while one is running, starting another says so and waits. When it has finished, run it again if you want it to catch passes that became active in the meantime.
+- Attendees' header **More actions** also has **Remove inactive passes**. It removes every voided wallet pass of the event from the wallet service, once it has stayed voided for at least a day, in one go (a selection is limited to 100 attendees). It asks first, then runs in the background and shows a summary when it is done: how many passes were removed, how many were left alone because they had changed since, and how many could not be removed (run it again to try those once more). Unlike **Delete wallet pass**, it keeps each pass's local record and its history in Reports.
+  - Appears once this event has Wallet configured, and works on an archived event and with the Wallet switch off, like **Remove from provider**.
+  - Only removes passes that have been voided for at least a day - a safety margin before something irreversible at the wallet service. A pass restored in that window is never touched.
+  - Expired passes are not included yet - **Remove from provider** on that attendee still reaches them.
+  - Only one run at a time per event, same as **Void active passes** above.
 - Export attendee information only for an approved event purpose.
 
 ## What changes after this action
