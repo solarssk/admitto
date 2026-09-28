@@ -4,6 +4,7 @@ import {
   deleteWalletPass,
   refreshWalletPassStatus,
   reissueWalletPass,
+  removeWalletPassFromProvider,
   restoreWalletPass,
   voidWalletPass,
 } from "../../src/api/client.js";
@@ -99,5 +100,23 @@ describe("deleteWalletPass (client) — thin wrapper coverage", () => {
       expect.objectContaining({ method: "POST", credentials: "same-origin" }),
     );
     expect(result).toEqual({ deleted: true });
+  });
+});
+
+describe("removeWalletPassFromProvider (client) — thin wrapper coverage", () => {
+  it("POSTs the encoded wallet/remove endpoint for the attendee", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: "voided", provider_removed_at: "2026-09-20T10:00:00.000Z" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await removeWalletPassFromProvider("evt with space", "att-1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/events/evt%20with%20space/attendees/att-1/wallet/remove",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(result).toEqual({ status: "voided", provider_removed_at: "2026-09-20T10:00:00.000Z" });
   });
 });

@@ -13,14 +13,21 @@ import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
  * apps/web-local, moved here so the CLI worker's wallet_push job drain can reuse it too, not
  * reimplement it). Attendees with no resolvable ticket (never issued) count as skipped, matching
  * the single-attendee route's 409.
+ *
+ * A pass removed at the provider (`provider_removed_at` set) is never touched: a caller that
+ * already knows passes `providerRemovedAt` and gets an early skip without a provider call, and both
+ * database writes below carry `provider_removed_at: null` in their own where clause, so a removal
+ * that lands while the provider call is in flight freezes the row atomically instead of being
+ * overwritten (or logged as a reissue).
  */
 export async function reissueOneWalletPass(
   db: PrismaClient,
   eventId: string,
-  target: { attendeeId: string; providerPassId: string },
+  target: { attendeeId: string; providerPassId: string; providerRemovedAt?: Date | null },
   provider: WalletPassProvider,
   audit: OpsAuditContext,
 ): Promise<"reissued" | "skipped"> {
+  if (target.providerRemovedAt) return "skipped";
   const attendee = await db.attendee.findUnique({
     where: { id: target.attendeeId },
     select: { qr_payload: true, external_uuid: true, token_enc: true },
@@ -47,8 +54,8 @@ export async function reissueOneWalletPass(
     result = await provider.updatePass(target.providerPassId, input);
   } catch (err) {
     try {
-      await db.walletPass.update({
-        where: { attendee_id: target.attendeeId },
+      await db.walletPass.updateMany({
+        where: { attendee_id: target.attendeeId, provider_removed_at: null },
         data: { last_error_code: err instanceof WalletProviderError ? err.code : "wallet_provider_rejected" },
       });
     } catch (updateErr) {
@@ -58,13 +65,13 @@ export async function reissueOneWalletPass(
     throw err;
   }
 
-  await db.$transaction(async (tx) => {
+  return db.$transaction(async (tx): Promise<"reissued" | "skipped"> => {
     // updatePass only patches the provider's content, never its voided flag (that's Restore's
     // job, a separate explicit action) - status/voided_at are deliberately left untouched here so
     // an already-voided pass stays voided instead of falsely reporting "active" while the
     // installed pass is still invalid at the provider, which would also hide the Restore action.
-    await tx.walletPass.update({
-      where: { attendee_id: target.attendeeId },
+    const { count } = await tx.walletPass.updateMany({
+      where: { attendee_id: target.attendeeId, provider_removed_at: null },
       data: {
         download_url: result.downloadUrl,
         apple_url: result.appleUrl,
@@ -73,6 +80,8 @@ export async function reissueOneWalletPass(
         last_synced_at: new Date(),
       },
     });
+    // Removed while the provider call was in flight: nothing to record, and no reissue to log.
+    if (count === 0) return "skipped";
     await writeActionLog(tx, {
       event_id: eventId,
       attendee_id: target.attendeeId,
@@ -80,6 +89,6 @@ export async function reissueOneWalletPass(
       audit,
       metadata: { bulk: true },
     });
+    return "reissued";
   });
-  return "reissued";
 }

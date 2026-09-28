@@ -103,6 +103,7 @@ describe("getTimelineLabel — full action_type coverage (Codecov review)", () =
     ["wallet_pass_restored", "Wallet pass restored"],
     ["wallet_pass_reissued", "Wallet pass updated"],
     ["wallet_pass_deleted", "Wallet pass deleted"],
+    ["wallet_pass_removed", "Removed from provider"],
     ["scan_preview", "Scan preview"],
   ])("maps %s to %s", (actionType, expected) => {
     expect(getTimelineLabel(labelEntry(actionType))).toBe(expected);
@@ -131,6 +132,7 @@ describe("getTimelineIcon — unrecognized action_type (Codecov review)", () => 
     ["note_updated", "pencil"],
     ["note_deleted", "trash"],
     ["ticket_link_retrieved", "link"],
+    ["wallet_pass_removed", "cloud-off"],
   ])("maps %s to %s", (actionType, expected) => {
     expect(getTimelineIcon(actionType)).toBe(expected);
   });
@@ -618,6 +620,7 @@ describe("getTimelineTone (PO review — colored icons to distinguish outcomes)"
     expect(getTimelineTone(entry("pass_revoked"))).toBe("error");
     expect(getTimelineTone(entry("mail_bounced"))).toBe("error");
     expect(getTimelineTone(entry("wallet_pass_voided"))).toBe("error");
+    expect(getTimelineTone(entry("wallet_pass_removed"))).toBe("error");
   });
 
   it("marks routine/informational rows neutral by default", () => {

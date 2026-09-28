@@ -135,6 +135,10 @@ export type { DrainExportJobsResult, ExportJobStorage } from "./drain-export-job
 export { resolveTicketPageDisplay, buildWalletPassInput } from "./wallet-pass-input.js";
 export { formatDate, formatDateShort, formatEventHour, formatEventHoursRange } from "@admitto/shared/region-date-format";
 export { reissueOneWalletPass } from "./reissue-wallet-pass.js";
+export {
+  removeOneWalletPassFromProvider,
+  type RemoveWalletPassOutcome,
+} from "./remove-wallet-pass-from-provider.js";
 export { resolveEventWalletProvider } from "./resolve-event-wallet-provider.js";
 export { drainWalletPushJobs, readWalletPushRequest } from "./drain-wallet-push-jobs.js";
 export type { DrainWalletPushJobsResult, WalletPushRequest } from "./drain-wallet-push-jobs.js";

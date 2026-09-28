@@ -163,6 +163,7 @@ import {
   handleBulkVoidAttendeeWalletPass,
   handleBulkReissueAttendeeWalletPass,
   handleBulkDeleteAttendeeWalletPass,
+  handleBulkRemoveAttendeeWalletPass,
   handleBulkRefreshAttendeeWalletStatus,
   handleBulkTicketTypeEventAttendees,
   handleBulkRsvpEventAttendees,
@@ -182,6 +183,7 @@ import {
   handleReissueAttendeeWalletPass,
   handleRefreshAttendeeWalletStatus,
   handleDeleteAttendeeWalletPass,
+  handleRemoveAttendeeWalletPass,
   handleAddAttendeeNote,
   handlePatchAttendeeNote,
   handleDeleteAttendeeNote,
@@ -1023,10 +1025,13 @@ export function createApp(options: CreateAppOptions = {}) {
         return null;
       }
       try {
-        const row = await db.walletPass.update({
-          where: { attendee_id: attendee.id },
+        // Conditional on the pass not having been removed while the provider call was in flight.
+        const { count } = await db.walletPass.updateMany({
+          where: { attendee_id: attendee.id, provider_removed_at: null },
           data: { status: "active", voided_at: null, provider_commanded_at: new Date(), last_error_code: null },
         });
+        if (count === 0) return null;
+        const row = await db.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } });
         return { apple_url: row.apple_url, android_url: row.android_url };
       } catch (err) {
         console.error("walletPass update (restore) failed:", err);
@@ -1097,6 +1102,11 @@ export function createApp(options: CreateAppOptions = {}) {
      * keep its cognitive complexity under the SonarCloud threshold (S3776). Returns null (after
      * the callee's own logging) when none of the three paths could produce a usable URL. */
     async function resolvePassUrls(): Promise<{ apple_url: string | null; android_url: string | null } | null> {
+      // A pass removed at the provider is gone there for good: neither restoring nor re-creating it
+      // may be attempted from a public tap (restorePass would hit a deleted resource, and a
+      // successful-looking answer would mark the frozen row active again). Answered like an expired
+      // pass until the public Add to Wallet rules define the proper page.
+      if (existing?.provider_removed_at) return null;
       if (existing?.status === "active") {
         return { apple_url: existing.apple_url, android_url: existing.android_url };
       }
@@ -1137,6 +1147,8 @@ export function createApp(options: CreateAppOptions = {}) {
           });
           return null;
         }
+        // Same reasoning as the pre-lock check above.
+        if (latest?.provider_removed_at) return null;
         if (latest?.status === "active") {
           return { apple_url: latest.apple_url, android_url: latest.android_url };
         }
@@ -1747,7 +1759,10 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     bulkAttendeeIdsBodyLimit,
     adminWalletActionBulkRateLimit,
-    guardArchivedEvent((c) => handleBulkVoidAttendeeWalletPass(c, db)),
+    // No guardArchivedEvent: Void is archive/switched-off-exempt (business rules table) - an
+    // operator must be able to void passes for an event that has already ended or been archived,
+    // on whichever provider is still configured (ignoreWalletEnabled inside the handler).
+    (c) => handleBulkVoidAttendeeWalletPass(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-wallet-reissue",
@@ -1763,7 +1778,20 @@ export function createApp(options: CreateAppOptions = {}) {
     staffAdminGate,
     bulkAttendeeIdsBodyLimit,
     adminWalletActionBulkRateLimit,
-    guardArchivedEvent((c) => handleBulkDeleteAttendeeWalletPass(c, db)),
+    // No guardArchivedEvent: Delete/reset is archive/switched-off-exempt, same reasoning as
+    // bulk-wallet-void above.
+    (c) => handleBulkDeleteAttendeeWalletPass(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/bulk-wallet-remove",
+    jsonPostCsrf,
+    staffAdminGate,
+    bulkAttendeeIdsBodyLimit,
+    adminWalletActionBulkRateLimit,
+    // No guardArchivedEvent: Remove from provider is archive/switched-off-exempt, same
+    // reasoning as bulk-wallet-void above - this is the action that lets an operator stop
+    // the provider counting these passes against the account's plan after an event has ended.
+    (c) => handleBulkRemoveAttendeeWalletPass(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/bulk-wallet-refresh-status",
@@ -1830,7 +1858,9 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminWalletActionRateLimit,
-    guardArchivedEvent((c) => handleVoidAttendeeWalletPass(c, db)),
+    // No guardArchivedEvent: Void is archive/switched-off-exempt, same reasoning as
+    // bulk-wallet-void above.
+    (c) => handleVoidAttendeeWalletPass(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/wallet/restore",
@@ -1859,7 +1889,18 @@ export function createApp(options: CreateAppOptions = {}) {
     jsonPostCsrf,
     staffAdminGate,
     adminWalletActionRateLimit,
-    guardArchivedEvent((c) => handleDeleteAttendeeWalletPass(c, db)),
+    // No guardArchivedEvent: Delete/reset is archive/switched-off-exempt, same reasoning as
+    // bulk-wallet-void above.
+    (c) => handleDeleteAttendeeWalletPass(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/attendees/:id/wallet/remove",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminWalletActionRateLimit,
+    // No guardArchivedEvent: Remove from provider is archive/switched-off-exempt, same
+    // reasoning as bulk-wallet-remove above.
+    (c) => handleRemoveAttendeeWalletPass(c, db),
   );
   app.post(
     "/api/admin/events/:eventId/attendees/:id/items/:itemKey/revoke",

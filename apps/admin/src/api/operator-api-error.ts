@@ -224,10 +224,13 @@ export const CODE_MESSAGES: Record<string, string> = {
   wallet_pass_inactive: "This wallet pass is no longer active, so there is nothing to refresh.",
   wallet_pass_not_refreshable:
     "This wallet pass was never registered with the provider, so its status can't be refreshed.",
+  wallet_pass_not_removable: "This wallet pass isn't voided or expired, so it can't be removed from the provider.",
+  wallet_pass_removed: "This wallet pass has already been removed from the provider.",
   wallet_provider_duplicate: "The wallet provider already has a matching pass. Refresh and try again.",
   wallet_provider_not_found: "The wallet provider couldn't find this pass. It may have been removed there.",
   wallet_provider_rate_limited: "The wallet provider is rate-limiting requests. Wait a moment and try again.",
   wallet_provider_rejected: "The wallet provider rejected this request. Try again, or check the wallet configuration.",
+  wallet_provider_remove_unsupported: "The wallet provider doesn't support removing a pass remotely.",
   wallet_provider_timeout: "The wallet provider didn't respond in time. Try again.",
   wallet_provider_unauthorized: "The wallet provider rejected the configured API key. Check the wallet configuration.",
   wallet_push_already_running: "A push is already running for this event. Try again once it finishes.",

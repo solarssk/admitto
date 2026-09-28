@@ -15,6 +15,7 @@ import {
   type PassCreatorWebhookData,
   type WalletPassProvider,
   type WalletStatusRefreshOutcome,
+  type WebhookPassTarget,
 } from "@admitto/wallet";
 
 interface WebhookCapableProvider {
@@ -76,26 +77,23 @@ function payloadNamesADifferentEvent(eventId: string, data: PassCreatorWebhookDa
  * state - the delivery carries no validity field, and a late redelivery can arrive after a Restore
  * that already undid the void. So it re-reads the pass from the provider and lets the same
  * reconciliation as the periodic sync and manual Refresh decide (an active pass the provider now
- * reports voided or expired becomes voided/expired; nothing else changes).
+ * reports voided or expired becomes voided/expired; nothing else changes). `target` is already
+ * resolved by the caller - see its own removed-row guard in handlePassCreatorWebhook, which both
+ * routes share.
  *
- * 200 = the delivery was dealt with, including "no such pass of ours" and "pass is not active, so
- * nothing to reconcile". 503 = the re-read could not be completed (provider error, or a no-match
- * that even the retry inside refreshOneWalletPassStatus could not turn into a read) - PassCreator
- * redelivers on a non-2xx (`retryEnabled` at subscribe time), and the background sync is no safety
- * net here since it skips archived events. A 503 carries no detail, like every other rejection on
- * this unauthenticated endpoint. */
+ * 200 = the delivery was dealt with, including "pass is not active, so nothing to reconcile". 503
+ * = the re-read could not be completed (provider error, or a no-match that even the retry inside
+ * refreshOneWalletPassStatus could not turn into a read) - PassCreator redelivers on a non-2xx
+ * (`retryEnabled` at subscribe time), and the background sync is no safety net here since it skips
+ * archived events. A 503 carries no detail, like every other rejection on this unauthenticated
+ * endpoint. */
 async function reconcileVoidedSignal(
   c: Context,
   db: PrismaClient,
   provider: WalletPassProvider,
   eventId: string,
-  data: PassCreatorWebhookData,
+  target: WebhookPassTarget & { providerRemovedAt: null },
 ): Promise<Response> {
-  const target = await findWebhookPassTarget(db, eventId, data);
-  if (!target) {
-    emitSystemLog("wallet", "info", "wallet_webhook_unmatched", { eventId });
-    return c.body(null, 200);
-  }
   let outcome: WalletStatusRefreshOutcome;
   try {
     outcome = await refreshOneWalletPassStatus(db, target, provider);
@@ -169,6 +167,12 @@ async function resolveEventWebhookProvider(
  * later): a delivery there triggers applyFirstConfirmedAt in addition to the normal
  * applyWebhookUpdate, rather than instead of it - the delivery still carries real registration-
  * count data worth applying the usual way.
+ *
+ * A delivery for a pass Admitto has removed from the provider (`provider_removed_at` set, PR 3's
+ * "Remove from provider") is acked 200 here, before any provider call, reconciliation or write
+ * of any kind - not just for `pass_voided`, but for a plain registration delivery too. Nothing
+ * provider-facing may touch a removed row, and its frozen last-known snapshot must stay frozen; a
+ * late redelivery racing the removal itself is exactly the case this guards.
  */
 export async function handlePassCreatorWebhook(
   c: Context,
@@ -204,7 +208,19 @@ export async function handlePassCreatorWebhook(
 
   if (payloadNamesADifferentEvent(eventId, data)) return c.body(null, 200);
 
-  if (isVoidedRoute) return reconcileVoidedSignal(c, db, provider, eventId, data);
+  const target = await findWebhookPassTarget(db, eventId, data);
+  if (target?.providerRemovedAt) {
+    emitSystemLog("wallet", "info", "wallet_webhook_removed_skipped", { eventId });
+    return c.body(null, 200);
+  }
+
+  if (isVoidedRoute) {
+    if (!target) {
+      emitSystemLog("wallet", "info", "wallet_webhook_unmatched", { eventId });
+      return c.body(null, 200);
+    }
+    return reconcileVoidedSignal(c, db, provider, eventId, target);
+  }
 
   // Success is otherwise silent (a bare 200) - this is the only positive signal in System Logs
   // that a delivery actually reached us, verified, and either found or missed its WalletPass row.

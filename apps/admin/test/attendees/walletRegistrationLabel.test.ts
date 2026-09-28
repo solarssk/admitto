@@ -33,4 +33,20 @@ describe("walletRegistrationLabel", () => {
   it("treats a null inactive count as zero when active is a confirmed number", () => {
     expect(walletRegistrationLabel(1, null)).toBe("Registered");
   });
+
+  describe("for a pass removed at the provider (frozen last-known snapshot)", () => {
+    it("says Was registered instead of Registered", () => {
+      expect(walletRegistrationLabel(1, 0, true)).toBe("Was registered");
+    });
+
+    it("keeps the device count, worded as Was registered", () => {
+      expect(walletRegistrationLabel(3, 0, true)).toBe("Was registered (3 devices)");
+    });
+
+    it("leaves every state that never claimed a live registration unchanged", () => {
+      expect(walletRegistrationLabel(null, null, true)).toBe("Status unknown");
+      expect(walletRegistrationLabel(0, 1, true)).toBe("Unregistered");
+      expect(walletRegistrationLabel(0, 0, true)).toBe("Not added");
+    });
+  });
 });
