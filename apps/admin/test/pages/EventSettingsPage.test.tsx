@@ -2284,23 +2284,23 @@ describe("EventSettingsPage tabs", () => {
     expect(document.querySelector(".danger-zone-panel")).toBeTruthy();
   });
 
-  it("unarchives the event from the Danger zone tab", async () => {
+  it("restores the event from the Danger zone tab", async () => {
     vi.mocked(fetchEventSettings).mockResolvedValueOnce(archivedEvent);
     vi.mocked(unarchiveEvent).mockResolvedValueOnce(undefined);
     vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...archivedEvent, status: "active" });
     renderSettings("/admin/events/evt-2/settings");
     await screen.findByRole("tab", { name: "Danger zone" });
     fireEvent.click(screen.getByRole("tab", { name: "Danger zone" }));
-    fireEvent.click(await screen.findByRole("button", { name: /Unarchive event/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Restore event/ }));
 
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Unarchive" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore" }));
 
     await waitFor(() => {
       expect(unarchiveEvent).toHaveBeenCalledWith("evt-2");
     });
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Event unarchived/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Event restored/);
     });
   });
 

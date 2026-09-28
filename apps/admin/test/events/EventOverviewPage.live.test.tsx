@@ -1541,6 +1541,33 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.getByRole("dialog", { name: "Add contact" })).toBeTruthy();
   });
 
+  it("shows the server's own reason when it refuses an edit of a contact, and keeps the dialog open", async () => {
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(5, {
+        contacts: [
+          { id: "c-edit", name: "Jane Doe", role: null, phone: "+48500100200", email: null, note: null, sort_order: 0 },
+        ],
+      }),
+    );
+    mockUpdateEventContact.mockRejectedValueOnce(new ApiError(400, "invalid_phone", "invalid_phone"));
+
+    renderPage();
+
+    const keyContactsSection = await screen
+      .findByText("Key contacts")
+      .then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    fireEvent.click(within(keyContactsSection).getByRole("button", { name: "Edit Jane Doe" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit contact" });
+    fireEvent.change(within(dialog).getByLabelText("Name *"), { target: { value: "Jane Doe Jr" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(
+      await screen.findByText("Enter a valid phone number: digits only, between 3 and 15 in total."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Failed to update contact.")).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Edit contact" })).toBeTruthy();
+  });
+
   it("falls back to the generic message when the failure carries no known reason", async () => {
     mockCreateEventContact.mockRejectedValueOnce(new ApiError(500, "secret_internal"));
     const dialog = await openAddContactDialog();

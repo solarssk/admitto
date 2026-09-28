@@ -1588,9 +1588,9 @@ describe("EventsPickerPage archived event navigation", () => {
     const link = screen.getByRole("link", { name: /Archived Summit/ });
     expect(link.getAttribute("href")).toBe("/admin/events/evt-arch/overview");
     // Card matches the active-event card style (same badge position, no separate
-    // Unarchive button) — that action now lives on Event settings / Settings only.
+    // Restore button) — that action now lives on Event settings / Settings only.
     expect(screen.getByText("Archived")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Unarchive" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Restore" })).toBeNull();
     // Grey (not green) left-border accent distinguishes archived from active cards.
     expect(link.querySelector(".event-card")?.classList.contains("event-card--archived")).toBe(
       true,
