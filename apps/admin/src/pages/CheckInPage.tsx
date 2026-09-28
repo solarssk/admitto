@@ -1328,7 +1328,7 @@ export function CheckInPage({
 
   // Queued wrapper for a suggestion-row click (an external entry point,
   // unlike the internal auto-select call below).
-  const openLookupResult = (attendeeId: string) => runExclusive(() => openLookupResultImpl(attendeeId));
+  const openLookupResult = (attendeeId: string) => void runExclusive(() => openLookupResultImpl(attendeeId));
 
   // Typeahead under the scan bar: best-effort and unqueued — a read-only
   // lookup must not wait behind in-flight scans; the seq guard drops stale

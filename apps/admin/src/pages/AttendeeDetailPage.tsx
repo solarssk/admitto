@@ -2673,7 +2673,7 @@ export function AttendeeDetailPage() {
       {editMode && (
         <dialog className="attendee-edit-modal" open aria-modal="true" aria-labelledby={editTitleId}>
           <ModalBackdrop onClose={handleCancelEdit} />
-          <form ref={editPanelRef} className="attendee-edit-modal__panel" onSubmit={handleSave}>
+          <form ref={editPanelRef} className="attendee-edit-modal__panel" onSubmit={(e) => void handleSave(e)}>
             <h2 id={editTitleId} className="attendee-edit-modal__title">
               <i className="ti ti-pencil" aria-hidden="true" /> Edit attendee
             </h2>
@@ -2845,7 +2845,7 @@ export function AttendeeDetailPage() {
       {resendOpen && (
         <dialog className="attendee-resend-modal" open aria-modal="true" aria-labelledby={resendTitleId}>
           <ModalBackdrop onClose={() => setResendOpen(false)} />
-          <form ref={resendPanelRef} className="attendee-resend-modal__panel" onSubmit={handleResend}>
+          <form ref={resendPanelRef} className="attendee-resend-modal__panel" onSubmit={(e) => void handleResend(e)}>
             <h3 id={resendTitleId} className="attendee-resend-modal__title">Resend ticket</h3>
             {resendError && <Notice variant="error" role="alert">{resendError}</Notice>}
             <div className="attendee-resend-options">
