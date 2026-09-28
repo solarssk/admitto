@@ -2347,6 +2347,55 @@ describe("attendee wallet actions — void/restore/reissue", () => {
       }
     });
 
+    it("rejects operator, and never reaches the provider", async () => {
+      const attendeeId = "att-wallet-action-remove-op";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true, passStatus: "voided" });
+      try {
+        const res = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/remove`,
+          { method: "POST", headers: { Cookie: opCookie, ...sameOrigin } },
+        );
+        expect(res.status).toBe(403);
+        const bulk = await app.request(`/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-remove`, {
+          method: "POST",
+          headers: { Cookie: opCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: [attendeeId] }),
+        });
+        expect(bulk.status).toBe(403);
+        expect(deleteSpy).not.toHaveBeenCalled();
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.provider_removed_at).toBeNull();
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("cannot reach an attendee of another event through this event's URL, single or bulk", async () => {
+      const attendeeId = "att-wallet-action-remove-cross-event";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT_UNCONFIGURED, { withPass: true, passStatus: "voided" });
+      try {
+        const single = await app.request(
+          `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/remove`,
+          { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+        );
+        expect(single.status).toBe(403);
+        const bulk = await app.request(`/api/admin/events/${WALLET_ACTION_EVENT}/attendees/bulk-wallet-remove`, {
+          method: "POST",
+          headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+          body: JSON.stringify({ attendeeIds: [attendeeId] }),
+        });
+        expect(bulk.status).toBe(200);
+        expect(await bulk.json()).toEqual({ removed: 0, skipped: 1, errored: 0 });
+        expect(deleteSpy).not.toHaveBeenCalled();
+        const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+        expect(row?.provider_removed_at).toBeNull();
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
     it("is idempotent: a second call still returns 200 without calling the provider again", async () => {
       const attendeeId = "att-wallet-action-remove-twice";
       await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true, passStatus: "voided" });
