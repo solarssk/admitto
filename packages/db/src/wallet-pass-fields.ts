@@ -29,4 +29,8 @@ export interface WalletPassApiFields {
   // Raw captured User-Agent - see WalletPass.user_agent's schema comment.
   user_agent: string | null;
   user_agent_captured_at: string | null;
+  // Set once Admitto has removed the pass from the provider (PR 3, "Remove from provider") -
+  // see WalletPass.provider_removed_at's schema comment. Status stays whatever it was (voided or
+  // expired); this is a separate, provider-presence axis.
+  provider_removed_at: string | null;
 }

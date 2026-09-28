@@ -1,0 +1,88 @@
+import type { PrismaClient } from "@admitto/db";
+import { applyProviderSnapshotToWalletPass, type WalletPassProvider } from "@admitto/wallet";
+import { writeActionLog, type OpsAuditContext } from "./ops-audit.js";
+
+export type RemoveWalletPassOutcome = "removed" | "already_removed";
+
+/**
+ * Permanently removes one wallet pass from the provider while keeping the local WalletPass row and
+ * its history (Reports, registration counts) - the answer to the problem "Delete wallet pass" can't
+ * solve, since that one wipes the row itself. Only meaningful for a pass that is already `voided`
+ * or `expired` (the caller enforces that, along with `provider.capabilities.remoteDelete`, before
+ * calling this - see the single/bulk routes) and never changes `status`: this is a provider-presence
+ * action, not a validity one.
+ *
+ * Already-removed (`providerRemovedAt` already set) is treated as success without touching
+ * anything - `deletePass` is idempotent at the provider too, but skipping it here avoids a wasted
+ * call for a selection that includes a pass another request already removed.
+ *
+ * Order matters, same reasoning as the plan's own "Remove" business rule:
+ * 1. A best-effort final snapshot read (only when a `userProvidedId` is known - a row that somehow
+ *    lacks one has nothing to look up by). Found: applied through the same
+ *    applyProviderSnapshotToWalletPass every other read goes through, so the very last registration
+ *    counts this pass will ever have are as fresh as possible. `null` (no match) leaves the
+ *    existing data alone without drawing any conclusion - it is not proof of anything. A thrown
+ *    provider error aborts this pass entirely (the caller's Promise.allSettled counts it as failed,
+ *    safe to retry) rather than proceeding to delete without knowing what was last true.
+ * 2. Always `deletePass(providerPassId)` - 2xx or 404 (already gone) both count as success, per its
+ *    own contract.
+ * 3. Only once that has genuinely succeeded: stamp `provider_removed_at` and write the action log
+ *    entry, in one transaction.
+ */
+export async function removeOneWalletPassFromProvider(
+  db: PrismaClient,
+  eventId: string,
+  target: {
+    attendeeId: string;
+    providerPassId: string;
+    userProvidedId: string | null;
+    status: string;
+    providerCommandedAt: Date | null;
+    providerRemovedAt: Date | null;
+  },
+  provider: WalletPassProvider,
+  audit: OpsAuditContext,
+  options: { bulk?: boolean } = {},
+): Promise<RemoveWalletPassOutcome> {
+  if (target.providerRemovedAt) return "already_removed";
+
+  if (target.userProvidedId) {
+    const snapshot = await provider.getPassSnapshot({
+      providerPassId: target.providerPassId,
+      userProvidedId: target.userProvidedId,
+    });
+    if (snapshot) {
+      await applyProviderSnapshotToWalletPass(
+        db,
+        {
+          attendeeId: target.attendeeId,
+          providerPassId: target.providerPassId,
+          userProvidedId: target.userProvidedId,
+          status: target.status,
+          provider_commanded_at: target.providerCommandedAt,
+          provider_removed_at: null,
+        },
+        snapshot,
+        { policy: provider.consistencyPolicy, providerTimeZone: null },
+      );
+    }
+  }
+
+  await provider.deletePass(target.providerPassId);
+
+  await db.$transaction(async (tx) => {
+    await tx.walletPass.update({
+      where: { attendee_id: target.attendeeId },
+      data: { provider_removed_at: new Date() },
+    });
+    await writeActionLog(tx, {
+      event_id: eventId,
+      attendee_id: target.attendeeId,
+      action_type: "wallet_pass_removed",
+      audit,
+      metadata: options.bulk ? { bulk: true } : {},
+    });
+  });
+
+  return "removed";
+}

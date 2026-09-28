@@ -285,6 +285,39 @@ describe("POST /api/wallet/webhook/passcreator/:eventId", () => {
     expect(querySystemLogs({ search: "wallet_webhook_applied" })).toHaveLength(0);
   });
 
+  it("acks 200 without touching the frozen snapshot when the pass has been removed from the provider (PR 3)", async () => {
+    await prisma.walletPass.update({
+      where: { attendee_id: ATTENDEE_ID },
+      data: {
+        status: "voided",
+        provider_removed_at: new Date("2026-09-20T10:00:00.000Z"),
+        apple_active_registrations: 5,
+      },
+    });
+    const provider = stubProvider(keyPair.publicKey);
+    const app = makeApp(provider);
+    // A late redelivery carrying different counts than the frozen snapshot - must not overwrite it.
+    const body = signedRequest({
+      identifier: "pc-webhook-1",
+      userProvidedId: USER_PROVIDED_ID,
+      operatingSystem: "iOS",
+      noOfActivePasses: 99,
+    });
+
+    const res = await app.request(`/api/wallet/webhook/passcreator/${EVENT_ID}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    expect(res.status).toBe(200);
+    const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
+    expect(row?.apple_active_registrations).toBe(5);
+    expect(row?.status).toBe("voided");
+    expect(querySystemLogs({ search: "wallet_webhook_removed_skipped" })).toHaveLength(1);
+    expect(querySystemLogs({ search: "wallet_webhook_applied" })).toHaveLength(0);
+  });
+
   it("never reads a voided flag out of a registration delivery: status stays active", async () => {
     const provider = stubProvider(keyPair.publicKey);
     const app = makeApp(provider);
@@ -656,6 +689,21 @@ describe("POST /api/wallet/webhook/passcreator/:eventId/voided", () => {
     expect(provider.getPassSnapshot).toHaveBeenCalledTimes(2);
     const row = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_ID } });
     expect(row?.status).toBe("active");
+  });
+
+  it("acks 200 without asking the provider when the pass has already been removed from the provider (PR 3) - a late redelivery racing Remove", async () => {
+    await prisma.walletPass.update({
+      where: { attendee_id: ATTENDEE_ID },
+      data: { status: "voided", provider_removed_at: new Date("2026-09-20T10:00:00.000Z") },
+    });
+    const provider = stubProvider(keyPair.publicKey);
+    const app = makeApp(provider);
+
+    const res = await postVoided(app, voidedDelivery());
+
+    expect(res.status).toBe(200);
+    expect(provider.getPassSnapshot).not.toHaveBeenCalled();
+    expect(querySystemLogs({ search: "wallet_webhook_removed_skipped" })).toHaveLength(1);
   });
 
   it("acks 200 without asking the provider when the pass is already voided in Admitto", async () => {

@@ -171,15 +171,20 @@ export async function findWebhookPassTarget(
   db: PrismaClient,
   eventId: string,
   data: PassCreatorWebhookData,
-): Promise<{ attendeeId: string; providerPassId: string; userProvidedId: string } | null> {
+): Promise<{ attendeeId: string; providerPassId: string; userProvidedId: string; providerRemovedAt: Date | null } | null> {
   const where = webhookMatchFilter(data);
   if (!where) return null;
   const row = await db.walletPass.findFirst({
     where: { ...where, attendee: { event_id: eventId } },
-    select: { attendee_id: true, provider_pass_id: true, user_provided_id: true },
+    select: { attendee_id: true, provider_pass_id: true, user_provided_id: true, provider_removed_at: true },
   });
   if (!row?.provider_pass_id || !row.user_provided_id) return null;
-  return { attendeeId: row.attendee_id, providerPassId: row.provider_pass_id, userProvidedId: row.user_provided_id };
+  return {
+    attendeeId: row.attendee_id,
+    providerPassId: row.provider_pass_id,
+    userProvidedId: row.user_provided_id,
+    providerRemovedAt: row.provider_removed_at,
+  };
 }
 
 // operatingSystem names which platform's counts this delivery carries. Confirmed live 2026-08-13
