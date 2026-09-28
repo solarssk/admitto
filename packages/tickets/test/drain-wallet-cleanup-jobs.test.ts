@@ -262,7 +262,10 @@ describe("drainWalletCleanupJobs", () => {
     expect(entry?.fields).toMatchObject({ error: "plain string error" });
   });
 
-  it("stops claiming once the per-call limit is reached", async () => {
+  it("stops claiming a type once its own per-type limit is reached", async () => {
+    // limit is a budget PER type, not shared across types: wallet_void_active claims its 2
+    // (job-1, job-2) and stops, then wallet_remove_inactive gets its own fresh budget of 2 and
+    // claims the 3rd queued job before running out.
     vi.mocked(claimNextAdminJob)
       .mockResolvedValueOnce(voidJob({ id: "job-1" }) as never)
       .mockResolvedValueOnce(voidJob({ id: "job-2" }) as never)
@@ -270,8 +273,23 @@ describe("drainWalletCleanupJobs", () => {
 
     const result = await drainWalletCleanupJobs(db as never, { limit: 2 });
 
+    expect(result).toMatchObject({ claimed: 3, succeeded: 3 });
+    expect(claimNextAdminJob).toHaveBeenCalledTimes(4);
+  });
+
+  it("does not let a steady stream of one job type starve the other at limit: 1 (regression)", async () => {
+    // A shared claim counter across HANDLER_ENTRIES would let wallet_void_active consume the
+    // worker's entire limit:1 budget every tick, so claimNextAdminJob would never even be called
+    // for wallet_remove_inactive. Each type must get its own claim opportunity per drain call.
+    vi.mocked(claimNextAdminJob).mockImplementation(async (_db, type) =>
+      type === "wallet_void_active" ? ((voidJob() as never) as never) : ((removeJob() as never) as never),
+    );
+
+    const result = await drainWalletCleanupJobs(db as never, { limit: 1 });
+
+    expect(claimNextAdminJob).toHaveBeenCalledWith(db, "wallet_void_active");
+    expect(claimNextAdminJob).toHaveBeenCalledWith(db, "wallet_remove_inactive");
     expect(result).toMatchObject({ claimed: 2, succeeded: 2 });
-    expect(claimNextAdminJob).toHaveBeenCalledTimes(2);
   });
 
   it("reports an idle drain when nothing is pending", async () => {

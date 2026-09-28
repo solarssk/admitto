@@ -362,8 +362,12 @@ export async function reclaimStaleWalletCleanupJobs(
   return { reclaimed };
 }
 
-/** Claims and runs up to `limit` jobs across every clean-up type, oldest pending first within a
- * type. */
+/** Claims and runs up to `limit` jobs of EACH clean-up type, oldest pending first within a type.
+ * `limit` is a per-type budget, not shared across types - the worker always calls this with
+ * `limit: 1`, so a per-type budget is what gives every job type a turn on a given tick. A single
+ * shared counter would let a steady trickle of one type (e.g. wallet_void_active) claim the whole
+ * budget every tick and starve the other type indefinitely, since claimNextAdminJob for the
+ * starved type would never even be called. */
 export async function drainWalletCleanupJobs(
   db: PrismaClient,
   options: { limit?: number; staleRunningMs?: number; heartbeatStaleMs?: number } = {},
@@ -379,14 +383,16 @@ export async function drainWalletCleanupJobs(
   let failed = 0;
 
   for (const [type, handler] of HANDLER_ENTRIES) {
-    while (claimed < limit) {
+    let claimedForType = 0;
+    while (claimedForType < limit) {
       const job = await claimNextAdminJob(db, type);
       if (!job) break;
-      claimed += 1;
+      claimedForType += 1;
       const outcome = await runOneWalletCleanupJob(db, job, handler);
       if (outcome === "succeeded") succeeded += 1;
       else failed += 1;
     }
+    claimed += claimedForType;
   }
 
   return { claimed, succeeded, failed, reclaimed };
