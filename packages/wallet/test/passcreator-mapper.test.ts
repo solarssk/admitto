@@ -32,6 +32,19 @@ describe("toPassCreatorData", () => {
     expect(data.barcodeValue).toBe("https://tickets.example.com/t/tok-1");
   });
 
+  it("never maps an inherited Object.prototype member or a '__proto__' key into the pass data", () => {
+    // JSON.parse creates an own '__proto__' property, exactly like a mapping read back from the DB.
+    const stored = JSON.parse(
+      '{"__proto__": "full_name", "viaConstructor": "constructor", "viaProto": "__proto__", "name": "full_name"}',
+    ) as Record<string, string>;
+    const data = toPassCreatorData(baseInput, "tmpl-1", stored, true);
+
+    expect(data.name).toBe("Alice Admin");
+    expect(data).not.toHaveProperty("viaConstructor");
+    expect(data).not.toHaveProperty("viaProto");
+    expect(Object.hasOwn(data, "__proto__")).toBe(false);
+  });
+
   it("includes barcodeValue even when a custom field mapping is used", () => {
     const data = toPassCreatorData(baseInput, "tmpl-1", { attendeeFullName: "full_name" }, true);
     expect(data.barcodeValue).toBe("https://tickets.example.com/t/tok-1");
@@ -287,6 +300,11 @@ describe("isWalletFieldMappingRelevant", () => {
     for (const field of WALLET_RELEVANT_EVENT_FIELDS) expect(EVENT_FIELD_PLACEHOLDERS).toHaveProperty(field);
     for (const field of WALLET_RELEVANT_LOCATION_FIELDS) expect(LOCATION_FIELD_PLACEHOLDERS).toHaveProperty(field);
     for (const field of WALLET_RELEVANT_ATTENDEE_FIELDS) expect(ATTENDEE_FIELD_PLACEHOLDERS).toHaveProperty(field);
+  });
+
+  it("fails open for a field name that only exists as an inherited Object.prototype member", () => {
+    expect(isWalletFieldMappingRelevant("constructor", EVENT_FIELD_PLACEHOLDERS, { a: "event_name" })).toBe(true);
+    expect(isWalletFieldMappingRelevant("toString", ATTENDEE_FIELD_PLACEHOLDERS, null)).toBe(true);
   });
 
   it("wallet_apple_enabled has no placeholder of its own - isWalletFieldMappingRelevant alone is always false for it, regardless of mapping", () => {

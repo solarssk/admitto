@@ -94,11 +94,10 @@ const POSITIVE_INTEGER_RE = /^[1-9]\d*$/;
  * once the new variable is set and already overrides it.
  */
 export function assertValidBounceIngestTickSecondsEnv(env: NodeJS.ProcessEnv = process.env): void {
+  const tickRaw = env["BOUNCE_INGEST_TICK_SECONDS"];
   const key =
-    env["BOUNCE_INGEST_TICK_SECONDS"] !== undefined
-      ? "BOUNCE_INGEST_TICK_SECONDS"
-      : "BOUNCE_INGEST_INTERVAL_SECONDS";
-  const raw = env[key];
+    tickRaw !== undefined ? "BOUNCE_INGEST_TICK_SECONDS" : "BOUNCE_INGEST_INTERVAL_SECONDS";
+  const raw = tickRaw ?? env["BOUNCE_INGEST_INTERVAL_SECONDS"];
   if (raw === undefined || raw === "") return;
   if (!POSITIVE_INTEGER_RE.test(raw) || !Number.isSafeInteger(Number.parseInt(raw, 10))) {
     throw new Error(`${key} must be a positive integer (got: ${raw})`);

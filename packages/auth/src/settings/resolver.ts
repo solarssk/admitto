@@ -24,6 +24,9 @@ function parseEnvValue(raw: string, fallback: unknown): unknown {
 function envOverride(key: string): unknown {
   const envName = SETTING_ENV_LOCKS.get(key);
   if (!envName) return undefined;
+  // envName only ever comes from the fixed SETTING_ENV_LOCKS table (15 known variable names),
+  // never from a request or stored value, so this lookup cannot be steered by input.
+  // eslint-disable-next-line security/detect-object-injection
   const raw = process.env[envName];
   if (raw === undefined || raw.trim() === "") return undefined;
   return parseEnvValue(raw, SETTING_DEFAULTS.get(key));
