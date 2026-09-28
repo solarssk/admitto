@@ -52,6 +52,9 @@ vi.mock("../src/commands/wallet-push-jobs.js", () => ({ drainWalletPushJobs: vi.
 vi.mock("../src/commands/wallet-refresh-status-jobs.js", () => ({
   drainWalletRefreshStatusJobs: vi.fn(async () => ({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0 })),
 }));
+vi.mock("../src/commands/wallet-cleanup-jobs.js", () => ({
+  drainWalletCleanupJobs: vi.fn(async () => ({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0 })),
+}));
 vi.mock("../src/commands/wallet-message-jobs.js", () => ({
   drainWalletMessageJobs: vi.fn(async () => ({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0 })),
 }));

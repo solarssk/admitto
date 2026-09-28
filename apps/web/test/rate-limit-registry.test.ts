@@ -41,6 +41,7 @@ const EXPECTED_POLICIES: Record<
   "admin:import-job-status": { windowMs: [60_000], max: [120], checks: 1 },
   "admin:wallet-push-job-status": { windowMs: [60_000], max: [120], checks: 1 },
   "admin:wallet-refresh-status-job-status": { windowMs: [60_000], max: [120], checks: 1 },
+  "admin:wallet-cleanup-job-status": { windowMs: [60_000], max: [120], checks: 1 },
   "admin:wallet-message-job-status": { windowMs: [60_000], max: [120], checks: 1 },
   "admin:wallet-message-send": { windowMs: [600_000], max: [10], checks: 1 },
   "admin:template-preview": { windowMs: [60_000], max: [20], checks: 1 },
@@ -184,6 +185,16 @@ describe("RATE_POLICIES registry", () => {
     } as never;
     expect(RATE_POLICIES["admin:wallet-message-job-status"].checks[0]!.keyOf(ctx)).toBe(
       "admin:wallet-message-job-status:user:user-42:event:evt-1",
+    );
+  });
+
+  it("scopes admin:wallet-cleanup-job-status by user and event via adminUserEventKey", () => {
+    const ctx = {
+      get: (key: string) => (key === "auth" ? { userId: "user-42" } : undefined),
+      req: { param: (name: string) => (name === "eventId" ? "evt-1" : undefined) },
+    } as never;
+    expect(RATE_POLICIES["admin:wallet-cleanup-job-status"].checks[0]!.keyOf(ctx)).toBe(
+      "admin:wallet-cleanup-job-status:user:user-42:event:evt-1",
     );
   });
 

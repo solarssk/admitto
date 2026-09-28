@@ -274,6 +274,7 @@ An invalid or unrecognised ticket link shows "This link is invalid or the page n
 | Action | Requires | Confirmation dialog |
 |---|---|---|
 | Void | Wallet provider credentials configured for the event (the Wallet switch and the archived state do not matter), and a wallet pass on that attendee | Required |
+| Void active passes (whole event) | Wallet provider credentials configured for the event (the Wallet switch and the archived state do not matter); no attendee or pass selection needed | Required, then runs in the background |
 | Restore | Wallet configured for the event, the event not over or archived, and a wallet pass on that attendee that has not been removed at the provider | Required |
 | Push updates | Wallet configured for the event, and a wallet pass on that attendee | Required |
 | Refresh status | Wallet provider credentials configured for the event (the Wallet switch and the archived state do not matter), and an active wallet pass on that attendee | Not required |
