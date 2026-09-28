@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Check-in progress on Overview is simpler: the ring now sits beside one large checked-in number, with the rest shown as **not yet arrived**, or as **no-shows** once the event is over (after its end time when one is set, otherwise at the end of its day). The ticket-type breakdown and the repeated legend are gone (ticket types are in Reports), and Busiest hour appears only when the event does not use wallets.
 - The Overview **Setup checklist** now shows a progress bar (green, amber, or red depending on the worst check), lists problems before completed checks, and every row links to the page that fixes it. The link to Event settings at the bottom is gone.
 - Bringing an archived event back is now called **Restore** everywhere, matching the button on the Overview: the **Restore event** button and the **Restore this event?** dialog in Event settings, the **Restore** button and dialog in the Archiving list, the **Event restored.** message, and the **Event restored** entry in the audit log (older entries show the new name too). What it does is unchanged.
+- Event hours on the public ticket page, in emails, and on wallet passes now show a numeric time zone offset as UTC+2 instead of GMT+2, matching the admin, which already wrote it that way. Named abbreviations such as CET and EDT are unchanged, and so is GMT itself for zones that really use it (UK winter time). A wallet pass that was already added keeps its old text until it is next updated.
 
 ### Fixed
 

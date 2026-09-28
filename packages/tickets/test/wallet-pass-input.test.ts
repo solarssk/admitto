@@ -114,7 +114,7 @@ describe("buildWalletPassInput", () => {
       eventNameLabel: "Admitto Conference",
       eventDateLabel: "24 September 2026",
       eventDateShortLabel: "24 Sep 2026",
-      eventHoursLabel: "09:00 - 18:00 GMT+1",
+      eventHoursLabel: "09:00 - 18:00 UTC+1",
       eventLocationLabel: "Main Hall",
       directionsTextLabel: "Enter via the north gate",
       accessibilityTextLabel: "Step-free access",
@@ -186,8 +186,8 @@ describe("buildWalletPassInput", () => {
     const startOnly = buildWalletPassInput(fullResolved({ event: { eventHoursEnd: null } }), "b");
     const endOnly = buildWalletPassInput(fullResolved({ event: { eventHoursStart: null } }), "b");
 
-    expect(startOnly.eventHoursLabel).toBe("from 09:00 GMT+1");
-    expect(endOnly.eventHoursLabel).toBe("until 18:00 GMT+1");
+    expect(startOnly.eventHoursLabel).toBe("from 09:00 UTC+1");
+    expect(endOnly.eventHoursLabel).toBe("until 18:00 UTC+1");
   });
 
   it("prefers an explicit map URL override over the computed link", () => {
@@ -232,7 +232,7 @@ describe("buildWalletPassInput", () => {
 
     expect(input.eventDateLabel).toBe("September 24, 2026");
     expect(input.eventDateShortLabel).toBe("Sep 24, 2026");
-    expect(input.eventHoursLabel).toBe("9:00 am - 6:00 pm GMT+1");
+    expect(input.eventHoursLabel).toBe("9:00 am - 6:00 pm UTC+1");
   });
 });
 
