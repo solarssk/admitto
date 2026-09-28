@@ -1138,9 +1138,10 @@ export function createApp(options: CreateAppOptions = {}) {
           });
           return null;
         }
-        // Same rule as the early exit above, re-checked because another request may have voided,
-        // expired or removed the pass since that read.
-        if (isWalletPassUnavailable(latest)) return WALLET_PASS_UNAVAILABLE;
+        // Same rules as the early exits above, re-checked because another request may have voided,
+        // expired or removed the pass since that read, and the event may have ended while this
+        // request waited for its turn (isWalletAddClosed reads the clock again).
+        if (isWalletPassUnavailable(latest) || isWalletAddClosed(event)) return WALLET_PASS_UNAVAILABLE;
         if (latest?.status === "active") {
           return { apple_url: latest.apple_url, android_url: latest.android_url };
         }

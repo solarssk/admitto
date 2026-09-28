@@ -495,6 +495,19 @@ describe("On-demand wallet routes", () => {
     expect(html).toContain("Add to Google Wallet");
   });
 
+  it("keeps the wallet buttons on the ticket page when the pass lookup itself fails (the route re-checks)", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const lookup = vi.spyOn(prisma.walletPass, "findUnique").mockRejectedValueOnce(new Error("db down"));
+    const app = makeApp(stubProvider());
+
+    const html = await (await app.request(`/t/${MODE_A_TOKEN}`)).text();
+
+    expect(lookup).toHaveBeenCalled();
+    expect(html).toContain("Add to Apple Wallet");
+    expect(html).toContain("Add to Google Wallet");
+    errSpy.mockRestore();
+  });
+
   describe("once the event is over or archived", () => {
     async function withEventPatch(data: { date?: Date; archived_at?: Date | null }, run: () => Promise<void>) {
       const before = await prisma.event.findUniqueOrThrow({ where: { id: EVENT_ID } });
@@ -547,6 +560,32 @@ describe("On-demand wallet routes", () => {
         expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}`);
         expect(provider.createPass).not.toHaveBeenCalled();
       });
+    });
+
+    it("an event that ends while the tap waits for its turn creates nothing", async () => {
+      const originalFindUnique = prisma.walletPass.findUnique.bind(prisma.walletPass);
+      let lookups = 0;
+      vi.spyOn(prisma.walletPass, "findUnique").mockImplementation(((args: Parameters<typeof originalFindUnique>[0]) => {
+        // The first lookup is the admission read, the second is the re-read under the creation
+        // lock: the clock jumps past the event's end in between.
+        if (args.where?.attendee_id === ATTENDEE_MODE_A_ID && ++lookups === 2) {
+          vi.useFakeTimers({ toFake: ["Date"] });
+          vi.setSystemTime(new Date("2099-09-03T12:00:00.000Z"));
+        }
+        return originalFindUnique(args);
+      }) as unknown as typeof prisma.walletPass.findUnique);
+      const provider = stubProvider();
+      try {
+        const res = await makeApp(provider).request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+        expect(lookups).toBe(2);
+        expect(res.status).toBe(302);
+        expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}`);
+        expect(provider.createPass).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+      expect(await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } })).toBeNull();
     });
 
     it("the ticket page drops the wallet buttons", async () => {

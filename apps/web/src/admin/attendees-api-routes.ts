@@ -2105,14 +2105,14 @@ function isEventWalletAddClosed(event: {
   date: Date;
   event_hours_start: string | null;
   event_hours_end: string | null;
-  timezone: string | null;
+  timezone: string;
   archived_at: Date | null;
 }): boolean {
   return isWalletAddClosed({
     date: event.date,
     eventHoursStart: event.event_hours_start,
     eventHoursEnd: event.event_hours_end,
-    timezone: event.timezone || "UTC",
+    timezone: event.timezone,
     archivedAt: event.archived_at,
   });
 }
@@ -4259,7 +4259,7 @@ async function loadWalletActionContext(
       date: event.date,
       eventHoursStart: event.event_hours_start,
       eventHoursEnd: event.event_hours_end,
-      timezone: event.timezone || "UTC",
+      timezone: event.timezone,
       archivedAt: event.archived_at,
     },
     provider,

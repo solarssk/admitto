@@ -31,7 +31,7 @@ export function eventEndsAtUtc(event: EventEndInput): Date {
   const start = event.eventHoursStart && HH_MM.test(event.eventHoursStart) ? event.eventHoursStart : null;
   const overnight = end !== null && start !== null && end < start;
 
-  const day = end === null ? utcDay(event.date, 1) : utcDay(event.date, overnight ? 1 : 0);
+  const day = utcDay(event.date, end === null || overnight ? 1 : 0);
   const wallClock = end === null ? "00:00:00.000" : `${end}:00.000`;
   try {
     return new Date(zonedWallClockToUtcIso(day, wallClock, event.timezone));
