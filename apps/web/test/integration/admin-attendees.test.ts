@@ -3183,15 +3183,16 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         expect(await prisma.attendeeActionLog.count({ where: { event_id: VOID_ALL_EVENT } })).toBe(0);
       }));
 
-    it("does not overwrite a Restore that lands while the provider call is in flight", () =>
+    it("a Restore that lands while the void is in flight wins: the pass stays active here and is restored at the provider again", () =>
       withVoidAllEvent(async () => {
         const id = "att-void-all-racing";
         await seedActionAttendee(id, VOID_ALL_EVENT, { withPass: true });
         const provider = {
           voidPass: vi.fn(async () => {
-            // The pass is restored (command stamp moves) while the void is being sent.
-            await prisma.walletPass.update({ where: { attendee_id: id }, data: { provider_commanded_at: new Date() } });
+            // The pass is restored (its command stamp moves) while the void is being sent.
+            await prisma.walletPass.update({ where: { attendee_id: id }, data: { provider_commanded_at: new Date(Date.now() - 5000) } });
           }),
+          restorePass: vi.fn(async () => undefined),
         };
 
         const result = await voidOneWalletPassAtProvider(
@@ -3203,7 +3204,36 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         );
 
         expect(result).toBe("skipped");
-        expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: id } })).status).toBe("active");
+        expect(provider.restorePass).toHaveBeenCalledWith(`pc-${id}`);
+        const row = await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: id } });
+        expect(row.status).toBe("active");
+        // The stamp was refreshed by the realignment, so a stale "voided" read is not taken for a void.
+        expect(row.provider_commanded_at!.getTime()).toBeGreaterThan(Date.now() - 4000);
+        expect(await prisma.attendeeActionLog.count({ where: { event_id: VOID_ALL_EVENT } })).toBe(0);
+      }));
+
+    it("a pass that expires while the void is in flight is left as expired, with no restore sent", () =>
+      withVoidAllEvent(async () => {
+        const id = "att-void-all-expiring";
+        await seedActionAttendee(id, VOID_ALL_EVENT, { withPass: true });
+        const provider = {
+          voidPass: vi.fn(async () => {
+            await prisma.walletPass.update({ where: { attendee_id: id }, data: { status: "expired" } });
+          }),
+          restorePass: vi.fn(async () => undefined),
+        };
+
+        const result = await voidOneWalletPassAtProvider(
+          prisma,
+          VOID_ALL_EVENT,
+          { attendeeId: id, providerPassId: `pc-${id}`, status: "active", providerRemovedAt: null, providerCommandedAt: null },
+          provider as never,
+          {},
+        );
+
+        expect(result).toBe("skipped");
+        expect(provider.restorePass).not.toHaveBeenCalled();
+        expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: id } })).status).toBe("expired");
       }));
 
     it("end to end: a provider failure on one pass leaves it active for a later run, and the rest are still voided", () =>

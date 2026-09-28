@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/system-log";
 
 vi.mock("../src/ops-audit.js", () => ({ writeActionLog: vi.fn() }));
 
@@ -16,16 +17,20 @@ const target = {
 const ACTIVE_ROW = { status: "active", provider_removed_at: null, provider_commanded_at: null };
 
 describe("voidOneWalletPassAtProvider", () => {
-  const provider = { voidPass: vi.fn() };
+  const provider = { voidPass: vi.fn(), restorePass: vi.fn() };
   const txUpdateMany = vi.fn();
   const findFirst = vi.fn();
+  const walletUpdateMany = vi.fn();
   const db = {
-    walletPass: { findFirst },
+    walletPass: { findFirst, updateMany: walletUpdateMany },
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({ walletPass: { updateMany: txUpdateMany } })),
   };
 
   beforeEach(() => {
     provider.voidPass.mockReset().mockResolvedValue(undefined);
+    provider.restorePass.mockReset().mockResolvedValue(undefined);
+    walletUpdateMany.mockReset().mockResolvedValue({ count: 1 });
+    resetSystemLogBufferForTest();
     findFirst.mockReset().mockResolvedValue(ACTIVE_ROW);
     txUpdateMany.mockReset().mockResolvedValue({ count: 1 });
     vi.mocked(writeActionLog).mockReset().mockResolvedValue(undefined);
@@ -84,24 +89,60 @@ describe("voidOneWalletPassAtProvider", () => {
     expect(db.$transaction).not.toHaveBeenCalled();
   });
 
-  it("skips, logging nothing, when the pass was removed while the provider call was in flight", async () => {
+  /** The write finds the pass changed; `nowRow` is what the follow-up read then sees. */
+  async function loseTheRace(nowRow: unknown) {
     txUpdateMany.mockResolvedValue({ count: 0 });
+    findFirst.mockResolvedValueOnce(ACTIVE_ROW).mockResolvedValueOnce(nowRow);
+    return voidOneWalletPassAtProvider(db as never, "evt-1", target, provider as never, audit);
+  }
 
-    const result = await voidOneWalletPassAtProvider(db as never, "evt-1", target, provider as never, audit);
-
-    expect(result).toBe("skipped");
-    expect(writeActionLog).not.toHaveBeenCalled();
-  });
-
-  it("skips, logging nothing, when the pass was deleted and issued again while the provider call was in flight (the new pass is not the one voided)", async () => {
-    // The write matches on the voided pass's own identity, so the replacement row matches nothing.
-    txUpdateMany.mockResolvedValue({ count: 0 });
-
-    const result = await voidOneWalletPassAtProvider(db as never, "evt-1", target, provider as never, audit);
+  it.each([
+    ["removed at the provider", { status: "voided", provider_removed_at: new Date("2026-09-20T10:00:00Z") }],
+    ["expired", { status: "expired", provider_removed_at: null }],
+    ["voided by someone else", { status: "voided", provider_removed_at: null }],
+    ["deleted and issued again (the row now holds another pass, so it is not found by this pass's identity)", null],
+  ])("skips, logging nothing and leaving the provider alone, when the pass was %s while the void was in flight", async (_label, nowRow) => {
+    const result = await loseTheRace(nowRow);
 
     expect(result).toBe("skipped");
     expect(txUpdateMany.mock.calls[0]![0].where).toMatchObject({ provider_pass_id: "pc-1" });
     expect(writeActionLog).not.toHaveBeenCalled();
+    expect(provider.restorePass).not.toHaveBeenCalled();
+    expect(walletUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("puts a Restore that landed in the gap back at the provider (a Restore is the newer decision), and refreshes the command stamp", async () => {
+    const result = await loseTheRace({ status: "active", provider_removed_at: null });
+
+    expect(result).toBe("skipped");
+    expect(provider.restorePass).toHaveBeenCalledWith("pc-1");
+    expect(walletUpdateMany).toHaveBeenCalledWith({
+      where: { attendee_id: "att-1", provider_pass_id: "pc-1", provider_removed_at: null, status: "active" },
+      data: { provider_commanded_at: expect.any(Date) },
+    });
+    expect(writeActionLog).not.toHaveBeenCalled();
+    // The follow-up read is scoped to this pass's own identity.
+    expect(findFirst.mock.calls[1]![0].where).toEqual({ attendee_id: "att-1", provider_pass_id: "pc-1" });
+  });
+
+  it("does not turn a failed realignment into an error of the pass: it is logged and left to the periodic check", async () => {
+    provider.restorePass.mockRejectedValue(new Error("provider down"));
+
+    const result = await loseTheRace({ status: "active", provider_removed_at: null });
+
+    expect(result).toBe("skipped");
+    expect(walletUpdateMany).not.toHaveBeenCalled();
+    const [entry] = querySystemLogs({ source: "wallet", search: "wallet_void_realign_failed" });
+    expect(entry?.fields).toMatchObject({ event_id: "evt-1", error: "provider down" });
+  });
+
+  it("logs a non-Error failure of the realignment by its value", async () => {
+    provider.restorePass.mockRejectedValue("plain string");
+
+    await loseTheRace({ status: "active", provider_removed_at: null });
+
+    const [entry] = querySystemLogs({ source: "wallet", search: "wallet_void_realign_failed" });
+    expect(entry?.fields).toMatchObject({ error: "plain string" });
   });
 
   it("reads the row again before the provider call and matches the state it read in the write", async () => {
