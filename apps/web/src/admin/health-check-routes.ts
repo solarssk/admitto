@@ -1251,6 +1251,37 @@ export async function canCreateUploadDir(dir: string): Promise<boolean> {
 }
 
 /**
+ * A `file_storage` row for one of the local-path failure states below, which all share the same
+ * six detail keys and differ only in their values (SonarCloud flagged the four near-identical
+ * object literals as new-code duplication once "Cannot create the upload folder" became a
+ * fourth copy of the same shape).
+ */
+function fileStorageIssueRow(
+  label: string,
+  checkedAt: string,
+  uploadPath: string,
+  status: "down" | "not_configured",
+  summary: string,
+  writable: string,
+  reason: string,
+): HealthCheckRow {
+  return {
+    id: "file_storage",
+    label,
+    status,
+    summary,
+    details: detailsFromEntries([
+      ["status", status],
+      ["provider", "local"],
+      ["path", uploadPath],
+      ["writable", writable],
+      ["reason", reason],
+      ["last_checked", checkedAt],
+    ]),
+  };
+}
+
+/**
  * Local branding upload volume (`UPLOAD_DIR` / `@admitto/storage`).
  * Passive: path must be an existing directory that is readable, writable, and searchable
  * (`R_OK|W_OK|X_OK`). A missing root is not_configured (adapter `mkdir` on first put), not an
@@ -1309,20 +1340,7 @@ export async function fileStorageRow(
     // eslint-disable-next-line security/detect-non-literal-fs-filename
     const st = await stat(uploadPath);
     if (!st.isDirectory()) {
-      return {
-        id: "file_storage",
-        label,
-        status: "down",
-        summary: "Not a directory",
-        details: detailsFromEntries([
-          ["status", "down"],
-          ["provider", "local"],
-          ["path", uploadPath],
-          ["writable", "no"],
-          ["reason", "not_a_directory"],
-          ["last_checked", checkedAt],
-        ]),
-      };
+      return fileStorageIssueRow(label, checkedAt, uploadPath, "down", "Not a directory", "no", "not_a_directory");
     }
     // X_OK: directory must be searchable so children can be created (Unix).
      
@@ -1341,50 +1359,27 @@ export async function fileStorageRow(
       // instance is healthy when uploads are already broken. A live check verifies this
       // directly instead of assuming the benign case.
       if (live && !(await canCreateUploadDir(uploadPath))) {
-        return {
-          id: "file_storage",
+        return fileStorageIssueRow(
           label,
-          status: "down",
-          summary: "Cannot create the upload folder",
-          details: detailsFromEntries([
-            ["status", "down"],
-            ["provider", "local"],
-            ["path", uploadPath],
-            ["writable", "no"],
-            ["reason", "cannot_create_directory"],
-            ["last_checked", checkedAt],
-          ]),
-        };
+          checkedAt,
+          uploadPath,
+          "down",
+          "Cannot create the upload folder",
+          "no",
+          "cannot_create_directory",
+        );
       }
-      return {
-        id: "file_storage",
+      return fileStorageIssueRow(
         label,
-        status: "not_configured",
-        summary: "Missing directory · created on first upload",
-        details: detailsFromEntries([
-          ["status", "not_configured"],
-          ["provider", "local"],
-          ["path", uploadPath],
-          ["writable", "unknown"],
-          ["reason", "missing_directory"],
-          ["last_checked", checkedAt],
-        ]),
-      };
+        checkedAt,
+        uploadPath,
+        "not_configured",
+        "Missing directory · created on first upload",
+        "unknown",
+        "missing_directory",
+      );
     }
-    return {
-      id: "file_storage",
-      label,
-      status: "down",
-      summary: "Not writable",
-      details: detailsFromEntries([
-        ["status", "down"],
-        ["provider", "local"],
-        ["path", uploadPath],
-        ["writable", "no"],
-        ["reason", "not_writable"],
-        ["last_checked", checkedAt],
-      ]),
-    };
+    return fileStorageIssueRow(label, checkedAt, uploadPath, "down", "Not writable", "no", "not_writable");
   }
 
   if (live) {
