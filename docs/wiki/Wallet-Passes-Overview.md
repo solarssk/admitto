@@ -85,13 +85,27 @@ works; Admitto never signs or hosts pass files itself.
     actually offers for that event. Turning the whole feature off hides the Wallet column and the
     Attendee Detail Wallet card entirely; turning off just Apple or just Google Wallet drops that
     platform's icon/row everywhere, without affecting the other one.
+  - **After Remove from provider:** the pass's last known registration counts are kept, but
+    shown as "Was registered" rather than "Registered" on both surfaces, since a removed pass is
+    never read again - it is a frozen snapshot from just before removal, not a live status.
 - **Wallet lifecycle actions.**
-  - **Actions available:** void, push updates, refresh status (active passes only), and
-    permanently delete a wallet pass at the provider, plus restore. Revoking an attendee's ticket also voids their wallet pass
-    automatically; restoring the ticket restores the pass the same way.
-  - **Single vs bulk scope:** void, push updates, refresh status, and delete are available both
-    from Attendee Detail (single attendee) and the Attendees list (bulk, for a selection). Restore
-    is Attendee Detail only, there is no bulk version of it.
+  - **Actions available:** void, push updates, refresh status (active passes only), permanently
+    delete a wallet pass at the provider (and its local record), restore, and - once a pass is
+    voided or expired - remove it from the provider while keeping the local record and its Reports
+    history. Revoking an attendee's ticket also voids their wallet pass automatically; restoring
+    the ticket restores the pass the same way.
+  - **Single vs bulk scope:** void, push updates, refresh status, delete, and remove are available
+    both from Attendee Detail (single attendee) and the Attendees list (bulk, for a selection).
+    Restore is Attendee Detail only, there is no bulk version of it.
+  - **Delete vs Remove:** delete erases the wallet pass at the provider and the local record
+    together, including its Reports history. Remove from provider only deletes it at the
+    provider, keeping the local record and history - it exists specifically to stop the provider
+    counting a no-longer-valid pass against its own plan, which void alone does not
+    do. Remove is only offered once a pass is voided or expired, and cannot be undone at the
+    provider.
+  - **Archived events and the Wallet switch:** void, delete, remove, and refresh status all still
+    work on an archived event and when the event's Wallet switch is off, so a pass can be wound
+    down after an event has ended. Restore and push updates stay blocked there.
   - **Rate and pacing limits:** a bulk wallet action accepts at most 100 attendees per selection.
     Each attendee's pass is updated one call at a time at a fixed pace, to stay within
     PassCreator's own request limit, rather than all at once, so a bulk action against a large

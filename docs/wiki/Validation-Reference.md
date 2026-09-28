@@ -273,13 +273,14 @@ An invalid or unrecognised ticket link shows "This link is invalid or the page n
 
 | Action | Requires | Confirmation dialog |
 |---|---|---|
-| Void | Wallet configured for the event, and a wallet pass on that attendee | Required |
-| Restore | Wallet configured for the event, and a wallet pass on that attendee | Required |
+| Void | Wallet provider credentials configured for the event (the Wallet switch and the archived state do not matter), and a wallet pass on that attendee | Required |
+| Restore | Wallet configured for the event, the event not ended or archived, and a wallet pass on that attendee | Required |
 | Push updates | Wallet configured for the event, and a wallet pass on that attendee | Required |
-| Refresh status | PassCreator credentials configured for the event (the Wallet switch and the archived state do not matter), and an active wallet pass on that attendee | Not required |
-| Delete | Wallet configured for the event, and a wallet pass on that attendee | Required, warns that the action is permanent and that Apple/Google Wallet gives no way to remove a pass from someone's phone - only the attendee can do that |
+| Refresh status | Wallet provider credentials configured for the event (the Wallet switch and the archived state do not matter), and an active wallet pass on that attendee | Not required |
+| Delete | Wallet provider credentials configured for the event (the Wallet switch and the archived state do not matter), and a wallet pass on that attendee | Required, warns that the action is permanent, that it also erases the pass's Reports history, and that Apple/Google Wallet gives no way to remove a pass from someone's phone - only the attendee can do that |
+| Remove from provider | Wallet provider credentials configured for the event (the Wallet switch and the archived state do not matter), and a voided or expired wallet pass on that attendee | Required, warns that the action is permanent at the provider (unlike Delete, the local record and its Reports history are kept) |
 
-If a requirement isn't met, each action gives a specific reason: "This attendee has no wallet pass to act on." or "Wallet isn't configured for this event." Refresh status on a pass that is no longer active says "This wallet pass is no longer active, so there is nothing to refresh."
+If a requirement isn't met, each action gives a specific reason: "This attendee has no wallet pass to act on." or "Wallet isn't configured for this event." Refresh status on a pass that is no longer active says "This wallet pass is no longer active, so there is nothing to refresh." Remove from provider on an active pass says "This wallet pass isn't voided or expired, so it can't be removed from the provider."
 
 - A provider (PassCreator) rejection is always translated to a specific reason, never a bare error: a wrong API key, the pass not found, PassCreator rate-limiting the instance, or a timeout.
 - Revoking or restoring an attendee's admission status automatically voids or restores their wallet pass to match, best-effort, without blocking the attendee save itself if that sync fails.
