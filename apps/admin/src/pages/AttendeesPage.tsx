@@ -241,6 +241,13 @@ function notifyBulkWalletActionResult(
   addToast(`No wallet passes ${verb}${noteSuffix}.`, "error");
 }
 
+/** Body of the bulk Remove confirm dialog. The count is the selection, not the number of passes
+ * that will be removed: only the voided or expired ones among them are. */
+function bulkRemoveDialogMessage(selected: number): string {
+  const attendees = selected === 1 ? "attendee" : "attendees";
+  return `Permanently deletes the voided or expired passes among the ${selected} selected ${attendees} at the provider. Unlike Delete, this keeps the local record and its Reports history - it just stops the provider counting these passes towards its own plan.`;
+}
+
 /** Inline hint of the bulk Remove dialog after some removals failed - a repeat only retries what is
  * left, since passes that were already removed are skipped. */
 function bulkRemoveRetryMessage(errored: number): string {
@@ -2647,7 +2654,7 @@ export function AttendeesPage() {
       <ConfirmDialog
         open={bulkRemoveWalletConfirmOpen}
         title="Remove wallet passes from the provider?"
-        message={`Permanently deletes the voided or expired passes among the ${selectedIds.size} selected attendee${selectedIds.size === 1 ? "" : "s"} at the provider. Unlike Delete, this keeps the local record and its Reports history - it just stops the provider counting these passes towards its own plan.`}
+        message={bulkRemoveDialogMessage(selectedIds.size)}
         errorMessage={bulkRemoveWalletError}
         confirmLabel="Remove"
         confirmVariant="danger"
