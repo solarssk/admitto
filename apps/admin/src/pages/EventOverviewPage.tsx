@@ -24,7 +24,7 @@ import {
   deleteEventResource,
   unarchiveEvent,
 } from "../api/client.js";
-import { operatorApiErrorMessage } from "../api/operator-api-error.js";
+import { CONTACT_PHONE_ERROR, INVALID_EMAIL_MESSAGE, operatorApiErrorMessage } from "../api/operator-api-error.js";
 import { useAuth } from "../auth/AuthProvider.js";
 import { isSuperadmin } from "../auth/capabilities.js";
 import type {
@@ -61,6 +61,14 @@ import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { NO_AUTOFILL_PROPS } from "../settings/mailTransportFormParts.js";
 import { PhoneCountrySelect } from "../components/PhoneCountrySelect.js";
 import { composePhoneE164, splitPhoneForPicker } from "../utils/phoneCountries.js";
+import {
+  CONTACT_EMAIL_MAX_LENGTH,
+  CONTACT_PHONE_MAX_LENGTH,
+  isValidContactPhone,
+  sanitizeContactPhoneInput,
+} from "@admitto/shared";
+import { isValidEmailFormat } from "../utils/email.js";
+import { mailtoHref, telHref } from "../utils/contactLinks.js";
 
 const OVERVIEW_REFRESH_MS = 30_000;
 const OVERVIEW_SUBTITLE =
@@ -864,6 +872,23 @@ function ContactModal({
   const [phoneCountryCode, setPhoneCountryCode] = useState(initialPhone.dialCode);
   const [phoneNumber, setPhoneNumber] = useState(initialPhone.nationalNumber);
   const [saving, setSaving] = useState(false);
+  // An error shows once the field has been left, or once Save was tried; it clears as soon as the
+  // value is fixed because it is derived from the current value, not stored.
+  const [touched, setTouched] = useState({ email: false, phone: false });
+  const composedPhone = composePhoneE164(phoneCountryCode, phoneNumber);
+  const emailValue = form.email.trim();
+  // A value that did not change is never flagged, so a contact saved before these checks existed
+  // can still have its name or role edited (the server applies the same rule).
+  const emailError =
+    emailValue &&
+    emailValue !== (contact?.email ?? "") &&
+    (emailValue.length > CONTACT_EMAIL_MAX_LENGTH || !isValidEmailFormat(emailValue))
+      ? INVALID_EMAIL_MESSAGE
+      : null;
+  const phoneError =
+    composedPhone && composedPhone !== (contact?.phone ?? "") && !isValidContactPhone(composedPhone)
+      ? CONTACT_PHONE_ERROR
+      : null;
   const dirty =
     form.name.trim() !== (contact?.name ?? "") ||
     form.role.trim() !== (contact?.role ?? "") ||
@@ -873,13 +898,17 @@ function ContactModal({
 
   const handleSubmit = async () => {
     if (!form.name.trim() || saving) return;
+    if (emailError || phoneError) {
+      setTouched({ email: true, phone: true });
+      return;
+    }
     setSaving(true);
     try {
       const data = {
         name: form.name.trim(),
         role: form.role.trim() || null,
-        phone: composePhoneE164(phoneCountryCode, phoneNumber) || null,
-        email: form.email.trim() || null,
+        phone: composedPhone || null,
+        email: emailValue || null,
       };
       if (contact) {
         await onUpdate(contact.id, data);
@@ -948,32 +977,52 @@ function ContactModal({
             label="Phone country code"
             value={phoneCountryCode}
             disabled={saving}
-            onChange={setPhoneCountryCode}
+            onChange={(code) => {
+              setPhoneCountryCode(code);
+              // The picker now supplies the country code, so a typed "+" has no place in the number.
+              setPhoneNumber((n) => sanitizeContactPhoneInput(n, !code));
+            }}
           />
           <Input
             id="overview-contact-phone-number"
             icon={<i className="ti ti-phone" aria-hidden="true" />}
             type="tel"
+            inputMode="tel"
+            maxLength={CONTACT_PHONE_MAX_LENGTH}
             name="event-contact-phone"
             value={phoneNumber}
+            invalid={touched.phone && !!phoneError}
+            aria-describedby={touched.phone && phoneError ? "overview-contact-phone-error" : undefined}
             disabled={saving}
-            onChange={(e) => setPhoneNumber(e.target.value)}
+            // Letters never get into the field: typing or pasting keeps only what a phone number can
+            // hold (digits, spaces, dashes, dots, parentheses, and a leading + when no country code
+            // is picked).
+            onChange={(e) => setPhoneNumber(sanitizeContactPhoneInput(e.target.value, !phoneCountryCode))}
+            onBlur={() => setTouched((t) => ({ ...t, phone: true }))}
             {...NO_AUTOFILL_PROPS}
           />
         </div>
+        {touched.phone && phoneError && (
+          <span id="overview-contact-phone-error" className="at-hint at-hint--error" role="alert">
+            {phoneError}
+          </span>
+        )}
       </div>
       <Input
         label="Email"
         // type="email" is what actually triggers Safari's iCloud "Hide My Email" suggestion chip
         // regardless of autocomplete/data-* opt-outs below — AddAttendeeModal.tsx and
         // AttendeeDetailPage.tsx already work around this the same way (type="text" +
-        // inputMode="email" for the mobile keyboard); no native email-format validation was
-        // actually relied on here (handleSubmit only trims/nulls it), so nothing is lost.
+        // inputMode="email" for the mobile keyboard); no native email-format validation
+        // is lost: the format is checked by isValidEmailFormat above and by the server.
         type="text"
         inputMode="email"
         icon={<i className="ti ti-mail" aria-hidden="true" />}
         value={form.email}
+        maxLength={CONTACT_EMAIL_MAX_LENGTH}
+        error={touched.email && emailError ? emailError : undefined}
         onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+        onBlur={() => setTouched((t) => ({ ...t, email: true }))}
         {...NO_AUTOFILL_PROPS}
         name="event-contact-email"
       />
@@ -1231,12 +1280,12 @@ function KeyContactsSection({
             </div>
             <div className="overview-contact__actions">
               {contact.phone && (
-                <a href={`tel:${contact.phone}`} className="overview-contact__action" aria-label={`Call ${contact.name}`}>
+                <a href={telHref(contact.phone)} className="overview-contact__action" aria-label={`Call ${contact.name}`}>
                   <i className="ti ti-phone" aria-hidden="true" />
                 </a>
               )}
               {contact.email && (
-                <a href={`mailto:${contact.email}`} className="overview-contact__action" aria-label={`Email ${contact.name}`}>
+                <a href={mailtoHref(contact.email)} className="overview-contact__action" aria-label={`Email ${contact.name}`}>
                   <i className="ti ti-mail" aria-hidden="true" />
                 </a>
               )}
@@ -1614,7 +1663,7 @@ export function EventOverviewPage() {
       if (currentEventIdRef.current !== capturedEventId) return;
       setContacts((prev) => [...prev, created]);
     } catch (err) {
-      addToast("Failed to add contact.", "error");
+      addToast(operatorApiErrorMessage(err, "Failed to add contact."), "error");
       throw err;
     }
   }, [event.id, addToast]);
@@ -1626,7 +1675,7 @@ export function EventOverviewPage() {
       if (currentEventIdRef.current !== capturedEventId) return;
       setContacts((prev) => prev.map((c) => (c.id === id ? updated : c)));
     } catch (err) {
-      addToast("Failed to update contact.", "error");
+      addToast(operatorApiErrorMessage(err, "Failed to update contact."), "error");
       throw err;
     }
   }, [event.id, addToast]);

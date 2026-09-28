@@ -30,6 +30,8 @@ Open the correct organisation and event. If another manager may be editing the s
 2. Review the **Setup checklist**. Its bar and the **N of M done** count show progress, the bar turns amber or red when a check needs attention, problems are listed first, and each row opens the page where you fix it.
 3. Review KPI tiles (including attendees and **Failed delivery**), the **Check-in progress** card, and **Recent activity** (check-ins, attendees added, item issue/return/revoke, mail failures, and imports).
 4. Use **Pinned note**, **Key contacts**, and **Important links & files** when your event keeps that operational context on Overview.
+
+A key contact's phone number takes digits only (3 to 15 in total, with spaces, dashes, dots, parentheses, and a leading + allowed), so letters cannot be typed, and its email must be a valid address. Both are checked when you save.
 5. Follow a readiness prompt when it points to unfinished setup.
 
 **Check-in progress** shows how many attendees have checked in, with the rest as **not yet arrived** while the event can still fill up and as **no-shows** once it is over (after its end time when one is set in Event settings, otherwise at the end of its day). Below it, **Last check-in** sits next to **Wallet passes installed** when the event uses wallets (a template and API key are saved and Apple or Google is switched on), or next to **Busiest hour** when it does not. Wallet passes installed counts attendees whose pass was confirmed on a device at any point, so it does not drop if someone later removes the pass. Breakdowns by ticket type or by hour are in **Reports**.

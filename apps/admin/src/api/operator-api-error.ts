@@ -1,6 +1,12 @@
+import { CONTACT_PHONE_MAX_DIGITS, CONTACT_PHONE_MIN_DIGITS } from "@admitto/shared";
 import { ApiError } from "./client.js";
 
 const MACHINE_CODE = /^[a-z][a-z0-9_]*$/;
+
+/** Shared by the API error map below and the key contact form, so the same rule reads the same in
+ * both places. The digit range comes from the rule itself, so the message cannot drift from it. */
+export const INVALID_EMAIL_MESSAGE = "Enter a valid email address.";
+export const CONTACT_PHONE_ERROR = `Enter a valid phone number: digits only, between ${CONTACT_PHONE_MIN_DIGITS} and ${CONTACT_PHONE_MAX_DIGITS} in total.`;
 
 /** Known API error codes and operator-safe literals mapped to UI copy. Exported only for the
  * coverage guard in operator-api-error.coverage.test.ts, which checks every snake_case error
@@ -66,7 +72,8 @@ export const CODE_MESSAGES: Record<string, string> = {
     "Inactivity timeout cannot be longer than the maximum session lifetime.",
   incomplete_transport: "Fill in all required fields for this mail transport before saving.",
   internal_error: "Something went wrong. Try again. If it keeps happening, check System logs.",
-  invalid_email: "Enter a valid email address.",
+  invalid_email: INVALID_EMAIL_MESSAGE,
+  invalid_phone: CONTACT_PHONE_ERROR,
   invalid_form_data: "Could not read the upload. Try again.",
   invalid_image: "That file is not a valid image. Try another PNG, JPG, or WebP.",
   invalid_code: "Invalid authenticator code.",
