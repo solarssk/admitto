@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { ToastProvider } from "@admitto/ui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { EventOverviewPage } from "../../src/pages/EventOverviewPage.js";
@@ -10,8 +11,13 @@ import type {
   EventResourceDto,
 } from "../../src/api/types.js";
 import type { StreamCheckinEvent } from "../../src/hooks/useEventStream.js";
-import { connectionStateValue, makeTicketType, renderWithToast } from "../test-utils.js";
-import { formatEventCalendarDate } from "../../src/utils/event-dates.js";
+import {
+  connectionStateValue,
+  makeSuperadminAssignment,
+  makeTicketType,
+  renderWithToast,
+} from "../test-utils.js";
+import { formatEventCalendarDate, formatEventDateTime, formatUtcDateTime } from "../../src/utils/event-dates.js";
 
 const fetchEventOverview = vi.fn();
 const fetchTicketTypes = vi.fn();
@@ -22,6 +28,12 @@ let activityChangedHandler: (() => void) | null = null;
 // Lets a test simulate the SSE handshake not having completed yet (#C) — defaults to true so
 // every other test keeps its original "always connected" behavior.
 let mockStreamConnected = true;
+// Per-test knobs for the archived-event tests: fields merged over the mocked outlet event, the
+// layout's refreshEvent(), and the signed-in role assignments.
+let mockEventOverrides: Record<string, unknown> = {};
+const mockRefreshEvent = vi.fn();
+let mockAssignments: Array<{ role: string; scope_type: string; scope_id: string | null }> = [];
+const mockUnarchiveEvent = vi.fn();
 
 vi.mock("../../src/hooks/useEventStream.js", () => ({
   useEventStream: (
@@ -37,6 +49,10 @@ vi.mock("../../src/hooks/useEventStream.js", () => ({
 
 vi.mock("../../src/connection/ConnectionStateProvider.js", () => ({
   useConnectionState: () => connectionStateValue("connected", reportApiError),
+}));
+
+vi.mock("../../src/auth/AuthProvider.js", () => ({
+  useAuth: () => ({ assignments: mockAssignments }),
 }));
 
 vi.mock("react-router", async () => {
@@ -55,7 +71,9 @@ vi.mock("react-router", async () => {
         archived_at: null,
         organization_id: "org-1",
         attendee_count: 50,
+        ...mockEventOverrides,
       },
+      refreshEvent: mockRefreshEvent,
     }),
   };
 });
@@ -71,6 +89,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   createEventResource: vi.fn(),
   updateEventResource: vi.fn(),
   deleteEventResource: vi.fn(),
+  unarchiveEvent: (...args: unknown[]) => mockUnarchiveEvent(...args),
 }));
 
 import {
@@ -129,14 +148,18 @@ const liveEvent: StreamCheckinEvent = {
   deviceLabel: null,
 };
 
-function renderPage() {
-  return renderWithToast(
+function pageTree() {
+  return (
     <MemoryRouter initialEntries={["/admin/events/evt-1/overview"]}>
       <Routes>
         <Route path="/admin/events/:eventId/overview" element={<EventOverviewPage />} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+}
+
+function renderPage() {
+  return renderWithToast(pageTree());
 }
 
 /** The 4 KPI tiles - scope queries here since some plain numbers/labels also appear elsewhere on
@@ -168,6 +191,8 @@ afterEach(() => {
   streamHandler = null;
   activityChangedHandler = null;
   mockStreamConnected = true;
+  mockEventOverrides = {};
+  mockAssignments = [];
 });
 
 describe("EventOverviewPage live stats", () => {
@@ -531,11 +556,11 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     }
   });
 
-  it("keeps the neutral 'Event countdown' label, not 'Days to event', for an event that ended within the past week", async () => {
+  it("shows a short '3 days ago' under 'Event ended', not 'Days to event', for an event that ended within the past week", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       // 3 calendar days after the fixture's 2026-07-01 event date - still inside the +-7 day
-      // window, so the value is prose ("Ended 3 days ago") rather than a bare number.
+      // window, so the value is a short phrase rather than a bare number.
       vi.setSystemTime(new Date("2026-07-04T10:00:00.000Z"));
       fetchEventOverview.mockResolvedValue(overviewFixture(5));
 
@@ -545,8 +570,9 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
         expect(within(statsRow()).getByText("Attendees")).toBeTruthy();
       });
 
-      expect(within(statsRow()).getByText("Ended 3 days ago")).toBeTruthy();
-      expect(within(statsRow()).getByText("Event countdown")).toBeTruthy();
+      expect(within(statsRow()).getByText("3 days ago")).toBeTruthy();
+      expect(within(statsRow()).getByText("Event ended")).toBeTruthy();
+      expect(within(statsRow()).queryByText("Event countdown")).toBeNull();
       expect(within(statsRow()).queryByText("Days to event")).toBeNull();
     } finally {
       vi.useRealTimers();
@@ -1469,5 +1495,232 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
       expect(screen.getByText("Gate B is closed today")).toBeTruthy();
     });
     expect(document.querySelector(".overview-pinned-note")).toBeNull();
+  });
+
+  it.each([
+    ["2026-07-02T10:00:00.000Z", "Yesterday"],
+    ["2026-07-01T20:00:00.000Z", "Today"],
+  ])("reads an ended event as '%s' under 'Event ended' (now = %s)", async (now, expected) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.setSystemTime(new Date(now));
+      fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(within(statsRow()).getByText("Event ended")).toBeTruthy();
+      });
+      expect(within(statsRow()).getByText(expected)).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps all four KPI values the same size, including the ended-event phrase", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.setSystemTime(new Date("2026-07-04T10:00:00.000Z"));
+      fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+      renderPage();
+
+      await screen.findByText("3 days ago");
+      const values = Array.from(statsRow().querySelectorAll(".overview-kpi__value"));
+      expect(values).toHaveLength(4);
+      for (const value of values) {
+        expect(value.className).toBe("overview-kpi__value");
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("EventOverviewPage archived event", () => {
+  const archivedAt = "2026-07-02T06:03:00.000Z";
+
+  beforeEach(() => {
+    fetchEventOverview.mockReset();
+    fetchTicketTypes.mockReset();
+    fetchTicketTypes.mockResolvedValue([]);
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+    mockUnarchiveEvent.mockReset();
+    mockRefreshEvent.mockReset();
+    mockRefreshEvent.mockResolvedValue(undefined);
+    mockEventOverrides = { archived_at: archivedAt, archived_by_timezone: "Asia/Kolkata" };
+    mockAssignments = [makeSuperadminAssignment()];
+  });
+
+  it("shows no archived badge, notice or restore button for an active event", async () => {
+    mockEventOverrides = {};
+
+    renderPage();
+
+    await screen.findByText("Attendees");
+    expect(screen.queryByText(/This event is archived/)).toBeNull();
+    expect(document.querySelector(".at-notice")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Restore event" })).toBeNull();
+  });
+
+  it("shows a warning-toned archived notice with a Restore button for a superadmin, and no separate read-only badge", async () => {
+    renderPage();
+
+    await screen.findByText("Attendees");
+    expect(screen.queryByText(/Read-only since/)).toBeNull();
+    const notice = document.querySelector(".at-notice") as HTMLElement;
+    expect(notice.className).toContain("at-notice--warning");
+    expect(notice.textContent).toContain("This event is archived.");
+    expect(notice.textContent).toContain("editing and check-in are locked");
+    expect(within(notice).getByRole("button", { name: "Restore event" })).toBeTruthy();
+    expect(notice.textContent).not.toContain("Ask a superadmin");
+  });
+
+  it("hides the Restore button and points to a superadmin for everyone else", async () => {
+    mockAssignments = [];
+
+    renderPage();
+
+    await screen.findByText("Attendees");
+    expect(screen.queryByRole("button", { name: "Restore event" })).toBeNull();
+    expect((document.querySelector(".at-notice") as HTMLElement).textContent).toContain(
+      "Ask a superadmin to restore it.",
+    );
+  });
+
+  it("asks for confirmation before restoring and does nothing on Cancel", async () => {
+    renderPage();
+
+    await screen.findByText("Attendees");
+    fireEvent.click(screen.getByRole("button", { name: "Restore event" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Restore this event?" });
+    expect(within(dialog).getByText(/"Demo Event" will become active again/)).toBeTruthy();
+    expect(mockUnarchiveEvent).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mockUnarchiveEvent).not.toHaveBeenCalled();
+    expect(mockRefreshEvent).not.toHaveBeenCalled();
+  });
+
+  it("restores the event on confirm, then refreshes the layout event and closes the dialog", async () => {
+    mockUnarchiveEvent.mockResolvedValue(undefined);
+
+    renderPage();
+
+    await screen.findByText("Attendees");
+    fireEvent.click(screen.getByRole("button", { name: "Restore event" }));
+    const dialog = await screen.findByRole("dialog", { name: "Restore this event?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore event" }));
+
+    await waitFor(() => expect(mockUnarchiveEvent).toHaveBeenCalledWith("evt-1"));
+    await waitFor(() => expect(mockRefreshEvent).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(await screen.findByText("Event restored.")).toBeTruthy();
+  });
+
+  it("keeps the dialog open when dismissed while the restore request is in flight", async () => {
+    let resolveUnarchive!: () => void;
+    mockUnarchiveEvent.mockImplementation(() => new Promise<void>((resolve) => (resolveUnarchive = resolve)));
+
+    renderPage();
+
+    await screen.findByText("Attendees");
+    fireEvent.click(screen.getByRole("button", { name: "Restore event" }));
+    const dialog = await screen.findByRole("dialog", { name: "Restore this event?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore event" }));
+    await waitFor(() => expect(mockUnarchiveEvent).toHaveBeenCalledTimes(1));
+
+    // Backdrop click is the dismissal path that stays enabled while the buttons are disabled.
+    fireEvent.click(document.querySelector(".at-modal-backdrop") as HTMLElement);
+    expect(screen.getByRole("dialog", { name: "Restore this event?" })).toBeTruthy();
+
+    await act(async () => {
+      resolveUnarchive();
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mockRefreshEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not refresh the layout when the route moves to another event mid-restore", async () => {
+    let resolveUnarchive!: () => void;
+    mockUnarchiveEvent.mockImplementation(() => new Promise<void>((resolve) => (resolveUnarchive = resolve)));
+
+    const view = renderPage();
+
+    await screen.findByText("Attendees");
+    fireEvent.click(screen.getByRole("button", { name: "Restore event" }));
+    const dialog = await screen.findByRole("dialog", { name: "Restore this event?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore event" }));
+    await waitFor(() => expect(mockUnarchiveEvent).toHaveBeenCalledWith("evt-1"));
+
+    // The route moves to another event while the request is still in flight.
+    mockEventOverrides = { ...mockEventOverrides, id: "evt-2", title: "Other Event" };
+    view.rerender(<ToastProvider>{pageTree()}</ToastProvider>);
+    await act(async () => {
+      resolveUnarchive();
+    });
+
+    expect(mockRefreshEvent).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("does not show a failed restore's error on the event the route moved to", async () => {
+    let rejectUnarchive!: (err: Error) => void;
+    mockUnarchiveEvent.mockImplementation(() => new Promise<void>((_, reject) => (rejectUnarchive = reject)));
+
+    const view = renderPage();
+
+    await screen.findByText("Attendees");
+    fireEvent.click(screen.getByRole("button", { name: "Restore event" }));
+    const dialog = await screen.findByRole("dialog", { name: "Restore this event?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore event" }));
+    await waitFor(() => expect(mockUnarchiveEvent).toHaveBeenCalledWith("evt-1"));
+
+    mockEventOverrides = { ...mockEventOverrides, id: "evt-2", title: "Other Event" };
+    view.rerender(<ToastProvider>{pageTree()}</ToastProvider>);
+    await act(async () => {
+      rejectUnarchive(new Error("boom"));
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Restore event" }));
+    const reopened = await screen.findByRole("dialog", { name: "Restore this event?" });
+    expect(within(reopened).queryByRole("alert")).toBeNull();
+    expect(within(reopened).getByText(/"Other Event" will become active again/)).toBeTruthy();
+  });
+
+  it("formats the archive time in UTC when the archiving admin's time zone is unknown", async () => {
+    mockEventOverrides = { archived_at: archivedAt, archived_by_timezone: null };
+
+    renderPage();
+
+    await screen.findByText("Attendees");
+    const notice = (document.querySelector(".at-notice") as HTMLElement).textContent ?? "";
+    expect(notice).toContain(formatUtcDateTime(archivedAt));
+  });
+
+  it("formats the archive time in the archiving admin's own time zone when known", async () => {
+    renderPage();
+
+    await screen.findByText("Attendees");
+    const notice = (document.querySelector(".at-notice") as HTMLElement).textContent ?? "";
+    expect(notice).toContain(formatEventDateTime(archivedAt, "Asia/Kolkata"));
+  });
+
+  it("keeps the dialog open with an inline error when restoring fails, and does not refresh", async () => {
+    mockUnarchiveEvent.mockRejectedValue(new Error("boom"));
+
+    renderPage();
+
+    await screen.findByText("Attendees");
+    fireEvent.click(screen.getByRole("button", { name: "Restore event" }));
+    const dialog = await screen.findByRole("dialog", { name: "Restore this event?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore event" }));
+
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toBeTruthy());
+    expect(screen.getByRole("dialog", { name: "Restore this event?" })).toBeTruthy();
+    expect(mockRefreshEvent).not.toHaveBeenCalled();
   });
 });
