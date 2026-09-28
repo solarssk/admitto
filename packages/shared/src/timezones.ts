@@ -97,6 +97,13 @@ const NICE_ABBREVIATION_RE = /^[A-Za-z]{2,5}$/;
 // minutes are an alternation, not an optional group, with the same match and the same groups.
 const GMT_OFFSET_RE = /^GMT([+-])(\d{1,2})(?:$|:(\d{2})$)/;
 
+/** ICU spells a numeric offset "GMT+2", but the product shows every numeric offset as "UTC+2" (the
+ * admin already does), so the label this module hands out is converted here. Only a GMT followed
+ * by a sign is touched: a bare "GMT" is a real zone abbreviation (UK winter time) and stays. */
+function asUtcOffsetLabel(label: string | undefined): string | undefined {
+  return label?.replace(/^GMT(?=[+-])/, "UTC");
+}
+
 function icuTimeZoneNamePart(iana: string, date: Date, style: "short" | "shortOffset"): string | undefined {
   try {
     return new Intl.DateTimeFormat("en-US", { timeZone: iana, timeZoneName: style })
@@ -118,7 +125,9 @@ function icuTimeZoneNamePart(iana: string, date: Date, style: "short" | "shortOf
  * date's actual UTC offset to the zone's known standard offset: if they match, the date isn't in
  * DST and the static tzdb abbreviation (e.g. "CET", "IST") is safe to show; if they differ, the
  * date IS in DST and that static label would be wrong, so this falls back to a plain numeric UTC
- * offset instead - never a letter abbreviation for the wrong half of the year. */
+ * offset instead - never a letter abbreviation for the wrong half of the year.
+ *
+ * A numeric offset comes back as "UTC+2", not ICU's "GMT+2" (see {@link asUtcOffsetLabel}). */
 export function getTimeZoneAbbreviationForDate(timeZone: string, date: Date): string | null {
   const zone = getTimeZone(timeZone);
   if (!zone) return null;
@@ -139,5 +148,5 @@ export function getTimeZoneAbbreviationForDate(timeZone: string, date: Date): st
     return zone.abbreviation;
   }
   // zone.abbreviation is always a string (never nullish), so it's a safe final fallback here.
-  return offsetRaw ?? icuShort ?? zone.abbreviation;
+  return asUtcOffsetLabel(offsetRaw) ?? asUtcOffsetLabel(icuShort) ?? zone.abbreviation;
 }

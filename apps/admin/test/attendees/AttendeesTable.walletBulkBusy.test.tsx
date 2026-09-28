@@ -161,7 +161,7 @@ describe("AttendeesTable wallet bulk actions gated by the event's platform toggl
     render(<AttendeesTable {...tableProps} items={[walletRow]} />);
     const menu = openMoreActionsMenu();
     const item = menu.getByRole("menuitem", { name: /Remove from provider/ });
-    expect(item.textContent).toContain("Voided or expired passes only, history is kept");
+    expect(item.textContent).toContain("Delete voided or expired passes, keep the history");
   });
 
   it("keeps the read-only Refresh status with the Wallet feature disabled while the event's credentials are configured", () => {

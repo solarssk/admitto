@@ -84,6 +84,7 @@ import {
   reissueOneWalletPass,
   removeOneWalletPassFromProvider,
   type RemoveWalletPassOutcome,
+  voidOneWalletPassAtProvider,
   resolveEventWalletProvider,
   issueTicket,
 } from "@admitto/tickets";
@@ -3438,37 +3439,6 @@ async function loadBulkWalletTargets(
   }));
 }
 
-async function voidOneWalletPass(
-  db: PrismaClient,
-  eventId: string,
-  target: { attendeeId: string; providerPassId: string; status: string; providerRemovedAt: Date | null },
-  provider: WalletPassProvider,
-  audit: OpsAuditContext,
-): Promise<"voided" | "skipped"> {
-  // A removed pass is always voided/expired already, so this is mostly belt-and-braces - there is
-  // nothing left at the provider to void.
-  if (target.status !== "active" || target.providerRemovedAt) return "skipped";
-  await provider.voidPass(target.providerPassId);
-  return db.$transaction(async (tx) => {
-    const row = await updateWalletPassUnlessRemoved(tx, target.attendeeId, {
-      status: "voided",
-      voided_at: new Date(),
-      provider_commanded_at: new Date(),
-      last_error_code: null,
-    });
-    // Removed by someone else while this selection was being processed: nothing left to mark.
-    if (!row) return "skipped";
-    await writeActionLog(tx, {
-      event_id: eventId,
-      attendee_id: target.attendeeId,
-      action_type: "wallet_pass_voided",
-      audit,
-      metadata: { bulk: true },
-    });
-    return "voided";
-  });
-}
-
 /** Pulls one selected attendee's current device-registration status from the provider, via the
  * same shared refreshOneWalletPassStatus (packages/wallet/src/refresh-wallet-pass-status.ts) the
  * single-attendee "Refresh status" route uses. Attendees with no resolvable userProvidedId (never
@@ -3616,7 +3586,7 @@ async function runBulkWalletAction<K extends string>(
  * owned-id/chunked-Promise.allSettled shape as the sibling bulk endpoints in this file; attendees
  * with no WalletPass row, or whose pass is already voided, count as skipped rather than errored. */
 export async function handleBulkVoidAttendeeWalletPass(c: Context, db: PrismaClient): Promise<Response> {
-  return runBulkWalletAction(c, db, "voided", "wallet_void", voidOneWalletPass, { ignoreWalletEnabled: true });
+  return runBulkWalletAction(c, db, "voided", "wallet_void", voidOneWalletPassAtProvider, { ignoreWalletEnabled: true });
 }
 
 /** POST /api/admin/events/:eventId/attendees/bulk-wallet-reissue - push each selected attendee's
