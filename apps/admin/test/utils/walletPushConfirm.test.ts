@@ -37,13 +37,13 @@ describe("describeWalletKeyClearConfirm", () => {
 describe("describeWalletDisableConfirm", () => {
   it("uses singular wording for exactly one issued pass", () => {
     expect(describeWalletDisableConfirm(1)).toBe(
-      "This event has 1 issued wallet pass. Turning off wallet passes stops syncing, voiding, restoring, and pushing updates to it. PassCreator's own notifications - a device registration, or a pass voided or expired - are still read and applied while it's off; only the periodic background check pauses, and resumes once you turn this back on.",
+      "This event has 1 issued wallet pass. Turning off wallet passes stops syncing, restoring, and pushing updates to it. You can still void, remove or delete it. PassCreator's own notifications - a device registration, or a pass voided or expired - are still read and applied while it's off; only the periodic background check pauses, and resumes once you turn this back on.",
     );
   });
 
   it("uses plural wording for more than one issued pass", () => {
     expect(describeWalletDisableConfirm(4)).toBe(
-      "This event has 4 issued wallet passes. Turning off wallet passes stops syncing, voiding, restoring, and pushing updates to them. PassCreator's own notifications - a device registration, or a pass voided or expired - are still read and applied while it's off; only the periodic background check pauses, and resumes once you turn this back on.",
+      "This event has 4 issued wallet passes. Turning off wallet passes stops syncing, restoring, and pushing updates to them. You can still void, remove or delete them. PassCreator's own notifications - a device registration, or a pass voided or expired - are still read and applied while it's off; only the periodic background check pauses, and resumes once you turn this back on.",
     );
   });
 });

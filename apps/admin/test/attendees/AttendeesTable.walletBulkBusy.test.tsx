@@ -79,10 +79,12 @@ const tableProps: AttendeesTableProps = {
   onBulkReissueWallet: vi.fn(),
   onBulkRefreshWalletStatus: vi.fn(),
   onBulkDeleteWallet: vi.fn(),
+  onBulkRemoveWallet: vi.fn(),
   bulkVoidWalletBusy: false,
   bulkReissueWalletBusy: false,
   bulkRefreshWalletStatusBusy: false,
   bulkDeleteWalletBusy: false,
+  bulkRemoveWalletBusy: false,
   onBulkDelete: vi.fn(),
   eventTimezone: "UTC",
   event: { archived_at: null as string | null },
@@ -123,6 +125,12 @@ describe("AttendeesTable wallet bulk-action busy labels", () => {
     expect(menu.getByRole("menuitem", { name: /^Deleting wallet passes…/ })).toBeTruthy();
   });
 
+  it("shows the busy label while a bulk remove is in flight", () => {
+    render(<AttendeesTable {...tableProps} items={[walletRow]} bulkRemoveWalletBusy />);
+    const menu = openMoreActionsMenu();
+    expect(menu.getByRole("menuitem", { name: /^Removing from provider…/ })).toBeTruthy();
+  });
+
   it("shows the busy label while a bulk refresh status is in flight", () => {
     render(<AttendeesTable {...tableProps} items={[walletRow]} bulkRefreshWalletStatusBusy />);
     const menu = openMoreActionsMenu();
@@ -131,12 +139,29 @@ describe("AttendeesTable wallet bulk-action busy labels", () => {
 });
 
 describe("AttendeesTable wallet bulk actions gated by the event's platform toggles", () => {
-  it("hides Void/Push updates/Delete wallet pass even when the selection has wallet_status rows, once the event's Wallet feature is disabled", () => {
+  it("hides only Push updates once the event's Wallet feature is disabled: Void, Refresh status, Remove and Delete wind passes down and only need the credentials", () => {
     render(<AttendeesTable {...tableProps} items={[walletRow]} walletPlatforms={{ apple: false, google: false, any: false }} />);
     const menu = openMoreActionsMenu();
-    expect(menu.queryByRole("menuitem", { name: /Void wallet pass/ })).toBeNull();
     expect(menu.queryByRole("menuitem", { name: /Push updates/ })).toBeNull();
-    expect(menu.queryByRole("menuitem", { name: /Delete wallet pass/ })).toBeNull();
+    for (const name of [/Void wallet pass/, /Refresh status/, /Remove from provider/, /Delete wallet pass/]) {
+      expect(menu.getByRole("menuitem", { name })).toBeTruthy();
+    }
+  });
+
+  it("hides every wind-down action, but keeps Push updates, when the platforms are on and the event has no credentials", () => {
+    render(<AttendeesTable {...tableProps} items={[walletRow]} walletConfigured={false} />);
+    const menu = openMoreActionsMenu();
+    expect(menu.getByRole("menuitem", { name: /Push updates/ })).toBeTruthy();
+    for (const name of [/Void wallet pass/, /Refresh status/, /Remove from provider/, /Delete wallet pass/]) {
+      expect(menu.queryByRole("menuitem", { name })).toBeNull();
+    }
+  });
+
+  it("does not promise a number for Remove: the selection can include passes it will skip", () => {
+    render(<AttendeesTable {...tableProps} items={[walletRow]} />);
+    const menu = openMoreActionsMenu();
+    const item = menu.getByRole("menuitem", { name: /Remove from provider/ });
+    expect(item.textContent).toContain("Voided or expired passes only, history is kept");
   });
 
   it("keeps the read-only Refresh status with the Wallet feature disabled while the event's credentials are configured", () => {

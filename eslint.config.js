@@ -30,11 +30,11 @@ const tsUnusedVarsOptions = {
 // "error" severity. The rules below found real, pre-existing issues (133 errors across ~50 files:
 // mostly no-misused-promises / no-floating-promises in mail/webhook/export code, plus
 // no-unsafe-assignment/return/member-access/argument/call where external data crosses a type
-// boundary untyped) that need one-by-one review, not a blind bulk fix — downgraded to "warn" so
-// this config change itself can land without blocking on unrelated pre-existing bugs. Tracked as
-// follow-up work; each rule should move back to "error" as its findings are fixed to zero.
+// boundary untyped) that needed one-by-one review, not a blind bulk fix — so they first shipped as
+// "warn" behind the warning baseline (scripts/eslint-warning-baseline.mjs) and each moved to
+// "error" once its own findings reached zero. All of them are now "error".
 const typeAwareFollowUpRules = {
-  "@typescript-eslint/no-misused-promises": "warn",
+  "@typescript-eslint/no-misused-promises": "error",
   "@typescript-eslint/no-floating-promises": "error",
   "@typescript-eslint/require-await": "error",
   "@typescript-eslint/no-unsafe-assignment": "error",

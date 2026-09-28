@@ -554,7 +554,7 @@ export function ExternalServicesPanel() {
               variant="warning"
               role="alert"
               action={
-                <Button type="button" variant="secondary" onClick={() => navigate("/admin/settings?tab=general")}>
+                <Button type="button" variant="secondary" onClick={() => void navigate("/admin/settings?tab=general")}>
                   Open Support contact
                 </Button>
               }

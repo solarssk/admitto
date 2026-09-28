@@ -286,6 +286,7 @@ export interface AttendeeRowDto {
     | "google_inactive_registrations"
     | "samsung_active_registrations"
     | "samsung_inactive_registrations"
+    | "provider_removed_at"
   > | null;
 }
 
@@ -585,6 +586,15 @@ export interface BulkWalletReissueResponse {
 export interface BulkWalletDeleteResponse {
   deleted: number;
   /** No WalletPass row - nothing to delete, left untouched. */
+  skipped: number;
+  errored: number;
+}
+
+/** Bulk wallet-remove summary from POST .../attendees/bulk-wallet-remove. */
+export interface BulkWalletRemoveResponse {
+  removed: number;
+  /** No WalletPass row, not voided/expired, provider doesn't support remote delete, or already
+   * removed - left untouched. */
   skipped: number;
   errored: number;
 }

@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useParams } from "react-router";
 import { AttendeesPage } from "../../src/pages/AttendeesPage.js";
 import { mockMatchMedia, renderWithToast } from "../test-utils.js";
-import { exportAttendees, fetchEventAttendees, reportApiError } from "./attendeesPageSetup.js";
+import { exportAttendees, fetchEventAttendees, makeRow, reportApiError } from "./attendeesPageSetup.js";
+
+function AttendeeRouteProbe() {
+  const { attendeeId } = useParams();
+  return <div>attendee page {attendeeId}</div>;
+}
 
 function renderPage() {
   return renderWithToast(
@@ -12,6 +17,7 @@ function renderPage() {
       <Routes>
         <Route path="/admin/events/:eventId/attendees" element={<AttendeesPage />} />
         <Route path="/admin/events/:eventId/attendees/import" element={<div>import page</div>} />
+        <Route path="/admin/events/:eventId/attendees/:attendeeId" element={<AttendeeRouteProbe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -162,5 +168,23 @@ describe("AttendeesPage header actions on mobile (PO review — header must neve
     fireEvent.click(screen.getByRole("button", { name: "More actions" }));
     expect(screen.getByRole("menuitem", { name: /^Send tickets/ })).toBeTruthy();
     expect(screen.queryByRole("menuitem", { name: /^Export/ })).toBeNull();
+  });
+});
+
+describe("AttendeesPage row navigation", () => {
+  it("opens the attendee's own page when a row is clicked", async () => {
+    fetchEventAttendees.mockResolvedValue({
+      items: [makeRow("att-1", "Jane Doe"), makeRow("att-2", "John Smith")],
+      total: 2,
+      page: 1,
+      pageSize: 25,
+    });
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+
+    fireEvent.click(screen.getByText("John Smith"));
+
+    expect(await screen.findByText("attendee page att-2")).toBeTruthy();
   });
 });

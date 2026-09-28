@@ -698,14 +698,14 @@ export function IdentityProviderEditor({
   const notFoundContent = (
     <div className="identity-editor__error">
       <p>This provider no longer exists.</p>
-      <Button variant="secondary" onClick={() => navigate(IDENTITY_PROVIDERS_ROUTE)}>
+      <Button variant="secondary" onClick={() => void navigate(IDENTITY_PROVIDERS_ROUTE)}>
         Back to providers
       </Button>
     </div>
   );
 
   const formContent = (
-    <form className="identity-editor" onSubmit={handleSubmit} noValidate>
+    <form className="identity-editor" onSubmit={(event) => void handleSubmit(event)} noValidate>
       {mode === "create" && (
         <div className="identity-protocol-picker" aria-label="Identity provider protocol">
           <span className="identity-protocol-tile identity-protocol-tile--active">
@@ -803,7 +803,7 @@ export function IdentityProviderEditor({
               type="button"
               variant="secondary"
               size="sm"
-              onClick={handleDiscover}
+              onClick={() => void handleDiscover()}
               disabled={isActionBusy(saving, testing, discovering)}
             >
               {discoverButtonLabel(discovering)}
@@ -948,7 +948,7 @@ export function IdentityProviderEditor({
         <Button
           type="button"
           variant="secondary"
-          onClick={handleTest}
+          onClick={() => void handleTest()}
           disabled={actionsDisabled(saving, testing, discovering, mode, loadState)}
         >
           {testButtonLabel(testing)}

@@ -117,6 +117,8 @@ async function loadTargets(
     where: {
       attendee_id: { in: attendeeIds },
       provider_pass_id: { not: null },
+      // A pass removed at the provider has nothing left to update there.
+      provider_removed_at: null,
       attendee: { event_id: eventId },
     },
     select: { attendee_id: true, provider_pass_id: true },

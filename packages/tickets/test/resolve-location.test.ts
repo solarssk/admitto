@@ -19,6 +19,17 @@ describe("parseWalletFieldMapping", () => {
       }),
     ).toEqual({ name: "full_name", eventDate: "event_date" });
   });
+
+  it("never lets a stored '__proto__' key through, and does not touch the prototype", () => {
+    // JSON.parse creates an own '__proto__' property, exactly like a value read back from the DB.
+    const stored: unknown = JSON.parse('{"__proto__": "polluted", "name": "full_name"}');
+    const parsed = parseWalletFieldMapping(stored);
+
+    expect(parsed).toEqual({ name: "full_name" });
+    expect(Object.hasOwn(parsed ?? {}, "__proto__")).toBe(false);
+    expect(Object.getPrototypeOf(parsed)).toBe(Object.prototype);
+    expect(parseWalletFieldMapping(JSON.parse('{"__proto__": "polluted"}'))).toBeNull();
+  });
 });
 
 describe("parseTicketAddressComponents", () => {

@@ -75,6 +75,14 @@ describe("measurePdfColumnMetrics", () => {
     expect(metrics).toHaveLength(columns.length);
     expect(metrics[8]!.minWidth).toBeGreaterThanOrEqual(PDF_MIN_COLUMN_WIDTH);
   });
+
+  it("measures cells missing from a short row as empty", () => {
+    const doc = makeMeasuringDoc();
+    const columns = [...BASE_HEADERS, "Size", "Diet"];
+    const short = measurePdfColumnMetrics(doc, columns, [makeRow({ attribute_values: [] })]);
+    const headersOnly = measurePdfColumnMetrics(doc, columns, []);
+    expect(short.slice(8)).toEqual(headersOnly.slice(8));
+  });
 });
 
 describe("resolvePdfPageSize", () => {
@@ -133,6 +141,31 @@ describe("distributePdfColumnWidths", () => {
     const total = plan.slotWidths.reduce((a, b) => a + b, 0);
     expect(total).toBeLessThanOrEqual(PDF_A3_PRINTABLE_WIDTH);
   });
+
+  it("keeps every column at the floor when even the floors do not fit", () => {
+    // 100pt printable minus 5 x 6pt padding leaves 70pt, less than five 20pt floors: nothing can
+    // be shaved further, so the plan stops at the floor instead of looping.
+    const metrics: PdfColumnMetrics[] = Array.from({ length: 5 }, () => ({
+      minWidth: 200,
+      maxWidth: 200,
+    }));
+    const plan = distributePdfColumnWidths(metrics, 100);
+    expect(plan.mode).toBe("ellipsis-fallback");
+    expect(plan.contentWidths).toEqual([20, 20, 20, 20, 20]);
+  });
+
+  it("shaves the single extra point from the first of several equally widest columns", () => {
+    // Scaled floors are [190, 190, 190, 142, 20] = 732, one point over the 731.89 available, so
+    // exactly one column loses a point - and it must be the first widest one, not the last.
+    const metrics: PdfColumnMetrics[] = [200, 200, 200, 150, 20].map((w) => ({
+      minWidth: w,
+      maxWidth: w,
+    }));
+    const plan = distributePdfColumnWidths(metrics, PDF_A4_PRINTABLE_WIDTH);
+    expect(plan.mode).toBe("ellipsis-fallback");
+    expect(plan.contentWidths).toEqual([189, 190, 190, 142, 20]);
+    expect(plan.slotWidths).toEqual([195, 196, 196, 148, 26]);
+  });
 });
 
 describe("buildExportPdfBuffer", () => {
@@ -153,6 +186,15 @@ describe("buildExportPdfBuffer", () => {
     expect(Buffer.from(bytes.subarray(0, 4)).toString("ascii")).toBe("%PDF");
     const latin = Buffer.from(bytes).toString("latin1");
     expect((latin.match(/\/Type \/Page\b/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("draws a row shorter than the column list, leaving its missing cells empty", async () => {
+    const bytes = await buildExportPdfBuffer(
+      [makeRow({ attribute_values: ["M"] })],
+      [...BASE_HEADERS, "Size", "Diet"],
+      { title: "Short Row Event", date: new Date("2026-08-01T00:00:00Z") },
+    );
+    expect(Buffer.from(bytes.subarray(0, 4)).toString("ascii")).toBe("%PDF");
   });
 
   it("escalates to A3 and exercises the ellipsis-fallback draw path for an extreme attribute count", async () => {

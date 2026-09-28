@@ -183,6 +183,21 @@ describe("drainWalletPushJobs", () => {
     expect(finalCall![0].data.result_json).toMatchObject({ reissued: 1, skipped: 1, errored: 0 });
   });
 
+  it("never loads a pass removed at the provider as a push target: there is nothing left there to update", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(
+      baseJob({ result_json: { request: { kind: "attendee_ids", eventId: "evt-1", attendeeIds: ["att-1"] } } }) as never,
+    );
+    db.walletPass.findMany.mockResolvedValueOnce([]);
+
+    await drainWalletPushJobs(db as never);
+
+    expect(db.walletPass.findMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ provider_removed_at: null, attendee_id: { in: ["att-1"] } }),
+      select: { attendee_id: true, provider_pass_id: true },
+    });
+    expect(reissueOneWalletPass).not.toHaveBeenCalled();
+  });
+
   it("counts a rejected push as errored without aborting the rest of the batch, but still logs the partial failure since nothing else would surface it for a background job", async () => {
     vi.mocked(claimNextAdminJob).mockResolvedValueOnce(baseJob() as never);
     vi.mocked(reissueOneWalletPass)
