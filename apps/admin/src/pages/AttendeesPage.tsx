@@ -842,7 +842,7 @@ function HeaderMoreMenu({
         {isDesktop ? "More actions" : "More"}
       </Button>
       {open && (
-        <div className="more-actions-menu__panel" role="menu" ref={panelRef} style={panelStyle}>
+        <div className="more-actions-menu__panel at-scroll" role="menu" ref={panelRef} style={panelStyle}>
           <MoreActionsMenuItem
             icon="upload"
             label="Import"

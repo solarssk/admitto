@@ -192,6 +192,9 @@ export type ResolvedTicket = {
     eventHoursEnd: string | null;
     /** Master switch for this event's wallet feature; off hides both platforms regardless of the
      * per-platform switches below. */
+    /** Set once the event is archived - with the event's end time it decides whether an attendee
+     * may still add a wallet pass (isWalletAddClosed in @admitto/shared). */
+    archivedAt: Date | null;
     walletEnabled: boolean;
     /** PassCreator template for this event's wallet passes; null disables wallet passes. */
     walletTemplateId: string | null;

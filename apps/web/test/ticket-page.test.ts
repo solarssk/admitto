@@ -14,6 +14,7 @@ import {
 const EMPTY_EVENT_LOCATION = {
   eventHoursStart: null,
   eventHoursEnd: null,
+  archivedAt: null,
   walletEnabled: true,
   walletTemplateId: null,
   walletApiKeyEnc: null,

@@ -104,6 +104,10 @@
 }
 
 .more-actions-menu__divider {
+  /* The panel is a flex column that scrolls once it is taller than the viewport; without this the
+     1px-high, content-less separator is the one child a flex column shrinks to nothing, so a long
+     menu (the bulk actions one) lost every divider between its groups. */
+  flex-shrink: 0;
   height: 1px;
   margin: var(--space-1) 0;
   background: var(--border);
