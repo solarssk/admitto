@@ -925,6 +925,9 @@ function AttendeeOverviewTab({
   const [sentMessageRow, setSentMessageRow] = useState<DeliveryDto | null>(null);
   const [detailsRow, setDetailsRow] = useState<DeliveryDto | null>(null);
   const deliveryCounts = countDeliveryOutcomes(detail.deliveries);
+  // The install links open the public Add to Wallet route, which does nothing for a pass that was
+  // removed at the provider, so an admin must not be offered them to copy and send.
+  const removedAtProvider = !!detail.wallet_pass?.provider_removed_at;
 
   // React Router reuses this same AttendeeDetailPage/AttendeeOverviewTab instance across
   // :attendeeId param changes - without this, a delivery modal left open while navigating to a
@@ -1015,9 +1018,9 @@ function AttendeeOverviewTab({
             title="Wallet"
             actions={
               <WalletLinksMenu
-                appleUrl={walletPlatforms.apple ? detail.wallet_apple_link : null}
-                androidUrl={walletPlatforms.google ? detail.wallet_google_link : null}
-                samsungEnabled={walletPlatforms.samsung}
+                appleUrl={walletPlatforms.apple && !removedAtProvider ? detail.wallet_apple_link : null}
+                androidUrl={walletPlatforms.google && !removedAtProvider ? detail.wallet_google_link : null}
+                samsungEnabled={walletPlatforms.samsung && !removedAtProvider}
               />
             }
           >

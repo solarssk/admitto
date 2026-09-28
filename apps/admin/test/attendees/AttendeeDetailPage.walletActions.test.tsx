@@ -878,6 +878,21 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       expect(screen.queryByRole("button", { name: "Wallet pass links" })).toBeNull();
     });
 
+    it("offers no install link once the pass was removed at the provider: the public route does nothing for it", async () => {
+      mockWalletSamsungEnabled = true;
+      mockLoad(
+        baseDetail({
+          wallet_apple_link: "https://example.com/apple",
+          wallet_google_link: "https://example.com/android",
+          wallet_pass: walletPass({ status: "voided", provider_removed_at: "2026-09-20T10:00:00.000Z" }),
+        }),
+      );
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      expect(screen.queryByRole("button", { name: "Wallet pass links" })).toBeNull();
+    });
+
     it("shows the menu with only a disabled Copy Samsung Wallet link entry when Samsung Wallet is on but Apple/Google links don't exist yet", async () => {
       mockWalletSamsungEnabled = true;
       mockLoad(baseDetail({ wallet_apple_link: null, wallet_google_link: null }));

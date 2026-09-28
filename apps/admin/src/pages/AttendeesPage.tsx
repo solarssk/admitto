@@ -45,6 +45,7 @@ import type {
   AttendeeSortBy,
   AttendeeSortDir,
   AttendeeMailStatusFilter,
+  BulkWalletRemoveResponse,
   EventCustomFieldDto,
   EventDto,
   RsvpStatus,
@@ -245,6 +246,31 @@ function notifyBulkWalletActionResult(
 function bulkRemoveRetryMessage(errored: number): string {
   const passes = errored === 1 ? "pass" : "passes";
   return `${errored} ${passes} could not be removed. Try again - passes that were already removed are skipped.`;
+}
+
+/** Outcome of a bulk Remove: always the summary toast, then either the retry hint (some removals
+ * failed - failures are safe to retry, so the selection and the dialog stay, and the list is not
+ * reloaded because reloading clears the selection; the dialog's Cancel reloads instead) or the
+ * normal finish. Lives outside the page component to keep its cognitive complexity in check. */
+function applyBulkRemoveResult(
+  result: BulkWalletRemoveResponse,
+  addToast: (message: string, variant?: ToastVariant) => void,
+  ui: { showRetryHint: (message: string) => void; finish: () => void },
+) {
+  notifyBulkWalletActionResult(
+    { count: result.removed, skipped: result.skipped, errored: result.errored },
+    {
+      verb: "removed",
+      skipReason: "had no pass, wasn't voided or expired, or was already removed",
+      noneMessage: "None of the selected attendees had a voided or expired pass to remove from the provider.",
+    },
+    addToast,
+  );
+  if (result.errored > 0) {
+    ui.showRetryHint(bulkRemoveRetryMessage(result.errored));
+    return;
+  }
+  ui.finish();
 }
 
 /** Shared three-way "none found / already set / N changed" toast for a bulk field-assignment
@@ -2039,28 +2065,15 @@ export function AttendeesPage() {
       apiErrorFallback: "Remove from provider failed.",
       genericFallback: "Failed to remove wallet passes from the provider.",
       action: (id) => bulkRemoveWalletPass(id, [...selectedIds]),
-      onSuccess: (result) => {
-        notifyBulkWalletActionResult(
-          { count: result.removed, skipped: result.skipped, errored: result.errored },
-          {
-            verb: "removed",
-            skipReason: "had no pass, wasn't voided or expired, or was already removed",
-            noneMessage:
-              "None of the selected attendees had a voided or expired pass to remove from the provider.",
+      onSuccess: (result) =>
+        applyBulkRemoveResult(result, addToast, {
+          showRetryHint: setBulkRemoveWalletError,
+          finish: () => {
+            setBulkRemoveWalletConfirmOpen(false);
+            clearSelection();
+            setReloadToken((n) => n + 1);
           },
-          addToast,
-        );
-        if (result.errored > 0) {
-          // Failures are safe to retry (a repeat skips what is already removed), so keep the
-          // selection and the dialog instead of making the operator rebuild it. No reload here:
-          // reloading the list clears the selection. The dialog's Cancel reloads instead.
-          setBulkRemoveWalletError(bulkRemoveRetryMessage(result.errored));
-          return;
-        }
-        setBulkRemoveWalletConfirmOpen(false);
-        clearSelection();
-        setReloadToken((n) => n + 1);
-      },
+        }),
     });
 
   const isUnfilteredEmpty =
@@ -2643,8 +2656,9 @@ export function AttendeesPage() {
         onCancel={() => {
           if (!bulkRemoveWalletBusy) {
             setBulkRemoveWalletConfirmOpen(false);
-            // A partial failure left the list as it was before the removals; refresh it now.
-            if (bulkRemoveWalletError) setReloadToken((n) => n + 1);
+            // A partial failure left the list as it was before the removals, so refresh it now
+            // (branch-free: the token only moves when there was an error to leave behind).
+            setReloadToken((n) => n + Number(bulkRemoveWalletError !== null));
             setBulkRemoveWalletError(null);
           }
         }}
