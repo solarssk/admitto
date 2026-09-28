@@ -2245,10 +2245,13 @@ async function pushWalletUpdateOnAttendeeChangeBestEffort(
       }),
       db.walletPass.findUnique({
         where: { attendee_id: attendeeId },
-        select: { provider_pass_id: true, status: true },
+        select: { provider_pass_id: true, status: true, provider_removed_at: true },
       }),
     ]);
     if (!event || !walletPass?.provider_pass_id) return;
+    // A pass removed at the provider no longer exists there: nothing to update, and the
+    // "just voided by this request" override below must not reach it either.
+    if (walletPass.provider_removed_at) return;
     if (walletPass.status !== "active" && !justVoidedThisRequest) return;
 
     const walletFieldMapping = parseWalletFieldMapping(event.wallet_field_mapping);
