@@ -3,7 +3,7 @@
  * same action for every pass of one event that the Attendees selection routes cap at
  * WALLET_BULK_SEND_LIMIT (100) - void all active passes, and (in a later step) remove all inactive
  * ones at the provider. One drain for every clean-up type, each with its own handler, so a new
- * clean-up action is one more case in handlerFor rather than another copy of this claim/progress/
+ * clean-up action is one more entry in HANDLERS rather than another copy of this claim/progress/
  * finalize/reclaim scaffolding (the shape wallet_refresh_status already has).
  *
  * Chunked at the same low concurrency as wallet_push/wallet_refresh_status (ADR 0041 §3:
@@ -108,23 +108,19 @@ async function loadActivePassTargets(db: PrismaClient, eventId: string): Promise
   }));
 }
 
-const VOID_ACTIVE_HANDLER: WalletCleanupHandler = {
-  loadTargets: loadActivePassTargets,
-  async act(db, eventId, target, provider, audit) {
-    const outcome = await voidOneWalletPassAtProvider(db, eventId, target, provider, audit, { eventWide: true });
-    return outcome === "voided" ? "done" : "skipped";
+/** One handler per job type: `Record` makes a type without an entry a compile error. The drain walks
+ * the entries (below) rather than looking a handler up by the type of a row it just claimed. */
+const HANDLERS: Record<WalletCleanupJobType, WalletCleanupHandler> = {
+  wallet_void_active: {
+    loadTargets: loadActivePassTargets,
+    async act(db, eventId, target, provider, audit) {
+      const outcome = await voidOneWalletPassAtProvider(db, eventId, target, provider, audit, { eventWide: true });
+      return outcome === "voided" ? "done" : "skipped";
+    },
   },
 };
 
-/** The handler for a job type. A `switch` rather than an object indexed by a computed key: adding a
- * job type without a handler is then a compile error, and no plain object is looked up by a value
- * read from a database row. */
-function handlerFor(type: WalletCleanupJobType): WalletCleanupHandler {
-  switch (type) {
-    case "wallet_void_active":
-      return VOID_ACTIVE_HANDLER;
-  }
-}
+const HANDLER_ENTRIES = Object.entries(HANDLERS) as [WalletCleanupJobType, WalletCleanupHandler][];
 
 function readRequest(job: { result_json: unknown }): WalletCleanupRequest | null {
   if (!job.result_json || typeof job.result_json !== "object" || Array.isArray(job.result_json)) {
@@ -294,12 +290,12 @@ export async function drainWalletCleanupJobs(
   let succeeded = 0;
   let failed = 0;
 
-  for (const type of WALLET_CLEANUP_JOB_TYPES) {
+  for (const [type, handler] of HANDLER_ENTRIES) {
     while (claimed < limit) {
       const job = await claimNextAdminJob(db, type);
       if (!job) break;
       claimed += 1;
-      const outcome = await runOneWalletCleanupJob(db, job, handlerFor(type));
+      const outcome = await runOneWalletCleanupJob(db, job, handler);
       if (outcome === "succeeded") succeeded += 1;
       else failed += 1;
     }
