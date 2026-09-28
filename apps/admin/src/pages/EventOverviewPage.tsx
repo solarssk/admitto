@@ -311,7 +311,7 @@ function SetupChecklistCard({
 }>) {
   if (!overview) {
     return (
-      <Card title="Setup checklist" className="overview-card--fill">
+      <Card title="Setup checklist">
         <p className="overview-muted">
           {unavailablePlaceholderText(loading, showLoading)}
         </p>
@@ -332,7 +332,6 @@ function SetupChecklistCard({
   return (
     <Card
       title="Setup checklist"
-      className="overview-card--fill"
       actions={
         <span className="overview-readiness-score">
           {okCount} of {total} done
@@ -649,7 +648,7 @@ function RecentActivityCard({
   return (
     <Card
       title="Recent activity"
-      className="overview-card--header-fixed"
+      className="overview-card--header-fixed overview-card--timeline"
       actions={
         <>
           {/* Reuses the app's established Segmented control (AuditLogPanel's System/Audit
@@ -1471,7 +1470,7 @@ function NotesAndContactsCard(props: Readonly<{
   onDeleteResource: (id: string) => Promise<void>;
 }>) {
   return (
-    <Card title="Notes & contacts" className="overview-card--fill">
+    <Card title="Notes & contacts">
       <PinnedNoteSection
         note={props.pinnedNote}
         loading={props.loading}
@@ -1887,7 +1886,7 @@ export function EventOverviewPage() {
             timezone={getBrowserTimeZone()}
           />
         </div>
-        <div className="overview-row overview-row--stretch">
+        <div className="overview-row">
           <SetupChecklistCard overview={currentOverview} loading={loading} showLoading={showLoading} eventId={event.id} />
           <NotesAndContactsCard
             pinnedNote={pinnedNote}

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The Overview cards no longer leave large empty areas. Recent activity now scrolls inside the height of Check-in progress instead of using a fixed height of its own, and Setup checklist and Notes & contacts keep their natural heights instead of stretching to match each other, which spread the Notes sections far apart.
 - Check-in progress on Overview is simpler: the ring now sits beside one large checked-in number, with the rest shown as **not yet arrived**, or as **no-shows** once the event is over. The ticket-type breakdown and the repeated legend are gone (ticket types are in Reports), and Busiest hour appears only when the event does not use wallets.
 - The Overview **Setup checklist** now shows a progress bar and one notice saying whether anything needs attention, lists problems before completed checks, and every row links to the page that fixes it. The link to Event settings at the bottom is gone.
 - The Overview page of an archived event now shows an amber notice explaining what archiving means, with a **Restore event** button for superadmins, instead of fixed text in the corner and under the subtitle. Restoring asks for confirmation first and takes effect straight away, so there is no need to open Event settings. Other roles see a short note to ask a superadmin.

@@ -6966,13 +6966,13 @@ output.mail-field-hint {
   }
 }
 
-/* Check-in progress / Recent activity row only (round 5, item B): grid items default to
- * `align-items: stretch`, but the base `.overview-row` above opts every row out of that so each
- * card keeps its own natural height — right for the checklist/notes row below, wrong here, where
- * Recent activity's fixed-height scroll box (`.overview-timeline`) made its card visibly taller
- * than Check-in progress's shorter natural content. Stretch just this row's two cards to match;
- * paired with the flex rule below so Check-in progress's own content fills the extra height
- * sensibly instead of leaving dead space under it. */
+/* Check-in progress / Recent activity row only: the two cards sit side by side, so they stretch
+ * to one height (grid items default to `align-items: stretch`, but the base `.overview-row` above
+ * opts every row out so a card normally keeps its natural height). The Setup checklist / Notes
+ * row below keeps natural heights on purpose: stretching it spread Notes & contacts' sections
+ * apart with large gaps to match a taller checklist. The row's height comes from Check-in
+ * progress's own content; Recent activity's list scrolls inside whatever height that gives it
+ * (`.overview-card--timeline` below) instead of setting a height of its own. */
 .overview-row--stretch {
   align-items: stretch;
 }
@@ -7002,20 +7002,31 @@ output.mail-field-hint {
   justify-content: center;
 }
 
-/* Setup checklist / Notes & contacts row: same "stretch the row, let the shorter card's body
- * fill the height" idea as Check-in progress / Recent activity above, minus the header
- * min-height override — both of this row's headers are a plain single-line title (+ a small
- * score badge on Setup checklist), so there's no header-height mismatch to pin here. */
-.overview-card--fill {
-  display: flex;
-  flex-direction: column;
+/* Recent activity's list fills the card body without contributing to its height: absolutely
+ * positioned inside the padded body, so the row's height is set by the neighbouring Check-in
+ * progress card and the list scrolls inside it, instead of a fixed pixel height that left
+ * Check-in progress stretched with empty space. The min-height keeps the list usable when the
+ * card has no taller neighbour (one-column layout, or Check-in progress showing its empty state).
+ * The right offset is 8px short of the body padding so the scrollbar sits in that gutter, the
+ * same trick the list's own padding-right/margin-right pair used before. */
+.overview-card--timeline .at-card__body {
+  position: relative;
+  min-height: calc(220px + 2 * var(--pad-card));
 }
 
-.overview-card--fill .at-card__body {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+.overview-card--timeline .overview-timeline {
+  position: absolute;
+  top: var(--pad-card);
+  bottom: var(--pad-card);
+  left: var(--pad-card);
+  right: calc(var(--pad-card) - 8px);
+  margin-right: 0;
+}
+
+@media (max-width: 900px) {
+  .overview-card--timeline .at-card__body {
+    min-height: calc(312px + 2 * var(--pad-card));
+  }
 }
 
 .overview-muted {
@@ -7419,7 +7430,6 @@ output.mail-field-hint {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  height: 312px;
   overflow-y: auto;
   padding-right: 8px;
   margin-right: -8px;
