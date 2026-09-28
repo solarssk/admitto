@@ -1978,7 +1978,8 @@ export interface EventOverviewDto {
   attendees_with_ticket: number;
   last_check_in_at: string | null;
   busiest_hour: { hour: string; count: number } | null;
-  ticket_type_breakdown: Array<{ key: string; label: string; color: TicketTypeColor; count: number }>;
+  /** Active attendees whose wallet pass was ever confirmed installed; null when the event offers no wallet platform. */
+  wallet_installed: number | null;
   recent_activity: EventRecentActivityEntry[];
   contacts: EventContactDto[];
   resources: EventResourceDto[];
