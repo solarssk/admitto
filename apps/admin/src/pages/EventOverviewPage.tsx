@@ -52,6 +52,7 @@ import {
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { useCountdown, daysUntilEvent } from "../utils/event-countdown.js";
+import { eventEndsAtUtc } from "@admitto/shared";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
@@ -1737,6 +1738,17 @@ export function EventOverviewPage() {
       : null;
   const countdownLabel = useCountdown(eventDateIso, eventTimezone);
   const daysUntil = daysUntilEvent(eventDateIso, eventTimezone);
+  // The same "is the event over" moment the public Add to Wallet gate uses: its end time on its own
+  // day when one is set, otherwise the end of that day. NaN for an unreadable date compares as not
+  // over.
+  const eventEnded =
+    Date.now() >=
+    eventEndsAtUtc({
+      date: new Date(eventDateIso),
+      eventHoursStart: event.event_hours_start ?? null,
+      eventHoursEnd: event.event_hours_end ?? null,
+      timezone: eventTimezone,
+    }).getTime();
   const { value: countdownValue, label: daysToEventLabel } = countdownTileText(daysUntil, countdownLabel);
   const emailFailedTotal =
     currentOverview != null
@@ -1866,7 +1878,7 @@ export function EventOverviewPage() {
             loading={loading}
             showLoading={showLoading}
             admittedCount={admittedCount}
-            eventEnded={daysUntil != null && daysUntil < 0}
+            eventEnded={eventEnded}
           />
           <RecentActivityCard
             eventId={event.id}

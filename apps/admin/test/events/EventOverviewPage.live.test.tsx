@@ -762,6 +762,28 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     }
   });
 
+  it.each([
+    ["before the end time on the event's day", { event_hours_end: "17:00" }, "2026-07-01T16:00:00.000Z", "20 not yet arrived"],
+    ["after the end time on the event's day", { event_hours_end: "17:00" }, "2026-07-01T17:30:00.000Z", "20 no-shows"],
+    ["an overnight event before it ends", { event_hours_start: "22:00", event_hours_end: "02:00" }, "2026-07-02T01:00:00.000Z", "20 not yet arrived"],
+    ["an overnight event after it ends", { event_hours_start: "22:00", event_hours_end: "02:00" }, "2026-07-02T03:00:00.000Z", "20 no-shows"],
+    ["an event without an end time, later the same day", {}, "2026-07-01T23:00:00.000Z", "20 not yet arrived"],
+    ["an event without an end time, the next day", {}, "2026-07-02T00:30:00.000Z", "20 no-shows"],
+  ])("decides not-yet-arrived versus no-shows from the event's end: %s", async (_label, hours, now, expected) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.setSystemTime(new Date(now));
+      mockEventOverrides = hours;
+      fetchEventOverview.mockResolvedValue(overviewFixture(30, { attendee_count: 50 }));
+
+      renderPage();
+
+      expect(await screen.findByText(expected)).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shows a Wallet passes installed tile with its share of attendees, in place of Busiest hour, when wallets are in use", async () => {
     fetchEventOverview.mockResolvedValue(
       overviewFixture(5, {
