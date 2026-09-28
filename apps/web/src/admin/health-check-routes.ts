@@ -1084,6 +1084,18 @@ async function weatherPassiveRow(
   };
 }
 
+/** `weather-service.ts#probeErrorMessage()` falls back to the raw `Error.message` for any
+ * failure it does not itself wrap in `WeatherProviderError` (its own "timeout"/"unavailable"
+ * kinds, or the health check's own "support_contact_required"). `live_check` is whitelisted for
+ * the "Copy for GitHub Issue" export (ADR 0037), so an unexpected error must not reach it
+ * unfiltered - map to this closed set instead of trusting the source. */
+const WEATHER_LIVE_CHECK_REASONS = new Set(["timeout", "unavailable", "support_contact_required"]);
+
+function weatherLiveCheckReason(error: string | undefined): string {
+  if (error && WEATHER_LIVE_CHECK_REASONS.has(error)) return error;
+  return "failed";
+}
+
 function weatherLiveFailedRow(
   label: string,
   config: WeatherConfig,
@@ -1103,7 +1115,7 @@ function weatherLiveFailedRow(
       ["status", "down"],
       ["provider", config.provider],
       ["endpoint", endpoint],
-      ["live_check", probe.error ?? "failed"],
+      ["live_check", weatherLiveCheckReason(probe.error)],
       ["latency_ms", String(probe.latencyMs)],
       ["last_checked", checkedAt],
     ]),
@@ -1218,14 +1230,22 @@ export async function fileStorageRow(
   }
 
   if (providerRaw !== "local") {
+    // STORAGE_PROVIDER is operator-controlled and completely unconstrained here (anything that
+    // is not "local" or "s3" lands in this branch), unlike every other check's "provider" value,
+    // which the code itself chooses from a fixed set. "provider" is on the Markdown export
+    // whitelist (ADR 0037) and its value is emitted verbatim, so it stays a fixed, safe value;
+    // the real one is under "provider_raw" instead, which is deliberately NOT on the whitelist
+    // and so never reaches "Copy for GitHub Issue" - only the Superadmin tab, which shows every
+    // detail regardless of the whitelist.
     return {
       id: "file_storage",
       label,
       status: "degraded",
-      summary: `Unknown provider (${providerRaw})`,
+      summary: "Unknown provider",
       details: detailsFromEntries([
         ["status", "degraded"],
-        ["provider", providerRaw],
+        ["provider", "unknown"],
+        ["provider_raw", providerRaw],
         ["reason", "unknown_provider"],
         ["last_checked", checkedAt],
       ]),
