@@ -62,6 +62,7 @@ import { RSVP_LABELS, RsvpStatusBadge } from "../attendees/rsvpStatusBadge.js";
 import { TicketTypeBadge } from "../attendees/ticketTypeBadge.js";
 import { useEventScopedConfirm } from "../attendees/useEventScopedConfirm.js";
 import { useMailConfigured } from "../attendees/useMailConfigured.js";
+import { useWalletRemoveInactive } from "../attendees/useWalletRemoveInactive.js";
 import { useWalletVoidActive } from "../attendees/useWalletVoidActive.js";
 import { ARCHIVED_ACTION_TOOLTIP, ArchivedGuard, isEventArchived } from "../components/ArchivedGuard.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
@@ -757,6 +758,8 @@ interface HeaderMoreMenuProps {
   eventWideRefreshStatusBusy: boolean;
   onTriggerEventWideVoidActive: () => void;
   eventWideVoidActiveBusy: boolean;
+  onTriggerEventWideRemoveInactive: () => void;
+  eventWideRemoveInactiveBusy: boolean;
 }
 
 /** Header "More" menu — bundles Import and Send tickets behind one compact button, keeping
@@ -786,6 +789,8 @@ function HeaderMoreMenu({
   eventWideRefreshStatusBusy,
   onTriggerEventWideVoidActive,
   eventWideVoidActiveBusy,
+  onTriggerEventWideRemoveInactive,
+  eventWideRemoveInactiveBusy,
 }: Readonly<HeaderMoreMenuProps>) {
   const { open, setOpen, panelStyle, rootRef, triggerRef, panelRef } = useDropdownMenu<HTMLButtonElement>({
     align: "end",
@@ -872,6 +877,17 @@ function HeaderMoreMenu({
                     onClick={() => {
                       setOpen(false);
                       onTriggerEventWideVoidActive();
+                    }}
+                  />
+                  <MoreActionsMenuItem
+                    icon="cloud-off"
+                    variant="danger"
+                    label={eventWideRemoveInactiveBusy ? "Removing passes…" : "Remove inactive passes"}
+                    hint="Delete voided passes from the wallet service, keep the history"
+                    disabled={eventWideRemoveInactiveBusy}
+                    onClick={() => {
+                      setOpen(false);
+                      onTriggerEventWideRemoveInactive();
                     }}
                   />
                 </>
@@ -1130,6 +1146,12 @@ export function AttendeesPage() {
   const eventWideRefreshStatusConfirm = useEventScopedConfirm(eventId);
   const [reloadToken, setReloadToken] = useState(0);
   const eventWideVoidActive = useWalletVoidActive({
+    eventId,
+    addToast,
+    reportApiError,
+    onFinished: () => setReloadToken((n) => n + 1),
+  });
+  const eventWideRemoveInactive = useWalletRemoveInactive({
     eventId,
     addToast,
     reportApiError,
@@ -2167,6 +2189,8 @@ export function AttendeesPage() {
               eventWideRefreshStatusBusy={eventWideRefreshStatusBusy}
               onTriggerEventWideVoidActive={eventWideVoidActive.requestConfirm}
               eventWideVoidActiveBusy={eventWideVoidActive.busy}
+              onTriggerEventWideRemoveInactive={eventWideRemoveInactive.requestConfirm}
+              eventWideRemoveInactiveBusy={eventWideRemoveInactive.busy}
             />
             {/* Hidden below 768px — its 3 formats fold into HeaderMoreMenu's own panel there
              * instead (above), so only "+ Add"/"More" remain as standalone buttons, which is
@@ -2464,6 +2488,25 @@ export function AttendeesPage() {
         onConfirm={() => void eventWideVoidActive.confirm()}
         onCancel={eventWideVoidActive.cancel}
       />
+
+      <ConfirmDialog
+        open={eventWideRemoveInactive.confirmOpen}
+        title="Remove inactive wallet passes for this event?"
+        message="This deletes every voided wallet pass of the event from the wallet service, once it has been voided for at least a day. It covers the whole event, not only the selected attendees, and runs in the background."
+        errorMessage={eventWideRemoveInactive.error}
+        confirmLabel="Remove all"
+        confirmVariant="danger"
+        loading={eventWideRemoveInactive.busy}
+        onConfirm={() => void eventWideRemoveInactive.confirm()}
+        onCancel={eventWideRemoveInactive.cancel}
+      >
+        <ul className="confirm-dialog__list">
+          <li>Unlike Delete wallet pass, it keeps the pass record and its history in Reports</li>
+          <li>You cannot undo this at the wallet service</li>
+          <li>Passes that expired, rather than were voided, are not included yet - use Remove from provider on that attendee instead</li>
+          <li>Attendees with no pass, an active pass, or a pass already removed are not changed</li>
+        </ul>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={bulkSendConfirmOpen}

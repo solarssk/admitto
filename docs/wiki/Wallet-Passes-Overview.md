@@ -116,7 +116,10 @@ works; Admitto never signs or hosts pass files itself.
     pass of the event show as invalid, in the background and without the 100-attendee limit of a
     selection. It follows the same rules as void on one attendee (it also works on an archived
     event and with the Wallet switch off), leaves passes that are no longer active alone, and can be
-    run again to retry any that failed.
+    run again to retry any that failed. **Remove inactive passes**, right next to it, does the same
+    for **Remove from provider**: it removes every voided pass of the event that has stayed voided
+    for at least a day, keeping each pass's local record and Reports history. Expired passes are not
+    included yet - remove those one at a time or from a selection.
   - **Rate and pacing limits:** a bulk wallet action accepts at most 100 attendees per selection.
     Each attendee's pass is updated one call at a time at a fixed pace, to stay within
     PassCreator's own request limit, rather than all at once, so a bulk action against a large

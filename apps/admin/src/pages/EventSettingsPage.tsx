@@ -473,12 +473,17 @@ interface ArchiveDialogCopy {
   confirmVariant: "primary" | "danger";
 }
 
-function getArchiveDialogCopy(archiveMode: "archive" | "unarchive"): ArchiveDialogCopy {
+function getArchiveDialogCopy(archiveMode: "archive" | "unarchive", walletPassesManagedAtProviderCount: number): ArchiveDialogCopy {
   if (archiveMode === "archive") {
+    const walletHint =
+      walletPassesManagedAtProviderCount > 0
+        ? ` ${walletPassesManagedAtProviderCount} inactive wallet ${walletPassesManagedAtProviderCount === 1 ? "pass is" : "passes are"} still at the wallet service - archiving does not remove them. Use Remove inactive passes on Attendees, or Remove from provider, after archiving if you want to stop them being counted there.`
+        : "";
     return {
       title: "Archive this event?",
       message:
-        "This event will become fully read-only, including check-in. Attendee data is kept. Only a superadmin can undo this.",
+        "This event will become fully read-only, including check-in. Attendee data is kept. Only a superadmin can undo this." +
+        walletHint,
       confirmLabel: "Archive",
       confirmVariant: "danger",
     };
@@ -1274,7 +1279,7 @@ export function EventSettingsPage() {
   const eventWalletConfiguredForPush =
     event.wallet_enabled && !!event.wallet_template_id && event.wallet_api_key.configured;
 
-  const archiveDialogCopy = getArchiveDialogCopy(archiveMode);
+  const archiveDialogCopy = getArchiveDialogCopy(archiveMode, event.wallet_passes_managed_at_provider_count);
   const walletConfirmCopy = describeWalletConfirmDialog(
     walletConfirmKind,
     walletDisablingPlatforms,

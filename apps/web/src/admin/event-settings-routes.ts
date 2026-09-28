@@ -171,6 +171,7 @@ function serializeEventSettings(
   installedWalletPassCount: number,
   issuedWalletPassCount: number,
   installedWalletPassCountByPlatform: { apple: number; google: number; samsung: number },
+  walletPassesManagedAtProviderCount: number,
 ): EventSettingsDto {
   const normalizeNullableTimeZone = (value: string | null) =>
     value === null ? null : normalizeTimeZone(value) ?? value;
@@ -204,6 +205,7 @@ function serializeEventSettings(
     installed_wallet_pass_count: installedWalletPassCount,
     issued_wallet_pass_count: issuedWalletPassCount,
     installed_wallet_pass_count_by_platform: installedWalletPassCountByPlatform,
+    wallet_passes_managed_at_provider_count: walletPassesManagedAtProviderCount,
     organization_name: event.organization.name,
     active_items: event.event_items.map((item) => ({
       id: item.id,
@@ -353,6 +355,19 @@ async function loadIssuedWalletPassCount(
   });
 }
 
+/** Voided or expired passes still present at the provider - archiving an event does not clean
+ * these up, so the archive confirm dialog names this count as a reminder. */
+async function loadWalletPassesManagedAtProviderCount(db: PrismaClient, eventId: string): Promise<number> {
+  return db.walletPass.count({
+    where: {
+      status: { in: ["voided", "expired"] },
+      provider_pass_id: { not: null },
+      provider_removed_at: null,
+      attendee: { event_id: eventId },
+    },
+  });
+}
+
 async function loadEventSettingsRow(
   db: PrismaClient,
   eventId: string,
@@ -375,14 +390,21 @@ export async function handleGetEventSettings(c: Context, db: PrismaClient): Prom
   const event = await loadEventSettingsRow(db, eventId);
   if (!event) return c.json({ error: "not_found" }, 404);
 
-  const [deletability, revokeCounts, installedWalletPassCount, issuedWalletPassCount, installedByPlatform] =
-    await Promise.all([
-      loadDeletability(db, eventId, event),
-      loadRevokeCounts(db, eventId),
-      loadInstalledWalletPassCount(db, eventId),
-      loadIssuedWalletPassCount(db, eventId),
-      loadInstalledWalletPassCountByPlatform(db, eventId),
-    ]);
+  const [
+    deletability,
+    revokeCounts,
+    installedWalletPassCount,
+    issuedWalletPassCount,
+    installedByPlatform,
+    walletPassesManagedAtProviderCount,
+  ] = await Promise.all([
+    loadDeletability(db, eventId, event),
+    loadRevokeCounts(db, eventId),
+    loadInstalledWalletPassCount(db, eventId),
+    loadIssuedWalletPassCount(db, eventId),
+    loadInstalledWalletPassCountByPlatform(db, eventId),
+    loadWalletPassesManagedAtProviderCount(db, eventId),
+  ]);
   return c.json(
     serializeEventSettings(
       event,
@@ -391,6 +413,7 @@ export async function handleGetEventSettings(c: Context, db: PrismaClient): Prom
       installedWalletPassCount,
       issuedWalletPassCount,
       installedByPlatform,
+      walletPassesManagedAtProviderCount,
     ),
   );
 }
@@ -1201,14 +1224,21 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
       });
     }
 
-    const [deletability, revokeCounts, installedWalletPassCount, issuedWalletPassCount, installedByPlatform] =
-      await Promise.all([
-        loadDeletability(db, eventId, updated),
-        loadRevokeCounts(db, eventId),
-        loadInstalledWalletPassCount(db, eventId),
-        loadIssuedWalletPassCount(db, eventId),
-        loadInstalledWalletPassCountByPlatform(db, eventId),
-      ]);
+    const [
+      deletability,
+      revokeCounts,
+      installedWalletPassCount,
+      issuedWalletPassCount,
+      installedByPlatform,
+      walletPassesManagedAtProviderCount,
+    ] = await Promise.all([
+      loadDeletability(db, eventId, updated),
+      loadRevokeCounts(db, eventId),
+      loadInstalledWalletPassCount(db, eventId),
+      loadIssuedWalletPassCount(db, eventId),
+      loadInstalledWalletPassCountByPlatform(db, eventId),
+      loadWalletPassesManagedAtProviderCount(db, eventId),
+    ]);
     return c.json({
       event: serializeEventSettings(
         updated,
@@ -1217,6 +1247,7 @@ export async function handlePatchEvent(c: Context, db: PrismaClient): Promise<Re
         installedWalletPassCount,
         issuedWalletPassCount,
         installedByPlatform,
+        walletPassesManagedAtProviderCount,
       ),
     });
   } catch (err) {

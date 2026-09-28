@@ -1,10 +1,11 @@
 /**
- * Claim and run pending event-wide wallet clean-up AdminJobs (currently `wallet_void_active`): the
- * same action for every pass of one event that the Attendees selection routes cap at
- * WALLET_BULK_SEND_LIMIT (100) - void all active passes, and (in a later step) remove all inactive
- * ones at the provider. One drain for every clean-up type, each with its own handler, so a new
- * clean-up action is one more entry in HANDLERS rather than another copy of this claim/progress/
- * finalize/reclaim scaffolding (the shape wallet_refresh_status already has).
+ * Claim and run pending event-wide wallet clean-up AdminJobs (`wallet_void_active`,
+ * `wallet_remove_inactive`): the same action for every pass of one event that the Attendees
+ * selection routes cap at WALLET_BULK_SEND_LIMIT (100) - void all active passes, or remove all
+ * inactive ones at the provider while keeping their local row and Reports history. One drain for
+ * every clean-up type, each with its own handler, so a new clean-up action is one more entry in
+ * HANDLERS rather than another copy of this claim/progress/finalize/reclaim scaffolding (the shape
+ * wallet_refresh_status already has).
  *
  * Chunked at the same low concurrency as wallet_push/wallet_refresh_status (ADR 0041 §3:
  * PassCreator's own limit is 600 req/min, "keep client concurrency low (~8)") - a large event can
@@ -22,6 +23,7 @@ import type { WalletPassProvider } from "@admitto/wallet";
 import { claimNextAdminJob } from "./claim-admin-job.js";
 import type { OpsAuditContext } from "./ops-audit.js";
 import { reclaimStaleAdminJobsByType } from "./reclaim-stale-admin-jobs-by-type.js";
+import { removeOneWalletPassFromProvider } from "./remove-wallet-pass-from-provider.js";
 import { resolveEventWalletProvider } from "./resolve-event-wallet-provider.js";
 import { voidOneWalletPassAtProvider } from "./void-wallet-pass-at-provider.js";
 
@@ -31,7 +33,15 @@ export const DEFAULT_WALLET_CLEANUP_JOB_STALE_RUNNING_MS = 30 * 60 * 1000;
 
 export const WALLET_CLEANUP_CONCURRENCY = 8;
 
-export const WALLET_CLEANUP_JOB_TYPES = ["wallet_void_active"] as const;
+/** How long a voided pass sits before "Remove inactive passes" is allowed to remove it at the
+ * provider - a safety margin against removing (irreversible there) something an admin might still
+ * restore, per the plan's own "Remove" grace rule. Counted from `voided_at` only: an expired pass
+ * has no such reference point yet (the canonical `expires_at` column is a later step), so it does
+ * not qualify for this job - Remove from provider on one attendee, or the bulk selection action,
+ * still works on it directly. */
+export const WALLET_REMOVE_INACTIVE_GRACE_MS = 24 * 60 * 60 * 1000;
+
+export const WALLET_CLEANUP_JOB_TYPES = ["wallet_void_active", "wallet_remove_inactive"] as const;
 export type WalletCleanupJobType = (typeof WALLET_CLEANUP_JOB_TYPES)[number];
 
 export const STALE_WALLET_CLEANUP_JOB_ERROR =
@@ -108,6 +118,80 @@ async function loadActivePassTargets(db: PrismaClient, eventId: string): Promise
   }));
 }
 
+/** Every voided pass under the event, past its grace period, that still exists at the provider.
+ * Expired passes are excluded (see WALLET_REMOVE_INACTIVE_GRACE_MS). */
+async function loadGracedInactivePassTargets(db: PrismaClient, eventId: string): Promise<WalletCleanupTarget[]> {
+  const rows = await db.walletPass.findMany({
+    where: {
+      status: "voided",
+      voided_at: { lte: new Date(Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS) },
+      provider_pass_id: { not: null },
+      provider_removed_at: null,
+      attendee: { event_id: eventId },
+    },
+    select: {
+      attendee_id: true,
+      provider_pass_id: true,
+      user_provided_id: true,
+      status: true,
+      provider_commanded_at: true,
+      provider_removed_at: true,
+    },
+  });
+  return rows.map((row) => ({
+    attendeeId: row.attendee_id,
+    providerPassId: row.provider_pass_id!,
+    userProvidedId: row.user_provided_id,
+    status: row.status,
+    providerCommandedAt: row.provider_commanded_at,
+    providerRemovedAt: row.provider_removed_at,
+  }));
+}
+
+/** Removes one pass listed by loadGracedInactivePassTargets - re-read right before acting, the
+ * same reasoning as voidOneWalletPassAtProvider's own re-read: this job can reach a given pass
+ * minutes after listing it, and an admin may have restored the pass (back to `active`, nothing to
+ * remove) or already removed it directly in the meantime. `removeOneWalletPassFromProvider` itself
+ * has no status guard - it only checks `provider_removed_at` - so skipping here on a pass that is
+ * no longer voided or expired is what keeps a restored pass from being deleted at the provider out
+ * from under the admin who just restored it. */
+async function removeOneGracedInactivePass(
+  db: PrismaClient,
+  eventId: string,
+  target: WalletCleanupTarget,
+  provider: WalletPassProvider,
+  audit: OpsAuditContext,
+): Promise<"done" | "skipped"> {
+  const current = await db.walletPass.findFirst({
+    where: { attendee_id: target.attendeeId, provider_pass_id: target.providerPassId },
+    select: {
+      status: true,
+      provider_removed_at: true,
+      provider_commanded_at: true,
+      user_provided_id: true,
+    },
+  });
+  if (!current || current.provider_removed_at) return "skipped";
+  if (current.status !== "voided" && current.status !== "expired") return "skipped";
+
+  const outcome = await removeOneWalletPassFromProvider(
+    db,
+    eventId,
+    {
+      attendeeId: target.attendeeId,
+      providerPassId: target.providerPassId,
+      userProvidedId: current.user_provided_id,
+      status: current.status,
+      providerCommandedAt: current.provider_commanded_at,
+      providerRemovedAt: current.provider_removed_at,
+    },
+    provider,
+    audit,
+    { eventWide: true },
+  );
+  return outcome === "removed" ? "done" : "skipped";
+}
+
 /** One handler per job type: `Record` makes a type without an entry a compile error. The drain walks
  * the entries (below) rather than looking a handler up by the type of a row it just claimed. */
 const HANDLERS: Record<WalletCleanupJobType, WalletCleanupHandler> = {
@@ -117,6 +201,10 @@ const HANDLERS: Record<WalletCleanupJobType, WalletCleanupHandler> = {
       const outcome = await voidOneWalletPassAtProvider(db, eventId, target, provider, audit, { eventWide: true });
       return outcome === "voided" ? "done" : "skipped";
     },
+  },
+  wallet_remove_inactive: {
+    loadTargets: loadGracedInactivePassTargets,
+    act: removeOneGracedInactivePass,
   },
 };
 

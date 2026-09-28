@@ -54,7 +54,7 @@ export async function removeOneWalletPassFromProvider(
   },
   provider: WalletPassProvider,
   audit: OpsAuditContext,
-  options: { bulk?: boolean } = {},
+  options: { bulk?: boolean; eventWide?: boolean } = {},
 ): Promise<RemoveWalletPassOutcome> {
   if (target.providerRemovedAt) return "already_removed";
 
@@ -110,7 +110,11 @@ export async function removeOneWalletPassFromProvider(
       attendee_id: target.attendeeId,
       action_type: "wallet_pass_removed",
       audit,
-      metadata: { ...(options.bulk ? { bulk: true } : {}), ...(statusReset > 0 ? { status_reset: true } : {}) },
+      metadata: {
+        ...(options.bulk ? { bulk: true } : {}),
+        ...(options.eventWide ? { event_wide: true } : {}),
+        ...(statusReset > 0 ? { status_reset: true } : {}),
+      },
     });
     return "removed";
   });

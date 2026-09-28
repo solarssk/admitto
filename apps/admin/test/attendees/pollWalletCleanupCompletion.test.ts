@@ -20,15 +20,24 @@ const status = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-/** Runs the poll for the void action with sensible defaults; returns what it toasted. */
-async function poll(options: { maxAttempts?: number; intervalMs?: number; signal?: AbortSignal; onSuccess?: () => void } = {}) {
+/** Runs the poll with sensible defaults; returns what it toasted. */
+async function poll(
+  options: {
+    action?: "void_active" | "remove_inactive";
+    maxAttempts?: number;
+    intervalMs?: number;
+    signal?: AbortSignal;
+    onSuccess?: () => void;
+  } = {},
+) {
   const addToast = vi.fn();
   const ac = new AbortController();
-  await pollWalletCleanupCompletion("void_active", "evt-1", "job-1", addToast, {
+  const { action = "void_active", ...rest } = options;
+  await pollWalletCleanupCompletion(action, "evt-1", "job-1", addToast, {
     maxAttempts: 3,
     intervalMs: 0,
     signal: ac.signal,
-    ...options,
+    ...rest,
   });
   return addToast;
 }
@@ -197,5 +206,57 @@ describe("pollWalletCleanupCompletion", () => {
 
     expect(fetchWalletCleanupJobStatus).toHaveBeenCalledTimes(1);
     expect(addToast).not.toHaveBeenCalled();
+  });
+
+  // The polling loop itself (retry, abort, timers) is generic over `action` and already fully
+  // covered above via "void_active" - this block only checks the "remove_inactive" copy content.
+  describe("remove_inactive copy", () => {
+    it.each([
+      [2, 0, "2 wallet passes removed from the wallet service."],
+      [1, 0, "1 wallet pass removed from the wallet service."],
+      [3, 1, "3 wallet passes removed from the wallet service. 1 was left alone because it had changed since."],
+    ])("toasts success for done=%i skipped=%i", async (done, skipped, expected) => {
+      fetchWalletCleanupJobStatus.mockResolvedValueOnce(status({ status: "succeeded", done, skipped, errored: 0 }));
+
+      expect(await poll({ action: "remove_inactive" })).toHaveBeenCalledWith(expected, "success");
+    });
+
+    it("toasts info when there was nothing ready to remove", async () => {
+      fetchWalletCleanupJobStatus.mockResolvedValueOnce(status({ status: "succeeded", done: 0, skipped: 2, errored: 0 }));
+
+      expect(await poll({ action: "remove_inactive" })).toHaveBeenCalledWith(
+        "There were no wallet passes ready to remove.",
+        "info",
+      );
+    });
+
+    it("toasts a warning when some passes could not be removed", async () => {
+      fetchWalletCleanupJobStatus.mockResolvedValueOnce(status({ status: "succeeded", done: 1, skipped: 0, errored: 1 }));
+
+      expect(await poll({ action: "remove_inactive" })).toHaveBeenCalledWith(
+        "1 wallet pass removed from the wallet service. 1 could not be removed. Run it again to try those once more.",
+        "warning",
+      );
+    });
+
+    it("toasts an error when the job itself fails to run", async () => {
+      fetchWalletCleanupJobStatus.mockResolvedValueOnce(status({ status: "failed" }));
+
+      expect(await poll({ action: "remove_inactive" })).toHaveBeenCalledWith(
+        "Removing the wallet passes did not run. Try again from More actions.",
+        "error",
+      );
+    });
+
+    it("reports background work, not a failure, when attempts run out while still running", async () => {
+      fetchWalletCleanupJobStatus.mockResolvedValue(status({ status: "running" }));
+
+      const addToast = await poll({ action: "remove_inactive", maxAttempts: 2 });
+
+      expect(addToast).toHaveBeenCalledWith(
+        "Removing the wallet passes is still running in the background.",
+        "info",
+      );
+    });
   });
 });

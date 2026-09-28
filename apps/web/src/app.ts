@@ -197,7 +197,11 @@ import {
   handleTriggerEventWideWalletRefreshStatus,
   handleGetWalletRefreshStatusJob,
 } from "./admin/wallet-refresh-status-routes.js";
-import { handleGetWalletCleanupJob, handleTriggerEventWideWalletVoidActive } from "./admin/wallet-cleanup-routes.js";
+import {
+  handleGetWalletCleanupJob,
+  handleTriggerEventWideWalletRemoveInactive,
+  handleTriggerEventWideWalletVoidActive,
+} from "./admin/wallet-cleanup-routes.js";
 import {
   handleWalletMessageSend,
   handleGetWalletMessageJob,
@@ -1638,6 +1642,14 @@ export function createApp(options: CreateAppOptions = {}) {
     adminWalletActionBulkRateLimit,
     // No guardArchivedEvent: voiding passes is what an operator does once an event has ended.
     (c) => handleTriggerEventWideWalletVoidActive(c, db),
+  );
+  app.post(
+    "/api/admin/events/:eventId/wallet-remove-inactive",
+    jsonPostCsrf,
+    staffAdminGate,
+    adminWalletActionBulkRateLimit,
+    // No guardArchivedEvent, same reasoning as wallet-void-active above.
+    (c) => handleTriggerEventWideWalletRemoveInactive(c, db),
   );
   app.get(
     "/api/admin/events/:eventId/wallet-cleanup/jobs/:jobId",

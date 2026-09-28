@@ -158,6 +158,35 @@ describe("removeOneWalletPassFromProvider", () => {
     expect(writeActionLog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ metadata: {} }));
   });
 
+  it("writes event_wide:true metadata when called from the event-wide clean-up job", async () => {
+    const { db } = makeDb();
+    const target = makeTarget({ userProvidedId: null });
+
+    await removeOneWalletPassFromProvider(db as never, "evt-1", target, provider as never, audit, {
+      eventWide: true,
+    });
+
+    expect(writeActionLog).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ metadata: { event_wide: true } }),
+    );
+  });
+
+  it("combines bulk and event_wide metadata when both are set", async () => {
+    const { db } = makeDb();
+    const target = makeTarget({ userProvidedId: null });
+
+    await removeOneWalletPassFromProvider(db as never, "evt-1", target, provider as never, audit, {
+      bulk: true,
+      eventWide: true,
+    });
+
+    expect(writeActionLog).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ metadata: { bulk: true, event_wide: true } }),
+    );
+  });
+
   it("logs nothing and reports already_removed when a concurrent removal stamped the row first", async () => {
     const { db, txUpdateMany, txFindUnique } = makeDb();
     txUpdateMany.mockReset().mockResolvedValue({ count: 0 });

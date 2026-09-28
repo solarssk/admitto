@@ -1,8 +1,8 @@
 /**
- * Async event-wide wallet clean-up AdminJob HTTP routes (`wallet_void_active`) - enqueue + poll,
- * mirroring wallet-refresh-status-routes.ts. The bulk selection routes cap at
- * WALLET_BULK_SEND_LIMIT (100 attendees) because they run inside the request; these hand the same
- * action for EVERY pass of the event to the worker instead. See
+ * Async event-wide wallet clean-up AdminJob HTTP routes (`wallet_void_active`,
+ * `wallet_remove_inactive`) - enqueue + poll, mirroring wallet-refresh-status-routes.ts. The bulk
+ * selection routes cap at WALLET_BULK_SEND_LIMIT (100 attendees) because they run inside the
+ * request; these hand the same action for EVERY pass of the event to the worker instead. See
  * packages/tickets/src/drain-wallet-cleanup-jobs.ts for the worker side.
  */
 import type { Context } from "hono";
@@ -98,6 +98,14 @@ async function triggerEventWideWalletCleanup(
  * event in the background. Requires no attendee selection. */
 export async function handleTriggerEventWideWalletVoidActive(c: Context, db: PrismaClient): Promise<Response> {
   return triggerEventWideWalletCleanup(c, db, "wallet_void_active");
+}
+
+/** POST /api/admin/events/:eventId/wallet-remove-inactive - removes every voided wallet pass of
+ * the event still managed at the provider, past its grace period, in the background - keeping each
+ * pass's local record and Reports history, same as the single/bulk "Remove from provider" actions.
+ * Requires no attendee selection. */
+export async function handleTriggerEventWideWalletRemoveInactive(c: Context, db: PrismaClient): Promise<Response> {
+  return triggerEventWideWalletCleanup(c, db, "wallet_remove_inactive");
 }
 
 /** GET /api/admin/events/:eventId/wallet-cleanup/jobs/:jobId - status of either clean-up job type
