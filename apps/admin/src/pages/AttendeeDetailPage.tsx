@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams, useSearchParams } from "react-router";
-import { WALLET_RELEVANT_ATTENDEE_FIELDS, enabledWalletPlatforms, type EnabledWalletPlatforms } from "@admitto/shared";
+import {
+  WALLET_RELEVANT_ATTENDEE_FIELDS,
+  enabledWalletPlatforms,
+  isWalletAddClosed,
+  type EnabledWalletPlatforms,
+} from "@admitto/shared";
 import { ATTENDEE_FIELD_PLACEHOLDERS, isWalletFieldMappingRelevant } from "@admitto/wallet/passcreator-mapper";
 import {
   Avatar,
@@ -119,6 +124,19 @@ function attendeeTabFromSearch(searchParams: URLSearchParams): TabId {
 type ActiveRevokeAction = "pass" | "checkin" | "items" | "restore" | null;
 type ActiveWalletAction = "void" | "restore" | "reissue" | "delete" | "remove" | null;
 
+/** True once the event is over. The server refuses Restore then (409 wallet_restore_closed) and
+ * decides; this only stops the menu offering an action that cannot succeed. Archived events are
+ * left out on purpose: Restore is already shown disabled there with its own tooltip. */
+function hasEventEnded(event: Pick<EventDto, "date" | "timezone" | "event_hours_start" | "event_hours_end">): boolean {
+  return isWalletAddClosed({
+    date: new Date(event.date),
+    eventHoursStart: event.event_hours_start,
+    eventHoursEnd: event.event_hours_end,
+    timezone: event.timezone,
+    archivedAt: null,
+  });
+}
+
 /** Secondary actions that don't need their own header button - Resend ticket always, plus Edit
  * once folded in here below the mobile breakpoint (see `showEdit`) and Revoke check-in/items/pass
  * once grouped here on every viewport (see `RevokeActionMenuItems`) - matching the design mockup's
@@ -150,6 +168,7 @@ function MoreActionsMenu({
   onRevokePass,
   walletPlatforms,
   walletConfigured,
+  eventEnded,
   walletPass,
   walletBusy,
   onVoidWallet,
@@ -184,6 +203,8 @@ function MoreActionsMenu({
   /** The event has a template and a working API key (EventDto.wallet_configured), whatever the
    * Wallet master switch says - all the read-only Refresh status action needs. */
   walletConfigured: boolean;
+  /** The event is over: Restore is not offered (the server refuses it). */
+  eventEnded: boolean;
   walletPass: WalletPassActionDto | null;
   walletBusy: boolean;
   onVoidWallet: () => void;
@@ -337,6 +358,7 @@ function MoreActionsMenu({
               <WalletActionMenuItems
                 event={event}
                 platformActions={walletPlatforms.any}
+                eventEnded={eventEnded}
                 voidAvailable={voidAvailable}
                 refreshAvailable={refreshAvailable}
                 removeAvailable={removeAvailable}
@@ -515,6 +537,7 @@ function RevokeActionMenuItems({
 function WalletActionMenuItems({
   event,
   platformActions,
+  eventEnded,
   voidAvailable,
   refreshAvailable,
   removeAvailable,
@@ -532,6 +555,8 @@ function WalletActionMenuItems({
   /** False when the event no longer offers any wallet platform: Restore and Push updates are
    * hidden (the wind-down actions below stay, see their own flags). */
   platformActions: boolean;
+  /** The event is over: Restore is not offered. */
+  eventEnded: boolean;
   /** Void is offered: the event has credentials configured and the pass is active. */
   voidAvailable: boolean;
   /** Refresh status is offered: the event has credentials configured and the pass is active. */
@@ -572,7 +597,7 @@ function WalletActionMenuItems({
       )}
       {/* A removed pass is voided but can never be restored or updated again (409 wallet_pass_removed),
         * so neither is offered. */}
-      {platformActions && !walletPass.provider_removed_at && walletPass.status === "voided" && (
+      {platformActions && !eventEnded && !walletPass.provider_removed_at && walletPass.status === "voided" && (
         <ArchivedGuard event={event} reasonId="restore-wallet-pass-reason-menu" disabled={walletBusy}>
           {(guard) => (
             <button type="button" role="menuitem" className="more-actions-menu__item" {...guard} onClick={onRestore}>
@@ -2646,6 +2671,7 @@ export function AttendeeDetailPage() {
               }}
               walletPlatforms={walletPlatforms}
               walletConfigured={event.wallet_configured}
+              eventEnded={hasEventEnded(event)}
               walletPass={detail.wallet_pass}
               walletBusy={walletBusy}
               onVoidWallet={() => {

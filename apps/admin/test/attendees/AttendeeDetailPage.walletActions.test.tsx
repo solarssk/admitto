@@ -26,6 +26,8 @@ vi.mock("../../src/auth/AuthProvider.js", () => ({
   useAuth: () => ({ assignments: [makeOrgAdminAssignment()] }),
 }));
 
+// Far ahead by default: Restore is not offered once the event is over.
+let mockEventDate = "2099-06-01";
 let mockArchivedAt: string | null = null;
 let mockWalletEnabled = true;
 let mockWalletAppleEnabled = true;
@@ -42,7 +44,9 @@ vi.mock("react-router", async (importOriginal) => {
         id: "evt-1",
         title: "Demo",
         slug: "demo",
-        date: "2026-06-01",
+        get date() {
+          return mockEventDate;
+        },
         timezone: "Europe/Warsaw",
         location: null,
         attendee_count: 1,
@@ -178,6 +182,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   mockArchivedAt = null;
+  mockEventDate = "2099-06-01";
   mockWalletEnabled = true;
   mockWalletAppleEnabled = true;
   mockWalletGoogleEnabled = true;
@@ -355,6 +360,29 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       const push = screen.getByRole("menuitem", { name: /Push updates/ });
       expect((push as HTMLButtonElement).disabled).toBe(true);
       expect(getTooltipText(push)).toBe(ARCHIVED_ACTION_TOOLTIP);
+    });
+  });
+
+  describe("Restore wallet pass once the event is over", () => {
+    it("is not offered, while Push updates is: the server refuses Restore after the event", async () => {
+      mockEventDate = "2020-06-01";
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "voided" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      expect(screen.queryByRole("menuitem", { name: /Restore wallet pass/ })).toBeNull();
+      expect(screen.getByRole("menuitem", { name: /Push updates/ })).toBeTruthy();
+    });
+
+    it("is still offered on the event's own day until it ends", async () => {
+      mockEventDate = "2099-06-01";
+      mockLoad(baseDetail({ wallet_pass: walletPass({ status: "voided" }) }));
+      renderPage();
+      await screen.findByRole("heading", { name: "Anna" });
+
+      openMoreActionsMenu();
+      expect(screen.getByRole("menuitem", { name: /Restore wallet pass/ })).toBeTruthy();
     });
   });
 
