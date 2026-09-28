@@ -40,20 +40,12 @@
   }
 }
 
-/* "Generated ... · vX · sha" sits directly under the intro sentence as its own line, so it
-   wraps like any paragraph instead of fighting the intro for a row on narrow screens. */
+/* "Generated ... · vX · sha" is the second line of the intro caption: same size, colour and
+   typeface as the sentence above it, wrapping like normal text on narrow screens. */
 .health-check__meta {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.4rem;
   margin: var(--space-1) 0 var(--space-4);
-  font-family: var(--font-mono, ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace);
-  font-size: var(--fs-mono, var(--fs-xs));
+  font-size: var(--fs-sm);
   color: var(--text-muted, var(--tblr-secondary));
-}
-
-.health-check__meta span {
-  min-width: 0;
   overflow-wrap: anywhere;
 }
 
@@ -61,11 +53,6 @@
    (media query below), where the standalone button is hidden instead. */
 .health-check__live-menu-item {
   display: none;
-}
-
-.health-check__meta .ti {
-  font-size: 0.95em;
-  opacity: 0.85;
 }
 
 .health-check__groups {
@@ -105,7 +92,7 @@
   align-items: center;
   gap: 0.5rem;
   margin: 0;
-  font-size: var(--fs-h3);
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--text-primary, var(--tblr-body-color));
 }

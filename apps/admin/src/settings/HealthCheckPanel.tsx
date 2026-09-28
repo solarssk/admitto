@@ -414,14 +414,11 @@ export function HealthCheckPanel() {
           sanitized snapshot when opening a support issue.
         </p>
         <p className="health-check__meta">
-          <i className="ti ti-clock" aria-hidden="true" />
-          <span>
-            Generated{" "}
-            <time dateTime={report.generated_at}>
-              {formatEventDateTime(report.generated_at, getBrowserTimeZone())}
-            </time>
-            {runningBuildLabel()}
-          </span>
+          Generated{" "}
+          <time dateTime={report.generated_at}>
+            {formatEventDateTime(report.generated_at, getBrowserTimeZone())}
+          </time>
+          {runningBuildLabel()}
         </p>
 
         <div className="health-check__groups">
