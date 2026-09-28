@@ -1,4 +1,9 @@
-import type { HealthOverallStatus, HealthReportDto, HealthRowStatus } from "../api/types.js";
+import type {
+  HealthCheckRowDto,
+  HealthOverallStatus,
+  HealthReportDto,
+  HealthRowStatus,
+} from "../api/types.js";
 
 /** Detail keys safe to include in a public GitHub issue body (ADR 0037 whitelist). */
 const MARKDOWN_SAFE_DETAIL_KEYS = new Set([
@@ -18,15 +23,17 @@ const MARKDOWN_SAFE_DETAIL_KEYS = new Set([
   "source",
   "engine",
   "algorithm",
-  "endpoint",
   "max_zoom",
   "attribution",
   "protocol",
-  "display_name",
   "audiences",
   "last_checked",
   "reason",
 ]);
+// "endpoint" (a tile server, identity provider, or Cloudflare Access hostname) and
+// "display_name" (an org-set identity provider name) are deliberately NOT on this list: both
+// can identify the instance or its organisation, and the ADR 0037 dump is a public GitHub issue
+// body (see exportSafeLabel() below for how a check's own label is likewise generalised).
 
 const DETAIL_LABELS: Record<string, string> = {
   latency_ms: "Latency",
@@ -57,6 +64,36 @@ export function formatHealthDetailValue(key: string, value: string): string {
     default:
       return value;
   }
+}
+
+/**
+ * Export-only value transform, layered on top of {@link formatHealthDetailValue}. The Superadmin
+ * tab may show an exact detail value the public "Copy for GitHub Issue" dump should not: an
+ * exact database patch version (e.g. "PostgreSQL 16.2") is a lookup key for known
+ * vulnerabilities in that version, so the export coarsens it to the major version only
+ * ("PostgreSQL 16"). formatHealthDetailValue() itself stays UI-safe for the tab.
+ */
+function exportSafeDetailValue(key: string, value: string): string {
+  const formatted = formatHealthDetailValue(key, value);
+  if (key === "engine") return formatted.replace(/^(\D*\d+)\.\d+.*$/, "$1");
+  return formatted;
+}
+
+/**
+ * A check's own label can carry identifying detail: an identity provider's label embeds its
+ * org-set display name, and map tiles embeds the tile server's hostname (health-check-routes.ts
+ * `identityProviderRowLabel`, `mapTilesServiceLabel`). Both are useful in the Superadmin-only
+ * tab, but the "Copy for GitHub Issue" dump is public, so the export uses a fixed, generic label
+ * per check id instead - removing the unsafe detail keys alone would not be enough, since the
+ * label itself is emitted verbatim in both the table and the details heading.
+ */
+function exportSafeLabel(check: HealthCheckRowDto): string {
+  if (check.id.startsWith("identity_provider_")) {
+    const protocol = check.details.find((d) => d.key === "protocol")?.value;
+    return protocol ? `Identity provider, ${protocol}` : "Identity provider";
+  }
+  if (check.id === "map_tiles") return "Map tiles";
+  return check.label;
 }
 
 function overallLabel(status: HealthOverallStatus): string {
@@ -112,7 +149,7 @@ function appendGroupTable(
   );
   for (const check of group.checks) {
     lines.push(
-      `| ${escapeCell(check.label)} | ${rowStatusLabel(check.status)} | ${escapeCell(check.summary)} |`,
+      `| ${escapeCell(exportSafeLabel(check))} | ${rowStatusLabel(check.status)} | ${escapeCell(check.summary)} |`,
     );
   }
   lines.push("");
@@ -132,10 +169,10 @@ function appendGroupDetails(
     const safe = check.details.filter(
       (d) => MARKDOWN_SAFE_DETAIL_KEYS.has(d.key) && d.key !== "url",
     );
-    lines.push(`**${escapeMarkdownText(check.label)}**`);
+    lines.push(`**${escapeMarkdownText(exportSafeLabel(check))}**`);
     for (const d of safe) {
       lines.push(
-        `- ${formatHealthDetailLabel(d.key)}: ${escapeMarkdownText(formatHealthDetailValue(d.key, d.value))}`,
+        `- ${formatHealthDetailLabel(d.key)}: ${escapeMarkdownText(exportSafeDetailValue(d.key, d.value))}`,
       );
     }
     lines.push("");
