@@ -1146,6 +1146,90 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
     finally { setMfaEnrolling(false); }
   }
 
+  async function handleTotpSetupStart(): Promise<void> {
+    setMfaEnrolling(true); setTotpCode(""); setUriCopied(false); setShowUriManual(false); setQrRenderFailed(false); setBackupCodesSaved(false);
+    try {
+      await cancelMfaEnroll().catch(() => { /* ignore, no pending enrollment */ });
+      setEnrollData(await enrollMfaTotp());
+    }
+    catch (err) { addToast(operatorApiErrorMessage(err, "Failed to start 2FA setup."), "error"); }
+    finally { setMfaEnrolling(false); }
+  }
+
+  async function handleRegenerateBackupCodesConfirm(): Promise<void> {
+    setRegeneratingBackupCodes(true);
+    setRegenerateBackupCodesError(null);
+    // Starting a fresh regenerate cycle after already confirming the current batch is
+    // saved - fall back to the code-entry flow instead of leaving the old batch on screen.
+    if (regeneratedBackupCodes) setRegeneratedBackupCodes(null);
+    try {
+      await submitRegenerateBackupCodes(regenerateBackupCodesCode ? { code: regenerateBackupCodesCode } : undefined);
+    } catch (err) {
+      if (hasApiErrorCode(err, "totp_required")) {
+        setRegenerateBackupCodesCodeRequired(true);
+      } else {
+        setRegenerateBackupCodesError(operatorApiErrorMessage(err, "Failed to regenerate backup codes."));
+      }
+    } finally {
+      setRegeneratingBackupCodes(false);
+    }
+  }
+
+  async function handlePasswordSubmit(): Promise<void> {
+    if (passwordSaving || !passwordFormValid) return;
+    setPasswordSaving(true);
+    try {
+      await submitPasswordChange();
+    } catch (err) {
+      if (hasApiErrorCode(err, "totp_required")) {
+        // This account's role requires MFA, collect the step-up code in a
+        // dialog instead of growing this form, so the Password/2FA cards (which
+        // stretch to match each other's height) don't jump when it appears.
+        setPasswordCodeError(null);
+        setPasswordStepUpOpen(true);
+      } else {
+        addToast(operatorApiErrorMessage(err, "Failed to change password."), "error");
+      }
+    } finally {
+      setPasswordSaving(false);
+    }
+  }
+
+  // `current` is a parameter, not read from state, so the caller's null-narrowing carries in.
+  async function handleProfileSave(current: AccountDto): Promise<void> {
+    setProfileSaving(true);
+    const localeChanged = preferredLocale !== current.preferred_locale;
+    const timeFormatChanged = preferredTimeFormat !== current.preferred_time_format;
+    try {
+      const phoneCountryCodeChanged = phoneCountryCode !== (current.phone_country_code ?? "");
+      const phoneNumberChanged = phoneNumber !== (current.phone_number ?? "");
+      const result = await patchAccountProfile({
+        ...(displayName !== (current.display_name ?? "") && { display_name: displayName }),
+        ...(localeChanged && { preferred_locale: preferredLocale }),
+        ...(timeFormatChanged && { preferred_time_format: preferredTimeFormat }),
+        ...(phoneCountryCodeChanged && { phone_country_code: phoneCountryCode }),
+        ...(phoneNumberChanged && { phone_number: phoneNumber || null }),
+      });
+      setDisplayName(result.display_name ?? "");
+      setPreferredLocale(result.preferred_locale);
+      setPreferredTimeFormat(result.preferred_time_format);
+      setPhoneCountryCode(result.phone_country_code ?? "");
+      setPhoneNumber(result.phone_number ?? "");
+      setPreferredLocaleStore(result.preferred_locale ?? undefined);
+      setPreferredTimeFormatStore(result.preferred_time_format);
+      addToast(
+        localeChanged
+          ? "Profile saved. Reload this page to refresh session timestamps below."
+          : "Profile saved.",
+        "success",
+        localeChanged ? 0 : undefined,
+      );
+      await loadAccount();
+    } catch (err) {
+      addToast(operatorApiErrorMessage(err, "Failed to save profile."), "error");
+    } finally { setProfileSaving(false); }
+  }
+
   function handleAddPasskeyCancel(): void {
     if (addingPasskey) return;
     if (addPasskeyBackupCodes && !backupCodesSaved) return;
@@ -1248,25 +1332,9 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             className="account-password-form"
             aria-label="Change password"
             autoComplete="on"
-            onSubmit={async (e) => {
+            onSubmit={(e) => {
               e.preventDefault();
-              if (passwordSaving || !passwordFormValid) return;
-              setPasswordSaving(true);
-              try {
-                await submitPasswordChange();
-              } catch (err) {
-                if (hasApiErrorCode(err, "totp_required")) {
-                  // This account's role requires MFA, collect the step-up code in a
-                  // dialog instead of growing this form, so the Password/2FA cards (which
-                  // stretch to match each other's height) don't jump when it appears.
-                  setPasswordCodeError(null);
-                  setPasswordStepUpOpen(true);
-                } else {
-                  addToast(operatorApiErrorMessage(err, "Failed to change password."), "error");
-                }
-              } finally {
-                setPasswordSaving(false);
-              }
+              void handlePasswordSubmit();
             }}
           >
             <input
@@ -1492,24 +1560,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         disableConfirm={
           (!!regeneratedBackupCodes && !backupCodesSaved) || (regenerateBackupCodesCodeRequired && !regenerateBackupCodesCode)
         }
-        onConfirm={async () => {
-          setRegeneratingBackupCodes(true);
-          setRegenerateBackupCodesError(null);
-          // Starting a fresh regenerate cycle after already confirming the current batch is
-          // saved - fall back to the code-entry flow instead of leaving the old batch on screen.
-          if (regeneratedBackupCodes) setRegeneratedBackupCodes(null);
-          try {
-            await submitRegenerateBackupCodes(regenerateBackupCodesCode ? { code: regenerateBackupCodesCode } : undefined);
-          } catch (err) {
-            if (hasApiErrorCode(err, "totp_required")) {
-              setRegenerateBackupCodesCodeRequired(true);
-            } else {
-              setRegenerateBackupCodesError(operatorApiErrorMessage(err, "Failed to regenerate backup codes."));
-            }
-          } finally {
-            setRegeneratingBackupCodes(false);
-          }
-        }}
+        onConfirm={() => void handleRegenerateBackupCodesConfirm()}
         onCancel={() => {
           if (regeneratingBackupCodes) return;
           // Same guard as handleAddPasskeyCancel: once regeneration succeeds, the previous batch
@@ -1566,8 +1617,8 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         disableConfirm={
           totpCode.length < 6 || ((enrollData?.backupCodes.length ?? 0) > 0 && !backupCodesSaved)
         }
-        onConfirm={handleTotpEnrollConfirm}
-        onCancel={handleTotpEnrollCancel}
+        onConfirm={() => void handleTotpEnrollConfirm()}
+        onCancel={() => void handleTotpEnrollCancel()}
       >
         {renderMfaEnrollment()}
       </ConfirmDialog>
@@ -1591,7 +1642,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         loading={addingPasskey}
         errorMessage={addPasskeyError ?? undefined}
         disableConfirm={!!addPasskeyBackupCodes || !addPasskeyLabel.trim()}
-        onConfirm={handleAddPasskeyConfirm}
+        onConfirm={() => void handleAddPasskeyConfirm()}
         onCancel={handleAddPasskeyCancel}
       >
         {addPasskeyBackupCodes ? (
@@ -1629,7 +1680,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         loading={addingSecurityKey}
         errorMessage={addSecurityKeyError ?? undefined}
         disableConfirm={!!addSecurityKeyBackupCodes || !addSecurityKeyLabel.trim()}
-        onConfirm={handleAddSecurityKeyConfirm}
+        onConfirm={() => void handleAddSecurityKeyConfirm()}
         onCancel={handleAddSecurityKeyCancel}
       >
         {addSecurityKeyBackupCodes ? (
@@ -1662,7 +1713,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         loading={removingCredential}
         errorMessage={removeCredentialError ?? undefined}
         disableConfirm={removeCredentialCodeRequired && !removeCredentialCode}
-        onConfirm={handleRemoveCredentialConfirm}
+        onConfirm={() => void handleRemoveCredentialConfirm()}
         onCancel={handleRemoveCredentialCancel}
       >
         {removeCredentialTarget && account && isLastConfirmedMfaMethod(removeCredentialTarget, account) && (
@@ -1716,15 +1767,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
           {account.has_local_password && (
             <div className="account-mfa-method__action">
               {!totpEnrolled && (
-                <Button type="button" variant="primary" disabled={mfaEnrolling} onClick={async () => {
-                  setMfaEnrolling(true); setTotpCode(""); setUriCopied(false); setShowUriManual(false); setQrRenderFailed(false); setBackupCodesSaved(false);
-                  try {
-                    await cancelMfaEnroll().catch(() => { /* ignore, no pending enrollment */ });
-                    setEnrollData(await enrollMfaTotp());
-                  }
-                  catch (err) { addToast(operatorApiErrorMessage(err, "Failed to start 2FA setup."), "error"); }
-                  finally { setMfaEnrolling(false); }
-                }}>Set up</Button>
+                <Button type="button" variant="primary" disabled={mfaEnrolling} onClick={() => void handleTotpSetupStart()}>Set up</Button>
               )}
               {totpEnrolled && (
                 <Button type="button" variant="secondary" onClick={() => {
@@ -2154,39 +2197,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
             onUnlinkClick={() => setUnlinkSsoOpen(true)}
           />
         }
-        footer={<div className="mail-transport-footer"><Button type="button" variant="primary" disabled={profileSaving || !profileDirty} onClick={async () => {
-        setProfileSaving(true);
-        const localeChanged = preferredLocale !== account.preferred_locale;
-        const timeFormatChanged = preferredTimeFormat !== account.preferred_time_format;
-        try {
-          const phoneCountryCodeChanged = phoneCountryCode !== (account.phone_country_code ?? "");
-          const phoneNumberChanged = phoneNumber !== (account.phone_number ?? "");
-          const result = await patchAccountProfile({
-            ...(displayName !== (account.display_name ?? "") && { display_name: displayName }),
-            ...(localeChanged && { preferred_locale: preferredLocale }),
-            ...(timeFormatChanged && { preferred_time_format: preferredTimeFormat }),
-            ...(phoneCountryCodeChanged && { phone_country_code: phoneCountryCode }),
-            ...(phoneNumberChanged && { phone_number: phoneNumber || null }),
-          });
-          setDisplayName(result.display_name ?? "");
-          setPreferredLocale(result.preferred_locale);
-          setPreferredTimeFormat(result.preferred_time_format);
-          setPhoneCountryCode(result.phone_country_code ?? "");
-          setPhoneNumber(result.phone_number ?? "");
-          setPreferredLocaleStore(result.preferred_locale ?? undefined);
-          setPreferredTimeFormatStore(result.preferred_time_format);
-          addToast(
-            localeChanged
-              ? "Profile saved. Reload this page to refresh session timestamps below."
-              : "Profile saved.",
-            "success",
-            localeChanged ? 0 : undefined,
-          );
-          await loadAccount();
-        } catch (err) {
-          addToast(operatorApiErrorMessage(err, "Failed to save profile."), "error");
-        } finally { setProfileSaving(false); }
-      }}>Save</Button></div>}>
+        footer={<div className="mail-transport-footer"><Button type="button" variant="primary" disabled={profileSaving || !profileDirty} onClick={() => void handleProfileSave(account)}>Save</Button></div>}>
         <div className="account-profile-editable">
           <Input
             id="account-display-name"
@@ -2300,11 +2311,11 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         {renderNotificationsCard()}
       </AccountTabPanel>
 
-      <ConfirmDialog open={!!revokeTarget} icon={<i className="ti ti-device-laptop-off" aria-hidden="true" />} title="Revoke session" message={revokeTarget ? `Revoke this session? Last active ${formatRelativeTime(revokeTarget.lastSeenAt)}.` : ""} confirmLabel="Revoke" confirmVariant="danger" loading={revoking} errorMessage={revokeError ?? undefined} onConfirm={handleRevokeConfirm} onCancel={handleRevokeCancel} />
+      <ConfirmDialog open={!!revokeTarget} icon={<i className="ti ti-device-laptop-off" aria-hidden="true" />} title="Revoke session" message={revokeTarget ? `Revoke this session? Last active ${formatRelativeTime(revokeTarget.lastSeenAt)}.` : ""} confirmLabel="Revoke" confirmVariant="danger" loading={revoking} errorMessage={revokeError ?? undefined} onConfirm={() => void handleRevokeConfirm()} onCancel={handleRevokeCancel} />
 
-      <ConfirmDialog open={revokeAllOpen} icon={<i className="ti ti-device-laptop-off" aria-hidden="true" />} title="Revoke all other sessions" message={`This will end ${otherSessions.length} other active session${otherSessions.length === 1 ? "" : "s"}.`} confirmLabel="Revoke" confirmVariant="danger" loading={revokeAllBusy} errorMessage={revokeError ?? undefined} onConfirm={handleRevokeAllConfirm} onCancel={handleRevokeAllCancel} />
+      <ConfirmDialog open={revokeAllOpen} icon={<i className="ti ti-device-laptop-off" aria-hidden="true" />} title="Revoke all other sessions" message={`This will end ${otherSessions.length} other active session${otherSessions.length === 1 ? "" : "s"}.`} confirmLabel="Revoke" confirmVariant="danger" loading={revokeAllBusy} errorMessage={revokeError ?? undefined} onConfirm={() => void handleRevokeAllConfirm()} onCancel={handleRevokeAllCancel} />
 
-      <ConfirmDialog open={forgetDevicesOpen} icon={<i className="ti ti-devices-off" aria-hidden="true" />} title="Forget all trusted devices" message="You'll be asked to verify with two-factor again the next time you sign in on any device you previously chose to remember." confirmLabel="Forget devices" loading={forgetDevicesBusy} errorMessage={forgetDevicesError ?? undefined} onConfirm={handleForgetDevicesConfirm} onCancel={handleForgetDevicesCancel} />
+      <ConfirmDialog open={forgetDevicesOpen} icon={<i className="ti ti-devices-off" aria-hidden="true" />} title="Forget all trusted devices" message="You'll be asked to verify with two-factor again the next time you sign in on any device you previously chose to remember." confirmLabel="Forget devices" loading={forgetDevicesBusy} errorMessage={forgetDevicesError ?? undefined} onConfirm={() => void handleForgetDevicesConfirm()} onCancel={handleForgetDevicesCancel} />
 
       <ConfirmDialog
         open={manageTotpOpen}
@@ -2317,7 +2328,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         loading={removingTotp}
         errorMessage={removeTotpError ?? undefined}
         disableConfirm={removeTotpCodeRequired && !removeTotpCode}
-        onConfirm={handleRemoveTotpConfirm}
+        onConfirm={() => void handleRemoveTotpConfirm()}
         onCancel={handleRemoveTotpCancel}
       >
         {isLastConfirmedMfaMethod({ type: "totp", confirmed: true, last_used_at: null }, account) && (
@@ -2361,7 +2372,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         loading={resetting}
         errorMessage={resetError ?? undefined}
         disableConfirm={!resetPassword || (resetCodeRequired && !resetCode)}
-        onConfirm={handleResetMfaConfirm}
+        onConfirm={() => void handleResetMfaConfirm()}
         onCancel={handleResetMfaCancel}
       >
         <div className="account-reset-mfa-fields">
@@ -2413,7 +2424,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         loading={passwordSaving}
         errorMessage={passwordCodeError ?? undefined}
         disableConfirm={!passwordCode}
-        onConfirm={handlePasswordStepUpConfirm}
+        onConfirm={() => void handlePasswordStepUpConfirm()}
         onCancel={handlePasswordStepUpCancel}
       >
         <Input
@@ -2451,7 +2462,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
           unlinkSsoPassword.length < PASSWORD_MIN_LENGTH ||
           (!!account?.has_local_password && unlinkSsoCurrentPassword.length === 0)
         }
-        onConfirm={handleUnlinkSsoConfirm}
+        onConfirm={() => void handleUnlinkSsoConfirm()}
         onCancel={handleUnlinkSsoCancel}
       >
         {account?.has_local_password && (
@@ -2490,7 +2501,7 @@ export function AccountPage({ activeTab = "profile" }: Readonly<{ activeTab?: Ac
         loading={unlinkSsoBusy}
         errorMessage={unlinkCodeError ?? undefined}
         disableConfirm={!unlinkCode}
-        onConfirm={handleUnlinkStepUpConfirm}
+        onConfirm={() => void handleUnlinkStepUpConfirm()}
         onCancel={handleUnlinkStepUpCancel}
       >
         <Input
