@@ -592,7 +592,7 @@ function WalletActionMenuItems({
           <i className="ti ti-wallet-off" aria-hidden="true" />
           <span className="more-actions-menu__item-text">
             <span>Void wallet pass</span>
-            <span className="more-actions-menu__item-hint">Show as invalid in their wallet</span>
+            <span className="more-actions-menu__item-hint">Make the pass invalid on their phone</span>
           </span>
         </button>
       )}
@@ -605,7 +605,7 @@ function WalletActionMenuItems({
               <i className="ti ti-refresh" aria-hidden="true" />
               <span className="more-actions-menu__item-text">
                 <span>Restore wallet pass</span>
-                <span className="more-actions-menu__item-hint">Show as valid again in their wallet</span>
+                <span className="more-actions-menu__item-hint">Make the pass valid again on their phone</span>
               </span>
             </button>
           )}
@@ -618,7 +618,7 @@ function WalletActionMenuItems({
               <i className="ti ti-refresh-dot" aria-hidden="true" />
               <span className="more-actions-menu__item-text">
                 <span>Push updates</span>
-                <span className="more-actions-menu__item-hint">Push the latest details to their wallet pass</span>
+                <span className="more-actions-menu__item-hint">Send the latest details to their pass</span>
               </span>
             </button>
           )}
@@ -639,7 +639,7 @@ function WalletActionMenuItems({
           <i className="ti ti-cloud-download" aria-hidden="true" />
           <span className="more-actions-menu__item-text">
             <span>Refresh status</span>
-            <span className="more-actions-menu__item-hint">Pull the latest status from the provider</span>
+            <span className="more-actions-menu__item-hint">Get the latest status of the pass</span>
           </span>
         </button>
       )}
@@ -650,7 +650,7 @@ function WalletActionMenuItems({
           icon="cloud-off"
           variant="danger"
           label="Remove from provider"
-          hint="Delete at the provider, keep this attendee's history"
+          hint="Delete the pass from the wallet service, keep the history"
           disabled={walletBusy || removeState === "disabled"}
           tooltip={removeState === "disabled" ? REMOVE_DISABLED_TOOLTIP : undefined}
           onClick={onRemove}
@@ -667,7 +667,7 @@ function WalletActionMenuItems({
           <i className="ti ti-trash" aria-hidden="true" />
           <span className="more-actions-menu__item-text">
             <span>Delete wallet pass</span>
-            <span className="more-actions-menu__item-hint">Permanently deletes the pass record and its history</span>
+            <span className="more-actions-menu__item-hint">Delete the pass and its history for good</span>
           </span>
         </button>
       )}
@@ -3101,7 +3101,7 @@ export function AttendeeDetailPage() {
       <ConfirmDialog
         open={activeWalletAction === "void"}
         title="Void wallet pass?"
-        message={`${detail.name}'s pass stays installed on their phone but shows as invalid in their wallet. You can restore it later.`}
+        message={`Voiding makes ${detail.name}'s pass show as invalid on their phone. The pass stays on the phone and the ticket is not changed. You can restore it later, while Wallet is on for this event and the event has not ended.`}
         confirmLabel="Void"
         confirmVariant="danger"
         loading={walletBusy}
@@ -3118,7 +3118,7 @@ export function AttendeeDetailPage() {
       <ConfirmDialog
         open={activeWalletAction === "restore"}
         title="Restore wallet pass?"
-        message={`This shows ${detail.name}'s pass as valid again in their wallet.`}
+        message={`This makes ${detail.name}'s pass show as valid again on their phone.`}
         confirmLabel="Restore"
         confirmVariant="primary"
         loading={walletBusy}
@@ -3135,7 +3135,7 @@ export function AttendeeDetailPage() {
       <ConfirmDialog
         open={activeWalletAction === "reissue"}
         title="Push updates to their wallet pass?"
-        message={`Pushes ${detail.name}'s current name, ticket type, and event details to their already-installed wallet pass.`}
+        message={`This sends ${detail.name}'s current name, ticket type, and event details to the pass on their phone.`}
         confirmLabel="Push updates"
         confirmVariant="primary"
         loading={walletBusy}
@@ -3152,7 +3152,7 @@ export function AttendeeDetailPage() {
       <ConfirmDialog
         open={activeWalletAction === "delete"}
         title="Delete wallet pass?"
-        message={`Permanently deletes ${detail.name}'s pass record at the provider.`}
+        message={`This deletes ${detail.name}'s wallet pass from the wallet service and erases its record here.`}
         confirmLabel="Delete"
         confirmVariant="danger"
         loading={walletBusy}
@@ -3166,12 +3166,12 @@ export function AttendeeDetailPage() {
         }}
       >
         <ul className="confirm-dialog__list">
-          <li>Apple/Google Wallet gives us no way to remove it from their phone - only they can do that</li>
-          <li>Doesn't affect check-in - use Revoke pass to block entry</li>
-          <li>They'd need to add it again from their ticket page for a fresh pass</li>
+          <li>The pass stays on their phone. Only they can remove it there (Apple and Google do not let us)</li>
+          <li>Check-in is not affected. Use Revoke pass to block entry</li>
+          <li>They can only add a new pass from their ticket page while Wallet is on for this event and the event has not ended</li>
           <li>
-            Also erases this pass from Reports (installs, registrations) - use Remove from
-            provider instead to stop it being counted at the provider while keeping that history
+            This also erases the pass from Reports (installs and registrations). Use Remove from
+            provider instead to keep that history
           </li>
         </ul>
       </ConfirmDialog>
@@ -3179,7 +3179,7 @@ export function AttendeeDetailPage() {
       <ConfirmDialog
         open={activeWalletAction === "remove"}
         title="Remove from provider?"
-        message={`Permanently deletes ${detail.name}'s pass at the provider. Unlike Delete, this keeps the local record and its Reports history (installs, registrations) - it just stops the provider counting this pass towards its own plan.`}
+        message={`This deletes ${detail.name}'s pass from the wallet service. Unlike Delete, it keeps the pass record and its history in Reports (installs and registrations). It only stops the wallet service from counting this pass in its plan.`}
         confirmLabel="Remove"
         confirmVariant="danger"
         loading={walletBusy}
@@ -3193,9 +3193,9 @@ export function AttendeeDetailPage() {
         }}
       >
         <ul className="confirm-dialog__list">
-          <li>Irreversible at the provider - there is no way to bring the pass back there</li>
-          <li>Only meaningful once the pass is already voided or expired</li>
-          <li>Doesn't affect check-in, and doesn't touch this attendee's Reports history</li>
+          <li>You cannot undo this. The pass cannot be brought back in the wallet service</li>
+          <li>It only works on a pass that is already voided or expired</li>
+          <li>Check-in is not affected, and the history in Reports stays</li>
         </ul>
       </ConfirmDialog>
 

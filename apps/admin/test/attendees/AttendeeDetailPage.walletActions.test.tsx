@@ -608,10 +608,10 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       fireEvent.click(screen.getByRole("menuitem", { name: /Delete wallet pass/ }));
       const dialog = screen.getByRole("dialog", { name: "Delete wallet pass?" });
       expect(
-        within(dialog).getByText(/Apple\/Google Wallet gives us no way to remove it from their phone/),
+        within(dialog).getByText(/Only they can remove it there \(Apple and Google do not let us\)/),
       ).toBeTruthy();
-      expect(within(dialog).getByText(/Doesn't affect check-in/)).toBeTruthy();
-      expect(within(dialog).getByText(/They'd need to add it again from their ticket page/)).toBeTruthy();
+      expect(within(dialog).getByText(/Check-in is not affected/)).toBeTruthy();
+      expect(within(dialog).getByText(/They can only add a new pass from their ticket page while Wallet is on for this event and the event has not ended/)).toBeTruthy();
     });
 
     it("confirms, calls deleteWalletPass, toasts, and reloads detail", async () => {
@@ -748,8 +748,8 @@ describe("AttendeeDetailPage — Wallet pass actions (Void / Restore / Push upda
       openMoreActionsMenu();
       fireEvent.click(screen.getByRole("menuitem", { name: /Remove from provider/ }));
       const dialog = screen.getByRole("dialog", { name: "Remove from provider?" });
-      expect(within(dialog).getByText(/keeps the local record and its Reports history/)).toBeTruthy();
-      expect(within(dialog).getByText(/Irreversible at the provider/)).toBeTruthy();
+      expect(within(dialog).getByText(/keeps the pass record and its history in Reports/)).toBeTruthy();
+      expect(within(dialog).getByText(/You cannot undo this/)).toBeTruthy();
     });
 
     it("confirms, calls removeWalletPassFromProvider, toasts, and reloads detail", async () => {
