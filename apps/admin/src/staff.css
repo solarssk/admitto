@@ -6889,15 +6889,6 @@ output.mail-field-hint {
   text-overflow: ellipsis;
 }
 
-.overview-kpi__value--text {
-  /* A phrase value ("Ended 3 days ago", "Today in 5h") is much wider than a number, so it drops a
-   * size and may wrap to a 2nd line instead of ending in an ellipsis. The tile's fixed height
-   * still holds: 2 lines at this size + the label stay under the desktop 76px / mobile 96px. */
-  font-size: 20px;
-  line-height: 1.15;
-  white-space: normal;
-}
-
 .overview-kpi__label {
   /* fs-sm here supersedes an earlier fs-h3 choice (a past PO review called fs-sm "too big a
    * jump" from a fs-display value above it) - the value directly above dropped from fs-display
@@ -6941,10 +6932,6 @@ output.mail-field-hint {
   .overview-kpi__value {
     font-size: 21px;
     white-space: normal;
-  }
-
-  .overview-kpi__value--text {
-    font-size: 17px;
   }
 
   .overview-kpi__label {

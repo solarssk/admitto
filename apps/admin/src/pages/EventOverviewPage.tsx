@@ -133,7 +133,6 @@ function OverviewKpiTile({
   label,
   value,
   sub,
-  textValue = false,
   children,
 }: Readonly<{
   icon: ReactNode;
@@ -141,8 +140,6 @@ function OverviewKpiTile({
   label: string;
   value: ReactNode;
   sub?: ReactNode;
-  /** The value is a phrase ("Ended 3 days ago"), not a number: smaller type that may wrap to two lines instead of truncating. */
-  textValue?: boolean;
   children?: ReactNode;
 }>) {
   return (
@@ -152,7 +149,7 @@ function OverviewKpiTile({
           {icon}
         </span>
         <div className="overview-kpi__body">
-          <span className={`overview-kpi__value${textValue ? " overview-kpi__value--text" : ""}`}>{value}</span>
+          <span className="overview-kpi__value">{value}</span>
           <span className="overview-kpi__label">{label}</span>
           {sub != null && <span className="overview-kpi__sub">{sub}</span>}
         </div>
@@ -160,6 +157,26 @@ function OverviewKpiTile({
       {children}
     </Card>
   );
+}
+
+/** Value and label for the countdown KPI tile.
+ * computeLabel() itself falls back to the plain calendar date for anything more than a week out
+ * (fine for the header's prose chip, wrong for this numeric tile, it would just repeat the date
+ * already shown in the page header), so beyond that window the tile shows the raw day count under a
+ * "Days to/since event" label, on either side. Within the week the label stays a neutral
+ * "Event countdown" for upcoming events. A past event reads "3 days ago" under "Event ended"
+ * instead of "Ended 3 days ago" under "Event countdown": the shorter value fits the tile at the same
+ * type size as the other three numbers, and the label still says which way it points. */
+function countdownTileText(
+  daysUntil: number | null,
+  countdownLabel: string,
+): { value: string; label: string } {
+  if (daysUntil != null && Math.abs(daysUntil) > 7) {
+    return { value: String(Math.abs(daysUntil)), label: daysUntil < 0 ? "Days since event" : "Days to event" };
+  }
+  const ended = /^Ended (.+)$/.exec(countdownLabel)?.[1];
+  if (ended) return { value: ended.charAt(0).toUpperCase() + ended.slice(1), label: "Event ended" };
+  return { value: countdownLabel, label: "Event countdown" };
 }
 
 interface ReadinessItem {
@@ -1718,27 +1735,7 @@ export function EventOverviewPage() {
       : null;
   const countdownLabel = useCountdown(eventDateIso, eventTimezone);
   const daysUntil = daysUntilEvent(eventDateIso, eventTimezone);
-  // computeLabel() itself falls back to the plain calendar date for anything more than a week out
-  // (fine for the header's prose chip, wrong for this numeric tile — it would just repeat the date
-  // already shown in the page header). Show the raw day count instead beyond that week window, on
-  // either side (future or already-past) — symmetric so a long-over event doesn't read as a full
-  // sentence next to a clean number for upcoming ones. The short phrasings for everything within a
-  // week ("Today"/"Tomorrow"/"Yesterday"/"In N days"/"Ended N days ago") already read fine as-is.
-  const countdownValue =
-    daysUntil != null && Math.abs(daysUntil) > 7 ? String(Math.abs(daysUntil)) : countdownLabel;
-  // No sub-line (it broke KPI row icon alignment — this was the only tile with a 3rd line).
-  // Label mirrors countdownValue's own bare-number/prose split above: "Days to/since event" only
-  // once the value is a bare number that needs a unit — a prose value ("In 7 days", "Ended 3 days
-  // ago") already states its own direction, so the label stays a neutral "Event countdown" instead
-  // of repeating "days" or contradicting which way that value points.
-  let daysToEventLabel: string;
-  if (daysUntil == null || Math.abs(daysUntil) <= 7) {
-    daysToEventLabel = "Event countdown";
-  } else if (daysUntil < 0) {
-    daysToEventLabel = "Days since event";
-  } else {
-    daysToEventLabel = "Days to event";
-  }
+  const { value: countdownValue, label: daysToEventLabel } = countdownTileText(daysUntil, countdownLabel);
   const emailFailedTotal =
     currentOverview != null
       ? currentOverview.email_failed + currentOverview.email_bounced
@@ -1840,7 +1837,6 @@ export function EventOverviewPage() {
           icon={<i className="ti ti-calendar-event" aria-hidden="true" />}
           label={daysToEventLabel}
           value={countdownValue}
-          textValue={Number.isNaN(Number(countdownValue))}
         />
         <OverviewKpiTile
           tone="error"

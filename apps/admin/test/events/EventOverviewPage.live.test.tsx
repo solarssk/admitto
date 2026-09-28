@@ -551,11 +551,11 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     }
   });
 
-  it("keeps the neutral 'Event countdown' label, not 'Days to event', for an event that ended within the past week", async () => {
+  it("shows a short '3 days ago' under 'Event ended', not 'Days to event', for an event that ended within the past week", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       // 3 calendar days after the fixture's 2026-07-01 event date - still inside the +-7 day
-      // window, so the value is prose ("Ended 3 days ago") rather than a bare number.
+      // window, so the value is a short phrase rather than a bare number.
       vi.setSystemTime(new Date("2026-07-04T10:00:00.000Z"));
       fetchEventOverview.mockResolvedValue(overviewFixture(5));
 
@@ -565,8 +565,9 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
         expect(within(statsRow()).getByText("Attendees")).toBeTruthy();
       });
 
-      expect(within(statsRow()).getByText("Ended 3 days ago")).toBeTruthy();
-      expect(within(statsRow()).getByText("Event countdown")).toBeTruthy();
+      expect(within(statsRow()).getByText("3 days ago")).toBeTruthy();
+      expect(within(statsRow()).getByText("Event ended")).toBeTruthy();
+      expect(within(statsRow()).queryByText("Event countdown")).toBeNull();
       expect(within(statsRow()).queryByText("Days to event")).toBeNull();
     } finally {
       vi.useRealTimers();
@@ -1491,7 +1492,27 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(document.querySelector(".overview-pinned-note")).toBeNull();
   });
 
-  it("shrinks a phrase countdown value so it wraps instead of truncating, but leaves a bare day count at full size", async () => {
+  it.each([
+    ["2026-07-02T10:00:00.000Z", "Yesterday"],
+    ["2026-07-01T20:00:00.000Z", "Today"],
+  ])("reads an ended event as '%s' under 'Event ended' (now = %s)", async (now, expected) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.setSystemTime(new Date(now));
+      fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(within(statsRow()).getByText("Event ended")).toBeTruthy();
+      });
+      expect(within(statsRow()).getByText(expected)).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps all four KPI values the same size, including the ended-event phrase", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       vi.setSystemTime(new Date("2026-07-04T10:00:00.000Z"));
@@ -1499,10 +1520,11 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
 
       renderPage();
 
-      const phrase = await screen.findByText("Ended 3 days ago");
-      expect(phrase.className).toContain("overview-kpi__value--text");
-      for (const count of within(statsRow()).getAllByText("50")) {
-        expect(count.className).not.toContain("overview-kpi__value--text");
+      await screen.findByText("3 days ago");
+      const values = Array.from(statsRow().querySelectorAll(".overview-kpi__value"));
+      expect(values).toHaveLength(4);
+      for (const value of values) {
+        expect(value.className).toBe("overview-kpi__value");
       }
     } finally {
       vi.useRealTimers();
