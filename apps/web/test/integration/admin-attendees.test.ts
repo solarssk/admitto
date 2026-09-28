@@ -1288,7 +1288,7 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         id: WALLET_ACTION_EVENT,
         title: "Wallet Action Event",
         slug: "wallet-action-event",
-        date: new Date("2026-09-01"),
+        date: new Date("2099-09-01"), // far ahead: Restore is refused once the event is over
         organization_id: ORG_A,
         wallet_template_id: "tmpl-action",
         wallet_api_key_enc: encryptToString("action-api-key"),
@@ -1572,6 +1572,61 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         // this test's fixture must not linger past this point - the "wallet_status on GET list"
         // block below fetches the default (unfiltered, 25-per-page) attendee list and expects its
         // own single seeded attendee to still be on page 1.
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+  });
+
+  describe("restore once the event is over", () => {
+    async function endEvent(run: () => Promise<void>) {
+      await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { date: new Date("2020-01-01") } });
+      try {
+        await run();
+      } finally {
+        await prisma.event.update({ where: { id: WALLET_ACTION_EVENT }, data: { date: new Date("2099-09-01") } });
+      }
+    }
+
+    it("answers 409 wallet_restore_closed and never reaches the provider", async () => {
+      const attendeeId = "att-wallet-action-restore-ended";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true, passStatus: "voided" });
+      try {
+        await endEvent(async () => {
+          const res = await app.request(
+            `/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}/wallet/restore`,
+            { method: "POST", headers: { Cookie: adminCookie, ...sameOrigin } },
+          );
+          expect(res.status).toBe(409);
+          expect(await res.json()).toEqual({ error: "wallet_restore_closed" });
+          expect(restoreSpy).not.toHaveBeenCalled();
+          const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+          expect(row?.status).toBe("voided");
+        });
+      } finally {
+        await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
+        await prisma.attendee.delete({ where: { id: attendeeId } });
+      }
+    });
+
+    it("the attendee revoke/restore cascade leaves a voided pass voided too", async () => {
+      const attendeeId = "att-wallet-action-restore-ended-cascade";
+      await seedActionAttendee(attendeeId, WALLET_ACTION_EVENT, { withPass: true, passStatus: "voided" });
+      await prisma.attendee.update({ where: { id: attendeeId }, data: { status: "revoked" } });
+      const before = await prisma.attendee.findUniqueOrThrow({ where: { id: attendeeId } });
+      try {
+        await endEvent(async () => {
+          const res = await app.request(`/api/admin/events/${WALLET_ACTION_EVENT}/attendees/${attendeeId}`, {
+            method: "PATCH",
+            headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "registered", expected_updated_at: before.updated_at.toISOString() }),
+          });
+          expect(res.status).toBe(200);
+          expect(restoreSpy).not.toHaveBeenCalled();
+          const row = await prisma.walletPass.findUnique({ where: { attendee_id: attendeeId } });
+          expect(row?.status).toBe("voided");
+        });
+      } finally {
         await prisma.walletPass.deleteMany({ where: { attendee_id: attendeeId } });
         await prisma.attendee.delete({ where: { id: attendeeId } });
       }

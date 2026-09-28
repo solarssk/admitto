@@ -168,6 +168,9 @@ function assignIfDefined<K extends keyof NormalizedEventLocationInput>(
   key: K,
   value: NormalizedEventLocationInput[K] | undefined,
 ): void {
+  // `key` is constrained to keyof NormalizedEventLocationInput and every caller passes a string
+  // literal, so it can only ever be one of this type's own field names.
+  // eslint-disable-next-line security/detect-object-injection
   if (value !== undefined) result[key] = value;
 }
 

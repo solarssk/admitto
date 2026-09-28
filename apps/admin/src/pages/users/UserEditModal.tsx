@@ -173,7 +173,7 @@ function UserMoreActionsMenu({
       />
       {moreActions.open && (
         <div
-          className="more-actions-menu__panel"
+          className="more-actions-menu__panel at-scroll"
           role="menu"
           ref={moreActions.panelRef}
           style={moreActions.panelStyle}

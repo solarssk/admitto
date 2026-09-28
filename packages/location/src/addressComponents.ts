@@ -80,10 +80,9 @@ function parseStreetFromLeadingSegments(parts: string[]): string | null {
   }
   if (parts.length === 0) return null;
 
-  const numberIdx = parts.findIndex((s) => HOUSE_NUMBER_RE.test(s));
-  if (numberIdx >= 0 && parts.length >= 2) {
-    const housenumber = parts[numberIdx]!;
-    const streetName = parts.find((s, i) => i !== numberIdx && !HOUSE_NUMBER_RE.test(s));
+  const housenumber = parts.find((s) => HOUSE_NUMBER_RE.test(s));
+  if (housenumber !== undefined && parts.length >= 2) {
+    const streetName = parts.find((s) => !HOUSE_NUMBER_RE.test(s));
     return cleanComponent(formatStreetLine({ street: streetName, housenumber }));
   }
   if (!HOUSE_NUMBER_RE.test(parts[0]!)) {
@@ -206,8 +205,7 @@ export function normalizeAddressComponents(
     throw new TypeError("address_components must be an object or null");
   }
   const raw = value as Record<string, unknown>;
-  const read = (key: keyof AddressComponents): string | null => {
-    const v = raw[key];
+  const read = (key: keyof AddressComponents, v: unknown): string | null => {
     if (v === null || v === undefined) return null;
     if (typeof v !== "string") {
       throw new TypeError(`address_components.${key} must be a string or null`);
@@ -215,12 +213,12 @@ export function normalizeAddressComponents(
     return cleanComponent(v);
   };
   return {
-    object_name: read("object_name"),
-    street: read("street"),
-    postcode: read("postcode"),
-    city: read("city"),
-    region: read("region"),
-    country: read("country"),
+    object_name: read("object_name", raw.object_name),
+    street: read("street", raw.street),
+    postcode: read("postcode", raw.postcode),
+    city: read("city", raw.city),
+    region: read("region", raw.region),
+    country: read("country", raw.country),
   };
 }
 

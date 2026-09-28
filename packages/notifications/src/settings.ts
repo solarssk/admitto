@@ -95,12 +95,13 @@ function normalizeEmailRecipients(raw: unknown): NotificationEmailRecipient[] {
  * empty, since an empty array is equivalent to the type being absent entirely (opt-out default). */
 function normalizeDisabledChannels(raw: unknown): Record<string, NotificationChannelKey[]> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-  const result: Record<string, NotificationChannelKey[]> = {};
-  for (const [type, channels] of Object.entries(raw as Record<string, unknown>)) {
+  // Object.fromEntries defines own data properties, so a stored key can never reach the
+  // `__proto__` setter; that key is skipped explicitly since no real type id is named that.
+  const entries = Object.entries(raw as Record<string, unknown>).flatMap(([type, channels]) => {
     const normalized = normalizeStringArray(channels) as NotificationChannelKey[];
-    if (normalized.length > 0) result[type] = normalized;
-  }
-  return result;
+    return type !== "__proto__" && normalized.length > 0 ? [[type, normalized] as const] : [];
+  });
+  return Object.fromEntries(entries);
 }
 
 export async function describeNotificationSettings(

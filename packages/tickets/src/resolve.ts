@@ -170,6 +170,7 @@ export function toResolved(
       id: string; title: string; slug: string; date: Date; timezone: string;
       event_hours_start: string | null; event_hours_end: string | null;
       event_type: string | null;
+      archived_at: Date | null;
       wallet_enabled: boolean;
       wallet_template_id: string | null;
       wallet_api_key_enc: string | null;
@@ -212,6 +213,7 @@ export function toResolved(
       timezone: row.event.timezone || "UTC",
       eventHoursStart: row.event.event_hours_start,
       eventHoursEnd: row.event.event_hours_end,
+      archivedAt: row.event.archived_at,
       walletEnabled: row.event.wallet_enabled,
       walletTemplateId: row.event.wallet_template_id,
       walletApiKeyEnc: row.event.wallet_api_key_enc,

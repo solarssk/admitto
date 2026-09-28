@@ -36,7 +36,7 @@ Restoring a pass can be blocked by event capacity. A Superadmin can use the disp
 
 - Revoking a pass blocks admission; it is not the same as revoking an earlier check-in.
 - Restoring a pass does not automatically check the attendee in again.
-- When the event has Wallet configured, revoking a pass also voids the attendee's wallet pass automatically, and restoring the pass restores the wallet pass the same way.
+- When the event has Wallet configured, revoking a pass also voids the attendee's wallet pass automatically, and restoring the pass restores the wallet pass the same way, unless the event is already over (a wallet pass is never made valid again after the event).
 - Attendance confirmation describes the attendee's response and does not replace pass status.
 - Delivery status describes a message attempt and does not prove that the pass is active.
 
