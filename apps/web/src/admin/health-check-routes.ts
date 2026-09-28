@@ -431,14 +431,18 @@ function setupToInstanceUrlRow(check: SetupCheckResult, checkedAt: string): Heal
     };
   }
   if (check.warn) {
+    // Same tone as data_encryption's own "optional in development" branch just above: this is
+    // not a real problem, so it must not count toward the overall verdict (worstHealthStatus()
+    // already skips not_configured and planned rows for that). "configured" is "no" here, not
+    // "yes": BASE_URL is not actually set, only allowed to be unset in development.
     return {
       id: "instance_url",
       label,
-      status: "degraded",
+      status: "not_configured",
       summary: "Optional in development",
       details: detailsFromEntries([
-        ["status", "degraded"],
-        ["configured", "yes"],
+        ["status", "not_configured"],
+        ["configured", "no"],
         ["last_checked", checkedAt],
       ]),
     };
@@ -1279,14 +1283,17 @@ export async function fileStorageRow(
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
-      // LocalStorageAdapter.put mkdir(recursive) on first branding save - not an outage.
+      // LocalStorageAdapter.put mkdir(recursive) on first branding save - not an outage, and not
+      // a warning either: a fresh install with no branding uploaded yet is expected to have no
+      // upload directory, so this must not count toward the overall verdict
+      // (worstHealthStatus() already skips not_configured and planned rows for that).
       return {
         id: "file_storage",
         label,
-        status: "degraded",
+        status: "not_configured",
         summary: "Missing directory · created on first upload",
         details: detailsFromEntries([
-          ["status", "degraded"],
+          ["status", "not_configured"],
           ["provider", "local"],
           ["path", uploadPath],
           ["writable", "unknown"],

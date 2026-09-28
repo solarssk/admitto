@@ -290,13 +290,15 @@ describe("fileStorageRow", () => {
     expect(row.status).toBe("ok");
   });
 
-  it("reports degraded when the directory is missing (adapter creates it on first put)", async () => {
+  it("reports not_configured when the directory is missing (adapter creates it on first put)", async () => {
+    // A fresh install with no branding uploaded yet is expected to have no upload directory, so
+    // this must not count toward the overall verdict (worstHealthStatus() skips not_configured).
     const row = await fileStorageRow(
       { UPLOAD_DIR: join(uploadFixture.dir, "does-not-exist") },
       checkedAt,
       false,
     );
-    expect(row.status).toBe("degraded");
+    expect(row.status).toBe("not_configured");
     expect(row.summary).toBe("Missing directory · created on first upload");
     expect(row.details.find((d) => d.key === "reason")?.value).toBe("missing_directory");
   });
@@ -1107,6 +1109,32 @@ describe("collectAdminHealth", () => {
     expect(report.overall).toBe("ok");
   });
 
+  it("keeps overall healthy on a fresh development install (instance URL unset, upload folder not created yet)", async () => {
+    // The two benign, dev-only amber states together: neither must flip the overall verdict.
+    collectSetupChecks.mockResolvedValue({
+      ...okSetup,
+      base_url: { ok: true, warn: true, detail: "optional in development" },
+    });
+    collectGauges.mockResolvedValue({
+      email_deliveries_queued: 0,
+      email_deliveries_failed_retryable: 0,
+      bounce_ingest_enabled: 0,
+      bounce_ingest_problem: 0,
+    });
+    stubHappyPathMailAndIdp();
+
+    const report = await collectAdminHealth({
+      db: healthDb(),
+      rateLimitStore: {} as never,
+      env: envWithUpload({ UPLOAD_DIR: join(uploadFixture.dir, "does-not-exist") }),
+    });
+
+    const core = report.groups[0]!.checks;
+    expect(core.find((c) => c.id === "instance_url")?.status).toBe("not_configured");
+    expect(core.find((c) => c.id === "file_storage")?.status).toBe("not_configured");
+    expect(report.overall).toBe("ok");
+  });
+
   it("reports wallet as ok when at least one event has it fully configured", async () => {
     collectSetupChecks.mockResolvedValue(okSetup);
     collectGauges.mockResolvedValue({
@@ -1371,7 +1399,12 @@ describe("collectAdminHealth", () => {
     );
     expect(core.find((c) => c.id === "rate_limit_storage")?.status).toBe("degraded");
     expect(core.find((c) => c.id === "rate_limit_storage")?.summary).toMatch(/900 ms/);
-    expect(core.find((c) => c.id === "instance_url")?.status).toBe("degraded");
+    // Same reasoning as file storage's missing directory: optional in development must not
+    // count toward the overall verdict, and "configured" reflects that BASE_URL is not actually
+    // set (not "yes", which the row wrote before this fix).
+    const instanceUrl = core.find((c) => c.id === "instance_url");
+    expect(instanceUrl?.status).toBe("not_configured");
+    expect(instanceUrl?.details.find((d) => d.key === "configured")?.value).toBe("no");
     expect(core.find((c) => c.id === "mail_delivery_queue")?.status).toBe("degraded");
     expect(core.find((c) => c.id === "mail_delivery_queue")?.summary).toMatch(
       /Queue empty · 3 retryable/,
