@@ -123,7 +123,7 @@ export function EventArchivingPanel() {
         addToast("Event archived.", "success");
       } else {
         await unarchiveEvent(confirmAction.event.id);
-        addToast("Event unarchived.", "success");
+        addToast("Event restored.", "success");
       }
       setConfirmAction(null);
       await load();
@@ -146,7 +146,7 @@ export function EventArchivingPanel() {
         size="sm"
         onClick={() => setConfirmAction({ type: "unarchive", event })}
       >
-        Unarchive
+        Restore
       </Button>
     );
 
@@ -341,13 +341,13 @@ export function EventArchivingPanel() {
 
       <ConfirmDialog
         open={!!confirmAction}
-        title={confirmAction?.type === "archive" ? "Archive event" : "Unarchive event"}
+        title={confirmAction?.type === "archive" ? "Archive event" : "Restore event"}
         message={
           confirmAction?.type === "archive"
-            ? "This event will be hidden and read-only. Data is preserved. A superadmin can unarchive later."
+            ? "This event will be hidden and read-only. Data is preserved. A superadmin can restore it later."
             : restoreMessage
         }
-        confirmLabel={confirmAction?.type === "archive" ? "Archive" : "Unarchive"}
+        confirmLabel={confirmAction?.type === "archive" ? "Archive" : "Restore"}
         confirmVariant={confirmAction?.type === "archive" ? "danger" : "primary"}
         loading={acting}
         errorMessage={actionError}

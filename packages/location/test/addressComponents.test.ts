@@ -420,3 +420,39 @@ describe("formatDirectionsAddressFromComponents", () => {
     ).toBe("Only Name");
   });
 });
+
+describe("house numbers and hostile segments", () => {
+  it.each(["Main St 12/14", "Main St 1-3", "Main St 12A/14B", "Main St 12", "12", "12a"])(
+    "treats %j as carrying a house number",
+    (street) => {
+      expect(streetLineLooksNumbered(street)).toBe(true);
+    },
+  );
+
+  it.each(["Main St", "Main St 12/", "Main St -3", "Main St 12/14/16", "Main St 1--3", "Main St A12"])(
+    "does not treat %j as carrying a house number",
+    (street) => {
+      expect(streetLineLooksNumbered(street)).toBe(false);
+    },
+  );
+
+  it("splits a trailing number off a street segment", () => {
+    expect(addressComponentsFromNominatimLabel("Wybrzeże Szczecińskie 1, Szczecin, 70-001, Polska").street).toBe(
+      "Wybrzeże Szczecińskie 1",
+    );
+  });
+
+  it("stays fast on a very long segment, with or without a usable trailing number", () => {
+    const started = performance.now();
+
+    const noNumber = addressComponentsFromNominatimLabel(`${"a ".repeat(50_000)}x, Warszawa, 00-001, Polska`);
+    const withNumber = addressComponentsFromNominatimLabel(`${"1 ".repeat(50_000)}12, Warszawa, 00-001, Polska`);
+
+    // The street is capped by cleanComponent, so it is not the whole 100k-character segment.
+    expect(noNumber.country).toBe("Polska");
+    expect(noNumber.street?.startsWith("a a a")).toBe(true);
+    expect(withNumber.street?.startsWith("1 1 1")).toBe(true);
+    expect(withNumber.street?.length).toBeLessThanOrEqual(200);
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+});

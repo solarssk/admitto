@@ -154,6 +154,7 @@ function buildSaveBody(draft: NotificationsDraft, saved: NotificationsDraft): Sa
 // Each domain label explicitly excludes "." from its own character class, so no quantified group
 // overlaps with the literal that follows it - the split points are the string's actual dot
 // positions, not a search space the engine has to backtrack through (Sonar S8786).
+// eslint-disable-next-line security/detect-unsafe-regex -- linear: labels exclude "."
 const EMAIL_RE = /^[^\s@]+@([^\s@.]+\.)+[^\s@.]+$/;
 
 type TestTone = "ok" | "warn" | "error";

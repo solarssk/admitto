@@ -59,7 +59,8 @@ function tzOffsetSuffix(instant: Date, timeZone: string): string {
     .formatToParts(instant)
     .find((p) => p.type === "timeZoneName")?.value;
   if (!part || part === "GMT") return "Z";
-  const match = /^GMT([+-])(\d{1,2})(?::?(\d{2}))?$/.exec(part);
+  // The minutes are an alternation, not an optional group: same match and same groups.
+  const match = /^GMT([+-])(\d{1,2})(?:$|:?(\d{2})$)/.exec(part);
   if (!match) return "Z";
   const [, sign, hours = "00", minutes = "00"] = match;
   // "+00:00" is UTC too (some ICU builds emit "GMT+00:00" for UTC rather than bare "GMT") -

@@ -210,9 +210,9 @@ If the event already has installed wallet passes, changing a wallet-relevant loc
 ### Danger zone (mostly Superadmin)
 
 - **Deleting** an event is only allowed once it has zero attendees, zero non-default items, zero non-standard ticket types, zero contacts/resources, no pinned note, and no extra mail template - the exact list of what's still blocking is shown to you, and re-checked on the server even if your screen is out of date.
-- **Archiving or unarchiving** is Superadmin-only, and archiving an already-archived event (or the reverse) is rejected rather than silently accepted.
+- **Archiving or restoring** is Superadmin-only, and archiving an already-archived event (or the reverse) is rejected rather than silently accepted.
 - **Revoking every check-in or every issued item at once** is Superadmin-only, and disabled if there's currently nothing to revoke.
-- Every destructive action here except Delete and Unarchive is blocked while the event is archived.
+- Every destructive action here except Delete and Restore is blocked while the event is archived.
 
 ### Check-in behaviour
 

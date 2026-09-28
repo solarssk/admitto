@@ -54,6 +54,15 @@ describe("shouldUseRedisSse", () => {
     expect(shouldUseRedisSse({ NODE_ENV: "production", REDIS_URL: "https://redis.example.com" })).toBe(false);
     expect(shouldUseRedisSse({ NODE_ENV: "production", REDIS_URL: "not a URL" })).toBe(false);
   });
+
+  it("treats the whole 127.x.x.x loopback range as local, but not lookalike hosts", () => {
+    for (const host of ["127.0.0.1", "127.1.2.3", "127.255.255.255"]) {
+      expect(shouldUseRedisSse({ NODE_ENV: "production", REDIS_URL: `redis://${host}:6379` })).toBe(true);
+    }
+    for (const host of ["128.0.0.1", "126.0.0.1", "127.0.0.1.example.com", "127.0.0.1x"]) {
+      expect(shouldUseRedisSse({ NODE_ENV: "production", REDIS_URL: `redis://${host}:6379` })).toBe(false);
+    }
+  });
 });
 
 // Forces the module's own env gate open for these tests only - everything else in the suite runs

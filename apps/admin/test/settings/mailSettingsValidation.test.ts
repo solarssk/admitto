@@ -263,6 +263,36 @@ describe("validateMailDraft — field length and format guards", () => {
     expect(result.fromAddress).toBe("From address must be a valid email.");
   });
 
+  it.each(["sender@-example.com", "sender@example-.com", "sender@exa_mple.com", "sender@sub.-a.example.com"])(
+    "rejects a From address with a domain label that starts or ends with a hyphen or holds another symbol: %s",
+    (fromAddress) => {
+      const result = validateMailDraft({
+        ...emptyMailDraft(),
+        provider: "smtp",
+        host: "smtp.example.com",
+        port: "587",
+        fromAddress,
+      });
+
+      expect(result.fromAddress).toBe("From address must be a valid email.");
+    },
+  );
+
+  it.each(["sender@a.example.com", "sender@my-example.com", "sender@ex-am-ple.co", "sender@a1-b2.example.org"])(
+    "accepts a From address whose domain labels keep hyphens and digits inside: %s",
+    (fromAddress) => {
+      const result = validateMailDraft({
+        ...emptyMailDraft(),
+        provider: "smtp",
+        host: "smtp.example.com",
+        port: "587",
+        fromAddress,
+      });
+
+      expect(result.fromAddress).toBeUndefined();
+    },
+  );
+
   it.each(["local", "test", "invalid", "example", "localhost", "internal", "lan", "corp", "con"])(
     "rejects Allowed from domain '.%s' - not a real IANA-delegated TLD",
     (fakeTld) => {

@@ -1213,7 +1213,7 @@ describe("AttendeesPage bulk wallet actions (#879)", () => {
     ));
     expect(
       await within(dialog).findByText(
-        "2 passes could not be removed. Try again - passes that were already removed are skipped.",
+        "2 passes could not be removed. Try again. Passes that were already removed are not tried again.",
       ),
     ).toBeTruthy();
     expect(screen.getByRole("dialog")).toBeTruthy();
@@ -1239,7 +1239,7 @@ describe("AttendeesPage bulk wallet actions (#879)", () => {
 
     expect(
       await within(dialog).findByText(
-        "1 pass could not be removed. Try again - passes that were already removed are skipped.",
+        "1 pass could not be removed. Try again. Passes that were already removed are not tried again.",
       ),
     ).toBeTruthy();
   });

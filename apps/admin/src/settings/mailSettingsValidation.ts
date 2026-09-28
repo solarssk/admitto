@@ -40,7 +40,9 @@ export type SecretEdits = Record<
  * the kind of pattern that backtracks on adversarial input. */
 function isValidDomainLabel(label: string): boolean {
   if (label.length === 0 || label.length > 63) return false;
-  return /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label);
+  // Starts and ends with a letter or digit, hyphens only in between; a lookahead for the first
+  // character instead of an optional group around the rest, same acceptance.
+  return /^(?=[a-zA-Z0-9])[a-zA-Z0-9-]*[a-zA-Z0-9]$/.test(label);
 }
 
 /** At least one label before a real IANA-delegated TLD (knownTlds.ts), and every label -

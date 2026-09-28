@@ -479,6 +479,14 @@ describe("buildWalletPassInput — access-point timing placeholders", () => {
     expect(input.venueOpenTimeLabel).toBe("2026-09-24T09:00:00Z");
   });
 
+  it("writes an offset with minutes, e.g. +05:30 for an Indian event", () => {
+    const input = buildWalletPassInput(
+      fullResolved({ event: { timezone: "Asia/Kolkata", venueOpenTime: "09:00" } }),
+      "b",
+    );
+    expect(input.venueOpenTimeLabel).toBe("2026-09-24T09:00:00+05:30");
+  });
+
   it("keeps the stored calendar day for a UTC+14 event, even though noon UTC there is already the next local day", () => {
     const input = buildWalletPassInput(
       fullResolved({ event: { timezone: "Pacific/Kiritimati", venueOpenTime: "09:00" } }),
