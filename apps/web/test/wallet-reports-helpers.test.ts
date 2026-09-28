@@ -29,6 +29,7 @@ function pass(overrides: Partial<Record<string, unknown>> = {}) {
     issued_at: new Date("2026-01-01T00:00:00.000Z"),
     first_confirmed_at: null,
     status: "active",
+    provider_removed_at: null,
     apple_active_registrations: 0,
     google_active_registrations: 0,
     samsung_active_registrations: 0,
@@ -502,6 +503,68 @@ describe("aggregateWalletPasses — lifecycleCounts", () => {
   it("still counts a disabled Samsung platform's own inactive registration as removed, not never_installed", () => {
     const result = aggregateWalletPasses([pass({ samsung_inactive_registrations: 1 })], APPLE_ONLY_ENABLED);
     expect(result.lifecycleCounts).toEqual({ active: 0, removed: 1, never_installed: 0 });
+  });
+});
+
+// plan v4.2 step 4: pass_validity and provider_state are independent axes from lifecycleCounts
+// above - status and provider_removed_at aren't platform-specific, gated, or derived from
+// registration counts at all, unlike every other counter aggregateWalletPasses builds.
+describe("aggregateWalletPasses — passValidityCounts and providerStateCounts", () => {
+  it("splits a mixed batch by WalletPass.status, ignoring registration state entirely", () => {
+    const result = aggregateWalletPasses(
+      [
+        pass({ status: "active" }),
+        pass({ status: "voided" }),
+        pass({ status: "expired" }),
+        // Removed-at-provider and no registrations at all - still counted by status alone.
+        pass({ status: "voided", provider_removed_at: new Date("2026-02-01T00:00:00.000Z") }),
+      ],
+      BOTH_ENABLED,
+    );
+    expect(result.passValidityCounts).toEqual({ active: 1, voided: 2, expired: 1 });
+  });
+
+  it("splits a mixed batch by WalletPass.provider_removed_at, independent of status", () => {
+    const result = aggregateWalletPasses(
+      [
+        pass({ provider_removed_at: null }),
+        pass({ status: "voided", provider_removed_at: null }),
+        pass({ status: "voided", provider_removed_at: new Date("2026-02-01T00:00:00.000Z") }),
+        pass({ status: "expired", provider_removed_at: new Date("2026-02-02T00:00:00.000Z") }),
+      ],
+      BOTH_ENABLED,
+    );
+    expect(result.providerStateCounts).toEqual({ managed: 2, removed: 2 });
+  });
+
+  it("a pass removed at the provider keeps its own registration state (lifecycleCounts) and pass validity unchanged - removal only moves providerStateCounts", () => {
+    // Same pass, active on Apple with a real registration, but already removed at the provider -
+    // the regression this test guards: Remove from provider must not retroactively change how a
+    // pass counts in the other two axes, only its own provider_state bucket.
+    const removedButStillCountedElsewhere = pass({
+      status: "voided",
+      apple_active_registrations: 1,
+      provider_removed_at: new Date("2026-02-01T00:00:00.000Z"),
+    });
+    const result = aggregateWalletPasses([removedButStillCountedElsewhere], BOTH_ENABLED);
+    expect(result.lifecycleCounts).toEqual({ active: 1, removed: 0, never_installed: 0 });
+    expect(result.passValidityCounts).toEqual({ active: 0, voided: 1, expired: 0 });
+    expect(result.providerStateCounts).toEqual({ managed: 0, removed: 1 });
+  });
+
+  it("passValidityCounts and providerStateCounts each sum to the total pass count, same as lifecycleCounts", () => {
+    const passes = [
+      pass({ status: "active", provider_removed_at: null }),
+      pass({ status: "voided", provider_removed_at: null }),
+      pass({ status: "voided", provider_removed_at: new Date("2026-02-01T00:00:00.000Z") }),
+      pass({ status: "expired", provider_removed_at: new Date("2026-02-02T00:00:00.000Z") }),
+      pass({ status: "expired", provider_removed_at: null }),
+    ];
+    const result = aggregateWalletPasses(passes, BOTH_ENABLED);
+    const sum = (counts: Record<string, number>) => Object.values(counts).reduce((a, b) => a + b, 0);
+    expect(sum(result.lifecycleCounts)).toBe(passes.length);
+    expect(sum(result.passValidityCounts)).toBe(passes.length);
+    expect(sum(result.providerStateCounts)).toBe(passes.length);
   });
 });
 

@@ -42,7 +42,7 @@ import "./reports-page.css";
 // the rest of this app.
 const PRIMARY = "#066fd1"; // --primary / --at-blue
 const STATUS_OK = "#2fb344"; // --status-ok / --at-green
-const DANGER_RED = "#d63939"; // --at-red / --status-error - the "Removed" slice of Wallet lifecycle, the one outcome of the three worth calling out as a concern
+const DANGER_RED = "#d63939"; // --at-red / --status-error - the "Previously registered" slice of Registration state, the one outcome of its three worth calling out as a concern
 const GRAY_400 = "#94a3b8"; // --at-gray-400
 const GRAY_100 = "#f1f5f9"; // --at-gray-100, radial/donut track background
 const TEXT_PRIMARY = "#1d273b"; // --text-primary / --at-ink
@@ -96,9 +96,14 @@ const REGISTRATION_COUNT_COLORS: Record<EventWalletReportsResponse["registration
 };
 
 type WalletLifecycleKey = keyof EventWalletReportsResponse["wallet_lifecycle"];
+// Labels read "Registered"/"Previously registered" (not "Active"/"Removed") - this card is now
+// one of three independent axes (Pass validity, Provider state, Registration state below), and
+// "Active"/"Removed" would collide with Pass validity's own "Active" status and Provider state's
+// own "Removed" outcome, which mean different things. The DTO's own field/value names stay
+// wallet_lifecycle/active/removed/never_installed regardless - see that field's own doc comment.
 const LIFECYCLE_LABELS: Record<WalletLifecycleKey, string> = {
-  active: "Active",
-  removed: "Removed",
+  active: "Registered",
+  removed: "Previously registered",
   never_installed: "Never installed",
 };
 // Same green/gray-for-neutral convention as every other chart in this file - the one departure is
@@ -108,6 +113,35 @@ const LIFECYCLE_COLORS: Record<WalletLifecycleKey, string> = {
   active: STATUS_OK,
   removed: DANGER_RED,
   never_installed: GRAY_400,
+};
+
+type PassValidityKey = keyof EventWalletReportsResponse["pass_validity"];
+const PASS_VALIDITY_LABELS: Record<PassValidityKey, string> = {
+  active: "Active",
+  voided: "Voided",
+  expired: "Expired",
+};
+// Yellow for voided (reversible via Restore, a caution rather than a hard stop) vs. red for
+// expired (permanent) - same "how worried should this make you" gradient DANGER_RED/yellow/gray
+// already carries elsewhere in this file (BUCKET_COLORS, REGISTRATION_COUNT_COLORS).
+const PASS_VALIDITY_COLORS: Record<PassValidityKey, string> = {
+  active: STATUS_OK,
+  voided: "#f59f00", // --at-yellow
+  expired: DANGER_RED,
+};
+
+type ProviderStateKey = keyof EventWalletReportsResponse["provider_state"];
+const PROVIDER_STATE_LABELS: Record<ProviderStateKey, string> = {
+  managed: "Managed",
+  removed: "Removed from provider",
+};
+// Gray, not red, for "removed" here - unlike Registration state's "Previously registered" (a
+// retention signal worth flagging) or Pass validity's "Expired", a pass removed from the provider
+// is a deliberate admin cleanup action (Remove inactive passes / Remove from provider), not
+// something to call out as a concern.
+const PROVIDER_STATE_COLORS: Record<ProviderStateKey, string> = {
+  managed: STATUS_OK,
+  removed: GRAY_400,
 };
 
 /** HintLabel next to the card title, not a bare icon in the header's actions slot - the app's
@@ -329,6 +363,87 @@ function walletLifecycleBreakdownRows(
   gotPass: number,
 ): BreakdownRow[] {
   return walletLifecycleSlices(lifecycle).map((slice) => ({
+    id: slice.label,
+    label: slice.label,
+    meta: `${slice.count} · ${pctOf(slice.count, gotPass)}%`,
+    pct: pctOf(slice.count, gotPass),
+    color: slice.color,
+  }));
+}
+
+/** Same donut-plus-breakdown shape as WalletLifecycleDonut above, for pass_validity's own three
+ * mutually-exclusive outcomes - independent of wallet_lifecycle (a voided or expired pass can
+ * still show as Registered/Previously registered there; validity and registration are different
+ * questions, see pass_validity's own DTO doc comment). */
+function passValiditySlices(validity: EventWalletReportsResponse["pass_validity"]): ReportsDonutSlice[] {
+  return (Object.keys(PASS_VALIDITY_LABELS) as PassValidityKey[]).map((key) => ({
+    label: PASS_VALIDITY_LABELS[key],
+    color: PASS_VALIDITY_COLORS[key],
+    count: validity[key],
+  }));
+}
+
+function PassValidityDonut({
+  validity,
+  gotPass,
+  isActive,
+}: Readonly<{ validity: EventWalletReportsResponse["pass_validity"]; gotPass: number; isActive: boolean }>) {
+  return (
+    <ReportsDonutChart
+      slices={passValiditySlices(validity)}
+      centerValue={gotPass}
+      centerLabel="issued"
+      unit="pass"
+      isActive={isActive}
+    />
+  );
+}
+
+function passValidityBreakdownRows(
+  validity: EventWalletReportsResponse["pass_validity"],
+  gotPass: number,
+): BreakdownRow[] {
+  return passValiditySlices(validity).map((slice) => ({
+    id: slice.label,
+    label: slice.label,
+    meta: `${slice.count} · ${pctOf(slice.count, gotPass)}%`,
+    pct: pctOf(slice.count, gotPass),
+    color: slice.color,
+  }));
+}
+
+/** Same donut-plus-breakdown shape again, for provider_state's own two mutually-exclusive
+ * outcomes - whether the pass still exists at the wallet provider, independent of both
+ * pass_validity and wallet_lifecycle above (see provider_state's own DTO doc comment). */
+function providerStateSlices(state: EventWalletReportsResponse["provider_state"]): ReportsDonutSlice[] {
+  return (Object.keys(PROVIDER_STATE_LABELS) as ProviderStateKey[]).map((key) => ({
+    label: PROVIDER_STATE_LABELS[key],
+    color: PROVIDER_STATE_COLORS[key],
+    count: state[key],
+  }));
+}
+
+function ProviderStateDonut({
+  state,
+  gotPass,
+  isActive,
+}: Readonly<{ state: EventWalletReportsResponse["provider_state"]; gotPass: number; isActive: boolean }>) {
+  return (
+    <ReportsDonutChart
+      slices={providerStateSlices(state)}
+      centerValue={gotPass}
+      centerLabel="issued"
+      unit="pass"
+      isActive={isActive}
+    />
+  );
+}
+
+function providerStateBreakdownRows(
+  state: EventWalletReportsResponse["provider_state"],
+  gotPass: number,
+): BreakdownRow[] {
+  return providerStateSlices(state).map((slice) => ({
     id: slice.label,
     label: slice.label,
     meta: `${slice.count} · ${pctOf(slice.count, gotPass)}%`,
@@ -672,16 +787,17 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       {data.passes_truncated && (
         <Notice variant="warning" className="wallets-truncated-notice">
           This event has more issued wallet passes than a single report can process at once, so
-          platform mix, devices per attendee, adoption by ticket type, wallet lifecycle, time to
-          wallet install, and time to install after reminder below are based on a partial sample
-          rather than every pass. Cumulative passes issued and admission rate by wallet status are
-          unaffected - both come from a full count, not a sample.
+          platform mix, devices per attendee, adoption by ticket type, pass validity, provider
+          state, registration state, time to wallet install, and time to install after reminder
+          below are based on a partial sample rather than every pass. Cumulative passes issued and
+          admission rate by wallet status are unaffected - both come from a full count, not a
+          sample.
         </Notice>
       )}
       <div className="wallets-panels">
         <Card title={<HintLabel hint={syncedHint(data.synced_at)}>Wallet adoption</HintLabel>}>
           <p className="wallets-description">
-            One pass per attendee, issued on the first Add to Wallet tap and installed once confirmed - unaffected by later removal (see Wallet lifecycle below).
+            One pass per attendee, issued on the first Add to Wallet tap and installed once confirmed - unaffected by later removal (see Registration state (last known) below).
           </p>
           <div className="wallets-adoption">
             <AdoptionGauge
@@ -771,9 +887,34 @@ export const WalletsReportsTab = memo(function WalletsReportsTab({
       </div>
 
       <div className="wallets-panels">
-        <Card title="Wallet lifecycle">
+        <Card title="Pass validity">
           <p className="wallets-description">
-            Every issued pass, grouped by whether it&rsquo;s currently active on a platform this event offers, was once installed but isn&rsquo;t active now (including a pass whose platform has since been turned off), or was never installed at all.
+            Every issued pass, grouped by whether it can still be used, was voided by an admin (reversible via Restore until the event ends), or has permanently expired.
+          </p>
+          <div className="wallets-adoption">
+            <PassValidityDonut validity={data.pass_validity} gotPass={data.adoption.got_pass} isActive={isActive} />
+            <div className="wallets-adoption__breakdown">
+              <BreakdownRows rows={passValidityBreakdownRows(data.pass_validity, data.adoption.got_pass)} />
+            </div>
+          </div>
+        </Card>
+        <Card title="Provider state">
+          <p className="wallets-description">
+            Every issued pass, grouped by whether it&rsquo;s still managed at the wallet service or has been permanently removed there - its record and history stay here either way.
+          </p>
+          <div className="wallets-adoption">
+            <ProviderStateDonut state={data.provider_state} gotPass={data.adoption.got_pass} isActive={isActive} />
+            <div className="wallets-adoption__breakdown">
+              <BreakdownRows rows={providerStateBreakdownRows(data.provider_state, data.adoption.got_pass)} />
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <div className="wallets-panels">
+        <Card title="Registration state (last known)">
+          <p className="wallets-description">
+            Every issued pass, grouped by whether it&rsquo;s registered on a platform this event offers right now, was registered before but isn&rsquo;t now (including on a platform since turned off), or was never installed at all.
           </p>
           <div className="wallets-adoption">
             <WalletLifecycleDonut lifecycle={data.wallet_lifecycle} gotPass={data.adoption.got_pass} isActive={isActive} />

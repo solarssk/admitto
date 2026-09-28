@@ -793,7 +793,7 @@ describe("CommunicationSendPanel", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: "By wallet status" }));
     fireEvent.click(screen.getByRole("button", { name: /^Wallet status,/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Active (installed now)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Registered (last known)" }));
     fireEvent.click(screen.getByRole("button", { name: "Count recipients" }));
     await waitFor(() => {
       expect(sendEventBulk).toHaveBeenLastCalledWith("evt-1", {

@@ -127,19 +127,53 @@ export interface EventWalletReportsResponse {
     with_wallet: { total: number; admitted: number; pct: number };
     without_wallet: { total: number; admitted: number; pct: number };
   };
-  /** What became of every issued pass - mutually exclusive, always summing to exactly
-   * `adoption.got_pass`, and splitting `adoption.confirmed` itself into its two components:
-   * `active` + `removed` == `adoption.confirmed` (the core "Installed = Active + Removed" identity
-   * this field exists to make explicit - architect review, 2026-09-03). Most numbers on this DTO
-   * (adoption, by_ticket_type, admission_by_wallet, the two time-to-install cards) now answer "was
-   * a wallet pass ever confirmed installed", a historical fact - `platform` and
+  /** What WalletPass.status says about every issued pass - independent of, and not to be confused
+   * with, `wallet_lifecycle` below (registration state) or `provider_state` (whether the pass
+   * still exists at the wallet provider). Always sums to exactly `adoption.got_pass`. A pass can
+   * be `voided` (an admin invalidated it - reversible via Restore until the event ends) or have
+   * naturally `expired`, while still being `managed` in `provider_state` (removing it there is a
+   * separate, later step) and while still showing as `active`/`removed` in `wallet_lifecycle`
+   * (whether it's still on a device is a different question from whether it's still valid) - the
+   * three axes are deliberately independent, not nested. `failed` (a createPass attempt that
+   * never actually issued a pass) never sets `issued_at`, so it's outside this population
+   * entirely, not a fourth bucket here (architect review, plan v4.2 step 4). */
+  pass_validity: {
+    active: number;
+    voided: number;
+    expired: number;
+  };
+  /** Whether every issued pass still exists at the wallet provider (`managed`) or has been
+   * permanently deleted there (`removed`, via "Remove from provider" or "Remove inactive passes" -
+   * see Wallet-Passes-Overview.md) while its local record and history stay here. Always sums to
+   * exactly `adoption.got_pass`, independent of `pass_validity` and `wallet_lifecycle`: a removed
+   * pass is always voided or expired (Remove requires one of those first, see
+   * removeOneWalletPassFromProvider's own doc comment), but it doesn't disappear from this report
+   * the way it disappears from the provider's own dashboard once removed. */
+  provider_state: {
+    managed: number;
+    removed: number;
+  };
+  /** What became of every issued pass, as far as registration on a device is concerned right now
+   * (this DTO's "last known" registration-state axis) - mutually exclusive, always summing to
+   * exactly `adoption.got_pass`, and splitting `adoption.confirmed` itself into its two
+   * components: `active` + `removed` == `adoption.confirmed` (the core "Installed = Active +
+   * Removed" identity this field exists to make explicit - architect review, 2026-09-03).
+   * Independent of `pass_validity`/`provider_state` above - a pass can be `active` here while
+   * `voided` in `pass_validity` (a void doesn't touch registration counts by itself; only a later
+   * push/removal does), or `removed` here while still `managed` in `provider_state` (an attendee
+   * uninstalling a still-valid, still-provider-managed pass). Most numbers on this DTO (adoption,
+   * by_ticket_type, admission_by_wallet, the two time-to-install cards) now answer "was a wallet
+   * pass ever confirmed installed", a historical fact - `platform` and
    * `registrations_per_attendee` are the (now unusual) exceptions that stay live-right-now, since
    * neither has any historical data to fall back on (no per-platform or per-device history is
    * persisted once a registration goes inactive). `active` below is this DTO's one live-right-now
    * number inside `wallet_lifecycle` itself; `removed` is what turns the historical `confirmed`
    * total into more than just a repeat of `active` - a retention/removal signal the rest of the
    * tab has no way to show on its own (PO review: "80 installed, 25 removed before the event"
-   * points at a UX/communication problem the adoption number alone hides). */
+   * points at a UX/communication problem the adoption number alone hides). Field name and values
+   * kept as `wallet_lifecycle`/`active`/`removed`/`never_installed` (not renamed to match the
+   * frontend's "Registration state (last known)" card title) so this contract doesn't churn for a
+   * display-only rename - plan v4.2 step 4. */
   wallet_lifecycle: {
     /** At least one active registration on any platform the event still offers - the same
      * definition `classifyPassPlatform` uses for "active" (platform !== "none"), and the same

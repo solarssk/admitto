@@ -651,11 +651,15 @@ async function seed(client: PrismaClient) {
       },
       {
         // Nothing active anywhere, one inactive registration - confirmed installed once, removed
-        // from the only device it was ever on.
+        // from the only device it was ever on. Also voided and removed at the provider (plan v4.2
+        // step 4's own pass_validity/provider_state axes) - independent of, and doesn't change,
+        // this same pass's own wallet_lifecycle bucket (registration state doesn't read status or
+        // provider_removed_at at all).
         attendee_id: ATT_LC_REMOVED,
-        status: "active",
+        status: "voided",
         issued_at: new Date("2027-06-15T00:00:00.000Z"),
         apple_inactive_registrations: 1,
+        provider_removed_at: new Date("2027-06-20T00:00:00.000Z"),
       },
       {
         // Nothing active anywhere, inactive registrations on BOTH platforms - still one removed
@@ -3448,6 +3452,8 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     const body = (await res.json()) as {
       adoption: { got_pass: number; confirmed: number };
       wallet_lifecycle: { active: number; removed: number; never_installed: number };
+      pass_validity: { active: number; voided: number; expired: number };
+      provider_state: { managed: number; removed: number };
     };
     expect(body.adoption.got_pass).toBe(5);
     // ATT_LC_ACTIVE_SAME_PLATFORM and ATT_LC_ACTIVE_CROSS_PLATFORM are both active despite each
@@ -3465,6 +3471,20 @@ describe("GET /api/admin/events/:eventId/reports/wallets", () => {
     // non-trivial `removed` bucket.
     expect(body.adoption.confirmed).toBe(4);
     expect(body.wallet_lifecycle.active + body.wallet_lifecycle.removed).toBe(body.adoption.confirmed);
+
+    // pass_validity and provider_state are independent axes from wallet_lifecycle above -
+    // ATT_LC_REMOVED is voided and removed at the provider, but that doesn't move it out of its
+    // own "removed" wallet_lifecycle bucket (asserted above), since neither axis reads the
+    // other's fields (plan v4.2 step 4's own regression - a Remove must not silently change these
+    // historical/registration-state numbers, only its own provider_state bucket). Every other
+    // fixture pass stays status: "active", provider_removed_at: null.
+    expect(body.pass_validity).toEqual({ active: 4, voided: 1, expired: 0 });
+    expect(body.provider_state).toEqual({ managed: 4, removed: 1 });
+    // Both sum to adoption.got_pass=5, same as wallet_lifecycle does.
+    expect(body.pass_validity.active + body.pass_validity.voided + body.pass_validity.expired).toBe(
+      body.adoption.got_pass,
+    );
+    expect(body.provider_state.managed + body.provider_state.removed).toBe(body.adoption.got_pass);
   });
 
   it("counts a Samsung-only registration as confirmed, samsung_only, and active - the Reports pipeline reads samsung_active_registrations end to end", async () => {
@@ -4099,8 +4119,13 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     expect(html).not.toContain("No wallet passes currently active");
     // wallet_lifecycle: active=5, removed=0, never_installed=2 (same fixture as the GET aggregate
     // test's own wallet_lifecycle assertion above) - the real rows should render, not the "No
-    // wallet passes issued yet" empty fallback.
-    expect(html).toContain("Wallet lifecycle");
+    // wallet passes issued yet" empty fallback. All three of the split-out sections now render as
+    // their own heading (exact row content for pass_validity/provider_state is asserted against
+    // EVENT_WALLETS_LIFECYCLE's own purpose-built fixture in the "denominates the pdf's..." test
+    // below, which has a real, non-degenerate split - this fixture doesn't).
+    expect(html).toContain("<h2>Pass validity</h2>");
+    expect(html).toContain("<h2>Provider state</h2>");
+    expect(html).toContain("<h2>Registration state (last known)</h2>");
     expect(html).toContain("Never installed");
     expect(html).not.toContain("No wallet passes issued yet");
     // EVENT_WALLETS has 8 seeded passes, nowhere near WALLET_AGGREGATE_MAX - the partial-sample
@@ -4131,6 +4156,18 @@ describe("GET /api/admin/events/:eventId/reports/export?report=wallets", () => {
     expect(html).toContain("<td>Apple Wallet only</td><td>1</td><td>50%</td>");
     expect(html).toContain("<td>Google Wallet only</td><td>1</td><td>50%</td>");
     expect(html).not.toContain("25%");
+
+    // Exact row content for the two brand-new sections too, not just their headings - same rigor
+    // as the platform-mix assertions above, so a swapped label/count or a wrong percentage
+    // denominator in exportWalletReportsPdf's own passValidityRows/providerStateRows would fail
+    // this test. ATT_LC_REMOVED is this fixture's one voided-and-removed-from-provider pass (see
+    // its own fixture comment further up this file): pass_validity = { active: 4, voided: 1,
+    // expired: 0 }, provider_state = { managed: 4, removed: 1 }, both against got_pass=5.
+    expect(html).toContain("<td>Active</td><td>4</td><td>80%</td>");
+    expect(html).toContain("<td>Voided</td><td>1</td><td>20%</td>");
+    expect(html).toContain("<td>Expired</td><td>0</td><td>0%</td>");
+    expect(html).toContain("<td>Managed</td><td>4</td><td>80%</td>");
+    expect(html).toContain("<td>Removed from provider</td><td>1</td><td>20%</td>");
   });
 
   it("shows every empty/not-synced state in the wallets pdf for an event with no attendees", async () => {
