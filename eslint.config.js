@@ -54,9 +54,12 @@ const typeAwareFollowUpRules = {
 // `detect-object-injection` is an error for packages/*/src/**/*.ts too (the React/TSX config
 // below keeps it off): the two computed-key lookups left there read from a fixed key set and each
 // carries a narrow local suppression saying which one.
+// `detect-non-literal-regexp` is an error everywhere: the one remaining string-built RegExp is the
+// audited compileFragmentPattern() in the bounce parser, whose callers pass only constants.
 const securityFollowUpRules = {
   "security/detect-non-literal-fs-filename": "error",
   "security/detect-object-injection": "error",
+  "security/detect-non-literal-regexp": "error",
 };
 
 // Shared by packages/ui's own *.tsx files and every apps/*/src file below — both are React/TSX,
