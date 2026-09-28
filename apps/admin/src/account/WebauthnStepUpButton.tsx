@@ -28,44 +28,41 @@ interface WebauthnStepUpButtonProps {
  * (already exists per dialog for the code field) and its own submit function; this component only
  * runs the ceremony and hands the resulting proof to `onSubmit`. */
 export function WebauthnStepUpButton({ busy, onBusyChange, onError, onSubmit }: Readonly<WebauthnStepUpButtonProps>) {
+  async function handleClick(): Promise<void> {
+    onBusyChange(true);
+    onError(null);
+    let proof: StepUpProofBody;
+    try {
+      proof = await runWebauthnStepUp();
+    } catch (err) {
+      onError(
+        err instanceof Error && err.name === "NotAllowedError"
+          ? "Passkey or security key step-up was cancelled."
+          : "Could not verify with your passkey or security key. Try again, or enter a code instead.",
+      );
+      onBusyChange(false);
+      return;
+    }
+    try {
+      await onSubmit(proof);
+    } catch (err) {
+      // The ceremony itself already succeeded here - a thrown ApiError is the protected
+      // action rejecting the proof (session expired, rate-limited, target already gone),
+      // not a failed passkey/security key verification, so it gets its own message instead
+      // of the ceremony-cancelled copy above.
+      onError(
+        err instanceof ApiError
+          ? operatorApiErrorMessage(err, "Failed to complete the action.")
+          : "Could not verify with your passkey or security key. Try again, or enter a code instead.",
+      );
+    } finally {
+      onBusyChange(false);
+    }
+  }
+
   return (
     <>
-      <Button
-        type="button"
-        variant="secondary"
-        disabled={busy}
-        onClick={async () => {
-          onBusyChange(true);
-          onError(null);
-          let proof: StepUpProofBody;
-          try {
-            proof = await runWebauthnStepUp();
-          } catch (err) {
-            onError(
-              err instanceof Error && err.name === "NotAllowedError"
-                ? "Passkey or security key step-up was cancelled."
-                : "Could not verify with your passkey or security key. Try again, or enter a code instead.",
-            );
-            onBusyChange(false);
-            return;
-          }
-          try {
-            await onSubmit(proof);
-          } catch (err) {
-            // The ceremony itself already succeeded here - a thrown ApiError is the protected
-            // action rejecting the proof (session expired, rate-limited, target already gone),
-            // not a failed passkey/security key verification, so it gets its own message instead
-            // of the ceremony-cancelled copy above.
-            onError(
-              err instanceof ApiError
-                ? operatorApiErrorMessage(err, "Failed to complete the action.")
-                : "Could not verify with your passkey or security key. Try again, or enter a code instead.",
-            );
-          } finally {
-            onBusyChange(false);
-          }
-        }}
-      >
+      <Button type="button" variant="secondary" disabled={busy} onClick={() => void handleClick()}>
         Use a passkey or security key
       </Button>
       {busy && (
