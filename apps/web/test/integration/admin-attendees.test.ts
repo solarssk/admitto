@@ -7,7 +7,13 @@ import { createTestPrismaClient } from "@admitto/db/testing";
 import { createSession, hashPassword, SESSION_STAGE } from "@admitto/auth";
 import { encryptToString } from "@admitto/crypto";
 import { setMailSettings } from "@admitto/mailer-config";
-import { drainWalletCleanupJobs, generateToken, getAttendeeCard, hashToken } from "@admitto/tickets";
+import {
+  drainWalletCleanupJobs,
+  generateToken,
+  getAttendeeCard,
+  hashToken,
+  voidOneWalletPassAtProvider,
+} from "@admitto/tickets";
 import { PassCreatorClient, WalletProviderError } from "@admitto/wallet";
 import * as ticketOperations from "@admitto/tickets";
 import * as mailDelivery from "@admitto/mail-delivery";
@@ -3141,6 +3147,63 @@ describe("attendee wallet actions — void/restore/reissue", () => {
         const job = await prisma.adminJob.findUniqueOrThrow({ where: { id: jobId } });
         expect(job).toMatchObject({ status: "succeeded", progress_total: 2, progress_done: 2 });
         expect(job.result_json).toMatchObject({ done: 2, skipped: 0, errored: 0 });
+      }));
+
+    it("skips a pass that changed after the job's snapshot: voided and restored since (its command stamp moved), and expired since", () =>
+      withVoidAllEvent(async () => {
+        const restoredId = "att-void-all-restored";
+        const expiredId = "att-void-all-expired";
+        for (const id of [restoredId, expiredId]) await seedActionAttendee(id, VOID_ALL_EVENT, { withPass: true });
+        const snapshot = (id: string) => ({
+          attendeeId: id,
+          providerPassId: `pc-${id}`,
+          status: "active",
+          providerRemovedAt: null,
+          providerCommandedAt: null,
+        });
+        // Another operator voided and restored the first pass after the snapshot was taken, and the
+        // periodic sync recorded the second as expired.
+        await prisma.walletPass.update({
+          where: { attendee_id: restoredId },
+          data: { status: "active", provider_commanded_at: new Date() },
+        });
+        await prisma.walletPass.update({ where: { attendee_id: expiredId }, data: { status: "expired" } });
+        const provider = { voidPass: vi.fn(async () => undefined) };
+
+        const results = await Promise.all(
+          [restoredId, expiredId].map((id) =>
+            voidOneWalletPassAtProvider(prisma, VOID_ALL_EVENT, snapshot(id), provider as never, {}),
+          ),
+        );
+
+        expect(results).toEqual(["skipped", "skipped"]);
+        expect(provider.voidPass).not.toHaveBeenCalled();
+        expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: restoredId } })).status).toBe("active");
+        expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: expiredId } })).status).toBe("expired");
+        expect(await prisma.attendeeActionLog.count({ where: { event_id: VOID_ALL_EVENT } })).toBe(0);
+      }));
+
+    it("does not overwrite a Restore that lands while the provider call is in flight", () =>
+      withVoidAllEvent(async () => {
+        const id = "att-void-all-racing";
+        await seedActionAttendee(id, VOID_ALL_EVENT, { withPass: true });
+        const provider = {
+          voidPass: vi.fn(async () => {
+            // The pass is restored (command stamp moves) while the void is being sent.
+            await prisma.walletPass.update({ where: { attendee_id: id }, data: { provider_commanded_at: new Date() } });
+          }),
+        };
+
+        const result = await voidOneWalletPassAtProvider(
+          prisma,
+          VOID_ALL_EVENT,
+          { attendeeId: id, providerPassId: `pc-${id}`, status: "active", providerRemovedAt: null, providerCommandedAt: null },
+          provider as never,
+          {},
+        );
+
+        expect(result).toBe("skipped");
+        expect((await prisma.walletPass.findUniqueOrThrow({ where: { attendee_id: id } })).status).toBe("active");
       }));
 
     it("end to end: a provider failure on one pass leaves it active for a later run, and the rest are still voided", () =>

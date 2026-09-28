@@ -6,17 +6,27 @@ import { writeActionLog } from "../src/ops-audit.js";
 import { voidOneWalletPassAtProvider } from "../src/void-wallet-pass-at-provider.js";
 
 const audit = { operator: "user-1", sessionId: "sess-1" };
-const target = { attendeeId: "att-1", providerPassId: "pc-1", status: "active", providerRemovedAt: null };
+const target = {
+  attendeeId: "att-1",
+  providerPassId: "pc-1",
+  status: "active",
+  providerRemovedAt: null,
+  providerCommandedAt: null,
+};
+const ACTIVE_ROW = { status: "active", provider_removed_at: null, provider_commanded_at: null };
 
 describe("voidOneWalletPassAtProvider", () => {
   const provider = { voidPass: vi.fn() };
   const txUpdateMany = vi.fn();
+  const findFirst = vi.fn();
   const db = {
+    walletPass: { findFirst },
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({ walletPass: { updateMany: txUpdateMany } })),
   };
 
   beforeEach(() => {
     provider.voidPass.mockReset().mockResolvedValue(undefined);
+    findFirst.mockReset().mockResolvedValue(ACTIVE_ROW);
     txUpdateMany.mockReset().mockResolvedValue({ count: 1 });
     vi.mocked(writeActionLog).mockReset().mockResolvedValue(undefined);
   });
@@ -27,7 +37,13 @@ describe("voidOneWalletPassAtProvider", () => {
     expect(result).toBe("voided");
     expect(provider.voidPass).toHaveBeenCalledWith("pc-1");
     expect(txUpdateMany).toHaveBeenCalledWith({
-      where: { attendee_id: "att-1", provider_pass_id: "pc-1", provider_removed_at: null },
+      where: {
+        attendee_id: "att-1",
+        provider_pass_id: "pc-1",
+        provider_removed_at: null,
+        status: "active",
+        provider_commanded_at: null,
+      },
       data: {
         status: "voided",
         voided_at: expect.any(Date),
@@ -86,6 +102,68 @@ describe("voidOneWalletPassAtProvider", () => {
     expect(result).toBe("skipped");
     expect(txUpdateMany.mock.calls[0]![0].where).toMatchObject({ provider_pass_id: "pc-1" });
     expect(writeActionLog).not.toHaveBeenCalled();
+  });
+
+  it("reads the row again before the provider call and matches the state it read in the write", async () => {
+    const stamp = new Date("2026-09-28T10:00:00Z");
+    findFirst.mockResolvedValue({ ...ACTIVE_ROW, provider_commanded_at: stamp });
+
+    const result = await voidOneWalletPassAtProvider(
+      db as never,
+      "evt-1",
+      { ...target, providerCommandedAt: stamp },
+      provider as never,
+      audit,
+    );
+
+    expect(result).toBe("voided");
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { attendee_id: "att-1", provider_pass_id: "pc-1" },
+      select: { status: true, provider_removed_at: true, provider_commanded_at: true },
+    });
+    expect(txUpdateMany.mock.calls[0]![0].where).toMatchObject({ status: "active", provider_commanded_at: stamp });
+  });
+
+  it.each([
+    ["expired since the snapshot", { ...ACTIVE_ROW, status: "expired" }],
+    ["voided since the snapshot", { ...ACTIVE_ROW, status: "voided" }],
+    ["removed since the snapshot", { ...ACTIVE_ROW, provider_removed_at: new Date("2026-09-20T10:00:00Z") }],
+    ["gone since the snapshot", null],
+  ])("skips a pass that is %s, without calling the provider", async (_label, row) => {
+    findFirst.mockResolvedValue(row);
+
+    const result = await voidOneWalletPassAtProvider(db as never, "evt-1", target, provider as never, audit);
+
+    expect(result).toBe("skipped");
+    expect(provider.voidPass).not.toHaveBeenCalled();
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("skips a pass that another operator voided and restored since the snapshot (its command stamp moved)", async () => {
+    findFirst.mockResolvedValue({ ...ACTIVE_ROW, provider_commanded_at: new Date("2026-09-28T10:05:00Z") });
+
+    const result = await voidOneWalletPassAtProvider(db as never, "evt-1", target, provider as never, audit);
+
+    expect(result).toBe("skipped");
+    expect(provider.voidPass).not.toHaveBeenCalled();
+  });
+
+  it("skips a pass whose command stamp was set when the snapshot had none, and one whose stamp was cleared", async () => {
+    findFirst.mockResolvedValue({ ...ACTIVE_ROW, provider_commanded_at: new Date("2026-09-28T10:05:00Z") });
+    expect(await voidOneWalletPassAtProvider(db as never, "evt-1", target, provider as never, audit)).toBe("skipped");
+
+    findFirst.mockResolvedValue(ACTIVE_ROW);
+    const stamped = { ...target, providerCommandedAt: new Date("2026-09-28T10:00:00Z") };
+    expect(await voidOneWalletPassAtProvider(db as never, "evt-1", stamped, provider as never, audit)).toBe("skipped");
+  });
+
+  it("does not compare command stamps when the caller's snapshot has none to offer", async () => {
+    findFirst.mockResolvedValue({ ...ACTIVE_ROW, provider_commanded_at: new Date("2026-09-28T10:05:00Z") });
+    const { providerCommandedAt: _omitted, ...withoutStamp } = target;
+
+    const result = await voidOneWalletPassAtProvider(db as never, "evt-1", withoutStamp, provider as never, audit);
+
+    expect(result).toBe("voided");
   });
 
   it("propagates a provider failure and writes nothing locally", async () => {
