@@ -31,8 +31,9 @@ const tsUnusedVarsOptions = {
 // mostly no-misused-promises / no-floating-promises in mail/webhook/export code, plus
 // no-unsafe-assignment/return/member-access/argument/call where external data crosses a type
 // boundary untyped) that needed one-by-one review, not a blind bulk fix — so they first shipped as
-// "warn" behind the warning baseline (scripts/eslint-warning-baseline.mjs) and each moved to
-// "error" once its own findings reached zero. All of them are now "error".
+// "warn" behind a committed warning baseline (since retired) and each moved to "error" once its
+// own findings reached zero. All of them are now "error", and `npm run lint` runs with
+// `--max-warnings 0`, so a warning of any kind fails it.
 const typeAwareFollowUpRules = {
   "@typescript-eslint/no-misused-promises": "error",
   "@typescript-eslint/no-floating-promises": "error",
