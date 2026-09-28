@@ -164,6 +164,7 @@ const activeEvent = {
   installed_wallet_pass_count: 0,
   issued_wallet_pass_count: 0,
   installed_wallet_pass_count_by_platform: { apple: 0, google: 0, samsung: 0 },
+  wallet_passes_managed_at_provider_count: 0,
   organization_name: "Org",
   active_items: [] as Array<{ id: string; name: string; enabled: boolean }>,
   logo_url: null,
@@ -3546,6 +3547,50 @@ describe("EventSettingsPage — revoke all check-ins / items issued (Danger Zone
     await waitFor(() => {
       expect(screen.getByText("No attendees are currently checked in.")).toBeTruthy();
     });
+  });
+
+  it("does not mention inactive wallet passes in the archive dialog when there are none", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, wallet_passes_managed_at_provider_count: 0 });
+    renderSettings();
+    await openDangerZone();
+    fireEvent.click(await screen.findByRole("button", { name: "Archive event" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByText(/still at the wallet service/)).toBeNull();
+  });
+
+  it("names how many inactive wallet passes are still at the wallet service, in the archive dialog, and says which action covers which of them", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, wallet_passes_managed_at_provider_count: 3 });
+    renderSettings();
+    await openDangerZone();
+    fireEvent.click(await screen.findByRole("button", { name: "Archive event" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(
+        /3 inactive wallet passes are still at the wallet service - archiving does not remove them\./,
+      ),
+    ).toBeTruthy();
+    // The count includes passes Remove inactive passes does not reach (still within its grace
+    // period, or expired), so the hint must not point at that one action for the whole count.
+    expect(
+      within(dialog).getByText(/Remove inactive passes on Attendees clears the ones voided for at least a day/),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByText(/Remove from provider \(per attendee or a selection\) reaches the rest, including any that are expired\./),
+    ).toBeTruthy();
+  });
+
+  it("uses singular wording for exactly one inactive wallet pass, in the archive dialog", async () => {
+    vi.mocked(fetchEventSettings).mockResolvedValueOnce({ ...activeEvent, wallet_passes_managed_at_provider_count: 1 });
+    renderSettings();
+    await openDangerZone();
+    fireEvent.click(await screen.findByRole("button", { name: "Archive event" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(/1 inactive wallet pass is still at the wallet service - archiving does not remove them\./),
+    ).toBeTruthy();
   });
 
   it("closes archive confirmation without changing the event", async () => {

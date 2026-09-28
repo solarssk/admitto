@@ -104,7 +104,7 @@ Tab inventory:
 
 1. Open **Event settings** → **Danger zone**.
 2. Use **Revoke all check-ins** or **Revoke all items issued** only when the event process requires a bulk undo (each asks for confirmation).
-3. Ask a Superadmin to **Archive event** when the event should become fully read-only.
+3. Ask a Superadmin to **Archive event** when the event should become fully read-only. If the event has wallet passes that are voided or expired but still at the wallet service, the confirmation says how many - archiving does not remove them. **Remove inactive passes** on Attendees clears the ones voided for at least a day; **Remove from provider**, per attendee or a selection, reaches the rest, including any that are expired. Both work before or after archiving.
 4. **Delete event** is Superadmin-only. It is available when the event has no attendees and no event-specific content left to clear (custom items, custom ticket types, contacts, resources, pinned note, or additional named mail templates). A saved Ticket email override is removed with the event and does not block deletion. Operational history alone does not block delete. Confirming requires typing the event title.
 
 ## Expected result

@@ -148,7 +148,11 @@ export { drainWalletMessageJobs } from "./drain-wallet-message-jobs.js";
 export type { DrainWalletMessageJobsResult } from "./drain-wallet-message-jobs.js";
 export { drainWalletRefreshStatusJobs } from "./drain-wallet-refresh-status-jobs.js";
 export type { DrainWalletRefreshStatusJobsResult } from "./drain-wallet-refresh-status-jobs.js";
-export { drainWalletCleanupJobs, WALLET_CLEANUP_JOB_TYPES } from "./drain-wallet-cleanup-jobs.js";
+export {
+  drainWalletCleanupJobs,
+  WALLET_CLEANUP_JOB_TYPES,
+  WALLET_REMOVE_INACTIVE_GRACE_MS,
+} from "./drain-wallet-cleanup-jobs.js";
 export type { DrainWalletCleanupJobsResult, WalletCleanupJobType } from "./drain-wallet-cleanup-jobs.js";
 export { voidOneWalletPassAtProvider } from "./void-wallet-pass-at-provider.js";
 export type { VoidWalletPassOutcome } from "./void-wallet-pass-at-provider.js";

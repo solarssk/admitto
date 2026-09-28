@@ -3,6 +3,7 @@ import { querySystemLogs, resetSystemLogBufferForTest } from "@admitto/shared/sy
 
 vi.mock("../src/claim-admin-job.js", () => ({ claimNextAdminJob: vi.fn() }));
 vi.mock("../src/void-wallet-pass-at-provider.js", () => ({ voidOneWalletPassAtProvider: vi.fn() }));
+vi.mock("../src/remove-wallet-pass-from-provider.js", () => ({ removeOneWalletPassFromProvider: vi.fn() }));
 vi.mock("@admitto/wallet", () => ({ resolveWalletProvider: vi.fn(), resolveConfiguredWalletProvider: vi.fn() }));
 
 import { resolveConfiguredWalletProvider, resolveWalletProvider } from "@admitto/wallet";
@@ -16,10 +17,36 @@ import {
   WALLET_CLEANUP_JOB_BAD_REQUEST_ERROR,
   WALLET_CLEANUP_JOB_GENERIC_ERROR,
   WALLET_CLEANUP_JOB_NOT_CONFIGURED_ERROR,
+  WALLET_REMOVE_INACTIVE_GRACE_MS,
 } from "../src/drain-wallet-cleanup-jobs.js";
+import { removeOneWalletPassFromProvider } from "../src/remove-wallet-pass-from-provider.js";
 import { voidOneWalletPassAtProvider } from "../src/void-wallet-pass-at-provider.js";
 
 const provider = { provider: "stub" };
+
+const removeJob = (overrides: Record<string, unknown> = {}) => ({
+  id: "job-remove-1",
+  type: "wallet_remove_inactive",
+  status: "running",
+  event_id: "evt-1",
+  organization_id: "org-1",
+  actor_user_id: "user-1",
+  session_id: "sess-1",
+  client_timezone: "Europe/Warsaw",
+  result_json: { request: { eventId: "evt-1" } },
+  ...overrides,
+});
+
+/** A voided WalletPass row past its grace period, as loadGracedInactivePassTargets selects it. */
+const votedRow = (n: number, overrides: Record<string, unknown> = {}) => ({
+  attendee_id: `att-${n}`,
+  provider_pass_id: `pc-${n}`,
+  user_provided_id: `admitto:evt-1:att-${n}`,
+  status: "voided",
+  provider_commanded_at: null,
+  provider_removed_at: null,
+  ...overrides,
+});
 
 const voidJob = (overrides: Record<string, unknown> = {}) => ({
   id: "job-1",
@@ -47,7 +74,7 @@ describe("drainWalletCleanupJobs", () => {
   const db = {
     adminJob: { update: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
     backgroundWorkerHeartbeat: { findUnique: vi.fn() },
-    walletPass: { findMany: vi.fn() },
+    walletPass: { findMany: vi.fn(), findFirst: vi.fn() },
     event: { findUnique: vi.fn() },
   };
 
@@ -60,6 +87,7 @@ describe("drainWalletCleanupJobs", () => {
   beforeEach(() => {
     vi.mocked(claimNextAdminJob).mockReset().mockResolvedValue(null);
     vi.mocked(voidOneWalletPassAtProvider).mockReset().mockResolvedValue("voided");
+    vi.mocked(removeOneWalletPassFromProvider).mockReset().mockResolvedValue("removed");
     vi.mocked(resolveConfiguredWalletProvider).mockReset().mockReturnValue(provider as never);
     vi.mocked(resolveWalletProvider).mockReset().mockReturnValue(provider as never);
     db.adminJob.update.mockReset().mockResolvedValue({});
@@ -67,6 +95,12 @@ describe("drainWalletCleanupJobs", () => {
     db.adminJob.updateMany.mockReset().mockResolvedValue({ count: 1 });
     db.backgroundWorkerHeartbeat.findUnique.mockReset().mockResolvedValue({ last_beat_at: new Date() });
     db.walletPass.findMany.mockReset().mockResolvedValue([passRow(1), passRow(2), passRow(3)]);
+    db.walletPass.findFirst.mockReset().mockResolvedValue({
+      status: "voided",
+      provider_removed_at: null,
+      provider_commanded_at: null,
+      user_provided_id: "admitto:evt-1:att-1",
+    });
     db.event.findUnique.mockReset().mockResolvedValue({
       wallet_enabled: false,
       wallet_template_id: "tmpl-1",
@@ -228,7 +262,10 @@ describe("drainWalletCleanupJobs", () => {
     expect(entry?.fields).toMatchObject({ error: "plain string error" });
   });
 
-  it("stops claiming once the per-call limit is reached", async () => {
+  it("stops claiming a type once its own per-type limit is reached", async () => {
+    // limit is a budget PER type, not shared across types: wallet_void_active claims its 2
+    // (job-1, job-2) and stops, then wallet_remove_inactive gets its own fresh budget of 2 and
+    // claims the 3rd queued job before running out.
     vi.mocked(claimNextAdminJob)
       .mockResolvedValueOnce(voidJob({ id: "job-1" }) as never)
       .mockResolvedValueOnce(voidJob({ id: "job-2" }) as never)
@@ -236,19 +273,36 @@ describe("drainWalletCleanupJobs", () => {
 
     const result = await drainWalletCleanupJobs(db as never, { limit: 2 });
 
+    expect(result).toMatchObject({ claimed: 3, succeeded: 3 });
+    expect(claimNextAdminJob).toHaveBeenCalledTimes(4);
+  });
+
+  it("does not let a steady stream of one job type starve the other at limit: 1 (regression)", async () => {
+    // A shared claim counter across HANDLER_ENTRIES would let wallet_void_active consume the
+    // worker's entire limit:1 budget every tick, so claimNextAdminJob would never even be called
+    // for wallet_remove_inactive. Each type must get its own claim opportunity per drain call.
+    vi.mocked(claimNextAdminJob).mockImplementation(async (_db, type) =>
+      type === "wallet_void_active" ? ((voidJob() as never) as never) : ((removeJob() as never) as never),
+    );
+
+    const result = await drainWalletCleanupJobs(db as never, { limit: 1 });
+
+    expect(claimNextAdminJob).toHaveBeenCalledWith(db, "wallet_void_active");
+    expect(claimNextAdminJob).toHaveBeenCalledWith(db, "wallet_remove_inactive");
     expect(result).toMatchObject({ claimed: 2, succeeded: 2 });
-    expect(claimNextAdminJob).toHaveBeenCalledTimes(2);
   });
 
   it("reports an idle drain when nothing is pending", async () => {
     expect(await drainWalletCleanupJobs(db as never)).toEqual({ claimed: 0, succeeded: 0, failed: 0, reclaimed: 0 });
   });
 
-  it("reclaims stale running and pending jobs of the clean-up type with their own messages", async () => {
-    db.adminJob.findMany.mockResolvedValue([
-      { id: "stale-run", status: "running" },
-      { id: "stale-pend", status: "pending" },
-    ]);
+  it("reclaims stale running and pending jobs across every clean-up type, each with the same fixed messages", async () => {
+    db.adminJob.findMany.mockImplementation(async (args: unknown) => {
+      const type = (args as { where: { type: string } }).where.type;
+      return type === "wallet_void_active"
+        ? [{ id: "stale-run", status: "running" }]
+        : [{ id: "stale-pend", status: "pending" }];
+    });
     db.adminJob.updateMany.mockResolvedValue({ count: 1 });
 
     const result = await reclaimStaleWalletCleanupJobs(db as never);
@@ -256,6 +310,9 @@ describe("drainWalletCleanupJobs", () => {
     expect(result).toEqual({ reclaimed: 2 });
     expect(db.adminJob.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ type: "wallet_void_active" }) }),
+    );
+    expect(db.adminJob.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ type: "wallet_remove_inactive" }) }),
     );
     expect(db.adminJob.updateMany).toHaveBeenCalledWith({
       where: { id: "stale-run", status: "running" },
@@ -265,5 +322,155 @@ describe("drainWalletCleanupJobs", () => {
       where: { id: "stale-pend", status: "pending" },
       data: { status: "failed", error: STALE_WALLET_CLEANUP_PENDING_ERROR, finished_at: expect.any(Date) },
     });
+  });
+});
+
+describe("drainWalletCleanupJobs (wallet_remove_inactive)", () => {
+  const db = {
+    adminJob: { update: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
+    backgroundWorkerHeartbeat: { findUnique: vi.fn() },
+    walletPass: { findMany: vi.fn(), findFirst: vi.fn() },
+    event: { findUnique: vi.fn() },
+  };
+
+  const terminalWrite = () =>
+    [...db.adminJob.update.mock.calls, ...db.adminJob.updateMany.mock.calls]
+      .map((call) => (call[0] as { data: Record<string, unknown> }).data)
+      .find((data) => data.status === "succeeded" || data.status === "failed");
+
+  beforeEach(() => {
+    vi.mocked(claimNextAdminJob).mockReset().mockResolvedValue(null);
+    vi.mocked(removeOneWalletPassFromProvider).mockReset().mockResolvedValue("removed");
+    vi.mocked(resolveConfiguredWalletProvider).mockReset().mockReturnValue(provider as never);
+    vi.mocked(resolveWalletProvider).mockReset().mockReturnValue(provider as never);
+    db.adminJob.update.mockReset().mockResolvedValue({});
+    db.adminJob.findMany.mockReset().mockResolvedValue([]);
+    db.adminJob.updateMany.mockReset().mockResolvedValue({ count: 1 });
+    db.backgroundWorkerHeartbeat.findUnique.mockReset().mockResolvedValue({ last_beat_at: new Date() });
+    db.walletPass.findMany.mockReset().mockResolvedValue([votedRow(1)]);
+    db.walletPass.findFirst.mockReset().mockResolvedValue({
+      status: "voided",
+      voided_at: new Date(Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS - 60_000),
+      provider_removed_at: null,
+      provider_commanded_at: null,
+      user_provided_id: "admitto:evt-1:att-1",
+    });
+    db.event.findUnique.mockReset().mockResolvedValue({
+      wallet_enabled: false,
+      wallet_template_id: "tmpl-1",
+      wallet_api_key_enc: "enc",
+      wallet_field_mapping: null,
+      wallet_provider_timezone: null,
+    });
+  });
+
+  it("queries voided passes past their grace period, not the ones still within it", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(null).mockResolvedValueOnce(removeJob() as never);
+
+    const before = Date.now();
+    await drainWalletCleanupJobs(db as never);
+    const after = Date.now();
+
+    expect(claimNextAdminJob).toHaveBeenCalledWith(db, "wallet_remove_inactive");
+    const where = db.walletPass.findMany.mock.calls[0]![0].where;
+    expect(where).toMatchObject({
+      status: "voided",
+      provider_pass_id: { not: null },
+      provider_removed_at: null,
+      attendee: { event_id: "evt-1" },
+    });
+    const cutoff = (where.voided_at as { lte: Date }).lte.getTime();
+    expect(cutoff).toBeGreaterThanOrEqual(before - WALLET_REMOVE_INACTIVE_GRACE_MS);
+    expect(cutoff).toBeLessThanOrEqual(after - WALLET_REMOVE_INACTIVE_GRACE_MS);
+  });
+
+  it("re-reads each pass right before removing it, and passes the fresh state (not the stale listing) to removeOneWalletPassFromProvider", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(null).mockResolvedValueOnce(removeJob() as never);
+    const commandedAt = new Date("2026-09-28T10:00:00Z");
+    db.walletPass.findFirst.mockResolvedValueOnce({
+      status: "voided",
+      voided_at: new Date(Date.now() - WALLET_REMOVE_INACTIVE_GRACE_MS - 60_000),
+      provider_removed_at: null,
+      provider_commanded_at: commandedAt,
+      user_provided_id: "admitto:evt-1:att-1",
+    });
+
+    const result = await drainWalletCleanupJobs(db as never);
+
+    expect(result).toMatchObject({ claimed: 1, succeeded: 1 });
+    expect(db.walletPass.findFirst).toHaveBeenCalledWith({
+      where: { attendee_id: "att-1", provider_pass_id: "pc-1" },
+      select: {
+        status: true,
+        voided_at: true,
+        provider_removed_at: true,
+        provider_commanded_at: true,
+        user_provided_id: true,
+      },
+    });
+    expect(removeOneWalletPassFromProvider).toHaveBeenCalledWith(
+      db,
+      "evt-1",
+      {
+        attendeeId: "att-1",
+        providerPassId: "pc-1",
+        userProvidedId: "admitto:evt-1:att-1",
+        status: "voided",
+        providerCommandedAt: commandedAt,
+        providerRemovedAt: null,
+      },
+      provider,
+      { operator: "user-1", sessionId: "sess-1", timezone: "Europe/Warsaw" },
+      { eventWide: true },
+    );
+    expect(terminalWrite()).toMatchObject({ status: "succeeded", result_json: { done: 1, skipped: 0, errored: 0 } });
+  });
+
+  it.each([
+    ["restored back to active since the listing", { status: "active", provider_removed_at: null }],
+    ["already removed by someone else since the listing", { status: "voided", provider_removed_at: new Date() }],
+    ["gone since the listing (row not found)", null],
+    [
+      "restored and voided again since the listing, still within its own new grace period (regression)",
+      { status: "voided", voided_at: new Date(), provider_removed_at: null },
+    ],
+  ])("skips a pass that was %s, without calling the provider", async (_label, row) => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(null).mockResolvedValueOnce(removeJob() as never);
+    db.walletPass.findFirst.mockResolvedValueOnce(row);
+
+    await drainWalletCleanupJobs(db as never);
+
+    expect(removeOneWalletPassFromProvider).not.toHaveBeenCalled();
+    expect(terminalWrite()).toMatchObject({ result_json: { done: 0, skipped: 1, errored: 0 } });
+  });
+
+  it("still removes a pass that expired since the listing (Remove from provider also allows expired)", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(null).mockResolvedValueOnce(removeJob() as never);
+    db.walletPass.findFirst.mockResolvedValueOnce({
+      status: "expired",
+      provider_removed_at: null,
+      provider_commanded_at: null,
+      user_provided_id: "admitto:evt-1:att-1",
+    });
+
+    await drainWalletCleanupJobs(db as never);
+
+    expect(removeOneWalletPassFromProvider).toHaveBeenCalledWith(
+      db,
+      "evt-1",
+      expect.objectContaining({ status: "expired" }),
+      provider,
+      expect.anything(),
+      { eventWide: true },
+    );
+  });
+
+  it("counts a non-'removed' outcome (already_removed/not_found/changed) as skipped, not an error", async () => {
+    vi.mocked(claimNextAdminJob).mockResolvedValueOnce(null).mockResolvedValueOnce(removeJob() as never);
+    vi.mocked(removeOneWalletPassFromProvider).mockResolvedValueOnce("already_removed");
+
+    await drainWalletCleanupJobs(db as never);
+
+    expect(terminalWrite()).toMatchObject({ result_json: { done: 0, skipped: 1, errored: 0 } });
   });
 });
