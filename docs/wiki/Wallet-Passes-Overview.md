@@ -112,10 +112,11 @@ works; Admitto never signs or hosts pass files itself.
   - **Archived events and the Wallet switch:** void, delete, remove, and refresh status all still
     work on an archived event and when the event's Wallet switch is off, so a pass can be wound
     down after an event has ended. Restore and push updates stay disabled there.
-  - **Whole event at once:** **Void active passes** in the Attendees header menu voids every active
-    pass of the event in the background, without the 100-attendee limit of a selection. It works
-    like void on one attendee (same archived-event and Wallet-switch rules), skips passes that are
-    not active, and can be run again to pick up anything that failed.
+  - **Whole event at once:** **Void active passes** in the Attendees header menu makes every active
+    pass of the event show as invalid, in the background and without the 100-attendee limit of a
+    selection. It follows the same rules as void on one attendee (it also works on an archived
+    event and with the Wallet switch off), leaves passes that are no longer active alone, and can be
+    run again to retry any that failed.
   - **Rate and pacing limits:** a bulk wallet action accepts at most 100 attendees per selection.
     Each attendee's pass is updated one call at a time at a fixed pace, to stay within
     PassCreator's own request limit, rather than all at once, so a bulk action against a large

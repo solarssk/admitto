@@ -866,7 +866,7 @@ function HeaderMoreMenu({
                     icon="wallet-off"
                     variant="warning"
                     label={eventWideVoidActiveBusy ? "Voiding passes…" : "Void active passes"}
-                    hint="Void every active wallet pass of this event"
+                    hint="Make every active wallet pass invalid"
                     disabled={eventWideVoidActiveBusy}
                     onClick={() => {
                       setOpen(false);
@@ -2467,7 +2467,7 @@ export function AttendeesPage() {
       <ConfirmDialog
         open={eventWideVoidActive.confirmOpen}
         title="Void every active wallet pass for this event?"
-        message="Each active pass stays installed on the attendee's phone but shows as invalid in their wallet. This covers the whole event, not only the selected attendees, and runs in the background. A single pass can be restored later from the attendee's page, until the event is over."
+        message="Voiding makes a wallet pass show as invalid on the attendee's phone. The pass stays on the phone and the attendee's ticket is not changed. This covers every active pass of the event, not only the selected attendees, and runs in the background. You can restore one pass at a time from the attendee's page, until the event is over. It is not the same as Remove from provider or Delete wallet pass: those erase the pass from the wallet service for good."
         errorMessage={eventWideVoidActive.error}
         confirmLabel="Void all"
         confirmVariant="danger"

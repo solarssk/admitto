@@ -45,7 +45,8 @@ describe("pollWalletCleanupCompletion", () => {
   it.each([
     [2, 0, "2 wallet passes voided."],
     [1, 0, "1 wallet pass voided."],
-    [4, 3, "4 wallet passes voided (3 skipped)."],
+    [4, 1, "4 wallet passes voided. 1 was left alone because it was no longer active."],
+    [4, 3, "4 wallet passes voided. 3 were left alone because they were no longer active."],
   ])("toasts success for done=%i skipped=%i", async (done, skipped, expected) => {
     fetchWalletCleanupJobStatus.mockResolvedValueOnce(status({ status: "succeeded", done, skipped, errored: 0 }));
 
@@ -65,8 +66,8 @@ describe("pollWalletCleanupCompletion", () => {
   });
 
   it.each([
-    [1, 1, "1 wallet pass voided, 1 could not be voided. Run it again to retry those."],
-    [5, 2, "5 wallet passes voided, 2 could not be voided. Run it again to retry those."],
+    [1, 1, "1 wallet pass voided. 1 could not be voided. Run it again to try those once more."],
+    [5, 2, "5 wallet passes voided. 2 could not be voided. Run it again to try those once more."],
   ])("toasts a warning when some passes could not be voided (done=%i errored=%i)", async (done, errored, expected) => {
     fetchWalletCleanupJobStatus.mockResolvedValueOnce(status({ status: "succeeded", done, skipped: 0, errored }));
 
@@ -89,7 +90,7 @@ describe("pollWalletCleanupCompletion", () => {
     fetchWalletCleanupJobStatus.mockResolvedValueOnce(status({ status: "failed", error: "Wallet is not configured for this event." }));
 
     expect(await poll()).toHaveBeenCalledWith(
-      "Voiding the wallet passes failed to run. Try again from More actions.",
+      "Voiding the wallet passes did not run. Try again from More actions.",
       "error",
     );
   });

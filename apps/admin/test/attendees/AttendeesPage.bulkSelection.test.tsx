@@ -3530,7 +3530,7 @@ describe("AttendeesPage header 'Void active passes' (event-wide, wallet configur
 
     await waitFor(() => expect(triggerEventWideWalletVoidActive).toHaveBeenCalledWith("evt-1"));
     await waitFor(() => {
-      expect(addToast).toHaveBeenCalledWith("Voiding queued - you'll see a summary once it finishes.", "info");
+      expect(addToast).toHaveBeenCalledWith("Voiding started. You'll see a summary when it's done.", "info");
     });
     await waitFor(() => expect(screen.queryByRole("dialog", { name: DIALOG })).toBeNull());
     await waitFor(() => {
@@ -3631,7 +3631,7 @@ describe("AttendeesPage header 'Void active passes' (event-wide, wallet configur
 
     await waitFor(() => {
       expect(addToast).toHaveBeenCalledWith(
-        "Voiding the wallet passes failed to run. Try again from More actions.",
+        "Voiding the wallet passes did not run. Try again from More actions.",
         "info",
       );
     });
@@ -3663,7 +3663,7 @@ describe("AttendeesPage header 'Void active passes' (event-wide, wallet configur
       await Promise.resolve();
     });
 
-    expect(addToast).not.toHaveBeenCalledWith("Voiding queued - you'll see a summary once it finishes.", "info");
+    expect(addToast).not.toHaveBeenCalledWith("Voiding started. You'll see a summary when it's done.", "info");
     expect(pollWalletCleanupCompletion).not.toHaveBeenCalled();
   });
 
