@@ -1025,10 +1025,13 @@ export function createApp(options: CreateAppOptions = {}) {
         return null;
       }
       try {
-        const row = await db.walletPass.update({
-          where: { attendee_id: attendee.id },
+        // Conditional on the pass not having been removed while the provider call was in flight.
+        const { count } = await db.walletPass.updateMany({
+          where: { attendee_id: attendee.id, provider_removed_at: null },
           data: { status: "active", voided_at: null, provider_commanded_at: new Date(), last_error_code: null },
         });
+        if (count === 0) return null;
+        const row = await db.walletPass.findUniqueOrThrow({ where: { attendee_id: attendee.id } });
         return { apple_url: row.apple_url, android_url: row.android_url };
       } catch (err) {
         console.error("walletPass update (restore) failed:", err);
@@ -1099,6 +1102,11 @@ export function createApp(options: CreateAppOptions = {}) {
      * keep its cognitive complexity under the SonarCloud threshold (S3776). Returns null (after
      * the callee's own logging) when none of the three paths could produce a usable URL. */
     async function resolvePassUrls(): Promise<{ apple_url: string | null; android_url: string | null } | null> {
+      // A pass removed at the provider is gone there for good: neither restoring nor re-creating it
+      // may be attempted from a public tap (restorePass would hit a deleted resource, and a
+      // successful-looking answer would mark the frozen row active again). Answered like an expired
+      // pass until the public Add to Wallet rules define the proper page.
+      if (existing?.provider_removed_at) return null;
       if (existing?.status === "active") {
         return { apple_url: existing.apple_url, android_url: existing.android_url };
       }
@@ -1139,6 +1147,8 @@ export function createApp(options: CreateAppOptions = {}) {
           });
           return null;
         }
+        // Same reasoning as the pre-lock check above.
+        if (latest?.provider_removed_at) return null;
         if (latest?.status === "active") {
           return { apple_url: latest.apple_url, android_url: latest.android_url };
         }

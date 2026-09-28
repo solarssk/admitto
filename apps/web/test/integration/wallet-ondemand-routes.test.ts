@@ -486,6 +486,65 @@ describe("On-demand wallet routes", () => {
     expect(saved?.status).toBe("expired");
   });
 
+  it("does not restore or re-create a pass that was removed at the provider: redirects with walletError=1 and never calls it", async () => {
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: ATTENDEE_MODE_A_ID,
+        provider: "passcreator",
+        provider_pass_id: "pc-removed-retry",
+        user_provided_id: `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
+        status: "voided",
+        voided_at: new Date(),
+        provider_removed_at: new Date("2026-09-20T10:00:00.000Z"),
+        apple_url: "https://pc.test/apple/dead",
+        android_url: "https://pc.test/android/dead",
+      },
+    });
+    const provider = stubProvider();
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+    expect(provider.restorePass).not.toHaveBeenCalled();
+    expect(provider.createPass).not.toHaveBeenCalled();
+    expect(provider.findByUserProvidedId).not.toHaveBeenCalled();
+
+    const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(saved?.status).toBe("voided");
+  });
+
+  it("does not reactivate a voided pass that is removed while its restore call is in flight", async () => {
+    await prisma.walletPass.create({
+      data: {
+        attendee_id: ATTENDEE_MODE_A_ID,
+        provider: "passcreator",
+        provider_pass_id: "pc-removed-race",
+        user_provided_id: `admitto:${EVENT_ID}:${ATTENDEE_MODE_A_ID}`,
+        status: "voided",
+        voided_at: new Date(),
+        apple_url: "https://pc.test/apple/stale",
+        android_url: "https://pc.test/android/stale",
+      },
+    });
+    const provider = stubProvider();
+    vi.mocked(provider.restorePass).mockImplementationOnce(async () => {
+      await prisma.walletPass.update({
+        where: { attendee_id: ATTENDEE_MODE_A_ID },
+        data: { provider_removed_at: new Date() },
+      });
+    });
+    const app = makeApp(provider);
+
+    const res = await app.request(`/t/${MODE_A_TOKEN}/wallet/apple`, { redirect: "manual" });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/t/${MODE_A_TOKEN}?walletError=1`);
+    const saved = await prisma.walletPass.findUnique({ where: { attendee_id: ATTENDEE_MODE_A_ID } });
+    expect(saved?.status).toBe("voided");
+  });
+
   it("redirects back with walletError=1 and records status=failed on provider error", async () => {
     const provider = stubProvider();
     provider.createPass.mockRejectedValueOnce(
