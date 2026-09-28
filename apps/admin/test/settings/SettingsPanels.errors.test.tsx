@@ -299,7 +299,7 @@ describe("EventArchivingPanel operator errors", () => {
     expect(screen.queryByText("No active events")).toBeNull();
   });
 
-  it("unarchives an event on confirm, toasts, and reloads the list", async () => {
+  it("restores an archived event on confirm, toasts, and reloads the list", async () => {
     const archived = { ...sampleEvent, archived_at: "2026-06-02T00:00:00.000Z" };
     vi.mocked(fetchAdminEvents).mockResolvedValueOnce([archived]);
     vi.mocked(unarchiveEvent).mockResolvedValueOnce(undefined);
@@ -309,15 +309,15 @@ describe("EventArchivingPanel operator errors", () => {
       expect(screen.getByRole("radio", { name: "Archived" })).toBeTruthy();
     });
     fireEvent.click(screen.getByRole("radio", { name: "Archived" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Unarchive" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
     const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Unarchive" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Restore" }));
 
     await waitFor(() => {
       expect(unarchiveEvent).toHaveBeenCalledWith("evt-1");
     });
     await waitFor(() => {
-      expect(screen.getByTestId("at-toast").textContent).toMatch(/Event unarchived/);
+      expect(screen.getByTestId("at-toast").textContent).toMatch(/Event restored/);
     });
     expect(fetchAdminEvents).toHaveBeenCalledTimes(2);
   });

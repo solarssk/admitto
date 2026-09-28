@@ -507,10 +507,10 @@ describe("EventCard", () => {
     expect(document.querySelector("img.event-card__map")).toBeNull();
   });
 
-  it("does not render Archive or Unarchive actions", () => {
+  it("does not render Archive or Restore actions", () => {
     renderCard({ showStatusBadge: true, showAttendeeCount: true });
     expect(screen.queryByRole("button", { name: /Archive/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Unarchive/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Restore/i })).toBeNull();
   });
 });
 
