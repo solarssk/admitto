@@ -67,6 +67,7 @@ export const CODE_MESSAGES: Record<string, string> = {
   incomplete_transport: "Fill in all required fields for this mail transport before saving.",
   internal_error: "Something went wrong. Try again. If it keeps happening, check System logs.",
   invalid_email: "Enter a valid email address.",
+  invalid_phone: "Enter a valid phone number: digits only, between 6 and 15 in total.",
   invalid_form_data: "Could not read the upload. Try again.",
   invalid_image: "That file is not a valid image. Try another PNG, JPG, or WebP.",
   invalid_code: "Invalid authenticator code.",

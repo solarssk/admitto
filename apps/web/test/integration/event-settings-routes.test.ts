@@ -2913,6 +2913,63 @@ describe("event context routes", () => {
     }
   });
 
+  it("rejects a contact email or phone that is not one, without mutation, and leaves a saved legacy value alone", async () => {
+    const send = (method: "POST" | "PUT", path: string, body: object) =>
+      app.request(`/api/admin/events/${EVENT_SET}/contacts${path}`, {
+        method,
+        headers: { Cookie: adminCookie, ...sameOrigin, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    const badEmail = await send("POST", "", { name: "Rejected contact", email: "not-an-email" });
+    expect(badEmail.status).toBe(400);
+    expect(await badEmail.json()).toEqual({ error: "invalid_email" });
+    const badPhone = await send("POST", "", { name: "Rejected contact", phone: "call the venue" });
+    expect(badPhone.status).toBe(400);
+    expect(await badPhone.json()).toEqual({ error: "invalid_phone" });
+    // A non-string value is neither, and must be a 400, not a crash.
+    const numericEmail = await send("POST", "", { name: "Rejected contact", email: 12345 });
+    expect(numericEmail.status).toBe(400);
+    expect(await numericEmail.json()).toEqual({ error: "invalid_email" });
+    const numericPhone = await send("POST", "", { name: "Rejected contact", phone: 123456789 });
+    expect(numericPhone.status).toBe(400);
+    expect(await numericPhone.json()).toEqual({ error: "invalid_phone" });
+    expect(await prisma.eventContact.count({ where: { event_id: EVENT_SET, name: "Rejected contact" } })).toBe(0);
+
+    // Saved before the check existed: an old-style phone and a malformed email.
+    const legacy = await prisma.eventContact.create({
+      data: { event_id: EVENT_SET, name: "Legacy contact", phone: "ext. 5", email: "legacy" },
+    });
+    try {
+      // Editing something else, with the old values sent back unchanged, is not blocked.
+      const renamed = await send("PUT", `/${legacy.id}`, { name: "Legacy renamed", phone: "ext. 5", email: "legacy" });
+      expect(renamed.status).toBe(200);
+      // Changing the phone to another invalid value is.
+      const stillBad = await send("PUT", `/${legacy.id}`, { phone: "ext. 6" });
+      expect(stillBad.status).toBe(400);
+      expect(await stillBad.json()).toEqual({ error: "invalid_phone" });
+      const stillBadEmail = await send("PUT", `/${legacy.id}`, { email: "legacy2" });
+      expect(stillBadEmail.status).toBe(400);
+      expect(await stillBadEmail.json()).toEqual({ error: "invalid_email" });
+      expect(await prisma.eventContact.findUniqueOrThrow({ where: { id: legacy.id } })).toMatchObject({
+        name: "Legacy renamed",
+        phone: "ext. 5",
+        email: "legacy",
+      });
+      // Fixing both saves, and clearing them is always allowed.
+      const fixed = await send("PUT", `/${legacy.id}`, { phone: "+48 123 456 789", email: "legacy@example.com" });
+      expect(fixed.status).toBe(200);
+      const cleared = await send("PUT", `/${legacy.id}`, { phone: "", email: null });
+      expect(cleared.status).toBe(200);
+      expect(await prisma.eventContact.findUniqueOrThrow({ where: { id: legacy.id } })).toMatchObject({
+        phone: null,
+        email: null,
+      });
+    } finally {
+      await prisma.eventContact.deleteMany({ where: { id: legacy.id } });
+    }
+  });
+
   it("converts a contact update race into not_found", async () => {
     const contact = await prisma.eventContact.create({
       data: { event_id: EVENT_SET, name: "Race contact" },

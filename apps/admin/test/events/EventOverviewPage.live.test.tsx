@@ -1265,6 +1265,142 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     });
   });
 
+  /** Opens the "Add contact" dialog on a fresh render and returns it, for the validation tests. */
+  async function openAddContactDialog() {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+    renderPage();
+    const keyContactsSection = await screen
+      .findByText("Key contacts")
+      .then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    fireEvent.click(within(keyContactsSection).getByRole("button", { name: "Add a key contact" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add contact" });
+    fireEvent.change(within(dialog).getByLabelText("Name *"), { target: { value: "Jane Doe" } });
+    return dialog;
+  }
+
+  it("keeps letters out of the contact phone field, whether typed or pasted", async () => {
+    const dialog = await openAddContactDialog();
+    const phoneField = within(dialog).getByLabelText("Phone number") as HTMLInputElement;
+
+    fireEvent.change(phoneField, { target: { value: "call 555 0100 ext" } });
+    expect(phoneField.value).toBe(" 555 0100 ");
+    fireEvent.change(phoneField, { target: { value: "abc" } });
+    expect(phoneField.value).toBe("");
+    // Without a country code a leading + is the way to write one, so it is allowed there.
+    fireEvent.change(phoneField, { target: { value: "+48 500 100 200" } });
+    expect(phoneField.value).toBe("+48 500 100 200");
+  });
+
+  it("drops a typed + once a country code is picked, since the picker supplies it", async () => {
+    const dialog = await openAddContactDialog();
+    const phoneField = within(dialog).getByLabelText("Phone number") as HTMLInputElement;
+    fireEvent.change(phoneField, { target: { value: "+48 500" } });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Phone country code, no code selected" }));
+    fireEvent.change(screen.getByLabelText("Search country or dial code"), { target: { value: "Poland" } });
+    fireEvent.click(screen.getByRole("button", { name: "Poland +48" }));
+
+    expect(phoneField.value).toBe("48 500");
+    fireEvent.change(phoneField, { target: { value: "+500 100 200" } });
+    expect(phoneField.value).toBe("500 100 200");
+  });
+
+  it("flags a too-short phone number once the field is left and blocks saving, without calling the API", async () => {
+    const dialog = await openAddContactDialog();
+    const phoneField = within(dialog).getByLabelText("Phone number") as HTMLInputElement;
+    fireEvent.change(phoneField, { target: { value: "12" } });
+    // No error while still typing; it shows when the field is left.
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+    fireEvent.blur(phoneField);
+
+    const alert = within(dialog).getByRole("alert");
+    expect(alert.textContent).toContain("digits only");
+    expect(phoneField.getAttribute("aria-invalid")).toBe("true");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    expect(mockCreateEventContact).not.toHaveBeenCalled();
+
+    fireEvent.change(phoneField, { target: { value: "500 100 200" } });
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+  });
+
+  it("flags an email that is not one and blocks saving until it is fixed", async () => {
+    mockCreateEventContact.mockResolvedValueOnce({
+      id: "c-mail",
+      name: "Jane Doe",
+      role: null,
+      phone: null,
+      email: "jane@example.com",
+      note: null,
+      sort_order: 0,
+    } satisfies EventContactDto);
+    const dialog = await openAddContactDialog();
+    const emailField = within(dialog).getByLabelText("Email") as HTMLInputElement;
+
+    fireEvent.change(emailField, { target: { value: "not-an-email" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    // Save alone surfaces the error too, for a field that was never left.
+    expect(within(dialog).getByRole("alert").textContent).toBe("Enter a valid email address.");
+    expect(mockCreateEventContact).not.toHaveBeenCalled();
+
+    fireEvent.change(emailField, { target: { value: "jane@example.com" } });
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(mockCreateEventContact).toHaveBeenCalledWith("evt-1", {
+        name: "Jane Doe",
+        role: null,
+        phone: null,
+        email: "jane@example.com",
+      });
+    });
+  });
+
+  it("does not flag a contact's saved phone or email that predates these checks unless it is changed", async () => {
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(5, {
+        contacts: [
+          { id: "c-old", name: "Old Contact", role: null, phone: "ext. 5", email: "legacy", note: null, sort_order: 0 },
+        ],
+      }),
+    );
+    mockUpdateEventContact.mockResolvedValueOnce({
+      id: "c-old",
+      name: "Renamed Contact",
+      role: null,
+      phone: "ext. 5",
+      email: "legacy",
+      note: null,
+      sort_order: 0,
+    } satisfies EventContactDto);
+
+    renderPage();
+
+    const keyContactsSection = await screen
+      .findByText("Key contacts")
+      .then((el) => el.closest(".overview-notes-section") as HTMLElement);
+    fireEvent.click(within(keyContactsSection).getByRole("button", { name: /Edit/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit contact" });
+
+    fireEvent.blur(within(dialog).getByLabelText("Phone number"));
+    fireEvent.blur(within(dialog).getByLabelText("Email"));
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+
+    fireEvent.change(within(dialog).getByLabelText("Name *"), { target: { value: "Renamed Contact" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mockUpdateEventContact).toHaveBeenCalledWith("evt-1", "c-old", {
+        name: "Renamed Contact",
+        role: null,
+        phone: "ext. 5",
+        email: "legacy",
+      });
+    });
+  });
+
   it("splits an existing key contact E.164 phone value when opening Edit", async () => {
     fetchEventOverview.mockResolvedValue(
       overviewFixture(5, {

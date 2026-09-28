@@ -30,6 +30,8 @@ Open the correct organisation and event. If another manager may be editing the s
 2. Review the compact **Setup checklist** for unfinished setup.
 3. Review KPI tiles (including attendees and **Failed delivery**), the **Check-in progress** ring with ticket-type breakdown, and **Recent activity** (check-ins, attendees added, item issue/return/revoke, mail failures, and imports).
 4. Use **Pinned note**, **Key contacts**, and **Important links & files** when your event keeps that operational context on Overview.
+
+A key contact's phone number takes digits only (6 to 15 in total, with spaces, dashes, dots, parentheses, and a leading + allowed), so letters cannot be typed, and its email must be a valid address. Both are checked when you save.
 5. Follow a readiness prompt when it points to unfinished setup.
 
 ### Event settings tabs

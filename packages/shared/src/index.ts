@@ -1,5 +1,11 @@
 export { splitCsvLine } from "./csvUtils.js";
 export { redactEmail } from "./redact.js";
+export {
+  CONTACT_PHONE_MAX_DIGITS,
+  CONTACT_PHONE_MIN_DIGITS,
+  isValidContactPhone,
+  sanitizeContactPhoneInput,
+} from "./contactPhone.js";
 export { parseUserAgent, parseUserAgentSafe, parseUserAgentWithVersion } from "./parseUserAgent.js";
 export { NO_COMPRESSION_HEADERS } from "./noCompressionHeaders.js";
 export type { DeliveryDetailDto, DeliveryDto } from "./deliveryDto.js";

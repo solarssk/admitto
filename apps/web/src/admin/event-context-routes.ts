@@ -1,6 +1,8 @@
 import type { Context } from "hono";
 import { Prisma } from "@admitto/db";
 import type { PrismaClient } from "@admitto/db";
+import { isValidEmailFormat } from "@admitto/auth";
+import { isValidContactPhone } from "@admitto/shared";
 import { writeAdminAuditLog } from "@admitto/tickets";
 import { validateHttpUrl, InvalidHttpUrlError } from "@admitto/mail-templates";
 import { assertEventManageAccess, adminAuditFromContext, requireEventId } from "./admin-helpers.js";
@@ -67,6 +69,25 @@ export async function handlePatchEventNote(c: Context, db: PrismaClient): Promis
 
 // ── Key contacts ────────────────────────────────────────────────────────────
 
+/** A contact's email or phone is shown to staff as a mailto:/tel: link, so a value that is not one
+ * is rejected here as well as in the form (the form check is a convenience, not the gate). Only a
+ * value that actually changes is checked on update, so a contact saved before this check existed
+ * can still have its name or role edited without being forced to fix an old phone number first. */
+function contactFieldError(
+  next: { email?: unknown; phone?: unknown },
+  current?: { email: string | null; phone: string | null },
+): "invalid_email" | "invalid_phone" | null {
+  // Anything that is not a string (a number, an object) is not an email or a phone number either;
+  // rejecting it here also keeps it from reaching the .trim() calls below as a 500.
+  if (next.email != null && typeof next.email !== "string") return "invalid_email";
+  if (next.phone != null && typeof next.phone !== "string") return "invalid_phone";
+  const email = next.email?.trim() || null;
+  if (email && email !== current?.email && !isValidEmailFormat(email)) return "invalid_email";
+  const phone = next.phone?.trim() || null;
+  if (phone && phone !== current?.phone && !isValidContactPhone(phone)) return "invalid_phone";
+  return null;
+}
+
 /** POST /api/admin/events/:eventId/contacts */
 export async function handleCreateContact(c: Context, db: PrismaClient): Promise<Response> {
   const eventIdParam = requireEventId(c);
@@ -86,6 +107,8 @@ export async function handleCreateContact(c: Context, db: PrismaClient): Promise
   }>();
 
   if (!body.name?.trim()) return c.json({ error: "name_required" }, 400);
+  const fieldError = contactFieldError(body);
+  if (fieldError) return c.json({ error: fieldError }, 400);
 
   const audit = adminAuditFromContext(c);
   const orgId = await requireEventOrgId(db, eventId);
@@ -141,6 +164,14 @@ export async function handleUpdateContact(c: Context, db: PrismaClient): Promise
   }>();
 
   if (body.name !== undefined && !body.name?.trim()) return c.json({ error: "name_required" }, 400);
+  const fieldError = contactFieldError(
+    {
+      ...(body.email !== undefined && { email: body.email }),
+      ...(body.phone !== undefined && { phone: body.phone }),
+    },
+    existing,
+  );
+  if (fieldError) return c.json({ error: fieldError }, 400);
 
   const audit = adminAuditFromContext(c);
   const orgId = await requireEventOrgId(db, eventId);
