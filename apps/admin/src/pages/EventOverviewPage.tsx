@@ -9,7 +9,6 @@ import {
   ModalBackdrop,
   Notice,
   PageHeader,
-  ticketTypeChartColor,
   useToast,
 } from "@admitto/ui";
 import {
@@ -53,6 +52,7 @@ import {
 import { useDelayedLoading } from "../hooks/useDelayedLoading.js";
 import { useEventStream, type StreamCheckinEvent } from "../hooks/useEventStream.js";
 import { useCountdown, daysUntilEvent } from "../utils/event-countdown.js";
+import { eventEndsAtUtc } from "@admitto/shared";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { SearchableSelect } from "../components/SearchableSelect.js";
 import { Segmented, type SegmentedOption } from "../components/Segmented.js";
@@ -193,6 +193,10 @@ interface ReadinessItem {
   /** Explanatory sentence shown under the label for not-ok items — no reusable readiness widget
    * exists yet under Event settings (checked before building this), so this stays local. */
   detail: string;
+  /** Tabler icon name (without the `ti-` prefix) shown in the row's tinted square. */
+  icon: string;
+  /** Where the row leads, so a problem is one click from the page that fixes it. */
+  to: string;
 }
 
 /** Merges the former "Needs attention" + "Event readiness" cards into one compact checklist
@@ -216,7 +220,8 @@ function ticketsSentReadiness(overview: EventOverviewDto): Pick<ReadinessItem, "
 
 // Extracted out of SetupChecklistCard (SonarCloud S3776: keeps the branching/pluralization logic
 // out of the component's own cognitive-complexity count, which the JSX below also contributes to).
-function buildReadinessItems(overview: EventOverviewDto): ReadinessItem[] {
+function buildReadinessItems(overview: EventOverviewDto, eventId: string): ReadinessItem[] {
+  const eventPath = `/admin/events/${eventId}`;
   const failed = overview.email_failed + overview.email_bounced;
   const ticketsSent = ticketsSentReadiness(overview);
 
@@ -241,26 +246,36 @@ function buildReadinessItems(overview: EventOverviewDto): ReadinessItem[] {
       label: "Attendees imported",
       status: overview.attendee_count > 0 ? "ok" : "warn",
       detail: attendeesImportedDetail,
+      icon: "users",
+      to: `${eventPath}/attendees`,
     },
     {
       label: "Tickets sent",
       status: ticketsSent.status,
       detail: ticketsSent.detail,
+      icon: "mail-check",
+      to: `${eventPath}/communication`,
     },
     {
       label: "Email delivery",
       status: failed === 0 ? "ok" : "error",
       detail: deliveryHealthyDetail,
+      icon: failed === 0 ? "mail-opened" : "mail-x",
+      to: `${eventPath}/communication`,
     },
     {
       label: "Check-in staff",
       status: overview.checkin_staff_count > 0 ? "ok" : "warn",
       detail: checkinStaffDetail,
+      icon: "user-check",
+      to: "/admin/users",
     },
     {
       label: "Event items",
       status: "neutral",
       detail: eventItemsDetail,
+      icon: "package",
+      to: `${eventPath}/requirements`,
     },
   ];
 }
@@ -274,11 +289,22 @@ function unavailablePlaceholderText(loading: boolean, showLoading: boolean): str
 }
 
 
-function checklistStatusIcon(status: ReadinessItem["status"]): string {
-  if (status === "error") return "ti-x";
-  if (status === "ok") return "ti-check";
-  if (status === "warn") return "ti-alert-triangle";
-  return "ti-minus";
+const READINESS_STATUS_TEXT: Record<ReadinessItem["status"], string> = {
+  ok: "Done",
+  warn: "Needs attention",
+  error: "Problem",
+  neutral: "Optional",
+};
+
+/** Problems first, so what needs doing is never below the fold. */
+const CHECKLIST_ORDER: Record<ReadinessItem["status"], number> = { error: 0, warn: 1, ok: 2, neutral: 3 };
+
+/** One tone for the whole card: red when any check failed, amber when one still needs doing,
+ * green once every required check is done. */
+function checklistTone(items: ReadinessItem[]): "ok" | "warn" | "error" {
+  if (items.some((i) => i.status === "error")) return "error";
+  if (items.some((i) => i.status === "warn")) return "warn";
+  return "ok";
 }
 
 function SetupChecklistCard({
@@ -294,7 +320,7 @@ function SetupChecklistCard({
 }>) {
   if (!overview) {
     return (
-      <Card title="Setup checklist" className="overview-card--fill">
+      <Card title="Setup checklist">
         <p className="overview-muted">
           {unavailablePlaceholderText(loading, showLoading)}
         </p>
@@ -302,56 +328,67 @@ function SetupChecklistCard({
     );
   }
 
-  const items = buildReadinessItems(overview);
+  const items = buildReadinessItems(overview, eventId);
   const okCount = items.filter((i) => i.status === "ok").length;
   const total = items.filter((i) => i.status !== "neutral").length;
+  const tone = checklistTone(items);
 
   return (
     <Card
       title="Setup checklist"
-      className="overview-card--fill"
       actions={
         <span className="overview-readiness-score">
-          {okCount}/{total}
+          {okCount} of {total} done
         </span>
       }
     >
-      <div className="overview-checklist">
-        {items.map((item) => (
-          <div key={item.label} className="overview-readiness-item">
-            <span className={`status-circle status-circle--${item.status}`} aria-hidden="true">
-              <i className={`ti ${checklistStatusIcon(item.status)}`} aria-hidden="true" />
-            </span>
-            <div className="overview-readiness-item__body">
-              <strong>{item.label}</strong>
-              <span className="overview-readiness-item__detail">{item.detail}</span>
-            </div>
-          </div>
-        ))}
+      <div className="overview-setup">
+        <progress
+          className={`overview-setup__bar overview-setup__bar--${tone}`}
+          aria-label="Setup progress"
+          max={total || 1}
+          value={okCount}
+        />
+        <div className="overview-checklist">
+          {/* Array.sort is stable, so rows of the same status keep their natural order. */}
+          {[...items]
+            .sort((x, y) => CHECKLIST_ORDER[x.status] - CHECKLIST_ORDER[y.status])
+            .map((item) => (
+              <Link key={item.label} to={item.to} className="overview-check">
+                <span className={`overview-check__icon overview-check__icon--${item.status}`} aria-hidden="true">
+                  <i className={`ti ti-${item.icon}`} />
+                </span>
+                <span className="overview-check__body">
+                  <strong>{item.label}</strong>
+                  <span className="overview-check__detail">{item.detail}</span>
+                </span>
+                <span className="sr-only">{READINESS_STATUS_TEXT[item.status]}</span>
+                <i className="ti ti-chevron-right overview-check__chevron" aria-hidden="true" />
+              </Link>
+            ))}
+        </div>
       </div>
-      <Link to={`/admin/events/${eventId}/settings?tab=general`} className="overview-checklist__link">
-        View full checklist in Event settings <i className="ti ti-arrow-right" aria-hidden="true" />
-      </Link>
     </Card>
   );
 }
 
-/** Check-in progress card (new, Part B): admission ring, ticket-type breakdown, and two glance
- * stats — the ring uses a real conic-gradient over --status-ok / --surface-sunken rather than an
- * SVG/canvas dependency. Takes the optimistic-delta-inclusive `admittedCount` (not just
- * `overview.admitted_count`) so the ring still updates instantly on a live check-in — the removed
- * "Checked in" KPI tile (#E1) used to be the only place that instant bump was visible; this is now
- * the sole admission display, so it needs to stay just as responsive. */
+/** Check-in progress card: the ring and the one number that matters (how many are in, and how
+ * many are not), plus two small facts. The second fact is the wallet install count when the event
+ * uses wallets, otherwise the busiest hour. Anything more detailed (by ticket type, by hour)
+ * lives in Reports. `eventEnded` only changes the word for the attendees who never arrived:
+ * "not yet arrived" while the event can still fill up, "no-shows" once it is over. */
 function CheckInProgressCard({
   overview,
   loading,
   showLoading,
   admittedCount,
+  eventEnded,
 }: Readonly<{
   overview: EventOverviewDto | null;
   loading: boolean;
   showLoading: boolean;
   admittedCount: number | null;
+  eventEnded: boolean;
 }>) {
   if (!overview) {
     return (
@@ -367,48 +404,19 @@ function CheckInProgressCard({
   const admitted = Math.min(admittedCount ?? overview.admitted_count, total);
   const notYet = Math.max(total - admitted, 0);
   const pct = total > 0 ? Math.round((admitted / total) * 100) : 0;
-  // --border-strong (#cbd5e1, ~1.5:1 contrast vs white) rather than a --text-muted-based mix
-  // (PO review, round 2): the previous ~3.2:1 mix sat too close in weight to --at-gray-500, which
-  // "By ticket type" below now uses for its own "Gray" swatch (ticketTypeChartColor) — reading as
-  // the same gray made the ring's neutral "not yet" wedge look like it belonged to that unrelated
-  // category legend. --border-strong is a clearly lighter, purely structural token (also used for
-  // borders/dividers elsewhere) that no longer visually competes with real ticket-type swatches.
-  // Under the 3:1 floor is acceptable here specifically because the count is redundant with
-  // accessible text right next to it (ring-center "{pct}%", legend "Not yet {notYet}").
+  // --border-strong (~1.5:1 against white) rather than a --text-muted-based mix: a clearly lighter,
+  // purely structural track so the "not yet" part of the ring reads as neutral. Under the 3:1
+  // floor is acceptable because the numbers next to the ring already say the same thing in text.
   const notYetColor = "var(--border-strong)";
-  // Defensive fallback: a stale apps/web dev process (no watch mode) still running from before
-  // this field existed on the overview API would otherwise crash the whole page (same class of
-  // gap already hardened on the Attendee Detail page's `event_items ?? []`).
-  const breakdown = (overview.ticket_type_breakdown ?? []).filter((t) => t.count > 0);
-  const breakdownTotal = breakdown.reduce((sum, t) => sum + t.count, 0);
+  // A stale apps/web dev process (no watch mode) from before this field existed omits it: treat
+  // that the same as "wallets not in use" instead of crashing the whole page.
+  const walletInstalled = overview.wallet_installed ?? null;
+  const walletPct = walletInstalled != null && total > 0 ? Math.round((walletInstalled / total) * 100) : 0;
+  let notYetText = `${notYet} not yet arrived`;
+  if (eventEnded) notYetText = `${notYet} ${notYet === 1 ? "no-show" : "no-shows"}`;
 
-  let ticketTypeBar: ReactNode = null;
-  if (breakdown.length === 1) {
-    ticketTypeBar = (
-      <span
-        className="overview-tt-bar__seg"
-        style={{
-          width: "100%",
-          background: ticketTypeChartColor(breakdown[0]!.color),
-        }}
-      />
-    );
-  } else if (breakdown.length > 1) {
-    // breakdown only includes count > 0, so breakdownTotal is always > 0 here.
-    ticketTypeBar = breakdown.map((t) => (
-      <span
-        key={t.key}
-        className="overview-tt-bar__seg"
-        style={{
-          width: `${(t.count / breakdownTotal) * 100}%`,
-          background: ticketTypeChartColor(t.color),
-        }}
-      />
-    ));
-  }
-
-  // A ring at a permanent 0% is noise, not information, when there's nobody to check in yet —
-  // same icon+text placeholder treatment as Recent activity's empty state instead (PO review).
+  // A ring at a permanent 0% is noise, not information, when there's nobody to check in yet:
+  // same icon+text placeholder treatment as Recent activity's empty state instead.
   const body =
     total === 0 ? (
       <EmptyState
@@ -417,13 +425,11 @@ function CheckInProgressCard({
         description="Import attendees to start tracking check-ins."
       />
     ) : (
-      <>
-        <div className="overview-progress">
+      <div className="overview-checkin">
+        <div className="overview-checkin__hero">
           <div
             className="overview-ring"
             style={{
-              // notYetColor: deliberately under the 3:1 graphical-object floor here (see const
-              // above) so the "not yet" wedge reads as a neutral track, not a ticket-type swatch.
               background: `conic-gradient(var(--status-ok) 0% ${pct}%, ${notYetColor} ${pct}% 100%)`,
             }}
             role="img"
@@ -433,53 +439,50 @@ function CheckInProgressCard({
               <span className="overview-ring__pct">{pct}%</span>
             </div>
           </div>
-          <div className="overview-progress__legend">
-            <div className="overview-progress__legend-item">
-              <span className="overview-progress__legend-dot" style={{ background: "var(--status-ok)" }} />{" "}
-              Checked in <strong>{admitted}</strong>
-            </div>
-            <div className="overview-progress__legend-item">
-              <span className="overview-progress__legend-dot" style={{ background: notYetColor }} />{" "}
-              Not yet <strong>{notYet}</strong>
-            </div>
+          <div className="overview-checkin__figure">
+            <span className="overview-checkin__count">{admitted}</span>
+            <span className="overview-checkin__caption">checked in</span>
+            <span className="overview-checkin__rest">{notYetText}</span>
           </div>
-        </div>
-
-        <div className="overview-tt-breakdown">
-          <span className="overline">By ticket type</span>
-          <div className="overview-tt-bar">{ticketTypeBar}</div>
-          {breakdown.length > 0 && (
-            <div className="overview-tt-legend">
-              {breakdown.map((t) => (
-                <span key={t.key} className="overview-tt-legend__item">
-                  <span
-                    className="overview-tt-legend__dot"
-                    style={{ background: ticketTypeChartColor(t.color) }}
-                  />
-                  {t.label} <span className="overview-tt-legend__count">{t.count}</span>
-                </span>
-              ))}
-            </div>
-          )}
         </div>
 
         <div className="overview-glance">
           <div className="overview-glance__tile">
-            <span className="overview-glance__label">
-              <i className="ti ti-clock" aria-hidden="true" /> Last check-in
+            <span className="overview-glance__icon" aria-hidden="true">
+              <i className="ti ti-clock" />
             </span>
-            <span className="overview-glance__value">{formatRelativeTime(overview.last_check_in_at)}</span>
-          </div>
-          <div className="overview-glance__tile">
-            <span className="overview-glance__label">
-              <i className="ti ti-trending-up" aria-hidden="true" /> Busiest hour
-            </span>
-            <span className="overview-glance__value">
-              {overview.busiest_hour ? formatBusiestHourRange(overview.busiest_hour.hour) : "-"}
+            <span className="overview-glance__text">
+              <span className="overview-glance__label">Last check-in</span>
+              <span className="overview-glance__value">{formatRelativeTime(overview.last_check_in_at)}</span>
             </span>
           </div>
+          {walletInstalled == null ? (
+            <div className="overview-glance__tile">
+              <span className="overview-glance__icon" aria-hidden="true">
+                <i className="ti ti-trending-up" />
+              </span>
+              <span className="overview-glance__text">
+                <span className="overview-glance__label">Busiest hour</span>
+                <span className="overview-glance__value">
+                  {overview.busiest_hour ? formatBusiestHourRange(overview.busiest_hour.hour) : "-"}
+                </span>
+              </span>
+            </div>
+          ) : (
+            <div className="overview-glance__tile">
+              <span className="overview-glance__icon overview-glance__icon--wallet" aria-hidden="true">
+                <i className="ti ti-wallet" />
+              </span>
+              <span className="overview-glance__text">
+                <span className="overview-glance__label">Wallet passes installed</span>
+                <span className="overview-glance__value">
+                  {walletInstalled} <span className="overview-glance__aside">({walletPct}%)</span>
+                </span>
+              </span>
+            </div>
+          )}
         </div>
-      </>
+      </div>
     );
 
   return (
@@ -644,7 +647,7 @@ function RecentActivityCard({
   return (
     <Card
       title="Recent activity"
-      className="overview-card--header-fixed"
+      className="overview-card--header-fixed overview-card--timeline"
       actions={
         <>
           {/* Reuses the app's established Segmented control (AuditLogPanel's System/Audit
@@ -1507,7 +1510,7 @@ function NotesAndContactsCard(props: Readonly<{
   onDeleteResource: (id: string) => Promise<void>;
 }>) {
   return (
-    <Card title="Notes & contacts" className="overview-card--fill">
+    <Card title="Notes & contacts">
       <PinnedNoteSection
         note={props.pinnedNote}
         loading={props.loading}
@@ -1784,6 +1787,17 @@ export function EventOverviewPage() {
       : null;
   const countdownLabel = useCountdown(eventDateIso, eventTimezone);
   const daysUntil = daysUntilEvent(eventDateIso, eventTimezone);
+  // The same "is the event over" moment the public Add to Wallet gate uses: its end time on its own
+  // day when one is set, otherwise the end of that day. NaN for an unreadable date compares as not
+  // over.
+  const eventEnded =
+    Date.now() >=
+    eventEndsAtUtc({
+      date: new Date(eventDateIso),
+      eventHoursStart: event.event_hours_start ?? null,
+      eventHoursEnd: event.event_hours_end ?? null,
+      timezone: eventTimezone,
+    }).getTime();
   const { value: countdownValue, label: daysToEventLabel } = countdownTileText(daysUntil, countdownLabel);
   const emailFailedTotal =
     currentOverview != null
@@ -1908,7 +1922,13 @@ export function EventOverviewPage() {
 
       <div className="overview-body">
         <div className="overview-row overview-row--stretch">
-          <CheckInProgressCard overview={currentOverview} loading={loading} showLoading={showLoading} admittedCount={admittedCount} />
+          <CheckInProgressCard
+            overview={currentOverview}
+            loading={loading}
+            showLoading={showLoading}
+            admittedCount={admittedCount}
+            eventEnded={eventEnded}
+          />
           <RecentActivityCard
             eventId={event.id}
             activity={currentOverview?.recent_activity ?? []}

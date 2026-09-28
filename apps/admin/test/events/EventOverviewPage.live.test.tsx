@@ -132,7 +132,7 @@ const overviewFixture = (
   attendees_with_ticket: 50,
   last_check_in_at: null,
   busiest_hour: null,
-  ticket_type_breakdown: [],
+  wallet_installed: null,
   recent_activity: [],
   contacts: [],
   resources: [],
@@ -163,6 +163,11 @@ function renderPage() {
   return renderWithToast(pageTree());
 }
 
+/** The archived-event notice (the Setup checklist has its own, unrelated .at-notice below it). */
+function archivedNotice(): HTMLElement {
+  return screen.getByText(/This event is archived/).closest(".at-notice") as HTMLElement;
+}
+
 /** The 4 KPI tiles - scope queries here since some plain numbers/labels also appear elsewhere on
  * the page (e.g. the Failed delivery count vs. the Setup checklist). */
 function statsRow(): HTMLElement {
@@ -179,11 +184,11 @@ function checklistCard(): HTMLElement {
   return card as HTMLElement;
 }
 
-/** The Check-in progress card's admission ring legend now owns the admitted count display (the
+/** The Check-in progress card's checked-in figure now owns the admitted count display (the
  * top KPI row's old "Checked in" tile was removed in favor of a Days-to-event tile, #E1) — this
  * still carries the optimistic SSE delta instantly, same as the removed tile used to. */
 function admittedLegendValue(): string {
-  return document.querySelector(".overview-progress__legend-item strong")?.textContent ?? "";
+  return document.querySelector(".overview-checkin__count")?.textContent ?? "";
 }
 
 afterEach(() => {
@@ -645,10 +650,14 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     await waitFor(() => {
       expect(screen.getByText("Setup checklist")).toBeTruthy();
     });
-    expect(screen.queryByText("Needs attention")).toBeNull();
-    expect(screen.queryByText("Event readiness")).toBeNull();
+    // The two old card titles are gone (a row's screen-reader status word may still say
+    // "Needs attention", so check card titles, not any text on the page).
+    const cardTitles = Array.from(document.querySelectorAll(".at-card__title")).map((el) => el.textContent);
+    expect(cardTitles).not.toContain("Needs attention");
+    expect(cardTitles).not.toContain("Event readiness");
     expect(screen.getByText("Email delivery")).toBeTruthy();
-    expect(screen.getByText("View full checklist in Event settings")).toBeTruthy();
+    // Each row now leads to the page that fixes it, so there is no separate footer link.
+    expect(screen.queryByText("View full checklist in Event settings")).toBeNull();
   });
 
   it("shows completed checklist rows alongside the remaining setup checks", async () => {
@@ -706,71 +715,190 @@ describe("EventOverviewPage redesign (#344-#350, #373, #374)", () => {
     expect(screen.queryByText("13:00–14:00")).toBeNull();
   });
 
-  it("renders the ticket-type breakdown section whenever attendees exist, with a full-width bar for a single type and an empty track when no check-ins yet", async () => {
+  it("does not render a ticket-type breakdown on Check-in progress (that detail lives in Reports)", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Check-in progress")).toBeTruthy();
+    });
+    expect(screen.queryByText("By ticket type")).toBeNull();
+  });
+
+  it("shows the checked-in count as the focal number, with the remainder as 'not yet arrived' while the event can still fill up", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.setSystemTime(new Date("2026-06-26T10:00:00.000Z"));
+      fetchEventOverview.mockResolvedValue(overviewFixture(30, { attendee_count: 50 }));
+
+      renderPage();
+
+      await waitFor(() => expect(admittedLegendValue()).toBe("30"));
+      expect(screen.getByText("checked in")).toBeTruthy();
+      expect(screen.getByText("20 not yet arrived")).toBeTruthy();
+      expect(screen.getByText("60%")).toBeTruthy();
+      // The old legend repeated the same numbers; the total is already the Attendees tile.
+      expect(screen.queryByText("Not yet")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    [1, "1 no-show"],
+    [39, "39 no-shows"],
+  ])("calls the %i attendee(s) who never arrived '%s' once the event is over", async (missing, expected) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.setSystemTime(new Date("2026-07-04T10:00:00.000Z"));
+      fetchEventOverview.mockResolvedValue(overviewFixture(50 - missing, { attendee_count: 50 }));
+
+      renderPage();
+
+      expect(await screen.findByText(expected)).toBeTruthy();
+      expect(screen.queryByText(/not yet arrived/)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ["before the end time on the event's day", { event_hours_end: "17:00" }, "2026-07-01T16:00:00.000Z", "20 not yet arrived"],
+    ["after the end time on the event's day", { event_hours_end: "17:00" }, "2026-07-01T17:30:00.000Z", "20 no-shows"],
+    ["an overnight event before it ends", { event_hours_start: "22:00", event_hours_end: "02:00" }, "2026-07-02T01:00:00.000Z", "20 not yet arrived"],
+    ["an overnight event after it ends", { event_hours_start: "22:00", event_hours_end: "02:00" }, "2026-07-02T03:00:00.000Z", "20 no-shows"],
+    ["an event without an end time, later the same day", {}, "2026-07-01T23:00:00.000Z", "20 not yet arrived"],
+    ["an event without an end time, the next day", {}, "2026-07-02T00:30:00.000Z", "20 no-shows"],
+  ])("decides not-yet-arrived versus no-shows from the event's end: %s", async (_label, hours, now, expected) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      vi.setSystemTime(new Date(now));
+      mockEventOverrides = hours;
+      fetchEventOverview.mockResolvedValue(overviewFixture(30, { attendee_count: 50 }));
+
+      renderPage();
+
+      expect(await screen.findByText(expected)).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows a Wallet passes installed tile with its share of attendees, in place of Busiest hour, when wallets are in use", async () => {
     fetchEventOverview.mockResolvedValue(
-      overviewFixture(0, {
+      overviewFixture(5, {
         attendee_count: 50,
-        ticket_type_breakdown: [{ key: "standard", label: "Standard", color: "gray", count: 0 }],
+        wallet_installed: 30,
+        busiest_hour: { hour: "13:00", count: 4 },
+        last_check_in_at: "2026-07-01T10:00:00.000Z",
       }),
     );
 
     renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByText("Check-in progress")).toBeTruthy();
-    });
-    expect(screen.getByText("By ticket type")).toBeTruthy();
-    expect(document.querySelector(".overview-tt-bar")).toBeTruthy();
-    expect(document.querySelector(".overview-tt-bar__seg")).toBeNull();
-    expect(document.querySelector(".overview-tt-legend")).toBeNull();
-
-    cleanup();
-    fetchEventOverview.mockResolvedValue(
-      overviewFixture(5, {
-        ticket_type_breakdown: [{ key: "standard", label: "Standard", color: "gray", count: 5 }],
-      }),
-    );
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByText("Standard")).toBeTruthy();
-    });
-    const singleSeg = document.querySelector(".overview-tt-bar__seg") as HTMLElement;
-    expect(singleSeg?.style.width).toBe("100%");
+    const tile = (await screen.findByText("Wallet passes installed")).closest(".overview-glance__tile") as HTMLElement;
+    expect(tile.textContent).toContain("30");
+    expect(tile.textContent).toContain("(60%)");
+    expect(screen.queryByText("Busiest hour")).toBeNull();
+    expect(screen.getByText("Last check-in")).toBeTruthy();
   });
 
-  it("renders the ticket-type breakdown bar with multiple segments when more than one type has attendees", async () => {
-    fetchEventOverview.mockResolvedValue(
-      overviewFixture(5, {
-        ticket_type_breakdown: [
-          { key: "standard", label: "Standard", color: "gray", count: 3 },
-          { key: "vip", label: "VIP", color: "purple", count: 2 },
-        ],
-      }),
-    );
+  it("keeps Busiest hour and shows no wallet tile when wallets are not in use", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5, { wallet_installed: null }));
 
     renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByText("Check-in progress")).toBeTruthy();
-    });
-    expect(screen.getByText("Standard")).toBeTruthy();
-    expect(screen.getByText("VIP")).toBeTruthy();
+    await screen.findByText("Busiest hour");
+    expect(screen.queryByText("Wallet passes installed")).toBeNull();
   });
 
-  it("doesn't crash Check-in progress when ticket_type_breakdown is entirely absent from the response (stale apps/web dev process predating this field)", async () => {
+  it("shows 0 installed (not a missing tile) when wallets are in use but nobody has installed a pass yet", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5, { attendee_count: 50, wallet_installed: 0 }));
+
+    renderPage();
+
+    const tile = (await screen.findByText("Wallet passes installed")).closest(".overview-glance__tile") as HTMLElement;
+    expect(tile.textContent).toContain("(0%)");
+  });
+
+  it("doesn't crash Check-in progress when wallet_installed is entirely absent from the response (stale apps/web dev process predating this field)", async () => {
     const staleOverview = overviewFixture(5);
-    // apps/web has no watch mode — a dev server running an older build genuinely omits fields
-    // added since, unlike the fixture default `[]`. Simulate that instead of an empty array. If
-    // the page ever reverts to reading this field without a fallback, `renderPage()` below throws
-    // synchronously (no error boundary in this test tree) and fails the test.
-    delete (staleOverview as Partial<EventOverviewDto>).ticket_type_breakdown;
+    // apps/web has no watch mode: a dev server running an older build genuinely omits fields
+    // added since, unlike the fixture default. If the page ever reads this field without a
+    // fallback, `renderPage()` below fails instead of falling back to Busiest hour.
+    delete (staleOverview as Partial<EventOverviewDto>).wallet_installed;
     fetchEventOverview.mockResolvedValue(staleOverview);
 
     renderPage();
 
-    await waitFor(() => {
-      expect(screen.getByText("Check-in progress")).toBeTruthy();
+    await screen.findByText("Busiest hour");
+    expect(screen.queryByText("Wallet passes installed")).toBeNull();
+  });
+
+  it("shows Setup checklist progress as 'N of M done' with an accessible progress bar, and no separate status notice", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+    renderPage();
+
+    const card = within(await screen.findByText("Setup checklist").then(() => checklistCard()));
+    expect(card.getByText("4 of 4 done")).toBeTruthy();
+    // A native <progress>: value and max carry the semantics, no ARIA attributes to keep in sync.
+    const bar = card.getByRole("progressbar", { name: "Setup progress" }) as HTMLProgressElement;
+    expect(bar.tagName).toBe("PROGRESS");
+    expect(bar.value).toBe(4);
+    expect(bar.max).toBe(4);
+    expect(bar.className).toContain("overview-setup__bar--ok");
+    // Status lives in the bar tone and each row's coloured icon, not in a second banner.
+    expect(checklistCard().querySelector(".at-notice")).toBeNull();
+  });
+
+  it("flags what needs attention in the bar tone and the row icons, and lists problems before completed rows", async () => {
+    fetchEventOverview.mockResolvedValue(
+      overviewFixture(5, { attendee_count: 50, attendees_with_ticket: 10, email_failed: 2 }),
+    );
+
+    renderPage();
+
+    const card = within(await screen.findByText("Setup checklist").then(() => checklistCard()));
+    expect(card.getByText("2 of 4 done")).toBeTruthy();
+    // A failed delivery outranks a partly-sent warning, which outranks completed rows.
+    const labels = Array.from(checklistCard().querySelectorAll(".overview-check__body strong")).map((el) => el.textContent);
+    expect(labels).toEqual(["Email delivery", "Tickets sent", "Attendees imported", "Check-in staff", "Event items"]);
+    expect(card.getByRole("progressbar").className).toContain("overview-setup__bar--error");
+    expect(card.getByText("Problem")).toBeTruthy();
+    expect(card.getByText("Needs attention")).toBeTruthy();
+  });
+
+  it("uses an amber bar when a required check is not done but nothing has failed", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5, { checkin_staff_count: 0 }));
+
+    renderPage();
+
+    const card = within(await screen.findByText("Setup checklist").then(() => checklistCard()));
+    expect(card.getByText("3 of 4 done")).toBeTruthy();
+    expect(card.getByRole("progressbar").className).toContain("overview-setup__bar--warn");
+    expect(checklistCard().querySelector(".overview-check__icon--warn")).toBeTruthy();
+  });
+
+  it("links each Setup checklist row to the page that fixes it", async () => {
+    fetchEventOverview.mockResolvedValue(overviewFixture(5));
+
+    renderPage();
+
+    await screen.findByText("Setup checklist");
+    const hrefs = Object.fromEntries(
+      Array.from(checklistCard().querySelectorAll<HTMLAnchorElement>("a.overview-check")).map((a) => [
+        a.querySelector("strong")?.textContent,
+        a.getAttribute("href"),
+      ]),
+    );
+    expect(hrefs).toEqual({
+      "Attendees imported": "/admin/events/evt-1/attendees",
+      "Tickets sent": "/admin/events/evt-1/communication",
+      "Email delivery": "/admin/events/evt-1/communication",
+      "Check-in staff": "/admin/users",
+      "Event items": "/admin/events/evt-1/requirements",
     });
   });
 
@@ -1759,7 +1887,6 @@ describe("EventOverviewPage archived event", () => {
 
     await screen.findByText("Attendees");
     expect(screen.queryByText(/This event is archived/)).toBeNull();
-    expect(document.querySelector(".at-notice")).toBeNull();
     expect(screen.queryByRole("button", { name: "Restore event" })).toBeNull();
   });
 
@@ -1768,7 +1895,7 @@ describe("EventOverviewPage archived event", () => {
 
     await screen.findByText("Attendees");
     expect(screen.queryByText(/Read-only since/)).toBeNull();
-    const notice = document.querySelector(".at-notice") as HTMLElement;
+    const notice = archivedNotice();
     expect(notice.className).toContain("at-notice--warning");
     expect(notice.textContent).toContain("This event is archived.");
     expect(notice.textContent).toContain("editing and check-in are locked");
@@ -1783,7 +1910,7 @@ describe("EventOverviewPage archived event", () => {
 
     await screen.findByText("Attendees");
     expect(screen.queryByRole("button", { name: "Restore event" })).toBeNull();
-    expect((document.querySelector(".at-notice") as HTMLElement).textContent).toContain(
+    expect(archivedNotice().textContent).toContain(
       "Ask a superadmin to restore it.",
     );
   });
@@ -1897,7 +2024,7 @@ describe("EventOverviewPage archived event", () => {
     renderPage();
 
     await screen.findByText("Attendees");
-    const notice = (document.querySelector(".at-notice") as HTMLElement).textContent ?? "";
+    const notice = archivedNotice().textContent ?? "";
     expect(notice).toContain(formatUtcDateTime(archivedAt));
   });
 
@@ -1905,7 +2032,7 @@ describe("EventOverviewPage archived event", () => {
     renderPage();
 
     await screen.findByText("Attendees");
-    const notice = (document.querySelector(".at-notice") as HTMLElement).textContent ?? "";
+    const notice = archivedNotice().textContent ?? "";
     expect(notice).toContain(formatEventDateTime(archivedAt, "Asia/Kolkata"));
   });
 
