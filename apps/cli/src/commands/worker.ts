@@ -33,6 +33,7 @@ import { installSystemLogRelay, uninstallSystemLogRelay } from "../lib/system-lo
 import { drainExportJobs } from "./export-jobs.js";
 import { runWalletRegistrationSync } from "./wallet-sync.js";
 import { drainWalletPushJobs } from "./wallet-push-jobs.js";
+import { drainWalletCleanupJobs } from "./wallet-cleanup-jobs.js";
 import { drainWalletRefreshStatusJobs } from "./wallet-refresh-status-jobs.js";
 import { drainWalletMessageJobs } from "./wallet-message-jobs.js";
 import { touchWorkerHeartbeat } from "./worker-heartbeat.js";
@@ -321,6 +322,32 @@ async function runWalletRefreshStatusJob(db: PrismaClient, locks: WorkerLockClie
   }
 }
 
+/** @returns true when a job was claimed this tick - same one-at-a-time reasoning as wallet_push. */
+async function runWalletCleanupJob(db: PrismaClient, locks: WorkerLockClient): Promise<boolean> {
+  const acquired = await locks.tryAcquire("wallet_cleanup");
+  if (!acquired) {
+    log("wallet_cleanup", "skipped (lock held)");
+    return false;
+  }
+  try {
+    const heartbeatStaleMs = workerHeartbeatStaleMs(parseBounceIngestTickSeconds(process.env));
+    const result = await withHeartbeatRefresh(db, "wallet_cleanup", () =>
+      drainWalletCleanupJobs(db, { limit: 1, heartbeatStaleMs }),
+    );
+    if (result.claimed === 0 && result.reclaimed === 0) {
+      log("wallet_cleanup", "idle");
+      return false;
+    }
+    log(
+      "wallet_cleanup",
+      `ok claimed=${result.claimed} succeeded=${result.succeeded} failed=${result.failed} reclaimed=${result.reclaimed}`,
+    );
+    return result.claimed > 0;
+  } finally {
+    await locks.release("wallet_cleanup");
+  }
+}
+
 async function runBounceJob(db: PrismaClient, locks: WorkerLockClient): Promise<void> {
   const acquired = await locks.tryAcquire("bounce");
   if (!acquired) {
@@ -418,6 +445,7 @@ export async function runWorkerTick(
     exportHasMore,
     walletPushHasMore,
     walletRefreshStatusHasMore,
+    walletCleanupHasMore,
     walletMessageHasMore,
   ] = await Promise.all([
     runJobSafely("mail_delivery", () => runMailDeliveryJob(db, locks), false),
@@ -425,6 +453,7 @@ export async function runWorkerTick(
     runJobSafely("export", () => runExportJob(db, locks), false),
     runJobSafely("wallet_push", () => runWalletPushJob(db, locks), false),
     runJobSafely("wallet_refresh_status", () => runWalletRefreshStatusJob(db, locks), false),
+    runJobSafely("wallet_cleanup", () => runWalletCleanupJob(db, locks), false),
     runJobSafely("wallet_message", () => runWalletMessageJob(db, locks), false),
     runJobSafely("bounce", () => runBounceJob(db, locks), undefined),
     runJobSafely("wallet_sync", () => runWalletSyncJob(db, locks), undefined),
@@ -457,6 +486,7 @@ export async function runWorkerTick(
     exportHasMore ||
     walletPushHasMore ||
     walletRefreshStatusHasMore ||
+    walletCleanupHasMore ||
     walletMessageHasMore
   );
 }
