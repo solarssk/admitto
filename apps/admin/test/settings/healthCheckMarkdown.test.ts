@@ -273,6 +273,32 @@ describe("formatHealthCheckMarkdown - export-safe labels (ADR 0037)", () => {
     expect(md).not.toContain("16.2");
   });
 
+  it("leaves an engine value unchanged when it has no digit run followed by a dot and digit", () => {
+    const noVersion = { ...hostileReport, groups: [withEngine("PostgreSQL")] };
+    expect(formatHealthCheckMarkdown(noVersion)).toContain("engine: PostgreSQL");
+
+    const trailingDot = { ...hostileReport, groups: [withEngine("PostgreSQL 16.")] };
+    expect(formatHealthCheckMarkdown(trailingDot)).toContain("engine: PostgreSQL 16.");
+
+    function withEngine(engine: string) {
+      return {
+        id: "core" as const,
+        label: "Core infrastructure",
+        subtitle: "Owned and run by this instance",
+        status: "ok" as const,
+        checks: [
+          {
+            id: "database",
+            label: "Database",
+            status: "ok" as const,
+            summary: "Connected",
+            details: [{ key: "engine", value: engine }],
+          },
+        ],
+      };
+    }
+  });
+
   it("falls back to a bare 'Identity provider' label when the protocol detail is missing", () => {
     const md = formatHealthCheckMarkdown({
       ...hostileReport,
