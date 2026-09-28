@@ -9,18 +9,28 @@ import { removeOneWalletPassFromProvider } from "../src/remove-wallet-pass-from-
 
 const audit = { operator: "user-1", sessionId: "sess-1", timezone: "Europe/Warsaw" };
 
-function makeDb() {
+function makeDb(
+  preDeleteRead: { status: string; provider_removed_at: Date | null; provider_commanded_at: Date | null } | null = {
+    status: "voided",
+    provider_removed_at: null,
+    provider_commanded_at: null,
+  },
+) {
   // First updateMany is the conditional removal stamp, second is the "put an active row back to
   // voided" repair - both report one row by default, except the repair, which matches nothing
   // unless a test says a Restore raced in.
   const txUpdateMany = vi.fn().mockResolvedValueOnce({ count: 1 }).mockResolvedValue({ count: 0 });
   const txFindUnique = vi.fn().mockResolvedValue(null);
+  // The re-read right before deletePass - matches makeTarget()'s own defaults by default, so it
+  // reports "nothing changed" unless a test overrides it to exercise the pre-delete abort path.
+  const findFirst = vi.fn().mockResolvedValue(preDeleteRead);
   const db = {
+    walletPass: { findFirst },
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
       fn({ walletPass: { updateMany: txUpdateMany, findUnique: txFindUnique } }),
     ),
   };
-  return { db, txUpdateMany, txFindUnique };
+  return { db, txUpdateMany, txFindUnique, findFirst };
 }
 
 function makeTarget(overrides: Partial<Parameters<typeof removeOneWalletPassFromProvider>[2]> = {}) {
@@ -91,8 +101,9 @@ describe("removeOneWalletPassFromProvider", () => {
   });
 
   it("applies a found snapshot through applyProviderSnapshotToWalletPass before deleting", async () => {
-    const { db } = makeDb();
-    const target = makeTarget({ providerCommandedAt: new Date("2026-09-01T00:00:00Z") });
+    const commandedAt = new Date("2026-09-01T00:00:00Z");
+    const { db } = makeDb({ status: "voided", provider_removed_at: null, provider_commanded_at: commandedAt });
+    const target = makeTarget({ providerCommandedAt: commandedAt });
     const snapshot = { observedAt: new Date(), validity: { voided: true, expirationRaw: null, expiresAt: null }, registrations: null, firstDownloadedAt: null };
     provider.getPassSnapshot.mockResolvedValueOnce(snapshot);
     vi.mocked(applyProviderSnapshotToWalletPass).mockResolvedValueOnce("applied");
@@ -115,6 +126,52 @@ describe("removeOneWalletPassFromProvider", () => {
     );
     // deletePass must still run after the snapshot step, not be skipped by it.
     expect(provider.deletePass).toHaveBeenCalledWith("pc-1");
+  });
+
+  it("aborts before deletePass as changed when a concurrent Restore is seen in the pre-delete re-read (regression)", async () => {
+    const { db, findFirst } = makeDb({ status: "active", provider_removed_at: null, provider_commanded_at: new Date() });
+    const target = makeTarget({ userProvidedId: null });
+
+    const result = await removeOneWalletPassFromProvider(db as never, "evt-1", target, provider as never, audit);
+
+    expect(result).toBe("changed");
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { attendee_id: "att-1", provider_pass_id: "pc-1" },
+      select: { status: true, provider_removed_at: true, provider_commanded_at: true },
+    });
+    expect(provider.deletePass).not.toHaveBeenCalled();
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("aborts before deletePass as changed when provider_commanded_at drifted even though status is still voided (regression)", async () => {
+    const { db } = makeDb({ status: "voided", provider_removed_at: null, provider_commanded_at: new Date("2026-09-25T00:00:00Z") });
+    const target = makeTarget({ userProvidedId: null, providerCommandedAt: new Date("2026-09-01T00:00:00Z") });
+
+    const result = await removeOneWalletPassFromProvider(db as never, "evt-1", target, provider as never, audit);
+
+    expect(result).toBe("changed");
+    expect(provider.deletePass).not.toHaveBeenCalled();
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("aborts before deletePass as already_removed when the pre-delete re-read finds it already stamped", async () => {
+    const { db } = makeDb({ status: "voided", provider_removed_at: new Date(), provider_commanded_at: null });
+    const target = makeTarget({ userProvidedId: null });
+
+    const result = await removeOneWalletPassFromProvider(db as never, "evt-1", target, provider as never, audit);
+
+    expect(result).toBe("already_removed");
+    expect(provider.deletePass).not.toHaveBeenCalled();
+  });
+
+  it("aborts before deletePass as not_found when the pre-delete re-read finds the row gone", async () => {
+    const { db } = makeDb(null);
+    const target = makeTarget({ userProvidedId: null });
+
+    const result = await removeOneWalletPassFromProvider(db as never, "evt-1", target, provider as never, audit);
+
+    expect(result).toBe("not_found");
+    expect(provider.deletePass).not.toHaveBeenCalled();
   });
 
   it("a provider error during the snapshot read aborts before deletePass is ever called", async () => {
@@ -156,6 +213,35 @@ describe("removeOneWalletPassFromProvider", () => {
     vi.mocked(writeActionLog).mockClear();
     await removeOneWalletPassFromProvider(makeDb().db as never, "evt-1", target, provider as never, audit);
     expect(writeActionLog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ metadata: {} }));
+  });
+
+  it("writes event_wide:true metadata when called from the event-wide clean-up job", async () => {
+    const { db } = makeDb();
+    const target = makeTarget({ userProvidedId: null });
+
+    await removeOneWalletPassFromProvider(db as never, "evt-1", target, provider as never, audit, {
+      eventWide: true,
+    });
+
+    expect(writeActionLog).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ metadata: { event_wide: true } }),
+    );
+  });
+
+  it("combines bulk and event_wide metadata when both are set", async () => {
+    const { db } = makeDb();
+    const target = makeTarget({ userProvidedId: null });
+
+    await removeOneWalletPassFromProvider(db as never, "evt-1", target, provider as never, audit, {
+      bulk: true,
+      eventWide: true,
+    });
+
+    expect(writeActionLog).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ metadata: { bulk: true, event_wide: true } }),
+    );
   });
 
   it("logs nothing and reports already_removed when a concurrent removal stamped the row first", async () => {

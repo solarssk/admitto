@@ -1235,12 +1235,24 @@ export async function triggerEventWideWalletVoidActive(eventId: string): Promise
   return parseJson<{ jobId: string }>(res);
 }
 
+/** Event managers: remove every voided wallet pass of the event that is past its grace period and
+ * still at the provider, in the background - same "keep the local record and Reports history"
+ * behaviour as the single/bulk "Remove from provider" actions, from the Attendees header's "More
+ * actions" menu. Works on an archived event and with the Wallet switch off. */
+export async function triggerEventWideWalletRemoveInactive(eventId: string): Promise<{ jobId: string }> {
+  const res = await fetch(
+    `/api/admin/events/${encodeURIComponent(eventId)}/wallet-remove-inactive`,
+    jsonPostInit({}),
+  );
+  return parseJson<{ jobId: string }>(res);
+}
+
 /** Lifecycle of an AdminJob as the status routes report it. */
 export type AdminJobStatus = "pending" | "running" | "succeeded" | "failed";
 
 export interface WalletCleanupJobStatusResponse {
   jobId: string;
-  type: "wallet_void_active";
+  type: "wallet_void_active" | "wallet_remove_inactive";
   status: AdminJobStatus;
   error: string | null;
   progressTotal: number | null;

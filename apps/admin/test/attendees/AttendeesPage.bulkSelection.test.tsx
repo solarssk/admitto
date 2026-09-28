@@ -39,6 +39,7 @@ const triggerEventWideWalletPush = vi.fn();
 const triggerEventWideWalletRefreshStatus = vi.fn();
 const pollWalletRefreshStatusCompletion = vi.fn();
 const triggerEventWideWalletVoidActive = vi.fn();
+const triggerEventWideWalletRemoveInactive = vi.fn();
 const pollWalletCleanupCompletion = vi.fn();
 
 function mailSettings(provider: string | null) {
@@ -147,6 +148,7 @@ vi.mock("../../src/api/client.js", async (importOriginal) => ({
   triggerEventWideWalletPush: (...args: unknown[]) => triggerEventWideWalletPush(...args),
   triggerEventWideWalletRefreshStatus: (...args: unknown[]) => triggerEventWideWalletRefreshStatus(...args),
   triggerEventWideWalletVoidActive: (...args: unknown[]) => triggerEventWideWalletVoidActive(...args),
+  triggerEventWideWalletRemoveInactive: (...args: unknown[]) => triggerEventWideWalletRemoveInactive(...args),
   updateAttendee: vi.fn(),
 }));
 
@@ -3812,7 +3814,7 @@ describe("AttendeesPage header 'Void active passes' (event-wide, wallet configur
 
     await waitFor(() => {
       expect(within(dialog).getByRole("alert").textContent).toBe(
-        "Voiding is already running for this event. Try again once it finishes.",
+        "A wallet clean-up job is already running for this event. Try again once it finishes.",
       );
     });
     expect(pollWalletCleanupCompletion).not.toHaveBeenCalled();
@@ -3877,5 +3879,140 @@ describe("AttendeesPage header 'Void active passes' (event-wide, wallet configur
     });
 
     expect(within(dialog).queryByRole("alert")).toBeNull();
+  });
+});
+
+// The confirmation's event-scoped behaviour (closes on navigation, does not come back, drops a
+// stale success/error) comes from the same useWalletCleanupAction hook the "Void active passes"
+// suite above already exercises in full at the AttendeesPage level, and again at the hook level in
+// useWalletVoidActive.test.tsx - this block only checks the "Remove inactive passes" wiring that
+// actually differs: which endpoint, copy, and dialog text are used.
+describe("AttendeesPage header 'Remove inactive passes' (event-wide, wallet configured)", () => {
+  const DIALOG = "Remove inactive wallet passes for this event?";
+
+  beforeEach(() => {
+    triggerEventWideWalletRemoveInactive.mockReset();
+    pollWalletCleanupCompletion.mockReset().mockResolvedValue(undefined);
+    fetchEventAttendees.mockResolvedValue({ items: [rowA, rowB, rowC], total: 3, page: 1, pageSize: 25 });
+  });
+
+  async function openRemoveInactiveDialog() {
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Remove inactive passes/ }));
+    return screen.getByRole("dialog", { name: DIALOG });
+  }
+
+  it("confirms, queues the event-wide job, toasts that it's queued, and polls with the 'remove_inactive' action", async () => {
+    triggerEventWideWalletRemoveInactive.mockResolvedValue({ jobId: "job-1" });
+
+    const dialog = await openRemoveInactiveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove all" }));
+
+    await waitFor(() => expect(triggerEventWideWalletRemoveInactive).toHaveBeenCalledWith("evt-1"));
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith("Removing started. You'll see a summary when it's done.", "info");
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: DIALOG })).toBeNull());
+    await waitFor(() => {
+      expect(pollWalletCleanupCompletion).toHaveBeenCalledWith(
+        "remove_inactive",
+        "evt-1",
+        "job-1",
+        expect.any(Function),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+  });
+
+  it("is also offered with the Wallet switch off (it only needs the event's credentials)", async () => {
+    mockWalletEnabled = false;
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+
+    expect(screen.getByRole("menuitem", { name: /^Remove inactive passes/ })).toBeTruthy();
+  });
+
+  it("is not offered when the event has no wallet configured", async () => {
+    mockWalletConfigured = false;
+
+    renderPage();
+    await screen.findByText("Jane Doe");
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+
+    expect(screen.queryByRole("menuitem", { name: /^Remove inactive passes/ })).toBeNull();
+  });
+
+  it("shows an inline dialog error and keeps the dialog open when queueing fails", async () => {
+    triggerEventWideWalletRemoveInactive.mockRejectedValueOnce(new Error("network down"));
+
+    const dialog = await openRemoveInactiveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove all" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByRole("alert").textContent).toBe("Failed to remove the wallet passes.");
+    });
+    expect(pollWalletCleanupCompletion).not.toHaveBeenCalled();
+  });
+
+  it("closes without queueing anything when Cancel is clicked", async () => {
+    const dialog = await openRemoveInactiveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: DIALOG })).toBeNull();
+    expect(triggerEventWideWalletRemoveInactive).not.toHaveBeenCalled();
+  });
+
+  it("shows the busy label while the request is in flight", async () => {
+    let resolveTrigger!: (value: { jobId: string }) => void;
+    triggerEventWideWalletRemoveInactive.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveTrigger = resolve;
+      }),
+    );
+
+    const dialog = await openRemoveInactiveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove all" }));
+    await waitFor(() => expect(triggerEventWideWalletRemoveInactive).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect((screen.getByRole("menuitem", { name: /^Removing passes…/ }) as HTMLButtonElement).disabled).toBe(true);
+
+    await act(async () => {
+      resolveTrigger({ jobId: "job-1" });
+      await Promise.resolve();
+    });
+  });
+
+  it("reloads the attendee list once the background job reports success", async () => {
+    triggerEventWideWalletRemoveInactive.mockResolvedValue({ jobId: "job-1" });
+
+    const dialog = await openRemoveInactiveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove all" }));
+    await waitFor(() => expect(pollWalletCleanupCompletion).toHaveBeenCalled());
+    const callsBefore = fetchEventAttendees.mock.calls.length;
+    const options = pollWalletCleanupCompletion.mock.calls[0]?.[4] as { onSuccess?: () => void };
+
+    act(() => options.onSuccess?.());
+
+    await waitFor(() => expect(fetchEventAttendees.mock.calls.length).toBeGreaterThan(callsBefore));
+  });
+
+  it("shows the server's message inline when a removal is already running for the event", async () => {
+    const { ApiError } = await import("../../src/api/client.js");
+    triggerEventWideWalletRemoveInactive.mockRejectedValueOnce(new ApiError(409, "wallet_cleanup_already_running"));
+
+    const dialog = await openRemoveInactiveDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove all" }));
+
+    await waitFor(() => {
+      expect(within(dialog).getByRole("alert").textContent).toBe(
+        "A wallet clean-up job is already running for this event. Try again once it finishes.",
+      );
+    });
+    expect(pollWalletCleanupCompletion).not.toHaveBeenCalled();
   });
 });
