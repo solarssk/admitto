@@ -50,7 +50,23 @@ describe("timezones", () => {
       // "CET" in January (correct - not DST) but must NOT show "CET" in July (DST, +2 not +1).
       expect(getTimeZoneAbbreviationForDate("Europe/Warsaw", new Date("2026-01-15T12:00:00Z"))).toBe("CET");
       expect(getTimeZoneAbbreviationForDate("Europe/Warsaw", new Date("2026-07-15T12:00:00Z"))).not.toBe("CET");
-      expect(getTimeZoneAbbreviationForDate("Europe/Warsaw", new Date("2026-07-15T12:00:00Z"))).toBe("GMT+2");
+      expect(getTimeZoneAbbreviationForDate("Europe/Warsaw", new Date("2026-07-15T12:00:00Z"))).toBe("UTC+2");
+    });
+
+    it("shows a numeric offset as UTC+N, never GMT+N, matching the admin's own labels", () => {
+      // British Summer Time and Lord Howe daylight time have no ICU letter form either.
+      expect(getTimeZoneAbbreviationForDate("Europe/London", new Date("2026-07-15T12:00:00Z"))).toBe("UTC+1");
+      expect(getTimeZoneAbbreviationForDate("Australia/Lord_Howe", new Date("2026-01-15T12:00:00Z"))).toBe("UTC+11");
+    });
+
+    it("keeps the minutes and the sign of a fractional negative offset", () => {
+      // Newfoundland daylight time is UTC-2:30.
+      expect(getTimeZoneAbbreviationForDate("America/St_Johns", new Date("2026-07-15T12:00:00Z"))).toBe("UTC-2:30");
+    });
+
+    it("leaves a real GMT zone abbreviation alone (UK winter time, Abidjan)", () => {
+      expect(getTimeZoneAbbreviationForDate("Europe/London", new Date("2026-01-15T12:00:00Z"))).toBe("GMT");
+      expect(getTimeZoneAbbreviationForDate("Africa/Abidjan", new Date("2026-07-15T12:00:00Z"))).toBe("GMT");
     });
 
     it("handles a southern-hemisphere zone where DST runs opposite the northern-hemisphere months", () => {
