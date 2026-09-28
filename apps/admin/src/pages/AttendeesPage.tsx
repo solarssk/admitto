@@ -2467,7 +2467,7 @@ export function AttendeesPage() {
       <ConfirmDialog
         open={eventWideVoidActive.confirmOpen}
         title="Void every active wallet pass for this event?"
-        message="Voiding makes a wallet pass show as invalid on the attendee's phone. The pass stays on the phone and the attendee's ticket is not changed. This covers every active pass of the event, not only the selected attendees, and runs in the background. You can restore one pass at a time from the attendee's page, until the event is over. Attendees who have not added a pass yet can still add one until the event is over. To stop that, turn Wallet off in Event settings. It is not the same as Remove from provider or Delete wallet pass: those erase the pass from the wallet service for good."
+        message="Voiding makes a wallet pass show as invalid on the attendee's phone. The pass stays on the phone and the attendee's ticket is not changed. This covers every active pass of the event, not only the selected attendees, and runs in the background. You can restore one pass at a time from the attendee's page, until the event is over. Attendees who have not added a pass yet can still add one until the event is over. To stop that, ask a Superadmin to turn Wallet off in Event settings. It is not the same as Remove from provider or Delete wallet pass: those erase the pass from the wallet service for good."
         errorMessage={eventWideVoidActive.error}
         confirmLabel="Void all"
         confirmVariant="danger"
